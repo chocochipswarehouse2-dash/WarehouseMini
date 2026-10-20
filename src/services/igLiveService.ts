@@ -578,6 +578,37 @@ export async function postUpdateStatusToGas(
 }
 
 /**
+ * Kirim Update Ekspedisi ke Google Sheets Backend
+ */
+export async function postUpdateCourierToGas(
+  gasUrl: string,
+  orderId: string,
+  ekspedisi: string,
+  layanan: string
+): Promise<{ success: boolean; message: string }> {
+  const url = (gasUrl || DEFAULT_IG_LIVE_GAS_URL).trim();
+  if (!url) return { success: false, message: 'URL GAS belum diatur' };
+  try {
+    const payload = JSON.stringify({
+      action: 'updateCourier',
+      order_id: orderId,
+      ekspedisi: ekspedisi,
+      layanan: layanan
+    });
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: payload
+    });
+    const data = await res.json();
+    return { success: !!data.success, message: data.message || 'OK' };
+  } catch (err: any) {
+    console.warn('[IGLIVE] Gagal post ekspedisi ke GAS:', err);
+    return { success: false, message: err?.message || 'Gagal terhubung ke GAS' };
+  }
+}
+
+/**
  * Kirim Edit Data Pesanan ke Google Sheets Backend
  */
 export async function postEditOrderToGas(
@@ -589,6 +620,8 @@ export async function postEditOrderToGas(
     alamat_lengkap?: string;
     catatan?: string;
     no_resi?: string;
+    ekspedisi?: string;
+    layanan?: string;
   }
 ): Promise<{ success: boolean; message: string }> {
   const url = (gasUrl || DEFAULT_IG_LIVE_GAS_URL).trim();

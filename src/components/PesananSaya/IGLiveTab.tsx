@@ -26,7 +26,9 @@ import {
   ExternalLink,
   ShoppingBag,
   ListOrdered,
-  X
+  X,
+  Zap,
+  Rocket
 } from 'lucide-react';
 import { UserSession, ProductItem } from '../../types';
 import {
@@ -45,6 +47,7 @@ import {
   lookupMasterProduct,
   postUpdateResiToGas,
   postUpdateStatusToGas,
+  postUpdateCourierToGas,
   postEditOrderToGas,
   generateUUID,
 } from '../../services/igLiveService';
@@ -131,6 +134,148 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
   const [formItems, setFormItems] = useState<
     { sku: string; nama_produk: string; size: string; qty: number; lokasi: string; harga: number }[]
   >([]);
+
+  // State Status Penulisan Resi ke Spreadsheet (GAS)
+  const [resiSavingState, setResiSavingState] = useState<Record<string, 'saving' | 'saved' | 'error'>>({});
+  const resiDebounceTimers = useRef<Record<string, NodeJS.Timeout>>({});
+
+  // Helper Kurir & Layanan
+  const getCourierKey = (ekspedisi?: string, layanan?: string) => {
+    const e = (ekspedisi || '').toUpperCase();
+    const l = (layanan || '').toUpperCase();
+    if (l.includes('YES') || e.includes('YES')) return 'JNE_YES';
+    if (e.includes('INSTAN') || l.includes('INSTAN') || e.includes('GOSEND') || e.includes('GRAB')) return 'INSTAN';
+    if (e.includes('SAMEDAY') || l.includes('SAMEDAY')) return 'SAMEDAY';
+    if (e.includes('J&T')) return 'JT';
+    if (e.includes('SICEPAT')) return 'SICEPAT';
+    return 'JNE_REG';
+  };
+
+  // Ubah Ekspedisi & Tulis Langsung ke Spreadsheet
+  const handleUpdateCourier = async (orderId: string, courierKey: string) => {
+    let newExp = 'JNE';
+    let newLay = 'REG';
+    if (courierKey === 'JNE_YES') {
+      newExp = 'JNE';
+      newLay = 'YES';
+    } else if (courierKey === 'INSTAN') {
+      newExp = 'Instan';
+      newLay = 'Instant';
+    } else if (courierKey === 'SAMEDAY') {
+      newExp = 'Sameday';
+      newLay = 'Sameday';
+    } else if (courierKey === 'JT') {
+      newExp = 'J&T Express';
+      newLay = 'Reguler';
+    } else if (courierKey === 'SICEPAT') {
+      newExp = 'SiCepat';
+      newLay = 'Reguler';
+    } else {
+      newExp = 'JNE';
+      newLay = 'REG';
+    }
+
+    // 1. Update lokal
+    const updated = orders.map((o) =>
+      o.id === orderId
+        ? { ...o, ekspedisi: newExp, layanan: newLay, updated_at: new Date().toISOString() }
+        : o
+    );
+    saveAndSetOrders(updated);
+
+    // 2. Tulis langsung ke Spreadsheet Google Sheets via GAS
+    if (gasUrl) {
+      try {
+        const res = await postUpdateCourierToGas(gasUrl, orderId, newExp, newLay);
+        if (res.success) {
+          onShowToast(`Ekspedisi diubah ke ${newExp} ${newLay} & disimpan ke Spreadsheet!`, 'success');
+        } else {
+          onShowToast(`Ekspedisi lokal diperbarui (${res.message})`, 'info');
+        }
+      } catch (err: any) {
+        console.warn('Gagal sync kurir ke GAS:', err);
+      }
+    }
+  };
+
+  // Simpan Resi Tunggal ke Google Sheets Spreadsheet
+  const handleSaveSingleResi = async (orderId: string, rawResi: string) => {
+    if (resiDebounceTimers.current[orderId]) {
+      clearTimeout(resiDebounceTimers.current[orderId]);
+      delete resiDebounceTimers.current[orderId];
+    }
+
+    const cleanResi = (rawResi || '').trim().toUpperCase();
+    if (!cleanResi || cleanResi === '-') return;
+
+    setResiSavingState((prev) => ({ ...prev, [orderId]: 'saving' }));
+
+    // Update lokal & otomatis jadikan status "dikirim" jika siap diproses/diproses
+    const targetOrder = orders.find((o) => o.id === orderId);
+    const shouldSetDikirim =
+      targetOrder && (targetOrder.status === 'siap_diproses' || targetOrder.status === 'diproses');
+
+    const updated = orders.map((o) => {
+      if (o.id === orderId) {
+        return {
+          ...o,
+          no_resi: cleanResi,
+          status: (shouldSetDikirim ? 'dikirim' : o.status) as IGLiveOrderStatus,
+          updated_at: new Date().toISOString(),
+        };
+      }
+      return o;
+    });
+    saveAndSetOrders(updated);
+
+    // Tulis ke Spreadsheet via GAS Backend
+    if (gasUrl) {
+      try {
+        const res = await postUpdateResiToGas(
+          gasUrl,
+          orderId,
+          cleanResi,
+          shouldSetDikirim ? 'Dikirim' : (targetOrder?.status === 'dikirim' ? 'Dikirim' : 'Siap Diproses')
+        );
+        if (res.success) {
+          setResiSavingState((prev) => ({ ...prev, [orderId]: 'saved' }));
+          onShowToast(`No. Resi ${cleanResi} berhasil ditulis ke Spreadsheet!`, 'success');
+          setTimeout(() => {
+            setResiSavingState((prev) => {
+              const copy = { ...prev };
+              delete copy[orderId];
+              return copy;
+            });
+          }, 3000);
+        } else {
+          setResiSavingState((prev) => ({ ...prev, [orderId]: 'error' }));
+          onShowToast(`Gagal menulis resi ke Spreadsheet: ${res.message}`, 'error');
+        }
+      } catch (err: any) {
+        setResiSavingState((prev) => ({ ...prev, [orderId]: 'error' }));
+        onShowToast(`Koneksi GAS gagal: ${err?.message || err}`, 'error');
+      }
+    }
+  };
+
+  // Tangani perubahan ketikan No Resi dengan debounce auto-save ke spreadsheet
+  const handleResiChange = (orderId: string, val: string) => {
+    const upperVal = val.toUpperCase();
+    const updated = orders.map((o) =>
+      o.id === orderId ? { ...o, no_resi: upperVal, updated_at: new Date().toISOString() } : o
+    );
+    saveAndSetOrders(updated);
+
+    if (resiDebounceTimers.current[orderId]) {
+      clearTimeout(resiDebounceTimers.current[orderId]);
+    }
+
+    if (upperVal.trim() && upperVal.trim() !== '-') {
+      resiDebounceTimers.current[orderId] = setTimeout(() => {
+        handleSaveSingleResi(orderId, upperVal);
+      }, 1000);
+    }
+  };
 
   // Load Initial Data directly from Google Apps Script (GAS) Backend
   useEffect(() => {
@@ -443,7 +588,12 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
           alamat_lengkap: formAlamat.trim(),
           catatan: formCatatan.trim(),
           no_resi: formNoResi.trim() || '-',
+          ekspedisi: formEkspedisi,
+          layanan: formLayanan,
         });
+        if (formEkspedisi) {
+          postUpdateCourierToGas(gasUrl, formNoPesanan.trim(), formEkspedisi, formLayanan);
+        }
         if (formNoResi.trim() && formNoResi.trim() !== '-') {
           postUpdateResiToGas(gasUrl, formNoPesanan.trim(), formNoResi.trim(), 'Dikirim');
         }
@@ -572,8 +722,21 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
       }
 
       // 4. Ekspedisi Filter
-      if (ekspedisiFilter !== 'ALL' && !o.ekspedisi.toLowerCase().includes(ekspedisiFilter.toLowerCase())) {
-        return false;
+      if (ekspedisiFilter !== 'ALL') {
+        const curKey = getCourierKey(o.ekspedisi, o.layanan);
+        if (ekspedisiFilter === 'JNE') {
+          if (!o.ekspedisi.toLowerCase().includes('jne')) return false;
+        } else if (ekspedisiFilter === 'JNE_REG') {
+          if (curKey !== 'JNE_REG') return false;
+        } else if (ekspedisiFilter === 'JNE_YES') {
+          if (curKey !== 'JNE_YES') return false;
+        } else if (ekspedisiFilter === 'INSTAN') {
+          if (curKey !== 'INSTAN') return false;
+        } else if (ekspedisiFilter === 'SAMEDAY') {
+          if (curKey !== 'SAMEDAY') return false;
+        } else if (!o.ekspedisi.toLowerCase().includes(ekspedisiFilter.toLowerCase())) {
+          return false;
+        }
       }
 
       return true;
@@ -1089,10 +1252,13 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                 className="py-1.5 px-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 font-bold focus:outline-hidden"
               >
                 <option value="ALL">Semua Kurir</option>
+                <option value="JNE">JNE (Semua Layanan)</option>
+                <option value="JNE_REG">JNE - REG (Default)</option>
+                <option value="JNE_YES">JNE - YES</option>
+                <option value="INSTAN">Instan</option>
+                <option value="SAMEDAY">Sameday</option>
                 <option value="J&T">J&T Express</option>
                 <option value="SiCepat">SiCepat</option>
-                <option value="JNE">JNE</option>
-                <option value="SPX">SPX</option>
               </select>
             </div>
 
@@ -1245,27 +1411,111 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                               ))}
                             </div>
                           </td>
-                          <td className="p-3 align-top">
-                            <div className="font-bold text-slate-800 dark:text-slate-200">
-                              {order.ekspedisi}
+                          <td className="p-3 align-top min-w-[210px]">
+                            {/* Ekspedisi Selector & Visual Badge */}
+                            <div className="space-y-1.5">
+                              <div className="flex items-center gap-1.5">
+                                <select
+                                  value={getCourierKey(order.ekspedisi, order.layanan)}
+                                  onChange={(e) => handleUpdateCourier(order.id, e.target.value)}
+                                  className="w-full text-xs font-bold py-1 px-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-100 cursor-pointer focus:ring-1 focus:ring-pink-500 shadow-2xs"
+                                >
+                                  <option value="JNE_REG">📦 JNE - REG (Default)</option>
+                                  <option value="JNE_YES">⚡ JNE - YES (Esok Sampai)</option>
+                                  <option value="INSTAN">🚀 Instan (GoSend / Grab)</option>
+                                  <option value="SAMEDAY">⏱️ Sameday (Anteraja / Grab)</option>
+                                  <option value="JT">🚚 J&T Express</option>
+                                  <option value="SICEPAT">🐆 SiCepat</option>
+                                </select>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {getCourierKey(order.ekspedisi, order.layanan) === 'JNE_REG' && (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                                    <Truck className="w-2.5 h-2.5" /> JNE REG (Default)
+                                  </span>
+                                )}
+                                {getCourierKey(order.ekspedisi, order.layanan) === 'JNE_YES' && (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                    <Zap className="w-2.5 h-2.5 text-amber-600 fill-amber-500" /> JNE YES (Esok Sampai)
+                                  </span>
+                                )}
+                                {getCourierKey(order.ekspedisi, order.layanan) === 'INSTAN' && (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                    <Rocket className="w-2.5 h-2.5 text-emerald-600" /> Instan
+                                  </span>
+                                )}
+                                {getCourierKey(order.ekspedisi, order.layanan) === 'SAMEDAY' && (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                                    <Clock className="w-2.5 h-2.5 text-purple-600" /> Sameday
+                                  </span>
+                                )}
+                                {getCourierKey(order.ekspedisi, order.layanan) === 'JT' && (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-50 dark:bg-red-950/60 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800">
+                                    <Truck className="w-2.5 h-2.5" /> J&T Reguler
+                                  </span>
+                                )}
+                                {getCourierKey(order.ekspedisi, order.layanan) === 'SICEPAT' && (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-50 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800">
+                                    <Truck className="w-2.5 h-2.5" /> SiCepat
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            <div className="text-[11px] text-slate-500">
-                              {order.layanan || 'Reguler'}
-                            </div>
-                            <div className="mt-1 flex flex-col gap-1">
-                              <label className="text-[10px] text-slate-500 font-bold uppercase">Input Resi:</label>
+
+                            {/* Input Resi Box dengan Sync Otomatis ke Spreadsheet */}
+                            <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-1">
+                              <div className="flex items-center justify-between">
+                                <label className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-tight">
+                                  Input Resi:
+                                </label>
+                                {resiSavingState[order.id] === 'saving' && (
+                                  <span className="text-[9px] font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-0.5 animate-pulse">
+                                    <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Menulis Sheet...
+                                  </span>
+                                )}
+                                {resiSavingState[order.id] === 'saved' && (
+                                  <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
+                                    <CheckCircle2 className="w-2.5 h-2.5" /> Tersimpan di Sheet
+                                  </span>
+                                )}
+                                {resiSavingState[order.id] === 'error' && (
+                                  <span className="text-[9px] font-bold text-red-600 dark:text-red-400 flex items-center gap-0.5">
+                                    <AlertCircle className="w-2.5 h-2.5" /> Gagal Sheet
+                                  </span>
+                                )}
+                              </div>
                               <div className="flex items-center gap-1">
                                 <input
                                   type="text"
-                                  placeholder="Input No Resi..."
+                                  placeholder="No Resi..."
                                   value={order.no_resi === '-' ? '' : (order.no_resi || '')}
-                                  onChange={(e) => {
-                                    const val = e.target.value.toUpperCase();
-                                    const updated = orders.map(o => o.id === order.id ? { ...o, no_resi: val, updated_at: new Date().toISOString() } : o);
-                                    saveAndSetOrders(updated);
+                                  onChange={(e) => handleResiChange(order.id, e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      handleSaveSingleResi(order.id, order.no_resi || '');
+                                    }
                                   }}
-                                  className="w-full text-xs py-1 px-1.5 border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:ring-1 focus:ring-pink-500 font-mono font-bold"
+                                  onBlur={() => {
+                                    if (order.no_resi && order.no_resi !== '-') {
+                                      handleSaveSingleResi(order.id, order.no_resi);
+                                    }
+                                  }}
+                                  className="w-full text-xs py-1 px-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:ring-1 focus:ring-pink-500 font-mono font-bold"
                                 />
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveSingleResi(order.id, order.no_resi || '')}
+                                  disabled={resiSavingState[order.id] === 'saving' || !order.no_resi || order.no_resi === '-'}
+                                  title="Simpan No. Resi ke Google Sheets Spreadsheet"
+                                  className="p-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] flex items-center gap-0.5 cursor-pointer shadow-xs disabled:opacity-40 shrink-0 transition-colors"
+                                >
+                                  {resiSavingState[order.id] === 'saving' ? (
+                                    <RefreshCw className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <CheckCircle2 className="w-3 h-3" />
+                                  )}
+                                  <span>Simpan</span>
+                                </button>
                               </div>
                             </div>
                           </td>
@@ -1585,11 +1835,11 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                     className="w-full p-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white font-bold"
                   >
                     <option value="JNE">JNE</option>
+                    <option value="Instan">Instan (GoSend / Grab)</option>
+                    <option value="Sameday">Sameday</option>
                     <option value="J&T Express">J&T Express</option>
                     <option value="SiCepat">SiCepat</option>
                     <option value="SPX Express">SPX Express</option>
-                    <option value="GoSend">GoSend</option>
-                    <option value="GrabExpress">GrabExpress</option>
                     <option value="Lainnya">Lainnya</option>
                   </select>
                 </div>
@@ -1603,6 +1853,27 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                     onChange={(e) => setFormLayanan(e.target.value)}
                     className="w-full p-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
                   />
+                  <div className="flex gap-1 mt-1">
+                    {['REG', 'YES', 'Instant', 'Sameday'].map((lay) => (
+                      <button
+                        key={lay}
+                        type="button"
+                        onClick={() => {
+                          setFormLayanan(lay);
+                          if (lay === 'Instant') setFormEkspedisi('Instan');
+                          if (lay === 'Sameday') setFormEkspedisi('Sameday');
+                          if (lay === 'YES' || lay === 'REG') setFormEkspedisi('JNE');
+                        }}
+                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded border transition-colors ${
+                          formLayanan === lay
+                            ? 'bg-pink-600 text-white border-pink-600'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-200'
+                        }`}
+                      >
+                        {lay}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">

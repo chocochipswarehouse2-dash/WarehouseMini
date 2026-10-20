@@ -101,15 +101,55 @@ function doGet(e) {
         statusWms = "menunggu_pembayaran";
       }
 
-      // Deteksi Ekspedisi dari Keterangan atau default J&T Express
-      let ekspedisi = "J&T Express";
-      let layanan = "Reguler";
-      const ketUpper = keterangan.toUpperCase();
-      if (ketUpper.includes("JNE")) ekspedisi = "JNE Express";
-      else if (ketUpper.includes("SICEPAT")) ekspedisi = "SiCepat";
-      else if (ketUpper.includes("SPX") || ketUpper.includes("SHOPEE")) ekspedisi = "SPX Express";
-      else if (ketUpper.includes("GOSEND") || ketUpper.includes("GOJEK")) ekspedisi = "GoSend Instant";
-      else if (ketUpper.includes("GRAB")) ekspedisi = "GrabExpress";
+      // Deteksi Ekspedisi: Default adalah JNE REG, dapat diubah jadi JNE YES, Instan, Sameday
+      let ekspedisi = "JNE";
+      let layanan = "REG";
+
+      const kurirMatch = keterangan.match(/\[Kurir:\s*([^\]]+)\]/i);
+      if (kurirMatch) {
+        const fullKurir = kurirMatch[1].trim();
+        const fkUpper = fullKurir.toUpperCase();
+        if (fkUpper.includes("YES") || fkUpper.includes("JNE YES")) {
+          ekspedisi = "JNE";
+          layanan = "YES";
+        } else if (fkUpper.includes("INSTAN") || fkUpper.includes("INSTANT") || fkUpper.includes("GOSEND") || fkUpper.includes("GRAB")) {
+          ekspedisi = "Instan";
+          layanan = "Instant";
+        } else if (fkUpper.includes("SAMEDAY") || fkUpper.includes("SAME DAY")) {
+          ekspedisi = "Sameday";
+          layanan = "Sameday";
+        } else if (fkUpper.includes("J&T")) {
+          ekspedisi = "J&T Express";
+          layanan = "Reguler";
+        } else if (fkUpper.includes("SICEPAT")) {
+          ekspedisi = "SiCepat";
+          layanan = "Reguler";
+        } else {
+          ekspedisi = "JNE";
+          layanan = "REG";
+        }
+      } else {
+        const ketUpper = keterangan.toUpperCase();
+        if (ketUpper.includes("YES") || ketUpper.includes("JNE YES")) {
+          ekspedisi = "JNE";
+          layanan = "YES";
+        } else if (ketUpper.includes("INSTAN") || ketUpper.includes("INSTANT") || ketUpper.includes("GOSEND") || ketUpper.includes("GRAB")) {
+          ekspedisi = "Instan";
+          layanan = "Instant";
+        } else if (ketUpper.includes("SAMEDAY") || ketUpper.includes("SAME DAY")) {
+          ekspedisi = "Sameday";
+          layanan = "Sameday";
+        } else if (ketUpper.includes("SICEPAT")) {
+          ekspedisi = "SiCepat";
+          layanan = "Reguler";
+        } else if (ketUpper.includes("J&T")) {
+          ekspedisi = "J&T Express";
+          layanan = "Reguler";
+        } else {
+          ekspedisi = "JNE";
+          layanan = "REG";
+        }
+      }
 
       // Item Produk
       const itemObj = {
@@ -226,7 +266,18 @@ function doPost(e) {
         if (String(orderIds[i][0]).trim() === targetOrderId) {
           const rowNum = i + 3;
           sheet.getRange(rowNum, 16).setValue(newResi);  // Kolom P = Resi
-          sheet.getRange(rowNum, 14).setValue(newStatus); // Kolom N = Status
+          if (newResi && newResi !== "-") {
+            sheet.getRange(rowNum, 14).setValue(newStatus); // Kolom N = Status
+          }
+          if (payload.ekspedisi) {
+            const exp = String(payload.ekspedisi).trim();
+            const lay = String(payload.layanan || "REG").trim();
+            let curKet = String(sheet.getRange(rowNum, 15).getValue() || "");
+            curKet = curKet.replace(/\[Kurir:[^\]]+\]\s*/gi, "").trim();
+            const kurirTag = "[Kurir: " + exp + " " + lay + "]";
+            const updatedKet = curKet ? (kurirTag + " " + curKet) : kurirTag;
+            sheet.getRange(rowNum, 15).setValue(updatedKet);
+          }
           sheet.getRange(rowNum, 41).setValue("[" + timestampNow + "] Resi diupdate via WMS: " + newResi); // AO
           sheet.getRange(rowNum, 42).setValue(activeUser); // AP
           matchedCount++;
@@ -264,7 +315,42 @@ function doPost(e) {
       });
     }
 
-    // AKSI 4: EDIT PESANAN (Nama, HP, Alamat, Catatan)
+    // AKSI 4: UPDATE EKSPEDISI / KURIR (JNE REG, JNE YES, Instan, Sameday)
+    if (action === "updateCourier" || action === "updateEkspedisi") {
+      const targetOrderId = String(payload.order_id || payload.no_pesanan || "").trim();
+      const newEkspedisi = String(payload.ekspedisi || "JNE").trim();
+      const newLayanan = String(payload.layanan || "REG").trim();
+
+      if (!targetOrderId) {
+        return jsonResponse({ success: false, message: "order_id wajib diisi." });
+      }
+
+      const orderIds = sheet.getRange(3, 39, lastRow - 2, 1).getValues();
+      let matchedCount = 0;
+
+      for (let i = 0; i < orderIds.length; i++) {
+        if (String(orderIds[i][0]).trim() === targetOrderId) {
+          const rowNum = i + 3;
+          let curKet = String(sheet.getRange(rowNum, 15).getValue() || "");
+          curKet = curKet.replace(/\[Kurir:[^\]]+\]\s*/gi, "").trim();
+          const kurirTag = "[Kurir: " + newEkspedisi + " " + newLayanan + "]";
+          const updatedKet = curKet ? (kurirTag + " " + curKet) : kurirTag;
+          
+          sheet.getRange(rowNum, 15).setValue(updatedKet); // Kolom O = Keterangan
+          sheet.getRange(rowNum, 41).setValue("[" + timestampNow + "] Ekspedisi diubah ke: " + newEkspedisi + " " + newLayanan);
+          sheet.getRange(rowNum, 42).setValue(activeUser);
+          matchedCount++;
+        }
+      }
+
+      return jsonResponse({
+        success: matchedCount > 0,
+        matched_rows: matchedCount,
+        message: matchedCount > 0 ? "Ekspedisi berhasil diupdate ke " + matchedCount + " baris gsheet." : "Order ID tidak ditemukan."
+      });
+    }
+
+    // AKSI 5: EDIT PESANAN (Nama, HP, Alamat, Catatan, Ekspedisi, Resi)
     if (action === "editOrder") {
       const targetOrderId = String(payload.order_id || payload.no_pesanan || "").trim();
       const orderIds = sheet.getRange(3, 39, lastRow - 2, 1).getValues();
@@ -275,8 +361,20 @@ function doPost(e) {
           if (payload.nama_pembeli) sheet.getRange(rowNum, 2).setValue(payload.nama_pembeli);
           if (payload.no_telp) sheet.getRange(rowNum, 3).setValue(payload.no_telp);
           if (payload.alamat_lengkap) sheet.getRange(rowNum, 4).setValue(payload.alamat_lengkap);
-          if (payload.catatan) sheet.getRange(rowNum, 15).setValue(payload.catatan);
           if (payload.no_resi) sheet.getRange(rowNum, 16).setValue(payload.no_resi);
+          
+          if (payload.ekspedisi) {
+            const exp = String(payload.ekspedisi).trim();
+            const lay = String(payload.layanan || "REG").trim();
+            let baseKet = payload.catatan ? String(payload.catatan) : String(sheet.getRange(rowNum, 15).getValue() || "");
+            baseKet = baseKet.replace(/\[Kurir:[^\]]+\]\s*/gi, "").trim();
+            const kurirTag = "[Kurir: " + exp + " " + lay + "]";
+            const updatedKet = baseKet ? (kurirTag + " " + baseKet) : kurirTag;
+            sheet.getRange(rowNum, 15).setValue(updatedKet);
+          } else if (payload.catatan) {
+            sheet.getRange(rowNum, 15).setValue(payload.catatan);
+          }
+
           sheet.getRange(rowNum, 41).setValue("[" + timestampNow + "] Data diedit via WMS");
           sheet.getRange(rowNum, 42).setValue(activeUser);
         }

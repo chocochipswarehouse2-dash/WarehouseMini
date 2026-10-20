@@ -2570,6 +2570,7 @@ _WMS Warehouse System_`;
         setOrders(prev => prev.map(o => {
           if (o.no_pesanan === order.no_pesanan) {
             const updatedItems = (o.items || []).map(it => {
+              if (item.id === 'ALL_MKT') {
                 const ful = (it.fulfillment || '').toLowerCase();
                 const isTarget = ful.includes('marketplace') || ful.includes('gudang') || ful.includes('warehouse') || order.no_pesanan?.startsWith('AR-') || !ful;
                 if (isTarget) {
@@ -5953,36 +5954,6 @@ _WMS Warehouse System_`;
                       );
                     })()}
                   </td>
-
-                                    {userIsAdmin && order.status !== 'batal' && (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const isMulti = (order.items || []).length > 1;
-                                          setSoldModalData({
-                                            order,
-                                            item: it,
-                                            resolution: isMulti ? 'partial_fulfill' : 'cancel_order',
-                                            note: 'Stok kosong di alokasi DealPOS Marketplace.',
-                                            sendWaToStore: true
-                                          });
-                                        }}
-                                        className="text-[9px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 px-1.5 py-0.5 rounded border border-red-200 dark:border-red-800/60 cursor-pointer flex items-center gap-0.5"
-                                        title="Tandai stok ini kosong / sold"
-                                      >
-                                        <AlertOctagon className="w-2.5 h-2.5" />
-                                        <span>Tandai Sold</span>
-                                      </button>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </td>
                   <td className="sticky right-0 z-10 px-3 py-2 text-right align-middle min-w-[270px] pr-4 bg-white dark:bg-slate-900 shadow-[-6px_0_10px_-4px_rgba(0,0,0,0.08)] whitespace-nowrap">
                     <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                       {(isEligibleForSjStruk(order) || isStoreUser) && (
@@ -6580,34 +6551,6 @@ _WMS Warehouse System_`;
                                 </div>
                               );
                             })}
-                          </div>
-                        </div>
-                      );
-                    })()}
-
-                                    {userIsAdmin && order.status !== 'batal' && (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const isMulti = (order.items || []).length > 1;
-                                          setSoldModalData({
-                                            order,
-                                            item: it,
-                                            resolution: isMulti ? 'partial_fulfill' : 'cancel_order',
-                                            note: 'Stok kosong di alokasi DealPOS Marketplace.',
-                                            sendWaToStore: true
-                                          });
-                                        }}
-                                        className="text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 px-2 py-0.5 rounded border border-red-200 dark:border-red-800/60 cursor-pointer flex items-center gap-1"
-                                      >
-                                        <AlertOctagon className="w-3 h-3" />
-                                        <span>Tandai Sold</span>
-                                      </button>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
                           </div>
                         </div>
                       );

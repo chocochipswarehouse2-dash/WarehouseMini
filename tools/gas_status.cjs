@@ -2,6 +2,7 @@ const fs = require('fs');
 
 const MAIN_SCRIPT_ID = '1kxPONxg5JyJKzrHg2EApt9K8c9nK6hccygtny2jf69JtgKIoVauTgDEU';
 const WEBHOOK_SCRIPT_ID = '1EfZ76Hl-bJhwvfzWpBkMD2zR8YbEkeBRgkgD76NHv95_XeHwtfsruqmE';
+const IG_LIVE_SCRIPT_ID = '1niTufmejkWtUnCCfStve3mvLMQakZEZ7eCJ27wehHWmC8nPkkSwyDW4A';
 
 async function getAccessToken() {
   const clasprc = JSON.parse(fs.readFileSync('C:/Users/Chocochips Warehouse/.clasprc.json', 'utf8'));
@@ -60,11 +61,13 @@ async function checkGasStatus() {
     const token = await getAccessToken();
     const webhookStatus = await checkProjectStatus(WEBHOOK_SCRIPT_ID, 'Standalone Fonnte Webhook', token);
     const mainStatus = await checkProjectStatus(MAIN_SCRIPT_ID, 'Main WMS Backend', token);
+    const igLiveStatus = await checkProjectStatus(IG_LIVE_SCRIPT_ID, 'IG Live Spreadsheet Backend', token);
 
     return {
       success: true,
       webhook: webhookStatus,
-      main: mainStatus
+      main: mainStatus,
+      igLive: igLiveStatus
     };
   } catch (err) {
     console.warn('[GAS STATUS WARNING] Tidak dapat memeriksa status GAS live:', err.message);

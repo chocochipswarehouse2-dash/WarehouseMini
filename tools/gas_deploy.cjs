@@ -5,6 +5,8 @@ const os = require('os');
 const MAIN_SCRIPT_ID = '1kxPONxg5JyJKzrHg2EApt9K8c9nK6hccygtny2jf69JtgKIoVauTgDEU';
 const WEBHOOK_SCRIPT_ID = '1EfZ76Hl-bJhwvfzWpBkMD2zR8YbEkeBRgkgD76NHv95_XeHwtfsruqmE';
 const PRODUKSI_SCRIPT_ID = '1vYGP1u5mCAvjFYbJQHbc7mLruxrtwUmlKh27djBJ6oBlomuOCCKy-scb';
+const IG_LIVE_SCRIPT_ID = '1niTufmejkWtUnCCfStve3mvLMQakZEZ7eCJ27wehHWmC8nPkkSwyDW4A';
+const IG_LIVE_DEP_ID = 'AKfycbyCAAs6oYeW1TJKq3mq_C2Lt1SxoVzVg2yeS8atAHlDsip5jDWQ2aJpRQ66oKPQdhU7dw';
 
 const NEW_URL = 'https://ilhqerecxbywqrhfpbbc.supabase.co';
 const NEW_KEY = 'sb_publishable_tMgdx9b0XBAQei7WcKYvMg_QwJ-lopn';
@@ -300,6 +302,80 @@ async function deployProduksiBackend(headers) {
   return verNum;
 }
 
+// -----------------------------------------------------------------------------
+// 4. DEPLOY IG LIVE SPREADSHEET BACKEND (1niTufme...)
+// -----------------------------------------------------------------------------
+async function deployIgLiveBackend(headers) {
+  console.log('\n======================================================');
+  console.log('📦 [4/4] DEPLOYING IG LIVE SPREADSHEET BACKEND PROJECT');
+  console.log(`Script ID: ${IG_LIVE_SCRIPT_ID}`);
+  console.log('======================================================');
+
+  const igLiveContent = fs.readFileSync(path.join(GAS_DIR, 'ig_live_backend.js'), 'utf8');
+  const appsscriptJson = fs.readFileSync(path.join(GAS_DIR, 'appsscript.json'), 'utf8');
+
+  const files = [
+    {
+      name: 'appsscript',
+      type: 'JSON',
+      source: appsscriptJson
+    },
+    {
+      name: 'Code',
+      type: 'SERVER_JS',
+      source: igLiveContent
+    }
+  ];
+
+  console.log('1. Mengunggah source ig_live_backend.js ke IG Live project...');
+  const putRes = await fetch(`https://script.googleapis.com/v1/projects/${IG_LIVE_SCRIPT_ID}/content`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({ files })
+  });
+  const putData = await putRes.json();
+  if (!putData.files) {
+    throw new Error('Gagal PUT IG Live project: ' + JSON.stringify(putData));
+  }
+  console.log('✅ Source ig_live_backend.js berhasil diunggah.');
+
+  console.log('2. Membuat Versi Baru...');
+  const verRes = await fetch(`https://script.googleapis.com/v1/projects/${IG_LIVE_SCRIPT_ID}/versions`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ description: 'WMS IG Live Auto-Deploy: JNE REG Default, Couriers & Fast Resi Write' })
+  });
+  const verData = await verRes.json();
+  const verNum = verData.versionNumber;
+  console.log(`✅ IG Live Versi baru berhasil dibuat: Versi ${verNum}`);
+
+  console.log('3. Memperbarui Deployment aktif...');
+  const depRes = await fetch(`https://script.googleapis.com/v1/projects/${IG_LIVE_SCRIPT_ID}/deployments`, { headers });
+  const depData = await depRes.json();
+  const deployments = depData.deployments || [];
+
+  const targetDep = deployments.find(d => d.deploymentId === IG_LIVE_DEP_ID) || deployments.find(d => d.deploymentConfig && d.deploymentConfig.versionNumber) || deployments[0];
+  if (targetDep) {
+    const depId = targetDep.deploymentId;
+    console.log(`Target Deployment ID: ${depId}`);
+    await fetch(`https://script.googleapis.com/v1/projects/${IG_LIVE_SCRIPT_ID}/deployments/${depId}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        deploymentConfig: {
+          scriptId: IG_LIVE_SCRIPT_ID,
+          versionNumber: verNum,
+          description: `Active IG Live Deployment (Version ${verNum})`
+        }
+      })
+    });
+    console.log(`✅ IG Live Backend aktif beralih ke Versi ${verNum}!`);
+    console.log(`URL: https://script.google.com/macros/s/${depId}/exec`);
+  }
+
+  return verNum;
+}
+
 async function runPushAndDeploy() {
   const token = await getAccessToken();
   const headers = {
@@ -310,12 +386,14 @@ async function runPushAndDeploy() {
   const webhookVersion = await deployStandaloneWebhook(headers);
   const mainVersion = await deployMainBackend(headers);
   const produksiVersion = await deployProduksiBackend(headers);
+  const igLiveVersion = await deployIgLiveBackend(headers);
 
   console.log('\n======================================================');
   console.log('🎉 SEMUA PROSES DEPLOY KE GOOGLE APPS SCRIPT SELESAI 100%!');
   console.log(`- Standalone Fonnte Webhook: Versi ${webhookVersion}`);
   console.log(`- Main WMS Backend: Versi ${mainVersion}`);
   console.log(`- Produksi Sheet Backend: Versi ${produksiVersion}`);
+  console.log(`- IG Live Sheet Backend: Versi ${igLiveVersion}`);
   console.log('======================================================');
 }
 
