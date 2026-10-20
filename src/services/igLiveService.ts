@@ -874,17 +874,15 @@ export async function fetchOrdersFromGas(
     }
 
     
-    // Fetch existing records from Supabase to preserve manual changes (Resi & Status & UUID)
-    const { data: existingData } = await getSupabaseClient().from('ig_live_orders')
-      .select('id, no_pesanan, no_resi, status');
-      
+    // Use local storage cache to preserve status & resi if user modified locally
+    const cachedOrders = getStoredIgLiveOrders();
     const existingMap = new Map();
-    if (existingData) {
-      existingData.forEach((row: any) => {
-        existingMap.set(row.no_pesanan, { 
-          id: row.id,
-          no_resi: row.no_resi, 
-          status: row.status 
+    if (cachedOrders && Array.isArray(cachedOrders)) {
+      cachedOrders.forEach((row) => {
+        existingMap.set(row.no_pesanan, {
+          no_resi: row.no_resi,
+          status: row.status,
+          is_picked: row.is_picked,
         });
       });
     }
@@ -912,7 +910,7 @@ export async function fetchOrdersFromGas(
         const master = lookupMasterProduct(sku, catalog);
         return {
           sku: master.sku || sku,
-          nama_produk: master.nama_produk || rawIt.nama_produk,
+          nama_produk: master.nama_produk || rawIt.nama_produk || sku,
           size: master.size !== '-' ? master.size : (rawIt.size || '-'),
           qty: Number(rawIt.qty || 1) || 1,
           harga: Number(rawIt.harga || rawIt.price || master.harga || 0),
@@ -923,19 +921,17 @@ export async function fetchOrdersFromGas(
         };
       });
 
-      // Preserve status & resi if it was already updated in Supabase
-      const finalResi = existing && existing.no_resi && existing.no_resi !== '-' 
-        ? existing.no_resi 
-        : (row.no_resi || row.resi || row.tracking_no || '-');
+      // Preserve status & resi from sheet or local cache
+      const finalResi = (row.no_resi && row.no_resi !== '-' && row.no_resi !== '')
+        ? row.no_resi
+        : (existing?.no_resi || row.resi || row.tracking_no || '-');
         
-      const finalStatus = existing && existing.status && existing.status !== 'siap_diproses'
-        ? existing.status
-        : ((row.status as IGLiveOrderStatus) || 'siap_diproses');
-
-      const existingId = existing && existing.id && isValidUuid(existing.id) ? existing.id : undefined;
+      const finalStatus = (row.status && row.status !== '')
+        ? (row.status as IGLiveOrderStatus)
+        : (existing?.status || 'siap_diproses');
 
       return {
-        id: existingId || orderNo,
+        id: orderNo,
         no_pesanan: orderNo,
         tanggal: row.tanggal || row.created_at || new Date().toISOString().substring(0, 19).replace('T', ' '),
         session_live: row.session_live || row.live_session || 'IG Live Session',
@@ -955,22 +951,19 @@ export async function fetchOrdersFromGas(
         alasan_batal: row.alasan_batal || '',
         catatan: row.catatan || row.notes || '',
         items,
-        is_picked: !!row.is_picked,
+        is_picked: !!row.is_picked || !!existing?.is_picked,
         waktu_picking: row.waktu_picking,
         petugas_picking: row.petugas_picking,
       };
     });
 
-    // Save and return
-    await upsertIgLiveOrdersToSupabase(mapped);
-
-    const refreshed = await fetchIgLiveOrdersFromSupabase();
-    const finalOrders = refreshed && refreshed.length > 0 ? refreshed : mapped;
+    // Save to local cache
+    saveStoredIgLiveOrders(mapped);
 
     return {
       success: true,
-      orders: finalOrders,
-      message: `Berhasil menarik ${mapped.length} pesanan dari sumber data`,
+      orders: mapped,
+      message: `Berhasil menarik ${mapped.length} pesanan langsung dari Google Sheets (GAS)`,
     };
   } catch (err: any) {
     console.error('[IGLIVE] Gagal fetch:', err);
