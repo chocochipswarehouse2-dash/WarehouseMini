@@ -44,6 +44,9 @@ import {
   syncLocalIgLiveToSupabase,
   fetchIgLiveOrdersFromSupabase,
   upsertIgLiveOrdersToSupabase,
+  postUpdateResiToGas,
+  postUpdateStatusToGas,
+  postEditOrderToGas,
   generateUUID,
   IG_LIVE_RLS_SQL_FIX,
 } from '../../services/igLiveService';
@@ -163,7 +166,15 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
     // Sync from local first, then fetch from Supabase
     syncLocalIgLiveToSupabase().then(() => {
       fetchIgLiveOrdersFromSupabase().then(res => {
-        setOrders(res);
+        if (res && res.length > 0) {
+          setOrders(res);
+        } else if (loadedGasUrl) {
+          fetchOrdersFromGas(loadedGasUrl, productCatalog, loadedSheetName).then(gasRes => {
+            if (gasRes.success && gasRes.orders) {
+              setOrders(gasRes.orders);
+            }
+          });
+        }
       });
     });
 
@@ -271,17 +282,53 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
     });
     saveAndSetOrders(updated);
     onShowToast(`Status pesanan diperbarui menjadi ${newStatus}`, 'success');
+
+    // Sinkronkan balik ke GSheet Backend
+    if (gasUrl) {
+      const gsheetStatus =
+        newStatus === 'diproses'
+          ? 'Diproses'
+          : newStatus === 'dikirim'
+          ? 'Dikirim'
+          : newStatus === 'selesai'
+          ? 'Selesai'
+          : newStatus === 'batal'
+          ? 'Batal'
+          : 'Siap Diproses';
+
+      postUpdateStatusToGas(gasUrl, orderId, gsheetStatus).then((res) => {
+        if (res.success) {
+          console.log('[IGLIVE] Status tersinkron ke GSheet:', orderId, gsheetStatus);
+        }
+      });
+    }
   };
 
   const handleBulkUpdateResiSuccess = (updates: { id: string; newResi: string }[]) => {
-    const updated = orders.map(o => {
-      const update = updates.find(u => u.id === o.id);
+    const updated = orders.map((o) => {
+      const update = updates.find((u) => u.id === o.id || u.id === o.no_pesanan);
       if (update) {
-        return { ...o, no_resi: update.newResi, updated_at: new Date().toISOString() };
+        return {
+          ...o,
+          no_resi: update.newResi,
+          status: 'dikirim' as IGLiveOrderStatus,
+          updated_at: new Date().toISOString(),
+        };
       }
       return o;
     });
     saveAndSetOrders(updated);
+
+    // Sinkronkan seluruh resi baru ke Google Sheets Backend
+    if (gasUrl && updates.length > 0) {
+      let syncCount = 0;
+      updates.forEach((u) => {
+        postUpdateResiToGas(gasUrl, u.id, u.newResi, 'Dikirim').then((res) => {
+          if (res.success) syncCount++;
+        });
+      });
+      onShowToast(`${updates.length} no. resi berhasil disinkronkan ke Google Sheet!`, 'success');
+    }
   };
 
   // Open Add Modal
@@ -413,6 +460,20 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
       });
       saveAndSetOrders(updated);
       onShowToast('Pesanan berhasil diperbarui', 'success');
+
+      if (gasUrl) {
+        postEditOrderToGas(gasUrl, {
+          order_id: formNoPesanan.trim(),
+          nama_pembeli: formNamaPembeli.trim(),
+          no_telp: formNoTelp.trim(),
+          alamat_lengkap: formAlamat.trim(),
+          catatan: formCatatan.trim(),
+          no_resi: formNoResi.trim() || '-',
+        });
+        if (formNoResi.trim() && formNoResi.trim() !== '-') {
+          postUpdateResiToGas(gasUrl, formNoPesanan.trim(), formNoResi.trim(), 'Dikirim');
+        }
+      }
     } else {
       // Create New
       const newOrder: IGLiveOrder = {
@@ -640,6 +701,12 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
 
     saveAndSetOrders(updated);
     onShowToast(`Berhasil menandai ${targetIds.length} pesanan selesai picking! Status diubah menjadi Sedang Dipacking`, 'success');
+
+    if (gasUrl) {
+      pickingItemsGrouped.targetOrders.forEach((o) => {
+        postUpdateStatusToGas(gasUrl, o.no_pesanan, 'Diproses');
+      });
+    }
   };
 
   // Print Handlers

@@ -683,14 +683,17 @@ export function getStoredIgLiveOrders(catalog: ProductItem[]): IGLiveOrder[] {
   return [];
 }
 
+export const DEFAULT_IG_LIVE_GAS_URL = 'https://script.google.com/macros/s/AKfycbyCAAs6oYeW1TJKq3mq_C2Lt1SxoVzVg2yeS8atAHlDsip5jDWQ2aJpRQ66oKPQdhU7dw/exec';
+export const DEFAULT_IG_LIVE_SHEET_NAME = 'Pesanan LIVE';
+
 /**
  * Get GAS Web App URL
  */
 export function getStoredIgLiveGasUrl(): string {
   try {
-    return localStorage.getItem(STORAGE_KEY_GAS_URL) || '';
+    return localStorage.getItem(STORAGE_KEY_GAS_URL) || DEFAULT_IG_LIVE_GAS_URL;
   } catch {
-    return '';
+    return DEFAULT_IG_LIVE_GAS_URL;
   }
 }
 
@@ -706,13 +709,13 @@ export function saveStoredIgLiveGasUrl(url: string): void {
 }
 
 /**
- * Get Target Sheet Name (Default: 'transaksi')
+ * Get Target Sheet Name (Default: 'Pesanan LIVE')
  */
 export function getStoredIgLiveSheetName(): string {
   try {
-    return localStorage.getItem(STORAGE_KEY_SHEET_NAME) || 'transaksi';
+    return localStorage.getItem(STORAGE_KEY_SHEET_NAME) || DEFAULT_IG_LIVE_SHEET_NAME;
   } catch {
-    return 'transaksi';
+    return DEFAULT_IG_LIVE_SHEET_NAME;
   }
 }
 
@@ -721,9 +724,103 @@ export function getStoredIgLiveSheetName(): string {
  */
 export function saveStoredIgLiveSheetName(sheetName: string): void {
   try {
-    localStorage.setItem(STORAGE_KEY_SHEET_NAME, sheetName.trim() || 'transaksi');
+    localStorage.setItem(STORAGE_KEY_SHEET_NAME, sheetName.trim() || DEFAULT_IG_LIVE_SHEET_NAME);
   } catch {
     // noop
+  }
+}
+
+/**
+ * Kirim Update Resi ke Google Sheets Backend
+ */
+export async function postUpdateResiToGas(
+  gasUrl: string,
+  orderId: string,
+  noResi: string,
+  status: string = 'Dikirim'
+): Promise<{ success: boolean; message: string }> {
+  const url = (gasUrl || DEFAULT_IG_LIVE_GAS_URL).trim();
+  if (!url) return { success: false, message: 'URL GAS belum diatur' };
+  try {
+    const payload = JSON.stringify({
+      action: 'updateResi',
+      order_id: orderId,
+      no_resi: noResi,
+      status: status
+    });
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: payload
+    });
+    const data = await res.json();
+    return { success: !!data.success, message: data.message || 'OK' };
+  } catch (err: any) {
+    console.warn('[IGLIVE] Gagal post resi ke GAS:', err);
+    return { success: false, message: err?.message || 'Gagal terhubung ke GAS' };
+  }
+}
+
+/**
+ * Kirim Update Status ke Google Sheets Backend
+ */
+export async function postUpdateStatusToGas(
+  gasUrl: string,
+  orderId: string,
+  status: string
+): Promise<{ success: boolean; message: string }> {
+  const url = (gasUrl || DEFAULT_IG_LIVE_GAS_URL).trim();
+  if (!url) return { success: false, message: 'URL GAS belum diatur' };
+  try {
+    const payload = JSON.stringify({
+      action: 'updateStatus',
+      order_id: orderId,
+      status: status
+    });
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: payload
+    });
+    const data = await res.json();
+    return { success: !!data.success, message: data.message || 'OK' };
+  } catch (err: any) {
+    console.warn('[IGLIVE] Gagal post status ke GAS:', err);
+    return { success: false, message: err?.message || 'Gagal terhubung ke GAS' };
+  }
+}
+
+/**
+ * Kirim Edit Data Pesanan ke Google Sheets Backend
+ */
+export async function postEditOrderToGas(
+  gasUrl: string,
+  order: {
+    order_id: string;
+    nama_pembeli?: string;
+    no_telp?: string;
+    alamat_lengkap?: string;
+    catatan?: string;
+    no_resi?: string;
+  }
+): Promise<{ success: boolean; message: string }> {
+  const url = (gasUrl || DEFAULT_IG_LIVE_GAS_URL).trim();
+  if (!url) return { success: false, message: 'URL GAS belum diatur' };
+  try {
+    const payload = JSON.stringify({
+      action: 'editOrder',
+      ...order
+    });
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: payload
+    });
+    const data = await res.json();
+    return { success: !!data.success, message: data.message || 'OK' };
+  } catch (err: any) {
+    console.warn('[IGLIVE] Gagal post edit order ke GAS:', err);
+    return { success: false, message: err?.message || 'Gagal terhubung ke GAS' };
   }
 }
 

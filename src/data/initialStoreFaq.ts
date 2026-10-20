@@ -343,5 +343,47 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
 
     keywords: ['tidak muncul', 'produk tidak ada', 'cari produk', 'sku hilang', 'maxton', 'darlene', 'katalog kosong', 'dropsearch', 'sinkronkan', 'katalog', 'live'],
     view_count: 210
+  },
+
+  {
+    id: 'faq-ig-live-workflow',
+    category: 'manual_shipment',
+    is_pinned: true,
+    question: 'Bagaimana alur kerja penanganan pesanan IG Live (Sinkronisasi GSheet, Picking List, Cetak Label A6, dan Resi)?',
+    answer: 'Modul IG Live menghubungkan Google Sheets rekapan live dengan operasional WMS gudang secara 2-arah: data pesanan ditarik otomatis, digabungkan per Order ID, dicetak lembar picking & label thermal A6, dan resi kurir otomatis tersinkron balik ke Google Sheet.',
+    target_audience: 'all',
+
+    // PERSPEKTIF ADMIN GUDANG
+    answer_admin: 'Admin Gudang mengelola antrean pesanan dari sesi Instagram Live di menu Pesanan Saya ➔ Tab "IG Live". Seluruh pesanan disinkronkan dari Google Sheet (tab "Pesanan LIVE") melalui integrasi Web App Google Apps Script. Saat pesanan masuk, Admin dapat mengelompokkan barang ke Lembar Picking Massal (Wave Picking terurut rak A001-A100), mencetak Label Thermal A6 (lengkap QR Code & detail item), dan menginput nomor resi (satuan atau massal barcode). Setiap nomor resi dan status yang diperbarui di WMS otomatis tersinkron balik ke kolom P (Resi) dan kolom N (Status) pada Google Spreadsheet.',
+    action_steps_admin: [
+      { step: 1, title: 'Buka Tab IG Live & Sinkronkan', desc: 'Buka menu Pesanan Saya ➔ Tab "IG Live". Klik tombol "Sinkronkan GAS" di kanan atas untuk memuat pesanan terbaru dari sheet Pesanan LIVE.' },
+      { step: 2, title: 'Cetak Picking List Massal', desc: 'Buka subtab "Picking & Packing" lalu klik "Cetak Picking List". Sistem otomatis mengurutkan barang berdasarkan prioritas rak fisik gudang.' },
+      { step: 3, title: 'Klik [Selesaikan Picking]', desc: 'Setelah barang diambil dari rak fisik, klik "Selesaikan Picking". Status pesanan akan otomatis berubah menjadi "Sedang Dipacking".' },
+      { step: 4, title: 'Cetak Label Pengiriman A6', desc: 'Pilih pesanan yang siap dikirim, lalu klik "Cetak Label (A6)". Tempelkan label thermal 105x148mm ke paket customer.' },
+      { step: 5, title: 'Input Resi (Satuan atau Massal)', desc: 'Scan atau ketik nomor resi kurir di kolom Resi atau via tombol "Update Resi Massal". Resi dan status "Dikirim" otomatis terkirim dan tercatat di Google Sheet.' }
+    ],
+    button_badges_admin: [
+      { label: 'Sinkronkan GAS', color: 'pink', icon: 'RefreshCw' },
+      { label: 'Cetak Picking List', color: 'indigo', icon: 'Printer' },
+      { label: 'Cetak Label (A6)', color: 'blue', icon: 'Tag' },
+      { label: 'Update Resi Massal', color: 'emerald', icon: 'FileSpreadsheet' }
+    ],
+    admin_notes: '🚀 Integrasi 2-arah: Nomor resi yang Anda input di WMS otomatis tersimpan di kolom P Google Sheets tanpa perlu admin mengetik manual lagi di sheet.',
+
+    // PERSPEKTIF TIM STORE / OUTLET / HOST LIVE
+    answer_store: 'Tim Host / Admin Live cukup fokus merekap pesanan customer di Google Sheets tab "TRANSAKSI". Sistem sinkronisasi otomatis akan mengunci Order ID permanen di tab "Pesanan LIVE" dan mengirimkannya ke layar tim Gudang untuk segera dipacking. Ketika paket telah selesai dipacking dan dikirim, nomor resi kurir akan otomatis muncul di kolom P spreadsheet Anda.',
+    action_steps_store: [
+      { step: 1, title: 'Input Data Sesi Live di GSheet', desc: 'Isi nama customer, nomor WhatsApp, alamat, kode barang, ukuran, dan harga di tab TRANSAKSI spreadsheet.' },
+      { step: 2, title: 'Order ID Terkunci Otomatis', desc: 'Script otomatis membuat Order ID permanen (ORD-YYMMDD-XXX) sehingga multi-item dari customer yang sama otomatis tergabung.' },
+      { step: 3, title: 'Pantau Status & Resi', desc: 'Ketika tim gudang mencetak label dan memasukkan nomor resi ekspedisi, kolom Status dan Resi di spreadsheet akan otomatis terisi secara real-time.' }
+    ],
+    button_badges_store: [
+      { label: 'Sheet: Pesanan LIVE', color: 'indigo', icon: 'FileSpreadsheet' },
+      { label: 'Auto-Update Resi', color: 'emerald', icon: 'CheckCircle2' }
+    ],
+    store_notes: '💡 Tim Live tidak perlu repot menanyakan nomor resi satu per satu ke gudang, karena nomor resi otomatis terisi di spreadsheet.',
+
+    keywords: ['ig live', 'instagram live', 'order id', 'picking list ig live', 'label a6', 'thermal a6', 'sinkronkan gas', 'update resi', 'pesanan live'],
+    view_count: 140
   }
 ];
