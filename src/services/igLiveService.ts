@@ -459,11 +459,16 @@ export const DEFAULT_IG_LIVE_GAS_URL = 'https://script.google.com/macros/s/AKfyc
 export const DEFAULT_IG_LIVE_SHEET_NAME = 'Pesanan LIVE';
 
 /**
- * Get GAS Web App URL
+ * Get GAS Web App URL (Strictly enforces official deployed GAS Web App)
  */
 export function getStoredIgLiveGasUrl(): string {
   try {
-    return localStorage.getItem(STORAGE_KEY_GAS_URL) || DEFAULT_IG_LIVE_GAS_URL;
+    const val = localStorage.getItem(STORAGE_KEY_GAS_URL);
+    if (val && val.includes('script.google.com/macros/s/')) {
+      return val;
+    }
+    localStorage.setItem(STORAGE_KEY_GAS_URL, DEFAULT_IG_LIVE_GAS_URL);
+    return DEFAULT_IG_LIVE_GAS_URL;
   } catch {
     return DEFAULT_IG_LIVE_GAS_URL;
   }
@@ -474,7 +479,12 @@ export function getStoredIgLiveGasUrl(): string {
  */
 export function saveStoredIgLiveGasUrl(url: string): void {
   try {
-    localStorage.setItem(STORAGE_KEY_GAS_URL, url.trim());
+    const clean = url.trim();
+    if (clean.includes('script.google.com/macros/s/')) {
+      localStorage.setItem(STORAGE_KEY_GAS_URL, clean);
+    } else {
+      localStorage.setItem(STORAGE_KEY_GAS_URL, DEFAULT_IG_LIVE_GAS_URL);
+    }
   } catch {
     // noop
   }
@@ -485,7 +495,12 @@ export function saveStoredIgLiveGasUrl(url: string): void {
  */
 export function getStoredIgLiveSheetName(): string {
   try {
-    return localStorage.getItem(STORAGE_KEY_SHEET_NAME) || DEFAULT_IG_LIVE_SHEET_NAME;
+    const val = localStorage.getItem(STORAGE_KEY_SHEET_NAME);
+    if (val && val.toLowerCase() === 'pesanan live') {
+      return val;
+    }
+    localStorage.setItem(STORAGE_KEY_SHEET_NAME, DEFAULT_IG_LIVE_SHEET_NAME);
+    return DEFAULT_IG_LIVE_SHEET_NAME;
   } catch {
     return DEFAULT_IG_LIVE_SHEET_NAME;
   }

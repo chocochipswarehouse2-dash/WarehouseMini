@@ -65,6 +65,8 @@ const QRCodeDisplay = ({ text }: { text: string }) => {
   return <img src={url} alt="QR Code" className="w-16 h-16 mx-auto object-contain" />;
 };
 
+export type IGLiveWorkflowTab = 'baru' | 'diproses' | 'selesai' | 'picking' | 'semua' | 'batal';
+
 interface IGLiveTabProps {
   session: UserSession | null;
   productCatalog: ProductItem[];
@@ -78,9 +80,8 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
 }) => {
   // State Data
   const [orders, setOrders] = useState<IGLiveOrder[]>([]);
-  const [gasUrl, setGasUrl] = useState<string>(DEFAULT_IG_LIVE_GAS_URL);
-  const [sheetName, setSheetName] = useState<string>(DEFAULT_IG_LIVE_SHEET_NAME);
-  const [tempSheetName, setTempSheetName] = useState<string>(DEFAULT_IG_LIVE_SHEET_NAME);
+  const gasUrl = DEFAULT_IG_LIVE_GAS_URL;
+  const sheetName = DEFAULT_IG_LIVE_SHEET_NAME;
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const userIsAdmin = isSuperadmin(session);
 
@@ -90,16 +91,12 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
   const [ekspedisiFilter, setEkspedisiFilter] = useState<string>('ALL');
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
 
-  // View Modes
-  const [activeSubTab, setActiveSubTab] = useState<'orders' | 'picking'>('orders');
+  // Workflow Lifecycle Sub-Tabs: 'baru' | 'diproses' | 'selesai' | 'picking' | 'semua' | 'batal'
+  const [activeWorkflowTab, setActiveWorkflowTab] = useState<IGLiveWorkflowTab>('baru');
 
   // Bulk Resi & Import Modal State
   const [isBulkUpdateResiModalOpen, setIsBulkUpdateResiModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-
-  // Modals
-  const [isGasModalOpen, setIsGasModalOpen] = useState<boolean>(false);
-  const [tempGasUrl, setTempGasUrl] = useState<string>(DEFAULT_IG_LIVE_GAS_URL);
 
   const saveAndSetOrders = (updatedOrders: IGLiveOrder[]) => {
     setOrders(updatedOrders);
@@ -110,7 +107,6 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
   const [editingOrder, setEditingOrder] = useState<IGLiveOrder | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState<boolean>(false);
   const [orderToDelete, setOrderToDelete] = useState<IGLiveOrder | null>(null);
-
 
   const [isCancelModalOpen, setIsCancelModalOpen] = useState<boolean>(false);
   const [orderToCancel, setOrderToCancel] = useState<IGLiveOrder | null>(null);
@@ -144,25 +140,19 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
     };
     window.addEventListener('afterprint', handleAfterPrint);
 
-    // Clean up old stale caches
+    // Clean up old stale caches & force official GAS endpoint
     if (typeof window !== 'undefined') {
       try {
         localStorage.removeItem('chocochips_iglive_orders_v1');
         localStorage.removeItem('wms_iglive_rls_needed');
+        localStorage.setItem('chocochips_iglive_gas_url_v1', DEFAULT_IG_LIVE_GAS_URL);
+        localStorage.setItem('chocochips_iglive_sheet_name_v1', DEFAULT_IG_LIVE_SHEET_NAME);
       } catch {}
     }
 
-    const loadedGasUrl = getStoredIgLiveGasUrl() || DEFAULT_IG_LIVE_GAS_URL;
-    setGasUrl(loadedGasUrl);
-    setTempGasUrl(loadedGasUrl);
-
-    const loadedSheetName = getStoredIgLiveSheetName() || DEFAULT_IG_LIVE_SHEET_NAME;
-    setSheetName(loadedSheetName);
-    setTempSheetName(loadedSheetName);
-
     // Initial load: Fetch live orders directly from GAS Google Sheet
     setIsSyncing(true);
-    fetchOrdersFromGas(loadedGasUrl, productCatalog, loadedSheetName).then(gasRes => {
+    fetchOrdersFromGas(DEFAULT_IG_LIVE_GAS_URL, productCatalog, DEFAULT_IG_LIVE_SHEET_NAME).then(gasRes => {
       setIsSyncing(false);
       if (gasRes.success && gasRes.orders && gasRes.orders.length > 0) {
         setOrders(gasRes.orders);
@@ -189,33 +179,19 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
 
   // Sync / Refresh from GAS / Google Sheets
   const handleSyncGas = async () => {
-    if (!gasUrl.trim()) {
-      setIsGasModalOpen(true);
-      onShowToast('Masukkan URL Web App GAS atau link Google Sheets terlebih dahulu', 'info');
-      return;
-    }
-
     setIsSyncing(true);
-    onShowToast(`Menghubungkan & menarik data dari sheet "${sheetName}"...`, 'info');
+    onShowToast('Menyinkronkan data pesanan dari Google Sheets...', 'info');
 
-    const result = await fetchOrdersFromGas(gasUrl, productCatalog, sheetName);
+    const result = await fetchOrdersFromGas(DEFAULT_IG_LIVE_GAS_URL, productCatalog, DEFAULT_IG_LIVE_SHEET_NAME);
     setIsSyncing(false);
 
     if (result.success && result.orders) {
       setOrders(result.orders);
-      onShowToast(result.message || `Berhasil sinkronisasi ${result.orders.length} pesanan dari sheet "${sheetName}"!`, 'success');
+      saveStoredIgLiveOrders(result.orders);
+      onShowToast(result.message || `Berhasil sinkronisasi ${result.orders.length} pesanan dari Google Sheets!`, 'success');
     } else {
-      onShowToast(result.message || 'Gagal mengambil data pesanan', 'error');
+      onShowToast(result.message || 'Gagal mengambil data pesanan dari Google Sheets', 'error');
     }
-  };
-
-  const handleSaveGasUrl = () => {
-    saveStoredIgLiveGasUrl(tempGasUrl);
-    setGasUrl(tempGasUrl);
-    saveStoredIgLiveSheetName(tempSheetName);
-    setSheetName(tempSheetName);
-    setIsGasModalOpen(false);
-    onShowToast(`Pengaturan koneksi (Sheet: "${tempSheetName}") berhasil disimpan`, 'success');
   };
 
   // Status Styling Helper
@@ -566,7 +542,18 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
   // Filtered Orders Memo
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => {
-      // Search
+      // 1. Workflow Tab Lifecycle Filter
+      if (activeWorkflowTab === 'baru') {
+        if (o.status !== 'siap_diproses' && o.status !== 'menunggu_pembayaran') return false;
+      } else if (activeWorkflowTab === 'diproses') {
+        if (o.status !== 'diproses') return false;
+      } else if (activeWorkflowTab === 'selesai') {
+        if (o.status !== 'dikirim' && o.status !== 'selesai') return false;
+      } else if (activeWorkflowTab === 'batal') {
+        if (o.status !== 'batal') return false;
+      }
+
+      // 2. Search
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchNo = o.no_pesanan.toLowerCase().includes(q);
@@ -579,19 +566,19 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
         if (!matchNo && !matchName && !matchIg && !matchResi && !matchItem) return false;
       }
 
-      // Status
+      // 3. Status Filter Dropdown
       if (statusFilter !== 'ALL' && o.status !== statusFilter) {
         return false;
       }
 
-      // Ekspedisi
+      // 4. Ekspedisi Filter
       if (ekspedisiFilter !== 'ALL' && !o.ekspedisi.toLowerCase().includes(ekspedisiFilter.toLowerCase())) {
         return false;
       }
 
       return true;
     });
-  }, [orders, searchQuery, statusFilter, ekspedisiFilter]);
+  }, [orders, activeWorkflowTab, searchQuery, statusFilter, ekspedisiFilter]);
 
   // Statistics Counters
   const stats = useMemo(() => {
@@ -776,19 +763,9 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
         <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto justify-end">
           <button
             type="button"
-            onClick={() => setIsGasModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-white/15 hover:bg-white/25 active:scale-95 text-white text-xs font-bold rounded-xl backdrop-blur-xs border border-white/20 transition-all cursor-pointer"
-            title="Pengaturan URL Web App Google Apps Script"
-          >
-            <Settings className="w-3.5 h-3.5" />
-            <span>Pengaturan URL GAS</span>
-          </button>
-
-          <button
-            type="button"
             onClick={handleSyncGas}
             disabled={isSyncing}
-            className="flex items-center gap-1.5 px-3 py-2 bg-white text-pink-700 hover:bg-pink-50 active:scale-95 text-xs font-extrabold rounded-xl shadow-sm transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2 bg-white text-pink-700 hover:bg-pink-50 active:scale-95 text-xs font-extrabold rounded-xl shadow-sm transition-all cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
             <span>{isSyncing ? 'Menyinkronkan...' : 'Sinkronkan GAS'}</span>
@@ -796,43 +773,226 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
         </div>
       </div>
 
-      {/* Mode Sub-Tab Switcher (Pesanan vs Picking Mode) */}
-      <div className="flex items-center justify-between bg-white dark:bg-slate-900 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs flex-wrap gap-2">
-        <div className="flex items-center gap-1">
+      {/* Stats Summary Cards (Interactive quick filters) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+        <button
+          type="button"
+          onClick={() => setActiveWorkflowTab('semua')}
+          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+            activeWorkflowTab === 'semua'
+              ? 'ring-2 ring-slate-800 bg-slate-100 dark:bg-slate-800 border-slate-400'
+              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+          }`}
+        >
+          <div className="text-[11px] font-bold text-slate-500 uppercase">Total Pesanan</div>
+          <div className="text-xl font-black text-slate-900 dark:text-white mt-1">{stats.total}</div>
+          <div className="text-[10px] text-slate-400 mt-0.5">{stats.totalQty} total pcs</div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveWorkflowTab('baru')}
+          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+            activeWorkflowTab === 'baru'
+              ? 'ring-2 ring-blue-600 bg-blue-100/70 dark:bg-blue-900/50 border-blue-400'
+              : 'bg-blue-50/70 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900 hover:border-blue-300'
+          }`}
+        >
+          <div className="text-[11px] font-bold text-blue-700 dark:text-blue-400 uppercase">Pesanan Baru</div>
+          <div className="text-xl font-black text-blue-900 dark:text-blue-200 mt-1">{stats.siap}</div>
+          <div className="text-[10px] text-blue-600/80 mt-0.5">Siap diproses</div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveWorkflowTab('diproses')}
+          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+            activeWorkflowTab === 'diproses'
+              ? 'ring-2 ring-indigo-600 bg-indigo-100/70 dark:bg-indigo-900/50 border-indigo-400'
+              : 'bg-indigo-50/70 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-900 hover:border-indigo-300'
+          }`}
+        >
+          <div className="text-[11px] font-bold text-indigo-700 dark:text-indigo-400 uppercase">Sedang Diproses</div>
+          <div className="text-xl font-black text-indigo-900 dark:text-indigo-200 mt-1">{stats.diproses}</div>
+          <div className="text-[10px] text-indigo-600/80 mt-0.5">Sedang dipacking</div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveWorkflowTab('selesai')}
+          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+            activeWorkflowTab === 'selesai'
+              ? 'ring-2 ring-emerald-600 bg-emerald-100/70 dark:bg-emerald-900/50 border-emerald-400'
+              : 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900 hover:border-emerald-300'
+          }`}
+        >
+          <div className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 uppercase">Selesai / Dikirim</div>
+          <div className="text-xl font-black text-emerald-900 dark:text-emerald-200 mt-1">{stats.dikirim + stats.selesai}</div>
+          <div className="text-[10px] text-emerald-600/80 mt-0.5">{stats.dikirim} kirim &bull; {stats.selesai} selesai</div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveWorkflowTab('picking')}
+          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+            activeWorkflowTab === 'picking'
+              ? 'ring-2 ring-pink-600 bg-pink-100/70 dark:bg-pink-900/50 border-pink-400'
+              : 'bg-pink-50/70 dark:bg-pink-950/30 border-pink-200 dark:border-pink-900 hover:border-pink-300'
+          }`}
+        >
+          <div className="text-[11px] font-bold text-pink-700 dark:text-pink-400 uppercase">Picking List</div>
+          <div className="text-xl font-black text-pink-900 dark:text-pink-200 mt-1">{pickingItemsGrouped.targetOrders.length}</div>
+          <div className="text-[10px] text-pink-600/80 mt-0.5">{pickingItemsGrouped.pickingList.length} SKU master rak</div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveWorkflowTab('batal')}
+          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+            activeWorkflowTab === 'batal'
+              ? 'ring-2 ring-rose-600 bg-rose-100/70 dark:bg-rose-900/50 border-rose-400'
+              : 'bg-rose-50/70 dark:bg-rose-950/30 border-rose-200 dark:border-rose-900 hover:border-rose-300'
+          }`}
+        >
+          <div className="text-[11px] font-bold text-rose-700 dark:text-rose-400 uppercase">Batal / Unpaid</div>
+          <div className="text-xl font-black text-rose-900 dark:text-rose-200 mt-1">{stats.batal}</div>
+          <div className="text-[10px] text-rose-600/80 mt-0.5">{stats.batal} dibatalkan</div>
+        </button>
+      </div>
+
+      {/* Main Workflow Lifecycle Sub-Tabs */}
+      <div className="flex items-center justify-between bg-white dark:bg-slate-900 p-2 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex-wrap gap-2">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+          {/* Tab 1: Pesanan Baru */}
           <button
             type="button"
-            onClick={() => setActiveSubTab('orders')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-bold text-xs sm:text-sm transition-all cursor-pointer ${
-              activeSubTab === 'orders'
-                ? 'bg-pink-600 text-white shadow-xs'
+            onClick={() => setActiveWorkflowTab('baru')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+              activeWorkflowTab === 'baru'
+                ? 'bg-blue-600 text-white shadow-md'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Package className="w-4 h-4" />
+            <span>Pesanan Baru</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs font-black ${
+                activeWorkflowTab === 'baru'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200'
+              }`}
+            >
+              {stats.siap}
+            </span>
+          </button>
+
+          {/* Tab 2: Sedang Diproses */}
+          <button
+            type="button"
+            onClick={() => setActiveWorkflowTab('diproses')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+              activeWorkflowTab === 'diproses'
+                ? 'bg-indigo-600 text-white shadow-md'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+            <span>Sedang Diproses</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs font-black ${
+                activeWorkflowTab === 'diproses'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-200'
+              }`}
+            >
+              {stats.diproses}
+            </span>
+          </button>
+
+          {/* Tab 3: Selesai / Dikirim */}
+          <button
+            type="button"
+            onClick={() => setActiveWorkflowTab('selesai')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+              activeWorkflowTab === 'selesai'
+                ? 'bg-emerald-600 text-white shadow-md'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Truck className="w-4 h-4" />
+            <span>Pesanan Selesai</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs font-black ${
+                activeWorkflowTab === 'selesai'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200'
+              }`}
+            >
+              {stats.dikirim + stats.selesai}
+            </span>
+          </button>
+
+          {/* Tab 4: Picking List Gudang */}
+          <button
+            type="button"
+            onClick={() => setActiveWorkflowTab('picking')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+              activeWorkflowTab === 'picking'
+                ? 'bg-pink-600 text-white shadow-md'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <ListOrdered className="w-4 h-4" />
+            <span>Fitur Picking List</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs font-black ${
+                activeWorkflowTab === 'picking'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-pink-100 text-pink-800 dark:bg-pink-900/60 dark:text-pink-200'
+              }`}
+            >
+              {pickingItemsGrouped.targetOrders.length}
+            </span>
+          </button>
+
+          {/* Tab 5: Semua Pesanan */}
+          <button
+            type="button"
+            onClick={() => setActiveWorkflowTab('semua')}
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+              activeWorkflowTab === 'semua'
+                ? 'bg-slate-800 text-white shadow-md dark:bg-slate-700'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
             <ShoppingBag className="w-4 h-4" />
-            <span>Daftar Pesanan ({filteredOrders.length})</span>
+            <span>Semua ({stats.total})</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveSubTab('picking')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-bold text-xs sm:text-sm transition-all cursor-pointer ${
-              activeSubTab === 'picking'
-                ? 'bg-pink-600 text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <ListOrdered className="w-4 h-4" />
-            <span>Fitur Picking List ({pickingItemsGrouped.targetOrders.length} Pesanan)</span>
-          </button>
+          {/* Tab 6: Batal */}
+          {stats.batal > 0 && (
+            <button
+              type="button"
+              onClick={() => setActiveWorkflowTab('batal')}
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+                activeWorkflowTab === 'batal'
+                  ? 'bg-rose-600 text-white shadow-md'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <XCircle className="w-4 h-4" />
+              <span>Batal ({stats.batal})</span>
+            </button>
+          )}
         </div>
 
         {/* Global Action per Mode */}
-        {activeSubTab === 'orders' ? (
-          <div className="flex items-center gap-2">
+        {activeWorkflowTab !== 'picking' ? (
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               type="button"
               onClick={handleOpenAddModal}
-              className="flex items-center gap-1 px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer"
+              className="flex items-center gap-1 px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Tambah Pesanan</span>
@@ -841,29 +1001,27 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
             <button
               type="button"
               onClick={() => setIsImportModalOpen(true)}
-              className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer"
+              className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>Import Pesanan (GSheet)</span>
+              <span>Import GSheet</span>
             </button>
 
             {userIsAdmin && (
               <button
                 type="button"
                 onClick={() => setIsBulkUpdateResiModalOpen(true)}
-                className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer"
+                className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
               >
                 <FileSpreadsheet className="w-3.5 h-3.5" />
                 <span>Update Resi Massal</span>
               </button>
             )}
 
-
-
             <button
               type="button"
               onClick={handlePrintBatchLabelA6}
-              className="flex items-center gap-1 px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer"
+              className="flex items-center gap-1 px-3 py-1.5 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
             >
               <Printer className="w-3.5 h-3.5" />
               <span>Cetak Label A6 {selectedOrderIds.length > 0 ? `(${selectedOrderIds.length})` : 'Massal'}</span>
@@ -874,7 +1032,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
             <button
               type="button"
               onClick={handleCompletePicking}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
             >
               <CheckCircle2 className="w-3.5 h-3.5" />
               <span>Tandai Selesai Picking</span>
@@ -883,7 +1041,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
             <button
               type="button"
               onClick={handlePrintMassalPicking}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
             >
               <Printer className="w-3.5 h-3.5" />
               <span>Cetak Picking List Massal</span>
@@ -892,47 +1050,8 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
         )}
       </div>
 
-      {/* Stats Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-        <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
-          <div className="text-[11px] font-bold text-slate-500 uppercase">Total Pesanan</div>
-          <div className="text-xl font-black text-slate-900 dark:text-white mt-1">{stats.total}</div>
-          <div className="text-[10px] text-slate-400 mt-0.5">{stats.totalQty} total pcs</div>
-        </div>
-
-        <div className="bg-blue-50/70 dark:bg-blue-950/30 p-3 rounded-xl border border-blue-200 dark:border-blue-900 shadow-2xs">
-          <div className="text-[11px] font-bold text-blue-700 dark:text-blue-400 uppercase">Siap Diproses</div>
-          <div className="text-xl font-black text-blue-900 dark:text-blue-200 mt-1">{stats.siap}</div>
-          <div className="text-[10px] text-blue-600/80 mt-0.5">Antrean picking</div>
-        </div>
-
-        <div className="bg-indigo-50/70 dark:bg-indigo-950/30 p-3 rounded-xl border border-indigo-200 dark:border-indigo-900 shadow-2xs">
-          <div className="text-[11px] font-bold text-indigo-700 dark:text-indigo-400 uppercase">Sedang Packing</div>
-          <div className="text-xl font-black text-indigo-900 dark:text-indigo-200 mt-1">{stats.diproses}</div>
-          <div className="text-[10px] text-indigo-600/80 mt-0.5">Siap label & resi</div>
-        </div>
-
-        <div className="bg-emerald-50/70 dark:bg-emerald-950/30 p-3 rounded-xl border border-emerald-200 dark:border-emerald-900 shadow-2xs">
-          <div className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 uppercase">Dikirim</div>
-          <div className="text-xl font-black text-emerald-900 dark:text-emerald-200 mt-1">{stats.dikirim}</div>
-          <div className="text-[10px] text-emerald-600/80 mt-0.5">Diserahkan kurir</div>
-        </div>
-
-        <div className="bg-teal-50/70 dark:bg-teal-950/30 p-3 rounded-xl border border-teal-200 dark:border-teal-900 shadow-2xs">
-          <div className="text-[11px] font-bold text-teal-700 dark:text-teal-400 uppercase">Selesai</div>
-          <div className="text-xl font-black text-teal-900 dark:text-teal-200 mt-1">{stats.selesai}</div>
-          <div className="text-[10px] text-teal-600/80 mt-0.5">Paket diterima</div>
-        </div>
-
-        <div className="bg-rose-50/70 dark:bg-rose-950/30 p-3 rounded-xl border border-rose-200 dark:border-rose-900 shadow-2xs">
-          <div className="text-[11px] font-bold text-rose-700 dark:text-rose-400 uppercase">Batal / Unpaid</div>
-          <div className="text-xl font-black text-rose-900 dark:text-rose-200 mt-1">{stats.batal}</div>
-          <div className="text-[10px] text-rose-600/80 mt-0.5">{stats.batal} dibatalkan</div>
-        </div>
-      </div>
-
-      {/* VIEW MODE 1: DAFTAR PESANAN */}
-      {activeSubTab === 'orders' && (
+      {/* VIEW MODE 1: DAFTAR PESANAN BERDASARKAN WORKFLOW STATUS */}
+      {activeWorkflowTab !== 'picking' && (
         <div className="space-y-3">
           {/* Filter Toolbar */}
           <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs flex flex-col md:flex-row items-center justify-between gap-3">
@@ -1231,7 +1350,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
       )}
 
       {/* VIEW MODE 2: PICKING LIST (Dengan Prioritas Lokasi WMS Rule 7) */}
-      {activeSubTab === 'picking' && (
+      {activeWorkflowTab === 'picking' && (
         <div className="space-y-4">
           {/* Info Banner Blueprint Picking */}
           <div className="bg-indigo-50 dark:bg-indigo-950/40 p-4 rounded-xl border border-indigo-200 dark:border-indigo-800/80 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
@@ -1352,93 +1471,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
       {/* MODALS SECTION */}
       {/* ========================================================================= */}
 
-      {/* 1. Modal Pengaturan URL GAS */}
-      {isGasModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-2xs">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-2xl">
-            <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Settings className="w-5 h-5 text-pink-600" />
-                Pengaturan Sinkronisasi Data (GAS / GSheets)
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsGasModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            <p className="text-xs text-slate-600 dark:text-slate-400 mb-4 leading-relaxed">
-              Masukkan URL Web App GAS atau Link Google Sheets (pastikan akses "Anyone with the link"!) untuk menarik data pesanan secara otomatis.
-            </p>
-
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  URL Web App GAS / Link Google Sheets:
-                </label>
-                <input
-                  type="url"
-                  placeholder="https://docs.google.com/spreadsheets/d/... atau https://script.google.com/.../exec"
-                  value={tempGasUrl}
-                  onChange={(e) => setTempGasUrl(e.target.value)}
-                  className="w-full p-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-pink-500 text-slate-900 dark:text-white"
-                />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                    Nama Sheet Tab di Spreadsheet:
-                  </label>
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold">
-                    Default: transaksi
-                  </span>
-                </div>
-                <input
-                  type="text"
-                  placeholder="transaksi"
-                  value={tempSheetName}
-                  onChange={(e) => setTempSheetName(e.target.value)}
-                  className="w-full p-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-pink-500 text-slate-900 dark:text-white font-mono"
-                />
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                  Sistem otomatis menembak sheet/tab <strong>"transaksi"</strong> secara langsung, bukan tab ringkasan atau gid=0 default.
-                </p>
-              </div>
-
-              <div className="p-3 rounded-xl bg-pink-50 dark:bg-pink-950/30 border border-pink-200 dark:border-pink-800/40 text-[11px] text-pink-900 dark:text-pink-200 space-y-1">
-                <div className="font-bold flex items-center gap-1.5">
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-pink-600 dark:text-pink-400" />
-                  <span>Format Kolom Sheet Transaksi</span>
-                </div>
-                <p className="text-slate-600 dark:text-slate-300">
-                  Header yang didukung: <em>NAMA PEMESAN, NO HP, ALAMAT, PRODUCT NAME, SIZE, SKU, HARGA LIVE, QTY, SHIPPING, TOTAL, STATUS, KET, RESI</em>. Kolom terdeteksi otomatis tanpa terpengaruh urutan kolom.
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setIsGasModalOpen(false)}
-                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl cursor-pointer"
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveGasUrl}
-                className="px-4 py-2 text-xs font-bold bg-pink-600 hover:bg-pink-700 text-white rounded-xl shadow-xs cursor-pointer"
-              >
-                Simpan Pengaturan
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 2. Modal Tambah / Edit Pesanan */}
       {isAddEditModalOpen && (
