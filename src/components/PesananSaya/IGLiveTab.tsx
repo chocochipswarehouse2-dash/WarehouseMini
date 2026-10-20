@@ -39,16 +39,14 @@ import {
   saveStoredIgLiveGasUrl,
   getStoredIgLiveSheetName,
   saveStoredIgLiveSheetName,
+  DEFAULT_IG_LIVE_GAS_URL,
+  DEFAULT_IG_LIVE_SHEET_NAME,
   fetchOrdersFromGas,
   lookupMasterProduct,
-  syncLocalIgLiveToSupabase,
-  fetchIgLiveOrdersFromSupabase,
-  upsertIgLiveOrdersToSupabase,
   postUpdateResiToGas,
   postUpdateStatusToGas,
   postEditOrderToGas,
   generateUUID,
-  IG_LIVE_RLS_SQL_FIX,
 } from '../../services/igLiveService';
 import { getFormalStoreBrandName } from '../../services/emailService';
 import { hasPermission, isSuperadmin } from '../../services/permissions';
@@ -80,9 +78,9 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
 }) => {
   // State Data
   const [orders, setOrders] = useState<IGLiveOrder[]>([]);
-  const [gasUrl, setGasUrl] = useState<string>('');
-  const [sheetName, setSheetName] = useState<string>('transaksi');
-  const [tempSheetName, setTempSheetName] = useState<string>('transaksi');
+  const [gasUrl, setGasUrl] = useState<string>(DEFAULT_IG_LIVE_GAS_URL);
+  const [sheetName, setSheetName] = useState<string>(DEFAULT_IG_LIVE_SHEET_NAME);
+  const [tempSheetName, setTempSheetName] = useState<string>(DEFAULT_IG_LIVE_SHEET_NAME);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const userIsAdmin = isSuperadmin(session);
 
@@ -101,20 +99,11 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
 
   // Modals
   const [isGasModalOpen, setIsGasModalOpen] = useState<boolean>(false);
-  const [tempGasUrl, setTempGasUrl] = useState<string>('');
-  const [hasRlsNotice, setHasRlsNotice] = useState<boolean>(() => {
-    return typeof window !== 'undefined' && localStorage.getItem('wms_iglive_rls_needed') === 'true';
-  });
+  const [tempGasUrl, setTempGasUrl] = useState<string>(DEFAULT_IG_LIVE_GAS_URL);
 
   const saveAndSetOrders = (updatedOrders: IGLiveOrder[]) => {
     setOrders(updatedOrders);
-    upsertIgLiveOrdersToSupabase(updatedOrders).then(ok => {
-      if (!ok) {
-        onShowToast('Gagal sinkronisasi ke server!', 'error');
-      }
-    }).catch(err => {
-      console.warn('Sync notice:', err);
-    });
+    saveStoredIgLiveOrders(updatedOrders);
   };
 
   const [isAddEditModalOpen, setIsAddEditModalOpen] = useState<boolean>(false);
@@ -147,7 +136,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
     { sku: string; nama_produk: string; size: string; qty: number; lokasi: string; harga: number }[]
   >([]);
 
-  // Load Initial Data
+  // Load Initial Data directly from Google Apps Script (GAS) Backend
   useEffect(() => {
     const handleAfterPrint = () => {
       setPrintMode(null);
@@ -155,37 +144,46 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
     };
     window.addEventListener('afterprint', handleAfterPrint);
 
-    const loadedGasUrl = getStoredIgLiveGasUrl();
+    // Clean up old stale caches
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('chocochips_iglive_orders_v1');
+        localStorage.removeItem('wms_iglive_rls_needed');
+      } catch {}
+    }
+
+    const loadedGasUrl = getStoredIgLiveGasUrl() || DEFAULT_IG_LIVE_GAS_URL;
     setGasUrl(loadedGasUrl);
     setTempGasUrl(loadedGasUrl);
 
-    const loadedSheetName = getStoredIgLiveSheetName();
+    const loadedSheetName = getStoredIgLiveSheetName() || DEFAULT_IG_LIVE_SHEET_NAME;
     setSheetName(loadedSheetName);
     setTempSheetName(loadedSheetName);
 
-    // Sync from local first, then fetch from Supabase
-    syncLocalIgLiveToSupabase().then(() => {
-      fetchIgLiveOrdersFromSupabase().then(res => {
-        if (res && res.length > 0) {
-          setOrders(res);
-        } else if (loadedGasUrl) {
-          fetchOrdersFromGas(loadedGasUrl, productCatalog, loadedSheetName).then(gasRes => {
-            if (gasRes.success && gasRes.orders) {
-              setOrders(gasRes.orders);
-            }
-          });
+    // Initial load: Fetch live orders directly from GAS Google Sheet
+    setIsSyncing(true);
+    fetchOrdersFromGas(loadedGasUrl, productCatalog, loadedSheetName).then(gasRes => {
+      setIsSyncing(false);
+      if (gasRes.success && gasRes.orders && gasRes.orders.length > 0) {
+        setOrders(gasRes.orders);
+        saveStoredIgLiveOrders(gasRes.orders);
+      } else {
+        const local = getStoredIgLiveOrders(productCatalog);
+        if (local && local.length > 0) {
+          setOrders(local);
         }
-      });
+      }
+    }).catch(err => {
+      setIsSyncing(false);
+      console.warn('[IGLIVE] Error fetch dari GAS, fallback ke cache lokal:', err);
+      const local = getStoredIgLiveOrders(productCatalog);
+      if (local && local.length > 0) {
+        setOrders(local);
+      }
     });
-
-    const handleRlsNotice = (e: any) => {
-      setHasRlsNotice(!!e.detail);
-    };
-    window.addEventListener('wms_iglive_rls_needed', handleRlsNotice);
 
     return () => {
       window.removeEventListener('afterprint', handleAfterPrint);
-      window.removeEventListener('wms_iglive_rls_needed', handleRlsNotice);
     };
   }, [productCatalog]);
 
@@ -763,12 +761,13 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
               <h1 className="text-xl sm:text-2xl font-black tracking-wide">
                 Chocochips IG Live
               </h1>
-              <span className="bg-white/25 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
-                {gasUrl ? 'Live Sync GAS' : 'Mode Data Dummy'}
+              <span className="bg-emerald-500/80 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1.5 border border-emerald-300/40 shadow-xs">
+                <span className="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+                Backend: Google Sheets (GAS Live)
               </span>
             </div>
             <p className="text-xs sm:text-sm text-pink-100 mt-0.5">
-              Penanganan pesanan dari sesi Instagram Live, Cetak Label Thermal A6, & Picking List Gudang
+              Penanganan pesanan dari sesi Instagram Live, Cetak Label Thermal A6, & Picking List Gudang (Backend Google Sheets)
             </p>
           </div>
         </div>
@@ -796,44 +795,6 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
           </button>
         </div>
       </div>
-
-      {/* RLS Policy Notice Banner */}
-      {hasRlsNotice && (
-        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-xl p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-900 dark:text-amber-200 text-xs sm:text-sm animate-in fade-in duration-200">
-          <div className="flex items-start gap-2.5">
-            <span className="text-base sm:text-lg shrink-0">🛡️</span>
-            <div>
-              <p className="font-bold">Info Keamanan Supabase (RLS Policy Active)</p>
-              <p className="text-xs text-amber-800 dark:text-amber-300 mt-0.5">
-                Data IG Live Anda <strong>tetap tersimpan aman di Supabase Backend (wms_settings)</strong>. Untuk mengizinkan penulisan langsung ke tabel <code>ig_live_orders</code>, jalankan 1 baris SQL Policy di Supabase SQL Editor.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                navigator.clipboard.writeText(IG_LIVE_RLS_SQL_FIX);
-                onShowToast('SQL Fix RLS berhasil disalin ke clipboard!', 'success');
-              }}
-              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-bold rounded-lg text-xs shadow-xs transition-all cursor-pointer"
-            >
-              Salin SQL Fix RLS
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                localStorage.removeItem('wms_iglive_rls_needed');
-                setHasRlsNotice(false);
-              }}
-              className="px-2 py-1.5 text-amber-700 dark:text-amber-400 hover:bg-amber-200/50 dark:hover:bg-amber-900/50 rounded-lg text-xs transition-all cursor-pointer"
-              title="Tutup Notifikasi"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Mode Sub-Tab Switcher (Pesanan vs Picking Mode) */}
       <div className="flex items-center justify-between bg-white dark:bg-slate-900 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs flex-wrap gap-2">
