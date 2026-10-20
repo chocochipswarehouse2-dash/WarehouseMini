@@ -1,11 +1,10 @@
 /**
- * Screen Orientation Lock Service for WMS
- * Ensures mobile screens remain in Portrait orientation (upright)
- * during barcode scanning and warehouse operations, preventing accidental
- * flips to landscape mode when the phone is tilted.
+ * Screen Orientation Service for WMS
+ * Allows screen orientation to follow the user's native device Auto-Rotate
+ * or Portrait Lock system setting on Android, iOS, Windows, and macOS.
  */
 
-export async function lockOrientationToPortrait(): Promise<boolean> {
+export function unlockOrientation(): boolean {
   if (typeof window === 'undefined') return false;
 
   try {
@@ -14,78 +13,29 @@ export async function lockOrientationToPortrait(): Promise<boolean> {
       (window.screen as any)?.mozOrientation ||
       (window.screen as any)?.msOrientation;
 
-    if (orientation && typeof orientation.lock === 'function') {
-      await orientation.lock('portrait');
+    if (orientation && typeof orientation.unlock === 'function') {
+      orientation.unlock();
       return true;
     }
   } catch {
-    // In standard browser tabs, lock() may reject unless in fullscreen or standalone PWA
+    // Ignore if unlock is not supported in the current browser context
   }
   return false;
 }
 
-/**
- * Force locks to portrait by requesting fullscreen first if required by mobile browsers
- */
+export async function lockOrientationToPortrait(): Promise<boolean> {
+  return unlockOrientation();
+}
+
 export async function lockOrientationWithFullscreen(): Promise<boolean> {
-  if (typeof window === 'undefined') return false;
-
-  try {
-    const docEl = document.documentElement as any;
-    if (!document.fullscreenElement && docEl) {
-      if (docEl.requestFullscreen) {
-        await docEl.requestFullscreen().catch(() => {});
-      } else if (docEl.webkitRequestFullscreen) {
-        await docEl.webkitRequestFullscreen().catch(() => {});
-      } else if (docEl.mozRequestFullScreen) {
-        await docEl.mozRequestFullScreen().catch(() => {});
-      } else if (docEl.msRequestFullscreen) {
-        await docEl.msRequestFullscreen().catch(() => {});
-      }
-    }
-
-    return await lockOrientationToPortrait();
-  } catch (err) {
-    console.warn('Orientation lock with fullscreen error:', err);
-    return false;
-  }
+  return unlockOrientation();
 }
 
 /**
- * Automatically attaches listeners to enforce portrait orientation
+ * Ensures any previous PWA orientation lock is released so the app
+ * strictly follows the phone's built-in Auto-Rotate setting.
  */
 export function setupOrientationAutoLock() {
   if (typeof window === 'undefined') return;
-
-  const tryLock = () => {
-    lockOrientationToPortrait();
-  };
-
-  // Immediate attempt
-  tryLock();
-
-  // Attempt on first few user gestures (required by browser security models)
-  window.addEventListener('touchstart', tryLock, { passive: true, once: false });
-  window.addEventListener('pointerdown', tryLock, { passive: true, once: false });
-  window.addEventListener('click', tryLock, { passive: true, once: false });
-
-  // When returning from background / tab switch
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      tryLock();
-    }
-  });
-  window.addEventListener('focus', tryLock);
-
-  // If orientation changes to landscape, attempt to re-lock to portrait immediately
-  if (window.screen?.orientation) {
-    window.screen.orientation.addEventListener('change', () => {
-      const type = window.screen.orientation.type || '';
-      if (type.includes('landscape')) {
-        tryLock();
-      }
-    });
-  } else {
-    window.addEventListener('orientationchange', tryLock);
-  }
+  unlockOrientation();
 }
