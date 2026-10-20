@@ -1324,7 +1324,9 @@ export async function bulkUpdateOrderSjDealpos(orderId: string, noSj: string, up
     if (!order) return { success: false, message: 'Pesanan tidak ditemukan' };
 
     const updatedItems = (order.items || []).map(it => {
-      if ((it.fulfillment || '').toLowerCase().includes('marketplace')) {
+      const ful = (it.fulfillment || '').toLowerCase();
+      const isTarget = ful.includes('marketplace') || ful.includes('gudang') || ful.includes('warehouse') || order.no_pesanan?.startsWith('AR-') || !ful;
+      if (isTarget) {
         return {
           ...it,
           no_sj_dealpos: noSj.trim(),

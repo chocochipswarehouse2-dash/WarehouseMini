@@ -2570,8 +2570,9 @@ _WMS Warehouse System_`;
         setOrders(prev => prev.map(o => {
           if (o.no_pesanan === order.no_pesanan) {
             const updatedItems = (o.items || []).map(it => {
-              if (applyToAllMarketplace || !item) {
-                if ((it.fulfillment || '').toLowerCase().includes('marketplace')) {
+                const ful = (it.fulfillment || '').toLowerCase();
+                const isTarget = ful.includes('marketplace') || ful.includes('gudang') || ful.includes('warehouse') || order.no_pesanan?.startsWith('AR-') || !ful;
+                if (isTarget) {
                   return { ...it, no_sj_dealpos: cleanSj, sj_updated_at: new Date().toISOString(), sj_updated_by: operatorName };
                 }
               } else if (it.id === item.id) {
@@ -2911,7 +2912,11 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
     const renderSjDealposModal = () => {
     if (!sjModalData) return null;
     const { order, item, noSj, applyToAllMarketplace } = sjModalData;
-    const mktItems = (order.items || []).filter(it => (it.fulfillment || '').toLowerCase().includes('marketplace'));
+    const isTargetItem = (it: any) => {
+      const ful = (it.fulfillment || '').toLowerCase();
+      return ful.includes('marketplace') || ful.includes('gudang') || ful.includes('warehouse') || order.no_pesanan?.startsWith('AR-') || !ful;
+    };
+    const mktItems = (order.items || []).filter(isTargetItem);
 
     return (
       <div className="fixed inset-0 z-50 bg-black/60 dark:bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
@@ -2926,7 +2931,7 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                   Input No. Surat Jalan DealPOS
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Mutasi Marketplace ➡️ {order.nama_pengirim}
+                  Transfer MKT / Warehouse ➡️ {order.nama_pengirim}
                 </p>
               </div>
             </div>
@@ -4350,13 +4355,21 @@ _WMS Warehouse System_`;
   const renderOrderBadges = (order: ManualShipmentOrder) => {
     const mktOrGudangItems = (order.items || []).filter(it => {
       const ful = (it.fulfillment || '').toLowerCase();
-      return ful.includes('marketplace') || ful.includes('gudang');
+      return ful.includes('marketplace') || ful.includes('gudang') || ful.includes('warehouse') || order.no_pesanan?.startsWith('AR-') || !ful;
     });
     const isWarehouseAr = order.alteration_repair_data?.sumber_barang === 'warehouse';
     const hasMarketplaceOrWarehouse = mktOrGudangItems.length > 0 || isWarehouseAr;
 
-    const missingSj = mktOrGudangItems.some(it => !it.no_sj_dealpos || !it.no_sj_dealpos.trim());
-    const existingSj = mktOrGudangItems.find(it => it.no_sj_dealpos && it.no_sj_dealpos.trim())?.no_sj_dealpos;
+    const findItemSj = (it: any) => {
+      return (it.no_sj_dealpos && it.no_sj_dealpos.trim()) ||
+             (order.no_transaksi_pengirim && order.no_transaksi_pengirim[0] && order.no_transaksi_pengirim[0].trim()) ||
+             (order.no_transaksi_customer && /^\d{2}\.\d{2}\./.test(order.no_transaksi_customer.trim()) ? order.no_transaksi_customer.trim() : '');
+    };
+
+    const missingSj = mktOrGudangItems.some(it => !findItemSj(it));
+    const existingSj = mktOrGudangItems.map(findItemSj).find(Boolean) || 
+                       (order.no_transaksi_pengirim && order.no_transaksi_pengirim[0]) || 
+                       (order.no_transaksi_customer && /^\d{2}\.\d{2}\./.test(order.no_transaksi_customer.trim()) ? order.no_transaksi_customer.trim() : '');
 
     const hasAlterFeature = hasRealAlterItems(order);
     const isSentToWh = isOrderSentToWarehouse(order);
@@ -5772,12 +5785,28 @@ _WMS Warehouse System_`;
                   </td>
                   <td className="px-3 py-2.5 align-top min-w-[200px] max-w-[280px]">
                     {(() => {
-                      const mktItems = (order.items || []).filter(it => (it.fulfillment || '').toLowerCase().includes('marketplace'));
+                      const mktItems = (order.items || []).filter(it => {
+                        const ful = (it.fulfillment || '').toLowerCase().trim();
+                        return (
+                          ful.includes('marketplace') ||
+                          ful.includes('gudang') ||
+                          ful.includes('warehouse') ||
+                          order.no_pesanan?.startsWith('AR-') ||
+                          !ful
+                        );
+                      });
                       if (mktItems.length === 0) {
                         return <span className="text-[10px] text-slate-400 dark:text-slate-500">-</span>;
                       }
-                      const sjList = Array.from(new Set(mktItems.map(it => it.no_sj_dealpos).filter(Boolean)));
-                      const hasMissingSj = mktItems.some(it => !it.no_sj_dealpos);
+
+                      const getItemSj = (it: any) => {
+                        return (it.no_sj_dealpos && it.no_sj_dealpos.trim()) ||
+                               (order.no_transaksi_pengirim && order.no_transaksi_pengirim[0] && order.no_transaksi_pengirim[0].trim()) ||
+                               (order.no_transaksi_customer && /^\d{2}\.\d{2}\./.test(order.no_transaksi_customer.trim()) ? order.no_transaksi_customer.trim() : '');
+                      };
+
+                      const sjList = Array.from(new Set(mktItems.map(getItemSj).filter(Boolean)));
+                      const hasMissingSj = mktItems.some(it => !getItemSj(it));
 
                       return (
                         <div className="flex flex-col gap-1.5 items-start">
@@ -5786,7 +5815,7 @@ _WMS Warehouse System_`;
                             {hasMissingSj ? (
                               <span className="inline-flex items-center gap-1 bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700/80 rounded px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-300">
                                 <Clock className="w-2.5 h-2.5 text-amber-600 shrink-0" />
-                                <span>{mktItems.filter(i => !i.no_sj_dealpos).length} Item Butuh SJ</span>
+                                <span>{mktItems.filter(i => !getItemSj(i)).length} Item Butuh SJ</span>
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-700/80 rounded px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 dark:text-emerald-300">
@@ -5812,73 +5841,118 @@ _WMS Warehouse System_`;
                             )}
                           </div>
 
-                          {/* List Produk Marketplace Langsung di Tabel */}
+                          {/* List Produk Marketplace / Gudang Langsung di Tabel */}
                           <div className="w-full space-y-1 bg-slate-50 dark:bg-slate-800/60 p-1.5 rounded-lg border border-slate-200/80 dark:border-slate-700/80">
-                            {mktItems.map((it, idx) => (
-                              <div key={it.id || idx} className="text-[11px] leading-tight flex flex-col gap-0.5 pb-1 border-b border-slate-200/60 dark:border-slate-700/60 last:border-0 last:pb-0">
-                                <div className="flex items-start justify-between gap-1">
-                                  <div className="font-semibold text-slate-800 dark:text-slate-100 truncate" title={it.nama_produk}>
-                                    {it.nama_produk}
+                            {mktItems.map((it, idx) => {
+                              const itemSj = getItemSj(it);
+                              return (
+                                <div key={it.id || idx} className="text-[11px] leading-tight flex flex-col gap-0.5 pb-1 border-b border-slate-200/60 dark:border-slate-700/60 last:border-0 last:pb-0">
+                                  <div className="flex items-start justify-between gap-1">
+                                    <div className="font-semibold text-slate-800 dark:text-slate-100 truncate" title={it.nama_produk}>
+                                      {it.nama_produk}
+                                    </div>
+                                    <span className="font-bold text-slate-700 dark:text-slate-300 text-[10px] shrink-0 bg-white dark:bg-slate-900 px-1 py-0.2 rounded border border-slate-200 dark:border-slate-700">
+                                      x{it.qty}
+                                    </span>
                                   </div>
-                                  <span className="font-bold text-slate-700 dark:text-slate-300 text-[10px] shrink-0 bg-white dark:bg-slate-900 px-1 py-0.2 rounded border border-slate-200 dark:border-slate-700">
-                                    x{it.qty}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 flex-wrap">
-                                  <span className="font-mono text-indigo-600 dark:text-indigo-400 font-semibold">{it.sku}</span>
-                                  {it.size && it.size !== 'ALL' && it.size !== '-' && <span>• {it.size}</span>}
-                                </div>
-                                {/* Status Item: Ready vs Sold Out */}
-                                {it.item_status === 'sold_out' ? (
-                                  <div className="mt-1 p-1 bg-red-100/80 dark:bg-red-950/70 border border-red-300 dark:border-red-800 rounded flex flex-col gap-0.5">
-                                    <div className="flex items-center justify-between gap-1">
-                                      <span className="text-[9.5px] font-bold text-red-700 dark:text-red-300 flex items-center gap-1">
-                                        <Ban className="w-2.5 h-2.5" />
-                                        <span>SOLD OUT</span>
+                                  <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 flex-wrap">
+                                    <span className="font-mono text-indigo-600 dark:text-indigo-400 font-semibold">{it.sku}</span>
+                                    {it.size && it.size !== 'ALL' && it.size !== '-' && <span>• {it.size}</span>}
+                                    <span className="text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-1 py-0.2 rounded text-[9px] border border-amber-200 dark:border-amber-800">
+                                      {it.fulfillment || (order.no_pesanan?.startsWith('AR-') ? 'Warehouse' : 'Marketplace')}
+                                    </span>
+                                  </div>
+                                  {/* Detail Instruksi Alter jika ada */}
+                                  {(isRealAlterItem(it) || it.alteration_detail || it.repair_detail || order.alteration_repair_data) && (
+                                    <div className="mt-0.5 text-[9.5px] font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/60 p-1 rounded border border-rose-200 dark:border-rose-800 flex items-start gap-1">
+                                      <Scissors className="w-2.5 h-2.5 text-rose-600 shrink-0 mt-0.5" />
+                                      <span className="leading-tight">
+                                        {it.alteration_detail || it.repair_detail || order.alteration_repair_data?.alteration_detail || 'Perlu Alterasi'}
                                       </span>
-                                      {userIsAdmin && (
+                                    </div>
+                                  )}
+                                  {/* Status Item: Ready vs Sold Out */}
+                                  {it.item_status === 'sold_out' ? (
+                                    <div className="mt-1 p-1 bg-red-100/80 dark:bg-red-950/70 border border-red-300 dark:border-red-800 rounded flex flex-col gap-0.5">
+                                      <div className="flex items-center justify-between gap-1">
+                                        <span className="text-[9.5px] font-bold text-red-700 dark:text-red-300 flex items-center gap-1">
+                                          <Ban className="w-2.5 h-2.5" />
+                                          <span>SOLD OUT</span>
+                                        </span>
+                                        {userIsAdmin && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleRestoreSoldItem(order, it)}
+                                            className="text-[9px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5 cursor-pointer"
+                                            title="Pulihkan jadi Ready"
+                                          >
+                                            <RotateCcw className="w-2.5 h-2.5" />
+                                            <span>Pulihkan</span>
+                                          </button>
+                                        )}
+                                      </div>
+                                      {it.sold_note && (
+                                        <span className="text-[9px] text-red-600 dark:text-red-400 italic truncate" title={it.sold_note}>
+                                          {it.sold_note}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div className="mt-0.5 flex items-center justify-between gap-1 flex-wrap">
+                                      {itemSj ? (
+                                        <div className="inline-flex items-center gap-1 font-mono text-[9.5px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100/60 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded w-fit">
+                                          <FileCheck className="w-2.5 h-2.5 text-emerald-600" />
+                                          <span>SJ: {itemSj}</span>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              copyToClipboard(itemSj, `No. SJ ${itemSj} disalin!`);
+                                              setCopiedSj(itemSj);
+                                              setTimeout(() => setCopiedSj(null), 2000);
+                                            }}
+                                            className="hover:underline p-0.5 text-emerald-600"
+                                            title="Salin No. SJ"
+                                          >
+                                            {copiedSj === itemSj ? <Check className="w-2.5 h-2.5 text-emerald-600" /> : <Copy className="w-2.5 h-2.5" />}
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <div className="text-[9.5px] text-amber-700 dark:text-amber-400 font-medium">
+                                          ⏳ Menunggu SJ DealPOS
+                                        </div>
+                                      )}
+
+                                      {userIsAdmin && order.status !== 'batal' && (
                                         <button
                                           type="button"
-                                          onClick={() => handleRestoreSoldItem(order, it)}
-                                          className="text-[9px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5 cursor-pointer"
-                                          title="Pulihkan jadi Ready"
+                                          onClick={() => {
+                                            const isMulti = (order.items || []).length > 1;
+                                            setSoldModalData({
+                                              order,
+                                              item: it,
+                                              resolution: isMulti ? 'partial_fulfill' : 'cancel_order',
+                                              note: 'Stok kosong di alokasi DealPOS Marketplace.',
+                                              sendWaToStore: true
+                                            });
+                                          }}
+                                          className="text-[9px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 px-1.5 py-0.5 rounded border border-red-200 dark:border-red-800/60 cursor-pointer flex items-center gap-0.5"
+                                          title="Tandai stok ini kosong / sold"
                                         >
-                                          <RotateCcw className="w-2.5 h-2.5" />
-                                          <span>Pulihkan</span>
+                                          <AlertOctagon className="w-2.5 h-2.5" />
+                                          <span>Tandai Sold</span>
                                         </button>
                                       )}
                                     </div>
-                                    {it.sold_note && (
-                                      <span className="text-[9px] text-red-600 dark:text-red-400 italic truncate" title={it.sold_note}>
-                                        {it.sold_note}
-                                      </span>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <div className="mt-0.5 flex items-center justify-between gap-1 flex-wrap">
-                                    {it.no_sj_dealpos ? (
-                                      <div className="inline-flex items-center gap-1 font-mono text-[9.5px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100/60 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded w-fit">
-                                        <FileCheck className="w-2.5 h-2.5 text-emerald-600" />
-                                        <span>SJ: {it.no_sj_dealpos}</span>
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            copyToClipboard(it.no_sj_dealpos || '', `No. SJ ${it.no_sj_dealpos} disalin!`);
-                                            setCopiedSj(it.no_sj_dealpos || null);
-                                            setTimeout(() => setCopiedSj(null), 2000);
-                                          }}
-                                          className="hover:underline p-0.5 text-emerald-600"
-                                          title="Salin No. SJ"
-                                        >
-                                          {copiedSj === it.no_sj_dealpos ? <Check className="w-2.5 h-2.5 text-emerald-600" /> : <Copy className="w-2.5 h-2.5" />}
-                                        </button>
-                                      </div>
-                                    ) : (
-                                      <div className="text-[9.5px] text-amber-700 dark:text-amber-400 font-medium">
-                                        ⏳ Menunggu SJ DealPOS
-                                      </div>
-                                    )}
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </td>
 
                                     {userIsAdmin && order.status !== 'batal' && (
                                       <button
@@ -6343,19 +6417,43 @@ _WMS Warehouse System_`;
                       );
                     })()}
 
-                    {/* Box Surat Jalan DealPOS (Khusus Produk Fulfilment Marketplace) */}
+                    {/* Box Surat Jalan DealPOS (Khusus Produk Fulfilment Marketplace / Gudang / Alteration) */}
                     {(() => {
-                      const mktItems = (order.items || []).filter(it => (it.fulfillment || '').toLowerCase().includes('marketplace'));
+                      const mktItems = (order.items || []).filter(it => {
+                        const ful = (it.fulfillment || '').toLowerCase().trim();
+                        return (
+                          ful.includes('marketplace') ||
+                          ful.includes('gudang') ||
+                          ful.includes('warehouse') ||
+                          order.no_pesanan?.startsWith('AR-') ||
+                          !ful
+                        );
+                      });
                       if (mktItems.length === 0) return null;
-                      const sjList = Array.from(new Set(mktItems.map(it => it.no_sj_dealpos).filter(Boolean)));
-                      const hasMissingSj = mktItems.some(it => !it.no_sj_dealpos);
+
+                      const getItemSj = (it: any) => {
+                        return (it.no_sj_dealpos && it.no_sj_dealpos.trim()) ||
+                               (order.no_transaksi_pengirim && order.no_transaksi_pengirim[0] && order.no_transaksi_pengirim[0].trim()) ||
+                               (order.no_transaksi_customer && /^\d{2}\.\d{2}\./.test(order.no_transaksi_customer.trim()) ? order.no_transaksi_customer.trim() : '');
+                      };
+
+                      const sjList = Array.from(new Set(mktItems.map(getItemSj).filter(Boolean)));
+                      const hasMissingSj = mktItems.some(it => !getItemSj(it));
+                      const isWarehouseOrAr = mktItems.some(it => {
+                        const ful = (it.fulfillment || '').toLowerCase();
+                        return ful.includes('warehouse') || ful.includes('gudang') || order.no_pesanan?.startsWith('AR-');
+                      });
 
                       return (
                         <div className="p-3 bg-amber-50/60 dark:bg-amber-950/40 rounded-xl border border-amber-300 dark:border-amber-800/80 space-y-2">
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300 uppercase tracking-wider flex items-center gap-1">
                               <FileCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                              <span>Produk dari Marketplace ({mktItems.length})</span>
+                              <span>
+                                {isWarehouseOrAr
+                                  ? `Produk Fulfilment Gudang / Alter (${mktItems.length})`
+                                  : `Produk dari Marketplace (${mktItems.length})`}
+                              </span>
                             </span>
                             {userIsAdmin && (
                               <button
@@ -6374,63 +6472,118 @@ _WMS Warehouse System_`;
                             )}
                           </div>
 
-                          {/* List Produk Marketplace */}
+                          {/* List Produk Marketplace / Gudang / Alter */}
                           <div className="space-y-1.5 bg-white dark:bg-slate-900/80 p-2 rounded-lg border border-amber-200 dark:border-amber-900/50">
-                            {mktItems.map((it, idx) => (
-                              <div key={it.id || idx} className="text-xs pb-1.5 border-b border-slate-100 dark:border-slate-800 last:border-0 last:pb-0">
-                                <div className="flex justify-between items-start gap-1">
-                                  <span className="font-semibold text-slate-800 dark:text-slate-100 leading-tight">
-                                    {it.nama_produk}
-                                  </span>
-                                  <span className="font-bold text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-700 dark:text-slate-300 shrink-0">
-                                    x{it.qty}
-                                  </span>
-                                </div>
-                                <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">
-                                  {it.sku} {it.size && it.size !== 'ALL' && it.size !== '-' ? `| Size: ${it.size}` : ''}
-                                </div>
-                                {/* Card View: Status Item Ready vs Sold Out */}
-                                {it.item_status === 'sold_out' ? (
-                                  <div className="mt-1 p-1.5 bg-red-100/90 dark:bg-red-950/80 border border-red-300 dark:border-red-800 rounded-lg flex items-center justify-between">
-                                    <div className="flex items-center gap-1 text-[10px] font-bold text-red-700 dark:text-red-300">
-                                      <Ban className="w-3 h-3" />
-                                      <span>SOLD OUT: {it.sold_note || 'Stok Marketplace Kosong'}</span>
-                                    </div>
-                                    {userIsAdmin && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleRestoreSoldItem(order, it)}
-                                        className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5"
-                                      >
-                                        <RotateCcw className="w-3 h-3" />
-                                        <span>Pulihkan</span>
-                                      </button>
-                                    )}
+                            {mktItems.map((it, idx) => {
+                              const itemSj = getItemSj(it);
+                              return (
+                                <div key={it.id || idx} className="text-xs pb-1.5 border-b border-slate-100 dark:border-slate-800 last:border-0 last:pb-0">
+                                  <div className="flex justify-between items-start gap-1">
+                                    <span className="font-semibold text-slate-800 dark:text-slate-100 leading-tight">
+                                      {it.nama_produk}
+                                    </span>
+                                    <span className="font-bold text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-700 dark:text-slate-300 shrink-0">
+                                      x{it.qty}
+                                    </span>
                                   </div>
-                                ) : (
-                                  <div className="mt-1 flex items-center justify-between gap-1 flex-wrap">
-                                    {it.no_sj_dealpos ? (
-                                      <div className="inline-flex items-center gap-1 font-mono text-[10px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/60">
-                                        <span>SJ: {it.no_sj_dealpos}</span>
+                                  <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-0.5 flex-wrap gap-1">
+                                    <span>{it.sku} {it.size && it.size !== 'ALL' && it.size !== '-' ? `| Size: ${it.size}` : ''}</span>
+                                    <span className="text-amber-800 dark:text-amber-200 font-sans font-bold bg-amber-100/70 dark:bg-amber-950 px-1.5 py-0.2 rounded border border-amber-300 dark:border-amber-800 text-[9.5px]">
+                                      📦 {it.fulfillment || (order.no_pesanan?.startsWith('AR-') ? 'Warehouse (Stok Gudang)' : 'Marketplace')}
+                                    </span>
+                                  </div>
+                                  
+                                  {/* Detail Instruksi Alterasi jika ada */}
+                                  {(isRealAlterItem(it) || it.alteration_detail || it.repair_detail || order.alteration_repair_data) && (
+                                    <div className="mt-1 text-[9.5px] font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/70 p-1.5 rounded-lg border border-rose-200 dark:border-rose-800 space-y-0.5">
+                                      <div className="flex items-start gap-1">
+                                        <Scissors className="w-3 h-3 text-rose-600 shrink-0 mt-0.5" />
+                                        <span className="leading-tight">
+                                          Instruksi {it.layanan_type === 'repair' ? 'Repair' : 'Alter'}: {it.alteration_detail || it.repair_detail || order.alteration_repair_data?.alteration_detail || 'Perlu Alterasi'}
+                                        </span>
+                                      </div>
+                                      {order.alteration_repair_data?.id_form_alter && (
+                                        <div className="text-[9px] text-rose-600 dark:text-rose-400 font-mono flex items-center justify-between pt-0.5 border-t border-rose-200/50 dark:border-rose-800/50">
+                                          <span>Form ID: {order.alteration_repair_data.id_form_alter}</span>
+                                          {order.alteration_repair_data.perkiraan_selesai && (
+                                            <span>Est. Selesai: {order.alteration_repair_data.perkiraan_selesai}</span>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Card View: Status Item Ready vs Sold Out */}
+                                  {it.item_status === 'sold_out' ? (
+                                    <div className="mt-1 p-1.5 bg-red-100/90 dark:bg-red-950/80 border border-red-300 dark:border-red-800 rounded-lg flex items-center justify-between">
+                                      <div className="flex items-center gap-1 text-[10px] font-bold text-red-700 dark:text-red-300">
+                                        <Ban className="w-3 h-3" />
+                                        <span>SOLD OUT: {it.sold_note || 'Stok Marketplace Kosong'}</span>
+                                      </div>
+                                      {userIsAdmin && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleRestoreSoldItem(order, it)}
+                                          className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5"
+                                        >
+                                          <RotateCcw className="w-3 h-3" />
+                                          <span>Pulihkan</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div className="mt-1 flex items-center justify-between gap-1 flex-wrap">
+                                      {itemSj ? (
+                                        <div className="inline-flex items-center gap-1 font-mono text-[10px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/60">
+                                          <span>SJ: {itemSj}</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              copyToClipboard(itemSj, `No. SJ ${itemSj} disalin!`);
+                                              setCopiedSj(itemSj);
+                                              setTimeout(() => setCopiedSj(null), 2000);
+                                            }}
+                                            className="p-0.5 text-emerald-600 dark:text-emerald-400 hover:text-emerald-900 cursor-pointer"
+                                            title="Salin No. SJ"
+                                          >
+                                            {copiedSj === itemSj ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <div className="text-[10px] font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1">
+                                          <Clock className="w-3 h-3" />
+                                          <span>Menunggu No. SJ DealPOS</span>
+                                        </div>
+                                      )}
+
+                                      {userIsAdmin && order.status !== 'batal' && (
                                         <button
                                           type="button"
                                           onClick={() => {
-                                            copyToClipboard(it.no_sj_dealpos || '', `No. SJ ${it.no_sj_dealpos} disalin!`);
-                                            setCopiedSj(it.no_sj_dealpos || null);
-                                            setTimeout(() => setCopiedSj(null), 2000);
+                                            const isMulti = (order.items || []).length > 1;
+                                            setSoldModalData({
+                                              order,
+                                              item: it,
+                                              resolution: isMulti ? 'partial_fulfill' : 'cancel_order',
+                                              note: 'Stok kosong di alokasi DealPOS Marketplace.',
+                                              sendWaToStore: true
+                                            });
                                           }}
-                                          className="p-0.5 text-emerald-600 dark:text-emerald-400 hover:text-emerald-900"
-                                          title="Salin No. SJ"
+                                          className="text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 px-2 py-0.5 rounded border border-red-200 dark:border-red-800/60 cursor-pointer flex items-center gap-1"
                                         >
-                                          {copiedSj === it.no_sj_dealpos ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                                          <AlertOctagon className="w-3 h-3" />
+                                          <span>Tandai Sold</span>
                                         </button>
-                                      </div>
-                                    ) : (
-                                      <div className="text-[10px] font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1">
-                                        <Clock className="w-3 h-3" />
-                                        <span>Menunggu No. SJ DealPOS</span>
-                                      </div>
-                                    )}
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                                     {userIsAdmin && order.status !== 'batal' && (
                                       <button
