@@ -776,7 +776,8 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
 
     try {
       setIsPushingSheet(true);
-      const res = await pushPenerimaanProduksiToGoogleSheet(itemsToPush, filteredBlocks, activeTab);
+      const activeBlocks = filteredBlocks.filter((b) => (activeTab === 'CMT' ? (!b.kategori || b.kategori === 'Lokal CMT') : b.kategori === 'Kargo'));
+      const res = await pushPenerimaanProduksiToGoogleSheet(itemsToPush, activeBlocks, activeTab);
       if (res.success) {
         onShowToast(res.message, 'success');
       } else {

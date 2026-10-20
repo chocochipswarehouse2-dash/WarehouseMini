@@ -222,11 +222,16 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
     try {
       setIsPushing(true);
 
+      // Ensure blocks strictly match currentTab (prevent cross-contamination between CMT and Kargo)
+      const effectiveBlocks = (currentTab === initialActiveTab && blocks && blocks.length > 0)
+        ? blocks.filter((b) => (currentTab === 'CMT' ? (!b.kategori || b.kategori === 'Lokal CMT') : b.kategori === 'Kargo'))
+        : undefined;
+
       if (mode === 'master') {
         setProgressMsg(`Menulis Master Matrix ${currentTab} ke Google Spreadsheet...`);
         const res = await pushPenerimaanProduksiToGoogleSheet({
           items: categoryItems,
-          blocks,
+          blocks: effectiveBlocks,
           activeTab: currentTab,
         });
 
@@ -244,7 +249,7 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
 
         const res = await pushProduksiPerTanggalToGoogleSheet({
           items: categoryItems,
-          blocks,
+          blocks: effectiveBlocks,
           activeTab: currentTab,
           targetDate: target,
           onProgress: (cur, tot, sheetName) => {
