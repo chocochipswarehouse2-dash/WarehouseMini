@@ -20,9 +20,12 @@ import {
   ChevronDown,
   ChevronUp,
   MapPin,
+  MessageSquare,
+  Copy,
 } from 'lucide-react';
 import { ProductItem, PickingListItem, StockRealtimeItem } from '../types';
 import { createPickingSuratJalanSupabase, isWarehouseLocation, getPickingPriority, fetchStockForSkus } from '../services/supabase';
+import { generateRefillPickingGroupMessage, sendFonnteMessage, getFonnteConfig, getWhatsAppWebUrl } from '../services/whatsapp';
 
 interface ParsedSJItem {
   nama: string;
@@ -651,6 +654,78 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
     }
   };
 
+  // Build WhatsApp Picking List message for a Refill SJ group (same structured format as SPS)
+  const buildRefillGroupWaMessage = (group: ParsedSJGroup, invoicePicking?: string): string => {
+    return generateRefillPickingGroupMessage({
+      no_sj: group.noSJ,
+      destination: group.tujuan || 'Toko / Store',
+      source: 'Warehouse',
+      tanggal_sj: group.date || new Date().toISOString().slice(0, 10),
+      operatorName: currentUser || 'Petugas WMS',
+      invoice_picking: invoicePicking,
+      items: group.items.map((it) => {
+        const cleanSku = it.sku.toUpperCase().trim();
+        const locs = getProductLocations(cleanSku, it.lokasi);
+        let locText = '-';
+        let isKosong = false;
+        if (locs.length > 0) {
+          locText = locs.map((l) => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ');
+        } else if (cleanSku in realtimeSkuStocks) {
+          const empty = getRecordedEmptyLocations(cleanSku);
+          locText = empty.length > 0 ? `KOSONG (Rak: ${empty.join(', ')})` : 'KOSONG (0 pcs)';
+          isKosong = true;
+        } else if (it.lokasi && it.lokasi !== '-' && it.lokasi !== 'KOSONG') {
+          locText = it.lokasi;
+        }
+        return {
+          sku: it.sku,
+          nama_produk: it.nama,
+          size: it.size || '-',
+          qty: it.qty,
+          lokasi: locText,
+          isKosong,
+        };
+      }),
+    });
+  };
+
+  // Send or Copy WhatsApp Picking List for a single Refill SJ
+  const handleSendRefillWa = async (group: ParsedSJGroup, mode: 'send' | 'copy' = 'send') => {
+    const text = buildRefillGroupWaMessage(group);
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {}
+
+    if (mode === 'copy') {
+      onNotify(`Teks Picking List WA untuk SJ "${group.noSJ}" berhasil disalin!`, 'success');
+      return;
+    }
+
+    const fonnteCfg = getFonnteConfig();
+    if (!fonnteCfg.token) {
+      onNotify(`Pesan Picking List "${group.noSJ}" disalin ke clipboard! Membuka WhatsApp...`, 'info');
+      window.open(getWhatsAppWebUrl(fonnteCfg.groupTarget || '', text), '_blank');
+      return;
+    }
+
+    if (!fonnteCfg.groupTarget) {
+      onNotify(`Target grup gudang belum diatur di Pengaturan. Teks "${group.noSJ}" telah disalin ke clipboard.`, 'warning');
+      window.open(getWhatsAppWebUrl('', text), '_blank');
+      return;
+    }
+
+    try {
+      const res = await sendFonnteMessage(fonnteCfg.groupTarget, text, fonnteCfg.token);
+      if (res.success) {
+        onNotify(`✅ Picking List WA Refill (${group.noSJ}) berhasil dikirim ke Grup Gudang via Fonnte!`, 'success');
+      } else {
+        onNotify(`Gagal kirim via Fonnte: ${res.message}. (Pesan telah disalin ke clipboard)`, 'warning');
+      }
+    } catch (err: any) {
+      onNotify(`Gagal kirim WA: ${err?.message || 'Error'}. (Pesan telah disalin ke clipboard)`, 'error');
+    }
+  };
+
   // Save parsed groups to Supabase picking_list
   const handleSaveToDatabase = async (groupsToSave: ParsedSJGroup[], andPrint = false) => {
     if (groupsToSave.length === 0) {
@@ -658,22 +733,12 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
       return;
     }
 
-    // Check duplicate SJs
-    const duplicateList = groupsToSave
-      .filter((g) => existingSJs.some((ex) => ex.toUpperCase() === g.noSJ.toUpperCase()))
-      .map((g) => g.noSJ);
-
-    // The duplicate warning is already rendered in the UI with a yellow badge.
-    // In iframe environments, window.confirm is often blocked and silently fails.
-    // Instead of using window.confirm, we will allow them to save if they explicitly clicked the button,
-    // or we could use a custom modal. For now, since they can see the warning, we proceed.
-    // If you want strict protection, a custom state-based confirmation modal is required.
-    
     setIsProcessing(true);
     showGlobalLoading('Memproses...');
     try {
       const allCreatedItems: PickingListItem[] = [];
       const generatedInvoices: string[] = [];
+      const fonnteCfg = getFonnteConfig();
 
       for (const group of groupsToSave) {
         const formattedItems = group.items.map((it) => {
@@ -697,6 +762,14 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
         }
         if (res && res.invoice_picking) {
           generatedInvoices.push(res.invoice_picking);
+        }
+
+        // Otomatis kirim Picking List Refill ke Grup WA Gudang jika autoSendEnabled aktif (sama seperti SPS)
+        if (fonnteCfg.autoSendEnabled && fonnteCfg.token && fonnteCfg.groupTarget) {
+          const waMsg = buildRefillGroupWaMessage(group, res?.invoice_picking);
+          sendFonnteMessage(fonnteCfg.groupTarget, waMsg, fonnteCfg.token).catch((wErr) => {
+            console.warn('Gagal auto-send WA Picking Refill:', wErr);
+          });
         }
       }
 
@@ -995,6 +1068,25 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
                               >
                                 <Send className="w-3.5 h-3.5" />
                                 <span>Simpan SJ Ini</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleSendRefillWa(group, 'send')}
+                                className="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-600 text-emerald-600 dark:text-emerald-400 hover:text-white rounded-lg border border-emerald-500/30 text-xs font-black transition-all flex items-center gap-1"
+                                title="Kirim Picking List ke Grup WA Gudang (Format SPS)"
+                              >
+                                <MessageSquare className="w-3.5 h-3.5" />
+                                <span>WA Picking</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleSendRefillWa(group, 'copy')}
+                                className="p-1.5 bg-white dark:bg-[#131d31] hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-200 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold transition-all"
+                                title="Salin Teks Picking List WhatsApp"
+                              >
+                                <Copy className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                               </button>
 
                               <button

@@ -218,6 +218,84 @@ export function generatePeminjamanGroupMessage(
   );
 }
 
+export interface RefillPickingItemParam {
+  sku: string;
+  nama_produk: string;
+  size?: string;
+  qty: number;
+  lokasi?: string;
+  isKosong?: boolean;
+}
+
+export interface RefillPickingMessageParams {
+  no_sj: string;
+  destination: string;
+  source?: string;
+  tanggal_sj?: string;
+  operatorName?: string;
+  invoice_picking?: string;
+  status?: string;
+  items: RefillPickingItemParam[];
+}
+
+/**
+ * Membuat pesan WhatsApp Picking List Refill / Pengiriman untuk Grup WhatsApp Gudang
+ * Menggunakan format terstruktur yang sama persis dengan Picking List Peminjaman (SPS)
+ */
+export function generateRefillPickingGroupMessage(params: RefillPickingMessageParams): string {
+  const items = params.items || [];
+  const totalQty = items.reduce((acc, it) => acc + (Number(it.qty) || 0), 0);
+  const totalItems = items.length;
+
+  const itemsList = items
+    .map((it, idx) => {
+      const itemNum = idx + 1;
+      const cleanSku = (it.sku || '-').trim();
+      const rawSize = (it.size || '').trim();
+      const cleanSize = rawSize && rawSize !== '-'
+        ? rawSize
+        : (extractSizeFromSku(cleanSku) !== '-' ? extractSizeFromSku(cleanSku) : '-');
+      const cleanName = (it.nama_produk || cleanSku).trim();
+      const cleanLoc = (it.lokasi && it.lokasi !== '-') ? it.lokasi.trim() : 'Belum Ada Rak';
+      const stockNote = it.isKosong && !cleanLoc.toUpperCase().includes('KOSONG') && !cleanLoc.includes('0 pcs')
+        ? ' ⚠️ _(Stok 0 - cek fisik)_'
+        : '';
+
+      return (
+        `${itemNum}. 📦 *${cleanName}*\n` +
+        `   ├ Size    : *${cleanSize}*\n` +
+        `   ├ SKU     : \`${cleanSku}\`\n` +
+        `   ├ QTY     : *${it.qty} pcs*\n` +
+        `   └ 📍 Lokasi: *${cleanLoc}*${stockNote}`
+      );
+    })
+    .join('\n\n');
+
+  const operatorStr = params.operatorName || 'Petugas WMS';
+  const dateStr = params.tanggal_sj || new Date().toISOString().slice(0, 10);
+  const timeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  const sourceStr = params.source || 'Warehouse';
+  const destStr = params.destination || 'Toko / Store';
+  const invoiceLine = params.invoice_picking ? `• Kode Antrian   : \`${params.invoice_picking}\`\n` : '';
+  const statusStr = params.status || 'PENDING PICKING';
+
+  return (
+    `*🚨 PICKING LIST REFILL (SURAT JALAN)*\n` +
+    `*No. Dokumen:* \`${params.no_sj}\`\n\n` +
+    `*INFORMASI PENGIRIMAN:*\n` +
+    `• Tujuan / Store : *${destStr}*\n` +
+    `• Asal Gudang    : ${sourceStr}\n` +
+    `• Tanggal SJ     : ${dateStr}\n` +
+    `• Waktu Submit   : ${timeStr} WIB\n` +
+    `• Operator Input : ${operatorStr}\n` +
+    invoiceLine +
+    `\n📋 *DAFTAR ITEM UNTUK PICKING (${totalItems} Item / ${totalQty} Pcs):*\n` +
+    `${itemsList}\n\n` +
+    `Mohon tim gudang segera siapkan barang dan cetak Surat Jalan (SJ).\n` +
+    `_Status Sistem: ${statusStr}_ ⏳`
+  );
+}
+
 /**
  * Membuat pesan WhatsApp notifikasi ke nomor pribadi peminjam
  */

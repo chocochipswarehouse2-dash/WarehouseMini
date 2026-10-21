@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { PengecekanSJDraft, ProductItem, UserSession, ProductLocationInfo, StockRealtimeItem } from '../../types';
 import { createPickingSuratJalanSupabase, fetchStockForSkus, isWarehouseLocation, getPickingPriority } from '../../services/supabase';
-import { getWhatsAppWebUrl, getFonnteConfig, sendFonnteMessage } from '../../services/whatsapp';
+import { getWhatsAppWebUrl, getFonnteConfig, sendFonnteMessage, generateRefillPickingGroupMessage } from '../../services/whatsapp';
 import { playSaveSuccessChime, playSuccessBeep } from '../../services/audio';
 import { extractSizeFromSku, cleanProductName, extractCleanSizeToken } from '../../utils/sortUtils';
 
@@ -308,48 +308,40 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
 
   const totalSku = enrichedItems.length;
 
-  // Generate teks WhatsApp otomatis
+  // Generate teks WhatsApp otomatis (format disamakan dengan Picking List SPS)
   const generatedWaText = useMemo(() => {
     if (!draft) return '';
     const dateStr = draft.tanggal_sj || new Date().toISOString().slice(0, 10);
 
-    let text = `📋 *TUGAS PICKING GUDANG (PENGIRIMAN)*\n`;
-    text += `━━━━━━━━━━━━━━━━━━━━━\n`;
-    text += `*No SJ:* ${draft.no_sj}\n`;
-    text += `*Tujuan:* ${draft.destination || 'Toko / Konsumen'}\n`;
-    text += `*Asal:* ${draft.source || 'Warehouse'}\n`;
-    text += `*Tanggal:* ${dateStr}\n`;
-    text += `*Total:* ${totalSku} SKU | ${totalQty} Pcs\n`;
-    text += `━━━━━━━━━━━━━━━━━━━━━\n`;
-    text += `*DAFTAR BARANG YANG HARUS DIAMBIL:*\n\n`;
+    return generateRefillPickingGroupMessage({
+      no_sj: draft.no_sj,
+      destination: draft.destination || 'Toko / Store',
+      source: draft.source || 'Warehouse',
+      tanggal_sj: dateStr,
+      operatorName: session?.name || session?.username || 'Admin Warehouse',
+      items: enrichedItems.map((it) => {
+        let locTag = '';
+        if (it.locList && it.locList.length > 0) {
+          locTag = it.locList.map(l => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ');
+        } else if (it.primaryLokasi && it.primaryLokasi !== '-' && it.primaryLokasi !== 'Warehouse') {
+          locTag = it.primaryLokasi;
+        } else if (it.lokasi && it.lokasi !== '-' && it.lokasi !== 'Belum Ada Rak') {
+          locTag = it.lokasi;
+        } else {
+          locTag = 'Belum Ada Rak';
+        }
 
-    // Grouping per lokasi jika memungkinkan
-    enrichedItems.forEach((it, idx) => {
-      let locTag = '';
-      if (it.locList && it.locList.length > 0) {
-        locTag = `Rak ${it.locList.map(l => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ')}`;
-      } else if (it.primaryLokasi && it.primaryLokasi !== '-' && it.primaryLokasi !== 'Warehouse') {
-        locTag = `Rak ${it.primaryLokasi}`;
-      } else if (it.lokasi && it.lokasi !== '-' && it.lokasi !== 'Belum Ada Rak') {
-        locTag = `Rak ${it.lokasi}`;
-      } else {
-        locTag = 'Belum Ada Rak';
-      }
-
-      const stockNote = it.isKosong ? ' ⚠️ _(Stok sistem: 0 pcs - cek fisik)_' : '';
-      const sizeTag = it.size && it.size !== '-' ? ` (Size: ${it.size})` : '';
-
-      text += `${idx + 1}. 📍 *[${locTag}]*${stockNote}\n`;
-      text += `   • SKU: \`${it.sku}\`\n`;
-      text += `   • Produk: ${it.nama_produk}${sizeTag}\n`;
-      text += `   • Qty Ambil: *${it.qty} pcs* [ ]\n\n`;
+        return {
+          sku: it.sku,
+          nama_produk: it.nama_produk,
+          size: it.size,
+          qty: it.qty,
+          lokasi: locTag,
+          isKosong: it.isKosong,
+        };
+      }),
     });
-
-    text += `━━━━━━━━━━━━━━━━━━━━━\n`;
-    text += `_Mohon picker yang bertugas mengonfirmasi di grup ini jika sudah mulai mengambil barang. Terima kasih!_ 🙏`;
-
-    return text;
-  }, [draft, enrichedItems, totalSku, totalQty]);
+  }, [draft, enrichedItems, session]);
 
   const [customWaText, setCustomWaText] = useState<string>('');
 

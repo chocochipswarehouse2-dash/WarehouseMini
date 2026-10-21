@@ -46,6 +46,8 @@ import {
   Compass,
   Info,
   Navigation,
+  MessageSquare,
+  Copy,
 } from 'lucide-react';
 import { CameraScanner } from './CameraScanner';
 import { FulfillmentRefillModal } from './FulfillmentRefillModal';
@@ -83,6 +85,7 @@ import {
 } from '../services/audio';
 import { sortAlphabeticalAndSize, fuzzySearchMultiple, fuzzySearch, partialSearchMatch, extractSizeFromSku, formatProductNameWithSize , cleanProductName } from '../utils/sortUtils';
 import { formatOperatorWithPersonName, getUserPersonName } from '../utils/userResolver';
+import { generateRefillPickingGroupMessage, sendFonnteMessage, getFonnteConfig, getWhatsAppWebUrl } from '../services/whatsapp';
 
 
 interface PickingTasksViewProps {
@@ -728,6 +731,73 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         hideGlobalLoading();
       }
     });
+  };
+
+  const handleSendPickingWa = async (group: PickingSuratJalanGroup, mode: 'send' | 'copy' = 'send') => {
+    const firstInvoice = group.items.find((it) => it.invoice_picking)?.invoice_picking;
+    const text = generateRefillPickingGroupMessage({
+      no_sj: group.no_sj,
+      destination: group.tujuan || 'Toko / Store',
+      source: 'Warehouse',
+      tanggal_sj: group.tanggal || new Date().toISOString().slice(0, 10),
+      operatorName: currentUser || 'Petugas WMS',
+      invoice_picking: firstInvoice,
+      status: group.status || 'PENDING PICKING',
+      items: group.items.map((it) => {
+        const cleanSku = (it.sku || '').toUpperCase().trim();
+        const locs = getProductLocations(cleanSku, it.lokasi);
+        let locText = it.lokasi || '-';
+        let isKosong = false;
+        if (locs.length > 0) {
+          locText = locs.map((l) => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ');
+        } else if (cleanSku in realtimeSkuStocks) {
+          const empty = getRecordedEmptyLocations(cleanSku);
+          locText = empty.length > 0 ? `KOSONG (Rak: ${empty.join(', ')})` : 'KOSONG (0 pcs)';
+          isKosong = true;
+        }
+        return {
+          sku: it.sku,
+          nama_produk: resolveProductName(it.sku, it.nama_produk),
+          size: it.size || '-',
+          qty: it.qty_req,
+          lokasi: locText,
+          isKosong,
+        };
+      }),
+    });
+
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {}
+
+    if (mode === 'copy') {
+      onNotify(`Teks Picking List WA untuk SJ "${group.no_sj}" berhasil disalin ke clipboard!`, 'success');
+      return;
+    }
+
+    const fonnteCfg = getFonnteConfig();
+    if (!fonnteCfg.token) {
+      onNotify(`Pesan Picking List "${group.no_sj}" disalin ke clipboard! Membuka WhatsApp...`, 'info');
+      window.open(getWhatsAppWebUrl(fonnteCfg.groupTarget || '', text), '_blank');
+      return;
+    }
+
+    if (!fonnteCfg.groupTarget) {
+      onNotify(`Target grup gudang belum diatur di Pengaturan. Teks "${group.no_sj}" telah disalin ke clipboard.`, 'warning');
+      window.open(getWhatsAppWebUrl('', text), '_blank');
+      return;
+    }
+
+    try {
+      const res = await sendFonnteMessage(fonnteCfg.groupTarget, text, fonnteCfg.token);
+      if (res.success) {
+        onNotify(`✅ Picking List WA (${group.no_sj}) berhasil dikirim ke Grup Gudang via Fonnte!`, 'success');
+      } else {
+        onNotify(`Gagal kirim via Fonnte: ${res.message}. (Pesan telah disalin ke clipboard)`, 'warning');
+      }
+    } catch (err: any) {
+      onNotify(`Gagal kirim WA: ${err?.message || 'Error'}. (Pesan telah disalin ke clipboard)`, 'error');
+    }
   };
 
   const handlePrintSPS = (group: PickingSuratJalanGroup) => {
@@ -3103,6 +3173,21 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                   <div className="flex items-center gap-2">
                     {!isDone && (
                       <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                        <button
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleSendPickingWa(group, 'send'); }}
+                          className="px-2 py-1.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500 hover:text-white rounded-lg transition-all flex items-center gap-1 text-[10px] font-extrabold uppercase cursor-pointer"
+                          title="Kirim Picking List ke Grup WA Gudang (Format SPS)"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">WA Picking</span>
+                        </button>
+                        <button
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleSendPickingWa(group, 'copy'); }}
+                          className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-white dark:hover:bg-slate-700 rounded-lg transition-all cursor-pointer"
+                          title="Salin Teks Picking List WhatsApp"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
                         <button
                           onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleOpenEditSJModal(group); }}
                           className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-white dark:hover:bg-slate-700 rounded-lg transition-all"
