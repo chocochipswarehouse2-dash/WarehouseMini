@@ -46,8 +46,9 @@ function doGet(e) {
       });
     }
 
-    // Ambil seluruh data dari baris 3 s/d kolom AP (42 kolom)
-    const data = sheet.getRange(3, 1, lastRow - 2, 42).getValues();
+    // Ambil seluruh data dari baris 3 s/d kolom AR (minimal 44 kolom: A-AL sumber, AM-AP sistem, AQ=Resi, AR=Ekspedisi)
+    const maxCols = Math.max(44, sheet.getLastColumn());
+    const data = sheet.getRange(3, 1, lastRow - 2, maxCols).getValues();
     const orderMap = {};
     const orderList = [];
 
@@ -70,13 +71,21 @@ function doGet(e) {
       const total = Number(r[12]) || 0;
       const rawStatus = String(r[13] || "").trim();
       const keterangan = String(r[14] || "").trim();
-      const resi = String(r[15] || "").trim();
+      const resiSumber = String(r[15] || "").trim();
       
-      // Order ID di Kolom AM (indeks 38)
+      // Order ID di Kolom AM (indeks 38 / kolom 39)
       let orderId = String(r[38] || "").trim();
       if (!orderId) {
         orderId = "ORD-ROW-" + rowIndex;
       }
+
+      // Kolom AQ (indeks 42 / kolom 43) = Resi dari Frontend WMS
+      // Kolom AR (indeks 43 / kolom 44) = Ekspedisi dari Frontend WMS
+      const resiAQ = String(r[42] || "").trim();
+      const ekspedisiAR = String(r[43] || "").trim();
+
+      // Prioritas Resi: Ambil dari Kolom AQ (Frontend WMS), fallback ke Kolom P (Sumber) jika AQ kosong
+      const resi = (resiAQ && resiAQ !== "-") ? resiAQ : resiSumber;
 
       // Normalisasi Tanggal ke Format YYYY-MM-DD HH:mm:ss
       let tanggalStr = "";
@@ -101,53 +110,41 @@ function doGet(e) {
         statusWms = "menunggu_pembayaran";
       }
 
-      // Deteksi Ekspedisi: Default adalah JNE REG, dapat diubah jadi JNE YES, Instan, Sameday
+      // Deteksi Ekspedisi: Prioritas Utama dari Kolom AR (Frontend WMS), fallback ke Keterangan (Kolom O), Default JNE REG
       let ekspedisi = "JNE";
       let layanan = "REG";
 
-      const kurirMatch = keterangan.match(/\[Kurir:\s*([^\]]+)\]/i);
-      if (kurirMatch) {
-        const fullKurir = kurirMatch[1].trim();
-        const fkUpper = fullKurir.toUpperCase();
+      const parseKurirString = function(rawKurirStr) {
+        const fkUpper = String(rawKurirStr || "").toUpperCase().trim();
+        if (!fkUpper || fkUpper === "-") return null;
         if (fkUpper.includes("YES") || fkUpper.includes("JNE YES")) {
-          ekspedisi = "JNE";
-          layanan = "YES";
+          return { ekspedisi: "JNE", layanan: "YES" };
         } else if (fkUpper.includes("INSTAN") || fkUpper.includes("INSTANT") || fkUpper.includes("GOSEND") || fkUpper.includes("GRAB")) {
-          ekspedisi = "Instan";
-          layanan = "Instant";
+          return { ekspedisi: "Instan", layanan: "Instant" };
         } else if (fkUpper.includes("SAMEDAY") || fkUpper.includes("SAME DAY")) {
-          ekspedisi = "Sameday";
-          layanan = "Sameday";
-        } else if (fkUpper.includes("J&T")) {
-          ekspedisi = "J&T Express";
-          layanan = "Reguler";
+          return { ekspedisi: "Sameday", layanan: "Sameday" };
+        } else if (fkUpper.includes("J&T") || fkUpper === "JT") {
+          return { ekspedisi: "J&T Express", layanan: "Reguler" };
         } else if (fkUpper.includes("SICEPAT")) {
-          ekspedisi = "SiCepat";
-          layanan = "Reguler";
-        } else {
-          ekspedisi = "JNE";
-          layanan = "REG";
+          return { ekspedisi: "SiCepat", layanan: "Reguler" };
+        } else if (fkUpper.includes("SPX")) {
+          return { ekspedisi: "SPX Express", layanan: "Reguler" };
+        } else if (fkUpper.includes("JNE")) {
+          return { ekspedisi: "JNE", layanan: "REG" };
         }
+        return null;
+      };
+
+      const parsedFromAR = parseKurirString(ekspedisiAR);
+      if (parsedFromAR) {
+        ekspedisi = parsedFromAR.ekspedisi;
+        layanan = parsedFromAR.layanan;
       } else {
-        const ketUpper = keterangan.toUpperCase();
-        if (ketUpper.includes("YES") || ketUpper.includes("JNE YES")) {
-          ekspedisi = "JNE";
-          layanan = "YES";
-        } else if (ketUpper.includes("INSTAN") || ketUpper.includes("INSTANT") || ketUpper.includes("GOSEND") || ketUpper.includes("GRAB")) {
-          ekspedisi = "Instan";
-          layanan = "Instant";
-        } else if (ketUpper.includes("SAMEDAY") || ketUpper.includes("SAME DAY")) {
-          ekspedisi = "Sameday";
-          layanan = "Sameday";
-        } else if (ketUpper.includes("SICEPAT")) {
-          ekspedisi = "SiCepat";
-          layanan = "Reguler";
-        } else if (ketUpper.includes("J&T")) {
-          ekspedisi = "J&T Express";
-          layanan = "Reguler";
-        } else {
-          ekspedisi = "JNE";
-          layanan = "REG";
+        const kurirMatch = keterangan.match(/\[Kurir:\s*([^\]]+)\]/i);
+        const parsedFromKet = parseKurirString(kurirMatch ? kurirMatch[1] : keterangan);
+        if (parsedFromKet) {
+          ekspedisi = parsedFromKet.ekspedisi;
+          layanan = parsedFromKet.layanan;
         }
       }
 
@@ -177,6 +174,8 @@ function doGet(e) {
           ekspedisi: ekspedisi,
           layanan: layanan,
           no_resi: resi || "-",
+          resi_aq: resiAQ || "",
+          ekspedisi_ar: ekspedisiAR || "",
           biaya_ongkir: ongkir,
           total_bayar: total || (price + ongkir),
           status: statusWms,
@@ -191,6 +190,19 @@ function doGet(e) {
         orderMap[orderId].row_indexes.push(rowIndex);
         if (!orderMap[orderId].total_bayar) {
           orderMap[orderId].total_bayar += price;
+        }
+        // Jika baris lanjutan memiliki resi di AQ atau ekspedisi di AR, pastikan terambil
+        if ((orderMap[orderId].no_resi === "-" || !orderMap[orderId].no_resi) && resi && resi !== "-") {
+          orderMap[orderId].no_resi = resi;
+          orderMap[orderId].resi_aq = resiAQ || resi;
+          if (orderMap[orderId].status === "siap_diproses" || orderMap[orderId].status === "diproses") {
+            orderMap[orderId].status = "dikirim";
+          }
+        }
+        if (!orderMap[orderId].ekspedisi_ar && ekspedisiAR) {
+          orderMap[orderId].ekspedisi_ar = ekspedisiAR;
+          orderMap[orderId].ekspedisi = ekspedisi;
+          orderMap[orderId].layanan = layanan;
         }
       }
     }
@@ -211,7 +223,7 @@ function doGet(e) {
 }
 
 // ==========================================
-// 2. API POST: UPDATE DARI WMS BALIK KE GSHEET
+// 2. API POST: UPDATE DARI WMS BALIK KE GSHEET (KOLOM AQ & AR)
 // ==========================================
 function doPost(e) {
   try {
@@ -238,9 +250,30 @@ function doPost(e) {
       return jsonResponse({ success: false, message: "Sheet kosong" });
     }
 
+    // Pastikan Header Kolom AQ (43) dan AR (44) tersedia
+    if (!String(sheet.getRange("AQ2").getValue() || "").trim()) {
+      sheet.getRange("AQ2").setValue("Resi");
+    }
+    if (!String(sheet.getRange("AR2").getValue() || "").trim()) {
+      sheet.getRange("AR2").setValue("Ekspedisi");
+    }
+
     const now = new Date();
     const timestampNow = Utilities.formatDate(now, "Asia/Jakarta", "yyyy-MM-dd HH:mm");
     let activeUser = "WMS Vercel App";
+
+    // Helper format label ekspedisi untuk Kolom AR
+    const formatEkspedisiAR = function(expRaw, layRaw) {
+      const exp = String(expRaw || "").trim();
+      const lay = String(layRaw || "").trim();
+      if (!exp) return "";
+      const expUp = exp.toUpperCase();
+      if (expUp === "INSTAN" || expUp === "INSTANT") return "Instan";
+      if (expUp === "SAMEDAY" || expUp === "SAME DAY") return "Sameday";
+      if (expUp === "JNE") return "JNE " + (lay.toUpperCase() === "YES" ? "YES" : "REG");
+      if (lay && !expUp.includes(lay.toUpperCase())) return exp + " " + lay;
+      return exp;
+    };
 
     // AKSI 1: TRIGGER SINKRONISASI
     if (action === "sync") {
@@ -248,11 +281,11 @@ function doPost(e) {
       return jsonResponse({ success: true, message: "Sinkronisasi berhasil dijalankan." });
     }
 
-    // AKSI 2: UPDATE NOMOR RESI DARI GUDANG
+    // AKSI 2: UPDATE NOMOR RESI DARI FRONTEND -> TULIS KE KOLOM AQ (43) & EKSPEDISI KE KOLOM AR (44)
+    // (Kolom A - AL tidak disentuh agar tidak bentrok dengan trigger sinkronisasi sumber)
     if (action === "updateResi") {
       const targetOrderId = String(payload.order_id || payload.no_pesanan || "").trim();
       const newResi = String(payload.no_resi || payload.resi || "").trim();
-      const newStatus = payload.status || "Dikirim";
 
       if (!targetOrderId || !newResi) {
         return jsonResponse({ success: false, message: "order_id dan no_resi wajib diisi." });
@@ -265,20 +298,18 @@ function doPost(e) {
       for (let i = 0; i < orderIds.length; i++) {
         if (String(orderIds[i][0]).trim() === targetOrderId) {
           const rowNum = i + 3;
-          sheet.getRange(rowNum, 16).setValue(newResi);  // Kolom P = Resi
-          if (newResi && newResi !== "-") {
-            sheet.getRange(rowNum, 14).setValue(newStatus); // Kolom N = Status
-          }
+          // Tulis Resi ke Kolom AQ (Kolom 43)
+          sheet.getRange(rowNum, 43).setValue(newResi);
+
+          // Jika ekspedisi dikirim bersamaan, tulis juga ke Kolom AR (Kolom 44)
           if (payload.ekspedisi) {
-            const exp = String(payload.ekspedisi).trim();
-            const lay = String(payload.layanan || "REG").trim();
-            let curKet = String(sheet.getRange(rowNum, 15).getValue() || "");
-            curKet = curKet.replace(/\[Kurir:[^\]]+\]\s*/gi, "").trim();
-            const kurirTag = "[Kurir: " + exp + " " + lay + "]";
-            const updatedKet = curKet ? (kurirTag + " " + curKet) : kurirTag;
-            sheet.getRange(rowNum, 15).setValue(updatedKet);
+            const kurirAR = formatEkspedisiAR(payload.ekspedisi, payload.layanan);
+            if (kurirAR) {
+              sheet.getRange(rowNum, 44).setValue(kurirAR);
+            }
           }
-          sheet.getRange(rowNum, 41).setValue("[" + timestampNow + "] Resi diupdate via WMS: " + newResi); // AO
+
+          sheet.getRange(rowNum, 41).setValue("[" + timestampNow + "] Resi diupdate via WMS (AQ): " + newResi); // AO
           sheet.getRange(rowNum, 42).setValue(activeUser); // AP
           matchedCount++;
         }
@@ -287,11 +318,12 @@ function doPost(e) {
       return jsonResponse({
         success: matchedCount > 0,
         matched_rows: matchedCount,
-        message: matchedCount > 0 ? "Resi berhasil diupdate ke " + matchedCount + " baris gsheet." : "Order ID tidak ditemukan."
+        target_columns: { resi: "AQ", ekspedisi: "AR" },
+        message: matchedCount > 0 ? "Resi berhasil ditulis ke Kolom AQ (" + matchedCount + " baris)." : "Order ID tidak ditemukan."
       });
     }
 
-    // AKSI 3: UPDATE STATUS (Diproses / Batal / Selesai)
+    // AKSI 3: UPDATE STATUS (Catat di Log Kolom AO & AP tanpa menimpa Kolom A-AL)
     if (action === "updateStatus") {
       const targetOrderId = String(payload.order_id || payload.no_pesanan || "").trim();
       const newStatus = String(payload.status || "").trim();
@@ -302,7 +334,6 @@ function doPost(e) {
       for (let i = 0; i < orderIds.length; i++) {
         if (String(orderIds[i][0]).trim() === targetOrderId) {
           const rowNum = i + 3;
-          sheet.getRange(rowNum, 14).setValue(newStatus); // Kolom N
           sheet.getRange(rowNum, 41).setValue("[" + timestampNow + "] Status diubah via WMS menjadi: " + newStatus);
           sheet.getRange(rowNum, 42).setValue(activeUser);
           matchedCount++;
@@ -311,11 +342,12 @@ function doPost(e) {
 
       return jsonResponse({
         success: matchedCount > 0,
-        message: "Status berhasil diupdate ke gsheet."
+        message: "Status berhasil dicatat ke gsheet."
       });
     }
 
-    // AKSI 4: UPDATE EKSPEDISI / KURIR (JNE REG, JNE YES, Instan, Sameday)
+    // AKSI 4: UPDATE EKSPEDISI / KURIR DARI FRONTEND -> TULIS KE KOLOM AR (44)
+    // (Kolom A - AL tidak disentuh agar tidak bentrok dengan trigger sinkronisasi sumber)
     if (action === "updateCourier" || action === "updateEkspedisi") {
       const targetOrderId = String(payload.order_id || payload.no_pesanan || "").trim();
       const newEkspedisi = String(payload.ekspedisi || "JNE").trim();
@@ -325,19 +357,47 @@ function doPost(e) {
         return jsonResponse({ success: false, message: "order_id wajib diisi." });
       }
 
+      const kurirAR = formatEkspedisiAR(newEkspedisi, newLayanan);
       const orderIds = sheet.getRange(3, 39, lastRow - 2, 1).getValues();
       let matchedCount = 0;
 
       for (let i = 0; i < orderIds.length; i++) {
         if (String(orderIds[i][0]).trim() === targetOrderId) {
           const rowNum = i + 3;
-          let curKet = String(sheet.getRange(rowNum, 15).getValue() || "");
-          curKet = curKet.replace(/\[Kurir:[^\]]+\]\s*/gi, "").trim();
-          const kurirTag = "[Kurir: " + newEkspedisi + " " + newLayanan + "]";
-          const updatedKet = curKet ? (kurirTag + " " + curKet) : kurirTag;
-          
-          sheet.getRange(rowNum, 15).setValue(updatedKet); // Kolom O = Keterangan
-          sheet.getRange(rowNum, 41).setValue("[" + timestampNow + "] Ekspedisi diubah ke: " + newEkspedisi + " " + newLayanan);
+          // Tulis pilihan ekspedisi ke Kolom AR (Kolom 44)
+          sheet.getRange(rowNum, 44).setValue(kurirAR);
+          sheet.getRange(rowNum, 41).setValue("[" + timestampNow + "] Ekspedisi diubah via WMS (AR): " + kurirAR); // AO
+          sheet.getRange(rowNum, 42).setValue(activeUser); // AP
+          matchedCount++;
+        }
+      }
+
+      return jsonResponse({
+        success: matchedCount > 0,
+        matched_rows: matchedCount,
+        target_column: "AR",
+        message: matchedCount > 0 ? "Ekspedisi berhasil ditulis ke Kolom AR (" + matchedCount + " baris)." : "Order ID tidak ditemukan."
+      });
+    }
+
+    // AKSI 5: EDIT PESANAN DARI FRONTEND -> RESI KE KOLOM AQ (43), EKSPEDISI KE KOLOM AR (44)
+    if (action === "editOrder") {
+      const targetOrderId = String(payload.order_id || payload.no_pesanan || "").trim();
+      const orderIds = sheet.getRange(3, 39, lastRow - 2, 1).getValues();
+      let matchedCount = 0;
+
+      for (let i = 0; i < orderIds.length; i++) {
+        if (String(orderIds[i][0]).trim() === targetOrderId) {
+          const rowNum = i + 3;
+          if (payload.no_resi !== undefined) {
+            sheet.getRange(rowNum, 43).setValue(String(payload.no_resi || "").trim()); // Kolom AQ = Resi
+          }
+          if (payload.ekspedisi) {
+            const kurirAR = formatEkspedisiAR(payload.ekspedisi, payload.layanan);
+            sheet.getRange(rowNum, 44).setValue(kurirAR); // Kolom AR = Ekspedisi
+          }
+
+          sheet.getRange(rowNum, 41).setValue("[" + timestampNow + "] Data Resi/Ekspedisi (AQ/AR) diedit via WMS");
           sheet.getRange(rowNum, 42).setValue(activeUser);
           matchedCount++;
         }
@@ -346,41 +406,8 @@ function doPost(e) {
       return jsonResponse({
         success: matchedCount > 0,
         matched_rows: matchedCount,
-        message: matchedCount > 0 ? "Ekspedisi berhasil diupdate ke " + matchedCount + " baris gsheet." : "Order ID tidak ditemukan."
+        message: "Pesanan berhasil diupdate di Kolom AQ & AR."
       });
-    }
-
-    // AKSI 5: EDIT PESANAN (Nama, HP, Alamat, Catatan, Ekspedisi, Resi)
-    if (action === "editOrder") {
-      const targetOrderId = String(payload.order_id || payload.no_pesanan || "").trim();
-      const orderIds = sheet.getRange(3, 39, lastRow - 2, 1).getValues();
-
-      for (let i = 0; i < orderIds.length; i++) {
-        if (String(orderIds[i][0]).trim() === targetOrderId) {
-          const rowNum = i + 3;
-          if (payload.nama_pembeli) sheet.getRange(rowNum, 2).setValue(payload.nama_pembeli);
-          if (payload.no_telp) sheet.getRange(rowNum, 3).setValue(payload.no_telp);
-          if (payload.alamat_lengkap) sheet.getRange(rowNum, 4).setValue(payload.alamat_lengkap);
-          if (payload.no_resi) sheet.getRange(rowNum, 16).setValue(payload.no_resi);
-          
-          if (payload.ekspedisi) {
-            const exp = String(payload.ekspedisi).trim();
-            const lay = String(payload.layanan || "REG").trim();
-            let baseKet = payload.catatan ? String(payload.catatan) : String(sheet.getRange(rowNum, 15).getValue() || "");
-            baseKet = baseKet.replace(/\[Kurir:[^\]]+\]\s*/gi, "").trim();
-            const kurirTag = "[Kurir: " + exp + " " + lay + "]";
-            const updatedKet = baseKet ? (kurirTag + " " + baseKet) : kurirTag;
-            sheet.getRange(rowNum, 15).setValue(updatedKet);
-          } else if (payload.catatan) {
-            sheet.getRange(rowNum, 15).setValue(payload.catatan);
-          }
-
-          sheet.getRange(rowNum, 41).setValue("[" + timestampNow + "] Data diedit via WMS");
-          sheet.getRange(rowNum, 42).setValue(activeUser);
-        }
-      }
-
-      return jsonResponse({ success: true, message: "Pesanan berhasil diedit di gsheet." });
     }
 
     return jsonResponse({ success: false, message: "Aksi tidak dikenal: " + action });
@@ -397,18 +424,20 @@ function jsonResponse(data) {
 }
 
 // ==========================================
-// 3. FUNGSI LOGIKA ASLI ANDA (DIPERTAHANKAN)
+// 3. FUNGSI SINKRONISASI SUMBER (KOLOM A-AL DARI SUMBER, AM-AR DIPERTAHANKAN)
 // ==========================================
 function sinkronisasiPesananLiveDenganLog() {
   const targetSS = SpreadsheetApp.getActiveSpreadsheet();
   const targetSheet = targetSS.getSheetByName(TARGET_SHEET_NAME);
   if (!targetSheet) return;
 
-  // 1. Header Kolom Sistem
+  // 1. Header Kolom Sistem & Frontend WMS (AM s/d AR)
   targetSheet.getRange("AM2").setValue("Order ID");
   targetSheet.getRange("AN2").setValue("Tanggal Input");
   targetSheet.getRange("AO2").setValue("Log Perubahan Terakhir");
   targetSheet.getRange("AP2").setValue("Diubah Oleh");
+  targetSheet.getRange("AQ2").setValue("Resi");
+  targetSheet.getRange("AR2").setValue("Ekspedisi");
 
   // 2. Buka spreadsheet sumber
   let sourceSS;
@@ -427,11 +456,12 @@ function sinkronisasiPesananLiveDenganLog() {
   // 3. Ambil data sumber (Kolom A s/d AL = 38 kolom)
   const sourceData = sourceSheet.getRange(3, 1, sourceLastRow - 2, 38).getValues();
 
-  // 4. Ambil data lama di sheet tujuan (Kolom A s/d AP = 42 kolom)
+  // 4. Ambil data lama di sheet tujuan (Kolom A s/d AR = 44 kolom)
   const targetLastRow = targetSheet.getLastRow();
   let targetData = [];
   if (targetLastRow >= 3) {
-    targetData = targetSheet.getRange(3, 1, targetLastRow - 2, 42).getValues();
+    const readCols = Math.max(44, targetSheet.getLastColumn());
+    targetData = targetSheet.getRange(3, 1, targetLastRow - 2, readCols).getValues();
   }
 
   const now = new Date();
@@ -448,17 +478,31 @@ function sinkronisasiPesananLiveDenganLog() {
     "Status", "Keterangan", "Resi"
   ];
 
-  // 5. PETA ORDER ID LAMA (Agar tidak pernah berubah lagi)
+  // 5. PETA ORDER ID LAMA & DATA FRONTEND (KOLOM AQ & AR AGAR TIDAK PERNAH TERHAPUS)
   let orderMap = {};
+  let frontendDataByOrderId = {};
   let maxOrderNum = 0;
 
   for (let i = 0; i < targetData.length; i++) {
     const tRow = targetData[i];
     const existingOrderId = String(tRow[38] || "").trim(); // Kolom AM
+    const existingResiAQ = String(tRow[42] || "").trim();  // Kolom AQ
+    const existingEkspAR = String(tRow[43] || "").trim();  // Kolom AR
+
     if (existingOrderId) {
       const key = normalisasiKunci(tRow[0], tRow[1], tRow[2]);
       if (key && !orderMap[key]) {
         orderMap[key] = existingOrderId;
+      }
+
+      if (!frontendDataByOrderId[existingOrderId]) {
+        frontendDataByOrderId[existingOrderId] = { resiAQ: "", ekspAR: "" };
+      }
+      if (existingResiAQ && existingResiAQ !== "-") {
+        frontendDataByOrderId[existingOrderId].resiAQ = existingResiAQ;
+      }
+      if (existingEkspAR && existingEkspAR !== "-") {
+        frontendDataByOrderId[existingOrderId].ekspAR = existingEkspAR;
       }
       
       const match = existingOrderId.match(/(\d+)$/);
@@ -538,22 +582,31 @@ function sinkronisasiPesananLiveDenganLog() {
       }
     }
 
+    // Kolom A s/d AL (38 kolom) murni dari sheet sumber
     let rowLengkap = sRow.slice(0, 38);
+
+    // Ambil nilai Kolom AQ (Resi Frontend) & Kolom AR (Ekspedisi Frontend) yang sudah tersimpan
+    const savedFrontend = frontendDataByOrderId[orderId] || { resiAQ: "", ekspAR: "" };
+    const rowResiAQ = (tRow && String(tRow[42] || "").trim()) || savedFrontend.resiAQ || "";
+    const rowEkspAR = (tRow && String(tRow[43] || "").trim()) || savedFrontend.ekspAR || "";
+
     rowLengkap.push(orderId);       // Kolom AM (39)
     rowLengkap.push(tanggalInput);  // Kolom AN (40)
     rowLengkap.push(lastLog);       // Kolom AO (41)
     rowLengkap.push(lastEditor);    // Kolom AP (42)
+    rowLengkap.push(rowResiAQ);     // Kolom AQ (43) = Resi dari Frontend WMS
+    rowLengkap.push(rowEkspAR);     // Kolom AR (44) = Ekspedisi dari Frontend WMS
 
     finalRows.push(rowLengkap);
   }
 
   if (finalRows.length === 0) return;
 
-  // 6. Tulis data & format tabel
-  targetSheet.getRange(3, 1, finalRows.length, 42).setValues(finalRows);
+  // 6. Tulis data (44 kolom: A s/d AR) & format tabel
+  targetSheet.getRange(3, 1, finalRows.length, 44).setValues(finalRows);
   rapikanFormatTabel(targetSheet, finalRows.length);
 
-  Logger.log("Selesai. Order ID terkunci rapi.");
+  Logger.log("Selesai. Order ID (AM) serta Resi (AQ) & Ekspedisi (AR) terkunci rapi.");
 }
 
 function normalisasiKunci(tanggal, nama, noHp) {
@@ -608,7 +661,7 @@ function formatCekNilai(val, isPhone) {
 
 function rapikanFormatTabel(sheet, numRows) {
   if (numRows < 1) return;
-  const dataRange = sheet.getRange(3, 1, numRows, 42);
+  const dataRange = sheet.getRange(3, 1, numRows, 44);
 
   dataRange.setBorder(true, true, true, true, true, true, "#D0D7DE", SpreadsheetApp.BorderStyle.SOLID);
   sheet.getRange(3, 9, numRows, 1).setNumberFormat("#,##0");
@@ -622,11 +675,11 @@ function rapikanFormatTabel(sheet, numRows) {
   sheet.getRange(3, 16, numRows, 1).setHorizontalAlignment("center");
 
   sheet.getRange(3, 39, numRows, 2).setHorizontalAlignment("center");
-  sheet.getRange(3, 42, numRows, 1).setHorizontalAlignment("center");
+  sheet.getRange(3, 42, numRows, 3).setHorizontalAlignment("center");
   sheet.getRange(3, 4, numRows, 1).setWrap(true);
   sheet.getRange(3, 41, numRows, 1).setWrap(true);
 
-  sheet.getRange("AM2:AP2")
+  sheet.getRange("AM2:AR2")
     .setBackground("#37474F")
     .setFontColor("#FFFFFF")
     .setFontWeight("bold")

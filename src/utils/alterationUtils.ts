@@ -90,14 +90,21 @@ export function isRealAlterItem(it: any): boolean {
   return hasFormId || hasDetail;
 }
 
+export function isStandaloneArOrder(order: any): boolean {
+  if (!order) return false;
+  const noPesanan = String(order.no_pesanan || '').trim().toUpperCase();
+  // Pesanan Manual Shipment (MS...) tidak pernah merupakan AR Standalone
+  if (noPesanan.startsWith('MS')) return false;
+  if (noPesanan.startsWith('AR-') || noPesanan.startsWith('REP-') || noPesanan.startsWith('ALT-')) {
+    return true;
+  }
+  return order.order_type === 'alteration_repair' && hasValidArData(order.alteration_repair_data);
+}
+
 export function hasRealAlterItems(order: any): boolean {
   if (!order) return false;
-  const noPesanan = (order.no_pesanan || '').toUpperCase();
-  const isArPrefix = noPesanan.startsWith('AR-') || noPesanan.startsWith('REP-') || noPesanan.startsWith('ALT-');
-  const validArData = hasValidArData(order.alteration_repair_data);
-
-  if (isArPrefix || validArData) return true;
-  if (order.order_type === 'alteration_repair' && (isArPrefix || validArData)) return true;
+  if (isStandaloneArOrder(order)) return true;
+  if (hasValidArData(order.alteration_repair_data)) return true;
 
   return Array.isArray(order.items) && order.items.some(isRealAlterItem);
 }

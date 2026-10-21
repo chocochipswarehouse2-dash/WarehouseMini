@@ -841,10 +841,11 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
         } catch {}
       }
 
-      // Deteksi order_type
+      // Deteksi order_type (Pesanan MS... adalah manual_shipment meskipun memiliki metadata kirim WH / alter)
       const noPesanan = (item.no_pesanan || '').toUpperCase();
+      const isMsPrefix = noPesanan.startsWith('MS');
       const isArPrefix = noPesanan.startsWith('AR-') || noPesanan.startsWith('REP-') || noPesanan.startsWith('ALT-');
-      const isAlterationRepair = isArPrefix || hasValidArData(alteration_repair_data);
+      const isAlterationRepair = !isMsPrefix && (isArPrefix || hasValidArData(alteration_repair_data));
       const order_type = isAlterationRepair ? 'alteration_repair' : 'manual_shipment';
 
       // Parse & normalize items array (bisa berupa Array, string JSON, atau flat properties)

@@ -21,7 +21,7 @@ import { SopPresentationModal } from './SopPresentationModal';
 import { StoreHelpModal } from './StoreHelpModal';
 import { SuperadminKnowledgeHubModal } from './SuperadminKnowledgeHubModal';
 import { fetchStoreHelpTickets } from '../../services/storeHelpService';
-import { isRealAlterItem, hasRealAlterItems, getRealAlterItems, orderNeedsResi, isKirimKeStoreOrder, isExternalCourier } from '../../utils/alterationUtils';
+import { isRealAlterItem, hasRealAlterItems, getRealAlterItems, hasValidArData, isStandaloneArOrder, orderNeedsResi, isKirimKeStoreOrder, isExternalCourier } from '../../utils/alterationUtils';
 import {
   fetchOutlets,
   fetchManualShipments,
@@ -4456,8 +4456,8 @@ _WMS Warehouse System_`;
     // Filter Jenis Pesanan (Manual Shipment vs Alteration & Repair vs Manual With Alter)
     if (filterOrderType !== 'all') {
       result = result.filter(o => {
-        const isAr = o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data;
-        const hasAlterItem = (o.items || []).some(isRealAlterItem);
+        const isAr = isStandaloneArOrder(o);
+        const hasAlterItem = (o.items || []).some(isRealAlterItem) || hasValidArData(o.alteration_repair_data);
         if (filterOrderType === 'alteration_repair') return isAr;
         if (filterOrderType === 'manual_with_alter') return !isAr && hasAlterItem;
         if (filterOrderType === 'manual_shipment') return !isAr && !hasAlterItem;
@@ -4468,8 +4468,8 @@ _WMS Warehouse System_`;
     // Filter Status Alteration Dropdown
     if (filterAlterStatus !== 'all') {
       result = result.filter(o => {
-        const isAr = o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data;
-        const hasAlterItem = (o.items || []).some(isRealAlterItem);
+        const isAr = isStandaloneArOrder(o);
+        const hasAlterItem = (o.items || []).some(isRealAlterItem) || hasValidArData(o.alteration_repair_data);
         if (filterAlterStatus === 'manual_with_alter') return !isAr && hasAlterItem;
         if (filterAlterStatus === 'all_alter') return isAr || hasAlterItem;
         if (filterAlterStatus === 'no_alter') return !isAr && !hasAlterItem;
@@ -4774,14 +4774,15 @@ _WMS Warehouse System_`;
   };
 
   const renderRekap = () => {
-    const totalArCount = scopedOrders.filter(o => o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data).length;
+    const totalArCount = scopedOrders.filter(o => isStandaloneArOrder(o)).length;
     const totalManualWithAlterCount = scopedOrders.filter(o => {
-      const isAr = o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data;
-      return !isAr && (o.items || []).some(isRealAlterItem);
+      const isAr = isStandaloneArOrder(o);
+      const hasAlter = (o.items || []).some(isRealAlterItem) || hasValidArData(o.alteration_repair_data);
+      return !isAr && hasAlter;
     }).length;
     const totalManualPureCount = scopedOrders.filter(o => {
-      const isAr = o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data;
-      const hasAlter = (o.items || []).some(isRealAlterItem);
+      const isAr = isStandaloneArOrder(o);
+      const hasAlter = (o.items || []).some(isRealAlterItem) || hasValidArData(o.alteration_repair_data);
       return !isAr && !hasAlter;
     }).length;
     const unassignedResiCount = scopedOrders.filter(o => o.status !== 'batal' && orderNeedsResi(o) && !(o.no_resi || '').trim()).length;
@@ -4789,8 +4790,8 @@ _WMS Warehouse System_`;
     const selectedAlterOrders = scopedOrders.filter(o => {
       const k = getOrderKey(o);
       if (!selectedOrders.has(k)) return false;
-      const isAr = o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data;
-      return isAr || (o.items || []).some(isRealAlterItem);
+      const isAr = isStandaloneArOrder(o);
+      return isAr || (o.items || []).some(isRealAlterItem) || hasValidArData(o.alteration_repair_data);
     });
 
     return (
@@ -5864,11 +5865,11 @@ _WMS Warehouse System_`;
                                     </span>
                                   </div>
                                   {/* Detail Instruksi Alter jika ada */}
-                                  {(isRealAlterItem(it) || it.alteration_detail || it.repair_detail || order.alteration_repair_data) && (
+                                  {(isRealAlterItem(it) || it.alteration_detail || it.repair_detail || hasValidArData(order.alteration_repair_data)) && (
                                     <div className="mt-0.5 text-[9.5px] font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/60 p-1 rounded border border-rose-200 dark:border-rose-800 flex items-start gap-1">
                                       <Scissors className="w-2.5 h-2.5 text-rose-600 shrink-0 mt-0.5" />
                                       <span className="leading-tight">
-                                        {it.alteration_detail || it.repair_detail || order.alteration_repair_data?.alteration_detail || 'Perlu Alterasi'}
+                                        {it.alteration_detail || it.repair_detail || order.alteration_repair_data?.alteration_detail || order.alteration_repair_data?.repair_detail || 'Perlu Alterasi'}
                                       </span>
                                     </div>
                                   )}
@@ -6465,12 +6466,12 @@ _WMS Warehouse System_`;
                                   </div>
                                   
                                   {/* Detail Instruksi Alterasi jika ada */}
-                                  {(isRealAlterItem(it) || it.alteration_detail || it.repair_detail || order.alteration_repair_data) && (
+                                  {(isRealAlterItem(it) || it.alteration_detail || it.repair_detail || hasValidArData(order.alteration_repair_data)) && (
                                     <div className="mt-1 text-[9.5px] font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/70 p-1.5 rounded-lg border border-rose-200 dark:border-rose-800 space-y-0.5">
                                       <div className="flex items-start gap-1">
                                         <Scissors className="w-3 h-3 text-rose-600 shrink-0 mt-0.5" />
                                         <span className="leading-tight">
-                                          Instruksi {it.layanan_type === 'repair' ? 'Repair' : 'Alter'}: {it.alteration_detail || it.repair_detail || order.alteration_repair_data?.alteration_detail || 'Perlu Alterasi'}
+                                          Instruksi {it.layanan_type === 'repair' ? 'Repair' : 'Alter'}: {it.alteration_detail || it.repair_detail || order.alteration_repair_data?.alteration_detail || order.alteration_repair_data?.repair_detail || 'Perlu Alterasi'}
                                         </span>
                                       </div>
                                       {order.alteration_repair_data?.id_form_alter && (

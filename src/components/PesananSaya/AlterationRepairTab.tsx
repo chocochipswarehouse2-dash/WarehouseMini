@@ -79,6 +79,7 @@ import { StoreHelpModal } from './StoreHelpModal';
 import { compressImage } from '../../utils/imageCompressor';
 import { uploadImageToGdrive } from '../../services/gdriveUpload';
 import { partialSearchMatch } from '../../utils/sortUtils';
+import { isStandaloneArOrder } from '../../utils/alterationUtils';
 import { searchActiveProductsLive } from '../../services/supabase';
 
 interface AlterationRepairTabProps {
@@ -446,10 +447,7 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
 
   // Filter only Alteration & Repair orders count for Rekap indicator
   const alterationOrdersCount = useMemo(() => {
-    return allOrders.filter((o) => {
-      const no = (o.no_pesanan || '').toUpperCase();
-      return o.order_type === 'alteration_repair' || no.startsWith('AR-') || no.startsWith('REP-') || no.startsWith('ALT-') || !!o.alteration_repair_data;
-    }).length;
+    return allOrders.filter((o) => isStandaloneArOrder(o)).length;
   }, [allOrders]);
 
   // Helper generate Registration No

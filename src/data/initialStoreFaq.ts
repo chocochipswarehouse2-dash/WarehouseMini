@@ -179,7 +179,7 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
       { label: 'Tab Distribusi Store', color: 'blue', icon: 'Layers' },
       { label: 'Verifikasi Penerimaan Fisik', color: 'emerald', icon: 'CheckCircle2' }
     ],
-    admin_notes: 'ℹ️ Jika paket tiba dalam kondisi rusak atau tidak sesuai struk, segera dokumentasikan foto dan laporkan ke PIC toko pengirim.',
+    admin_notes: 'ℹ️ Jika paket tiba dalam kondisi rusak atau tidak sesuai struk, segera dokumentasikan foto dan laporkan ke PIC toko pengirim. Pada filter Rekap Pesanan Toko, pesanan Manual Shipment (MS...) yang diatur "Kirim ke WH" tetap berada di kategori Manual (atau + Alter jika disertai permak), sedangkan tab AR Standalone khusus menampilkan tiket registrasi AR-... murni.',
 
     // PERSPEKTIF TIM STORE / OUTLET
     answer_store: 'Store WAJIB mengirimkan fisik pakaian ke Gudang Pusat jika toko Anda ditunjuk sebagai penyedia barang untuk pesanan cabang lain (Multi-Store Fulfillment), atau pakaian customer butuh alterasi oleh penjahit gudang. Jika pesanan berasal dari Marketplace murni, toko tidak perlu kirim barang.',
@@ -192,9 +192,9 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
       { label: 'Cetak Surat Jalan Struk', color: 'blue', icon: 'Printer' },
       { label: 'Kirim ke Gudang', color: 'emerald', icon: 'Truck' }
     ],
-    store_notes: '⚠️ Jangan kirim barang tanpa menyertakan Surat Jalan Struk fisik, karena gudang tidak dapat mengidentifikasi tujuan paket customer tanpa struk tersebut.',
+    store_notes: '⚠️ Jangan kirim barang tanpa menyertakan Surat Jalan Struk fisik, karena gudang tidak dapat mengidentifikasi tujuan paket customer tanpa struk tersebut. Pesanan MS... yang sudah diatur Kirim ke WH tetap tampil di tab Manual, bukan di AR Standalone.',
 
-    keywords: ['kirim ke gudang', 'surat jalan struk', 'antar fisik', 'multi store', 'kurir internal', 'ekspedisi', 'packing', 'cabang ke gudang'],
+    keywords: ['kirim ke gudang', 'surat jalan struk', 'antar fisik', 'multi store', 'kurir internal', 'ekspedisi', 'packing', 'cabang ke gudang', 'ar standalone'],
     view_count: 98
   },
 

@@ -1,5 +1,5 @@
 import { ProductItem } from '../types';
-import { getAreaFromLokasi, getPickingPriority, generateUUID } from './supabase';
+import { getAreaFromLokasi, getPickingPriority, generateUUID, supabaseFetch } from './supabase';
 import { cleanProductName, extractSizeFromSku } from '../utils/sortUtils';
 
 export { generateUUID };
@@ -425,7 +425,103 @@ export function isValidUuid(str?: string | null): boolean {
 }
 
 /**
- * Simpan daftar pesanan ke cache lokal browser (offline persistence)
+ * Sinkronisasi daftar pesanan IG Live ke tabel Supabase public.ig_live_orders
+ */
+export async function syncIgLiveOrdersToSupabase(orders: IGLiveOrder[]): Promise<void> {
+  if (!orders || orders.length === 0) return;
+  try {
+    const payload = orders
+      .filter((o) => o && (o.no_pesanan || o.id))
+      .map((o) => {
+        const orderNo = String(o.no_pesanan || o.id).trim();
+        let parsedDate = new Date().toISOString();
+        if (o.tanggal) {
+          const d = new Date(o.tanggal.replace(' ', 'T'));
+          if (!isNaN(d.getTime())) parsedDate = d.toISOString();
+        }
+        return {
+          no_pesanan: orderNo,
+          tanggal: parsedDate,
+          session_live: o.session_live || 'IG Live Session',
+          username_ig: o.username_ig || '@customer',
+          nama_pembeli: o.nama_pembeli || 'Customer IG',
+          no_telp: o.no_telp || '',
+          alamat_lengkap: o.alamat_lengkap || '',
+          kota_kabupaten: o.kota_kabupaten || '',
+          provinsi: o.provinsi || '',
+          kode_pos: o.kode_pos || '',
+          ekspedisi: o.ekspedisi || 'JNE',
+          layanan: o.layanan || 'REG',
+          no_resi: o.no_resi || '-',
+          biaya_ongkir: Number(o.biaya_ongkir || 0),
+          total_bayar: Number(o.total_bayar || 0),
+          status: o.status || 'siap_diproses',
+          alasan_batal: o.alasan_batal || '',
+          catatan: o.catatan || '',
+          items: Array.isArray(o.items) ? o.items : [],
+          is_picked: !!o.is_picked,
+          updated_at: new Date().toISOString(),
+        };
+      });
+
+    if (payload.length === 0) return;
+
+    await supabaseFetch(
+      'ig_live_orders?on_conflict=no_pesanan',
+      'POST',
+      payload,
+      undefined,
+      { Prefer: 'resolution=merge-duplicates,return=minimal' }
+    );
+  } catch (err) {
+    console.warn('[IGLIVE] Gagal sinkronisasi ke Supabase ig_live_orders:', err);
+  }
+}
+
+/**
+ * Ambil daftar pesanan IG Live dari tabel Supabase public.ig_live_orders
+ */
+export async function fetchIgLiveOrdersFromSupabase(): Promise<IGLiveOrder[]> {
+  try {
+    const rows = await supabaseFetch<any[]>(
+      'ig_live_orders',
+      'GET',
+      null,
+      'select=*&order=tanggal.desc'
+    );
+    if (!Array.isArray(rows)) return [];
+    return rows.map((r) => ({
+      id: r.no_pesanan || r.id,
+      no_pesanan: r.no_pesanan || r.id,
+      tanggal: r.tanggal ? String(r.tanggal).substring(0, 19).replace('T', ' ') : '',
+      session_live: r.session_live || 'IG Live Session',
+      username_ig: r.username_ig || '@customer',
+      nama_pembeli: r.nama_pembeli || 'Customer IG',
+      no_telp: r.no_telp || '',
+      alamat_lengkap: r.alamat_lengkap || '',
+      kota_kabupaten: r.kota_kabupaten || '',
+      provinsi: r.provinsi || '',
+      kode_pos: r.kode_pos || '',
+      ekspedisi: r.ekspedisi || 'JNE',
+      layanan: r.layanan || 'REG',
+      no_resi: r.no_resi || '-',
+      biaya_ongkir: Number(r.biaya_ongkir || 0),
+      total_bayar: Number(r.total_bayar || 0),
+      status: (r.status || 'siap_diproses') as IGLiveOrderStatus,
+      alasan_batal: r.alasan_batal || '',
+      catatan: r.catatan || '',
+      items: Array.isArray(r.items) ? r.items : [],
+      is_picked: !!r.is_picked,
+      updated_at: r.updated_at,
+    }));
+  } catch (err) {
+    console.warn('[IGLIVE] Gagal membaca ig_live_orders dari Supabase:', err);
+    return [];
+  }
+}
+
+/**
+ * Simpan daftar pesanan ke cache lokal browser & Supabase
  */
 export function saveStoredIgLiveOrders(orders: IGLiveOrder[]): void {
   try {
@@ -435,6 +531,7 @@ export function saveStoredIgLiveOrders(orders: IGLiveOrder[]): void {
   } catch (err) {
     console.warn('[IGLIVE] Gagal simpan cache lokal:', err);
   }
+  syncIgLiveOrdersToSupabase(orders);
 }
 
 /**
@@ -518,25 +615,66 @@ export function saveStoredIgLiveSheetName(sheetName: string): void {
 }
 
 /**
- * Kirim Update Resi ke Google Sheets Backend
+ * Kirim Update Resi ke Google Sheets Backend (Kolom AQ) & Supabase
  */
 export async function postUpdateResiToGas(
   gasUrl: string,
   orderId: string,
   noResi: string,
-  status: string = 'Dikirim'
+  status: string = 'Dikirim',
+  ekspedisi?: string,
+  layanan?: string
 ): Promise<{ success: boolean; message: string }> {
   const url = (gasUrl || DEFAULT_IG_LIVE_GAS_URL).trim();
+  const cleanOrderId = (orderId || '').trim();
+  const cleanResi = (noResi || '').trim().toUpperCase();
+
+  // Simpan juga ke Supabase ig_live_orders secara paralel
+  if (cleanOrderId && cleanResi) {
+    const wmsStatus: IGLiveOrderStatus =
+      status.toLowerCase().includes('kirim')
+        ? 'dikirim'
+        : status.toLowerCase().includes('selesai')
+        ? 'selesai'
+        : status.toLowerCase().includes('batal')
+        ? 'batal'
+        : status.toLowerCase().includes('proses') && !status.toLowerCase().includes('siap')
+        ? 'diproses'
+        : 'siap_diproses';
+
+    const patchBody: Record<string, any> = {
+      no_resi: cleanResi,
+      status: wmsStatus,
+      updated_at: new Date().toISOString(),
+    };
+    if (ekspedisi) patchBody.ekspedisi = ekspedisi;
+    if (layanan) patchBody.layanan = layanan;
+
+    supabaseFetch(
+      `ig_live_orders?no_pesanan=eq.${encodeURIComponent(cleanOrderId)}`,
+      'PATCH',
+      patchBody
+    ).catch(() => {});
+  }
+
   if (!url) return { success: false, message: 'URL GAS belum diatur' };
   try {
     const payload = JSON.stringify({
       action: 'updateResi',
-      order_id: orderId,
-      no_resi: noResi,
-      status: status
+      order_id: cleanOrderId,
+      no_pesanan: cleanOrderId,
+      no_resi: cleanResi,
+      status: status,
+      ekspedisi: ekspedisi,
+      layanan: layanan,
+      target_col_resi: 'AQ',
+      target_col_ekspedisi: 'AR',
+      col_resi: 43,
+      col_ekspedisi: 44
     });
     const res = await fetch(url, {
       method: 'POST',
+      redirect: 'follow',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: payload
     });
@@ -549,7 +687,7 @@ export async function postUpdateResiToGas(
 }
 
 /**
- * Kirim Update Status ke Google Sheets Backend
+ * Kirim Update Status ke Google Sheets Backend & Supabase
  */
 export async function postUpdateStatusToGas(
   gasUrl: string,
@@ -557,15 +695,41 @@ export async function postUpdateStatusToGas(
   status: string
 ): Promise<{ success: boolean; message: string }> {
   const url = (gasUrl || DEFAULT_IG_LIVE_GAS_URL).trim();
+  const cleanOrderId = (orderId || '').trim();
+
+  if (cleanOrderId && status) {
+    const wmsStatus: IGLiveOrderStatus =
+      status.toLowerCase().includes('kirim')
+        ? 'dikirim'
+        : status.toLowerCase().includes('selesai')
+        ? 'selesai'
+        : status.toLowerCase().includes('batal')
+        ? 'batal'
+        : status.toLowerCase().includes('proses') && !status.toLowerCase().includes('siap')
+        ? 'diproses'
+        : 'siap_diproses';
+
+    supabaseFetch(
+      `ig_live_orders?no_pesanan=eq.${encodeURIComponent(cleanOrderId)}`,
+      'PATCH',
+      {
+        status: wmsStatus,
+        updated_at: new Date().toISOString(),
+      }
+    ).catch(() => {});
+  }
+
   if (!url) return { success: false, message: 'URL GAS belum diatur' };
   try {
     const payload = JSON.stringify({
       action: 'updateStatus',
-      order_id: orderId,
+      order_id: cleanOrderId,
+      no_pesanan: cleanOrderId,
       status: status
     });
     const res = await fetch(url, {
       method: 'POST',
+      redirect: 'follow',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: payload
     });
@@ -578,7 +742,7 @@ export async function postUpdateStatusToGas(
 }
 
 /**
- * Kirim Update Ekspedisi ke Google Sheets Backend
+ * Kirim Update Ekspedisi ke Google Sheets Backend (Kolom AR) & Supabase
  */
 export async function postUpdateCourierToGas(
   gasUrl: string,
@@ -587,16 +751,34 @@ export async function postUpdateCourierToGas(
   layanan: string
 ): Promise<{ success: boolean; message: string }> {
   const url = (gasUrl || DEFAULT_IG_LIVE_GAS_URL).trim();
+  const cleanOrderId = (orderId || '').trim();
+
+  if (cleanOrderId && ekspedisi) {
+    supabaseFetch(
+      `ig_live_orders?no_pesanan=eq.${encodeURIComponent(cleanOrderId)}`,
+      'PATCH',
+      {
+        ekspedisi,
+        layanan: layanan || 'REG',
+        updated_at: new Date().toISOString(),
+      }
+    ).catch(() => {});
+  }
+
   if (!url) return { success: false, message: 'URL GAS belum diatur' };
   try {
     const payload = JSON.stringify({
       action: 'updateCourier',
-      order_id: orderId,
+      order_id: cleanOrderId,
+      no_pesanan: cleanOrderId,
       ekspedisi: ekspedisi,
-      layanan: layanan
+      layanan: layanan,
+      target_col_ekspedisi: 'AR',
+      col_ekspedisi: 44
     });
     const res = await fetch(url, {
       method: 'POST',
+      redirect: 'follow',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: payload
     });
@@ -609,7 +791,7 @@ export async function postUpdateCourierToGas(
 }
 
 /**
- * Kirim Edit Data Pesanan ke Google Sheets Backend
+ * Kirim Edit Data Pesanan ke Google Sheets Backend (Kolom AQ & AR) & Supabase
  */
 export async function postEditOrderToGas(
   gasUrl: string,
@@ -629,10 +811,15 @@ export async function postEditOrderToGas(
   try {
     const payload = JSON.stringify({
       action: 'editOrder',
+      target_col_resi: 'AQ',
+      target_col_ekspedisi: 'AR',
+      col_resi: 43,
+      col_ekspedisi: 44,
       ...order
     });
     const res = await fetch(url, {
       method: 'POST',
+      redirect: 'follow',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: payload
     });
@@ -647,8 +834,35 @@ export async function postEditOrderToGas(
 import Papa from 'papaparse';
 
 /**
+ * Helper parsing string ekspedisi dari Kolom AR (misal "JNE YES", "Instan", "Sameday", "JNE REG")
+ */
+function parseCourierFromColAR(rawStr?: string | null): { ekspedisi: string; layanan: string } | null {
+  const fkUpper = String(rawStr || '').toUpperCase().trim();
+  if (!fkUpper || fkUpper === '-') return null;
+  if (fkUpper.includes('YES') || fkUpper.includes('JNE YES')) {
+    return { ekspedisi: 'JNE', layanan: 'YES' };
+  } else if (fkUpper.includes('INSTAN') || fkUpper.includes('INSTANT') || fkUpper.includes('GOSEND') || fkUpper.includes('GRAB')) {
+    return { ekspedisi: 'Instan', layanan: 'Instant' };
+  } else if (fkUpper.includes('SAMEDAY') || fkUpper.includes('SAME DAY')) {
+    return { ekspedisi: 'Sameday', layanan: 'Sameday' };
+  } else if (fkUpper.includes('J&T') || fkUpper === 'JT') {
+    return { ekspedisi: 'J&T Express', layanan: 'Reguler' };
+  } else if (fkUpper.includes('SICEPAT')) {
+    return { ekspedisi: 'SiCepat', layanan: 'Reguler' };
+  } else if (fkUpper.includes('SPX')) {
+    return { ekspedisi: 'SPX Express', layanan: 'Reguler' };
+  } else if (fkUpper.includes('JNE')) {
+    return { ekspedisi: 'JNE', layanan: 'REG' };
+  }
+  return null;
+}
+
+/**
  * Tarik / Sinkronisasi Data Pesanan dari URL GAS atau Google Sheets langsung
- * Standar: Target utama sheet/tab adalah "transaksi".
+ * Standar: Target utama sheet/tab adalah "Pesanan LIVE" / "transaksi".
+ * Kolom A - AL: Sumber data GSheet lain (trigger cek update)
+ * Kolom AQ (43, index 42): Resi yang diupdate dari Frontend WMS
+ * Kolom AR (44, index 43): Ekspedisi yang diupdate dari Frontend WMS
  */
 export async function fetchOrdersFromGas(
   gasUrl: string,
@@ -681,10 +895,10 @@ export async function fetchOrdersFromGas(
       let csvText = '';
       let fetchSuccess = false;
 
-      // 2. Prioritas 1: Ambil langsung tab sheet "transaksi" via Google Visualization API
-      // Ini menjamin sheet yang ditarik adalah sheet transaksi, bukan gid=0 (sheet default/rekap)
+      // 2. Prioritas 1: Ambil langsung tab sheet via Google Visualization API
       const gvizCandidateUrls = [
         `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(targetSheet)}`,
+        `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Pesanan%20LIVE`,
         `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=transaksi`,
         `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Transaksi`,
         `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=TRANSAKSI`,
@@ -695,7 +909,6 @@ export async function fetchOrdersFromGas(
           const resp = await fetch(testUrl);
           if (resp.ok) {
             const txt = await resp.text();
-            // Validasi apakah bukan halaman HTML login/error
             if (txt && !txt.includes('<!DOCTYPE html>') && !txt.includes('<html')) {
               csvText = txt;
               fetchSuccess = true;
@@ -750,8 +963,6 @@ export async function fetchOrdersFromGas(
       }
       
       // 6. Deteksi baris header dan pemetaan kolom secara dinamis
-      // Format baku sheet "transaksi":
-      // NAMA PEMESAN | NO HP | ALAMAT | KODE | PRODUCT NAME | SIZE | SKU | HARGA LIVE | QTY | PRICE | SHIPPING | TOTAL | STATUS | KET | RESI
       let headerRowIndex = -1;
       const colMap: Record<string, number> = {};
 
@@ -800,7 +1011,16 @@ export async function fetchOrdersFromGas(
               if (colMap['ket'] === undefined) colMap['ket'] = idx;
             }
             if (c === 'RESI' || c.includes('NO RESI') || c.includes('AWB') || c.includes('TRACKING')) {
-              if (colMap['resi'] === undefined) colMap['resi'] = idx;
+              if (idx >= 38) {
+                colMap['resi_aq'] = idx;
+              } else if (colMap['resi'] === undefined) {
+                colMap['resi'] = idx;
+              }
+            }
+            if (c.includes('EKSPEDISI') || c.includes('KURIR')) {
+              if (idx >= 38) {
+                colMap['ekspedisi_ar'] = idx;
+              }
             }
             if (c.includes('NO PESANAN') || c.includes('ORDER ID') || c.includes('INVOICE') || c.includes('NO TRANSAKSI')) {
               if (colMap['no_pesanan'] === undefined) colMap['no_pesanan'] = idx;
@@ -834,8 +1054,14 @@ export async function fetchOrdersFromGas(
         const total = cleanNumber(colMap['total'] !== undefined ? r[colMap['total']] : r[11]);
         const rawStatus = String((colMap['status'] !== undefined ? r[colMap['status']] : r[12]) || '').toLowerCase().trim();
         const catatan = (colMap['ket'] !== undefined ? r[colMap['ket']] : r[13]) || '';
-        const resi = (colMap['resi'] !== undefined ? r[colMap['resi']] : r[14]) || '';
-        const explicitOrderNo = (colMap['no_pesanan'] !== undefined ? String(r[colMap['no_pesanan']] || '').trim() : '');
+        
+        // Prioritaskan Resi dari Kolom AQ (index 42) dan Ekspedisi dari Kolom AR (index 43)
+        const resiAQ = String((colMap['resi_aq'] !== undefined ? r[colMap['resi_aq']] : r[42]) || '').trim();
+        const ekspAR = String((colMap['ekspedisi_ar'] !== undefined ? r[colMap['ekspedisi_ar']] : r[43]) || '').trim();
+        const resiSumber = String((colMap['resi'] !== undefined ? r[colMap['resi']] : r[14]) || '').trim();
+        const resi = (resiAQ && resiAQ !== '-') ? resiAQ : resiSumber;
+
+        const explicitOrderNo = (colMap['no_pesanan'] !== undefined ? String(r[colMap['no_pesanan']] || '').trim() : String(r[38] || '').trim());
 
         // Skip baris yang tidak memiliki informasi pembeli dan SKU
         if (!namaPembeli && !noHp && !sku && !productName) continue;
@@ -843,11 +1069,12 @@ export async function fetchOrdersFromGas(
         let status: IGLiveOrderStatus = 'siap_diproses';
         if (rawStatus.includes('cancel') || rawStatus.includes('batal')) status = 'batal';
         else if (rawStatus.includes('selesai') || rawStatus.includes('done')) status = 'selesai';
-        else if (rawStatus.includes('dikirim') || rawStatus.includes('kirim')) status = 'dikirim';
+        else if (rawStatus.includes('dikirim') || rawStatus.includes('kirim') || (resi && resi !== '-')) status = 'dikirim';
         else if (rawStatus.includes('proses') || rawStatus.includes('packing')) status = 'diproses';
         else if (rawStatus.includes('tunggu') || rawStatus.includes('belum bayar')) status = 'menunggu_pembayaran';
         
         const finalOrderNo = explicitOrderNo || `IGL-GS-${Date.now()}-${i}`;
+        const parsedAR = parseCourierFromColAR(ekspAR);
 
         rawList.push({
           id: finalOrderNo,
@@ -861,6 +1088,10 @@ export async function fetchOrdersFromGas(
           status,
           catatan,
           no_resi: resi,
+          resi_aq: resiAQ,
+          ekspedisi_ar: ekspAR,
+          ekspedisi: parsedAR?.ekspedisi,
+          layanan: parsedAR?.layanan,
           items: [
             {
               sku,
@@ -875,7 +1106,6 @@ export async function fetchOrdersFromGas(
 
     } else {
       // Logic untuk GAS JSON API
-      // Jika URL adalah endpoint GAS dan belum memiliki parameter table, otomatis arahkan ke table=transaksi
       let fetchUrl = url;
       if (fetchUrl.includes('script.google.com') && !fetchUrl.includes('table=') && !fetchUrl.includes('action=')) {
         const separator = fetchUrl.includes('?') ? '&' : '?';
@@ -906,19 +1136,58 @@ export async function fetchOrdersFromGas(
       }
     }
 
-    
-    // Use local storage cache to preserve status & resi if user modified locally
+    // Gabungkan data yang tersimpan di Supabase (ig_live_orders) & cache lokal browser
+    const supabaseOrders = await fetchIgLiveOrdersFromSupabase();
     const cachedOrders = getStoredIgLiveOrders();
-    const existingMap = new Map();
-    if (cachedOrders && Array.isArray(cachedOrders)) {
-      cachedOrders.forEach((row) => {
-        existingMap.set(row.no_pesanan, {
-          no_resi: row.no_resi,
-          status: row.status,
-          is_picked: row.is_picked,
-        });
+    const existingMap = new Map<
+      string,
+      {
+        no_resi?: string;
+        status?: IGLiveOrderStatus;
+        ekspedisi?: string;
+        layanan?: string;
+        is_picked?: boolean;
+      }
+    >();
+
+    if (supabaseOrders && Array.isArray(supabaseOrders)) {
+      supabaseOrders.forEach((row) => {
+        if (row.no_pesanan) {
+          existingMap.set(row.no_pesanan, {
+            no_resi: row.no_resi,
+            status: row.status,
+            ekspedisi: row.ekspedisi,
+            layanan: row.layanan,
+            is_picked: row.is_picked,
+          });
+        }
       });
     }
+
+    if (cachedOrders && Array.isArray(cachedOrders)) {
+      cachedOrders.forEach((row) => {
+        if (row.no_pesanan) {
+          const prev = existingMap.get(row.no_pesanan);
+          const hasLocalResi = row.no_resi && row.no_resi !== '-' && row.no_resi.trim() !== '';
+          const hasPrevResi = prev?.no_resi && prev.no_resi !== '-' && prev.no_resi.trim() !== '';
+          existingMap.set(row.no_pesanan, {
+            no_resi: hasLocalResi ? row.no_resi : (hasPrevResi ? prev!.no_resi : row.no_resi),
+            status: row.status && row.status !== 'siap_diproses' ? row.status : (prev?.status || row.status),
+            ekspedisi: row.ekspedisi || prev?.ekspedisi,
+            layanan: row.layanan || prev?.layanan,
+            is_picked: !!row.is_picked || !!prev?.is_picked,
+          });
+        }
+      });
+    }
+
+    const pendingGasResiHealing: {
+      orderNo: string;
+      resi: string;
+      status: string;
+      ekspedisi?: string;
+      layanan?: string;
+    }[] = [];
 
     // Mapping raw data into standardized IGLiveOrder
     const mapped: IGLiveOrder[] = rawList.map((row, idx) => {
@@ -954,14 +1223,40 @@ export async function fetchOrdersFromGas(
         };
       });
 
-      // Preserve status & resi from sheet or local cache
-      const finalResi = (row.no_resi && row.no_resi !== '-' && row.no_resi !== '')
-        ? row.no_resi
-        : (existing?.no_resi || row.resi || row.tracking_no || '-');
-        
-      const finalStatus = (row.status && row.status !== '')
+      // Prioritaskan resi dari Kolom AQ (resi_aq) -> no_resi sheet -> Supabase/lokal
+      const rawSheetResi = String(row.resi_aq || row.no_resi || row.resi || '').trim();
+      const sheetHasResi = !!(rawSheetResi && rawSheetResi !== '-');
+      const existingHasResi = !!(existing?.no_resi && existing.no_resi !== '-' && String(existing.no_resi).trim() !== '');
+
+      const finalResi = sheetHasResi
+        ? rawSheetResi
+        : (existingHasResi ? String(existing!.no_resi).trim() : (row.tracking_no || '-'));
+
+      // Prioritaskan ekspedisi dari Kolom AR (ekspedisi_ar) -> Supabase/lokal -> sheet default
+      const parsedFromAR = parseCourierFromColAR(row.ekspedisi_ar);
+      const finalEkspedisi = parsedFromAR?.ekspedisi || existing?.ekspedisi || row.ekspedisi || row.courier || row.kurir || 'JNE';
+      const finalLayanan = parsedFromAR?.layanan || existing?.layanan || row.layanan || row.service || 'REG';
+
+      let finalStatus: IGLiveOrderStatus = (row.status && row.status !== '')
         ? (row.status as IGLiveOrderStatus)
         : (existing?.status || 'siap_diproses');
+
+      if (!sheetHasResi && existingHasResi) {
+        if (finalStatus === 'siap_diproses') {
+          finalStatus = (existing?.status && existing.status !== 'siap_diproses')
+            ? existing.status
+            : 'dikirim';
+        }
+        pendingGasResiHealing.push({
+          orderNo,
+          resi: finalResi,
+          status: finalStatus === 'dikirim' ? 'Dikirim' : finalStatus === 'selesai' ? 'Selesai' : 'Siap Diproses',
+          ekspedisi: finalEkspedisi,
+          layanan: finalLayanan,
+        });
+      } else if (finalStatus === 'siap_diproses' && existing?.status && existing.status !== 'siap_diproses') {
+        finalStatus = existing.status;
+      }
 
       return {
         id: orderNo,
@@ -975,8 +1270,8 @@ export async function fetchOrdersFromGas(
         kota_kabupaten: row.kota || row.kota_kabupaten || '',
         provinsi: row.provinsi || '',
         kode_pos: row.kode_pos || '',
-        ekspedisi: row.ekspedisi || row.courier || row.kurir || 'JNE',
-        layanan: row.layanan || row.service || 'REG',
+        ekspedisi: finalEkspedisi,
+        layanan: finalLayanan,
         no_resi: finalResi,
         biaya_ongkir: Number(row.biaya_ongkir || row.ongkir || 0),
         total_bayar: Number(row.total_bayar || row.total || 0),
@@ -990,8 +1285,17 @@ export async function fetchOrdersFromGas(
       };
     });
 
-    // Save to local cache
+    // Save to local cache & Supabase
     saveStoredIgLiveOrders(mapped);
+
+    // Auto-Heal: Tulis kembali resi & ekspedisi ke Kolom AQ & AR jika belum tertulis di Google Sheet
+    if (pendingGasResiHealing.length > 0 && !isGoogleSheets) {
+      Promise.all(
+        pendingGasResiHealing.map((item) =>
+          postUpdateResiToGas(url, item.orderNo, item.resi, item.status, item.ekspedisi, item.layanan)
+        )
+      ).catch(() => {});
+    }
 
     return {
       success: true,

@@ -49,6 +49,7 @@ import {
   postUpdateStatusToGas,
   postUpdateCourierToGas,
   postEditOrderToGas,
+  fetchIgLiveOrdersFromSupabase,
   generateUUID,
 } from '../../services/igLiveService';
 import { getFormalStoreBrandName } from '../../services/emailService';
@@ -183,12 +184,12 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
     );
     saveAndSetOrders(updated);
 
-    // 2. Tulis langsung ke Spreadsheet Google Sheets via GAS
+    // 2. Tulis langsung ke Kolom AR Spreadsheet Google Sheets via GAS
     if (gasUrl) {
       try {
         const res = await postUpdateCourierToGas(gasUrl, orderId, newExp, newLay);
         if (res.success) {
-          onShowToast(`Ekspedisi diubah ke ${newExp} ${newLay} & disimpan ke Spreadsheet!`, 'success');
+          onShowToast(`Ekspedisi diubah ke ${newExp} ${newLay} & ditulis ke Kolom AR Spreadsheet!`, 'success');
         } else {
           onShowToast(`Ekspedisi lokal diperbarui (${res.message})`, 'info');
         }
@@ -198,8 +199,12 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
     }
   };
 
-  // Simpan Resi Tunggal ke Google Sheets Spreadsheet
-  const handleSaveSingleResi = async (orderId: string, rawResi: string) => {
+  // Simpan Resi Tunggal ke Kolom AQ Google Sheets Spreadsheet & Supabase
+  const handleSaveSingleResi = async (
+    orderId: string,
+    rawResi: string,
+    finalizeStatusToDikirim: boolean = true
+  ) => {
     if (resiDebounceTimers.current[orderId]) {
       clearTimeout(resiDebounceTimers.current[orderId]);
       delete resiDebounceTimers.current[orderId];
@@ -210,43 +215,78 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
 
     setResiSavingState((prev) => ({ ...prev, [orderId]: 'saving' }));
 
-    // Update lokal & otomatis jadikan status "dikirim" jika siap diproses/diproses
-    const targetOrder = orders.find((o) => o.id === orderId);
-    const shouldSetDikirim =
-      targetOrder && (targetOrder.status === 'siap_diproses' || targetOrder.status === 'diproses');
+    let targetOrderNo = orderId;
+    let gsheetStatus = 'Dikirim';
+    let targetEkspedisi = 'JNE';
+    let targetLayanan = 'REG';
 
-    const updated = orders.map((o) => {
-      if (o.id === orderId) {
-        return {
-          ...o,
-          no_resi: cleanResi,
-          status: (shouldSetDikirim ? 'dikirim' : o.status) as IGLiveOrderStatus,
-          updated_at: new Date().toISOString(),
-        };
+    setOrders((prevOrders) => {
+      const targetOrder = prevOrders.find((o) => o.id === orderId || o.no_pesanan === orderId);
+      if (targetOrder?.no_pesanan) {
+        targetOrderNo = targetOrder.no_pesanan;
       }
-      return o;
-    });
-    saveAndSetOrders(updated);
+      if (targetOrder?.ekspedisi) {
+        targetEkspedisi = targetOrder.ekspedisi;
+      }
+      if (targetOrder?.layanan) {
+        targetLayanan = targetOrder.layanan;
+      }
+      const shouldSetDikirim =
+        finalizeStatusToDikirim &&
+        targetOrder &&
+        (targetOrder.status === 'siap_diproses' || targetOrder.status === 'diproses');
 
-    // Tulis ke Spreadsheet via GAS Backend
+      const nextStatus: IGLiveOrderStatus = shouldSetDikirim
+        ? 'dikirim'
+        : (targetOrder?.status || 'siap_diproses');
+
+      gsheetStatus =
+        nextStatus === 'dikirim' || finalizeStatusToDikirim
+          ? 'Dikirim'
+          : nextStatus === 'selesai'
+          ? 'Selesai'
+          : nextStatus === 'diproses'
+          ? 'Diproses'
+          : 'Siap Diproses';
+
+      const updated = prevOrders.map((o) => {
+        if (o.id === orderId || o.no_pesanan === orderId) {
+          return {
+            ...o,
+            no_resi: cleanResi,
+            status: nextStatus,
+            updated_at: new Date().toISOString(),
+          };
+        }
+        return o;
+      });
+      saveStoredIgLiveOrders(updated);
+      return updated;
+    });
+
+    // Tulis ke Kolom AQ (Resi) & Kolom AR (Ekspedisi) di Spreadsheet via GAS Backend & Supabase
     if (gasUrl) {
       try {
         const res = await postUpdateResiToGas(
           gasUrl,
-          orderId,
+          targetOrderNo,
           cleanResi,
-          shouldSetDikirim ? 'Dikirim' : (targetOrder?.status === 'dikirim' ? 'Dikirim' : 'Siap Diproses')
+          gsheetStatus,
+          targetEkspedisi,
+          targetLayanan
         );
         if (res.success) {
           setResiSavingState((prev) => ({ ...prev, [orderId]: 'saved' }));
-          onShowToast(`No. Resi ${cleanResi} berhasil ditulis ke Spreadsheet!`, 'success');
+          if (finalizeStatusToDikirim) {
+            onShowToast(`No. Resi ${cleanResi} berhasil ditulis ke Kolom AQ Sheet & Supabase!`, 'success');
+          }
           setTimeout(() => {
             setResiSavingState((prev) => {
               const copy = { ...prev };
               delete copy[orderId];
               return copy;
             });
-          }, 3000);
+          }, 4000);
         } else {
           setResiSavingState((prev) => ({ ...prev, [orderId]: 'error' }));
           onShowToast(`Gagal menulis resi ke Spreadsheet: ${res.message}`, 'error');
@@ -258,13 +298,16 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
     }
   };
 
-  // Tangani perubahan ketikan No Resi dengan debounce auto-save ke spreadsheet
+  // Tangani perubahan ketikan No Resi dengan debounce auto-save ke spreadsheet (tanpa menutup baris sebelum klik Simpan)
   const handleResiChange = (orderId: string, val: string) => {
     const upperVal = val.toUpperCase();
-    const updated = orders.map((o) =>
-      o.id === orderId ? { ...o, no_resi: upperVal, updated_at: new Date().toISOString() } : o
-    );
-    saveAndSetOrders(updated);
+    setOrders((prevOrders) => {
+      const updated = prevOrders.map((o) =>
+        o.id === orderId ? { ...o, no_resi: upperVal, updated_at: new Date().toISOString() } : o
+      );
+      saveStoredIgLiveOrders(updated);
+      return updated;
+    });
 
     if (resiDebounceTimers.current[orderId]) {
       clearTimeout(resiDebounceTimers.current[orderId]);
@@ -272,12 +315,14 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
 
     if (upperVal.trim() && upperVal.trim() !== '-') {
       resiDebounceTimers.current[orderId] = setTimeout(() => {
-        handleSaveSingleResi(orderId, upperVal);
-      }, 1000);
+        handleSaveSingleResi(orderId, upperVal, false);
+      }, 900);
     }
   };
 
-  // Load Initial Data directly from Google Apps Script (GAS) Backend
+  const hasInitialFetchedRef = useRef<boolean>(false);
+
+  // Load Initial Data from Supabase & Google Apps Script (GAS) Backend
   useEffect(() => {
     const handleAfterPrint = () => {
       setPrintMode(null);
@@ -285,37 +330,65 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
     };
     window.addEventListener('afterprint', handleAfterPrint);
 
-    // Clean up old stale caches & force official GAS endpoint
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.removeItem('chocochips_iglive_orders_v1');
-        localStorage.removeItem('wms_iglive_rls_needed');
-        localStorage.setItem('chocochips_iglive_gas_url_v1', DEFAULT_IG_LIVE_GAS_URL);
-        localStorage.setItem('chocochips_iglive_sheet_name_v1', DEFAULT_IG_LIVE_SHEET_NAME);
-      } catch {}
-    }
+    if (!hasInitialFetchedRef.current) {
+      hasInitialFetchedRef.current = true;
 
-    // Initial load: Fetch live orders directly from GAS Google Sheet
-    setIsSyncing(true);
-    fetchOrdersFromGas(DEFAULT_IG_LIVE_GAS_URL, productCatalog, DEFAULT_IG_LIVE_SHEET_NAME).then(gasRes => {
-      setIsSyncing(false);
-      if (gasRes.success && gasRes.orders && gasRes.orders.length > 0) {
-        setOrders(gasRes.orders);
-        saveStoredIgLiveOrders(gasRes.orders);
-      } else {
-        const local = getStoredIgLiveOrders(productCatalog);
-        if (local && local.length > 0) {
-          setOrders(local);
-        }
+      // Clean up old stale caches & force official GAS endpoint
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem('chocochips_iglive_orders_v1');
+          localStorage.removeItem('wms_iglive_rls_needed');
+          localStorage.setItem('chocochips_iglive_gas_url_v1', DEFAULT_IG_LIVE_GAS_URL);
+          localStorage.setItem('chocochips_iglive_sheet_name_v1', DEFAULT_IG_LIVE_SHEET_NAME);
+        } catch {}
       }
-    }).catch(err => {
-      setIsSyncing(false);
-      console.warn('[IGLIVE] Error fetch dari GAS, fallback ke cache lokal:', err);
+
+      // 1. Tampilkan instan dari cache lokal / Supabase terlebih dahulu
       const local = getStoredIgLiveOrders(productCatalog);
       if (local && local.length > 0) {
         setOrders(local);
+      } else {
+        fetchIgLiveOrdersFromSupabase().then((sbOrders) => {
+          if (sbOrders && sbOrders.length > 0) {
+            setOrders((prev) => (prev.length === 0 ? sbOrders : prev));
+          }
+        });
       }
-    });
+
+      // 2. Sinkronisasi dengan Google Sheets (GAS) + Auto-Heal resi ke Sheet
+      setIsSyncing(true);
+      fetchOrdersFromGas(DEFAULT_IG_LIVE_GAS_URL, productCatalog, DEFAULT_IG_LIVE_SHEET_NAME)
+        .then((gasRes) => {
+          setIsSyncing(false);
+          if (gasRes.success && gasRes.orders && gasRes.orders.length > 0) {
+            setOrders(gasRes.orders);
+            saveStoredIgLiveOrders(gasRes.orders);
+          }
+        })
+        .catch((err) => {
+          setIsSyncing(false);
+          console.warn('[IGLIVE] Error fetch dari GAS, fallback ke cache lokal:', err);
+        });
+    } else if (productCatalog && productCatalog.length > 0) {
+      // Re-enrich item lokasi/nama/size saat katalog selesai dimuat tanpa menimpa input resi
+      setOrders((prevOrders) =>
+        prevOrders.map((o) => ({
+          ...o,
+          items: (o.items || []).map((it) => {
+            const master = lookupMasterProduct(it.sku, productCatalog);
+            return {
+              ...it,
+              sku: master.sku || it.sku,
+              nama_produk: master.nama_produk || it.nama_produk,
+              size: master.size !== '-' ? master.size : it.size,
+              lokasi: master.lokasi !== '-' ? master.lokasi : it.lokasi,
+              area: master.area,
+              priority: master.priority,
+            };
+          }),
+        }))
+      );
+    }
 
     return () => {
       window.removeEventListener('afterprint', handleAfterPrint);
@@ -438,15 +511,23 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
     });
     saveAndSetOrders(updated);
 
-    // Sinkronkan seluruh resi baru ke Google Sheets Backend
+    // Sinkronkan seluruh resi baru ke Kolom AQ Google Sheets Backend
     if (gasUrl && updates.length > 0) {
       let syncCount = 0;
       updates.forEach((u) => {
-        postUpdateResiToGas(gasUrl, u.id, u.newResi, 'Dikirim').then((res) => {
+        const matchedOrd = orders.find((o) => o.id === u.id || o.no_pesanan === u.id);
+        postUpdateResiToGas(
+          gasUrl,
+          u.id,
+          u.newResi,
+          'Dikirim',
+          matchedOrd?.ekspedisi,
+          matchedOrd?.layanan
+        ).then((res) => {
           if (res.success) syncCount++;
         });
       });
-      onShowToast(`${updates.length} no. resi berhasil disinkronkan ke Google Sheet!`, 'success');
+      onShowToast(`${updates.length} no. resi berhasil disinkronkan ke Kolom AQ Google Sheet!`, 'success');
     }
   };
 
@@ -1462,20 +1543,20 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                               </div>
                             </div>
 
-                            {/* Input Resi Box dengan Sync Otomatis ke Spreadsheet */}
+                            {/* Input Resi Box dengan Sync Otomatis ke Kolom AQ Spreadsheet */}
                             <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-1">
                               <div className="flex items-center justify-between">
                                 <label className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-tight">
-                                  Input Resi:
+                                  Input Resi (Kolom AQ):
                                 </label>
                                 {resiSavingState[order.id] === 'saving' && (
                                   <span className="text-[9px] font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-0.5 animate-pulse">
-                                    <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Menulis Sheet...
+                                    <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Menulis AQ...
                                   </span>
                                 )}
                                 {resiSavingState[order.id] === 'saved' && (
                                   <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
-                                    <CheckCircle2 className="w-2.5 h-2.5" /> Tersimpan di Sheet
+                                    <CheckCircle2 className="w-2.5 h-2.5" /> Tersimpan (AQ)
                                   </span>
                                 )}
                                 {resiSavingState[order.id] === 'error' && (
@@ -1492,21 +1573,23 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                                   onChange={(e) => handleResiChange(order.id, e.target.value)}
                                   onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
-                                      handleSaveSingleResi(order.id, order.no_resi || '');
+                                      e.preventDefault();
+                                      handleSaveSingleResi(order.id, order.no_resi || '', true);
                                     }
                                   }}
                                   onBlur={() => {
                                     if (order.no_resi && order.no_resi !== '-') {
-                                      handleSaveSingleResi(order.id, order.no_resi);
+                                      handleSaveSingleResi(order.id, order.no_resi, false);
                                     }
                                   }}
                                   className="w-full text-xs py-1 px-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:ring-1 focus:ring-pink-500 font-mono font-bold"
                                 />
                                 <button
                                   type="button"
-                                  onClick={() => handleSaveSingleResi(order.id, order.no_resi || '')}
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={() => handleSaveSingleResi(order.id, order.no_resi || '', true)}
                                   disabled={resiSavingState[order.id] === 'saving' || !order.no_resi || order.no_resi === '-'}
-                                  title="Simpan No. Resi ke Google Sheets Spreadsheet"
+                                  title="Simpan No. Resi ke Google Sheets Spreadsheet & Supabase"
                                   className="p-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] flex items-center gap-0.5 cursor-pointer shadow-xs disabled:opacity-40 shrink-0 transition-colors"
                                 >
                                   {resiSavingState[order.id] === 'saving' ? (
@@ -2110,7 +2193,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
         isOpen={isBulkUpdateResiModalOpen}
         onClose={() => setIsBulkUpdateResiModalOpen(false)}
         orders={orders}
-        onSaveBatch={handleBatchUpdateResi}
+        onSaveBatch={handleBulkUpdateResiSuccess}
         onShowToast={onShowToast}
       />
 
