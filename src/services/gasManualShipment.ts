@@ -1035,8 +1035,9 @@ export async function editManualShipment(payload: ManualShipmentOrder): Promise<
     
     // Simpan metadata ke notes_paket
     let notes = (rest.notes_paket || '')
-      .replace(/\n?\[ALTERATION_REPAIR\]:[\s\S]*?(?=\n\[HISTORI_LOGS\]:|$)/, '')
-      .replace(/\n?\[HISTORI_LOGS\]:[\s\S]*$/, '')
+      .replace(/\n?\[ALTERATION_REPAIR\]:[\s\S]*?(?=\n\[(HISTORI_LOGS|STORE_METADATA)\]:|$)/, '')
+      .replace(/\n?\[HISTORI_LOGS\]:[\s\S]*?(?=\n\[STORE_METADATA\]:|$)/, '')
+      .replace(/\n?\[STORE_METADATA\]:[\s\S]*$/, '')
       .trim();
 
     const arData = alteration_repair_data || (payload.order_type === 'alteration_repair' ? {
@@ -1206,28 +1207,50 @@ export async function updateJadwalKirimStore(
 }
 
 /**
- * Update status cetak picking list atau label paket pesanan
+ * Update status cetak picking list atau label paket pesanan.
+ * ATURAN 2 TAHAP CETAK: Pesanan baru ('diterima' / 'pending') hanya berpindah ke 'diproses'
+ * apabila KEDUA tahapan cetak (Cetak Picking List DAN Cetak Label Paket) telah diselesaikan.
  */
 export async function updateOrderPrintStatus(
   orderIds: string[],
   type: 'picking' | 'label' | 'spk'
 ): Promise<{ success: boolean; message: string }> {
   try {
+    if (type === 'spk') {
+      return { success: true, message: 'Status cetak SPK dicatat' };
+    }
+
     const now = new Date().toISOString();
+    const allOrders = await fetchManualShipments();
+
     await Promise.all(
       orderIds.map(async (idOrNo) => {
         try {
-          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrNo);
-          const filter = isUuid ? `id=eq.${idOrNo}` : `no_pesanan=eq.${encodeURIComponent(idOrNo)}`;
+          const targetOrder = allOrders.find(
+            (o) => o.id === idOrNo || o.no_pesanan === idOrNo
+          );
 
-          // Update status ke diproses HANYA jika cetak picking list atau label pengiriman gudang
-          // Struk SJ / SPK tanda terima TIDAK BOLEH memindahkan pesanan dari diterima (baru) ke diproses
-          if (type === 'picking' || type === 'label') {
-            try {
-              await supabaseFetch('manual_shipment', 'PATCH', { status: 'diproses' }, `${filter}&status=in.(diterima,pending)`);
-            } catch {
-              await supabaseFetch('manual_shipment', 'PATCH', { status: 'diproses' }, `${filter}&status=eq.diterima`);
+          if (targetOrder) {
+            const nextPickingPrinted = type === 'picking' ? true : !!targetOrder.is_picking_printed;
+            const nextLabelPrinted = type === 'label' ? true : !!targetOrder.is_label_printed;
+            const bothPrinted = nextPickingPrinted && nextLabelPrinted;
+
+            const currentStatus = (targetOrder.status || 'diterima').toLowerCase().trim();
+            let nextStatus = targetOrder.status;
+            if (bothPrinted && (currentStatus === 'diterima' || currentStatus === 'pending' || !currentStatus)) {
+              nextStatus = 'diproses';
             }
+
+            const updatedOrder: ManualShipmentOrder = {
+              ...targetOrder,
+              status: nextStatus,
+              is_picking_printed: nextPickingPrinted,
+              is_label_printed: nextLabelPrinted,
+              tgl_cetak_picking: type === 'picking' ? now : (targetOrder.tgl_cetak_picking || ''),
+              tgl_cetak_label: type === 'label' ? now : (targetOrder.tgl_cetak_label || ''),
+            };
+
+            await editManualShipment(updatedOrder);
           }
         } catch (e) {
           console.warn('Silent skip order print status patch for', idOrNo, e);

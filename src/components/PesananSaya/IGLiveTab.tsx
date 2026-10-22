@@ -46,6 +46,7 @@ import {
   fetchOrdersFromGas,
   lookupMasterProduct,
   postUpdateResiToGas,
+  postBulkUpdateResiToGas,
   postUpdateStatusToGas,
   postUpdateCourierToGas,
   postEditOrderToGas,
@@ -513,21 +514,21 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
 
     // Sinkronkan seluruh resi baru ke Kolom AQ Google Sheets Backend
     if (gasUrl && updates.length > 0) {
-      let syncCount = 0;
-      updates.forEach((u) => {
+      const bulkPayload = updates.map((u) => {
         const matchedOrd = orders.find((o) => o.id === u.id || o.no_pesanan === u.id);
-        postUpdateResiToGas(
-          gasUrl,
-          u.id,
-          u.newResi,
-          'Dikirim',
-          matchedOrd?.ekspedisi,
-          matchedOrd?.layanan
-        ).then((res) => {
-          if (res.success) syncCount++;
-        });
+        return {
+          order_id: matchedOrd?.no_pesanan || u.id,
+          no_resi: u.newResi,
+          status: 'Dikirim',
+          ekspedisi: matchedOrd?.ekspedisi,
+          layanan: matchedOrd?.layanan,
+        };
       });
-      onShowToast(`${updates.length} no. resi berhasil disinkronkan ke Kolom AQ Google Sheet!`, 'success');
+      postBulkUpdateResiToGas(gasUrl, bulkPayload).then((res) => {
+        if (res.success) {
+          onShowToast(`${updates.length} no. resi berhasil disinkronkan ke Kolom AQ Google Sheet!`, 'success');
+        }
+      });
     }
   };
 
@@ -737,18 +738,23 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
   // Cancel Order
   const handleConfirmCancel = () => {
     if (!orderToCancel) return;
+    const reasonText = cancelReason.trim() || 'Dibatalkan oleh admin';
+    const targetOrderNo = orderToCancel.no_pesanan || orderToCancel.id;
     const updated = orders.map((o) => {
       if (o.id === orderToCancel.id) {
         return {
           ...o,
           status: 'batal' as IGLiveOrderStatus,
-          alasan_batal: cancelReason.trim() || 'Dibatalkan oleh admin',
+          alasan_batal: reasonText,
           updated_at: new Date().toISOString(),
         };
       }
       return o;
     });
     saveAndSetOrders(updated);
+    if (gasUrl) {
+      postUpdateStatusToGas(gasUrl, targetOrderNo, 'Batal', reasonText);
+    }
     setIsCancelModalOpen(false);
     setOrderToCancel(null);
     setCancelReason('');
@@ -1333,6 +1339,11 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                       selectedOrderIds.includes(o.id) ? { ...o, status: 'diproses' as IGLiveOrderStatus } : o
                     );
                     saveAndSetOrders(updated);
+                    if (gasUrl) {
+                      orders
+                        .filter((o) => selectedOrderIds.includes(o.id))
+                        .forEach((o) => postUpdateStatusToGas(gasUrl, o.no_pesanan || o.id, 'Diproses'));
+                    }
                     onShowToast(`${selectedOrderIds.length} pesanan diubah ke Sedang Dipacking`, 'success');
                   }}
                   className="px-2 py-1 text-[11px] font-bold bg-white text-indigo-700 rounded border border-indigo-200 shadow-2xs hover:bg-indigo-50"
@@ -1346,6 +1357,11 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                       selectedOrderIds.includes(o.id) ? { ...o, status: 'dikirim' as IGLiveOrderStatus } : o
                     );
                     saveAndSetOrders(updated);
+                    if (gasUrl) {
+                      orders
+                        .filter((o) => selectedOrderIds.includes(o.id))
+                        .forEach((o) => postUpdateStatusToGas(gasUrl, o.no_pesanan || o.id, 'Dikirim'));
+                    }
                     onShowToast(`${selectedOrderIds.length} pesanan diubah ke Dikirim`, 'success');
                   }}
                   className="px-2 py-1 text-[11px] font-bold bg-white text-emerald-700 rounded border border-emerald-200 shadow-2xs hover:bg-emerald-50"

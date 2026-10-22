@@ -687,12 +687,64 @@ export async function postUpdateResiToGas(
 }
 
 /**
- * Kirim Update Status ke Google Sheets Backend & Supabase
+ * Kirim Update Resi Massal (Bulk) ke Google Sheets Backend (Kolom AQ & AR) & Supabase
+ */
+export async function postBulkUpdateResiToGas(
+  gasUrl: string,
+  updates: {
+    order_id: string;
+    no_resi: string;
+    status?: string;
+    ekspedisi?: string;
+    layanan?: string;
+  }[]
+): Promise<{ success: boolean; message: string }> {
+  const url = (gasUrl || DEFAULT_IG_LIVE_GAS_URL).trim();
+  if (!url || !updates || updates.length === 0) {
+    return { success: false, message: 'Data update resi kosong' };
+  }
+
+  try {
+    const payload = JSON.stringify({
+      action: 'bulkUpdateResi',
+      updates: updates.map((u) => ({
+        order_id: (u.order_id || '').trim(),
+        no_pesanan: (u.order_id || '').trim(),
+        no_resi: (u.no_resi || '').trim().toUpperCase(),
+        status: u.status || 'Dikirim',
+        ekspedisi: u.ekspedisi,
+        layanan: u.layanan,
+      })),
+    });
+    const res = await fetch(url, {
+      method: 'POST',
+      redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: payload,
+    });
+    const data = await res.json();
+    if (data && data.success) {
+      return { success: true, message: data.message || 'Bulk resi berhasil disimpan' };
+    }
+    // Fallback ke satu-per-satu jika script GAS lama belum memiliki action bulkUpdateResi
+    for (const u of updates) {
+      await postUpdateResiToGas(url, u.order_id, u.no_resi, u.status || 'Dikirim', u.ekspedisi, u.layanan);
+    }
+    return { success: true, message: 'Bulk resi berhasil disinkronkan' };
+  } catch (err: any) {
+    console.warn('[IGLIVE] Gagal post bulk resi ke GAS:', err);
+    return { success: false, message: err?.message || 'Gagal terhubung ke GAS' };
+  }
+}
+
+/**
+ * Kirim Update Status ke Google Sheets Backend (Kolom AS & AO) & Supabase
  */
 export async function postUpdateStatusToGas(
   gasUrl: string,
   orderId: string,
-  status: string
+  status: string,
+  alasanBatal?: string
 ): Promise<{ success: boolean; message: string }> {
   const url = (gasUrl || DEFAULT_IG_LIVE_GAS_URL).trim();
   const cleanOrderId = (orderId || '').trim();
@@ -709,13 +761,18 @@ export async function postUpdateStatusToGas(
         ? 'diproses'
         : 'siap_diproses';
 
+    const patchBody: Record<string, any> = {
+      status: wmsStatus,
+      updated_at: new Date().toISOString(),
+    };
+    if (alasanBatal !== undefined) {
+      patchBody.alasan_batal = alasanBatal;
+    }
+
     supabaseFetch(
       `ig_live_orders?no_pesanan=eq.${encodeURIComponent(cleanOrderId)}`,
       'PATCH',
-      {
-        status: wmsStatus,
-        updated_at: new Date().toISOString(),
-      }
+      patchBody
     ).catch(() => {});
   }
 
@@ -725,7 +782,8 @@ export async function postUpdateStatusToGas(
       action: 'updateStatus',
       order_id: cleanOrderId,
       no_pesanan: cleanOrderId,
-      status: status
+      status: status,
+      alasan_batal: alasanBatal || ''
     });
     const res = await fetch(url, {
       method: 'POST',

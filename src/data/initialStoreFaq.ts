@@ -385,5 +385,48 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
 
     keywords: ['ig live', 'instagram live', 'order id', 'picking list ig live', 'label a6', 'thermal a6', 'sinkronkan gas', 'update resi', 'pesanan live'],
     view_count: 140
+  },
+
+  {
+    id: 'faq-two-step-print-diproses',
+    category: 'manual_shipment',
+    is_pinned: true,
+    question: 'Kapan pesanan Manual Shipment / Alter berpindah dari tab "Pesanan Baru" ke "Sedang Diproses", dan bagaimana cara filter "Belum Cetak Label" untuk cetak massal?',
+    answer: 'Pesanan hanya berpindah dari tab "Pesanan Baru" ke "Sedang Diproses" setelah Admin Gudang menyelesaikan 2 tahapan klik cetak: (1) Cetak Picking List (lembar ceklis) DAN (2) Cetak Label Paket. Jika baru 1 tahap yang dicetak, pesanan tetap berada di tab Pesanan Baru. Setiap kartu pesanan dilengkapi badge indikator status cetak ("Belum Cetak Label" / "Label Dicetak" & "Belum Cetak Picking" / "Picking Dicetak") serta tombol filter cepat untuk memudahkan cetak label massal.',
+    target_audience: 'all',
+
+    // PERSPEKTIF ADMIN GUDANG
+    answer_admin: 'Sebagai Admin Gudang, memindahkan pesanan dari tab "Pesanan Baru" ke "Sedang Diproses" wajib melalui 2 klik tahapan cetak: (1) Cetak Picking List (lembar ceklis) dan (2) Cetak Label Paket (A6). Jika Anda baru mencetak salah satu saja, pesanan tidak akan pindah ke tab Sedang Diproses agar tidak ada paket yang terlewat dicetak label atau lembar ceklisnya. Gunakan bar "Filter Cepat Cetak" di atas tabel untuk memfilter pesanan "Belum Cetak Label" dan mengeksekusi "⚡ Cetak Label Massal" dalam 1 klik.',
+    action_steps_admin: [
+      { step: 1, title: 'Cek Indikator Status Cetak pada Pesanan', desc: 'Setiap pesanan menampilkan badge indikator "Belum Cetak Label" / "Label Dicetak" serta "Belum Cetak Picking" / "Picking Dicetak". Anda juga bisa mengklik langsung badge tersebut untuk mencetak satuan.' },
+      { step: 2, title: 'Tahap 1: Cetak Picking List (Lembar Ceklis)', desc: 'Pilih pesanan (atau klik tombol Filter Cepat "Belum Cetak Picking" ➔ "⚡ Cetak Picking Massal") untuk mencetak lembar ceklis pengambilan barang.' },
+      { step: 3, title: 'Tahap 2: Filter "Belum Cetak Label" & Cetak Massal', desc: 'Klik tombol filter cepat "Belum Cetak Label" pada toolbar Rekap Pesanan, lalu klik "⚡ Cetak Label Massal" (atau centang Pilih Semua ➔ "Cetak Label A6").' },
+      { step: 4, title: 'Otomatis Pindah ke "Sedang Diproses"', desc: 'Begitu kedua tahapan (Picking List ✓ dan Label Paket ✓) selesai dicetak, status pesanan otomatis berubah menjadi "Diproses" dan berpindah ke tab "Sedang Diproses".' }
+    ],
+    button_badges_admin: [
+      { label: 'Belum Cetak Label', color: 'amber', icon: 'Printer' },
+      { label: '⚡ Cetak Label Massal', color: 'amber', icon: 'Printer' },
+      { label: 'Cetak Picking List', color: 'indigo', icon: 'FileText' },
+      { label: 'Label Dicetak ✓', color: 'emerald', icon: 'CheckCircle2' }
+    ],
+    admin_notes: '💡 Fitur Filter Cepat "Belum Cetak Label" menghitung otomatis jumlah pesanan aktif yang belum dicetak labelnya sehingga Admin dapat mencetak label A6 secara massal tanpa perlu memilah satu per satu.',
+
+    // PERSPEKTIF TIM STORE / OUTLET
+    answer_store: 'Tim Store dapat memantau progres penyiapan pesanan di Gudang Pusat melalui indikator badge pada kartu pesanan. Pesanan yang baru Anda submit akan berada di tab "Pesanan Baru" sampai Admin Gudang menyelesaikan kedua tahapan cetak internal gudang (Picking List dan Label Paket). Tim Store tidak mencetak Label Paket A6 maupun Picking List Gudang (Store hanya mencetak "SJ Struk Rangkap 2" bila mengirimkan fisik barang dari toko ke gudang).',
+    action_steps_store: [
+      { step: 1, title: 'Pantau Indikator di Kartu Pesanan', desc: 'Pada tab Rekap Pesanan Toko, Anda dapat melihat badge status "Belum Cetak Label" atau "Label Dicetak" (view-only untuk Store).' },
+      { step: 2, title: 'Pindah ke "Sedang Diproses" Setelah 2 Tahap Gudang', desc: 'Setelah Admin Gudang mencetak Lembar Picking dan Label Paket A6, pesanan Anda akan otomatis berpindah ke tab "Sedang Diproses".' },
+      { step: 3, title: 'Cetak SJ Struk (Khusus Kirim Barang Toko ke WH)', desc: 'Jika pesanan menggunakan stok fisik dari toko Anda, klik tombol "SJ Struk" / "Kirim ke Gudang" untuk mencetak struk tanda terima pengantaran ke gudang.' }
+    ],
+    button_badges_store: [
+      { label: 'Belum Cetak Label (View Only)', color: 'slate', icon: 'Clock' },
+      { label: 'Label Dicetak ✓', color: 'emerald', icon: 'CheckCircle2' },
+      { label: 'SJ Struk (Khusus Store)', color: 'amber', icon: 'Printer' }
+    ],
+    store_notes: 'ℹ️ Jika pesanan masih berada di tab "Pesanan Baru" meskipun sudah terlihat "Picking Dicetak", artinya Admin Gudang sedang dalam tahap pengambilan barang dan segera mencetak Label Paketnya.',
+
+    keywords: ['belum cetak label', 'cetak label massal', 'picking list', 'lembar ceklis', 'pesanan baru', 'sedang diproses', '2 klik', 'indikator label', 'filter label'],
+    view_count: 120
   }
 ];
+

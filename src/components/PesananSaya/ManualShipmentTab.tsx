@@ -281,6 +281,7 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterStore, setFilterStore] = useState<string>('all');
   const [filterDealposSj, setFilterDealposSj] = useState<'all' | 'need_sj' | 'has_sj'>('all');
+  const [filterPrintStatus, setFilterPrintStatus] = useState<'all' | 'unprinted_label' | 'printed_label' | 'unprinted_picking' | 'printed_picking' | 'incomplete_print' | 'complete_print'>('all');
   // Modal Quick Input No SJ DealPOS
   const [sjModalData, setSjModalData] = useState<{
     order: ManualShipmentOrder;
@@ -2274,7 +2275,7 @@ _WMS Warehouse System_`;
   // Bersihkan pilihan pesanan jika berganti login/user, sub-tab, stage tab, atau filter arah store
   useEffect(() => {
     setSelectedOrders(new Set());
-  }, [session?.username, activeTab, stageTab, filterStoreDirection, filterOrderType, filterStatus]);
+  }, [session?.username, activeTab, stageTab, filterStoreDirection, filterOrderType, filterStatus, filterPrintStatus]);
 
   const getOrderKey = (o: ManualShipmentOrder) => o.no_pesanan || (o as any).id || '';
 
@@ -2442,18 +2443,22 @@ _WMS Warehouse System_`;
     }
   };
 
-  const handlePrintPickingList = async (singleOrder?: ManualShipmentOrder | any) => {
+  const handlePrintPickingList = async (singleOrBatchOrder?: ManualShipmentOrder | ManualShipmentOrder[] | any) => {
+    const isOrderArray = Array.isArray(singleOrBatchOrder);
     // Robust check: Pastikan singleOrder benar-benar objek ManualShipmentOrder dan bukan MouseEvent dari onClick
     const isRealOrder = Boolean(
-      singleOrder &&
-      typeof singleOrder === 'object' &&
-      !('nativeEvent' in singleOrder) &&
-      !('bubbles' in singleOrder) &&
-      (singleOrder.no_pesanan || singleOrder.id || (Array.isArray(singleOrder.items) && singleOrder.items.length > 0))
+      !isOrderArray &&
+      singleOrBatchOrder &&
+      typeof singleOrBatchOrder === 'object' &&
+      !('nativeEvent' in singleOrBatchOrder) &&
+      !('bubbles' in singleOrBatchOrder) &&
+      (singleOrBatchOrder.no_pesanan || singleOrBatchOrder.id || (Array.isArray(singleOrBatchOrder.items) && singleOrBatchOrder.items.length > 0))
     );
 
-    const itemsToPrint = isRealOrder
-      ? [singleOrder as ManualShipmentOrder]
+    const itemsToPrint = isOrderArray
+      ? (singleOrBatchOrder as ManualShipmentOrder[])
+      : isRealOrder
+      ? [singleOrBatchOrder as ManualShipmentOrder]
       : scopedOrders.filter(o => {
           const k = getOrderKey(o);
           return k && selectedOrders.has(k);
@@ -2474,21 +2479,42 @@ _WMS Warehouse System_`;
     setLoading(true);
     const enrichedOrders = await enrichOrdersWithLocations(validOrdersToPrint);
     
-    // Update status to diproses dan tandai picking list sudah dicetak
+    // Tandai picking list sudah dicetak; hanya pindah ke 'diproses' jika Label Paket JUGA sudah dicetak
     const orderIds = enrichedOrders.map(o => o.no_pesanan || (o as any).id).filter(Boolean);
-    
+    const nowIso = new Date().toISOString();
+    let movedToDiprosesCount = 0;
+
     // Update local state immediately for instant responsive UI
     setOrders(prev => prev.map(o => {
       const id = o.no_pesanan || (o as any).id;
       if (orderIds.includes(id) || (o.no_pesanan && orderIds.includes(o.no_pesanan))) {
+        const bothDone = !!o.is_label_printed;
+        if (bothDone && o.status === 'diterima') movedToDiprosesCount++;
         return {
           ...o,
-          status: o.status === 'diterima' ? 'diproses' : o.status,
+          status: (o.status === 'diterima' && bothDone) ? 'diproses' : o.status,
           is_picking_printed: true,
+          tgl_cetak_picking: nowIso,
         };
       }
       return o;
     }));
+
+    if (selectedOrderDetails) {
+      const detailId = selectedOrderDetails.no_pesanan || (selectedOrderDetails as any).id;
+      if (orderIds.includes(detailId) || (selectedOrderDetails.no_pesanan && orderIds.includes(selectedOrderDetails.no_pesanan))) {
+        setSelectedOrderDetails(prev => {
+          if (!prev) return null;
+          const bothDone = !!prev.is_label_printed;
+          return {
+            ...prev,
+            status: (prev.status === 'diterima' && bothDone) ? 'diproses' : prev.status,
+            is_picking_printed: true,
+            tgl_cetak_picking: nowIso,
+          };
+        });
+      }
+    }
 
     updateOrderPrintStatus(orderIds, 'picking').catch(err => console.warn('Async print status error:', err));
 
@@ -2500,11 +2526,15 @@ _WMS Warehouse System_`;
       timestamp: Date.now(),
     });
     
-    if (!singleOrder) {
+    if (!isRealOrder && !isOrderArray) {
       setSelectedOrders(new Set());
     }
     setLoading(false);
-    onShowToast(`Menyiapkan cetak ${enrichedOrders.length} picking list`, 'success');
+    if (movedToDiprosesCount > 0) {
+      onShowToast(`Menyiapkan cetak ${enrichedOrders.length} Picking List (2/2 tahap selesai — pesanan pindah ke Sedang Diproses)`, 'success');
+    } else {
+      onShowToast(`Menyiapkan cetak ${enrichedOrders.length} Picking List (Tahap 1/2 — cetak Label Paket juga agar pindah ke Sedang Diproses)`, 'info');
+    }
   };
 
   const handlePrintAlterWorkOrder = async (target: ManualShipmentOrder | ManualShipmentOrder[]) => {
@@ -3387,13 +3417,34 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                   </button>
 
                   {!isStoreUser && (
-                    <button 
-                      onClick={() => { setSelectedOrderDetails(null); handlePrintLabel(order); }}
-                      className="px-3.5 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 font-semibold rounded-lg text-xs border border-slate-300 dark:border-slate-700 flex items-center transition-colors cursor-pointer"
-                    >
-                      <Printer className="w-3.5 h-3.5 mr-1.5" />
-                      Print Label
-                    </button>
+                    <>
+                      <button 
+                        type="button"
+                        onClick={() => { setSelectedOrderDetails(null); handlePrintPickingList(order); }}
+                        className={`px-3.5 py-1.5 font-semibold rounded-lg text-xs border flex items-center transition-colors cursor-pointer ${
+                          order.is_picking_printed
+                            ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100'
+                            : 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100'
+                        }`}
+                        title="Tahap 1/2: Cetak Lembar Ceklis Picking List"
+                      >
+                        <FileText className="w-3.5 h-3.5 mr-1.5" />
+                        {order.is_picking_printed ? 'Cetak Ulang Picking ✓' : 'Cetak Picking List'}
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => { setSelectedOrderDetails(null); handlePrintLabel(order); }}
+                        className={`px-3.5 py-1.5 font-semibold rounded-lg text-xs border flex items-center transition-colors cursor-pointer ${
+                          order.is_label_printed
+                            ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100'
+                            : 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-200 border-amber-300 dark:border-amber-700 hover:bg-amber-100'
+                        }`}
+                        title="Tahap 2/2: Cetak Label Pengiriman Paket A6"
+                      >
+                        <Printer className="w-3.5 h-3.5 mr-1.5" />
+                        {order.is_label_printed ? 'Cetak Ulang Label ✓' : 'Print Label Paket'}
+                      </button>
+                    </>
                   )}
                   {!isStoreUser && hasRealAlterItems(order) && (
                     <>
@@ -3781,22 +3832,26 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
     );
   };
 
-  const handlePrintLabel = async (singleOrder?: ManualShipmentOrder | any) => {
+  const handlePrintLabel = async (singleOrBatchOrder?: ManualShipmentOrder | ManualShipmentOrder[] | any) => {
     if (isStoreUser) {
       onShowToast('Akun Store hanya memiliki akses cetak Struk Surat Jalan (Rangkap 2), bukan Label Pengiriman A6.', 'warning');
       return;
     }
 
+    const isOrderArray = Array.isArray(singleOrBatchOrder);
     const isRealOrder = Boolean(
-      singleOrder &&
-      typeof singleOrder === 'object' &&
-      !('nativeEvent' in singleOrder) &&
-      !('bubbles' in singleOrder) &&
-      (singleOrder.no_pesanan || singleOrder.id || (Array.isArray(singleOrder.items) && singleOrder.items.length > 0))
+      !isOrderArray &&
+      singleOrBatchOrder &&
+      typeof singleOrBatchOrder === 'object' &&
+      !('nativeEvent' in singleOrBatchOrder) &&
+      !('bubbles' in singleOrBatchOrder) &&
+      (singleOrBatchOrder.no_pesanan || singleOrBatchOrder.id || (Array.isArray(singleOrBatchOrder.items) && singleOrBatchOrder.items.length > 0))
     );
 
-    const itemsToPrint = isRealOrder
-      ? [singleOrder as ManualShipmentOrder]
+    const itemsToPrint = isOrderArray
+      ? (singleOrBatchOrder as ManualShipmentOrder[])
+      : isRealOrder
+      ? [singleOrBatchOrder as ManualShipmentOrder]
       : scopedOrders.filter(o => {
           const k = getOrderKey(o);
           return k && selectedOrders.has(k);
@@ -3811,19 +3866,40 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
     const enrichedOrders = await enrichOrdersWithLocations(itemsToPrint);
 
     const orderIds = enrichedOrders.map(o => o.no_pesanan || (o as any).id).filter(Boolean);
-    
-    // Update local state immediately to 'diproses'
+    const nowIso = new Date().toISOString();
+    let movedToDiprosesCount = 0;
+
+    // Tandai label sudah dicetak; hanya pindah ke 'diproses' jika Picking List JUGA sudah dicetak
     setOrders(prev => prev.map(o => {
       const id = o.no_pesanan || (o as any).id;
       if (orderIds.includes(id) || (o.no_pesanan && orderIds.includes(o.no_pesanan))) {
+        const bothDone = !!o.is_picking_printed;
+        if (bothDone && o.status === 'diterima') movedToDiprosesCount++;
         return {
           ...o,
-          status: o.status === 'diterima' ? 'diproses' : o.status,
+          status: (o.status === 'diterima' && bothDone) ? 'diproses' : o.status,
           is_label_printed: true,
+          tgl_cetak_label: nowIso,
         };
       }
       return o;
     }));
+
+    if (selectedOrderDetails) {
+      const detailId = selectedOrderDetails.no_pesanan || (selectedOrderDetails as any).id;
+      if (orderIds.includes(detailId) || (selectedOrderDetails.no_pesanan && orderIds.includes(selectedOrderDetails.no_pesanan))) {
+        setSelectedOrderDetails(prev => {
+          if (!prev) return null;
+          const bothDone = !!prev.is_picking_printed;
+          return {
+            ...prev,
+            status: (prev.status === 'diterima' && bothDone) ? 'diproses' : prev.status,
+            is_label_printed: true,
+            tgl_cetak_label: nowIso,
+          };
+        });
+      }
+    }
 
     updateOrderPrintStatus(orderIds, 'label').catch(err => console.warn('Async print status error:', err));
 
@@ -3850,10 +3926,14 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
       timestamp: Date.now(),
     });
 
-    if (!singleOrder) {
+    if (!isRealOrder && !isOrderArray) {
       setSelectedOrders(new Set());
     }
-    onShowToast(`Menyiapkan cetak label A6 ${itemsToPrint.length} paket`, 'success');
+    if (movedToDiprosesCount > 0) {
+      onShowToast(`Menyiapkan cetak label A6 ${itemsToPrint.length} paket (2/2 tahap selesai — pesanan pindah ke Sedang Diproses)`, 'success');
+    } else {
+      onShowToast(`Menyiapkan cetak label A6 ${itemsToPrint.length} paket (Tahap 1/2 — cetak Picking List juga agar pindah ke Sedang Diproses)`, 'info');
+    }
   };
 
   const handleUpdateResi = (no_pesanan: string) => {
@@ -4107,18 +4187,18 @@ _WMS Warehouse System_`;
   };
 
   // Helper: Tahap Sedang Diproses
-  // Sedang diproses = sudah dicetak picking dan label paket (atau dalam pengerjaan admin/workshop)
+  // ATURAN WAJIB 2 KLIK ADMIN: Pindah dari Pesanan Baru ke Sedang Diproses HARUS melalui 2 klik:
+  // 1. Cetak Picking List (lembar ceklis) AND 2. Cetak Label Paket
+  // Jika baru 1 tahapan cetak (hanya picking list saja atau hanya label paket saja), tetap di Pesanan Baru.
   const isOrderSedangDiproses = (order: ManualShipmentOrder): boolean => {
     if (order.status === 'batal') return false;
     if (isOrderSelesai(order)) return false;
 
-    const hasPrinted = !!(order.is_picking_printed || order.is_label_printed);
-    const statusStr = (order.status || '').toLowerCase().trim();
-    const isStatusDiproses = statusStr === 'diproses' || statusStr === 'proses' || statusStr === 'proses_packing' || statusStr === 'sedang_diproses';
+    const hasBothPrinted = !!(order.is_picking_printed && order.is_label_printed);
     const flowStr = (order.alteration_repair_data?.status_flow || '').toLowerCase();
     const isFlowAktif = ['dalam_pengerjaan', 'selesai_qc', 'diterima_warehouse', 'siap_dikirim'].includes(flowStr);
 
-    return hasPrinted || isStatusDiproses || isFlowAktif;
+    return hasBothPrinted || isFlowAktif;
   };
 
   // Helper: Tahap Pesanan Baru
@@ -4384,11 +4464,73 @@ _WMS Warehouse System_`;
 
     const hasAlterFeature = hasRealAlterItems(order);
     const isSentToWh = isOrderSentToWarehouse(order);
+    const showPrintBadges = order.status !== 'batal';
 
-    if (!hasMarketplaceOrWarehouse && !hasAlterFeature && !isSentToWh) return null;
+    if (!hasMarketplaceOrWarehouse && !hasAlterFeature && !isSentToWh && !showPrintBadges) return null;
 
     return (
       <div className="flex flex-wrap items-center gap-1.5 mt-1">
+        {/* BADGE 0: Indikator 2 Tahap Cetak Admin (Picking List & Label Paket) */}
+        {showPrintBadges && (
+          <>
+            {/* Indikator Cetak Label Paket */}
+            {order.is_label_printed ? (
+              <span
+                className="inline-flex items-center gap-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 shadow-2xs"
+                title={`Label Paket A6 sudah dicetak${order.tgl_cetak_label ? ` pada ${new Date(order.tgl_cetak_label).toLocaleString('id-ID')}` : ''}`}
+              >
+                <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                <span>Label Dicetak</span>
+              </span>
+            ) : !isStoreUser ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handlePrintLabel(order);
+                }}
+                className="inline-flex items-center gap-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/60 shadow-2xs transition-colors cursor-pointer"
+                title="Label Paket A6 belum dicetak. Klik untuk langsung cetak Label Paket"
+              >
+                <Printer className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                <span>Belum Cetak Label</span>
+              </button>
+            ) : (
+              <span
+                className="inline-flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-300 dark:border-slate-700"
+                title="Menunggu Admin Gudang mencetak Label Paket"
+              >
+                <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                <span>Belum Cetak Label</span>
+              </span>
+            )}
+
+            {/* Indikator Cetak Picking List */}
+            {order.is_picking_printed ? (
+              <span
+                className="inline-flex items-center gap-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-700 shadow-2xs"
+                title={`Picking List (Lembar Ceklis) sudah dicetak${order.tgl_cetak_picking ? ` pada ${new Date(order.tgl_cetak_picking).toLocaleString('id-ID')}` : ''}`}
+              >
+                <CheckCircle2 className="w-2.5 h-2.5 text-indigo-600 shrink-0" />
+                <span>Picking Dicetak</span>
+              </span>
+            ) : !isStoreUser ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handlePrintPickingList(order);
+                }}
+                className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-300 shadow-2xs transition-colors cursor-pointer"
+                title="Picking List belum dicetak. Klik untuk langsung cetak Picking List"
+              >
+                <FileText className="w-2.5 h-2.5 text-slate-500 shrink-0" />
+                <span>Belum Cetak Picking</span>
+              </button>
+            ) : null}
+          </>
+        )}
+
         {/* BADGE 1: Reminder SJ DealPOS (Marketplace/Gudang to Store) */}
         {hasMarketplaceOrWarehouse && (
           missingSj ? (
@@ -4571,6 +4713,21 @@ _WMS Warehouse System_`;
       );
     }
 
+    // Filter Status Cetak Label Paket & Picking List
+    if (filterPrintStatus === 'unprinted_label') {
+      result = result.filter(o => o.status !== 'batal' && !o.is_label_printed);
+    } else if (filterPrintStatus === 'printed_label') {
+      result = result.filter(o => !!o.is_label_printed);
+    } else if (filterPrintStatus === 'unprinted_picking') {
+      result = result.filter(o => o.status !== 'batal' && !o.is_picking_printed);
+    } else if (filterPrintStatus === 'printed_picking') {
+      result = result.filter(o => !!o.is_picking_printed);
+    } else if (filterPrintStatus === 'incomplete_print') {
+      result = result.filter(o => o.status !== 'batal' && (!o.is_picking_printed || !o.is_label_printed));
+    } else if (filterPrintStatus === 'complete_print') {
+      result = result.filter(o => !!(o.is_picking_printed && o.is_label_printed));
+    }
+
     // Search filter
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase().trim();
@@ -4598,6 +4755,7 @@ _WMS Warehouse System_`;
     filterEndDate,
     filterDealposSj,
     filterSoldStatus,
+    filterPrintStatus,
     filterOrderType,
     filterAlterStatus,
     filterStoreDirection,
@@ -4806,6 +4964,9 @@ _WMS Warehouse System_`;
       return !isAr && !hasAlter;
     }).length;
     const unassignedResiCount = scopedOrders.filter(o => o.status !== 'batal' && orderNeedsResi(o) && !(o.no_resi || '').trim()).length;
+    const unprintedLabelCount = directionScopedOrders.filter(o => o.status !== 'batal' && !isOrderSelesai(o) && !o.is_label_printed).length;
+    const unprintedPickingCount = directionScopedOrders.filter(o => o.status !== 'batal' && !isOrderSelesai(o) && !o.is_picking_printed).length;
+    const printedLabelCount = directionScopedOrders.filter(o => o.status !== 'batal' && !!o.is_label_printed).length;
 
     const selectedAlterOrders = scopedOrders.filter(o => {
       const k = getOrderKey(o);
@@ -5123,13 +5284,13 @@ _WMS Warehouse System_`;
           {stageTab === 'baru' && (
             <>
               <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-              <span><strong>Pesanan Baru:</strong> Baru disubmit dari Store dan belum pernah diproses atau dicetak picking/label oleh admin gudang.</span>
+              <span><strong>Pesanan Baru:</strong> Wajib melalui <strong>2 klik cetak Admin</strong> (<strong>1. Cetak Picking List</strong> + <strong>2. Cetak Label Paket</strong>) untuk berpindah ke tab Sedang Diproses. Jika baru 1 tahap, pesanan tetap berada di tab ini.</span>
             </>
           )}
           {stageTab === 'diproses' && (
             <>
               <Package className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-              <span><strong>Sedang Diproses:</strong> Sudah dicetak picking list dan label paketnya, atau sedang dikerjakan oleh admin gudang/workshop.</span>
+              <span><strong>Sedang Diproses:</strong> Kedua tahapan cetak (<strong>Picking List ✓</strong> &amp; <strong>Label Paket ✓</strong>) telah selesai dicetak, atau sedang dalam pengerjaan workshop/gudang.</span>
             </>
           )}
           {stageTab === 'selesai' && (
@@ -5143,6 +5304,98 @@ _WMS Warehouse System_`;
               <FileText className="w-3.5 h-3.5 text-slate-500 shrink-0" />
               <span>Menampilkan seluruh pesanan (termasuk dibatalkan dan belum diproses).</span>
             </>
+          )}
+        </div>
+
+        {/* Quick Filter Bar Status Cetak Label & Picking (Memudahkan Cetak Label Massal oleh Admin) */}
+        <div className="flex items-center justify-between gap-2 flex-wrap px-2.5 py-2 bg-amber-50/60 dark:bg-slate-800/70 rounded-xl border border-amber-200/80 dark:border-slate-700">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1 mr-1">
+              <Printer className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>Filter Cepat Cetak:</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setFilterPrintStatus('all')}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
+                filterPrintStatus === 'all'
+                  ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 border-slate-800 dark:border-slate-200 shadow-2xs'
+                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              Semua Status Cetak
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterPrintStatus(filterPrintStatus === 'unprinted_label' ? 'all' : 'unprinted_label')}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer border flex items-center gap-1.5 ${
+                filterPrintStatus === 'unprinted_label'
+                  ? 'bg-amber-500 text-white border-amber-600 shadow-xs ring-2 ring-amber-400/40'
+                  : 'bg-white dark:bg-slate-800 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/50'
+              }`}
+              title="Tampilkan hanya pesanan yang BELUM dicetak Label Paketnya (memudahkan Cetak Label Massal)"
+            >
+              <Printer className="w-3 h-3 shrink-0" />
+              <span>Belum Cetak Label</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                filterPrintStatus === 'unprinted_label' ? 'bg-amber-700 text-white' : 'bg-amber-100 dark:bg-amber-900/70 text-amber-900 dark:text-amber-200'
+              }`}>
+                {unprintedLabelCount}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterPrintStatus(filterPrintStatus === 'unprinted_picking' ? 'all' : 'unprinted_picking')}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer border flex items-center gap-1.5 ${
+                filterPrintStatus === 'unprinted_picking'
+                  ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs ring-2 ring-indigo-400/40'
+                  : 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/50'
+              }`}
+              title="Tampilkan hanya pesanan yang BELUM dicetak Picking List (lembar ceklis)"
+            >
+              <FileText className="w-3 h-3 shrink-0" />
+              <span>Belum Cetak Picking</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                filterPrintStatus === 'unprinted_picking' ? 'bg-indigo-800 text-white' : 'bg-indigo-100 dark:bg-indigo-900/70 text-indigo-800 dark:text-indigo-200'
+              }`}>
+                {unprintedPickingCount}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterPrintStatus(filterPrintStatus === 'printed_label' ? 'all' : 'printed_label')}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border flex items-center gap-1 ${
+                filterPrintStatus === 'printed_label'
+                  ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                  : 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/50'
+              }`}
+            >
+              <CheckCircle2 className="w-3 h-3 shrink-0" />
+              <span>Sudah Cetak Label ({printedLabelCount})</span>
+            </button>
+          </div>
+
+          {!isStoreUser && filterPrintStatus === 'unprinted_label' && filteredOrders.length > 0 && (
+            <button
+              type="button"
+              onClick={() => handlePrintLabel(filteredOrders)}
+              className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+              title="Langsung cetak Label A6 secara massal untuk seluruh pesanan Belum Cetak Label yang tampil"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>⚡ Cetak Label Massal ({filteredOrders.length})</span>
+            </button>
+          )}
+          {!isStoreUser && filterPrintStatus === 'unprinted_picking' && filteredOrders.length > 0 && (
+            <button
+              type="button"
+              onClick={() => handlePrintPickingList(filteredOrders)}
+              className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+              title="Langsung cetak Picking List secara massal untuk seluruh pesanan Belum Cetak Picking yang tampil"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>⚡ Cetak Picking Massal ({filteredOrders.length})</span>
+            </button>
           )}
         </div>
 
@@ -5180,6 +5433,7 @@ _WMS Warehouse System_`;
                 filterAlterStatus !== 'all',
                 filterDealposSj !== 'all',
                 filterSoldStatus !== 'all',
+                filterPrintStatus !== 'all',
                 filterStartDate !== '',
                 filterEndDate !== ''
               ].filter(Boolean).length;
@@ -5208,7 +5462,7 @@ _WMS Warehouse System_`;
             })()}
 
             {/* Reset Filter Button */}
-            {(searchTerm || filterStore !== 'all' || filterJasaKirim !== 'all' || filterStatus !== 'all' || filterAlterStatus !== 'all' || filterDealposSj !== 'all' || filterSoldStatus !== 'all' || filterStartDate !== '' || filterEndDate !== '') && (
+            {(searchTerm || filterStore !== 'all' || filterJasaKirim !== 'all' || filterStatus !== 'all' || filterAlterStatus !== 'all' || filterDealposSj !== 'all' || filterSoldStatus !== 'all' || filterPrintStatus !== 'all' || filterStartDate !== '' || filterEndDate !== '') && (
               <button
                 type="button"
                 onClick={() => {
@@ -5220,6 +5474,7 @@ _WMS Warehouse System_`;
                   setFilterOrderType('all');
                   setFilterDealposSj('all');
                   setFilterSoldStatus('all');
+                  setFilterPrintStatus('all');
                   setFilterStartDate('');
                   setFilterEndDate('');
                 }}
@@ -5353,8 +5608,30 @@ _WMS Warehouse System_`;
                   <option value="has_sold">🔴 Ada Item Sold Out</option>
                 </select>
               </div>
+
+              {/* 7. Status Cetak Label & Picking */}
+              <div className="flex flex-col gap-0.5">
+                <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Status Cetak Label / Picking:</label>
+                <select
+                  value={filterPrintStatus}
+                  onChange={(e) => setFilterPrintStatus(e.target.value as any)}
+                  className={`py-1 px-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 ${
+                    filterPrintStatus !== 'all'
+                      ? 'bg-indigo-50 dark:bg-indigo-950/70 border-indigo-300 dark:border-indigo-700 text-indigo-900 dark:text-indigo-200 font-bold'
+                      : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white'
+                  }`}
+                >
+                  <option value="all">Semua Status Cetak</option>
+                  <option value="unprinted_label">🏷️ Belum Cetak Label ({unprintedLabelCount})</option>
+                  <option value="printed_label">✅ Sudah Cetak Label ({printedLabelCount})</option>
+                  <option value="unprinted_picking">📋 Belum Cetak Picking ({unprintedPickingCount})</option>
+                  <option value="printed_picking">✅ Sudah Cetak Picking</option>
+                  <option value="incomplete_print">⏳ Belum Lengkap 2 Tahap Cetak</option>
+                  <option value="complete_print">✅ Lengkap 2 Tahap Cetak (Picking + Label)</option>
+                </select>
+              </div>
               
-              {/* 7. Rentang Tanggal */}
+              {/* 8. Rentang Tanggal */}
               <div className="flex flex-col gap-0.5 col-span-2 sm:col-span-1">
                 <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Rentang Tanggal:</label>
                 <div className="flex items-center gap-1">
@@ -6013,14 +6290,32 @@ _WMS Warehouse System_`;
                         </button>
                       ) : null}
                       {!isStoreUser && (
-                        <button
-                          type="button"
-                          onClick={() => handlePrintLabel(order)}
-                          className="p-1.5 text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center shadow-2xs"
-                          title="Print Label Pengiriman (A6 / Resi)"
-                        >
-                          <Printer className="w-3.5 h-3.5 text-indigo-600" />
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handlePrintPickingList(order)}
+                            className={`p-1.5 border rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center shadow-2xs ${
+                              order.is_picking_printed
+                                ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 border-emerald-300 dark:border-emerald-700'
+                                : 'text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 hover:text-indigo-700 border-slate-300 dark:border-slate-700'
+                            }`}
+                            title={order.is_picking_printed ? 'Picking List sudah dicetak (Klik untuk cetak ulang)' : 'Tahap 1/2: Cetak Picking List (Lembar Ceklis)'}
+                          >
+                            <FileText className={`w-3.5 h-3.5 ${order.is_picking_printed ? 'text-emerald-600' : 'text-slate-600 dark:text-slate-300'}`} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handlePrintLabel(order)}
+                            className={`p-1.5 border rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center shadow-2xs ${
+                              order.is_label_printed
+                                ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 border-emerald-300 dark:border-emerald-700'
+                                : 'text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border-indigo-200 dark:border-indigo-800'
+                            }`}
+                            title={order.is_label_printed ? 'Label Paket A6 sudah dicetak (Klik untuk cetak ulang)' : 'Tahap 2/2: Print Label Pengiriman (A6 / Resi)'}
+                          >
+                            <Printer className={`w-3.5 h-3.5 ${order.is_label_printed ? 'text-emerald-600' : 'text-indigo-600'}`} />
+                          </button>
+                        </>
                       )}
                       <button
                         type="button"
@@ -6042,6 +6337,7 @@ _WMS Warehouse System_`;
                         className="text-[10px] text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-2xs font-semibold cursor-pointer w-20 shrink-0"
                         onChange={(e) => {
                           const action = e.target.value;
+                          if (action === 'print_picking') handlePrintPickingList(order);
                           if (action === 'print') handlePrintLabel(order);
                           if (action === 'spk_penjahit') handlePrintAlterWorkOrder(order);
                           if (action === 'spk') setArReceiptOrder(order);
@@ -6140,6 +6436,8 @@ _WMS Warehouse System_`;
                         defaultValue=""
                       >
                         <option value="" disabled>Lainnya</option>
+                        {!isStoreUser && <option value="print_picking">📋 Cetak Picking List</option>}
+                        {!isStoreUser && <option value="print">🏷️ Cetak Label A6</option>}
                         {userIsAdmin && <option value="edit">✏️ Edit Pesanan</option>}
                         {userIsAdmin && <option value="jadwal_store">📅 Jadwal Kirim Store</option>}
                         {userIsAdmin && order.status !== 'diproses' && order.status !== 'dikirim' && order.status !== 'selesai' && order.status !== 'batal' && (
@@ -6694,14 +6992,32 @@ _WMS Warehouse System_`;
                           </button>
                         )}
                         {!isStoreUser && (
-                          <button
-                            type="button"
-                            onClick={() => handlePrintLabel(order)}
-                            title="Print Label Pengiriman (A6 / Resi)"
-                            className="p-1.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 rounded-lg flex items-center justify-center transition-colors cursor-pointer shadow-2xs"
-                          >
-                            <Printer className="w-3.5 h-3.5" />
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handlePrintPickingList(order)}
+                              title={order.is_picking_printed ? 'Picking List sudah dicetak (Klik untuk cetak ulang)' : 'Tahap 1/2: Cetak Picking List (Lembar Ceklis)'}
+                              className={`p-1.5 border rounded-lg flex items-center justify-center transition-colors cursor-pointer shadow-2xs ${
+                                order.is_picking_printed
+                                  ? 'bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700'
+                                  : 'bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700'
+                              }`}
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handlePrintLabel(order)}
+                              title={order.is_label_printed ? 'Label Paket A6 sudah dicetak (Klik untuk cetak ulang)' : 'Tahap 2/2: Print Label Pengiriman (A6 / Resi)'}
+                              className={`p-1.5 border rounded-lg flex items-center justify-center transition-colors cursor-pointer shadow-2xs ${
+                                order.is_label_printed
+                                  ? 'bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700'
+                                  : 'bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800'
+                              }`}
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                            </button>
+                          </>
                         )}
                         <button
                           type="button"
@@ -6756,6 +7072,7 @@ _WMS Warehouse System_`;
                           className="w-full text-xs text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-2xs font-semibold cursor-pointer"
                           onChange={(e) => {
                             const action = e.target.value;
+                            if (action === 'print_picking') handlePrintPickingList(order);
                             if (action === 'print') handlePrintLabel(order);
                             if (action === 'spk_penjahit') handlePrintAlterWorkOrder(order);
                             if (action === 'spk') setArReceiptOrder(order);
@@ -6833,7 +7150,8 @@ _WMS Warehouse System_`;
                             <option value="sj_struk">🧾 Cetak SJ Struk</option>
                           )}
                           <option value="notif_wa_store">📲 Notif WA Store</option>
-                          {!isStoreUser && <option value="print">Print Label A6</option>}
+                          {!isStoreUser && <option value="print_picking">📋 Cetak Picking List</option>}
+                          {!isStoreUser && <option value="print">🏷️ Print Label A6</option>}
                           {userIsAdmin && <option value="jadwal_store">📅 Atur Jadwal Store</option>}
                           {userIsAdmin && order.status !== 'diproses' && order.status !== 'dikirim' && order.status !== 'selesai' && order.status !== 'batal' && (
                             <option value="mark_diproses">▶️ Mulai Proses</option>
