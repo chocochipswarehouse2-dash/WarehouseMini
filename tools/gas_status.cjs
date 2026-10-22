@@ -3,6 +3,7 @@ const fs = require('fs');
 const MAIN_SCRIPT_ID = '1kxPONxg5JyJKzrHg2EApt9K8c9nK6hccygtny2jf69JtgKIoVauTgDEU';
 const WEBHOOK_SCRIPT_ID = '1EfZ76Hl-bJhwvfzWpBkMD2zR8YbEkeBRgkgD76NHv95_XeHwtfsruqmE';
 const IG_LIVE_SCRIPT_ID = '1niTufmejkWtUnCCfStve3mvLMQakZEZ7eCJ27wehHWmC8nPkkSwyDW4A';
+const JNE_SCRIPT_ID = '1Z1cIj3vnYR_CxK_SLuFqeOvlxnT5dUf7brhgW2X1Njj-Qr0qC7F9QmgZ';
 
 async function getAccessToken() {
   const clasprc = JSON.parse(fs.readFileSync('C:/Users/Chocochips Warehouse/.clasprc.json', 'utf8'));
@@ -62,12 +63,14 @@ async function checkGasStatus() {
     const webhookStatus = await checkProjectStatus(WEBHOOK_SCRIPT_ID, 'Standalone Fonnte Webhook', token);
     const mainStatus = await checkProjectStatus(MAIN_SCRIPT_ID, 'Main WMS Backend', token);
     const igLiveStatus = await checkProjectStatus(IG_LIVE_SCRIPT_ID, 'IG Live Spreadsheet Backend', token);
+    const jneStatus = await checkProjectStatus(JNE_SCRIPT_ID, 'Rekap Tagihan JNE Backend', token);
 
     return {
       success: true,
       webhook: webhookStatus,
       main: mainStatus,
-      igLive: igLiveStatus
+      igLive: igLiveStatus,
+      jne: jneStatus
     };
   } catch (err) {
     console.warn('[GAS STATUS WARNING] Tidak dapat memeriksa status GAS live:', err.message);

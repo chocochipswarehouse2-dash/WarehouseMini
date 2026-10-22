@@ -7,6 +7,8 @@ const WEBHOOK_SCRIPT_ID = '1EfZ76Hl-bJhwvfzWpBkMD2zR8YbEkeBRgkgD76NHv95_XeHwtfsr
 const PRODUKSI_SCRIPT_ID = '1vYGP1u5mCAvjFYbJQHbc7mLruxrtwUmlKh27djBJ6oBlomuOCCKy-scb';
 const IG_LIVE_SCRIPT_ID = '1niTufmejkWtUnCCfStve3mvLMQakZEZ7eCJ27wehHWmC8nPkkSwyDW4A';
 const IG_LIVE_DEP_ID = 'AKfycbyCAAs6oYeW1TJKq3mq_C2Lt1SxoVzVg2yeS8atAHlDsip5jDWQ2aJpRQ66oKPQdhU7dw';
+const JNE_SCRIPT_ID = '1Z1cIj3vnYR_CxK_SLuFqeOvlxnT5dUf7brhgW2X1Njj-Qr0qC7F9QmgZ';
+const JNE_DEP_ID = 'AKfycbytMxVVOUCbEIXK9gPT96oCc3nnr6qRN39axHG45xYuxwle47A6u2FerqfabXKLUt2nCA';
 
 const NEW_URL = 'https://ilhqerecxbywqrhfpbbc.supabase.co';
 const NEW_KEY = 'sb_publishable_tMgdx9b0XBAQei7WcKYvMg_QwJ-lopn';
@@ -376,6 +378,80 @@ async function deployIgLiveBackend(headers) {
   return verNum;
 }
 
+// -----------------------------------------------------------------------------
+// 5. DEPLOY REKAP TAGIHAN JNE BACKEND (1Z1cIj...)
+// -----------------------------------------------------------------------------
+async function deployJneBackend(headers) {
+  console.log('\n======================================================');
+  console.log('📦 [5/5] DEPLOYING REKAP TAGIHAN JNE BACKEND PROJECT');
+  console.log(`Script ID: ${JNE_SCRIPT_ID}`);
+  console.log('======================================================');
+
+  const jneContent = fs.readFileSync(path.join(GAS_DIR, 'jne_tagihan_backend.js'), 'utf8');
+  const appsscriptJson = fs.readFileSync(path.join(GAS_DIR, 'appsscript.json'), 'utf8');
+
+  const files = [
+    {
+      name: 'appsscript',
+      type: 'JSON',
+      source: appsscriptJson
+    },
+    {
+      name: 'Code',
+      type: 'SERVER_JS',
+      source: jneContent
+    }
+  ];
+
+  console.log('1. Mengunggah source jne_tagihan_backend.js ke JNE project...');
+  const putRes = await fetch(`https://script.googleapis.com/v1/projects/${JNE_SCRIPT_ID}/content`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({ files })
+  });
+  const putData = await putRes.json();
+  if (!putData.files) {
+    throw new Error('Gagal PUT JNE project: ' + JSON.stringify(putData));
+  }
+  console.log('✅ Source jne_tagihan_backend.js berhasil diunggah.');
+
+  console.log('2. Membuat Versi Baru...');
+  const verRes = await fetch(`https://script.googleapis.com/v1/projects/${JNE_SCRIPT_ID}/versions`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ description: 'WMS Auto-Deploy: Rekap Tagihan JNE Backend' })
+  });
+  const verData = await verRes.json();
+  const verNum = verData.versionNumber;
+  console.log(`✅ JNE Backend Versi baru berhasil dibuat: Versi ${verNum}`);
+
+  console.log('3. Memperbarui Deployment aktif...');
+  const depRes = await fetch(`https://script.googleapis.com/v1/projects/${JNE_SCRIPT_ID}/deployments`, { headers });
+  const depData = await depRes.json();
+  const deployments = depData.deployments || [];
+
+  const targetDep = deployments.find(d => d.deploymentId === JNE_DEP_ID) || deployments.find(d => d.deploymentConfig && d.deploymentConfig.versionNumber) || deployments[0];
+  if (targetDep) {
+    const depId = targetDep.deploymentId;
+    console.log(`Target Deployment ID: ${depId}`);
+    await fetch(`https://script.googleapis.com/v1/projects/${JNE_SCRIPT_ID}/deployments/${depId}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        deploymentConfig: {
+          scriptId: JNE_SCRIPT_ID,
+          versionNumber: verNum,
+          description: `Active JNE Tagihan Deployment (Version ${verNum})`
+        }
+      })
+    });
+    console.log(`✅ JNE Tagihan Backend aktif beralih ke Versi ${verNum}!`);
+    console.log(`URL: https://script.google.com/macros/s/${depId}/exec`);
+  }
+
+  return verNum;
+}
+
 async function runPushAndDeploy() {
   const token = await getAccessToken();
   const headers = {
@@ -387,6 +463,7 @@ async function runPushAndDeploy() {
   const mainVersion = await deployMainBackend(headers);
   const produksiVersion = await deployProduksiBackend(headers);
   const igLiveVersion = await deployIgLiveBackend(headers);
+  const jneVersion = await deployJneBackend(headers);
 
   console.log('\n======================================================');
   console.log('🎉 SEMUA PROSES DEPLOY KE GOOGLE APPS SCRIPT SELESAI 100%!');
@@ -394,6 +471,7 @@ async function runPushAndDeploy() {
   console.log(`- Main WMS Backend: Versi ${mainVersion}`);
   console.log(`- Produksi Sheet Backend: Versi ${produksiVersion}`);
   console.log(`- IG Live Sheet Backend: Versi ${igLiveVersion}`);
+  console.log(`- Rekap Tagihan JNE Backend: Versi ${jneVersion}`);
   console.log('======================================================');
 }
 
