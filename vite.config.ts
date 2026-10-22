@@ -27,7 +27,13 @@ export default defineConfig(({ command }) => {
         registerType: 'autoUpdate',
         injectRegister: 'auto',
         manifestFilename: 'manifest.json',
+        devOptions: {
+          enabled: true,
+        },
         workbox: {
+          skipWaiting: true,
+          clientsClaim: true,
+          cleanupOutdatedCaches: true,
           globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
           importScripts: ['pwa-extras.js'],
           navigateFallback: 'index.html',
@@ -57,7 +63,7 @@ export default defineConfig(({ command }) => {
           theme_color: '#0f172a',
           background_color: '#0f172a',
           display: 'standalone',
-          orientation: 'portrait',
+          orientation: 'portrait-primary',
           lang: 'id',
           dir: 'ltr',
           categories: ['business', 'productivity', 'utilities'],
