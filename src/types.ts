@@ -32,7 +32,8 @@ export type ActivePage =
   | 'roadmap'
   | 'katalog_produk'
   | 'pusat_resolusi'
-  | 'supabase_migration';
+  | 'supabase_migration'
+  | 'rekap_tagihan_jne';
 
 export interface KatalogVariant {
   warna: string;

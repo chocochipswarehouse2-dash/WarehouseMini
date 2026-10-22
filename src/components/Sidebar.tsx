@@ -41,7 +41,7 @@ import {
   Receipt,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
-import { hasPermission, isSuperadmin, canAccessSettings, ROLE_DETAILS } from '../services/permissions';
+import { hasPermission, isSuperadmin, canAccessSettings, canAccessJneRekap, ROLE_DETAILS } from '../services/permissions';
 import { getUserPersonName } from '../utils/userResolver';
 
 interface SidebarProps {
@@ -130,6 +130,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const canPeminjaman = userIsAdmin || hasPermission(session, 'menu_ops_peminjaman');
   const canCetakLabel = userIsAdmin || hasPermission(session, 'action_cetak_label');
   const canCetakBarcode = userIsAdmin || hasPermission(session, 'menu_ops_cetak_barcode') || hasPermission(session, 'action_cetak_barcode') || canCetakLabel || canInventory;
+  const canJneRekap = canAccessJneRekap(session);
   // HR
   const canViewKaryawan = userIsAdmin || hasPermission(session, 'menu_hr_karyawan');
   const canViewPresensi = userIsAdmin || hasPermission(session, 'menu_hr_presensi');
@@ -169,6 +170,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: ShieldAlert,
       description: 'Layanan CS, Retur & Kendala',
       access: canResolusi,
+    },
+    {
+      id: 'rekap_tagihan_jne' as ActivePage,
+      label: 'Rekap Tagihan JNE',
+      shortLabel: 'Tagihan JNE',
+      icon: Receipt,
+      description: 'Audit & Rekap Resi JNE',
+      access: canJneRekap,
     },
     {
       id: 'produksi' as ActivePage,

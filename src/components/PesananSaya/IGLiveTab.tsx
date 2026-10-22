@@ -981,42 +981,6 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
   return (
     <div className="space-y-4">
       <div className="space-y-4 print:hidden">
-      {/* Top Banner & Header */}
-      <div className="bg-gradient-to-r from-pink-600 via-rose-600 to-purple-700 text-white p-4 sm:p-5 rounded-2xl shadow-md border border-pink-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 border border-white/30 shadow-inner">
-            <Radio className="w-6 h-6 text-white animate-pulse" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl sm:text-2xl font-black tracking-wide">
-                Chocochips IG Live
-              </h1>
-              <span className="bg-emerald-500/80 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1.5 border border-emerald-300/40 shadow-xs">
-                <span className="w-2 h-2 rounded-full bg-white animate-pulse"></span>
-                Backend: Google Sheets (GAS Live)
-              </span>
-            </div>
-            <p className="text-xs sm:text-sm text-pink-100 mt-0.5">
-              Penanganan pesanan dari sesi Instagram Live, Cetak Label Thermal A6, & Picking List Gudang (Backend Google Sheets)
-            </p>
-          </div>
-        </div>
-
-        {/* Action Buttons Top */}
-        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto justify-end">
-          <button
-            type="button"
-            onClick={handleSyncGas}
-            disabled={isSyncing}
-            className="flex items-center gap-1.5 px-4 py-2 bg-white text-pink-700 hover:bg-pink-50 active:scale-95 text-xs font-extrabold rounded-xl shadow-sm transition-all cursor-pointer"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-            <span>{isSyncing ? 'Menyinkronkan...' : 'Sinkronkan GAS'}</span>
-          </button>
-        </div>
-      </div>
-
       {/* Stats Summary Cards (Interactive quick filters) */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
         <button
@@ -1231,67 +1195,80 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
         </div>
 
         {/* Global Action per Mode */}
-        {activeWorkflowTab !== 'picking' ? (
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              type="button"
-              onClick={handleOpenAddModal}
-              className="flex items-center gap-1 px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Tambah Pesanan</span>
-            </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={handleSyncGas}
+            disabled={isSyncing}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-slate-800 text-pink-700 dark:text-pink-400 border border-pink-200 dark:border-pink-800/80 hover:bg-pink-50 dark:hover:bg-pink-950/40 active:scale-95 text-xs font-bold rounded-xl shadow-2xs transition-all cursor-pointer"
+            title="Sinkronkan data dengan Google Sheets (GAS Live)"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+            <span>{isSyncing ? 'Menyinkronkan...' : 'Sinkronkan GAS'}</span>
+          </button>
 
-            <button
-              type="button"
-              onClick={() => setIsImportModalOpen(true)}
-              className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>Import GSheet</span>
-            </button>
-
-            {userIsAdmin && (
+          {activeWorkflowTab !== 'picking' ? (
+            <>
               <button
                 type="button"
-                onClick={() => setIsBulkUpdateResiModalOpen(true)}
-                className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+                onClick={handleOpenAddModal}
+                className="flex items-center gap-1 px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Tambah Pesanan</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsImportModalOpen(true)}
+                className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
               >
                 <FileSpreadsheet className="w-3.5 h-3.5" />
-                <span>Update Resi Massal</span>
+                <span>Import GSheet</span>
               </button>
-            )}
 
-            <button
-              type="button"
-              onClick={handlePrintBatchLabelA6}
-              className="flex items-center gap-1 px-3 py-1.5 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              <span>Cetak Label A6 {selectedOrderIds.length > 0 ? `(${selectedOrderIds.length})` : 'Massal'}</span>
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleCompletePicking}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Tandai Selesai Picking</span>
-            </button>
+              {userIsAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setIsBulkUpdateResiModalOpen(true)}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>Update Resi Massal</span>
+                </button>
+              )}
 
-            <button
-              type="button"
-              onClick={handlePrintMassalPicking}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              <span>Cetak Picking List Massal</span>
-            </button>
-          </div>
-        )}
+              <button
+                type="button"
+                onClick={handlePrintBatchLabelA6}
+                className="flex items-center gap-1 px-3 py-1.5 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Cetak Label A6 {selectedOrderIds.length > 0 ? `(${selectedOrderIds.length})` : 'Massal'}</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={handleCompletePicking}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Tandai Selesai Picking</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePrintMassalPicking}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Cetak Picking List Massal</span>
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* VIEW MODE 1: DAFTAR PESANAN BERDASARKAN WORKFLOW STATUS */}

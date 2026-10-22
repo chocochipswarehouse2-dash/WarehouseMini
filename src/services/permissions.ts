@@ -81,6 +81,15 @@ export const PERMISSION_GROUPS = [
     ]
   },
   {
+    id: 'g_ops_tagihan_jne',
+    title: 'Rekap Tagihan & Resi JNE',
+    badge: '🧾',
+    description: 'Rekap tagihan ongkir dan audit resi pengiriman JNE',
+    permissions: [
+      { key: 'menu_rekap_tagihan_jne', label: 'Menu Rekap Tagihan JNE', description: 'Akses halaman Rekap Tagihan & Resi JNE', isSuperadminOnly: false },
+    ]
+  },
+  {
     id: 'g_ops_produksi',
     title: 'Produksi',
     badge: '🏭',
@@ -551,6 +560,14 @@ export const canKatalogProduk = (session: UserSession | null) =>
   hasPermission(session, 'menu_ops_katalog_produk') || isSuperadmin(session);
 export const canManageKatalogProduk = (session: UserSession | null) =>
   hasPermission(session, 'action_upload_katalog') || hasPermission(session, 'action_edit_master') || isSuperadmin(session);
+
+export const canAccessJneRekap = (session: UserSession | null): boolean => {
+  if (!session) return false;
+  if (isSuperadmin(session)) return true;
+  const user = String(session.username || '').trim().toLowerCase();
+  if (['chocoadm', 'admin', 'warehouse', 'admin2'].includes(user)) return true;
+  return hasPermission(session, 'menu_rekap_tagihan_jne');
+};
 
 export const TOTAL_PERMISSIONS_COUNT = PERMISSION_GROUPS.reduce(
   (acc, g) => acc + g.permissions.length,

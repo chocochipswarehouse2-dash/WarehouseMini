@@ -114,6 +114,7 @@ const CetakLabelView = lazyWithRetry(() => import('./components/CetakLabelView')
 const CetakBarcodeProdukView = lazyWithRetry(() => import('./components/CetakBarcodeProdukView').then(m => ({ default: m.CetakBarcodeProdukView })));
 const PesananSayaView = lazyWithRetry(() => import('./components/PesananSaya/PesananSayaView').then(m => ({ default: m.PesananSayaView })));
 const PusatResolusiView = lazyWithRetry(() => import('./components/PusatResolusi/PusatResolusiView').then(m => ({ default: m.default })));
+const JneRekapView = lazyWithRetry(() => import('./components/JneRekapView').then(m => ({ default: m.JneRekapView })));
 
 const SupabaseMigrationView = lazyWithRetry(() => import('./components/SupabaseMigrationView').then(m => ({ default: m.SupabaseMigrationView })));
 
@@ -1944,6 +1945,12 @@ export default function App() {
                   <PusatResolusiView
                     session={session}
                     onNotify={showToast}
+                  />
+              )}
+              {activePage === 'rekap_tagihan_jne' && (
+                  <JneRekapView
+                    session={session}
+                    onShowToast={showToast}
                   />
               )}
               {activePage === 'katalog_produk' && (
