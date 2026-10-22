@@ -7655,6 +7655,116 @@ export async function fetchChannelStocksBySkus(skus: string[]): Promise<import('
  */
 let memoryPerbaikanTicketsCache: PerbaikanTicket[] | null = null;
 let memoryPerbaikanTicketsLastFetch = 0;
+let hasSanitizedLegacyQcStorage = false;
+
+const MAX_LOCAL_CACHE_ITEMS = 100;
+
+function stripBase64Urls(urls?: string[]): string[] {
+  if (!Array.isArray(urls) || urls.length === 0) return [];
+  return urls.filter((u) => typeof u === 'string' && !u.startsWith('data:') && u.length < 2048);
+}
+
+function sanitizeTicketForLocalStorage(t: PerbaikanTicket): PerbaikanTicket {
+  return {
+    ...t,
+    foto_urls: stripBase64Urls(t.foto_urls),
+    foto_sesudah: stripBase64Urls(t.foto_sesudah),
+  };
+}
+
+function sanitizeQcReportForLocalStorage(r: QcReport): QcReport {
+  return {
+    ...r,
+    foto_urls: stripBase64Urls(r.foto_urls),
+  };
+}
+
+function saveLightweightTicketsToLocalStorage(list: PerbaikanTicket[]): void {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    const light = list.slice(0, MAX_LOCAL_CACHE_ITEMS).map(sanitizeTicketForLocalStorage);
+    localStorage.setItem('wms_local_perbaikan_tickets', JSON.stringify(light));
+  } catch {}
+}
+
+function saveLightweightQcReportsToLocalStorage(list: QcReport[]): void {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    const light = list.slice(0, MAX_LOCAL_CACHE_ITEMS).map(sanitizeQcReportForLocalStorage);
+    localStorage.setItem('wms_local_qc_reports', JSON.stringify(light));
+  } catch {}
+}
+
+/**
+ * Membersihkan cache localStorage lama yang terlanjur membengkak oleh string Base64 atau ribuan baris
+ */
+export function ensureLightweightQcStorage(): void {
+  if (hasSanitizedLegacyQcStorage || typeof window === 'undefined' || !window.localStorage) return;
+  hasSanitizedLegacyQcStorage = true;
+  try {
+    const rawQc = localStorage.getItem('wms_local_qc_reports');
+    if (rawQc && rawQc.length > 150000) {
+      const parsed = JSON.parse(rawQc);
+      if (Array.isArray(parsed)) {
+        saveLightweightQcReportsToLocalStorage(parsed);
+      } else {
+        localStorage.removeItem('wms_local_qc_reports');
+      }
+    }
+  } catch {
+    try { localStorage.removeItem('wms_local_qc_reports'); } catch {}
+  }
+
+  try {
+    const rawTickets = localStorage.getItem('wms_local_perbaikan_tickets');
+    if (rawTickets && rawTickets.length > 150000) {
+      const parsed = JSON.parse(rawTickets);
+      if (Array.isArray(parsed)) {
+        saveLightweightTicketsToLocalStorage(parsed);
+      } else {
+        localStorage.removeItem('wms_local_perbaikan_tickets');
+      }
+    }
+  } catch {
+    try { localStorage.removeItem('wms_local_perbaikan_tickets'); } catch {}
+  }
+}
+
+export function getCachedQcReportsSync(): QcReport[] {
+  ensureLightweightQcStorage();
+  if (memoryQcReportsCache && memoryQcReportsCache.length > 0) {
+    return memoryQcReportsCache;
+  }
+  try {
+    const cached = localStorage.getItem('wms_local_qc_reports');
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        memoryQcReportsCache = parsed;
+        return parsed;
+      }
+    }
+  } catch {}
+  return [];
+}
+
+export function getCachedPerbaikanTicketsSync(): PerbaikanTicket[] {
+  ensureLightweightQcStorage();
+  if (memoryPerbaikanTicketsCache && memoryPerbaikanTicketsCache.length > 0) {
+    return memoryPerbaikanTicketsCache;
+  }
+  try {
+    const cached = localStorage.getItem('wms_local_perbaikan_tickets');
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        memoryPerbaikanTicketsCache = parsed;
+        return parsed;
+      }
+    }
+  } catch {}
+  return [];
+}
 
 export function invalidatePerbaikanTicketsCache(): void {
   memoryPerbaikanTicketsCache = null;
@@ -7662,63 +7772,108 @@ export function invalidatePerbaikanTicketsCache(): void {
 }
 
 /**
- * Fetch semua tiket perbaikan dari Supabase (dengan in-memory & local cache fallback)
+ * Fetch stok fisik KHUSUS untuk rak area Perbaikan (CC, PMK, DF) agar tidak men-download 50.000 baris gudang
  */
-export async function fetchPerbaikanTicketsFromSupabase(forceRefresh = false): Promise<PerbaikanTicket[]> {
+export async function fetchRepairAreaStokFisikDirect(forceRefresh = false): Promise<StockRealtimeItem[]> {
+  if (!forceRefresh && memoryStokFisikCache && memoryStokFisikCache.length > 0) {
+    return memoryStokFisikCache.filter((s) => {
+      const loc = String(s.lokasi || '').trim().toUpperCase();
+      const area = String(s.area || '').trim().toUpperCase();
+      return (
+        Number(s.sisa_stok || 0) > 0 &&
+        (area === 'PERBAIKAN' ||
+          loc.startsWith('CC') ||
+          loc.startsWith('PMK') ||
+          loc.startsWith('DF') ||
+          loc.includes('CUCI') ||
+          loc.includes('PERMAK') ||
+          loc.includes('DEFECT'))
+      );
+    });
+  }
+
+  try {
+    const query =
+      'or=(area.eq.Perbaikan,lokasi.ilike.CC*,lokasi.ilike.PMK*,lokasi.ilike.DF*)&sisa_stok=gt.0&select=sku,nama_produk,size,lokasi,area,sisa_stok,updated_at&limit=1000';
+    const rows = await supabaseFetch<StockRealtimeItem[]>('stok_real_fisik', 'GET', undefined, query);
+    if (Array.isArray(rows)) return rows;
+  } catch (err) {
+    console.warn('Gagal memuat stok khusus area perbaikan dari Supabase:', err);
+  }
+  return [];
+}
+
+export interface FetchPerbaikanTicketsOptions {
+  forceRefresh?: boolean;
+  limit?: number;
+  startDate?: string;
+  endDate?: string;
+}
+
+/**
+ * Fetch tiket perbaikan aktif dari Supabase (Default: 300 data terbaru, anti-freeze)
+ */
+export async function fetchPerbaikanTicketsFromSupabase(
+  optionsOrForce: boolean | FetchPerbaikanTicketsOptions = false
+): Promise<PerbaikanTicket[]> {
+  ensureLightweightQcStorage();
+
+  const opts: FetchPerbaikanTicketsOptions =
+    typeof optionsOrForce === 'boolean' ? { forceRefresh: optionsOrForce } : optionsOrForce || {};
+  const forceRefresh = !!opts.forceRefresh;
+  const limit = opts.limit && opts.limit > 0 ? opts.limit : 300;
+  const hasDateFilter = !!(opts.startDate || opts.endDate);
+
   // 1. In-memory cache check (fresh within 5 minutes)
-  if (!forceRefresh && memoryPerbaikanTicketsCache && memoryPerbaikanTicketsCache.length > 0 && Date.now() - memoryPerbaikanTicketsLastFetch < 5 * 60 * 1000) {
+  if (
+    !forceRefresh &&
+    !hasDateFilter &&
+    memoryPerbaikanTicketsCache &&
+    memoryPerbaikanTicketsCache.length > 0 &&
+    Date.now() - memoryPerbaikanTicketsLastFetch < 5 * 60 * 1000
+  ) {
     return memoryPerbaikanTicketsCache;
   }
 
-  let localData: PerbaikanTicket[] = [];
-  try {
-    const cached = localStorage.getItem('wms_local_perbaikan_tickets');
-    if (cached) {
-      localData = JSON.parse(cached);
-    }
-  } catch {}
-
-  // 2. Local storage cache check if not forcing refresh
-  if (!forceRefresh && localData.length > 0 && Date.now() - memoryPerbaikanTicketsLastFetch < 5 * 60 * 1000) {
-    memoryPerbaikanTicketsCache = localData;
-    return localData;
-  }
+  let localData: PerbaikanTicket[] = getCachedPerbaikanTicketsSync();
 
   try {
-    // Fetch all tickets with chunked pagination to prevent truncation (was previously limited to 500)
-    const allRemoteTickets: PerbaikanTicket[] = [];
-    const pageSize = 1000;
-    let offset = 0;
-    const maxRows = 20000;
-
-    while (offset < maxRows) {
-      // Exclude SELESAI statuses to drastically reduce egress for active ticket views
-      const query = `status_pengerjaan=not.in.(SELESAI_GRADE_A,SELESAI_DEFECT_SALE,SELESAI_SCRAP)&order=created_at.desc&limit=${pageSize}&offset=${offset}`;
-      const chunk = await supabaseFetch<PerbaikanTicket[]>('perbaikan_tickets', 'GET', undefined, query);
-      if (!chunk || !Array.isArray(chunk) || chunk.length === 0) break;
-      allRemoteTickets.push(...chunk);
-      if (chunk.length < pageSize) break;
-      offset += pageSize;
+    const queryParts: string[] = [
+      'status_pengerjaan=not.in.(SELESAI_GRADE_A,SELESAI_DEFECT_SALE,SELESAI_SCRAP)',
+      'order=created_at.desc',
+      `limit=${limit}`,
+    ];
+    if (opts.startDate) {
+      queryParts.push(`created_at=gte.${encodeURIComponent(opts.startDate + 'T00:00:00')}`);
+    }
+    if (opts.endDate) {
+      queryParts.push(`created_at=lte.${encodeURIComponent(opts.endDate + 'T23:59:59')}`);
     }
 
-    // Supabase is authoritative. If we successfully fetched (no errors), we replace the local cache completely.
-    // We only preserve offline items that haven't been synced yet (id > 1000000000).
-    const remoteTicketNos = new Set(allRemoteTickets.map(t => t.ticket_no).filter(Boolean));
-    const offlinePending = localData.filter(t => 
-      typeof t.id === 'number' && t.id > 1000000000 && !remoteTicketNos.has(t.ticket_no)
+    const chunk = await supabaseFetch<PerbaikanTicket[]>(
+      'perbaikan_tickets',
+      'GET',
+      undefined,
+      queryParts.join('&')
+    );
+    const allRemoteTickets = Array.isArray(chunk) ? chunk : [];
+
+    // Preserve offline items that haven't been synced yet (id > 1000000000)
+    const remoteTicketNos = new Set(allRemoteTickets.map((t) => t.ticket_no).filter(Boolean));
+    const offlinePending = localData.filter(
+      (t) => typeof t.id === 'number' && t.id > 1000000000 && !remoteTicketNos.has(t.ticket_no)
     );
 
-    const merged = [...allRemoteTickets, ...offlinePending].sort((a, b) => 
-      new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+    const merged = [...allRemoteTickets, ...offlinePending].sort(
+      (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
     );
 
-    localData = merged;
-    memoryPerbaikanTicketsCache = merged;
-    memoryPerbaikanTicketsLastFetch = Date.now();
-    try {
-      localStorage.setItem('wms_local_perbaikan_tickets', JSON.stringify(localData));
-    } catch {}
-    return localData;
+    if (!hasDateFilter) {
+      memoryPerbaikanTicketsCache = merged;
+      memoryPerbaikanTicketsLastFetch = Date.now();
+      saveLightweightTicketsToLocalStorage(merged);
+    }
+    return merged;
   } catch (err) {
     console.warn('Gagal memuat perbaikan_tickets dari Supabase, memuat dari local cache:', err);
   }
@@ -7801,19 +7956,18 @@ export async function savePerbaikanTicketToSupabase(ticket: PerbaikanTicket): Pr
     savedTicket.id = Date.now() + Math.floor(Math.random() * 1000000);
   }
 
-  // Update local cache
+  // Update memory & lightweight local cache
   try {
-    const cachedStr = localStorage.getItem('wms_local_perbaikan_tickets');
-    const list: PerbaikanTicket[] = cachedStr ? JSON.parse(cachedStr) : [];
-    const idx = list.findIndex(t => t.ticket_no === savedTicket.ticket_no);
+    const list: PerbaikanTicket[] = [...getCachedPerbaikanTicketsSync()];
+    const idx = list.findIndex((t) => t.ticket_no === savedTicket.ticket_no);
     if (idx >= 0) {
       list[idx] = savedTicket;
     } else {
       list.unshift(savedTicket);
     }
-    localStorage.setItem('wms_local_perbaikan_tickets', JSON.stringify(list));
     memoryPerbaikanTicketsCache = list;
     memoryPerbaikanTicketsLastFetch = Date.now();
+    saveLightweightTicketsToLocalStorage(list);
   } catch {}
 
   return savedTicket;
@@ -7836,18 +7990,15 @@ export async function updatePerbaikanTicketInSupabase(
     console.warn('Gagal mengupdate tiket perbaikan di Supabase (diupdate di cache lokal):', err);
   }
 
-  // Update local cache
+  // Update memory & lightweight local cache
   try {
-    const cachedStr = localStorage.getItem('wms_local_perbaikan_tickets');
-    if (cachedStr) {
-      const list: PerbaikanTicket[] = JSON.parse(cachedStr);
-      const idx = list.findIndex(t => t.id === ticketNoOrId || t.ticket_no === String(ticketNoOrId));
-      if (idx >= 0) {
-        list[idx] = { ...list[idx], ...updates, updated_at: new Date().toISOString() };
-        localStorage.setItem('wms_local_perbaikan_tickets', JSON.stringify(list));
-        memoryPerbaikanTicketsCache = list;
-        memoryPerbaikanTicketsLastFetch = Date.now();
-      }
+    const list: PerbaikanTicket[] = [...getCachedPerbaikanTicketsSync()];
+    const idx = list.findIndex((t) => t.id === ticketNoOrId || t.ticket_no === String(ticketNoOrId));
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...updates, updated_at: new Date().toISOString() };
+      memoryPerbaikanTicketsCache = list;
+      memoryPerbaikanTicketsLastFetch = Date.now();
+      saveLightweightTicketsToLocalStorage(list);
     }
   } catch {}
 
@@ -7870,16 +8021,13 @@ export async function deletePerbaikanTicketFromSupabase(ticketNoOrId: string | n
     console.warn('Gagal menghapus tiket perbaikan dari Supabase:', err);
   }
 
-  // Remove from local cache
+  // Remove from memory & lightweight local cache
   try {
-    const cachedStr = localStorage.getItem('wms_local_perbaikan_tickets');
-    if (cachedStr) {
-      const list: PerbaikanTicket[] = JSON.parse(cachedStr);
-      const filtered = list.filter(t => t.id !== ticketNoOrId && t.ticket_no !== sTicketNo);
-      localStorage.setItem('wms_local_perbaikan_tickets', JSON.stringify(filtered));
-      memoryPerbaikanTicketsCache = filtered;
-      memoryPerbaikanTicketsLastFetch = Date.now();
-    }
+    const list: PerbaikanTicket[] = getCachedPerbaikanTicketsSync();
+    const filtered = list.filter((t) => t.id !== ticketNoOrId && t.ticket_no !== sTicketNo);
+    memoryPerbaikanTicketsCache = filtered;
+    memoryPerbaikanTicketsLastFetch = Date.now();
+    saveLightweightTicketsToLocalStorage(filtered);
   } catch {}
 
   // Dispatch event agar PerbaikanView & modul terkait langsung update
@@ -8062,35 +8210,60 @@ export function invalidateQcReportsCache(): void {
   memoryQcReportsLastFetch = 0;
 }
 
+export interface FetchQcReportsOptions {
+  forceRefresh?: boolean;
+  limit?: number;
+  startDate?: string;
+  endDate?: string;
+}
+
 /**
- * Memuat seluruh riwayat laporan QC dari Supabase (tabel dedicated 'qc_reports' & local cache).
+ * Memuat riwayat laporan QC dari Supabase (Default: 300 data terbaru, anti-freeze).
  * Laporan QC terisolasi dan TIDAK masuk ke Mutasi Log (log_produk).
  */
-export async function fetchQcReportsFromSupabase(forceRefresh = false): Promise<QcReport[]> {
+export async function fetchQcReportsFromSupabase(
+  optionsOrForce: boolean | FetchQcReportsOptions = false
+): Promise<QcReport[]> {
+  ensureLightweightQcStorage();
+
+  const opts: FetchQcReportsOptions =
+    typeof optionsOrForce === 'boolean' ? { forceRefresh: optionsOrForce } : optionsOrForce || {};
+  const forceRefresh = !!opts.forceRefresh;
+  const limit = opts.limit && opts.limit > 0 ? opts.limit : 300;
+  const hasDateFilter = !!(opts.startDate || opts.endDate);
+
   // 1. In-memory cache check (fresh within 5 minutes)
-  if (!forceRefresh && memoryQcReportsCache && memoryQcReportsCache.length > 0 && Date.now() - memoryQcReportsLastFetch < 5 * 60 * 1000) {
+  if (
+    !forceRefresh &&
+    !hasDateFilter &&
+    memoryQcReportsCache &&
+    memoryQcReportsCache.length > 0 &&
+    Date.now() - memoryQcReportsLastFetch < 5 * 60 * 1000
+  ) {
     return memoryQcReportsCache;
   }
 
-  // 2. Ambil dari cache lokal terlebih dahulu
-  let localData: QcReport[] = [];
-  try {
-    const cachedStr = localStorage.getItem('wms_local_qc_reports');
-    if (cachedStr) {
-      localData = JSON.parse(cachedStr);
-    }
-  } catch {}
-
-  if (!forceRefresh && localData.length > 0 && Date.now() - memoryQcReportsLastFetch < 5 * 60 * 1000) {
-    memoryQcReportsCache = localData;
-    return localData;
-  }
+  // 2. Ambil dari cache memori/lokal terlebih dahulu
+  const localData: QcReport[] = getCachedQcReportsSync();
 
   const mergedMap = new Map<string, QcReport>();
 
-  // 3. Ambil dari tabel dedicated qc_reports
+  // 3. Ambil dari tabel dedicated qc_reports (Default 300 data terbaru)
   try {
-    const qcRes = await supabaseFetch<QcReport[]>('qc_reports', 'GET', undefined, 'order=created_at.desc&limit=2000');
+    const queryParts: string[] = ['order=created_at.desc', `limit=${limit}`];
+    if (opts.startDate) {
+      queryParts.push(`created_at=gte.${encodeURIComponent(opts.startDate + 'T00:00:00')}`);
+    }
+    if (opts.endDate) {
+      queryParts.push(`created_at=lte.${encodeURIComponent(opts.endDate + 'T23:59:59')}`);
+    }
+
+    const qcRes = await supabaseFetch<QcReport[]>(
+      'qc_reports',
+      'GET',
+      undefined,
+      queryParts.join('&')
+    );
     if (Array.isArray(qcRes)) {
       for (const item of qcRes) {
         if (item && item.report_no) {
@@ -8104,8 +8277,8 @@ export async function fetchQcReportsFromSupabase(forceRefresh = false): Promise<
 
   // Gabungkan dengan data lokal offline jika ada
   const remoteReportNos = new Set(Array.from(mergedMap.keys()));
-  const offlinePending = localData.filter((r) => 
-    typeof r.id === 'number' && r.id > 1000000000 && !remoteReportNos.has(r.report_no)
+  const offlinePending = localData.filter(
+    (r) => typeof r.id === 'number' && r.id > 1000000000 && !remoteReportNos.has(r.report_no)
   );
 
   for (const offline of offlinePending) {
@@ -8113,14 +8286,16 @@ export async function fetchQcReportsFromSupabase(forceRefresh = false): Promise<
   }
 
   const finalResults = Array.from(mergedMap.values()).sort(
-    (a, b) => new Date(b.created_at || b.tanggal || 0).getTime() - new Date(a.created_at || a.tanggal || 0).getTime()
+    (a, b) =>
+      new Date(b.created_at || b.tanggal || 0).getTime() -
+      new Date(a.created_at || a.tanggal || 0).getTime()
   );
 
-  memoryQcReportsCache = finalResults;
-  memoryQcReportsLastFetch = Date.now();
-  try {
-    localStorage.setItem('wms_local_qc_reports', JSON.stringify(finalResults));
-  } catch {}
+  if (!hasDateFilter) {
+    memoryQcReportsCache = finalResults;
+    memoryQcReportsLastFetch = Date.now();
+    saveLightweightQcReportsToLocalStorage(finalResults);
+  }
 
   return finalResults;
 }
@@ -8177,20 +8352,25 @@ export async function saveQcReportsBatchToSupabase(reports: QcReport[]): Promise
     }
   }
 
-  // Update local cache
+  // Update memory & lightweight local cache
+  let updatedList: QcReport[] = [];
   try {
-    const cachedStr = localStorage.getItem('wms_local_qc_reports');
-    let list: QcReport[] = cachedStr ? JSON.parse(cachedStr) : [];
+    let list: QcReport[] = [...getCachedQcReportsSync()];
     const reportNos = new Set(savedBatch.map((s) => s.report_no));
     list = list.filter((item) => !reportNos.has(item.report_no));
     list.unshift(...savedBatch);
-    localStorage.setItem('wms_local_qc_reports', JSON.stringify(list));
+    updatedList = list;
+    memoryQcReportsCache = list;
+    memoryQcReportsLastFetch = Date.now();
+    saveLightweightQcReportsToLocalStorage(list);
   } catch {}
 
   // Dispatch event agar komponen lain update secara reaktif
   if (typeof window !== 'undefined') {
     try {
-      window.dispatchEvent(new CustomEvent('wms_qc_reports_updated', { detail: savedBatch }));
+      window.dispatchEvent(
+        new CustomEvent('wms_qc_reports_updated', { detail: { reports: updatedList } })
+      );
     } catch {}
   }
 
@@ -8272,26 +8452,29 @@ export async function updateQcReportInSupabase(updatedReport: QcReport): Promise
     }
   }
 
-  // 2. Update cache lokal
+  // 2. Update cache memori & lokal ringan
+  let updatedList: QcReport[] = [];
   try {
-    const cachedStr = localStorage.getItem('wms_local_qc_reports');
-    if (cachedStr) {
-      const list: QcReport[] = JSON.parse(cachedStr);
-      const idx = list.findIndex((r) => r.report_no === reportNo);
-      if (idx !== -1) {
-        list[idx] = { ...list[idx], ...updatedReport, updated_at: new Date().toISOString() };
-      } else {
-        list.unshift(updatedReport);
-      }
-      localStorage.setItem('wms_local_qc_reports', JSON.stringify(list));
+    const list: QcReport[] = [...getCachedQcReportsSync()];
+    const idx = list.findIndex((r) => r.report_no === reportNo);
+    if (idx !== -1) {
+      list[idx] = { ...list[idx], ...updatedReport, updated_at: new Date().toISOString() };
+    } else {
+      list.unshift(updatedReport);
     }
+    updatedList = list;
+    memoryQcReportsCache = list;
+    memoryQcReportsLastFetch = Date.now();
+    saveLightweightQcReportsToLocalStorage(list);
   } catch {}
 
   // 3. Dispatch update event
   if (typeof window !== 'undefined') {
     try {
       window.dispatchEvent(
-        new CustomEvent('wms_qc_reports_updated', { detail: { updated: updatedReport } })
+        new CustomEvent('wms_qc_reports_updated', {
+          detail: { updated: updatedReport, reports: updatedList },
+        })
       );
     } catch {}
   }
@@ -8320,27 +8503,21 @@ export async function deleteQcReportFromSupabase(
   let linkedTicketNo = optionalTicketNo;
   if (!linkedTicketNo) {
     try {
-      const cachedQc = localStorage.getItem('wms_local_qc_reports');
-      if (cachedQc) {
-        const qcList: QcReport[] = JSON.parse(cachedQc);
-        const match = qcList.find(
-          (r) => r.report_no === sReportNo || (targetId && r.id === targetId)
-        );
-        if (match?.perbaikan_ticket_no) {
-          linkedTicketNo = match.perbaikan_ticket_no;
-        }
+      const qcList = getCachedQcReportsSync();
+      const match = qcList.find(
+        (r) => r.report_no === sReportNo || (targetId && r.id === targetId)
+      );
+      if (match?.perbaikan_ticket_no) {
+        linkedTicketNo = match.perbaikan_ticket_no;
       }
     } catch {}
   }
   if (!linkedTicketNo) {
     try {
-      const cachedTickets = localStorage.getItem('wms_local_perbaikan_tickets');
-      if (cachedTickets) {
-        const tList: PerbaikanTicket[] = JSON.parse(cachedTickets);
-        const match = tList.find((t) => t.qc_report_no === sReportNo);
-        if (match?.ticket_no) {
-          linkedTicketNo = match.ticket_no;
-        }
+      const tList = getCachedPerbaikanTicketsSync();
+      const match = tList.find((t) => t.qc_report_no === sReportNo);
+      if (match?.ticket_no) {
+        linkedTicketNo = match.ticket_no;
       }
     } catch {}
   }
@@ -8389,29 +8566,29 @@ export async function deleteQcReportFromSupabase(
     }
   }
 
-  // 4. CASCADE DELETE: Hapus tiket perbaikan & defect terkait dari local cache
+  // 4. CASCADE DELETE: Hapus tiket perbaikan & defect terkait dari memory & local cache
   try {
-    const cachedTickets = localStorage.getItem('wms_local_perbaikan_tickets');
-    if (cachedTickets) {
-      const tList: PerbaikanTicket[] = JSON.parse(cachedTickets);
-      const filteredTickets = tList.filter((t) => {
-        if (t.qc_report_no && t.qc_report_no === sReportNo) return false;
-        if (linkedTicketNo && t.ticket_no === linkedTicketNo) return false;
-        if (t.detail_kerusakan && t.detail_kerusakan.includes(sReportNo)) return false;
-        return true;
-      });
-      localStorage.setItem('wms_local_perbaikan_tickets', JSON.stringify(filteredTickets));
-    }
+    const tList = getCachedPerbaikanTicketsSync();
+    const filteredTickets = tList.filter((t) => {
+      if (t.qc_report_no && t.qc_report_no === sReportNo) return false;
+      if (linkedTicketNo && t.ticket_no === linkedTicketNo) return false;
+      if (t.detail_kerusakan && t.detail_kerusakan.includes(sReportNo)) return false;
+      return true;
+    });
+    memoryPerbaikanTicketsCache = filteredTickets;
+    saveLightweightTicketsToLocalStorage(filteredTickets);
   } catch {}
 
-  // 5. Hapus dari cache lokal QC
+  // 5. Hapus dari cache memori & lokal QC
+  let remainingReports: QcReport[] = [];
   try {
-    const cachedStr = localStorage.getItem('wms_local_qc_reports');
-    if (cachedStr) {
-      const list: QcReport[] = JSON.parse(cachedStr);
-      const filtered = list.filter((r) => r.report_no !== sReportNo && (!targetId || r.id !== targetId));
-      localStorage.setItem('wms_local_qc_reports', JSON.stringify(filtered));
-    }
+    const list = getCachedQcReportsSync();
+    const filtered = list.filter(
+      (r) => r.report_no !== sReportNo && (!targetId || r.id !== targetId)
+    );
+    remainingReports = filtered;
+    memoryQcReportsCache = filtered;
+    saveLightweightQcReportsToLocalStorage(filtered);
   } catch {}
 
   // 6. Dispatch delete event
@@ -8419,7 +8596,11 @@ export async function deleteQcReportFromSupabase(
     try {
       window.dispatchEvent(
         new CustomEvent('wms_qc_reports_updated', {
-          detail: { deletedReportNo: sReportNo, deletedTicketNo: linkedTicketNo },
+          detail: {
+            deletedReportNo: sReportNo,
+            deletedTicketNo: linkedTicketNo,
+            reports: remainingReports,
+          },
         })
       );
       window.dispatchEvent(

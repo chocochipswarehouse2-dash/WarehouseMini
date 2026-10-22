@@ -9,8 +9,9 @@ import { UserSession, ProductItem, PerbaikanTicket } from '../types';
 import { LaporanQcView } from './LaporanQcView';
 import { PerbaikanView } from './PerbaikanView';
 import {
-  fetchQcReportsFromSupabase,
-  fetchPerbaikanTicketsFromSupabase,
+  getCachedQcReportsSync,
+  getCachedPerbaikanTicketsSync,
+  ensureLightweightQcStorage,
 } from '../services/supabase';
 
 interface QualityControlViewProps {
@@ -38,35 +39,32 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
   });
 
   const recalculateStats = (qcList?: any[], ticketList?: any[]) => {
-    let reports = qcList;
-    if (!reports) {
-      try {
-        const cached = localStorage.getItem('wms_local_qc_reports');
-        if (cached) reports = JSON.parse(cached);
-      } catch {}
-    }
-    let tickets = ticketList;
-    if (!tickets) {
-      try {
-        const cached = localStorage.getItem('wms_local_perbaikan_tickets');
-        if (cached) tickets = JSON.parse(cached);
-      } catch {}
-    }
+    const reports = Array.isArray(qcList) ? qcList : getCachedQcReportsSync();
+    const tickets = Array.isArray(ticketList) ? ticketList : getCachedPerbaikanTicketsSync();
 
     let totalRep = 0;
     let rejectRep = 0;
     if (Array.isArray(reports)) {
       totalRep = reports.length;
-      rejectRep = reports.filter((r: any) => r.status === 'REJECT' || (Number(r.qty_reject) > 0)).length;
+      for (let i = 0; i < reports.length; i++) {
+        const r = reports[i];
+        if (r && (r.status === 'REJECT' || Number(r.qty_reject) > 0)) {
+          rejectRep++;
+        }
+      }
     }
 
     let cuci = 0;
     let permak = 0;
     let defect = 0;
     if (Array.isArray(tickets)) {
-      cuci = tickets.filter((t: any) => t.tahap === 'CUCI').length;
-      permak = tickets.filter((t: any) => t.tahap === 'PERMAK').length;
-      defect = tickets.filter((t: any) => t.tahap === 'DEFECT').length;
+      for (let i = 0; i < tickets.length; i++) {
+        const t = tickets[i];
+        if (!t) continue;
+        if (t.tahap === 'CUCI') cuci++;
+        else if (t.tahap === 'PERMAK') permak++;
+        else if (t.tahap === 'DEFECT') defect++;
+      }
     }
 
     setStats({
@@ -78,29 +76,18 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
   };
 
   useEffect(() => {
-    let isMounted = true;
-
-    // 1. Instant calculation from localStorage cache
+    // 1. Pastikan localStorage lama yang penuh Base64 langsung dibersihkan & hitung dari memori ringan
+    ensureLightweightQcStorage();
     recalculateStats();
 
-    // 2. Fast background sync from Supabase
-    Promise.all([
-      fetchQcReportsFromSupabase().catch(() => null),
-      fetchPerbaikanTicketsFromSupabase().catch(() => null),
-    ]).then(([freshReports, freshTickets]) => {
-      if (isMounted) {
-        recalculateStats(freshReports || undefined, freshTickets || undefined);
-      }
-    });
-
-    // 3. Event listeners for real-time reactivity
+    // 2. Event listeners untuk reaktivitas saat tab Riwayat atau Perbaikan memuat/mengubah data
     const handleQcUpdate = (e: any) => {
-      const reports = e?.detail?.reports;
+      const reports = Array.isArray(e?.detail?.reports) ? e.detail.reports : undefined;
       recalculateStats(reports, undefined);
     };
 
     const handleTicketUpdate = (e: any) => {
-      const tickets = e?.detail?.tickets;
+      const tickets = Array.isArray(e?.detail?.tickets) ? e.detail.tickets : undefined;
       recalculateStats(undefined, tickets);
     };
 
@@ -108,7 +95,6 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
     window.addEventListener('wms_qc_reports_updated', handleQcUpdate);
 
     return () => {
-      isMounted = false;
       window.removeEventListener('wms_perbaikan_tickets_updated', handleTicketUpdate);
       window.removeEventListener('wms_qc_reports_updated', handleQcUpdate);
     };
@@ -118,9 +104,8 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
     setTargetSearchTicket(ticketNo);
     let targetSection: QcMainTab = 'riwayat_laporan';
     try {
-      const cached = localStorage.getItem('wms_local_perbaikan_tickets');
-      if (cached && ticketNo) {
-        const list = JSON.parse(cached);
+      const list = getCachedPerbaikanTicketsSync();
+      if (list.length > 0 && ticketNo) {
         const found = list.find((t: any) => t.ticket_no === ticketNo);
         if (found) {
           if (found.tahap === 'CUCI' || found.tahap === 'PERMAK') {

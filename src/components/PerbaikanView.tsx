@@ -52,7 +52,9 @@ import {
   deletePerbaikanTicketFromSupabase,
   recordPerbaikanStockMutation,
   getSupabaseClient,
-  fetchSupabaseStokFisikDirect,
+  fetchRepairAreaStokFisikDirect,
+  getCachedPerbaikanTicketsSync,
+  ensureLightweightQcStorage,
   isDummyProduct,
 } from '../services/supabase';
 import { uploadMultipleImagesToGdrive } from '../services/gdriveUpload';
@@ -235,26 +237,54 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   const canExport = userIsAdmin || hasPermission(session, 'action_export_data');
   const canAccHarga = userIsAdmin || session?.role === 'Superadmin' || session?.role === 'All' || hasPermission(session, 'action_edit_master');
 
-  // State: Tickets with Supabase Realtime Sync
+  // State: Tickets with Supabase Realtime Sync (Lightweight cache init)
   const [tickets, setTickets] = useState<PerbaikanTicket[]>(() => {
-    try {
-      const saved = localStorage.getItem('wms_local_perbaikan_tickets');
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return INITIAL_DEMO_TICKETS;
+    const cached = getCachedPerbaikanTicketsSync();
+    return cached.length > 0 ? cached : INITIAL_DEMO_TICKETS;
   });
   const [isLoadingDb, setIsLoadingDb] = useState(false);
   const [stokFisikList, setStokFisikList] = useState<StockRealtimeItem[]>([]);
+  const [filterStartDate, setFilterStartDate] = useState<string>('');
+  const [filterEndDate, setFilterEndDate] = useState<string>('');
 
-  // Sync from Supabase on mount + listen to Supabase Realtime changes + window events
+  // Sync from Supabase on mount (Lazy Fetch 300 latest + targeted repair rack stock)
   useEffect(() => {
+    ensureLightweightQcStorage();
     let isMounted = true;
+    const hasDateFilter = Boolean(filterStartDate || filterEndDate);
+
+    const normalizeTicketList = (data: PerbaikanTicket[]): PerbaikanTicket[] => {
+      const normalized: PerbaikanTicket[] = [];
+      for (let idx = 0; idx < data.length; idx++) {
+        const t = data[idx];
+        if (!t) continue;
+        if (t.qty && t.qty > 1) {
+          const safeQty = Math.min(Number(t.qty) || 1, 50);
+          for (let i = 0; i < safeQty; i++) {
+            normalized.push({
+              ...t,
+              id: t.id ? Number(t.id) * 1000 + i : Date.now() + idx * 100 + i,
+              ticket_no: i === 0 ? t.ticket_no : `${t.ticket_no}-${i + 1}`,
+              qty: 1,
+            });
+          }
+        } else {
+          normalized.push({ ...t, qty: 1 });
+        }
+      }
+      return normalized;
+    };
+
     const loadFromSupabase = async () => {
       setIsLoadingDb(true);
       try {
         const [data, physical] = await Promise.all([
-          fetchPerbaikanTicketsFromSupabase(),
-          fetchSupabaseStokFisikDirect().catch(() => [] as StockRealtimeItem[]),
+          fetchPerbaikanTicketsFromSupabase({
+            limit: hasDateFilter ? 1000 : 300,
+            startDate: filterStartDate || undefined,
+            endDate: filterEndDate || undefined,
+          }),
+          fetchRepairAreaStokFisikDirect().catch(() => [] as StockRealtimeItem[]),
         ]);
 
         if (isMounted && physical && Array.isArray(physical)) {
@@ -262,31 +292,13 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
         }
 
         if (isMounted && data) {
-          // Aturan WMS: 1 Produk = 1 Tiket. Jika ada data lama dengan qty > 1, pecah otomatis menjadi 1 tiket per pcs
-          const normalized: PerbaikanTicket[] = [];
-          data.forEach((t) => {
-            if (t.qty && t.qty > 1) {
-              const prefix =
-                t.tahap === 'DEFECT'
-                  ? 'DFT'
-                  : t.tahap === 'CUCI'
-                  ? 'CC'
-                  : t.tahap === 'PERMAK'
-                  ? 'PMK'
-                  : 'RJC';
-              for (let i = 0; i < t.qty; i++) {
-                normalized.push({
-                  ...t,
-                  id: t.id ? Number(t.id) * 1000 + i : Date.now() + i,
-                  ticket_no: i === 0 ? t.ticket_no : `${t.ticket_no}-${i + 1}`,
-                  qty: 1,
-                });
-              }
-            } else {
-              normalized.push({ ...t, qty: 1 });
-            }
-          });
+          const normalized = normalizeTicketList(data);
           setTickets(normalized);
+          window.dispatchEvent(
+            new CustomEvent('wms_perbaikan_tickets_updated', {
+              detail: { tickets: normalized, source: 'perbaikan_mount' },
+            })
+          );
         }
       } catch (e) {
         console.warn('Initial load perbaikan tickets error:', e);
@@ -296,15 +308,23 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     };
     loadFromSupabase();
 
-    // Listen to window events from Supabase services
+    // Listen to window events from Supabase services (avoid self-triggering loop)
     const handleTicketEvent = (e: any) => {
+      if (e?.detail?.source === 'perbaikan_mount') return;
       const deletedTicketNo = e?.detail?.deletedTicketNo;
       if (deletedTicketNo) {
         if (isMounted) {
           setTickets((prev) => prev.filter((t) => t.ticket_no !== deletedTicketNo));
         }
+      } else if (Array.isArray(e?.detail?.tickets)) {
+        if (isMounted) {
+          setTickets(e.detail.tickets);
+        }
       } else {
-        loadFromSupabase();
+        const cached = getCachedPerbaikanTicketsSync();
+        if (isMounted && cached.length > 0) {
+          setTickets(normalizeTicketList(cached));
+        }
       }
     };
 
@@ -314,11 +334,16 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     const triggerDebouncedSync = async () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(async () => {
-        const fresh = await fetchPerbaikanTicketsFromSupabase();
+        const fresh = await fetchPerbaikanTicketsFromSupabase({
+          forceRefresh: true,
+          limit: hasDateFilter ? 1000 : 300,
+          startDate: filterStartDate || undefined,
+          endDate: filterEndDate || undefined,
+        });
         if (isMounted && fresh) {
-          setTickets(fresh);
+          setTickets(normalizeTicketList(fresh));
         }
-      }, 400);
+      }, 500);
     };
 
     const unsub = globalRealtimeStore.subscribe('perbaikan_tickets', triggerDebouncedSync);
@@ -329,19 +354,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       if (debounceTimer) clearTimeout(debounceTimer);
       unsub();
     };
-  }, []);
-
-  // Save to localStorage as secondary backup cache (debounced to avoid thread freeze)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      try {
-        localStorage.setItem('wms_local_perbaikan_tickets', JSON.stringify(tickets));
-      } catch (e) {
-        console.warn('Gagal menyimpan tiket perbaikan ke local storage:', e);
-      }
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [tickets]);
+  }, [filterStartDate, filterEndDate]);
 
   // Tab State: 'input' | 'reject' | 'cuci' | 'permak' | 'defect'
   const [activeTab, setActiveTab] = useState<
@@ -534,7 +547,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   const [printModalTicket, setPrintModalTicket] = useState<PerbaikanTicket | null>(null);
   const [detailModalTicket, setDetailModalTicket] = useState<PerbaikanTicket | null>(null);
 
-  // Fast indexed catalog map for O(1) SKU lookup
+  // Fast indexed catalog map for O(1) SKU lookup (Zero heavy regex overhead on mount)
   const catalogSkuMap = useMemo(() => {
     const map = new Map<string, ProductItem>();
     if (!Array.isArray(productCatalog)) return map;
@@ -542,8 +555,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       const p = productCatalog[i];
       if (p && p.k) {
         const cleanSku = String(p.k).trim().toUpperCase();
-        if (!cleanSku || isCorruptedSku(cleanSku) || isDummyProduct(p)) continue;
-        map.set(cleanSku, p);
+        if (cleanSku) map.set(cleanSku, p);
       }
     }
     return map;
@@ -562,10 +574,9 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       const p = productCatalog[i];
       if (!p || !p.k) continue;
       const kUpper = p.k.toUpperCase();
-      if (isCorruptedSku(kUpper) || isDummyProduct(p)) continue;
-
       const pUpper = (p.p || p.n || '').toUpperCase();
       if (kUpper.includes(q) || pUpper.includes(q)) {
+        if (isCorruptedSku(kUpper) || isDummyProduct(p)) continue;
         result.push(p);
         if (result.length >= 8) break; // Berhenti langsung begitu 8 item ditemukan
       }
@@ -573,7 +584,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     return result;
   }, [deferredFormSku, productCatalog, catalogSkuMap, formNama]);
 
-  // Deteksi Stok Fisik Area Perbaikan (CC = Cuci, PMK = Permak, DF = Defect) dari Live Stok Fisik Gudang & Katalog
+  // Deteksi Stok Fisik Area Perbaikan (CC = Cuci, PMK = Permak, DF = Defect) menggunakan Set O(1) tanpa full scan katalog
   const physicalRepairItems = useMemo(() => {
     const result: Array<{
       sku: string;
@@ -583,14 +594,16 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       qty: number;
       tahap: 'CUCI' | 'PERMAK' | 'DEFECT';
     }> = [];
+    const seenKeys = new Set<string>();
 
-    // 1. Dari stok real fisik (Live Physical Warehouse Stock - Definitive Source)
     if (Array.isArray(stokFisikList) && stokFisikList.length > 0) {
-      stokFisikList.forEach((s) => {
+      for (let i = 0; i < stokFisikList.length; i++) {
+        const s = stokFisikList[i];
+        if (!s) continue;
         const loc = String(s.lokasi || '').trim().toUpperCase();
         const area = String(s.area || '').trim().toUpperCase();
         const q = Number(s.sisa_stok || 0);
-        if (q <= 0) return;
+        if (q <= 0) continue;
 
         let tahap: 'CUCI' | 'PERMAK' | 'DEFECT' | null = null;
         if (loc.startsWith('CC') || loc.includes('CUCI') || area.includes('CUCI')) {
@@ -603,7 +616,10 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
 
         if (tahap) {
           const skuKey = String(s.sku || '').trim().toUpperCase();
-          if (isCorruptedSku(skuKey)) return;
+          if (!skuKey || isCorruptedSku(skuKey)) continue;
+          const dedupKey = `${skuKey}|${loc}|${tahap}`;
+          if (seenKeys.has(dedupKey)) continue;
+          seenKeys.add(dedupKey);
 
           const namaFromCatalog = catalogSkuMap.get(skuKey);
           const nama = resolveProductName(skuKey, s.nama_produk, namaFromCatalog);
@@ -618,73 +634,11 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
             tahap,
           });
         }
-      });
-    }
-
-    // 2. Dari productCatalog (Data Katalog & Master Produk)
-    if (Array.isArray(productCatalog) && productCatalog.length > 0) {
-      for (let i = 0; i < productCatalog.length; i++) {
-        const p = productCatalog[i];
-        if (!p || !p.k || isCorruptedSku(p.k) || isDummyProduct(p)) continue;
-
-        const cleanSku = String(p.k).trim().toUpperCase();
-        const cleanName = resolveProductName(cleanSku, p.p, p);
-        const cleanSize = resolveProductDisplaySize(cleanSku, p.s) || p.s || '-';
-
-        if (Array.isArray(p.locList) && p.locList.length > 0) {
-          p.locList.forEach((l) => {
-            const locStr = typeof l === 'string' ? l.trim().toUpperCase() : String(l.lokasi || '').trim().toUpperCase();
-            const q = typeof l === 'object' && l.qty !== undefined ? Number(l.qty) : (p.q || 1);
-            let tahap: 'CUCI' | 'PERMAK' | 'DEFECT' | null = null;
-            if (locStr.startsWith('CC') || locStr.includes('CUCI')) tahap = 'CUCI';
-            else if (locStr.startsWith('PMK') || locStr.includes('PERMAK')) tahap = 'PERMAK';
-            else if (locStr.startsWith('DF') || locStr.includes('DEFECT')) tahap = 'DEFECT';
-
-            if (tahap) {
-              const already = result.some(
-                (r) => r.sku.toUpperCase() === cleanSku && r.lokasi.toUpperCase() === locStr && r.tahap === tahap
-              );
-              if (!already) {
-                result.push({ sku: cleanSku, nama: cleanName, size: cleanSize, lokasi: locStr, qty: q > 0 ? q : 1, tahap });
-              }
-            }
-          });
-        } else if (p.lokasi) {
-          const locUpper = String(p.lokasi).toUpperCase();
-          if (
-            !locUpper.includes('CC') &&
-            !locUpper.includes('CUCI') &&
-            !locUpper.includes('PMK') &&
-            !locUpper.includes('PERMAK') &&
-            !locUpper.includes('DF') &&
-            !locUpper.includes('DEFECT')
-          ) {
-            continue;
-          }
-
-          const locs = locUpper.split(/[,/;\n|]+/);
-          locs.forEach((locRaw) => {
-            const locStr = locRaw.trim();
-            let tahap: 'CUCI' | 'PERMAK' | 'DEFECT' | null = null;
-            if (locStr.startsWith('CC') || locStr.includes('CUCI')) tahap = 'CUCI';
-            else if (locStr.startsWith('PMK') || locStr.includes('PERMAK')) tahap = 'PERMAK';
-            else if (locStr.startsWith('DF') || locStr.includes('DEFECT')) tahap = 'DEFECT';
-
-            if (tahap) {
-              const already = result.some(
-                (r) => r.sku.toUpperCase() === cleanSku && r.lokasi.toUpperCase() === locStr && r.tahap === tahap
-              );
-              if (!already) {
-                result.push({ sku: cleanSku, nama: cleanName, size: cleanSize, lokasi: locStr, qty: p.q && p.q > 0 ? p.q : 1, tahap });
-              }
-            }
-          });
-        }
       }
     }
 
     return result;
-  }, [productCatalog, stokFisikList, catalogSkuMap]);
+  }, [stokFisikList, catalogSkuMap]);
 
   // Statistics KPI
   const stats = useMemo(() => {
@@ -727,6 +681,13 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
         if (!isLocationMatch(t.lokasi_sekarang, filterLokasi)) return false;
       }
 
+      // Date range filter (YYYY-MM-DD)
+      if (filterStartDate || filterEndDate) {
+        const rawDate = String(t.created_at || t.tanggal || '').slice(0, 10);
+        if (filterStartDate && rawDate && rawDate < filterStartDate) return false;
+        if (filterEndDate && rawDate && rawDate > filterEndDate) return false;
+      }
+
       // Search query (mendukung pencarian nomor tiket, SKU, nama produk dari tiket maupun dari katalog master)
       if (deferredSearch.trim()) {
         const keywords = deferredSearch.trim().toUpperCase().split(/\s+/).filter(Boolean);
@@ -740,7 +701,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
 
       return true;
     });
-  }, [tickets, activeTab, filterKategori, filterLokasi, deferredSearch]);
+  }, [tickets, activeTab, filterKategori, filterLokasi, filterStartDate, filterEndDate, deferredSearch, catalogSkuMap]);
 
   // Total fisik barang (pcs) di daftar terfilter saat ini (misal 48 pcs di rak DF001)
   const filteredTotalPcs = useMemo(() => {
@@ -760,8 +721,8 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     setIsLoadingDb(true);
     try {
       const [freshTickets, freshPhysical] = await Promise.all([
-        fetchPerbaikanTicketsFromSupabase(true).catch(() => [] as PerbaikanTicket[]),
-        fetchSupabaseStokFisikDirect(true).catch(() => [] as StockRealtimeItem[]),
+        fetchPerbaikanTicketsFromSupabase({ forceRefresh: true, limit: 500 }).catch(() => [] as PerbaikanTicket[]),
+        fetchRepairAreaStokFisikDirect(true).catch(() => [] as StockRealtimeItem[]),
       ]);
 
       if (freshPhysical && freshPhysical.length > 0) {
@@ -2840,6 +2801,39 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            {/* Filter Rentang Tanggal (Untuk mencari tiket lama di luar 300 terbaru) */}
+            <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-[#0f172a] px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs">
+              <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <input
+                type="date"
+                value={filterStartDate}
+                onChange={(e) => setFilterStartDate(e.target.value)}
+                className="bg-transparent text-slate-800 dark:text-slate-200 text-xs outline-none"
+                title="Dari Tanggal"
+              />
+              <span className="text-slate-400">-</span>
+              <input
+                type="date"
+                value={filterEndDate}
+                onChange={(e) => setFilterEndDate(e.target.value)}
+                className="bg-transparent text-slate-800 dark:text-slate-200 text-xs outline-none"
+                title="Sampai Tanggal"
+              />
+              {(filterStartDate || filterEndDate) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterStartDate('');
+                    setFilterEndDate('');
+                  }}
+                  className="text-slate-400 hover:text-rose-500 ml-1 cursor-pointer"
+                  title="Reset Filter Tanggal"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
             {/* Filter Lokasi Rak */}
             <div className="flex items-center gap-1.5">
               <MapPin className="w-3.5 h-3.5 text-purple-600 shrink-0" />

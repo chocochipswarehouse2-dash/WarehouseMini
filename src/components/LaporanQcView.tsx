@@ -57,6 +57,8 @@ import {
   savePerbaikanTicketToSupabase,
   QC_REPORTS_SUPABASE_DDL_SQL,
   isDummyProduct,
+  getCachedQcReportsSync,
+  ensureLightweightQcStorage,
 } from '../services/supabase';
 import { getAllProductsFromLocalDb } from '../services/localDb';
 import { uploadMultipleImagesToGdrive } from '../services/gdriveUpload';
@@ -209,14 +211,9 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
   onNavigateToRiwayat,
 }) => {
   const [reports, setReports] = useState<QcReport[]>(() => {
-    try {
-      const cached = localStorage.getItem('wms_local_qc_reports');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return INITIAL_DEMO_QC_REPORTS;
+    if (viewMode === 'form_only') return [];
+    const cached = getCachedQcReportsSync();
+    return cached.length > 0 ? cached : INITIAL_DEMO_QC_REPORTS;
   });
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -333,11 +330,15 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const deferredSearchQuery = React.useDeferredValue(searchQuery);
   // High-performance Pagination State (Anti-lag di HP dengan RAM terbatas)
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(15);
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'OKE' | 'REJECT' | 'KNR' | 'CUCI' | 'PERMAK' | 'DEFECT'>('ALL');
   const [filterSumber, setFilterSumber] = useState<string>('ALL');
+  const [filterStartDate, setFilterStartDate] = useState<string>('');
+  const [filterEndDate, setFilterEndDate] = useState<string>('');
+  const skuSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // View Format Toggle: Kartu (Cards) vs Tabel (Table)
   const [viewFormat, setViewFormat] = useState<'cards' | 'table'>(() => {
@@ -415,17 +416,27 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
   const [editPicQc, setEditPicQc] = useState<string>('');
   const [editPhotos, setEditPhotos] = useState<PhotoItem[]>([]);
 
-  // Load from Supabase on mount & listen to realtime custom updates
+  // Load from Supabase ONLY when Riwayat view is active (Lazy Fetch per Tab, default 300 latest)
   useEffect(() => {
+    ensureLightweightQcStorage();
+    if (viewMode === 'form_only') return;
+
     let mounted = true;
+    const hasDateRange = Boolean(filterStartDate || filterEndDate);
     const load = async () => {
       setIsLoading(true);
       try {
-        const data = await fetchQcReportsFromSupabase();
+        const data = await fetchQcReportsFromSupabase({
+          limit: hasDateRange ? 1000 : 300,
+          startDate: filterStartDate || undefined,
+          endDate: filterEndDate || undefined,
+        });
         if (mounted && data) {
           setReports(data);
           window.dispatchEvent(
-            new CustomEvent('wms_qc_reports_updated', { detail: { reports: data } })
+            new CustomEvent('wms_qc_reports_updated', {
+              detail: { reports: data, source: 'riwayat_fetch' },
+            })
           );
         }
       } catch (err) {
@@ -436,13 +447,17 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
     };
     load();
 
-    // Listen to updates from other tabs or background sync
-    const handleRemoteUpdate = () => {
-      fetchQcReportsFromSupabase().then((data) => {
-        if (mounted && data) {
-          setReports(data);
-        }
-      });
+    // Listen to updates from mutations (without self-triggering network loop)
+    const handleRemoteUpdate = (e: any) => {
+      if (e?.detail?.source === 'riwayat_fetch') return;
+      if (Array.isArray(e?.detail?.reports)) {
+        if (mounted) setReports(e.detail.reports);
+        return;
+      }
+      const cached = getCachedQcReportsSync();
+      if (mounted && cached.length > 0) {
+        setReports(cached);
+      }
     };
     window.addEventListener('wms_qc_reports_updated', handleRemoteUpdate);
 
@@ -450,14 +465,18 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
       mounted = false;
       window.removeEventListener('wms_qc_reports_updated', handleRemoteUpdate);
     };
-  }, []);
+  }, [viewMode, filterStartDate, filterEndDate]);
 
   // -------------------------------------------------------------
-  // FULL CATALOG COMBINER & MULTI-TOKEN PARTIAL MATCH SEARCH
+  // ZERO-OVERHEAD CATALOG REFERENCE & ON-DEMAND SKU SEARCH
   // -------------------------------------------------------------
   const [localDbCatalog, setLocalDbCatalog] = useState<ProductItem[]>([]);
 
   useEffect(() => {
+    // Hanya muat dari IndexedDB jika prop productCatalog kosong DAN sedang di mode form
+    if (viewMode === 'riwayat_only') return;
+    if (Array.isArray(productCatalog) && productCatalog.length > 0) return;
+
     let mounted = true;
     getAllProductsFromLocalDb()
       .then((items) => {
@@ -469,94 +488,66 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [viewMode, productCatalog.length]);
 
-  const combinedCatalog = useMemo(() => {
-    const map = new Map<string, ProductItem>();
-
-    const insertToMap = (p: ProductItem) => {
-      if (!p || isDummyProduct(p)) return;
-      const key = String(p.k || (p as any).sku || '').trim().toUpperCase();
-      if (!key || isCorruptedSku(key)) return;
-
-      const cleanName = resolveProductName(key, p.p, p);
-      const cleanSize = resolveProductDisplaySize(key, p.s) || p.s || '-';
-
-      map.set(key, {
-        ...p,
-        k: key,
-        p: cleanName,
-        nama_produk: cleanName,
-        s: cleanSize,
-        size: cleanSize,
-      });
-    };
-
-    // 1. IndexedDB products
-    if (Array.isArray(localDbCatalog)) {
-      for (const p of localDbCatalog) {
-        insertToMap(p);
-      }
+  const activeCatalogSource = useMemo(() => {
+    if (Array.isArray(productCatalog) && productCatalog.length > 0) {
+      return productCatalog;
     }
-
-    // 2. Prop productCatalog from parent
-    if (Array.isArray(productCatalog)) {
-      for (const p of productCatalog) {
-        insertToMap(p);
-      }
-    }
-
-    // 3. Fallback localStorage
-    if (map.size === 0) {
-      try {
-        const raw = localStorage.getItem('wms_product_cache');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            for (const p of parsed) {
-              insertToMap(p);
-            }
-          }
-        }
-      } catch {}
-    }
-
-    return Array.from(map.values());
+    return localDbCatalog;
   }, [productCatalog, localDbCatalog]);
 
   const searchProductPartialMatch = (query: string): ProductItem[] => {
-    if (!query || !query.trim() || combinedCatalog.length === 0) return [];
+    if (!query || query.trim().length < 2 || activeCatalogSource.length === 0) return [];
     const cleanQ = query.toLowerCase().trim();
     const tokens = cleanQ.split(/\s+/).filter(Boolean);
     if (tokens.length === 0) return [];
 
     const scoredMatches: { item: ProductItem; score: number }[] = [];
+    const seenSkus = new Set<string>();
 
-    for (const p of combinedCatalog) {
-      const sSku = String(p.k || p.sku || '').toLowerCase();
-      const sName = String(
+    for (let i = 0; i < activeCatalogSource.length; i++) {
+      const p = activeCatalogSource[i];
+      if (!p) continue;
+      const rawSku = String(p.k || (p as any).sku || '').trim();
+      if (!rawSku) continue;
+      const sSku = rawSku.toLowerCase();
+
+      const rawName = String(
         p.nama_produk ||
-        p.p ||
-        p.n ||
-        p.name ||
-        p.nama ||
-        p.product_name ||
-        p.produk ||
-        (p as any).title ||
-        ''
-      ).toLowerCase();
+          p.p ||
+          p.n ||
+          p.name ||
+          p.nama ||
+          p.product_name ||
+          p.produk ||
+          (p as any).title ||
+          ''
+      );
+      const sName = rawName.toLowerCase();
       const sSize = String(p.s || p.size || '').toLowerCase();
-      const sCat = String(p.c || p.kategori || p.category || '').toLowerCase();
       const sColor = String(p.warna || (p as any).color || '').toLowerCase();
-      const sDesc = String(p.deskripsi || (p as any).description || '').toLowerCase();
-      const sBarcode = String((p as any).barcode || '').toLowerCase();
 
-      // Combined normalized text with single spaces
-      const combined = `${sSku} ${sName} ${sSize} ${sCat} ${sColor} ${sDesc} ${sBarcode}`;
-
-      // All search tokens must partially match somewhere in the combined string
-      const matchAll = tokens.every((token) => combined.includes(token));
+      // Fast token check without building huge concatenated strings unless needed
+      let matchAll = true;
+      for (let t = 0; t < tokens.length; t++) {
+        const tok = tokens[t];
+        if (
+          !sSku.includes(tok) &&
+          !sName.includes(tok) &&
+          !sSize.includes(tok) &&
+          !sColor.includes(tok)
+        ) {
+          matchAll = false;
+          break;
+        }
+      }
       if (!matchAll) continue;
+
+      const upperSku = rawSku.toUpperCase();
+      if (seenSkus.has(upperSku)) continue;
+      if (isDummyProduct(p) || isCorruptedSku(upperSku)) continue;
+      seenSkus.add(upperSku);
 
       let score = 0;
       if (sSku === cleanQ) score += 200;
@@ -567,24 +558,36 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
       else if (sName.startsWith(cleanQ)) score += 100;
       else if (sName.includes(cleanQ)) score += 50;
 
-      // Token bonuses
       for (const token of tokens) {
         if (sSku === token) score += 40;
         else if (sSku.startsWith(token)) score += 25;
         else if (sSku.includes(token)) score += 15;
 
         if (sName.startsWith(token)) score += 30;
-        if (sName.includes(token)) score += 20;
+        else if (sName.includes(token)) score += 20;
 
         if (sColor.includes(token)) score += 20;
         if (sSize === token) score += 20;
       }
 
       scoredMatches.push({ item: p, score });
+      if (scoredMatches.length >= 150) break;
     }
 
     scoredMatches.sort((a, b) => b.score - a.score);
-    return scoredMatches.slice(0, 30).map((m) => m.item);
+    return scoredMatches.slice(0, 25).map(({ item: p }) => {
+      const key = String(p.k || (p as any).sku || '').trim().toUpperCase();
+      const cleanName = resolveProductName(key, p.p, p);
+      const cleanSize = resolveProductDisplaySize(key, p.s) || p.s || '-';
+      return {
+        ...p,
+        k: key,
+        p: cleanName,
+        nama_produk: cleanName,
+        s: cleanSize,
+        size: cleanSize,
+      };
+    });
   };
 
   // -------------------------------------------------------------
@@ -687,17 +690,22 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
     onShowToast(`Semua variant diset ke status ${targetStatus}!`, 'info');
   };
 
-  // Autocomplete interaction for SKU
+  // Autocomplete interaction for SKU (Debounced 180ms, min 2 chars)
   const handleSkuSearchChange = (id: string, val: string) => {
     handleUpdateVariant(id, { sku: val });
-    if (!val.trim()) {
+    if (skuSearchTimerRef.current) {
+      clearTimeout(skuSearchTimerRef.current);
+    }
+    if (!val || val.trim().length < 2) {
       setActiveSuggestionVarId(null);
       setActiveSuggestions([]);
       return;
     }
-    const matches = searchProductPartialMatch(val);
-    setActiveSuggestions(matches);
-    setActiveSuggestionVarId(matches.length > 0 ? id : null);
+    skuSearchTimerRef.current = setTimeout(() => {
+      const matches = searchProductPartialMatch(val);
+      setActiveSuggestions(matches);
+      setActiveSuggestionVarId(matches.length > 0 ? id : null);
+    }, 180);
   };
 
   const handleSelectSuggestion = (id: string, item: ProductItem) => {
@@ -1139,10 +1147,11 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
   // Reset halaman saat filter berubah
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, filterStatus, filterSumber]);
+  }, [deferredSearchQuery, filterStatus, filterSumber, filterStartDate, filterEndDate]);
 
   const filteredReports = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
+    if (viewMode === 'form_only') return [];
+    const q = deferredSearchQuery.toLowerCase().trim();
     const tokens = q ? q.split(/\s+/).filter(Boolean) : [];
 
     return reports.filter((r) => {
@@ -1151,6 +1160,13 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
 
       // Sumber Batch Filter
       if (filterSumber !== 'ALL' && r.sumber_batch !== filterSumber) return false;
+
+      // Date Range Filter (YYYY-MM-DD)
+      if (filterStartDate || filterEndDate) {
+        const rawDate = String(r.tanggal || r.created_at || '').slice(0, 10);
+        if (filterStartDate && rawDate && rawDate < filterStartDate) return false;
+        if (filterEndDate && rawDate && rawDate > filterEndDate) return false;
+      }
 
       // Partial Match Search
       if (tokens.length > 0) {
@@ -1161,7 +1177,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
 
       return true;
     });
-  }, [reports, filterStatus, filterSumber, searchQuery]);
+  }, [reports, viewMode, filterStatus, filterSumber, filterStartDate, filterEndDate, deferredSearchQuery]);
 
   const metrics = useMemo(() => {
     let totalChecked = 0;
@@ -2401,11 +2417,19 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
               onClick={async () => {
                 setIsLoading(true);
                 try {
-                  const data = await fetchQcReportsFromSupabase();
+                  const hasDateRange = Boolean(filterStartDate || filterEndDate);
+                  const data = await fetchQcReportsFromSupabase({
+                    forceRefresh: true,
+                    limit: hasDateRange ? 1000 : 300,
+                    startDate: filterStartDate || undefined,
+                    endDate: filterEndDate || undefined,
+                  });
                   if (data) {
                     setReports(data);
                     window.dispatchEvent(
-                      new CustomEvent('wms_qc_reports_updated', { detail: { reports: data } })
+                      new CustomEvent('wms_qc_reports_updated', {
+                        detail: { reports: data, source: 'riwayat_fetch' },
+                      })
                     );
                   }
                   onShowToast('Data laporan QC berhasil disinkronisasi', 'info');
@@ -2439,6 +2463,39 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                 type="button"
                 onClick={() => setSearchQuery('')}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Filter Rentang Tanggal (Untuk mencari data lama di luar 300 terbaru) */}
+          <div className="flex items-center gap-1.5 bg-white dark:bg-slate-800 px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs">
+            <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <input
+              type="date"
+              value={filterStartDate}
+              onChange={(e) => setFilterStartDate(e.target.value)}
+              className="bg-transparent text-slate-800 dark:text-slate-200 text-xs outline-none"
+              title="Dari Tanggal"
+            />
+            <span className="text-slate-400">-</span>
+            <input
+              type="date"
+              value={filterEndDate}
+              onChange={(e) => setFilterEndDate(e.target.value)}
+              className="bg-transparent text-slate-800 dark:text-slate-200 text-xs outline-none"
+              title="Sampai Tanggal"
+            />
+            {(filterStartDate || filterEndDate) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterStartDate('');
+                  setFilterEndDate('');
+                }}
+                className="text-slate-400 hover:text-rose-500 ml-1"
+                title="Reset Filter Tanggal"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
