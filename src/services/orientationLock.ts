@@ -1,27 +1,38 @@
 /**
  * Screen Orientation Service for WMS
  *
- * Implements a 3-layer defense against unwanted auto-rotation on mobile phones:
- * 1. Manifest orientation: 'portrait-primary' in /manifest.json
- * 2. Runtime Screen Orientation API lock ('portrait-primary' / 'portrait') triggered
- *    on valid user activation events (touchend, pointerup, click) and lifecycle resume.
- * 3. Instant CSS/JS Viewport Counter-Rotation fallback: If an already-installed
- *    Android WebAPK (compiled previously with `orientation: "any"` -> `fullSensor`)
- *    or mobile browser ignores `screen.orientation.lock` and rotates the viewport
- *    into landscape (`innerWidth > innerHeight`), `html` is immediately counter-rotated
- *    (-90deg or +90deg matching the physical top of the phone) so the UI remains
- *    strictly upright in Portrait on the physical device screen.
+ * Ensures mobile phones remain locked in Portrait orientation:
+ * 1. Attempts direct W3C Screen Orientation API lock ('portrait-primary' / 'portrait').
+ * 2. On browsers like Samsung Internet (`SamsungBrowser`) or Android shortcuts that were
+ *    installed when the old manifest had `orientation: "any"` (`SCREEN_ORIENTATION_FULL_SENSOR`),
+ *    `screen.orientation.lock()` throws `SecurityError` unless `document.fullscreenElement` is active.
+ *    When a user gesture occurs (outside of input fields), this service enters Fullscreen and
+ *    immediately locks the Android Activity to `SCREEN_ORIENTATION_PORTRAIT`.
+ * 3. Never applies CSS `transform: rotate(...)` on `<html>` or `<body>`.
  */
+
+let needsFullscreenForLock = false;
 
 export function isMobilePhoneDevice(): boolean {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent || '';
-  const isPhoneUA = /Android|iPhone|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(ua) && !/iPad|Tablet/i.test(ua);
+  const isPhoneUA =
+    /Android|iPhone|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(ua) &&
+    !/iPad|Tablet/i.test(ua);
   const shortestScreen = window.screen
     ? Math.min(window.screen.width || 9999, window.screen.height || 9999)
     : 9999;
   const shortestInner = Math.min(window.innerWidth || 9999, window.innerHeight || 9999);
   return (isPhoneUA || shortestScreen < 600) && shortestInner < 600;
+}
+
+function isEditableElement(target: EventTarget | null): boolean {
+  if (!target || !(target instanceof Element)) return false;
+  return Boolean(
+    target.closest(
+      'input, textarea, select, [contenteditable="true"], [contenteditable=""], label'
+    )
+  );
 }
 
 export async function lockOrientationToPortrait(): Promise<boolean> {
@@ -36,10 +47,16 @@ export async function lockOrientationToPortrait(): Promise<boolean> {
     if (orientation && typeof orientation.lock === 'function') {
       try {
         await orientation.lock('portrait-primary');
+        needsFullscreenForLock = false;
         return true;
       } catch {
-        await orientation.lock('portrait');
-        return true;
+        try {
+          await orientation.lock('portrait');
+          needsFullscreenForLock = false;
+          return true;
+        } catch {
+          needsFullscreenForLock = true;
+        }
       }
     }
 
@@ -49,63 +66,50 @@ export async function lockOrientationToPortrait(): Promise<boolean> {
       (window.screen as any)?.msLockOrientation;
 
     if (typeof legacyLock === 'function') {
-      return Boolean(
+      const ok = Boolean(
         legacyLock.call(window.screen, 'portrait-primary') ||
           legacyLock.call(window.screen, 'portrait')
       );
+      if (ok) needsFullscreenForLock = false;
+      return ok;
     }
   } catch {
-    // Browser may reject lock() before user gesture or outside standalone/fullscreen mode
+    needsFullscreenForLock = true;
   }
   return false;
 }
 
-export function syncPortraitViewportFallback(): void {
-  if (typeof window === 'undefined' || typeof document === 'undefined') return;
-  const docEl = document.documentElement;
-  if (!docEl) return;
+export async function lockOrientationWithFullscreen(): Promise<boolean> {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return false;
+  if (!isMobilePhoneDevice()) return false;
 
-  if (!isMobilePhoneDevice()) {
-    docEl.classList.remove('wms-force-portrait-landscape');
-    docEl.style.removeProperty('--wms-portrait-w');
-    docEl.style.removeProperty('--wms-portrait-h');
-    docEl.style.removeProperty('--wms-portrait-transform');
-    return;
+  try {
+    const docEl: any = document.documentElement;
+    const isFullscreen = Boolean(
+      document.fullscreenElement || (document as any).webkitFullscreenElement
+    );
+
+    if (!isFullscreen && docEl) {
+      const reqFs = docEl.requestFullscreen || docEl.webkitRequestFullscreen;
+      if (typeof reqFs === 'function') {
+        try {
+          await reqFs.call(docEl, { navigationUI: 'hide' });
+        } catch {
+          // Ignore if fullscreen request is blocked
+        }
+      }
+    }
+  } catch {
+    // Ignore
   }
 
-  const w = window.innerWidth;
-  const h = window.innerHeight;
-
-  if (w > h) {
-    const rawAngle =
-      typeof window.screen?.orientation?.angle === 'number'
-        ? window.screen.orientation.angle
-        : typeof (window as any).orientation === 'number'
-          ? (window as any).orientation
-          : 90;
-    const normAngle = ((Number(rawAngle) % 360) + 360) % 360;
-    const transformVal =
-      normAngle === 270
-        ? 'rotate(90deg) translateY(-100%)'
-        : 'rotate(-90deg) translateX(-100%)';
-
-    docEl.style.setProperty('--wms-portrait-w', `${h}px`);
-    docEl.style.setProperty('--wms-portrait-h', `${w}px`);
-    docEl.style.setProperty('--wms-portrait-transform', transformVal);
-    docEl.classList.add('wms-force-portrait-landscape');
-  } else {
-    docEl.classList.remove('wms-force-portrait-landscape');
-    docEl.style.removeProperty('--wms-portrait-w');
-    docEl.style.removeProperty('--wms-portrait-h');
-    docEl.style.removeProperty('--wms-portrait-transform');
-  }
+  return lockOrientationToPortrait();
 }
 
 export function unlockOrientation(): boolean {
   if (typeof window === 'undefined') return false;
   if (isMobilePhoneDevice()) {
     void lockOrientationToPortrait();
-    syncPortraitViewportFallback();
     return false;
   }
 
@@ -125,27 +129,27 @@ export function unlockOrientation(): boolean {
   return false;
 }
 
-export async function lockOrientationWithFullscreen(): Promise<boolean> {
-  return lockOrientationToPortrait();
-}
-
 export function setupOrientationAutoLock() {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
-  const applyAll = () => {
-    void lockOrientationToPortrait();
-    syncPortraitViewportFallback();
-  };
+  // Ensure any legacy CSS rotation classes/variables are removed
+  try {
+    const docEl = document.documentElement;
+    docEl.classList.remove('wms-force-portrait-landscape');
+    docEl.style.removeProperty('--wms-portrait-w');
+    docEl.style.removeProperty('--wms-portrait-h');
+    docEl.style.removeProperty('--wms-portrait-transform');
+    docEl.style.removeProperty('transform');
+  } catch {
+    // Ignore
+  }
 
-  applyAll();
+  void lockOrientationToPortrait();
 
   const handleOrientationChange = () => {
-    applyAll();
-    setTimeout(applyAll, 60);
-    setTimeout(applyAll, 200);
+    void lockOrientationToPortrait();
   };
 
-  window.addEventListener('resize', syncPortraitViewportFallback, { passive: true });
   window.addEventListener('orientationchange', handleOrientationChange, { passive: true });
   if (
     window.screen?.orientation &&
@@ -156,16 +160,27 @@ export function setupOrientationAutoLock() {
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
-      applyAll();
+      void lockOrientationToPortrait();
     }
   });
-  window.addEventListener('focus', applyAll, { passive: true });
-  window.addEventListener('pageshow', applyAll, { passive: true });
 
-  // Valid transient user activation events for Chromium's ScreenOrientationProvider
-  const handleUserGesture = () => {
-    void lockOrientationToPortrait();
+  const handleUserGesture = (ev: Event) => {
+    if (!isMobilePhoneDevice()) return;
+    if (isEditableElement(ev.target)) return;
+
+    const isFullscreen = Boolean(
+      document.fullscreenElement || (document as any).webkitFullscreenElement
+    );
+    const isLandscapeNow = window.innerWidth > window.innerHeight;
+    const isSamsungBrowser = /SamsungBrowser/i.test(navigator.userAgent || '');
+
+    if (!isFullscreen && (needsFullscreenForLock || isSamsungBrowser || isLandscapeNow)) {
+      void lockOrientationWithFullscreen();
+    } else {
+      void lockOrientationToPortrait();
+    }
   };
+
   window.addEventListener('touchend', handleUserGesture, { passive: true });
   window.addEventListener('pointerup', handleUserGesture, { passive: true });
   window.addEventListener('click', handleUserGesture, { passive: true });

@@ -26,7 +26,7 @@ export default defineConfig(({ command }) => {
       VitePWA({
         registerType: 'autoUpdate',
         injectRegister: 'auto',
-        manifestFilename: 'manifest.json',
+        manifestFilename: 'manifest-portrait.json',
         devOptions: {
           enabled: true,
         },
@@ -56,14 +56,14 @@ export default defineConfig(({ command }) => {
           ]
         },
         manifest: {
-          id: 'warehouse-mini',
+          id: 'warehouse-mini-portrait',
           name: 'Warehouse Mini',
           short_name: 'Warehouse Mini',
           description: 'Aplikasi Scanner Barcode & WMS Warehouse Management System dengan sinkronisasi Supabase real-time',
           theme_color: '#0f172a',
           background_color: '#0f172a',
           display: 'standalone',
-          orientation: 'portrait-primary',
+          orientation: 'portrait',
           lang: 'id',
           dir: 'ltr',
           categories: ['business', 'productivity', 'utilities'],

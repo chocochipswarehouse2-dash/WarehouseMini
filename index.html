@@ -2,9 +2,8 @@
 <html lang="id">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <title>Warehouse Mini</title>
-    <link rel="manifest" href="/manifest.json" />
     <link rel="icon" type="image/png" sizes="48x48" href="/favicon.png" />
     <link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
     <meta name="description" content="Aplikasi Android & Web Scanner Gudang Pintar dengan sinkronisasi Supabase real-time, cetak barcode produk thermal 50x20mm massal Excel, multi-mode scan, modul Peminjaman Sementara (SPS) Live Studio/Shopee/TikTok, dan dark mode" />
@@ -22,41 +21,31 @@
     <meta name="x5-orientation" content="portrait" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 
-    <!-- Hard Portrait Lock CSS for Mobile Phones (Counter-rotates if OS/WebAPK forces landscape) -->
+    <!-- Ensure Fullscreen Mode Scrolls Smoothly & Never Rotates DOM via CSS -->
     <style>
-      @media screen {
-        html.wms-force-portrait-landscape {
-          position: fixed !important;
-          top: 0 !important;
-          left: 0 !important;
-          width: var(--wms-portrait-w, 100vh) !important;
-          height: var(--wms-portrait-h, 100vw) !important;
-          max-width: var(--wms-portrait-w, 100vh) !important;
-          max-height: var(--wms-portrait-h, 100vw) !important;
-          overflow: hidden !important;
-          transform-origin: top left !important;
-          transform: var(--wms-portrait-transform, rotate(-90deg) translateX(-100%)) !important;
-        }
-        html.wms-force-portrait-landscape body {
-          width: 100% !important;
-          height: 100% !important;
-          max-width: 100% !important;
-          max-height: 100% !important;
-          overflow-x: hidden !important;
-          overflow-y: auto !important;
-          -webkit-overflow-scrolling: touch !important;
-        }
+      html,
+      body {
+        transform: none !important;
       }
-      @media print {
-        html.wms-force-portrait-landscape {
-          position: static !important;
-          width: auto !important;
-          height: auto !important;
-          max-width: none !important;
-          max-height: none !important;
-          overflow: visible !important;
-          transform: none !important;
-        }
+      html:fullscreen,
+      html:-webkit-full-screen {
+        width: 100% !important;
+        height: 100% !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        background-color: var(--bg-app, #f4f6f8);
+      }
+      html.dark:fullscreen,
+      html.dark:-webkit-full-screen {
+        background-color: #0f172a;
+      }
+      html:fullscreen body,
+      html:-webkit-full-screen body {
+        width: 100% !important;
+        min-height: 100% !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
       }
     </style>
     
@@ -98,9 +87,20 @@
       }(window.location))
     </script>
     
-    <!-- Enforce Portrait Lock & Counter-Rotate if OS/WebAPK Forces Landscape on Mobile -->
+    <!-- Native OS Portrait Lock for Mobile Browsers (Including Samsung Internet Fullscreen Lock) -->
     <script>
       (function() {
+        // Clean up any legacy CSS classes from previous builds
+        try {
+          document.documentElement.classList.remove('wms-force-portrait-landscape');
+          document.documentElement.style.removeProperty('--wms-portrait-w');
+          document.documentElement.style.removeProperty('--wms-portrait-h');
+          document.documentElement.style.removeProperty('--wms-portrait-transform');
+          document.documentElement.style.removeProperty('transform');
+        } catch (e) {}
+
+        var needsFullscreenForOrientationLock = false;
+
         function isPhoneDevice() {
           var ua = navigator.userAgent || '';
           var isPhoneUA = /Android|iPhone|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(ua) && !/iPad|Tablet/i.test(ua);
@@ -109,82 +109,77 @@
           return (isPhoneUA || shortest < 600) && innerShortest < 600;
         }
 
-        function tryNativePortraitLock() {
+        function isEditableTarget(el) {
+          if (!el || typeof el.closest !== 'function') return false;
+          return Boolean(
+            el.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""], label')
+          );
+        }
+
+        function lockPortraitDirect() {
           try {
-            if (!isPhoneDevice()) return;
+            if (!isPhoneDevice()) return Promise.resolve(false);
             var ori = window.screen && (window.screen.orientation || window.screen.mozOrientation || window.screen.msOrientation);
             if (ori && typeof ori.lock === 'function') {
-              var p = ori.lock('portrait-primary');
-              if (p && typeof p.catch === 'function') {
-                p.catch(function() {
-                  try {
-                    var p2 = ori.lock('portrait');
-                    if (p2 && typeof p2.catch === 'function') p2.catch(function() {});
-                  } catch (e2) {}
+              return ori.lock('portrait-primary').then(function() {
+                needsFullscreenForOrientationLock = false;
+                return true;
+              }).catch(function() {
+                return ori.lock('portrait').then(function() {
+                  needsFullscreenForOrientationLock = false;
+                  return true;
+                }).catch(function() {
+                  needsFullscreenForOrientationLock = true;
+                  return false;
                 });
+              });
+            }
+          } catch (e) {
+            needsFullscreenForOrientationLock = true;
+          }
+          return Promise.resolve(false);
+        }
+
+        function handleUserGestureLock(ev) {
+          try {
+            if (!isPhoneDevice()) return;
+            if (ev && isEditableTarget(ev.target)) return;
+
+            var docEl = document.documentElement;
+            var isFullscreen = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+            var isLandscapeNow = window.innerWidth > window.innerHeight;
+            var isSamsungBrowser = /SamsungBrowser/i.test(navigator.userAgent || '');
+
+            // On Samsung Internet (or when direct lock rejected / screen is in landscape),
+            // ScreenOrientation.lock() requires Fullscreen API to lock the Android Activity to Portrait.
+            if (!isFullscreen && (needsFullscreenForOrientationLock || isSamsungBrowser || isLandscapeNow)) {
+              var reqFs = docEl.requestFullscreen || docEl.webkitRequestFullscreen;
+              if (typeof reqFs === 'function') {
+                var fsPromise = reqFs.call(docEl, { navigationUI: 'hide' });
+                if (fsPromise && typeof fsPromise.then === 'function') {
+                  fsPromise.then(function() {
+                    lockPortraitDirect();
+                  }).catch(function() {
+                    lockPortraitDirect();
+                  });
+                  return;
+                }
               }
             }
+
+            lockPortraitDirect();
           } catch (e) {}
         }
 
-        function syncPortraitViewport() {
-          try {
-            var docEl = document.documentElement;
-            if (!docEl) return;
-            if (!isPhoneDevice()) {
-              docEl.classList.remove('wms-force-portrait-landscape');
-              docEl.style.removeProperty('--wms-portrait-w');
-              docEl.style.removeProperty('--wms-portrait-h');
-              docEl.style.removeProperty('--wms-portrait-transform');
-              return;
-            }
-
-            tryNativePortraitLock();
-
-            var w = window.innerWidth;
-            var h = window.innerHeight;
-            if (w > h) {
-              var rawAngle = (window.screen && window.screen.orientation && typeof window.screen.orientation.angle === 'number')
-                ? window.screen.orientation.angle
-                : (typeof window.orientation === 'number' ? window.orientation : 90);
-              var normAngle = ((Number(rawAngle) % 360) + 360) % 360;
-              var transformVal = normAngle === 270
-                ? 'rotate(90deg) translateY(-100%)'
-                : 'rotate(-90deg) translateX(-100%)';
-
-              docEl.style.setProperty('--wms-portrait-w', h + 'px');
-              docEl.style.setProperty('--wms-portrait-h', w + 'px');
-              docEl.style.setProperty('--wms-portrait-transform', transformVal);
-              docEl.classList.add('wms-force-portrait-landscape');
-            } else {
-              docEl.classList.remove('wms-force-portrait-landscape');
-              docEl.style.removeProperty('--wms-portrait-w');
-              docEl.style.removeProperty('--wms-portrait-h');
-              docEl.style.removeProperty('--wms-portrait-transform');
-            }
-          } catch (e) {}
-        }
-
-        window.__wmsSyncPortraitViewport = syncPortraitViewport;
-        syncPortraitViewport();
-        window.addEventListener('resize', syncPortraitViewport, { passive: true });
+        lockPortraitDirect();
         window.addEventListener('orientationchange', function() {
-          syncPortraitViewport();
-          setTimeout(syncPortraitViewport, 60);
-          setTimeout(syncPortraitViewport, 200);
+          lockPortraitDirect();
         }, { passive: true });
-        if (window.screen && window.screen.orientation && typeof window.screen.orientation.addEventListener === 'function') {
-          window.screen.orientation.addEventListener('change', function() {
-            syncPortraitViewport();
-            setTimeout(syncPortraitViewport, 60);
-          });
-        }
-        window.addEventListener('touchend', tryNativePortraitLock, { passive: true });
-        window.addEventListener('pointerup', tryNativePortraitLock, { passive: true });
-        window.addEventListener('click', tryNativePortraitLock, { passive: true });
+        window.addEventListener('touchend', handleUserGestureLock, { passive: true });
+        window.addEventListener('pointerup', handleUserGestureLock, { passive: true });
+        window.addEventListener('click', handleUserGestureLock, { passive: true });
       })();
     </script>
-    
 
     <!-- Google Font & Web Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
