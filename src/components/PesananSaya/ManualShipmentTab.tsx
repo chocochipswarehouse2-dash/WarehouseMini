@@ -1997,18 +1997,25 @@ _WMS Warehouse System_`;
                           ))}
                         </select>
 
-                        {/* Input Opsional No SJ DealPOS jika Fulfilment Marketplace */}
+                        {/* Input No SJ DealPOS (MKT -> Store) khusus Admin WH, Store hanya View */}
                         {(item.fulfillment || '').toLowerCase().includes('marketplace') && (
-                          <div className="mt-1.5 flex items-center gap-1.5">
-                            <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 shrink-0">No SJ DealPOS:</span>
-                            <input
-                              type="text"
-                              value={item.no_sj_dealpos || ''}
-                              onChange={(e) => handleItemChange(item.id, 'no_sj_dealpos', e.target.value)}
-                              placeholder="Contoh: TR-202609-0012"
-                              className="w-full rounded border border-amber-300 dark:border-amber-700/80 bg-amber-50/50 dark:bg-amber-950/40 text-[11px] font-mono py-0.5 px-1.5 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
-                            />
-                          </div>
+                          userIsAdmin ? (
+                            <div className="mt-1.5 flex items-center gap-1.5">
+                              <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 shrink-0">No SJ Delivery (MKT➔Store):</span>
+                              <input
+                                type="text"
+                                value={item.no_sj_dealpos || ''}
+                                onChange={(e) => handleItemChange(item.id, 'no_sj_dealpos', e.target.value)}
+                                placeholder="Diisi Admin WH (Cth: 26.10.00286)"
+                                className="w-full rounded border border-amber-300 dark:border-amber-700/80 bg-amber-50/50 dark:bg-amber-950/40 text-[11px] font-mono py-0.5 px-1.5 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                              />
+                            </div>
+                          ) : (
+                            <div className="mt-1.5 text-[10px] text-amber-700 dark:text-amber-400 bg-amber-50/60 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded px-2 py-1 flex items-center justify-between">
+                              <span>No. SJ Delivery (MKT ➔ Store):</span>
+                              <span className="font-mono font-bold">{item.no_sj_dealpos || 'Diinput oleh Admin WH'}</span>
+                            </div>
+                          )
                         )}
                       </div>
 
@@ -2543,9 +2550,13 @@ _WMS Warehouse System_`;
   };
 
   
-  // Handler simpan No SJ DealPOS
+  // Handler simpan No SJ DealPOS (Khusus Admin WH)
   const handleSaveSjDealpos = async () => {
     if (!sjModalData) return;
+    if (!userIsAdmin) {
+      onShowToast('Akses ditolak: Hanya Admin WH yang dapat mengisi atau mengubah No. SJ Delivery DealPOS.', 'error');
+      return;
+    }
     const { order, item, noSj, applyToAllMarketplace } = sjModalData;
     const cleanSj = noSj.trim();
 
@@ -2566,25 +2577,28 @@ _WMS Warehouse System_`;
 
       if (success) {
         onShowToast(`No. Surat Jalan DealPOS berhasil ${cleanSj ? 'disimpan' : 'dihapus'}!`, 'success');
-        // Update local state orders agar instan
-        setOrders(prev => prev.map(o => {
-          if (o.no_pesanan === order.no_pesanan) {
-            const updatedItems = (o.items || []).map(it => {
-              if (item.id === 'ALL_MKT') {
-                const ful = (it.fulfillment || '').toLowerCase();
-                const isTarget = ful.includes('marketplace') || ful.includes('gudang') || ful.includes('warehouse') || order.no_pesanan?.startsWith('AR-') || !ful;
-                if (isTarget) {
-                  return { ...it, no_sj_dealpos: cleanSj, sj_updated_at: new Date().toISOString(), sj_updated_by: operatorName };
-                }
-              } else if (it.id === item.id) {
-                return { ...it, no_sj_dealpos: cleanSj, sj_updated_at: new Date().toISOString(), sj_updated_by: operatorName };
+        const nowIso = new Date().toISOString();
+        const mapOrderItems = (o: ManualShipmentOrder): ManualShipmentOrder => {
+          const updatedItems = (o.items || []).map(it => {
+            if (applyToAllMarketplace || !item || item.id === 'ALL_MKT') {
+              const ful = (it.fulfillment || '').toLowerCase();
+              const isTarget = ful.includes('marketplace') || ful.includes('gudang') || ful.includes('warehouse') || order.no_pesanan?.startsWith('AR-') || !ful;
+              if (isTarget) {
+                return { ...it, no_sj_dealpos: cleanSj, sj_updated_at: nowIso, sj_updated_by: operatorName };
               }
-              return it;
-            });
-            return { ...o, items: updatedItems };
-          }
-          return o;
-        }));
+            } else if (item && it.id === item.id) {
+              return { ...it, no_sj_dealpos: cleanSj, sj_updated_at: nowIso, sj_updated_by: operatorName };
+            }
+            return it;
+          });
+          return { ...o, items: updatedItems };
+        };
+
+        // Update local state orders agar instan
+        setOrders(prev => prev.map(o => o.no_pesanan === order.no_pesanan ? mapOrderItems(o) : o));
+        if (selectedOrderDetails?.no_pesanan === order.no_pesanan) {
+          setSelectedOrderDetails(prev => prev ? mapOrderItems(prev) : null);
+        }
         setSjModalData(null);
       } else {
         onShowToast('Gagal menyimpan No. Surat Jalan DealPOS', 'error');
@@ -4362,15 +4376,11 @@ _WMS Warehouse System_`;
     const hasMarketplaceOrWarehouse = mktOrGudangItems.length > 0 || isWarehouseAr;
 
     const findItemSj = (it: any) => {
-      return (it.no_sj_dealpos && it.no_sj_dealpos.trim()) ||
-             (order.no_transaksi_pengirim && order.no_transaksi_pengirim[0] && order.no_transaksi_pengirim[0].trim()) ||
-             (order.no_transaksi_customer && /^\d{2}\.\d{2}\./.test(order.no_transaksi_customer.trim()) ? order.no_transaksi_customer.trim() : '');
+      return (it.no_sj_dealpos && it.no_sj_dealpos.trim()) || '';
     };
 
     const missingSj = mktOrGudangItems.some(it => !findItemSj(it));
-    const existingSj = mktOrGudangItems.map(findItemSj).find(Boolean) || 
-                       (order.no_transaksi_pengirim && order.no_transaksi_pengirim[0]) || 
-                       (order.no_transaksi_customer && /^\d{2}\.\d{2}\./.test(order.no_transaksi_customer.trim()) ? order.no_transaksi_customer.trim() : '');
+    const existingSj = mktOrGudangItems.map(findItemSj).find(Boolean) || '';
 
     const hasAlterFeature = hasRealAlterItems(order);
     const isSentToWh = isOrderSentToWarehouse(order);
@@ -4382,22 +4392,32 @@ _WMS Warehouse System_`;
         {/* BADGE 1: Reminder SJ DealPOS (Marketplace/Gudang to Store) */}
         {hasMarketplaceOrWarehouse && (
           missingSj ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setSjModalData({
-                  order,
-                  noSj: '',
-                  applyToAllMarketplace: true,
-                });
-              }}
-              className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/60 shadow-2xs transition-colors cursor-pointer"
-              title="Perlu Buat Dokumen SJ DealPOS (Marketplace / Gudang to Store). Klik untuk input No. SJ"
-            >
-              <AlertTriangle className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400 shrink-0 animate-bounce" />
-              <span>Perlu Buat SJ DealPOS (MKT ➔ Store)</span>
-            </button>
+            userIsAdmin ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSjModalData({
+                    order,
+                    noSj: '',
+                    applyToAllMarketplace: true,
+                  });
+                }}
+                className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/60 shadow-2xs transition-colors cursor-pointer"
+                title="Perlu Buat Dokumen SJ DealPOS (Marketplace / Gudang to Store). Klik untuk input No. SJ"
+              >
+                <AlertTriangle className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400 shrink-0 animate-bounce" />
+                <span>Perlu Buat SJ DealPOS (MKT ➔ Store)</span>
+              </button>
+            ) : (
+              <span
+                className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 shadow-2xs"
+                title="Menunggu Admin WH menginput No. SJ Delivery DealPOS (MKT ➔ Store)"
+              >
+                <Clock className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                <span>Menunggu SJ DealPOS (MKT ➔ Store)</span>
+              </span>
+            )
           ) : (
             <span 
               className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 shadow-2xs"
@@ -5802,9 +5822,7 @@ _WMS Warehouse System_`;
                       }
 
                       const getItemSj = (it: any) => {
-                        return (it.no_sj_dealpos && it.no_sj_dealpos.trim()) ||
-                               (order.no_transaksi_pengirim && order.no_transaksi_pengirim[0] && order.no_transaksi_pengirim[0].trim()) ||
-                               (order.no_transaksi_customer && /^\d{2}\.\d{2}\./.test(order.no_transaksi_customer.trim()) ? order.no_transaksi_customer.trim() : '');
+                        return (it.no_sj_dealpos && it.no_sj_dealpos.trim()) || '';
                       };
 
                       const sjList = Array.from(new Set(mktItems.map(getItemSj).filter(Boolean)));
@@ -6404,9 +6422,7 @@ _WMS Warehouse System_`;
                       if (mktItems.length === 0) return null;
 
                       const getItemSj = (it: any) => {
-                        return (it.no_sj_dealpos && it.no_sj_dealpos.trim()) ||
-                               (order.no_transaksi_pengirim && order.no_transaksi_pengirim[0] && order.no_transaksi_pengirim[0].trim()) ||
-                               (order.no_transaksi_customer && /^\d{2}\.\d{2}\./.test(order.no_transaksi_customer.trim()) ? order.no_transaksi_customer.trim() : '');
+                        return (it.no_sj_dealpos && it.no_sj_dealpos.trim()) || '';
                       };
 
                       const sjList = Array.from(new Set(mktItems.map(getItemSj).filter(Boolean)));

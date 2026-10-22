@@ -275,36 +275,36 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
   {
     id: 'faq-no-sj-dealpos',
     category: 'stok_dealpos',
-    question: 'Apa itu No. SJ DealPOS dan apakah wajib diisi saat input pesanan?',
-    answer: 'No. SJ DealPOS adalah nomor Surat Jalan mutasi resmi di DealPOS untuk memotong alokasi marketplace ke gudang. Bersifat opsional untuk Store, dan divalidasi oleh Admin Gudang.',
+    question: 'Apa perbedaan No. Transaksi DealPOS (Store) dengan No. SJ Delivery DealPOS (MKT ➔ Store)?',
+    answer: 'No. Transaksi DealPOS adalah nomor struk/invoice penjualan kasir yang wajib diisi oleh Store saat membuat pesanan. Sedangkan No. SJ Delivery DealPOS (MKT ➔ Store) adalah nomor Surat Jalan transfer stok dari Marketplace ke Store yang hanya bisa diisi/diubah oleh Admin WH (Store hanya bisa melihat/view).',
     target_audience: 'all',
 
     // PERSPEKTIF ADMIN GUDANG
-    answer_admin: 'Admin Gudang bertugas memastikan No. SJ DealPOS terisi dan valid saat memproses pesanan dengan fulfillment "Marketplace". Nomor SJ DealPOS ini menjadi bukti transfer potong stok di sistem POS agar stok fisik gudang dan pembukuan kasir DealPOS tetap seimbang.',
+    answer_admin: 'Admin Gudang (WH) memegang akses penuh untuk mengisi dan mengubah No. SJ Delivery DealPOS (MKT ➔ Store) pada item dengan fulfillment "Marketplace". Nomor ini terpisah dari No. Transaksi Kasir DealPOS yang diinput oleh Store.',
     action_steps_admin: [
-      { step: 1, title: 'Buka DealPOS Backoffice', desc: 'Buat Surat Jalan transfer mutasi stok dari outlet/gudang asal ke alokasi penjualan pesanan.' },
-      { step: 2, title: 'Salin Nomor SJ DealPOS', desc: 'Contoh format: TR-2610-0045 atau SJ-MKT-019.' },
-      { step: 3, title: 'Update di WMS Manual Shipment', desc: 'Klik kolom No. SJ DealPOS pada kartu pesanan, masukkan nomornya, dan simpan.' }
+      { step: 1, title: 'Buka DealPOS Backoffice', desc: 'Buat Surat Jalan (SJ Delivery) transfer stok dari alokasi Marketplace/Gudang ke Store pemesan.' },
+      { step: 2, title: 'Klik + Input SJ DealPOS / Edit SJ DealPOS', desc: 'Pada kotak "Produk dari Marketplace" di tabel Rekap Pesanan, klik tombol "+ Input SJ DealPOS" atau "Edit SJ DealPOS".' },
+      { step: 3, title: 'Simpan Nomor SJ Delivery', desc: 'Masukkan nomor SJ Delivery (contoh: 26.10.00286) dan simpan. Status item akan berubah menjadi SJ Lengkap.' }
     ],
     button_badges_admin: [
-      { label: 'Input No SJ DealPOS', color: 'amber', icon: 'FileText' },
-      { label: 'Validasi Stok DealPOS', color: 'emerald', icon: 'RefreshCw' }
+      { label: '+ Input SJ DealPOS', color: 'indigo', icon: 'FileText' },
+      { label: 'Edit SJ DealPOS', color: 'indigo', icon: 'FileText' }
     ],
-    admin_notes: 'ℹ️ Pastikan nomor SJ DealPOS tidak tertukar antar pesanan agar audit bulanan stok akurat.',
+    admin_notes: 'ℹ️ Hanya akun Admin WH / Superadmin yang dapat melihat tombol Input/Edit SJ DealPOS. Akun Store hanya dapat melihat (view-only) nomor SJ yang sudah diinput Admin WH.',
 
     // PERSPEKTIF TIM STORE / OUTLET
-    answer_store: 'Untuk Tim Store, kolom No. SJ DealPOS bersifat OPSIONAL saat pertama kali mendaftarkan pesanan manual. Jika kasir toko Anda belum memiliki nomor SJ transfer dari DealPOS, kosongkan saja kolom ini dan lanjutkan pendaftaran.',
+    answer_store: 'Saat membuat pesanan, Tim Store WAJIB mengisi "No. Transaksi DealPOS" (nomor struk penjualan kasir toko). Adapun "No. SJ Delivery DealPOS (MKT ➔ Store)" pada produk fulfillment Marketplace dibuat dan diinput oleh Admin WH — Tim Store hanya perlu memantau (view) nomor SJ tersebut di kartu pesanan.',
     action_steps_store: [
-      { step: 1, title: 'Jika Sudah Ada SJ DealPOS', desc: 'Ketikkan nomor SJ transfer di kolom "No SJ DealPOS" jika kasir Anda sudah membuatnya.' },
-      { step: 2, title: 'Jika Belum Ada', desc: 'Biarkan kolom kosong. Jangan tunda pembuatan pesanan hanya karena menunggu nomor SJ DealPOS.' },
-      { step: 3, title: 'Admin Gudang Akan Melengkapi', desc: 'Admin Gudang akan mengupdate nomor SJ saat validasi barang di rak gudang.' }
+      { step: 1, title: 'Isi No. Transaksi DealPOS (Struk Kasir)', desc: 'Pada bagian Data Pengirim (Store), masukkan nomor struk transaksi penjualan DealPOS toko Anda (wajib diisi).' },
+      { step: 2, title: 'Pantau Status SJ Delivery (MKT ➔ Store)', desc: 'Untuk produk yang diambil dari stok Marketplace, status awal akan tertulis "Menunggu No. SJ DealPOS".' },
+      { step: 3, title: 'Lihat & Salin SJ Setelah Diinput Admin WH', desc: 'Setelah Admin WH memproses transfer stok, nomor SJ Delivery akan tampil pada kotak Produk dari Marketplace dan dapat Anda lihat/salin.' }
     ],
     button_badges_store: [
-      { label: 'No SJ DealPOS (Boleh Kosong)', color: 'slate', icon: 'FileText' }
+      { label: 'Menunggu No. SJ DealPOS (View Only)', color: 'amber', icon: 'Clock' }
     ],
-    store_notes: '💡 Jangan ragu untuk submit pesanan jika kolom No SJ DealPOS belum ada nomornya.',
+    store_notes: '💡 Store tidak perlu dan tidak dapat mengedit No. SJ Delivery (MKT ➔ Store) karena dokumen transfer tersebut diterbitkan oleh Admin WH.',
 
-    keywords: ['dealpos', 'no sj', 'surat jalan', 'tr', 'transfer', 'marketplace', 'alokasi', 'pos', 'kasir'],
+    keywords: ['dealpos', 'no sj', 'surat jalan', 'transaksi dealpos', 'marketplace', 'alokasi', 'pos', 'kasir', 'view only'],
     view_count: 88
   },
 
