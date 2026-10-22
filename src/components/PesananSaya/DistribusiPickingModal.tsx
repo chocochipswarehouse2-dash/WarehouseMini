@@ -122,22 +122,23 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
       if (Array.isArray(catMatch.locList)) {
         catMatch.locList.forEach((itemLoc) => {
           if (typeof itemLoc === 'object' && itemLoc && itemLoc.lokasi) {
-            const loc = String(itemLoc.lokasi || '').trim().toUpperCase();
+            const rawLocStr = String(itemLoc.lokasi || '').trim();
             const qty = Number(itemLoc.qty) || 0;
-            if (loc && isWarehouseLocation(loc)) {
-              if (!map.has(loc)) {
+            const parts = rawLocStr.split(/[,/;\n|]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
+            parts.forEach((loc) => {
+              if (loc && isWarehouseLocation(loc) && !map.has(loc)) {
                 map.set(loc, {
                   lokasi: loc,
-                  qty: qty,
+                  qty: parts.length === 1 ? qty : 0,
                   isPrimary: false,
                   source: 'CATALOG',
                 });
               }
-            }
+            });
           } else if (typeof itemLoc === 'string') {
-            const loc = itemLoc.trim().toUpperCase();
-            if (loc && isWarehouseLocation(loc)) {
-              if (!map.has(loc)) {
+            const parts = itemLoc.split(/[,/;\n|]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
+            parts.forEach((loc) => {
+              if (loc && isWarehouseLocation(loc) && !map.has(loc)) {
                 map.set(loc, {
                   lokasi: loc,
                   qty: 0,
@@ -145,14 +146,14 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
                   source: 'CATALOG',
                 });
               }
-            }
+            });
           }
         });
       }
       if (catMatch.lokasi) {
-        const loc = String(catMatch.lokasi).trim().toUpperCase();
-        if (loc && isWarehouseLocation(loc)) {
-          if (!map.has(loc)) {
+        const parts = String(catMatch.lokasi).split(/[,/;\n|]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
+        parts.forEach((loc) => {
+          if (loc && isWarehouseLocation(loc) && !map.has(loc)) {
             map.set(loc, {
               lokasi: loc,
               qty: 0,
@@ -160,7 +161,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
               source: 'CATALOG',
             });
           }
-        }
+        });
       }
     }
 
@@ -320,9 +321,10 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
       tanggal_sj: dateStr,
       operatorName: session?.name || session?.username || 'Admin Warehouse',
       items: enrichedItems.map((it) => {
+        const activeStockLocs = (it.locList || []).filter((l) => (l.qty || 0) > 0);
         let locTag = '';
-        if (it.locList && it.locList.length > 0) {
-          locTag = it.locList.map(l => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ');
+        if (activeStockLocs.length > 0) {
+          locTag = activeStockLocs.map((l) => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ');
         } else if (it.primaryLokasi && it.primaryLokasi !== '-' && it.primaryLokasi !== 'Warehouse') {
           locTag = it.primaryLokasi;
         } else if (it.lokasi && it.lokasi !== '-' && it.lokasi !== 'Belum Ada Rak') {

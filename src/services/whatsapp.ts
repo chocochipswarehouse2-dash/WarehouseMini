@@ -1,5 +1,5 @@
 import { PeminjamanRecord, ProductItem } from '../types';
-import { extractSizeFromSku, formatProductNameWithSize, resolveProductName, resolveProductDisplaySize } from '../utils/sortUtils';
+import { extractSizeFromSku, formatProductNameWithSize, resolveProductName, resolveProductDisplaySize, cleanProductName } from '../utils/sortUtils';
 import { getSettings } from './settings';
 
 export interface FonnteConfig {
@@ -255,7 +255,7 @@ export function generateRefillPickingGroupMessage(params: RefillPickingMessagePa
       const cleanSize = rawSize && rawSize !== '-'
         ? rawSize
         : (extractSizeFromSku(cleanSku) !== '-' ? extractSizeFromSku(cleanSku) : '-');
-      const cleanName = (it.nama_produk || cleanSku).trim();
+      const cleanName = cleanProductName((it.nama_produk || cleanSku).trim()) || cleanSku;
       const cleanLoc = (it.lokasi && it.lokasi !== '-') ? it.lokasi.trim() : 'Belum Ada Rak';
       const stockNote = it.isKosong && !cleanLoc.toUpperCase().includes('KOSONG') && !cleanLoc.includes('0 pcs')
         ? ' ⚠️ _(Stok 0 - cek fisik)_'
@@ -280,7 +280,7 @@ export function generateRefillPickingGroupMessage(params: RefillPickingMessagePa
   const statusStr = params.status || 'PENDING PICKING';
 
   return (
-    `*🚨 PICKING LIST REFILL (SURAT JALAN)*\n` +
+    `*🚨 PICKING LIST PENGIRIMAN (REFILL)*\n` +
     `*No. Dokumen:* \`${params.no_sj}\`\n\n` +
     `*INFORMASI PENGIRIMAN:*\n` +
     `• Tujuan / Store : *${destStr}*\n` +
