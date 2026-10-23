@@ -13,14 +13,15 @@ Dokumen ini adalah panduan arsitektur, alur kerja (*state machine*), struktur da
 
 ---
 
-## 2. Arsitektur Penyimpanan Database (Zero-DDL Cloud Sync)
-Agar berjalan langsung di Supabase tanpa ketergantungan migrasi tabel baru yang memblokir operasional:
-1. **Data Tiket Retur (`manual_shipment` dengan Isolasi Ketat)**:
-   - Disimpan pada tabel `public.manual_shipment` dengan **`no_pesanan` berawalan `RTR-`** (contoh: `RTR-SHO-261022-ABCD`).
-   - Seluruh atribut spesifik retur disimpan secara terstruktur di dalam `notes_paket` menggunakan delimiter **`[RETUR_BARANG]:{...JSON...}`**.
-   - Kolom `items` JSONB diisi dengan **`produk_pengganti`** agar 100% kompatibel dengan mesin pencetak Label A6, Picking List, dan pencarian lokasi rak `stok_real_fisik`.
-   - **HARD CONSTRAINT ISOLASI**: Fungsi `fetchManualShipments()` di `src/services/gasManualShipment.ts` **WAJIB** mengecualikan baris yang memiliki `no_pesanan.startsWith('RTR-')` atau `notes_paket.includes('[RETUR_BARANG]:')` agar data retur tidak pernah bocor ke tab Rekap Manual Shipment.
-2. **Pengaturan Khusus Pusat Resolusi (`wms_system_docs` + `localStorage`)**:
+## 2. Arsitektur Penyimpanan Database (Dedicated Table public.retur_barang & Fallback)
+1. **Tabel Utama: `public.retur_barang` (Terisolasi 100% dari Penjualan Store)**:
+   - Disimpan pada tabel khusus `public.retur_barang` dengan **`no_retur` berawalan `RTR-`** (contoh: `RTR-SHO-261022-ABCD`).
+   - Memiliki kolom terstruktur: `no_pesanan_asal`, `outlet_order`, `kategori_alasan`, `alasan_retur`, `opsi_pengiriman`, `nama_customer`, `no_hp`, `alamat_lengkap`, `produk_pesanan` (JSONB), `produk_pengganti` (JSONB), `selisih_harga`, `ongkir_dibayar`, `bukti_pembayaran_urls` (JSONB), `foto_komplain_urls` (JSONB), `no_sj_gudang_retur`, `no_invoice_return`, `no_resi`, `is_label_printed`, `is_picking_printed`, `status`, dan `history_logs` (JSONB).
+   - **Pemisahan Total**: Karena menggunakan tabel khusus `public.retur_barang`, data retur secara fisik tidak pernah menyentuh tabel penjualan `public.manual_shipment`.
+2. **Dual-Table Adapter & Fallback**:
+   - `src/services/returBarangService.ts` secara otomatis mendeteksi keberadaan tabel `public.retur_barang`. Jika ada environment yang belum membuat tabel, sistem otomatis fallback aman ke `manual_shipment` dengan tag `[RETUR_BARANG]:`.
+   - `fetchManualShipments()` di `src/services/gasManualShipment.ts` dan `gasSync.ts` tetap menyaring baris `RTR-` sebagai pengaman berlapis.
+3. **Pengaturan Khusus Pusat Resolusi (`wms_system_docs` + `localStorage`)**:
    - Disimpan di tabel `public.wms_system_docs` dengan `section_id = 'pusat_resolusi_settings'` (serta cache `localStorage` `wms_pusat_resolusi_settings`).
    - Menyimpan:
      - `recipient_emails`: Daftar email tim penerima notifikasi otomatis (bisa lebih dari 1 email Gmail, dipisahkan koma).

@@ -39,7 +39,7 @@ export default function PusatResolusiView({
   const [activeTab, setActiveTab] = useState(tabs[0].id);
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 dark:bg-[#0b1324] space-y-2 sm:space-y-3 p-2 sm:p-4">
+    <div className="flex flex-col h-full bg-slate-50 dark:bg-[#0b1324] space-y-2 sm:space-y-3 p-2 sm:p-4 print:p-0 print:m-0 print:bg-white print:space-y-0">
       {/* Header & Tabs Style Quality Control */}
       <div className="bg-slate-100/90 dark:bg-[#09090b]/90 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs shrink-0 print:hidden">
         <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar scroll-smooth py-0.5 px-0.5">
@@ -70,7 +70,7 @@ export default function PusatResolusiView({
       </div>
 
       {/* Content Area */}
-      <div className="flex-1 overflow-auto p-1 sm:p-2">
+      <div className="flex-1 overflow-auto p-1 sm:p-2 print:overflow-visible print:p-0">
         {activeTab === 'retur' ? (
           <ReturBarangTab
             session={session}

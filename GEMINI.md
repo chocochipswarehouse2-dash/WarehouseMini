@@ -131,7 +131,7 @@ Whenever features, buttons, modal flows, validation rules, or business logic are
 
 ## 9. Pusat Resolusi — Retur Barang Blueprint
 For any modifications to `PusatResolusiView`, `ReturBarangTab`, or `returBarangService.ts`, agents MUST read and adhere to `PUSAT_RESOLUSI_RETUR_BLUEPRINT.md`:
-1. **Data Isolation**: Retur Barang tickets are stored in `public.manual_shipment` with `no_pesanan` prefixed by `RTR-` and structured metadata in `notes_paket` (`[RETUR_BARANG]:{...}`). `fetchManualShipments()` MUST always filter out `RTR-` / `[RETUR_BARANG]:` records so they never appear in Manual Shipment Rekap.
+1. **Data Isolation & Storage**: Retur Barang tickets are stored in the dedicated table `public.retur_barang` with `no_retur` prefixed by `RTR-`. The service `returBarangService.ts` automatically manages CRUD on `public.retur_barang` (with fallback to `manual_shipment` if needed). `fetchManualShipments()` and `gasSync.ts` strictly filter out any `RTR-` records to guarantee 100% isolation from Store Manual Shipment Rekap and Dashboards.
 2. **3-Stage Deterministic Flow**:
    - **Pesanan Baru (`diterima`)**: Newly submitted by CS; auto-sends email notification via GAS (`MailApp.sendEmail`) to recipients configured in `pusat_resolusi_settings` (`wms_system_docs`).
    - **Pesanan Diproses (`diproses`)**: Triggered when Label A6 or Picking List is printed, WA Group Picking is requested, or Admin inputs `no_sj_gudang_retur` / `no_invoice_return`.

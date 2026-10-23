@@ -1359,7 +1359,9 @@ _Pusat Resolusi WMS Chocochips_`;
   };
 
   return (
-    <div className="space-y-4">
+    <>
+      {/* Seluruh Tampilan UI Interaktif (Otomatis Disembunyikan Penuh saat Print) */}
+      <div className="space-y-4 print:hidden">
       {/* Top Action & Sub-Navigation Bar */}
       <div className="flex flex-wrap items-center justify-between gap-2 bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-2xs">
         <div className="flex items-center gap-1.5">
@@ -3256,6 +3258,7 @@ _Pusat Resolusi WMS Chocochips_`;
           </div>
         </div>
       )}
+      </div>
 
       {/* =====================================================================
           FLOATING PRINT BAR & PRINT AREA (FORMAT IDENTIK MANUAL SHIPMENT)
@@ -3309,6 +3312,25 @@ _Pusat Resolusi WMS Chocochips_`;
                 height: auto !important;
                 overflow: visible !important;
               }
+              body * {
+                visibility: hidden;
+              }
+              #retur-barang-print-area,
+              #retur-barang-print-area * {
+                visibility: visible !important;
+              }
+              #retur-barang-print-area {
+                display: block !important;
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #ffffff !important;
+                color: #000000 !important;
+                z-index: 9999999 !important;
+              }
               .fixed, [class*="fixed"], .overflow-y-auto, .overflow-hidden, [class*="overflow-"] {
                 position: static !important;
                 overflow: visible !important;
@@ -3319,22 +3341,6 @@ _Pusat Resolusi WMS Chocochips_`;
                 box-shadow: none !important;
                 border: none !important;
                 background: transparent !important;
-              }
-              #retur-barang-print-area,
-              #retur-barang-print-area * {
-                visibility: visible !important;
-              }
-              #retur-barang-print-area {
-                display: block !important;
-                position: relative !important;
-                left: 0 !important;
-                top: 0 !important;
-                width: 100% !important;
-                margin: 0 !important;
-                padding: 0 !important;
-                background: #ffffff !important;
-                color: #000000 !important;
-                z-index: 999999 !important;
               }
               header, nav, aside, footer, [role="navigation"], .no-print, .print\\:hidden, [class*="print:hidden"], button {
                 display: none !important;
@@ -3610,6 +3616,6 @@ _Pusat Resolusi WMS Chocochips_`;
           </div>
         </>
       )}
-    </div>
+    </>
   );
 }
