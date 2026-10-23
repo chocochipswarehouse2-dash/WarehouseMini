@@ -3383,9 +3383,9 @@ _Pusat Resolusi WMS Chocochips_`;
                           <div className="text-xl font-black tracking-widest uppercase leading-none text-black flex items-center gap-2">
                             <img
                               src="/logo.svg"
-                              alt=""
+                              alt="CHOCOCHIPS"
                               referrerPolicy="no-referrer"
-                              className="h-7 object-contain hidden print:block"
+                              className="h-7 object-contain block"
                               onError={e => (e.currentTarget.style.display = 'none')}
                             />
                             <span className="text-[11px] font-black border border-black px-1.5 py-0.5">RETUR</span>

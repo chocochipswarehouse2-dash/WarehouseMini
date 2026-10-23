@@ -1,5 +1,3 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 128" width="512" height="128">
-  <rect x="0" y="16" width="96" height="96" fill="#111111" rx="24"/>
-  <text x="48" y="66" dominant-baseline="middle" text-anchor="middle" font-size="32" font-weight="bold" font-family="sans-serif" fill="#ffffff" letter-spacing="1">WMS</text>
-  <text x="112" y="68" dominant-baseline="middle" text-anchor="start" font-size="48" font-weight="bold" font-family="sans-serif" fill="#111111" letter-spacing="1">Warehouse</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 80" width="360" height="80">
+  <text x="2" y="44" dominant-baseline="central" font-size="46" font-weight="900" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" fill="#000000" letter-spacing="3.5">CHOCOCHIPS</text>
 </svg>

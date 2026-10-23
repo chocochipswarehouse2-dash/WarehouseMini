@@ -7863,7 +7863,7 @@ _WMS Warehouse System_`;
                        {/* 1. Header Label */}
                        <div className="border-b-[2px] border-black px-3 py-2 bg-gray-50 flex justify-between items-center break-inside-avoid">
                          <div className="text-xl font-black tracking-widest uppercase leading-none text-black flex items-center">
-                           <img src="/logo.svg" alt="" referrerPolicy="no-referrer" className="h-7 object-contain hidden print:block" onError={(e) => e.currentTarget.style.display = 'none'} />
+                           <img src="/logo.svg" alt="CHOCOCHIPS" referrerPolicy="no-referrer" className="h-7 object-contain block" onError={(e) => e.currentTarget.style.display = 'none'} />
                          </div>
                          <div className="text-lg font-black tracking-wider uppercase leading-none text-black">
                            {order.jasa_kirim || 'PENGIRIMAN PAKET'}
