@@ -740,6 +740,12 @@ export async function submitManualShipment(payload: ManualShipmentOrder): Promis
 
     const submitPayload: any = {
       ...rest,
+      items: Array.isArray(rest.items)
+        ? rest.items.map((it: any) => ({
+            ...it,
+            no_sj_dealpos: '',
+          }))
+        : rest.items,
       notes_paket: notes,
       created_at: payload.created_at || new Date().toISOString()
     };
@@ -796,7 +802,16 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
     const data = await supabaseFetch<any[]>('manual_shipment', 'GET', null, 'select=*&order=created_at.desc');
     if (!data) return [];
     
-    return data.map(item => {
+    const nonReturData = data.filter(item => {
+      const noPesanan = String(item.no_pesanan || '').toUpperCase().trim();
+      const rawNotes = String(item.notes_paket || '');
+      if (noPesanan.startsWith('RTR-') || rawNotes.includes('[RETUR_BARANG]:')) {
+        return false;
+      }
+      return true;
+    });
+
+    return nonReturData.map(item => {
       let history_logs: ManualShipmentHistoryLog[] = [];
       let alteration_repair_data: any = undefined;
       let store_metadata: any = undefined;
@@ -856,7 +871,21 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
         } catch {}
       }
 
-      let parsedItems: ManualShipmentItem[] = Array.isArray(rawItems) ? rawItems : [];
+      const storeTxList: string[] = Array.isArray(item.no_transaksi_pengirim)
+        ? item.no_transaksi_pengirim.map((t: any) => String(t || '').trim().toLowerCase()).filter(Boolean)
+        : item.no_transaksi_pengirim
+          ? String(item.no_transaksi_pengirim).split(',').map((t: string) => t.trim().toLowerCase()).filter(Boolean)
+          : [];
+
+      let parsedItems: ManualShipmentItem[] = (Array.isArray(rawItems) ? rawItems : []).map((it: any) => {
+        const rawSj = String(it?.no_sj_dealpos || '').trim();
+        // Jangan pernah menganggap No. Transaksi DealPOS Store sebagai No. SJ DealPOS Admin WH
+        const isDuplicateStoreTx = rawSj && storeTxList.includes(rawSj.toLowerCase()) && !it?.sj_updated_by;
+        return {
+          ...it,
+          no_sj_dealpos: isDuplicateStoreTx ? '' : rawSj,
+        };
+      });
 
       if (parsedItems.length === 0 && (item.sku || item.nama_produk)) {
         parsedItems = [{

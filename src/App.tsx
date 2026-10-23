@@ -1944,6 +1944,7 @@ export default function App() {
               {activePage === 'pusat_resolusi' && (
                   <PusatResolusiView
                     session={session}
+                    productCatalog={productDatabase}
                     onNotify={showToast}
                   />
               )}

@@ -481,6 +481,24 @@ _WMS Warehouse & Tailor Management System_`;
   };
 
   /**
+   * Helper: Ambil No. SJ DealPOS (MKT ➔ Store) yang valid dari Admin WH.
+   * Mencegah No. Transaksi DealPOS penjualan Store (no_transaksi_pengirim) tampil sebagai SJ DealPOS Admin WH.
+   */
+  const getValidItemSjDealpos = (order: ManualShipmentOrder | null | undefined, it: any): string => {
+    const rawSj = String(it?.no_sj_dealpos || '').trim();
+    if (!rawSj) return '';
+    const txList: string[] = Array.isArray(order?.no_transaksi_pengirim)
+      ? order!.no_transaksi_pengirim.map(t => String(t || '').trim().toLowerCase()).filter(Boolean)
+      : order?.no_transaksi_pengirim
+        ? String(order.no_transaksi_pengirim).split(',').map(t => t.trim().toLowerCase()).filter(Boolean)
+        : [];
+    if (txList.includes(rawSj.toLowerCase()) && !it?.sj_updated_by) {
+      return '';
+    }
+    return rawSj;
+  };
+
+  /**
    * Action Handler: Kirim notifikasi WA Alterasi via Fonnte langsung
    */
   const handleSendAlterWaFonnte = async (order: ManualShipmentOrder) => {
@@ -1252,6 +1270,7 @@ _WMS Warehouse System_`;
       items: items.map((it) => ({
         ...it,
         qty: Math.max(1, Number(it.qty) || 1),
+        no_sj_dealpos: editingOrder ? (it.no_sj_dealpos || '') : '',
       })),
       status: editingOrder ? editingOrder.status : 'diterima',
       no_resi: editingOrder ? (editingOrder.no_resi || '') : '',
@@ -1998,23 +2017,23 @@ _WMS Warehouse System_`;
                           ))}
                         </select>
 
-                        {/* Input No SJ DealPOS (MKT -> Store) khusus Admin WH, Store hanya View */}
+                        {/* Input No SJ DealPOS (MKT -> Store) khusus Admin WH saat Edit, Store/Form Baru hanya View */}
                         {(item.fulfillment || '').toLowerCase().includes('marketplace') && (
-                          userIsAdmin ? (
+                          editingOrder && userIsAdmin && !isStoreUser ? (
                             <div className="mt-1.5 flex items-center gap-1.5">
                               <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 shrink-0">No SJ Delivery (MKT➔Store):</span>
                               <input
                                 type="text"
                                 value={item.no_sj_dealpos || ''}
                                 onChange={(e) => handleItemChange(item.id, 'no_sj_dealpos', e.target.value)}
-                                placeholder="Diisi Admin WH (Cth: 26.10.00286)"
+                                placeholder="Diisi Admin WH (Cth: Transfer Order #26.10.00195)"
                                 className="w-full rounded border border-amber-300 dark:border-amber-700/80 bg-amber-50/50 dark:bg-amber-950/40 text-[11px] font-mono py-0.5 px-1.5 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
                               />
                             </div>
                           ) : (
                             <div className="mt-1.5 text-[10px] text-amber-700 dark:text-amber-400 bg-amber-50/60 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded px-2 py-1 flex items-center justify-between">
                               <span>No. SJ Delivery (MKT ➔ Store):</span>
-                              <span className="font-mono font-bold">{item.no_sj_dealpos || 'Diinput oleh Admin WH'}</span>
+                              <span className="font-mono font-bold">{(editingOrder && item.no_sj_dealpos) ? item.no_sj_dealpos : 'Diinput oleh Admin WH'}</span>
                             </div>
                           )
                         )}
@@ -2595,6 +2614,18 @@ _WMS Warehouse System_`;
     }
     const { order, item, noSj, applyToAllMarketplace } = sjModalData;
     const cleanSj = noSj.trim();
+
+    if (cleanSj) {
+      const storeTxList = Array.isArray(order.no_transaksi_pengirim)
+        ? order.no_transaksi_pengirim.map(t => String(t || '').trim().toLowerCase()).filter(Boolean)
+        : order.no_transaksi_pengirim
+          ? String(order.no_transaksi_pengirim).split(',').map(t => t.trim().toLowerCase()).filter(Boolean)
+          : [];
+      if (storeTxList.includes(cleanSj.toLowerCase())) {
+        onShowToast('No. SJ DealPOS (MKT ➔ Store) tidak boleh sama dengan No. Transaksi DealPOS Penjualan Store! Masukkan nomor Transfer Order dari Admin WH.', 'error');
+        return;
+      }
+    }
 
     setLoading(true);
     try {
@@ -3686,21 +3717,22 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                               </span>
                             )}
                             {item.item_status !== 'sold_out' && (item.fulfillment || '').toLowerCase().includes('marketplace') && (
-                              item.no_sj_dealpos ? (
+                              getValidItemSjDealpos(selectedOrderDetails, item) ? (
                                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-[10px] font-mono font-bold text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
                                   <FileCheck className="w-2.5 h-2.5" />
-                                  <span>SJ DealPOS: {item.no_sj_dealpos}</span>
+                                  <span>SJ DealPOS: {getValidItemSjDealpos(selectedOrderDetails, item)}</span>
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      copyToClipboard(item.no_sj_dealpos || '', `No. SJ ${item.no_sj_dealpos} disalin!`);
-                                      setCopiedSj(item.no_sj_dealpos || null);
+                                      const validSj = getValidItemSjDealpos(selectedOrderDetails, item);
+                                      copyToClipboard(validSj, `No. SJ ${validSj} disalin!`);
+                                      setCopiedSj(validSj || null);
                                       setTimeout(() => setCopiedSj(null), 2000);
                                     }}
                                     className="hover:underline p-0.5"
                                     title="Salin No. SJ"
                                   >
-                                    {copiedSj === item.no_sj_dealpos ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                                    {copiedSj === getValidItemSjDealpos(selectedOrderDetails, item) ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
                                   </button>
                                 </span>
                               ) : (
@@ -4501,7 +4533,7 @@ _WMS Warehouse System_`;
     const hasMarketplaceOrWarehouse = mktOrGudangItems.length > 0 || isWarehouseAr;
 
     const findItemSj = (it: any) => {
-      return (it.no_sj_dealpos && it.no_sj_dealpos.trim()) || '';
+      return getValidItemSjDealpos(order, it);
     };
 
     const missingSj = mktOrGudangItems.some(it => !findItemSj(it));
@@ -4737,13 +4769,13 @@ _WMS Warehouse System_`;
     if (filterDealposSj === 'need_sj') {
       result = result.filter(o => 
         (o.items || []).some(it => 
-          (it.fulfillment || '').toLowerCase().includes('marketplace') && !it.no_sj_dealpos
+          (it.fulfillment || '').toLowerCase().includes('marketplace') && !getValidItemSjDealpos(o, it)
         )
       );
     } else if (filterDealposSj === 'has_sj') {
       result = result.filter(o => 
         (o.items || []).some(it => 
-          (it.fulfillment || '').toLowerCase().includes('marketplace') && !!it.no_sj_dealpos
+          (it.fulfillment || '').toLowerCase().includes('marketplace') && !!getValidItemSjDealpos(o, it)
         )
       );
     }
@@ -4870,7 +4902,7 @@ _WMS Warehouse System_`;
   const pendingSjCount = useMemo(() => {
     return scopedOrders.filter(o => 
       (o.items || []).some(it => 
-        (it.fulfillment || '').toLowerCase().includes('marketplace') && !it.no_sj_dealpos
+        (it.fulfillment || '').toLowerCase().includes('marketplace') && !getValidItemSjDealpos(o, it)
       )
     ).length;
   }, [scopedOrders]);
@@ -6146,7 +6178,7 @@ _WMS Warehouse System_`;
                       }
 
                       const getItemSj = (it: any) => {
-                        return (it.no_sj_dealpos && it.no_sj_dealpos.trim()) || '';
+                        return getValidItemSjDealpos(order, it);
                       };
 
                       const sjList = Array.from(new Set(mktItems.map(getItemSj).filter(Boolean)));
@@ -6449,7 +6481,7 @@ _WMS Warehouse System_`;
                             }
                             setSjModalData({
                               order,
-                              noSj: (order.items || []).find(it => it.no_sj_dealpos)?.no_sj_dealpos || '',
+                              noSj: (order.items || []).map(it => getValidItemSjDealpos(order, it)).find(Boolean) || '',
                               applyToAllMarketplace: true
                             });
                           }
@@ -6766,7 +6798,7 @@ _WMS Warehouse System_`;
                       if (mktItems.length === 0) return null;
 
                       const getItemSj = (it: any) => {
-                        return (it.no_sj_dealpos && it.no_sj_dealpos.trim()) || '';
+                        return getValidItemSjDealpos(order, it);
                       };
 
                       const sjList = Array.from(new Set(mktItems.map(getItemSj).filter(Boolean)));
@@ -7158,7 +7190,7 @@ _WMS Warehouse System_`;
                               }
                               setSjModalData({
                                 order,
-                                noSj: (order.items || []).find(it => it.no_sj_dealpos)?.no_sj_dealpos || '',
+                                noSj: (order.items || []).map(it => getValidItemSjDealpos(order, it)).find(Boolean) || '',
                                 applyToAllMarketplace: true
                               });
                             }

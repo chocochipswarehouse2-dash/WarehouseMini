@@ -112,7 +112,20 @@ function handleGDriveUpload(payload) {
 function handleSendEmail(payload) {
   try {
     payload = payload || {};
-    var to = payload.to || '';
+    var rawTo = String(payload.to || '');
+    var toList = rawTo
+      .split(/[,;\n]+/)
+      .map(function(e) { return e.trim(); })
+      .filter(function(e) { return e.indexOf('@') > 0; });
+    var to = toList.join(',');
+
+    var rawCc = String(payload.cc || '');
+    var ccList = rawCc
+      .split(/[,;\n]+/)
+      .map(function(e) { return e.trim(); })
+      .filter(function(e) { return e.indexOf('@') > 0; });
+    var cc = ccList.join(',');
+
     var subject = payload.subject || 'Notifikasi Pesanan Chocochips';
     var htmlBody = payload.htmlBody || payload.body || '';
     var fromName = payload.fromName || 'Chocochips';
@@ -121,16 +134,21 @@ function handleSendEmail(payload) {
       return jsonResponse({ success: false, error: 'Target email (to) dan isi pesan (htmlBody) harus diisi.' });
     }
 
-    MailApp.sendEmail({
+    var mailOpts = {
       to: to,
       subject: subject,
       htmlBody: htmlBody,
       name: fromName
-    });
+    };
+    if (cc) {
+      mailOpts.cc = cc;
+    }
+
+    MailApp.sendEmail(mailOpts);
 
     return jsonResponse({
       success: true,
-      message: 'Email berhasil terkirim ke ' + to
+      message: 'Email berhasil terkirim ke ' + to + (cc ? ' (CC: ' + cc + ')' : '')
     });
   } catch (err) {
     Logger.log('handleSendEmail error: ' + err.toString());

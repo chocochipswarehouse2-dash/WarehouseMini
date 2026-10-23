@@ -45,10 +45,23 @@ export async function fetchDataFromGAS<T>(sheetName: string, since?: string | nu
     if (sheetName === 'Data Alamat') tableName = 'address_book';
     
     const rows = await supabaseFetch<T[]>(tableName, 'GET', null, 'select=*&limit=2000');
+    let finalRows = Array.isArray(rows) ? rows : [];
+    
+    // Pastikan jika sheet Manual Shipment, order Retur Barang (RTR-) tidak pernah ikut terbawa
+    if (sheetName === 'Manual Shipment' || tableName === 'manual_shipment') {
+      finalRows = finalRows.filter((item: any) => {
+        const noPesanan = String(item?.no_pesanan || '').toUpperCase().trim();
+        const rawNotes = String(item?.notes_paket || '');
+        if (noPesanan.startsWith('RTR-') || rawNotes.includes('[RETUR_BARANG]:')) {
+          return false;
+        }
+        return true;
+      });
+    }
     
     return {
       status: 'success',
-      data: Array.isArray(rows) ? rows : [],
+      data: finalRows,
       timestamp: Date.now()
     };
   } catch (err: any) {

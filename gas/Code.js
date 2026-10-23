@@ -52,7 +52,17 @@ function doPost(e) {
       payload = payload.data;
     }
 
-    // 2. Action router khusus WMS Produksi Sheet Sync
+    // 2. Intercept GDrive Image Upload (Foto komplain & bukti bayar)
+    if (payload.base64File && payload.fileName) {
+      return handleGDriveUpload(payload);
+    }
+
+    // 3. Intercept Send Email Notification (Pusat Resolusi & Manual Shipment)
+    if (payload.action === 'sendEmail' || payload.type === 'sendEmail') {
+      return handleSendEmail(payload);
+    }
+
+    // 4. Action router khusus WMS Produksi Sheet Sync
     if (payload.action === 'pushPenerimaanProduksi' || payload.action === 'update_master_recount_delta') {
       return jsonResponse(handlePushPenerimaanProduksi(payload));
     }
@@ -585,5 +595,106 @@ function handlePushPenerimaanProduksi(data) {
       error: err.toString(),
       message: 'Gagal menulis ke Google Sheet: ' + err.toString()
     };
+  }
+}
+
+/**
+ * Handle GDrive File Upload (Image: Bukti Bayar & Komplain)
+ */
+function handleGDriveUpload(payload) {
+  try {
+    payload = payload || {};
+    var folderId = payload.folderId || '185zUpQqnqOcxOO1Zng1ZwD1F2nXOmkIL';
+    
+    var folder;
+    try {
+      folder = DriveApp.getFolderById(folderId);
+    } catch (fErr) {
+      Logger.log('Folder ID tidak valid, menggunakan root folder: ' + fErr.toString());
+      folder = DriveApp.getRootFolder();
+    }
+    
+    var data = payload.base64File || payload.base64 || '';
+    if (!data) {
+      return jsonResponse({ success: false, error: 'Tidak ada data file base64 yang dikirim.' });
+    }
+    
+    if (data.indexOf(',') > -1) {
+      data = data.split(',')[1];
+    }
+    
+    var fileName = payload.fileName || payload.filename || ('Upload_' + new Date().getTime() + '.jpg');
+    var mimeType = payload.mimeType || 'image/jpeg';
+    
+    var decoded = Utilities.base64Decode(data);
+    var blob = Utilities.newBlob(decoded, mimeType, fileName);
+    var file = folder.createFile(blob);
+    
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (shareErr) {
+      Logger.log('Warning sharing: ' + shareErr.toString());
+    }
+    
+    return jsonResponse({
+      success: true,
+      url: file.getUrl(),
+      id: file.getId(),
+      fileId: file.getId(),
+      name: file.getName()
+    });
+  } catch (err) {
+    Logger.log('GDrive upload error: ' + err.toString());
+    return jsonResponse({ success: false, error: err.toString() });
+  }
+}
+
+/**
+ * Handle Pengiriman Email Notifikasi Resmi Chocochips (Pusat Resolusi & Manual Shipment)
+ */
+function handleSendEmail(payload) {
+  try {
+    payload = payload || {};
+    var rawTo = String(payload.to || '');
+    var toList = rawTo
+      .split(/[,;\n]+/)
+      .map(function(e) { return e.trim(); })
+      .filter(function(e) { return e.indexOf('@') > 0; });
+    var to = toList.join(',');
+
+    var rawCc = String(payload.cc || '');
+    var ccList = rawCc
+      .split(/[,;\n]+/)
+      .map(function(e) { return e.trim(); })
+      .filter(function(e) { return e.indexOf('@') > 0; });
+    var cc = ccList.join(',');
+
+    var subject = payload.subject || 'Notifikasi Pesanan Chocochips';
+    var htmlBody = payload.htmlBody || payload.body || '';
+    var fromName = payload.fromName || 'Chocochips - Pusat Resolusi';
+
+    if (!to || !htmlBody) {
+      return jsonResponse({ success: false, error: 'Target email (to) dan isi pesan (htmlBody) harus diisi.' });
+    }
+
+    var mailOpts = {
+      to: to,
+      subject: subject,
+      htmlBody: htmlBody,
+      name: fromName
+    };
+    if (cc) {
+      mailOpts.cc = cc;
+    }
+
+    MailApp.sendEmail(mailOpts);
+
+    return jsonResponse({
+      success: true,
+      message: 'Email berhasil terkirim ke ' + to + (cc ? ' (CC: ' + cc + ')' : '')
+    });
+  } catch (err) {
+    Logger.log('handleSendEmail error: ' + err.toString());
+    return jsonResponse({ success: false, error: err.toString() });
   }
 }

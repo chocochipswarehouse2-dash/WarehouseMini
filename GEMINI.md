@@ -128,3 +128,14 @@ Whenever features, buttons, modal flows, validation rules, or business logic are
    - **HARD CONSTRAINT (NO MISLEADING BUTTONS)**: NEVER instruct a Store PIC to click a button or perform an action that is restricted only to Admin (e.g., `Batalkan Pesanan`, `Tandai Sold Out`, `Update Resi`).
    - If an action requires Admin authority, the FAQ for Store MUST instruct them on how to request/escalate it (e.g., via the "Ajukan Kendala ke Superadmin" tab in `StoreHelpModal` or chat), while clearly describing that Admin will execute the button in the system.
 3. **Miniature UI Badges Consistency**: Always verify that the miniature UI badges listed in the FAQ (`button_badges`) correspond to actual buttons in the interface that match the operator's permission scope.
+
+## 9. Pusat Resolusi — Retur Barang Blueprint
+For any modifications to `PusatResolusiView`, `ReturBarangTab`, or `returBarangService.ts`, agents MUST read and adhere to `PUSAT_RESOLUSI_RETUR_BLUEPRINT.md`:
+1. **Data Isolation**: Retur Barang tickets are stored in `public.manual_shipment` with `no_pesanan` prefixed by `RTR-` and structured metadata in `notes_paket` (`[RETUR_BARANG]:{...}`). `fetchManualShipments()` MUST always filter out `RTR-` / `[RETUR_BARANG]:` records so they never appear in Manual Shipment Rekap.
+2. **3-Stage Deterministic Flow**:
+   - **Pesanan Baru (`diterima`)**: Newly submitted by CS; auto-sends email notification via GAS (`MailApp.sendEmail`) to recipients configured in `pusat_resolusi_settings` (`wms_system_docs`).
+   - **Pesanan Diproses (`diproses`)**: Triggered when Label A6 or Picking List is printed, WA Group Picking is requested, or Admin inputs `no_sj_gudang_retur` / `no_invoice_return`.
+   - **Pesanan Selesai (`dikirim`)**: Triggered when Admin inputs `no_resi` (replacement shipment tracking number).
+3. **Print & DealPOS Rules**:
+   - **Label A6 (`100mm x 150mm`)** and **Picking List (`A4`)** MUST always render `produk_pengganti` (Replacement Items), NEVER `produk_pesanan` (returned items).
+   - Admin manages two distinct DealPOS documents: `no_sj_gudang_retur` (SJ DealPOS to Gudang Retur) and `no_invoice_return` (Invoice Return DealPOS when return is completed).
