@@ -80,10 +80,54 @@ interface PresensiViewProps {
   onShowToast: (msg: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
+const formatClockTime = (d: Date = new Date()): string => {
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+};
+
+const formatTodayIso = (d: Date = new Date()): string => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const LiveDigitalClock: React.FC = React.memo(() => {
+  const [now, setNow] = useState<Date>(() => new Date());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNow(new Date());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const timeStr = formatClockTime(now);
+  const dateStr = now.toLocaleDateString('id-ID', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+
+  return (
+    <>
+      <h1 className="text-3xl sm:text-5xl font-black tracking-tight font-mono text-white drop-shadow-md">
+        {timeStr}
+      </h1>
+      <p className="text-sm sm:text-base text-slate-300 mt-1 flex items-center gap-2">
+        <Calendar className="w-4 h-4 text-primary-400" />
+        {dateStr}
+      </p>
+    </>
+  );
+});
+
 export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast }) => {
-  const [currentTime, setCurrentTime] = useState<string>('');
-  const [currentDateStr, setCurrentDateStr] = useState<string>('');
-  const [todayIso, setTodayIso] = useState<string>('');
+  const [currentMinute, setCurrentMinute] = useState<string>(() => formatClockTime().slice(0, 5));
+  const [todayIso, setTodayIso] = useState<string>(() => formatTodayIso());
 
   // Geofence & GPS States
   const [locationConfig, setLocationConfig] = useState<PresensiLocationConfig>(() => getPresensiLocationConfig());
@@ -114,6 +158,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
 
   const [activeTab, setActiveTab] = useState<'harian' | 'kpi' | 'tukar_shift' | 'log'>('harian');
   const [logRecords, setLogRecords] = useState<PresensiRecord[]>([]);
+  const [logVisibleCount, setLogVisibleCount] = useState<number>(100);
   const [loadingLog, setLoadingLog] = useState<boolean>(false);
   const [editingPresensiId, setEditingPresensiId] = useState<number | string | null>(null);
   const [editPresensiData, setEditPresensiData] = useState<Partial<PresensiRecord>>({});
@@ -152,36 +197,20 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
   const userName = session?.name || getUserPersonName(session?.username) || 'Karyawan';
 
   // Helper for ISO-compliant time string (HH:mm:ss with colons)
-  const getFormatTime = (d: Date = new Date()): string => {
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mm = String(d.getMinutes()).padStart(2, '0');
-    const ss = String(d.getSeconds()).padStart(2, '0');
-    return `${hh}:${mm}:${ss}`;
-  };
+  const getFormatTime = (d: Date = new Date()): string => formatClockTime(d);
 
-  // Realtime clock
+  // Minute-level checker (only updates parent state when HH:mm or date changes, never every second)
   useEffect(() => {
-    const updateTime = () => {
+    const syncMinuteAndDate = () => {
       const now = new Date();
-      const timeStr = getFormatTime(now);
-      const dateStr = now.toLocaleDateString('id-ID', {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-      });
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      const iso = `${year}-${month}-${day}`;
-
-      setCurrentTime(timeStr);
-      setCurrentDateStr(dateStr);
-      setTodayIso(iso);
+      const hhmm = formatClockTime(now).slice(0, 5);
+      const iso = formatTodayIso(now);
+      setCurrentMinute((prev) => (prev === hhmm ? prev : hhmm));
+      setTodayIso((prev) => (prev === iso ? prev : iso));
     };
 
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
+    syncMinuteAndDate();
+    const interval = setInterval(syncMinuteAndDate, 15000);
     return () => clearInterval(interval);
   }, []);
 
@@ -197,7 +226,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
         fetchKaryawanDirectory(),
         fetchIzinPulangAwalList(userNik, todayIso),
         fetchTukarShiftList(userNik),
-        fetchCutiRecords(userNik),
+        fetchCutiRecords(userNik, todayIso, todayIso),
       ]);
       setTodayPresensi(presensi);
       setShifts(masterShifts);
@@ -251,6 +280,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
       const start = d.toISOString().slice(0, 10);
       const data = await fetchPresensiRange(start, todayIso);
       setLogRecords(data);
+      setLogVisibleCount(100);
     } catch (e) {
       console.warn(e);
     } finally {
@@ -264,7 +294,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
     }
   }, [activeTab, loadLogData]);
 
-  // Load My KPI Data for this month
+  // Load My KPI Data for this month (without depending on karyawanList state to avoid double-fetch cascade)
   const loadMyKpi = useCallback(async () => {
     if (!userNik) return;
     setLoadingKpi(true);
@@ -274,15 +304,16 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
       const startOfMonth = d.toISOString().slice(0, 10);
       const today = new Date().toISOString().slice(0, 10);
 
-      const [presensis, rosters, lemburs, cutis, izins] = await Promise.all([
+      const [presensis, rosters, lemburs, cutis, izins, kList] = await Promise.all([
         fetchPresensiRange(startOfMonth, today, userNik),
         fetchRosterShiftList(userNik, startOfMonth, today),
-        fetchLemburRecords(userNik),
-        fetchCutiRecords(userNik),
-        fetchIzinPulangAwalList(userNik),
+        fetchLemburRecords(userNik, startOfMonth, today),
+        fetchCutiRecords(userNik, startOfMonth, today),
+        fetchIzinPulangAwalList(userNik, undefined, startOfMonth, today),
+        fetchKaryawanDirectory(),
       ]);
 
-      const me = karyawanList.find((k) => k.nik === userNik) || {
+      const me = kList.find((k) => k.nik === userNik) || {
         nik: userNik,
         nama: userName,
         divisi: session?.role || 'Warehouse',
@@ -305,7 +336,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
     } finally {
       setLoadingKpi(false);
     }
-  }, [userNik, karyawanList, userName, session?.role]);
+  }, [userNik, userName, session?.role]);
 
   useEffect(() => {
     if (activeTab === 'kpi' || activeTab === 'harian') {
@@ -571,10 +602,9 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
 
   // Check if current time has reached checkout time (DEFAULT FALSE agar tombol tidak langsung aktif sebelum jam pulang)
   const isPastCheckoutTime = useMemo(() => {
-    if (!currentTime || !shiftStandarPulang) return false;
-    const currentHHmm = currentTime.slice(0, 5);
-    return currentHHmm >= shiftStandarPulang;
-  }, [currentTime, shiftStandarPulang]);
+    if (!currentMinute || !shiftStandarPulang) return false;
+    return currentMinute >= shiftStandarPulang;
+  }, [currentMinute, shiftStandarPulang]);
 
   // Check today's early checkout approval status
   const todayApprovedEarlyCheckout = useMemo(() => {
@@ -890,13 +920,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                   </span>
                 </div>
 
-                <h1 className="text-3xl sm:text-5xl font-black tracking-tight font-mono text-white drop-shadow-md">
-                  {currentTime || '--:--:--'}
-                </h1>
-                <p className="text-sm sm:text-base text-slate-300 mt-1 flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-primary-400" />
-                  {currentDateStr || 'Memuat tanggal...'}
-                </p>
+                <LiveDigitalClock />
               </div>
 
               {/* User Badge Info & Quick KPI */}
@@ -1589,7 +1613,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {logRecords.map((r, i) => (
+                {logRecords.slice(0, logVisibleCount).map((r, i) => (
                   <tr key={r.id || i}>
                     <td className="p-3">{r.tanggal}</td>
                     <td className="p-3">{r.nik}</td>
@@ -1692,6 +1716,18 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                 )}
               </tbody>
             </table>
+            {logRecords.length > logVisibleCount && (
+              <div className="pt-4 flex items-center justify-between text-xs text-slate-500">
+                <span>Menampilkan {logVisibleCount} dari {logRecords.length} log presensi</span>
+                <button
+                  type="button"
+                  onClick={() => setLogVisibleCount((prev) => prev + 100)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
+                >
+                  Tampilkan Lebih Banyak (+100)
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1726,7 +1762,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-slate-500">Jam Pulang Sekarang:</span>
-                <span className="font-mono font-extrabold text-primary-600 dark:text-primary-400 text-sm">{currentTime || getFormatTime()}</span>
+                <span className="font-mono font-extrabold text-primary-600 dark:text-primary-400 text-sm">{getFormatTime()}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-slate-500">Jam Standar Shift:</span>

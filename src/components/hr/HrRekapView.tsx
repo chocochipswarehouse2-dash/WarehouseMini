@@ -55,7 +55,7 @@ import {
   fetchRosterShiftList,
   fetchIzinPulangAwalList,
 } from '../../services/supabase';
-import { calculateKpiAbsensi } from '../../utils/kpiCalculator';
+import { calculateKpiAbsensiBatch } from '../../utils/kpiCalculator';
 import { getUserPersonName } from '../../utils/userResolver';
 
 interface HrRekapViewProps {
@@ -99,10 +99,10 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
       const [karyawans, presensis, lemburs, cutis, rosters, izins] = await Promise.all([
         fetchKaryawanDirectory(),
         fetchPresensiRange(startDate, endDate),
-        fetchLemburRecords(),
-        fetchCutiRecords(),
+        fetchLemburRecords(undefined, startDate, endDate),
+        fetchCutiRecords(undefined, startDate, endDate),
         fetchRosterShiftList(undefined, startDate, endDate),
-        fetchIzinPulangAwalList(),
+        fetchIzinPulangAwalList(undefined, startDate, endDate),
       ]);
 
       setKaryawanList(karyawans);
@@ -462,24 +462,29 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
     });
   }, [filteredKaryawan, presensiList, lemburList, cutiList, rosterList, startDate, endDate]);
 
-  // KPI Summary Evaluation across filtered period
+  // KPI Summary Evaluation across filtered period (O(N+M) batch)
+  const kpiBatchMap = useMemo(() => {
+    return calculateKpiAbsensiBatch(
+      filteredKaryawan,
+      presensiList,
+      rosterList,
+      lemburList,
+      cutiList,
+      izinPulangList,
+      startDate,
+      endDate
+    );
+  }, [filteredKaryawan, presensiList, rosterList, lemburList, cutiList, izinPulangList, startDate, endDate]);
+
   const kpiSummaryList = useMemo(() => {
-    const list = filteredKaryawan.map((k) => {
-      return calculateKpiAbsensi({
-        karyawan: k,
-        presensiList,
-        rosterList,
-        lemburList,
-        cutiList,
-        izinPulangAwalList: izinPulangList,
-        startDate,
-        endDate,
-      });
-    });
-    // Sort descending by Nilai KPI
+    const list: KpiAbsensiSummary[] = [];
+    for (const k of filteredKaryawan) {
+      const kpi = kpiBatchMap[k.nik];
+      if (kpi) list.push(kpi);
+    }
     list.sort((a, b) => b.nilaiKpiAbsensi - a.nilaiKpiAbsensi);
     return list;
-  }, [filteredKaryawan, presensiList, rosterList, lemburList, cutiList, izinPulangList, startDate, endDate]);
+  }, [filteredKaryawan, kpiBatchMap]);
 
   // Grand Totals
   const grandTotals = useMemo(() => {

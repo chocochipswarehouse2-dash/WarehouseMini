@@ -1236,9 +1236,16 @@ export async function updateOrderPrintStatus(
             const bothPrinted = nextPickingPrinted && nextLabelPrinted;
 
             const currentStatus = (targetOrder.status || 'diterima').toLowerCase().trim();
+            const flowStr = (targetOrder.alteration_repair_data?.status_flow || '').toLowerCase();
+            const isFlowAktif = ['dalam_pengerjaan', 'selesai_qc', 'diterima_warehouse', 'siap_dikirim'].includes(flowStr);
+            const hasResiOrJadwal = !!(targetOrder.no_resi && targetOrder.no_resi.trim()) || !!(targetOrder.tgl_jadwal_kirim_store && targetOrder.tgl_jadwal_kirim_store.trim());
             let nextStatus = targetOrder.status;
-            if (bothPrinted && (currentStatus === 'diterima' || currentStatus === 'pending' || !currentStatus)) {
-              nextStatus = 'diproses';
+            if (currentStatus !== 'batal' && currentStatus !== 'dikirim' && currentStatus !== 'selesai' && !hasResiOrJadwal) {
+              if (bothPrinted || isFlowAktif) {
+                nextStatus = 'diproses';
+              } else {
+                nextStatus = 'diterima';
+              }
             }
 
             const updatedOrder: ManualShipmentOrder = {

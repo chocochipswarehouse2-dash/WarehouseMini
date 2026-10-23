@@ -2489,10 +2489,13 @@ _WMS Warehouse System_`;
       const id = o.no_pesanan || (o as any).id;
       if (orderIds.includes(id) || (o.no_pesanan && orderIds.includes(o.no_pesanan))) {
         const bothDone = !!o.is_label_printed;
-        if (bothDone && o.status === 'diterima') movedToDiprosesCount++;
+        const flowStr = (o.alteration_repair_data?.status_flow || '').toLowerCase();
+        const isFlowAktif = ['dalam_pengerjaan', 'selesai_qc', 'diterima_warehouse', 'siap_dikirim'].includes(flowStr);
+        const canTransition = o.status !== 'batal' && !isOrderSelesai(o);
+        if (bothDone && canTransition && o.status !== 'diproses') movedToDiprosesCount++;
         return {
           ...o,
-          status: (o.status === 'diterima' && bothDone) ? 'diproses' : o.status,
+          status: canTransition ? ((bothDone || isFlowAktif) ? 'diproses' : 'diterima') : o.status,
           is_picking_printed: true,
           tgl_cetak_picking: nowIso,
         };
@@ -2506,9 +2509,12 @@ _WMS Warehouse System_`;
         setSelectedOrderDetails(prev => {
           if (!prev) return null;
           const bothDone = !!prev.is_label_printed;
+          const flowStr = (prev.alteration_repair_data?.status_flow || '').toLowerCase();
+          const isFlowAktif = ['dalam_pengerjaan', 'selesai_qc', 'diterima_warehouse', 'siap_dikirim'].includes(flowStr);
+          const canTransition = prev.status !== 'batal' && !isOrderSelesai(prev);
           return {
             ...prev,
-            status: (prev.status === 'diterima' && bothDone) ? 'diproses' : prev.status,
+            status: canTransition ? ((bothDone || isFlowAktif) ? 'diproses' : 'diterima') : prev.status,
             is_picking_printed: true,
             tgl_cetak_picking: nowIso,
           };
@@ -3786,15 +3792,14 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                       <div>Order was placed on <span className="font-semibold text-slate-700 dark:text-slate-300">{new Date(order.created_at || '').toLocaleString('id-ID')}</span></div>
                       {order.submitted_by && <div>Submitted by <span className="font-semibold text-slate-700 dark:text-slate-300">{formatOperatorWithPersonName(order.submitted_by)}</span></div>}
                       <div className="inline-block mt-1">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider border ${
-                          order.status === 'diterima' ? 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800' : 
-                          order.status === 'diproses' ? 'border-yellow-400 dark:border-yellow-600/70 text-yellow-800 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-950/40' : 
-                          order.status === 'dikirim' ? 'border-emerald-400 dark:border-emerald-600/70 text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40' : 
-                          order.status === 'batal' ? 'border-red-400 dark:border-red-600/70 text-red-800 dark:text-red-300 bg-red-50 dark:bg-red-950/40' : 
-                          'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800'
-                        }`}>
-                          Status: {order.status}
-                        </span>
+                        {(() => {
+                          const badgeInfo = getOrderStatusBadgeInfo(order);
+                          return (
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider border ${badgeInfo.badgeClass}`}>
+                              Status: {badgeInfo.label}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
 
@@ -3874,10 +3879,13 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
       const id = o.no_pesanan || (o as any).id;
       if (orderIds.includes(id) || (o.no_pesanan && orderIds.includes(o.no_pesanan))) {
         const bothDone = !!o.is_picking_printed;
-        if (bothDone && o.status === 'diterima') movedToDiprosesCount++;
+        const flowStr = (o.alteration_repair_data?.status_flow || '').toLowerCase();
+        const isFlowAktif = ['dalam_pengerjaan', 'selesai_qc', 'diterima_warehouse', 'siap_dikirim'].includes(flowStr);
+        const canTransition = o.status !== 'batal' && !isOrderSelesai(o);
+        if (bothDone && canTransition && o.status !== 'diproses') movedToDiprosesCount++;
         return {
           ...o,
-          status: (o.status === 'diterima' && bothDone) ? 'diproses' : o.status,
+          status: canTransition ? ((bothDone || isFlowAktif) ? 'diproses' : 'diterima') : o.status,
           is_label_printed: true,
           tgl_cetak_label: nowIso,
         };
@@ -3891,9 +3899,12 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
         setSelectedOrderDetails(prev => {
           if (!prev) return null;
           const bothDone = !!prev.is_picking_printed;
+          const flowStr = (prev.alteration_repair_data?.status_flow || '').toLowerCase();
+          const isFlowAktif = ['dalam_pengerjaan', 'selesai_qc', 'diterima_warehouse', 'siap_dikirim'].includes(flowStr);
+          const canTransition = prev.status !== 'batal' && !isOrderSelesai(prev);
           return {
             ...prev,
-            status: (prev.status === 'diterima' && bothDone) ? 'diproses' : prev.status,
+            status: canTransition ? ((bothDone || isFlowAktif) ? 'diproses' : 'diterima') : prev.status,
             is_label_printed: true,
             tgl_cetak_label: nowIso,
           };
@@ -4208,6 +4219,40 @@ _WMS Warehouse System_`;
     if (isOrderSelesai(order)) return false;
     if (isOrderSedangDiproses(order)) return false;
     return true;
+  };
+
+  // Helper: Status efektif & konfigurasi badge yang selalu sinkron dengan 3 Tahap Utama (Aturan 2 Klik Cetak)
+  const getOrderStatusBadgeInfo = (order: ManualShipmentOrder): {
+    effectiveStatus: 'batal' | 'dikirim' | 'diproses' | 'diterima';
+    label: string;
+    badgeClass: string;
+  } => {
+    if (order.status === 'batal') {
+      return {
+        effectiveStatus: 'batal',
+        label: 'Batal',
+        badgeClass: 'border-red-400 dark:border-red-600/70 text-red-800 dark:text-red-300 bg-red-50 dark:bg-red-950/40',
+      };
+    }
+    if (isOrderSelesai(order)) {
+      return {
+        effectiveStatus: 'dikirim',
+        label: order.status === 'selesai' ? 'Selesai' : 'Dikirim',
+        badgeClass: 'border-emerald-400 dark:border-emerald-600/70 text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40',
+      };
+    }
+    if (isOrderSedangDiproses(order)) {
+      return {
+        effectiveStatus: 'diproses',
+        label: 'Diproses',
+        badgeClass: 'border-yellow-400 dark:border-yellow-600/70 text-yellow-800 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-950/40',
+      };
+    }
+    return {
+      effectiveStatus: 'diterima',
+      label: 'Diterima',
+      badgeClass: 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800',
+    };
   };
 
   /**
@@ -4639,26 +4684,23 @@ _WMS Warehouse System_`;
       });
     }
     
-    // Status filter
+    // Status filter (diselaraskan dengan status efektif tahapan pesanan)
     if (filterStatus !== 'all') {
       const targetStatus = filterStatus.toLowerCase().trim();
       result = result.filter(o => {
-        const s = (o.status || '').toLowerCase().trim();
-        if (targetStatus === 'pending') {
-          return s === 'pending' || s === 'menunggu' || s === 'diajukan' || !s;
-        }
-        if (targetStatus === 'diterima') {
-          return s === 'diterima' || s === 'terima';
-        }
-        if (targetStatus === 'diproses') {
-          return s === 'diproses' || s === 'proses' || s === 'proses_packing' || s === 'sedang_diproses';
+        if (targetStatus === 'batal') {
+          return o.status === 'batal';
         }
         if (targetStatus === 'dikirim') {
-          return s === 'dikirim' || s === 'kirim';
+          return isOrderSelesai(o);
         }
-        if (targetStatus === 'batal') {
-          return s === 'batal' || s === 'cancelled' || s === 'canceled';
+        if (targetStatus === 'diproses') {
+          return isOrderSedangDiproses(o);
         }
+        if (targetStatus === 'pending' || targetStatus === 'diterima') {
+          return isOrderPesananBaru(o);
+        }
+        const s = (o.status || '').toLowerCase().trim();
         return s === targetStatus;
       });
     }
@@ -4952,21 +4994,27 @@ _WMS Warehouse System_`;
   };
 
   const renderRekap = () => {
-    const totalArCount = scopedOrders.filter(o => isStandaloneArOrder(o)).length;
-    const totalManualWithAlterCount = scopedOrders.filter(o => {
+    const stageScopedOrders = directionScopedOrders.filter(o => {
+      if (stageTab === 'baru') return isOrderPesananBaru(o);
+      if (stageTab === 'diproses') return isOrderSedangDiproses(o);
+      if (stageTab === 'selesai') return isOrderSelesai(o);
+      return true;
+    });
+    const totalArCount = stageScopedOrders.filter(o => isStandaloneArOrder(o)).length;
+    const totalManualWithAlterCount = stageScopedOrders.filter(o => {
       const isAr = isStandaloneArOrder(o);
       const hasAlter = (o.items || []).some(isRealAlterItem) || hasValidArData(o.alteration_repair_data);
       return !isAr && hasAlter;
     }).length;
-    const totalManualPureCount = scopedOrders.filter(o => {
+    const totalManualPureCount = stageScopedOrders.filter(o => {
       const isAr = isStandaloneArOrder(o);
       const hasAlter = (o.items || []).some(isRealAlterItem) || hasValidArData(o.alteration_repair_data);
       return !isAr && !hasAlter;
     }).length;
     const unassignedResiCount = scopedOrders.filter(o => o.status !== 'batal' && orderNeedsResi(o) && !(o.no_resi || '').trim()).length;
-    const unprintedLabelCount = directionScopedOrders.filter(o => o.status !== 'batal' && !isOrderSelesai(o) && !o.is_label_printed).length;
-    const unprintedPickingCount = directionScopedOrders.filter(o => o.status !== 'batal' && !isOrderSelesai(o) && !o.is_picking_printed).length;
-    const printedLabelCount = directionScopedOrders.filter(o => o.status !== 'batal' && !!o.is_label_printed).length;
+    const unprintedLabelCount = stageScopedOrders.filter(o => o.status !== 'batal' && !o.is_label_printed).length;
+    const unprintedPickingCount = stageScopedOrders.filter(o => o.status !== 'batal' && !o.is_picking_printed).length;
+    const printedLabelCount = stageScopedOrders.filter(o => o.status !== 'batal' && !!o.is_label_printed).length;
 
     const selectedAlterOrders = scopedOrders.filter(o => {
       const k = getOrderKey(o);
@@ -5141,7 +5189,7 @@ _WMS Warehouse System_`;
           <div className="inline-flex p-1 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-lg shadow-2xs text-xs font-bold gap-1 flex-wrap">
             <button
               type="button"
-              onClick={() => setStageTab('baru')}
+              onClick={() => { setStageTab('baru'); setFilterPrintStatus('all'); }}
               className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-2 cursor-pointer ${
                 stageTab === 'baru'
                   ? 'bg-amber-500 text-white shadow-xs font-extrabold'
@@ -5159,7 +5207,7 @@ _WMS Warehouse System_`;
 
             <button
               type="button"
-              onClick={() => setStageTab('diproses')}
+              onClick={() => { setStageTab('diproses'); setFilterPrintStatus('all'); }}
               className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-2 cursor-pointer ${
                 stageTab === 'diproses'
                   ? 'bg-blue-600 text-white shadow-xs font-extrabold'
@@ -5177,7 +5225,7 @@ _WMS Warehouse System_`;
 
             <button
               type="button"
-              onClick={() => setStageTab('selesai')}
+              onClick={() => { setStageTab('selesai'); setFilterPrintStatus('all'); }}
               className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-2 cursor-pointer ${
                 stageTab === 'selesai'
                   ? 'bg-emerald-600 text-white shadow-xs font-extrabold'
@@ -5195,7 +5243,7 @@ _WMS Warehouse System_`;
 
             <button
               type="button"
-              onClick={() => setStageTab('semua')}
+              onClick={() => { setStageTab('semua'); setFilterPrintStatus('all'); }}
               className={`px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
                 stageTab === 'semua'
                   ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 shadow-xs font-extrabold'
@@ -6041,15 +6089,14 @@ _WMS Warehouse System_`;
                     )}
                   </td>
                   <td className="px-3 py-2.5 whitespace-nowrap align-top">
-                    <span className={`mt-0.5 px-2 py-0.5 inline-block text-[10px] font-semibold rounded-md border ${
-                      order.status === 'diterima' ? 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800' : 
-                      order.status === 'diproses' ? 'border-yellow-400 dark:border-yellow-600/70 text-yellow-800 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-950/40' : 
-                      order.status === 'dikirim' ? 'border-emerald-400 dark:border-emerald-600/70 text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40' : 
-                      order.status === 'batal' ? 'border-red-400 dark:border-red-600/70 text-red-800 dark:text-red-300 bg-red-50 dark:bg-red-950/40' : 
-                      'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800'
-                    }`}>
-                      {order.status.charAt(0).toUpperCase() + order.status.slice(1).toLowerCase()}
-                    </span>
+                    {(() => {
+                      const badgeInfo = getOrderStatusBadgeInfo(order);
+                      return (
+                        <span className={`mt-0.5 px-2 py-0.5 inline-block text-[10px] font-semibold rounded-md border ${badgeInfo.badgeClass}`}>
+                          {badgeInfo.label}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="px-3 py-2.5 align-top text-center">
                     <button 
@@ -6529,15 +6576,14 @@ _WMS Warehouse System_`;
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wide border ${
-                        order.status === 'diterima' ? 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800' : 
-                        order.status === 'diproses' ? 'border-yellow-400 dark:border-yellow-600/70 text-yellow-800 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-950/40' : 
-                        order.status === 'dikirim' ? 'border-emerald-400 dark:border-emerald-600/70 text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40' : 
-                        order.status === 'batal' ? 'border-red-400 dark:border-red-600/70 text-red-800 dark:text-red-300 bg-red-50 dark:bg-red-950/40' : 
-                        'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800'
-                      }`}>
-                        {order.status.charAt(0).toUpperCase() + order.status.slice(1).toLowerCase()}
-                      </span>
+                      {(() => {
+                        const badgeInfo = getOrderStatusBadgeInfo(order);
+                        return (
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wide border ${badgeInfo.badgeClass}`}>
+                            {badgeInfo.label}
+                          </span>
+                        );
+                      })()}
                       {(() => {
                         const isAr = hasRealAlterItems(order);
                         const alterItems = (order.items || []).filter(isRealAlterItem);

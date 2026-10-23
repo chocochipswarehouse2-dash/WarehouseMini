@@ -2,7 +2,7 @@
 <html lang="id">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
     <title>Warehouse Mini</title>
     <link rel="icon" type="image/png" sizes="48x48" href="/favicon.png" />
     <link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
@@ -20,34 +20,6 @@
     <meta name="screen-orientation" content="portrait" />
     <meta name="x5-orientation" content="portrait" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-
-    <!-- Ensure Fullscreen Mode Scrolls Smoothly & Never Rotates DOM via CSS -->
-    <style>
-      html,
-      body {
-        transform: none !important;
-      }
-      html:fullscreen,
-      html:-webkit-full-screen {
-        width: 100% !important;
-        height: 100% !important;
-        overflow-x: hidden !important;
-        overflow-y: auto !important;
-        background-color: var(--bg-app, #f4f6f8);
-      }
-      html.dark:fullscreen,
-      html.dark:-webkit-full-screen {
-        background-color: #0f172a;
-      }
-      html:fullscreen body,
-      html:-webkit-full-screen body {
-        width: 100% !important;
-        min-height: 100% !important;
-        overflow-x: hidden !important;
-        overflow-y: auto !important;
-        -webkit-overflow-scrolling: touch !important;
-      }
-    </style>
     
     <!-- Instant Dark/Light Theme Sync on Load -->
     <script>
@@ -87,97 +59,38 @@
       }(window.location))
     </script>
     
-    <!-- Native OS Portrait Lock for Mobile Browsers (Including Samsung Internet Fullscreen Lock) -->
+    <!-- Clean Native Portrait Lock (Without Forcing Fullscreen) -->
     <script>
       (function() {
-        // Clean up any legacy CSS classes from previous builds
         try {
           document.documentElement.classList.remove('wms-force-portrait-landscape');
           document.documentElement.style.removeProperty('--wms-portrait-w');
           document.documentElement.style.removeProperty('--wms-portrait-h');
           document.documentElement.style.removeProperty('--wms-portrait-transform');
           document.documentElement.style.removeProperty('transform');
+          if (document.fullscreenElement && typeof document.exitFullscreen === 'function') {
+            document.exitFullscreen().catch(function() {});
+          }
         } catch (e) {}
 
-        var needsFullscreenForOrientationLock = false;
-
-        function isPhoneDevice() {
-          var ua = navigator.userAgent || '';
-          var isPhoneUA = /Android|iPhone|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(ua) && !/iPad|Tablet/i.test(ua);
-          var shortest = window.screen ? Math.min(window.screen.width || 9999, window.screen.height || 9999) : 9999;
-          var innerShortest = Math.min(window.innerWidth || 9999, window.innerHeight || 9999);
-          return (isPhoneUA || shortest < 600) && innerShortest < 600;
-        }
-
-        function isEditableTarget(el) {
-          if (!el || typeof el.closest !== 'function') return false;
-          return Boolean(
-            el.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""], label')
-          );
-        }
-
-        function lockPortraitDirect() {
+        function lockPortraitSilent() {
           try {
-            if (!isPhoneDevice()) return Promise.resolve(false);
             var ori = window.screen && (window.screen.orientation || window.screen.mozOrientation || window.screen.msOrientation);
             if (ori && typeof ori.lock === 'function') {
-              return ori.lock('portrait-primary').then(function() {
-                needsFullscreenForOrientationLock = false;
-                return true;
-              }).catch(function() {
-                return ori.lock('portrait').then(function() {
-                  needsFullscreenForOrientationLock = false;
-                  return true;
-                }).catch(function() {
-                  needsFullscreenForOrientationLock = true;
-                  return false;
+              var p = ori.lock('portrait-primary');
+              if (p && typeof p.catch === 'function') {
+                p.catch(function() {
+                  try {
+                    var p2 = ori.lock('portrait');
+                    if (p2 && typeof p2.catch === 'function') p2.catch(function() {});
+                  } catch (e2) {}
                 });
-              });
-            }
-          } catch (e) {
-            needsFullscreenForOrientationLock = true;
-          }
-          return Promise.resolve(false);
-        }
-
-        function handleUserGestureLock(ev) {
-          try {
-            if (!isPhoneDevice()) return;
-            if (ev && isEditableTarget(ev.target)) return;
-
-            var docEl = document.documentElement;
-            var isFullscreen = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
-            var isLandscapeNow = window.innerWidth > window.innerHeight;
-            var isSamsungBrowser = /SamsungBrowser/i.test(navigator.userAgent || '');
-
-            // On Samsung Internet (or when direct lock rejected / screen is in landscape),
-            // ScreenOrientation.lock() requires Fullscreen API to lock the Android Activity to Portrait.
-            if (!isFullscreen && (needsFullscreenForOrientationLock || isSamsungBrowser || isLandscapeNow)) {
-              var reqFs = docEl.requestFullscreen || docEl.webkitRequestFullscreen;
-              if (typeof reqFs === 'function') {
-                var fsPromise = reqFs.call(docEl, { navigationUI: 'hide' });
-                if (fsPromise && typeof fsPromise.then === 'function') {
-                  fsPromise.then(function() {
-                    lockPortraitDirect();
-                  }).catch(function() {
-                    lockPortraitDirect();
-                  });
-                  return;
-                }
               }
             }
-
-            lockPortraitDirect();
           } catch (e) {}
         }
 
-        lockPortraitDirect();
-        window.addEventListener('orientationchange', function() {
-          lockPortraitDirect();
-        }, { passive: true });
-        window.addEventListener('touchend', handleUserGestureLock, { passive: true });
-        window.addEventListener('pointerup', handleUserGestureLock, { passive: true });
-        window.addEventListener('click', handleUserGestureLock, { passive: true });
+        lockPortraitSilent();
       })();
     </script>
 

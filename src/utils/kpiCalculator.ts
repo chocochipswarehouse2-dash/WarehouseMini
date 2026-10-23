@@ -259,3 +259,102 @@ export function calculateKpiAbsensi({
     labelStatus,
   };
 }
+
+/**
+ * Batch O(N + M) KPI calculation for all employees by pre-grouping records by NIK once
+ */
+export function calculateKpiAbsensiBatch({
+  karyawanList,
+  presensiList,
+  rosterList,
+  lemburList = [],
+  cutiList = [],
+  izinPulangAwalList = [],
+  startDate,
+  endDate,
+}: {
+  karyawanList: { nik: string; nama: string; divisi?: string }[];
+  presensiList: PresensiRecord[];
+  rosterList: RosterShiftRecord[];
+  lemburList?: LemburRecord[];
+  cutiList?: PerijinanCutiRecord[];
+  izinPulangAwalList?: IzinPulangAwalRecord[];
+  startDate: string;
+  endDate: string;
+}): Record<string, KpiAbsensiSummary> {
+  const presensiByNik = new Map<string, PresensiRecord[]>();
+  const rosterByNik = new Map<string, RosterShiftRecord[]>();
+  const lemburByNik = new Map<string, LemburRecord[]>();
+  const cutiByNik = new Map<string, PerijinanCutiRecord[]>();
+  const izinByNik = new Map<string, IzinPulangAwalRecord[]>();
+
+  for (const p of presensiList) {
+    if (p.tanggal < startDate || p.tanggal > endDate) continue;
+    const k = (p.nik || '').trim().toUpperCase();
+    if (!k) continue;
+    const arr = presensiByNik.get(k);
+    if (arr) arr.push(p);
+    else presensiByNik.set(k, [p]);
+  }
+
+  for (const r of rosterList) {
+    if (r.tanggal < startDate || r.tanggal > endDate) continue;
+    const k = (r.nik || '').trim().toUpperCase();
+    if (!k) continue;
+    const arr = rosterByNik.get(k);
+    if (arr) arr.push(r);
+    else rosterByNik.set(k, [r]);
+  }
+
+  for (const l of lemburList) {
+    if (l.status !== 'Disetujui' || l.tanggal < startDate || l.tanggal > endDate) continue;
+    const k = (l.nik || '').trim().toUpperCase();
+    if (!k) continue;
+    const arr = lemburByNik.get(k);
+    if (arr) arr.push(l);
+    else lemburByNik.set(k, [l]);
+  }
+
+  for (const c of cutiList) {
+    if (
+      c.status !== 'Disetujui' ||
+      !((c.tgl_mulai >= startDate && c.tgl_mulai <= endDate) ||
+        (c.tgl_selesai >= startDate && c.tgl_selesai <= endDate) ||
+        (c.tgl_mulai <= startDate && c.tgl_selesai >= endDate))
+    ) {
+      continue;
+    }
+    const k = (c.nik || '').trim().toUpperCase();
+    if (!k) continue;
+    const arr = cutiByNik.get(k);
+    if (arr) arr.push(c);
+    else cutiByNik.set(k, [c]);
+  }
+
+  for (const i of izinPulangAwalList) {
+    if (i.status !== 'Disetujui' || i.tanggal < startDate || i.tanggal > endDate) continue;
+    const k = (i.nik || '').trim().toUpperCase();
+    if (!k) continue;
+    const arr = izinByNik.get(k);
+    if (arr) arr.push(i);
+    else izinByNik.set(k, [i]);
+  }
+
+  const map: Record<string, KpiAbsensiSummary> = {};
+  for (const k of karyawanList) {
+    const nikUpper = (k.nik || '').trim().toUpperCase();
+    if (!nikUpper) continue;
+    map[nikUpper] = calculateKpiAbsensi({
+      karyawan: k,
+      presensiList: presensiByNik.get(nikUpper) || [],
+      rosterList: rosterByNik.get(nikUpper) || [],
+      lemburList: lemburByNik.get(nikUpper) || [],
+      cutiList: cutiByNik.get(nikUpper) || [],
+      izinPulangAwalList: izinByNik.get(nikUpper) || [],
+      startDate,
+      endDate,
+    });
+  }
+  return map;
+}
+

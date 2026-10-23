@@ -6414,16 +6414,31 @@ export async function fetchRosterShiftList(
   }
 }
 
+let memoryMasterShiftCache: MasterShiftRecord[] | null = null;
+let memoryMasterShiftLastFetch = 0;
+
 /**
- * Fetch master shifts (Shift 1, Shift 2, etc.)
+ * Fetch master shifts (Shift 1, Shift 2, etc.) with in-memory cache
  */
-export async function fetchMasterShiftList(): Promise<MasterShiftRecord[]> {
+export async function fetchMasterShiftList(forceRefresh = false): Promise<MasterShiftRecord[]> {
+  if (
+    !forceRefresh &&
+    memoryMasterShiftCache &&
+    Date.now() - memoryMasterShiftLastFetch < 5 * 60 * 1000
+  ) {
+    return memoryMasterShiftCache;
+  }
   try {
     const data = await supabaseFetch<MasterShiftRecord[]>('master_shift', 'GET', null, 'order=id.asc&limit=100');
-    return data || [];
+    if (Array.isArray(data)) {
+      memoryMasterShiftCache = data;
+      memoryMasterShiftLastFetch = Date.now();
+      return data;
+    }
+    return [];
   } catch (err) {
     console.warn('fetchMasterShiftList error:', err);
-    return [];
+    return memoryMasterShiftCache || [];
   }
 }
 
@@ -6431,6 +6446,8 @@ export async function fetchMasterShiftList(): Promise<MasterShiftRecord[]> {
  * Save or update a single master shift definition
  */
 export async function saveMasterShift(record: Partial<MasterShiftRecord>): Promise<MasterShiftRecord> {
+  memoryMasterShiftCache = null;
+  memoryMasterShiftLastFetch = 0;
   const sb = getSupabaseClient();
   const payload: Record<string, any> = {
     nama_shift: record.nama_shift?.trim(),
@@ -6691,13 +6708,23 @@ export async function deleteRosterShift(id: number): Promise<boolean> {
 }
 
 /**
- * Fetch lembur records (optionally filtered by NIK)
+ * Fetch lembur records (optionally filtered by NIK and date range)
  */
-export async function fetchLemburRecords(nik?: string): Promise<LemburRecord[]> {
+export async function fetchLemburRecords(
+  nik?: string,
+  startDate?: string,
+  endDate?: string
+): Promise<LemburRecord[]> {
   try {
     let query = 'select=*&order=tanggal.desc,created_at.desc&limit=500';
     if (nik) {
       query += `&nik=eq.${encodeURIComponent(nik)}`;
+    }
+    if (startDate) {
+      query += `&tanggal=gte.${encodeURIComponent(startDate)}`;
+    }
+    if (endDate) {
+      query += `&tanggal=lte.${encodeURIComponent(endDate)}`;
     }
     const data = await supabaseFetch<LemburRecord[]>('lembur', 'GET', null, query);
     return data || [];
@@ -6792,13 +6819,23 @@ export async function deleteLemburRecord(id: string): Promise<void> {
 }
 
 /**
- * Fetch cuti records (optionally filtered by NIK)
+ * Fetch cuti records (optionally filtered by NIK and date range)
  */
-export async function fetchCutiRecords(nik?: string): Promise<PerijinanCutiRecord[]> {
+export async function fetchCutiRecords(
+  nik?: string,
+  startDate?: string,
+  endDate?: string
+): Promise<PerijinanCutiRecord[]> {
   try {
     let query = 'select=*&order=tgl_mulai.desc,created_at.desc&limit=500';
     if (nik) {
       query += `&nik=eq.${encodeURIComponent(nik)}`;
+    }
+    if (startDate) {
+      query += `&tgl_selesai=gte.${encodeURIComponent(startDate)}`;
+    }
+    if (endDate) {
+      query += `&tgl_mulai=lte.${encodeURIComponent(endDate)}`;
     }
     const data = await supabaseFetch<PerijinanCutiRecord[]>('perijinan_cuti', 'GET', null, query);
     return data || [];
@@ -6929,30 +6966,47 @@ export async function cancelCutiRecord(
 // ============================================================================
 
 const LOCAL_STORAGE_IZIN_PULANG_KEY = 'wms_local_izin_pulang_awal';
+let resolvedIzinPulangTable: 'izin_pulang_cepat' | 'izin_pulang_awal' | 'none' = 'izin_pulang_cepat';
 
 /**
- * Fetch Izin Pulang Awal list
+ * Fetch Izin Pulang Awal list (uses izin_pulang_cepat table or localStorage without repeated 404s)
  */
 export async function fetchIzinPulangAwalList(
   nik?: string,
-  tanggal?: string
+  tanggal?: string,
+  startDate?: string,
+  endDate?: string
 ): Promise<IzinPulangAwalRecord[]> {
-  try {
-    let query = 'select=*&order=tanggal.desc,created_at.desc&limit=500';
-    if (nik) {
-      query += `&nik=eq.${encodeURIComponent(nik)}`;
+  if (resolvedIzinPulangTable !== 'none') {
+    try {
+      let query = 'select=*&order=tanggal.desc,created_at.desc&limit=500';
+      if (nik) {
+        query += `&nik=eq.${encodeURIComponent(nik)}`;
+      }
+      if (tanggal) {
+        query += `&tanggal=eq.${encodeURIComponent(tanggal)}`;
+      }
+      if (startDate) {
+        query += `&tanggal=gte.${encodeURIComponent(startDate)}`;
+      }
+      if (endDate) {
+        query += `&tanggal=lte.${encodeURIComponent(endDate)}`;
+      }
+      const data = await supabaseFetch<IzinPulangAwalRecord[]>(resolvedIzinPulangTable, 'GET', null, query);
+      if (data && Array.isArray(data)) {
+        if (!nik && !tanggal && !startDate && !endDate) {
+          try {
+            localStorage.setItem(LOCAL_STORAGE_IZIN_PULANG_KEY, JSON.stringify(data));
+          } catch {}
+        }
+        return data;
+      }
+    } catch (err: any) {
+      const msg = String(err?.message || err || '');
+      if (msg.includes('PGRST205') || msg.includes('404')) {
+        resolvedIzinPulangTable = 'none';
+      }
     }
-    if (tanggal) {
-      query += `&tanggal=eq.${encodeURIComponent(tanggal)}`;
-    }
-    const data = await supabaseFetch<IzinPulangAwalRecord[]>('izin_pulang_awal', 'GET', null, query);
-    if (data && Array.isArray(data)) {
-      // Sync local cache
-      localStorage.setItem(LOCAL_STORAGE_IZIN_PULANG_KEY, JSON.stringify(data));
-      return data;
-    }
-  } catch (err) {
-    console.warn('fetchIzinPulangAwalList fallback to localStorage:', err);
   }
 
   // Fallback localStorage
@@ -6965,6 +7019,12 @@ export async function fetchIzinPulangAwalList(
       }
       if (tanggal) {
         list = list.filter((item) => item.tanggal === tanggal);
+      }
+      if (startDate) {
+        list = list.filter((item) => item.tanggal >= startDate);
+      }
+      if (endDate) {
+        list = list.filter((item) => item.tanggal <= endDate);
       }
       return list;
     }
@@ -6998,22 +7058,23 @@ export async function submitIzinPulangAwalRecord(
     created_at: record.created_at || new Date().toISOString(),
   };
 
-  try {
-    const { data, error } = await sb
-      .from('izin_pulang_awal')
-      .insert(payload)
-      .select()
-      .single();
+  if (resolvedIzinPulangTable !== 'none') {
+    try {
+      const { data, error } = await sb
+        .from(resolvedIzinPulangTable)
+        .insert(payload)
+        .select()
+        .single();
 
-    if (!error && data) {
-      // Update local storage
-      const existing = await fetchIzinPulangAwalList();
-      const updated = [data, ...existing.filter((item) => item.id !== data.id)];
-      localStorage.setItem(LOCAL_STORAGE_IZIN_PULANG_KEY, JSON.stringify(updated));
-      return data;
-    }
-  } catch (err) {
-    console.warn('submitIzinPulangAwalRecord error, saving to localStorage:', err);
+      if (!error && data) {
+        const existing = await fetchIzinPulangAwalList();
+        const updated = [data, ...existing.filter((item) => item.id !== data.id)];
+        try {
+          localStorage.setItem(LOCAL_STORAGE_IZIN_PULANG_KEY, JSON.stringify(updated));
+        } catch {}
+        return data;
+      }
+    } catch {}
   }
 
   // Fallback save to localStorage
@@ -7038,18 +7099,18 @@ export async function updateIzinPulangAwalStatus(
 ): Promise<void> {
   const sb = getSupabaseClient();
   const nowIso = new Date().toISOString();
-  try {
-    await sb
-      .from('izin_pulang_awal')
-      .update({
-        status,
-        approved_by: status === 'Diajukan' ? null : approvedBy,
-        approved_at: status === 'Diajukan' ? null : nowIso,
-        catatan: catatan !== undefined ? catatan : '',
-      })
-      .eq('id', id);
-  } catch (err) {
-    console.warn('updateIzinPulangAwalStatus supabase warn:', err);
+  if (resolvedIzinPulangTable !== 'none') {
+    try {
+      await sb
+        .from(resolvedIzinPulangTable)
+        .update({
+          status,
+          approved_by: status === 'Diajukan' ? null : approvedBy,
+          approved_at: status === 'Diajukan' ? null : nowIso,
+          catatan: catatan !== undefined ? catatan : '',
+        })
+        .eq('id', id);
+    } catch {}
   }
 
   // Update local storage
@@ -7078,10 +7139,10 @@ export async function updateIzinPulangAwalStatus(
  */
 export async function deleteIzinPulangAwalRecord(id: string): Promise<void> {
   const sb = getSupabaseClient();
-  try {
-    await sb.from('izin_pulang_awal').delete().eq('id', id);
-  } catch (err) {
-    console.warn('deleteIzinPulangAwalRecord warn:', err);
+  if (resolvedIzinPulangTable !== 'none') {
+    try {
+      await sb.from(resolvedIzinPulangTable).delete().eq('id', id);
+    } catch {}
   }
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_IZIN_PULANG_KEY);
@@ -7098,23 +7159,33 @@ export async function deleteIzinPulangAwalRecord(id: string): Promise<void> {
 // ============================================================================
 
 const LOCAL_STORAGE_TUKAR_SHIFT_KEY = 'wms_local_tukar_shift';
+let isTukarShiftTableAvailable = true;
 
 /**
- * Fetch Tukar Shift records
+ * Fetch Tukar Shift records (remembers 404 so it doesn't spam failed network calls)
  */
 export async function fetchTukarShiftList(nik?: string): Promise<TukarShiftRecord[]> {
-  try {
-    let query = 'select=*&order=created_at.desc&limit=500';
-    if (nik) {
-      query += `&or=(pemohon_nik.eq.${encodeURIComponent(nik)},target_nik.eq.${encodeURIComponent(nik)})`;
+  if (isTukarShiftTableAvailable) {
+    try {
+      let query = 'select=*&order=created_at.desc&limit=500';
+      if (nik) {
+        query += `&or=(pemohon_nik.eq.${encodeURIComponent(nik)},target_nik.eq.${encodeURIComponent(nik)})`;
+      }
+      const data = await supabaseFetch<TukarShiftRecord[]>('pengajuan_tukar_shift', 'GET', null, query);
+      if (data && Array.isArray(data)) {
+        if (!nik) {
+          try {
+            localStorage.setItem(LOCAL_STORAGE_TUKAR_SHIFT_KEY, JSON.stringify(data));
+          } catch {}
+        }
+        return data;
+      }
+    } catch (err: any) {
+      const msg = String(err?.message || err || '');
+      if (msg.includes('PGRST205') || msg.includes('404')) {
+        isTukarShiftTableAvailable = false;
+      }
     }
-    const data = await supabaseFetch<TukarShiftRecord[]>('pengajuan_tukar_shift', 'GET', null, query);
-    if (data && Array.isArray(data)) {
-      localStorage.setItem(LOCAL_STORAGE_TUKAR_SHIFT_KEY, JSON.stringify(data));
-      return data;
-    }
-  } catch (err) {
-    console.warn('fetchTukarShiftList fallback to localStorage:', err);
   }
 
   // Fallback localStorage
@@ -7163,21 +7234,23 @@ export async function submitTukarShiftRecord(
     created_at: record.created_at || new Date().toISOString(),
   };
 
-  try {
-    const { data, error } = await sb
-      .from('pengajuan_tukar_shift')
-      .insert(payload)
-      .select()
-      .single();
+  if (isTukarShiftTableAvailable) {
+    try {
+      const { data, error } = await sb
+        .from('pengajuan_tukar_shift')
+        .insert(payload)
+        .select()
+        .single();
 
-    if (!error && data) {
-      const existing = await fetchTukarShiftList();
-      const updated = [data, ...existing.filter((item) => item.id !== data.id)];
-      localStorage.setItem(LOCAL_STORAGE_TUKAR_SHIFT_KEY, JSON.stringify(updated));
-      return data;
-    }
-  } catch (err) {
-    console.warn('submitTukarShiftRecord error, saving to localStorage:', err);
+      if (!error && data) {
+        const existing = await fetchTukarShiftList();
+        const updated = [data, ...existing.filter((item) => item.id !== data.id)];
+        try {
+          localStorage.setItem(LOCAL_STORAGE_TUKAR_SHIFT_KEY, JSON.stringify(updated));
+        } catch {}
+        return data;
+      }
+    } catch {}
   }
 
   // Fallback save to localStorage
@@ -7197,10 +7270,10 @@ export async function submitTukarShiftRecord(
  */
 export async function deleteTukarShiftRecord(id: string): Promise<void> {
   const sb = getSupabaseClient();
-  try {
-    await sb.from('pengajuan_tukar_shift').delete().eq('id', id);
-  } catch (err) {
-    console.warn('deleteTukarShiftRecord warn:', err);
+  if (isTukarShiftTableAvailable) {
+    try {
+      await sb.from('pengajuan_tukar_shift').delete().eq('id', id);
+    } catch {}
   }
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_TUKAR_SHIFT_KEY);
@@ -7222,24 +7295,23 @@ export async function updateTukarShiftStatus(
   const nowIso = new Date().toISOString();
 
   // 1. Update request status
-  try {
-    await sb
-      .from('pengajuan_tukar_shift')
-      .update({
-        status,
-        approved_by: approvedBy,
-        approved_at: nowIso,
-        catatan: catatan || '',
-      })
-      .eq('id', item.id);
-  } catch (err) {
-    console.warn('updateTukarShiftStatus supabase warn:', err);
+  if (isTukarShiftTableAvailable) {
+    try {
+      await sb
+        .from('pengajuan_tukar_shift')
+        .update({
+          status,
+          approved_by: approvedBy,
+          approved_at: nowIso,
+          catatan: catatan || '',
+        })
+        .eq('id', item.id);
+    } catch {}
   }
 
   // 2. IF APPROVED: AUTO-SWAP ROSTER SHIFTS FOR BOTH EMPLOYEES!
   if (status === 'Disetujui') {
     try {
-      // Pemohon takes target's shift on pemohon_tanggal
       await saveRosterShift({
         nik: item.pemohon_nik,
         tanggal: item.pemohon_tanggal,
@@ -7247,7 +7319,6 @@ export async function updateTukarShiftStatus(
         keterangan: `Tukar Shift dgn ${item.target_nama} (Approved by ${approvedBy})`,
       });
 
-      // Target takes pemohon's shift on target_tanggal
       await saveRosterShift({
         nik: item.target_nik,
         tanggal: item.target_tanggal,
@@ -7275,20 +7346,60 @@ export async function updateTukarShiftStatus(
   } catch {}
 }
 
+let memoryKaryawanDirectoryCache: KaryawanRecord[] | null = null;
+let memoryKaryawanDirectoryLastFetch = 0;
+let memoryKaryawanDirectoryInFlight: Promise<KaryawanRecord[]> | null = null;
+
+const KARYAWAN_LIGHTWEIGHT_COLUMNS =
+  'nik,nama,divisi,username,password,role,gaji_pokok,tunjangan,rate_lembur,saldo_kasbon,email,no_hp,tgl_lahir,tgl_bergabung,alamat,hobi,kontak_darurat,created_at,updated_at';
+
+export function invalidateKaryawanDirectoryCache(): void {
+  memoryKaryawanDirectoryCache = null;
+  memoryKaryawanDirectoryLastFetch = 0;
+  memoryKaryawanDirectoryInFlight = null;
+}
+
 /**
- * Fetch all karyawan directory
+ * Fetch all karyawan directory (excludes heavy Base64 foto column & caches in memory for 60s)
  */
-export async function fetchKaryawanDirectory(): Promise<KaryawanRecord[]> {
-  try {
-    const data = await supabaseFetch<KaryawanRecord[]>('karyawan', 'GET', null, 'order=nik.asc&limit=1000');
-    if (data && Array.isArray(data)) {
-      registerUserNames(data);
-    }
-    return data || [];
-  } catch (err) {
-    console.warn('fetchKaryawanDirectory error:', err);
-    return [];
+export async function fetchKaryawanDirectory(forceRefresh = false): Promise<KaryawanRecord[]> {
+  if (
+    !forceRefresh &&
+    memoryKaryawanDirectoryCache &&
+    Date.now() - memoryKaryawanDirectoryLastFetch < 60 * 1000
+  ) {
+    return memoryKaryawanDirectoryCache;
   }
+
+  if (!forceRefresh && memoryKaryawanDirectoryInFlight) {
+    return memoryKaryawanDirectoryInFlight;
+  }
+
+  const fetchPromise = (async (): Promise<KaryawanRecord[]> => {
+    try {
+      const data = await supabaseFetch<KaryawanRecord[]>(
+        'karyawan',
+        'GET',
+        null,
+        `select=${KARYAWAN_LIGHTWEIGHT_COLUMNS}&order=nik.asc&limit=1000`
+      );
+      if (data && Array.isArray(data)) {
+        registerUserNames(data);
+        memoryKaryawanDirectoryCache = data;
+        memoryKaryawanDirectoryLastFetch = Date.now();
+        return data;
+      }
+      return memoryKaryawanDirectoryCache || [];
+    } catch (err) {
+      console.warn('fetchKaryawanDirectory error:', err);
+      return memoryKaryawanDirectoryCache || [];
+    } finally {
+      memoryKaryawanDirectoryInFlight = null;
+    }
+  })();
+
+  memoryKaryawanDirectoryInFlight = fetchPromise;
+  return fetchPromise;
 }
 
 /**
@@ -7334,14 +7445,18 @@ export async function upsertKaryawanRecord(karyawan: Partial<KaryawanRecord>): P
       alamat: cleanStr(karyawan.alamat),
       hobi: cleanStr((karyawan as any).hobi),
       kontak_darurat: cleanStr(karyawan.kontak_darurat),
-      foto: cleanStr(karyawan.foto),
       updated_at: new Date().toISOString(),
     };
+
+    if (karyawan.foto !== undefined) {
+      payload.foto = cleanStr(karyawan.foto);
+    }
 
     const res = await supabaseFetch<any[]>('karyawan', 'POST', payload, 'on_conflict=nik', true);
     if (res && Array.isArray(res) && res.length === 0) {
       throw new Error("Akses ditolak (RLS) atau gagal menyimpan data.");
     }
+    invalidateKaryawanDirectoryCache();
     return { success: true };
   } catch (err: any) {
     console.error('upsertKaryawanRecord error:', err);
@@ -7359,6 +7474,7 @@ export async function deleteKaryawanRecord(nik: string): Promise<{ success: bool
     if (res && Array.isArray(res) && res.length === 0) {
       throw new Error("Data karyawan tidak ditemukan atau akses ditolak (RLS).");
     }
+    invalidateKaryawanDirectoryCache();
     return { success: true };
   } catch (err: any) {
     console.error('deleteKaryawanRecord error:', err);

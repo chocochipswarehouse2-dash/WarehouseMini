@@ -50,7 +50,7 @@ import {
   fetchCutiRecords,
   fetchIzinPulangAwalList,
 } from '../../services/supabase';
-import { calculateKpiAbsensi } from '../../utils/kpiCalculator';
+import { calculateKpiAbsensiBatch } from '../../utils/kpiCalculator';
 
 interface KaryawanViewProps {
   session: UserSession | null;
@@ -107,15 +107,17 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
   const canDelete = userIsAdmin || hasPermission(session, 'action_delete_master');
   const canSeeSalary = userIsAdmin;
 
-  // Load Karyawan Directory & Compute KPI
-  const loadKaryawan = useCallback(async () => {
+  // Load Karyawan Directory immediately, then compute KPI non-blockingly in the background
+  const loadKaryawan = useCallback(async (forceRefresh = false) => {
     setLoading(true);
     setLoadingKpi(true);
     try {
-      const data = await fetchKaryawanDirectory();
+      const data = await fetchKaryawanDirectory(forceRefresh);
       setKaryawanList(data);
+      // Unblock directory UI immediately so employee cards/tables render without waiting for 5 KPI tables!
+      setLoading(false);
 
-      // Compute KPI for current month
+      // Compute KPI for current month asynchronously
       const d = new Date();
       d.setDate(1);
       const startOfMonth = d.toISOString().slice(0, 10);
@@ -124,24 +126,20 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
       const [presensis, rosters, lemburs, cutis, izins] = await Promise.all([
         fetchPresensiRange(startOfMonth, today),
         fetchRosterShiftList(undefined, startOfMonth, today),
-        fetchLemburRecords(),
-        fetchCutiRecords(),
-        fetchIzinPulangAwalList(),
+        fetchLemburRecords(undefined, startOfMonth, today),
+        fetchCutiRecords(undefined, startOfMonth, today),
+        fetchIzinPulangAwalList(undefined, undefined, startOfMonth, today),
       ]);
 
-      const map: Record<string, KpiAbsensiSummary> = {};
-      data.forEach((k) => {
-        const summary = calculateKpiAbsensi({
-          karyawan: k,
-          presensiList: presensis,
-          rosterList: rosters,
-          lemburList: lemburs,
-          cutiList: cutis,
-          izinPulangAwalList: izins,
-          startDate: startOfMonth,
-          endDate: today,
-        });
-        map[k.nik.toUpperCase()] = summary;
+      const map = calculateKpiAbsensiBatch({
+        karyawanList: data,
+        presensiList: presensis,
+        rosterList: rosters,
+        lemburList: lemburs,
+        cutiList: cutis,
+        izinPulangAwalList: izins,
+        startDate: startOfMonth,
+        endDate: today,
       });
       setKpiMap(map);
     } catch (err: any) {

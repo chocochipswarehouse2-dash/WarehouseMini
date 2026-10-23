@@ -227,6 +227,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
   const [templateDefaultShift, setTemplateDefaultShift] = useState<string>('Shift 1');
   const [templateDefaultKeterangan, setTemplateDefaultKeterangan] = useState<string>('Jadwal Reguler');
   const [isApplyingTemplate, setIsApplyingTemplate] = useState<boolean>(false);
+  const [rosterVisibleCount, setRosterVisibleCount] = useState<number>(100);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -256,9 +257,16 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
       setKaryawanList(employees);
       setMasterShifts(shifts);
 
-      // Auto-merge cuti/izin/sakit yang sudah disetujui (Disetujui) ke dalam roster shift
+      // Auto-merge cuti/izin/sakit yang sudah disetujui (Disetujui) ke dalam roster shift dengan O(1) Map index
       const approvedCutis = (cutis || []).filter((c) => c.status === 'Disetujui');
       const mergedRoster = [...(roster || [])];
+      const rosterIdxMap = new Map<string, number>();
+      for (let i = 0; i < mergedRoster.length; i++) {
+        const item = mergedRoster[i];
+        if (item.nik && item.tanggal) {
+          rosterIdxMap.set(`${item.nik}_${item.tanggal}`, i);
+        }
+      }
 
       approvedCutis.forEach((cuti) => {
         if (!cuti.tgl_mulai || !cuti.tgl_selesai || !cuti.nik) return;
@@ -281,12 +289,11 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
             const m = String(cur.getMonth() + 1).padStart(2, '0');
             const d = String(cur.getDate()).padStart(2, '0');
             const dateStr = `${y}-${m}-${d}`;
+            const mapKey = `${cuti.nik}_${dateStr}`;
 
-            const existingIdx = mergedRoster.findIndex(
-              (r) => r.nik === cuti.nik && r.tanggal === dateStr
-            );
+            const existingIdx = rosterIdxMap.get(mapKey);
 
-            if (existingIdx !== -1) {
+            if (existingIdx !== undefined) {
               mergedRoster[existingIdx] = {
                 ...mergedRoster[existingIdx],
                 shift: leaveShift,
@@ -295,6 +302,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                 keterangan: ket,
               };
             } else {
+              rosterIdxMap.set(mapKey, mergedRoster.length);
               mergedRoster.push({
                 nik: cuti.nik,
                 nama: cuti.nama,
@@ -493,6 +501,22 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
       return true;
     });
   }, [rosterList, selectedDate, selectedShift, selectedDepartment, searchQuery, empMap]);
+
+  // O(1) Lookup map for weekly matrix view
+  const rosterByNikDate = useMemo(() => {
+    const map = new Map<string, RosterShiftRecord>();
+    for (const r of rosterList) {
+      if (r.nik && r.tanggal) {
+        map.set(`${r.nik}_${r.tanggal}`, r);
+      }
+    }
+    return map;
+  }, [rosterList]);
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setRosterVisibleCount(100);
+  }, [selectedDate, selectedShift, selectedDepartment, searchQuery]);
 
   // Summary counts for current filtered or all
   const summaryStats = useMemo(() => {
@@ -1556,7 +1580,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-sans">
-                {filteredRoster.map((r) => {
+                {filteredRoster.slice(0, rosterVisibleCount).map((r, rowIdx) => {
                   const emp = empMap[r.nik];
                   const badgeStyle = getShiftBadgeStyle(r.shift);
                   const isInlineOpen = inlineOpenRowId === r.id;
@@ -1564,7 +1588,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
 
                   return (
                     <tr
-                      key={r.id}
+                      key={r.id ?? `${r.nik}_${r.tanggal}_${rowIdx}`}
                       className="hover:bg-slate-50/70 dark:hover:bg-slate-800/30 transition-colors"
                     >
                       {/* Tanggal */}
@@ -1729,17 +1753,30 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
               </tbody>
             </table>
           </div>
+          {filteredRoster.length > rosterVisibleCount && (
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
+              <span>Menampilkan {rosterVisibleCount} dari {filteredRoster.length} jadwal shift</span>
+              <button
+                type="button"
+                onClick={() => setRosterVisibleCount((prev) => prev + 100)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
+              >
+                Tampilkan Lebih Banyak (+100)
+              </button>
+            </div>
+          )}
         </div>
       ) : viewMode === 'cards' ? (
         /* CARDS VIEW */
+        <div className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
-          {filteredRoster.map((r) => {
+          {filteredRoster.slice(0, rosterVisibleCount).map((r, cardIdx) => {
             const emp = empMap[r.nik];
             const badgeStyle = getShiftBadgeStyle(r.shift);
 
             return (
               <div
-                key={r.id}
+                key={r.id ?? `${r.nik}_${r.tanggal}_${cardIdx}`}
                 className="bg-white dark:bg-[#131d31] rounded-3xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 shadow-sm hover:shadow-md transition-all flex flex-col justify-between"
               >
                 <div>
@@ -1827,6 +1864,19 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
             </div>
           )}
         </div>
+        {filteredRoster.length > rosterVisibleCount && (
+          <div className="p-4 bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200/80 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
+            <span>Menampilkan {rosterVisibleCount} dari {filteredRoster.length} jadwal shift</span>
+            <button
+              type="button"
+              onClick={() => setRosterVisibleCount((prev) => prev + 100)}
+              className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
+            >
+              Tampilkan Lebih Banyak (+100)
+            </button>
+          </div>
+        )}
+        </div>
       ) : (
         /* WEEKLY MATRIX VIEW */
         <div className="bg-white dark:bg-[#131d31] rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm p-4 sm:p-5 overflow-hidden">
@@ -1908,9 +1958,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                       </td>
 
                       {weeklyDays.map((day) => {
-                        const shiftRec = rosterList.find(
-                          (r) => r.nik === k.nik && r.tanggal === day.dateStr
-                        );
+                        const shiftRec = rosterByNikDate.get(`${k.nik}_${day.dateStr}`);
                         const sName = shiftRec?.shift || '-';
                         const badgeStyle = getShiftBadgeStyle(sName);
 
