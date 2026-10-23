@@ -75,29 +75,40 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
   };
 
   const cleanVal = value.trim();
-  const isExactSku = Boolean(
-    cleanVal && products.some(p => (p.k || (p as any).sku || '').toUpperCase() === cleanVal.toUpperCase())
-  );
 
   // Local suggestions with multi-field fallback (nama produk, SKU, size, category)
+  // Exact SKU matches are prioritized to the very top so users can always see and click them!
   const localSuggestions = useMemo(() => {
-    if (!cleanVal || isExactSku) return [];
-    return products
-      .filter((p) =>
+    if (!cleanVal) return [];
+
+    const upperVal = cleanVal.toUpperCase();
+    const exactMatches: ProductItem[] = [];
+    const otherMatches: ProductItem[] = [];
+
+    for (const p of products) {
+      const sku = (p.k || (p as any).sku || '').toUpperCase();
+      if (sku === upperVal) {
+        exactMatches.push(p);
+      } else if (
         partialSearchMatch(
           cleanVal,
-          p.k || (p as any).sku,
+          sku,
           p.p || (p as any).nama_produk || p.n,
           p.s || (p as any).size,
           p.category || (p as any).kategori
         )
-      )
-      .slice(0, 25);
-  }, [cleanVal, isExactSku, products]);
+      ) {
+        otherMatches.push(p);
+      }
+      if (exactMatches.length + otherMatches.length >= 30) break;
+    }
+
+    return [...exactMatches, ...otherMatches];
+  }, [cleanVal, products]);
 
   // Debounced live search if localSuggestions is empty and query >= 2 chars
   useEffect(() => {
-    if (!isFocused || !cleanVal || cleanVal.length < 2 || isExactSku || localSuggestions.length > 0) {
+    if (!isFocused || !cleanVal || cleanVal.length < 2 || localSuggestions.length > 0) {
       setLiveResults([]);
       setIsSearchingLive(false);
       return;
@@ -124,10 +135,10 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
       active = false;
       clearTimeout(timer);
     };
-  }, [cleanVal, isFocused, isExactSku, localSuggestions.length]);
+  }, [cleanVal, isFocused, localSuggestions.length]);
 
   const renderSuggestions = () => {
-    if (!isFocused || !cleanVal || isExactSku) return null;
+    if (!isFocused || !cleanVal) return null;
 
     const displaySuggestions = localSuggestions.length > 0 ? localSuggestions : liveResults;
 
@@ -167,54 +178,70 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
           </div>
         )}
 
-        {displaySuggestions.map((s, sIdx) => (
-          <div
-            key={`${s.k}_${s.s || ''}_${sIdx}`}
-            onMouseDown={(e) => {
-              // Prevent input blur before click registers on desktop
-              e.preventDefault();
-            }}
-            onClick={() => {
-              selectSuggestion(s.k);
-            }}
-            onTouchStart={(e) => {
-              touchStartYRef.current = e.touches[0].clientY;
-              touchStartXRef.current = e.touches[0].clientX;
-              isTouchScrollingRef.current = false;
-            }}
-            onTouchMove={(e) => {
-              const dy = Math.abs(e.touches[0].clientY - touchStartYRef.current);
-              const dx = Math.abs(e.touches[0].clientX - touchStartXRef.current);
-              if (dy > 8 || dx > 8) {
-                isTouchScrollingRef.current = true;
-              }
-            }}
-            onTouchEnd={(e) => {
-              if (!isTouchScrollingRef.current) {
+        {displaySuggestions.map((s, sIdx) => {
+          const isExact = s.k.toUpperCase() === cleanVal.toUpperCase();
+          return (
+            <div
+              key={`${s.k}_${s.s || ''}_${sIdx}`}
+              onMouseDown={(e) => {
+                // Prevent input blur before click registers on desktop
                 e.preventDefault();
+              }}
+              onClick={() => {
                 selectSuggestion(s.k);
-              }
-            }}
-            className="px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 active:bg-rose-50 dark:active:bg-rose-950/40 cursor-pointer border-b border-slate-100 dark:border-slate-800/60 last:border-0 flex justify-between items-center transition-colors select-none"
-          >
-            <div className="min-w-0 pr-2 pointer-events-none">
-              <div className="font-bold text-slate-800 dark:text-slate-200 text-sm whitespace-normal break-words leading-tight">
-                {s.p || (s as any).nama_produk || s.n} {s.s && s.s !== 'ALL' && s.s !== 'Default' && s.s !== '-' ? `(Size: ${s.s})` : ''}
+              }}
+              onTouchStart={(e) => {
+                touchStartYRef.current = e.touches[0].clientY;
+                touchStartXRef.current = e.touches[0].clientX;
+                isTouchScrollingRef.current = false;
+              }}
+              onTouchMove={(e) => {
+                const dy = Math.abs(e.touches[0].clientY - touchStartYRef.current);
+                const dx = Math.abs(e.touches[0].clientX - touchStartXRef.current);
+                if (dy > 8 || dx > 8) {
+                  isTouchScrollingRef.current = true;
+                }
+              }}
+              onTouchEnd={(e) => {
+                if (!isTouchScrollingRef.current) {
+                  e.preventDefault();
+                  selectSuggestion(s.k);
+                }
+              }}
+              className={`px-4 py-3 cursor-pointer border-b border-slate-100 dark:border-slate-800/60 last:border-0 flex justify-between items-center transition-colors select-none ${
+                isExact
+                  ? 'bg-emerald-50/70 dark:bg-emerald-950/40 hover:bg-emerald-100/80 dark:hover:bg-emerald-900/50'
+                  : 'hover:bg-slate-50 dark:hover:bg-slate-800 active:bg-rose-50 dark:active:bg-rose-950/40'
+              }`}
+            >
+              <div className="min-w-0 pr-2 pointer-events-none">
+                <div className="font-bold text-slate-800 dark:text-slate-200 text-sm whitespace-normal break-words leading-tight flex items-center gap-2">
+                  <span>{s.p || (s as any).nama_produk || s.n} {s.s && s.s !== 'ALL' && s.s !== 'Default' && s.s !== '-' ? `(Size: ${s.s})` : ''}</span>
+                  {isExact && (
+                    <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/80 border border-emerald-300 dark:border-emerald-700 px-1.5 py-0.2 rounded-md">
+                      Cocok SKU
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-1 flex items-center gap-2 flex-wrap">
+                  <span>SKU: <strong className="text-slate-700 dark:text-slate-300">{s.k}</strong></span>
+                  {s.category && (
+                    <span className="text-[10px] text-slate-400 font-sans">
+                      • {String(s.category)}
+                    </span>
+                  )}
+                </div>
               </div>
-              <div className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-1 flex items-center gap-2 flex-wrap">
-                <span>SKU: <strong className="text-slate-700 dark:text-slate-300">{s.k}</strong></span>
-                {s.category && (
-                  <span className="text-[10px] text-slate-400 font-sans">
-                    • {String(s.category)}
-                  </span>
-                )}
-              </div>
+              <span className={`text-[10px] font-bold px-2.5 py-1.5 rounded-lg shrink-0 transition-colors ${
+                isExact
+                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs'
+                  : 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/80 hover:bg-rose-100 dark:hover:bg-rose-900/80'
+              }`}>
+                Pilih ↵
+              </span>
             </div>
-            <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/80 px-2 py-1 rounded-lg shrink-0">
-              Pilih
-            </span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     );
   };
