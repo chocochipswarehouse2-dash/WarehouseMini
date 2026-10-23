@@ -257,8 +257,32 @@ export function getSupabaseClient(): SupabaseClient {
 
 export const getSupabase = getSupabaseClient;
 
+export function normalizeLokasi(lokasi: string): string {
+  if (!lokasi) return '';
+  const trimmed = String(lokasi).trim().toUpperCase();
+
+  // 1. Kasus tertentu: variasi spasi nama area pasti (TIK TOK -> TIKTOK)
+  if (trimmed === 'TIK TOK' || trimmed === 'TIK-TOK') {
+    return 'TIKTOK';
+  }
+
+  // 2. Kasus tertentu: typo pasti huruf 'O' vs angka '0' pada kode rak standar (misal: CO43 -> C043, ROO5 -> R005)
+  // Format ketat: 1 huruf prefix rak baku (A-D, R, V, Z, X) diikuti kombinasi huruf O dan angka
+  // Kasus ambigu lainnya (kata umum, singkatan acak, tanda baca non-standar) TIDAK dinormalisasi agar tetap Anomali
+  if (/^[ABCDRVZX]-?[O0-9]+$/.test(trimmed)) {
+    const match = trimmed.match(/^([ABCDRVZX]-?)([O0-9]+)$/);
+    if (match) {
+      return match[1] + match[2].replace(/O/g, '0');
+    }
+  }
+
+  // Kasus ambigu tetap apa adanya agar terdeteksi Anomali dan diverifikasi fisik oleh tim gudang
+  return trimmed;
+}
+
 export function getAreaFromLokasi(lokasi: string, area?: string): string {
-  const l = (lokasi || '').trim().toUpperCase();
+  const raw = (lokasi || '').trim().toUpperCase();
+  const l = normalizeLokasi(raw);
   if (!l) return area || 'Warehouse';
   
   // 1. Warehouse: A001-A100, B001-B100, C001-C100, D001-D100 (supports 1-4 digits or dash e.g. A01, A-01, B005)

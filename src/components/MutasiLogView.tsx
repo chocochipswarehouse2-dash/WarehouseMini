@@ -378,7 +378,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
 
       // Area Filter
       if (areaFilter !== 'ALL') {
-        const itemArea = (log.area || getAreaFromLokasi(log.lokasi || '')).toUpperCase();
+        const itemArea = getAreaFromLokasi(log.lokasi || '', log.area).toUpperCase();
         if (!itemArea.includes(areaFilter.toUpperCase())) return false;
       }
 
@@ -1355,7 +1355,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                               {item.lokasi || '-'}
                             </span>
                             <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                              {item.area || getAreaFromLokasi(item.lokasi) || 'Warehouse'}
+                              {getAreaFromLokasi(item.lokasi || '', item.area)}
                             </span>
                           </div>
 
@@ -1563,7 +1563,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                               {item.lokasi}
                             </div>
                             <div className="text-[10px] text-slate-600 dark:text-slate-400">
-                              {item.area || getAreaFromLokasi(item.lokasi)}
+                              {getAreaFromLokasi(item.lokasi || '', item.area)}
                             </div>
                           </td>
 

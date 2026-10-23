@@ -121,6 +121,7 @@ const SupabaseMigrationView = lazyWithRetry(() => import('./components/SupabaseM
 import {
   fetchStockForLocations,
   getAreaFromLokasi,
+  normalizeLokasi,
   getSupabaseClient,
   insertLogProduk,
   insertStockOpnameQueue,
@@ -1145,8 +1146,9 @@ export default function App() {
         if (restIn && (restIn.startsWith('WA') || restIn.length > 5)) {
           explicitInvoice = restIn;
         } else if (restIn && !currentLocationRef.current && !/^[A-Z0-9_]{5,}$/i.test(restIn)) {
-          setCurrentLocation(restIn);
-          currentLocationRef.current = restIn;
+          const normIn = normalizeLokasi(restIn);
+          setCurrentLocation(normIn);
+          currentLocationRef.current = normIn;
         }
       } else if (/^#?(OUT|KELUAR)(\s|:|$)/i.test(text)) {
         cat = 'OUT';
@@ -1154,8 +1156,9 @@ export default function App() {
         if (restOut && (restOut.startsWith('WA') || restOut.length > 5)) {
           explicitInvoice = restOut;
         } else if (restOut && !currentLocationRef.current && !/^[A-Z0-9_]{5,}$/i.test(restOut)) {
-          setCurrentLocation(restOut);
-          currentLocationRef.current = restOut;
+          const normOut = normalizeLokasi(restOut);
+          setCurrentLocation(normOut);
+          currentLocationRef.current = normOut;
         }
       } else if (/^#?(SO|STOCK OPNAME|OPNAME)(\s|:|$)/i.test(text)) {
         cat = 'SO';
@@ -1175,7 +1178,8 @@ export default function App() {
 
     // 2. Detect Location tag (#LOK xxx, LOK xxx, #LOK:xxx) -> Just light up location indicator, do NOT add to scan list
     if (text.startsWith('#LOK') || text.startsWith('LOK ') || text.startsWith('LOK:')) {
-      const loc = text.replace(/^#?LOK:?\s*/i, '').trim();
+      const rawLoc = text.replace(/^#?LOK:?\s*/i, '').trim();
+      const loc = normalizeLokasi(rawLoc);
       if (loc) {
         setCurrentLocation(loc);
         currentLocationRef.current = loc;

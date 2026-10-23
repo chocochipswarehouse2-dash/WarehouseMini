@@ -999,7 +999,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
                             {item.lokasi}
                           </div>
                           <div className="text-[10px] text-slate-400 dark:text-slate-500">
-                            {item.area || getAreaFromLokasi(item.lokasi)}
+                            {getAreaFromLokasi(item.lokasi, item.area)}
                           </div>
                         </td>
 
