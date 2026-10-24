@@ -10,11 +10,12 @@
  * 6. Qty minus pada DealPOS (master produk) BUKAN anomali yang perlu kita sanitasi.
  */
 import { ProductItem, StockRealtimeItem, LogProdukItem, UserSession } from '../types';
-import { insertLogProduk, getStoredSupabaseConfig, invalidateStokFisikCache } from '../services/supabase';
+import { insertLogProduk, getStoredSupabaseConfig, invalidateStokFisikCache, getAreaFromLokasi } from '../services/supabase';
 import { buildProductLookupMap, lookupProductBySku } from './productLookup';
 
 export type AnomalyCategory =
   | 'NEGATIVE_STOCK'        // Qty minus di stok fisik rak gudang
+  | 'INVALID_LOCATION'      // Lokasi bukan kode rak standar (misal 'Warehouse', '-', atau salah ketik rak)
   | 'MISMATCH_MASTER_DATA'  // Nama produk / size tidak sesuai master produk
   | 'SKU_NOT_IN_MASTER'     // SKU tidak ada di master produk
   | 'SKU_CORRUPTED';        // SKU berformat rusak / diawali strip / catatan PO
@@ -152,12 +153,16 @@ export function scanAnomalies(
     const lookup = lookupProductBySku(rawSku, catalogMap);
     const master = lookup.masterItem;
 
-    const locations: AnomalyLocationItem[] = stocks.map((s) => ({
-      lokasi: s.lokasi || '-',
-      qty: Number(s.sisa_stok) || 0,
-      area: s.area,
-    }));
+    const locations: AnomalyLocationItem[] = stocks.map((s) => {
+      const lok = s.lokasi || '-';
+      return {
+        lokasi: lok,
+        qty: Number(s.sisa_stok) || 0,
+        area: getAreaFromLokasi(lok),
+      };
+    });
     const negativeLocs = locations.filter((l) => l.qty < 0);
+    const anomalousLocs = locations.filter((l) => l.qty !== 0 && getAreaFromLokasi(l.lokasi) === 'Anomali');
     const totalFisik = locations.reduce((sum, l) => sum + l.qty, 0);
 
     const categories: AnomalyCategory[] = [];
@@ -174,6 +179,18 @@ export function scanAnomalies(
       reasons.push(`Stok rak fisik gudang bertanda minus di: ${locStr}`);
       recommendations.push(
         'Lakukan penyesuaian (1-Click Reset ke 0) untuk menetralkan mutasi keluar berlebih pada rak fisik'
+      );
+    }
+
+    // 1B. LOCATION ANOMALY: Location is not a valid floor-plan rack (e.g. literal "Warehouse", "-", or typo)
+    if (anomalousLocs.length > 0) {
+      categories.push('INVALID_LOCATION');
+      const locStr = anomalousLocs.map((l) => `${l.lokasi} (${l.qty} pcs)`).join(', ');
+      reasons.push(
+        `Lokasi "${locStr}" bukan kode rak valid di denah gudang (Area: Anomali — misal scan WA tanpa menyertakan kode rak A001-D100)`
+      );
+      recommendations.push(
+        'Audit fisik di lapangan dan perbaiki kode rak pada Invoice di Log Mutasi (Sesuai Standar Rule 7C: tidak di-nolkan otomatis tanpa verifikasi)'
       );
     }
 

@@ -72,12 +72,14 @@ export const InventoryAnomalyModal: React.FC<InventoryAnomalyModalProps> = ({
   // Statistics counters
   const stats = useMemo(() => {
     let negativeStockCount = 0;
+    let invalidLocationCount = 0;
     let mismatchMasterCount = 0;
     let skuNotInMasterCount = 0;
     let corruptedSkuCount = 0;
 
     allAnomalies.forEach((a) => {
       if (a.categories.includes('NEGATIVE_STOCK')) negativeStockCount++;
+      if (a.categories.includes('INVALID_LOCATION')) invalidLocationCount++;
       if (a.categories.includes('MISMATCH_MASTER_DATA')) mismatchMasterCount++;
       if (a.categories.includes('SKU_NOT_IN_MASTER')) skuNotInMasterCount++;
       if (a.categories.includes('SKU_CORRUPTED')) corruptedSkuCount++;
@@ -86,6 +88,7 @@ export const InventoryAnomalyModal: React.FC<InventoryAnomalyModalProps> = ({
     return {
       total: allAnomalies.length,
       negativeStock: negativeStockCount,
+      invalidLocation: invalidLocationCount,
       mismatchMaster: mismatchMasterCount,
       skuNotInMaster: skuNotInMasterCount,
       corruptedSku: corruptedSkuCount,
@@ -624,6 +627,19 @@ export const InventoryAnomalyModal: React.FC<InventoryAnomalyModalProps> = ({
 
               <button
                 type="button"
+                onClick={() => setActiveTab('INVALID_LOCATION')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                  activeTab === 'INVALID_LOCATION'
+                    ? 'bg-orange-600 text-white shadow-xs'
+                    : 'bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300 hover:bg-orange-100'
+                }`}
+              >
+                <MapPin className="w-3 h-3" />
+                <span>Lokasi Anomali ({stats.invalidLocation})</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setActiveTab('MISMATCH_MASTER_DATA')}
                 className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
                   activeTab === 'MISMATCH_MASTER_DATA'
@@ -844,6 +860,17 @@ export const InventoryAnomalyModal: React.FC<InventoryAnomalyModalProps> = ({
                                     >
                                       <AlertTriangle className="w-3 h-3" />
                                       Stok Rak Minus
+                                    </span>
+                                  );
+                                }
+                                if (cat === 'INVALID_LOCATION') {
+                                  return (
+                                    <span
+                                      key={cat}
+                                      className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-600 dark:text-orange-400 w-fit"
+                                    >
+                                      <MapPin className="w-3 h-3" />
+                                      Lokasi Anomali (Non-Rak)
                                     </span>
                                   );
                                 }

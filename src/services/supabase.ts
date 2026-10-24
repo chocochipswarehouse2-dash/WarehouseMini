@@ -281,13 +281,14 @@ export function normalizeLokasi(lokasi: string): string {
   return trimmed;
 }
 
-export function getAreaFromLokasi(lokasi: string, area?: string): string {
+export function getAreaFromLokasi(lokasi: string, _area?: string): string {
   const raw = (lokasi || '').trim().toUpperCase();
   const l = normalizeLokasi(raw);
-  if (!l) return area || 'Warehouse';
+  if (!l) return 'Anomali';
   
   // 1. Warehouse: A001-A100, B001-B100, C001-C100, D001-D100 (supports 1-4 digits or dash e.g. A01, A-01, B005)
-  if (/^[ABCD]-?\d{1,4}$/.test(l) || l === 'WAREHOUSE') return 'Warehouse';
+  // HARD CONSTRAINT (Rule 7A & 7C): Literal "WAREHOUSE" is NOT a valid rack code on the floor plan -> MUST be Anomali!
+  if (/^[ABCD]-?\d{1,4}$/.test(l)) return 'Warehouse';
 
   // 2. Aksesoris: BELT..., CARD..., GIFT..., BOX... (e.g. BELT, BELT001, CARD002, BOX01)
   if (/^(BELT|CARD|GIFT|BOX)(\d*|-?\d+)$/.test(l) || l === 'BELT' || l === 'CARD' || l === 'GIFT' || l === 'BOX') return 'Aksesoris';
@@ -304,14 +305,7 @@ export function getAreaFromLokasi(lokasi: string, area?: string): string {
   // 6. Perbaikan: CC... (Cuci), PMK... (Permak), DF... (Defect)
   if (/^(CC|PMK|DF)-?\d*$/.test(l) || l.includes('PERBAIKAN') || l.includes('CUCI') || l.includes('PERMAK') || l.includes('DEFECT')) return 'Perbaikan';
 
-  // 7. Fallback to existing recorded area if valid
-  if (area) {
-    const a = area.trim();
-    if (['Warehouse', 'Aksesoris', 'Transit', 'Kolian', 'Blok F', 'Perbaikan'].includes(a)) {
-      return a;
-    }
-  }
-
+  // 7. Any location string not fitting the above patterns (including literal "Warehouse", "-", etc.) MUST be flagged as an anomaly
   return 'Anomali';
 }
 
@@ -1147,15 +1141,19 @@ export async function fetchStockForSkus(skus: string[]): Promise<StockRealtimeIt
  */
 export async function insertLogProduk(logs: LogProdukItem[]): Promise<unknown> {
   if (!logs.length) return [];
+  const normalizedLogs = logs.map((l) => ({
+    ...l,
+    area: getAreaFromLokasi(l.lokasi || ''),
+  }));
   try {
-    return await supabaseFetch('log_produk', 'POST', logs);
+    return await supabaseFetch('log_produk', 'POST', normalizedLogs);
   } catch (err) {
     console.warn('Direct Supabase insert failed, caching locally:', err);
     try {
       const existing = JSON.parse(localStorage.getItem('wms_offline_logs') || '[]');
-      localStorage.setItem('wms_offline_logs', JSON.stringify([...existing, ...logs]));
+      localStorage.setItem('wms_offline_logs', JSON.stringify([...existing, ...normalizedLogs]));
     } catch {}
-    return logs;
+    return normalizedLogs;
   }
 }
 
@@ -1195,7 +1193,7 @@ export async function insertStockOpnameQueue(items: StockOpnameQueueItem[]): Pro
     nama_produk: it.nama_produk || it.sku,
     size: it.size || '-',
     lokasi: it.lokasi || 'Warehouse',
-    area: it.area || getAreaFromLokasi(it.lokasi || 'Warehouse'),
+    area: getAreaFromLokasi(it.lokasi || 'Warehouse'),
     qty_sistem: Number(it.qty_sistem) || 0,
     qty_fisik: Number(it.qty_fisik) || 0,
     selisih: Number(it.selisih) || 0,
@@ -1665,7 +1663,7 @@ export async function updateLogProdukInvoiceBatch(
   if (!items.length) return { success: true, count: 0 };
   try {
     for (const item of items) {
-      const area = item.area || getAreaFromLokasi(item.lokasi);
+      const area = getAreaFromLokasi(item.lokasi);
       await supabaseFetch(
         'log_produk',
         'PATCH',
@@ -1939,7 +1937,7 @@ export async function syncPendingStockOpnameFromLogProduk(
               invoice: inv,
               sku,
               lokasi,
-              area: log.area || getAreaFromLokasi(lokasi),
+              area: getAreaFromLokasi(lokasi),
               nama_produk: log.nama_produk || sku,
               size: log.size || '-',
               qty_fisik: 0,
@@ -2056,7 +2054,7 @@ export async function syncPendingStockOpnameFromLogProduk(
               invoice: inv,
               sku,
               lokasi,
-              area: sysRow?.area || scannedItem?.area || getAreaFromLokasi(lokasi),
+              area: getAreaFromLokasi(lokasi),
               nama_produk: sysRow?.nama_produk || scannedItem?.nama_produk || sku,
               size: sysRow?.size || scannedItem?.size || '-',
               qty_sistem,
@@ -2133,7 +2131,7 @@ export async function syncPendingStockOpnameFromLogProduk(
             nama_produk: namaProduk,
             size,
             lokasi: entry.lokasi,
-            area: entry.area || getAreaFromLokasi(entry.lokasi),
+            area: getAreaFromLokasi(entry.lokasi),
             qty_sistem: entry.qty_sistem,
             qty_fisik: entry.qty_fisik,
             selisih: entry.selisih,
@@ -2348,7 +2346,7 @@ export async function processStockOpnameCsvImport(
           nama_produk: sysRow?.nama_produk || sku,
           size: sysRow?.size || '-',
           lokasi,
-          area: sysRow?.area || getAreaFromLokasi(lokasi),
+          area: getAreaFromLokasi(lokasi),
           qty_sistem,
           qty_fisik,
           selisih,
@@ -2577,7 +2575,7 @@ export async function approveStockOpnameQueueItems(
         sku: item.sku,
         nama_produk: item.nama_produk || item.sku,
         size: item.size || '-',
-        area: item.area || getAreaFromLokasi(loc),
+        area: getAreaFromLokasi(loc),
         lokasi: loc,
         qty: Math.abs(diff),
         operator: `${approvedBy || 'Admin'} (Adjustment SO)`,
@@ -2931,7 +2929,7 @@ export async function fetchAllStockRealtime(maxRows = 50000, skipDirectCache = f
               nama_produk: item.nama_produk || item.sku,
               size: item.size || '-',
               lokasi: item.lokasi || lokasi,
-              area: item.area || getAreaFromLokasi(lokasi),
+              area: getAreaFromLokasi(lokasi),
               sisa_stok: Number(item.sisa_stok) || 0,
               updated_at: item.updated_at,
             });
@@ -2961,7 +2959,7 @@ export async function fetchAllStockRealtime(maxRows = 50000, skipDirectCache = f
       const sku = (log.sku || '').trim().toUpperCase();
       if (!sku) continue;
       const lokasi = (log.lokasi || 'Warehouse').trim();
-      const area = log.area || getAreaFromLokasi(lokasi);
+      const area = getAreaFromLokasi(lokasi);
       const key = `${sku}__${lokasi.toUpperCase()}`;
 
       const qty = Number(log.qty) || 0;

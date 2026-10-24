@@ -475,12 +475,21 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
 
   // Unique areas for dropdown
   const uniqueAreas = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(['Warehouse', 'Blok F', 'Kolian', 'Aksesoris', 'Transit', 'Perbaikan', 'Anomali']);
     logs.forEach((it) => {
-      const a = it.area || getAreaFromLokasi(it.lokasi || '');
+      const a = getAreaFromLokasi(it.lokasi || '');
       if (a) set.add(a);
     });
     return Array.from(set).sort();
+  }, [logs]);
+
+  // Count of logs with anomalous location (e.g. 'Warehouse', '-', or invalid rack code)
+  const anomalyLocationCount = useMemo(() => {
+    let count = 0;
+    logs.forEach((it) => {
+      if (getAreaFromLokasi(it.lokasi || '') === 'Anomali') count++;
+    });
+    return count;
   }, [logs]);
 
   // Open Edit Modal for an Invoice
@@ -517,7 +526,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
             nama_produk: item.nama_produk || '',
             size: item.size || '-',
             lokasi: item.lokasi || 'Warehouse',
-            area: item.area || getAreaFromLokasi(item.lokasi || 'Warehouse'),
+            area: getAreaFromLokasi(item.lokasi || 'Warehouse'),
             qty: q,
             keterangan: item.keterangan || '',
           });
@@ -1027,6 +1036,26 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
               <Download className="w-3.5 h-3.5" />
             </button>
           )}
+
+          {/* Quick Anomaly Location Filter Button */}
+          {anomalyLocationCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setAreaFilter(areaFilter === 'Anomali' ? 'ALL' : 'Anomali')}
+              className={`px-2.5 sm:px-3 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shrink-0 border ${
+                areaFilter === 'Anomali'
+                  ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                  : 'bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-800/80'
+              }`}
+              title="Filter log dengan lokasi anomali / bukan kode rak standar (misal tertulis 'Warehouse' tanpa nomor rak)"
+            >
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden md:inline">Lokasi Anomali</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-rose-500/20 text-current">
+                {anomalyLocationCount}
+              </span>
+            </button>
+          )}
         </div>
 
         {/* Active Filter Strip (Shown only when active filters exist) */}
@@ -1346,18 +1375,42 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                         {/* 4. Two-Column Metric Grid: Location & Qty */}
                         <div className="grid grid-cols-2 gap-2 pt-0.5">
                           {/* Lokasi & Area */}
-                          <div className="bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800 rounded-xl p-2 flex flex-col justify-center">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 flex items-center gap-1">
-                              <MapPin className="w-3 h-3 text-indigo-500 shrink-0" />
-                              Lokasi Rak
-                            </span>
-                            <span className="font-mono font-black text-xs text-indigo-600 dark:text-indigo-400 truncate mt-0.5">
-                              {item.lokasi || '-'}
-                            </span>
-                            <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                              {getAreaFromLokasi(item.lokasi || '', item.area)}
-                            </span>
-                          </div>
+                          {(() => {
+                            const resolvedArea = getAreaFromLokasi(item.lokasi || '', item.area);
+                            const isLocAnomaly = resolvedArea === 'Anomali';
+                            return (
+                              <div
+                                className={`rounded-xl p-2 flex flex-col justify-center border ${
+                                  isLocAnomaly
+                                    ? 'bg-rose-50/80 dark:bg-rose-950/30 border-rose-300 dark:border-rose-800/80'
+                                    : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200/70 dark:border-slate-800'
+                                }`}
+                              >
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 flex items-center gap-1">
+                                  <MapPin className={`w-3 h-3 shrink-0 ${isLocAnomaly ? 'text-rose-500' : 'text-indigo-500'}`} />
+                                  Lokasi Rak
+                                </span>
+                                <span
+                                  className={`font-mono font-black text-xs truncate mt-0.5 ${
+                                    isLocAnomaly
+                                      ? 'text-rose-600 dark:text-rose-400'
+                                      : 'text-indigo-600 dark:text-indigo-400'
+                                  }`}
+                                >
+                                  {item.lokasi || '-'}
+                                </span>
+                                <span
+                                  className={`text-[10px] truncate mt-0.5 font-bold ${
+                                    isLocAnomaly
+                                      ? 'text-rose-600 dark:text-rose-400 flex items-center gap-1'
+                                      : 'text-slate-500 dark:text-slate-400'
+                                  }`}
+                                >
+                                  {isLocAnomaly ? '⚠️ Anomali (Bukan Kode Rak)' : resolvedArea}
+                                </span>
+                              </div>
+                            );
+                          })()}
 
                           {/* Perubahan Qty */}
                           <div className="bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800 rounded-xl p-2 flex flex-col justify-center items-end">
@@ -1558,13 +1611,36 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
 
                           {/* Location & Area */}
                           <td className="py-3 px-2 whitespace-nowrap">
-                            <div className="font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1 font-mono">
-                              <MapPin className="w-3 h-3" />
-                              {item.lokasi}
-                            </div>
-                            <div className="text-[10px] text-slate-600 dark:text-slate-400">
-                              {getAreaFromLokasi(item.lokasi || '', item.area)}
-                            </div>
+                            {(() => {
+                              const resolvedArea = getAreaFromLokasi(item.lokasi || '', item.area);
+                              const isLocAnomaly = resolvedArea === 'Anomali';
+                              return (
+                                <>
+                                  <div
+                                    className={`font-bold flex items-center gap-1 font-mono ${
+                                      isLocAnomaly
+                                        ? 'text-rose-600 dark:text-rose-400'
+                                        : 'text-indigo-600 dark:text-indigo-400'
+                                    }`}
+                                  >
+                                    <MapPin className="w-3 h-3 shrink-0" />
+                                    <span>{item.lokasi || '-'}</span>
+                                  </div>
+                                  {isLocAnomaly ? (
+                                    <span
+                                      className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-extrabold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/25"
+                                      title="Lokasi ini bukan kode rak standar di denah gudang (A001-D100, R/V/Z, X, Blok F, Aksesoris, Perbaikan)"
+                                    >
+                                      ⚠️ Anomali
+                                    </span>
+                                  ) : (
+                                    <div className="text-[10px] text-slate-600 dark:text-slate-400">
+                                      {resolvedArea}
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </td>
 
                           {/* Qty */}
@@ -1768,16 +1844,32 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
 
                         {/* Lokasi Rak */}
                         <div className="sm:col-span-3">
-                          <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
-                            Lokasi Rak (Area: {item.area || 'Warehouse'})
-                          </label>
-                          <input
-                            type="text"
-                            value={item.lokasi}
-                            onChange={(e) => handleItemFieldChange(idx, 'lokasi', e.target.value)}
-                            className="w-full px-2.5 py-1.5 text-xs font-mono font-bold uppercase bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-indigo-600 dark:text-indigo-400 focus:ring-2 focus:ring-primary-500"
-                            placeholder="Contoh: B038"
-                          />
+                          {(() => {
+                            const editArea = getAreaFromLokasi(item.lokasi || '');
+                            const isEditLocAnomaly = editArea === 'Anomali';
+                            return (
+                              <>
+                                <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                                  Lokasi Rak (Area:{' '}
+                                  <span className={isEditLocAnomaly ? 'text-rose-600 dark:text-rose-400 font-black' : 'text-indigo-600 dark:text-indigo-400'}>
+                                    {isEditLocAnomaly ? '⚠️ Anomali' : editArea}
+                                  </span>
+                                  )
+                                </label>
+                                <input
+                                  type="text"
+                                  value={item.lokasi}
+                                  onChange={(e) => handleItemFieldChange(idx, 'lokasi', e.target.value)}
+                                  className={`w-full px-2.5 py-1.5 text-xs font-mono font-bold uppercase bg-white dark:bg-slate-800 border rounded-lg focus:ring-2 focus:ring-primary-500 ${
+                                    isEditLocAnomaly
+                                      ? 'border-rose-400 dark:border-rose-700 text-rose-600 dark:text-rose-400'
+                                      : 'border-slate-200 dark:border-slate-700 text-indigo-600 dark:text-indigo-400'
+                                  }`}
+                                  placeholder="Contoh: B038"
+                                />
+                              </>
+                            );
+                          })()}
                         </div>
 
                         {/* Qty */}

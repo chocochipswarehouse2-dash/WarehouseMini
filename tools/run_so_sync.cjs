@@ -2,15 +2,16 @@ const { createClient } = require('@supabase/supabase-js');
 const client = createClient('https://ilhqerecxbywqrhfpbbc.supabase.co', 'sb_publishable_tMgdx9b0XBAQei7WcKYvMg_QwJ-lopn');
 
 function getAreaFromLokasi(lokasi) {
-  if (!lokasi) return 'Warehouse';
-  const l = lokasi.toUpperCase().trim();
-  if (/^[ABCD]\d{3}$/.test(l)) return 'Warehouse';
-  if (/^(CC|PMK|DF)\d{3}$/.test(l) || l.includes('PERBAIKAN')) return 'Perbaikan';
+  if (!lokasi) return 'Anomali';
+  const l = String(lokasi).toUpperCase().trim();
+  if (!l) return 'Anomali';
+  if (/^[ABCD]-?\d{1,4}$/.test(l)) return 'Warehouse';
+  if (/^(BELT|CARD|GIFT|BOX)(\d*|-?\d+)$/.test(l) || l === 'BELT' || l === 'CARD' || l === 'GIFT' || l === 'BOX') return 'Aksesoris';
+  if (l === 'X' || /^X-?\d*$/.test(l) || l === 'TRANSIT' || l.startsWith('TRANSIT')) return 'Transit';
+  if (/^[RVZ]-?\d+$/.test(l) || l.startsWith('KOLI')) return 'Kolian';
   if (/^(TIKTOK|SHOPEE|STUDIO)$/.test(l) || l.includes('BLOK F') || l.includes('SHOPEE') || l.includes('TIKTOK') || l.includes('STUDIO')) return 'Blok F';
-  if (/^(BELT|CARD|GIFT|BOX)\d{3}$/.test(l)) return 'Aksesoris';
-  if (/^[RVZ]\d{3}$/.test(l)) return 'Kolian';
-  if (/^X\d{3}$/.test(l) || l === 'TRANSIT') return 'Transit';
-  return 'Warehouse';
+  if (/^(CC|PMK|DF)-?\d*$/.test(l) || l.includes('PERBAIKAN') || l.includes('CUCI') || l.includes('PERMAK') || l.includes('DEFECT')) return 'Perbaikan';
+  return 'Anomali';
 }
 
 async function runSync() {
