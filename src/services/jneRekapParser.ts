@@ -358,9 +358,8 @@ export async function parsePdfJneFile(file: File): Promise<ParseResult> {
     const arrayBuffer = await file.arrayBuffer();
     
     // Dynamic import pdfjs-dist dari CDN agar tidak membebani initial bundle
-    const pdfjsLib: any = await import(
-      /* @vite-ignore */ 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs'
-    );
+    const pdfCdnUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs';
+    const pdfjsLib: any = await import(/* @vite-ignore */ pdfCdnUrl);
 
     // Konfigurasi worker
     if (pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
@@ -424,9 +423,8 @@ export async function parsePdfJneFile(file: File): Promise<ParseResult> {
 export async function parseImageJneFile(file: File, onProgress?: (pct: number) => void): Promise<ParseResult> {
   try {
     // Dynamic import Tesseract.js dari CDN
-    const Tesseract: any = await import(
-      /* @vite-ignore */ 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.esm.min.js'
-    );
+    const tesseractCdnUrl = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.esm.min.js';
+    const Tesseract: any = await import(/* @vite-ignore */ tesseractCdnUrl);
 
     const worker = await Tesseract.createWorker('ind+eng', 1, {
       logger: (m: any) => {

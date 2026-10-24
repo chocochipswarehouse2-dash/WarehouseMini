@@ -127,7 +127,7 @@ export const SuperadminKnowledgeHubModal: React.FC<SuperadminKnowledgeHubModalPr
       ticket.id,
       newStatus,
       ticket.admin_notes,
-      session?.nama || session?.username || 'Superadmin'
+      (session as any)?.nama || session?.username || 'Superadmin'
     );
     if (success) {
       onShowToast(`Status tiket diperbarui menjadi: ${newStatus}`, 'success');
@@ -143,7 +143,7 @@ export const SuperadminKnowledgeHubModal: React.FC<SuperadminKnowledgeHubModalPr
       ticket.id,
       ticket.status,
       notesInput,
-      session?.nama || session?.username || 'Superadmin'
+      (session as any)?.nama || session?.username || 'Superadmin'
     );
     if (success) {
       onShowToast('Catatan admin berhasil disimpan', 'success');
@@ -858,7 +858,7 @@ Tolong analisa alur sistem WMS saat ini, lalu rekomendasikan atau buatkan penyes
                 </label>
                 <select
                   value={editingFaq?.category || 'manual_shipment'}
-                  onChange={(e) => setEditingFaq({ ...editingFaq, category: e.target.value })}
+                  onChange={(e) => setEditingFaq({ ...editingFaq, category: e.target.value as any })}
                   className="w-full p-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl"
                 >
                   <option value="manual_shipment">Manual Shipment & Multi-Store</option>

@@ -471,8 +471,8 @@ export default function ReturBarangTab({
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const prefix = target === 'bukti_bayar' ? 'BuktiBayarRetur' : 'KomplainRetur';
-        const base64 = await compressImage(file);
-        const res = await uploadImageToGdrive(base64, `${prefix}_${noPesananAsal || noRetur}_${Date.now()}_${i + 1}.jpg`);
+        const compResult = await compressImage(file);
+        const res = await uploadImageToGdrive(compResult.dataUrl, `${prefix}_${noPesananAsal || noRetur}_${Date.now()}_${i + 1}.jpg`);
         if (res.success && res.url) {
           uploadedUrls.push(res.url);
         } else {

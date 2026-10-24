@@ -464,16 +464,16 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
 
   // KPI Summary Evaluation across filtered period (O(N+M) batch)
   const kpiBatchMap = useMemo(() => {
-    return calculateKpiAbsensiBatch(
-      filteredKaryawan,
+    return calculateKpiAbsensiBatch({
+      karyawanList: filteredKaryawan,
       presensiList,
       rosterList,
       lemburList,
       cutiList,
-      izinPulangList,
+      izinPulangAwalList: izinPulangList,
       startDate,
-      endDate
-    );
+      endDate,
+    });
   }, [filteredKaryawan, presensiList, rosterList, lemburList, cutiList, izinPulangList, startDate, endDate]);
 
   const kpiSummaryList = useMemo(() => {

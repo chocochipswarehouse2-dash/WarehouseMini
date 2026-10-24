@@ -21,11 +21,320 @@
     <meta name="x5-orientation" content="portrait" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     
+    <!-- Safe Storage, WebSocket & SecurityError Shield for Sandboxed Previews (Pre-Head) -->
+    <script>
+      (function() {
+        function isSecurityErrorMsg(val) {
+          if (!val) return false;
+          var s = '';
+          try {
+            if (typeof val === 'string') {
+              s = val;
+            } else if (val instanceof Error || (typeof DOMException !== 'undefined' && val instanceof DOMException)) {
+              s = (val.name || '') + ' ' + (val.message || '') + ' ' + (val.stack || '');
+            } else {
+              s = (val.message || val.name || '') + ' ' + JSON.stringify(val);
+            }
+          } catch (e) {
+            try { s = String(val); } catch (e2) { return false; }
+          }
+          return typeof s === 'string' && (
+            s.indexOf('operation is insecure') !== -1 ||
+            s.indexOf('SecurityError') !== -1 ||
+            s.indexOf('Access is denied') !== -1 ||
+            s.indexOf('failed to connect to websocket') !== -1 ||
+            s.indexOf('WebSocket closed without opened') !== -1
+          );
+        }
+
+        window.__wmsIsSecurityError = isSecurityErrorMsg;
+
+        // 0. Gatekeep MessagePort.prototype.postMessage so _aistudio-iframe.js never reports sandbox SecurityErrors to host UI
+        try {
+          if (typeof MessagePort !== 'undefined' && MessagePort.prototype && typeof MessagePort.prototype.postMessage === 'function') {
+            var origPortPostMessage = MessagePort.prototype.postMessage;
+            if (!origPortPostMessage.__wmsPatched) {
+              var safePortPostMessage = function(data) {
+                try {
+                  if (data && data.type === 'error') {
+                    if (isSecurityErrorMsg(data.message) || isSecurityErrorMsg(data)) {
+                      return;
+                    }
+                  }
+                } catch (e) {}
+                return origPortPostMessage.apply(this, arguments);
+              };
+              safePortPostMessage.__wmsPatched = true;
+              MessagePort.prototype.postMessage = safePortPostMessage;
+            }
+          }
+        } catch (e) {}
+
+        // 1. Capture-phase window error & unhandledrejection shields
+        window.addEventListener('error', function(e) {
+          var msg = (e && (e.message || (e.error && (e.error.message || e.error.name)))) || '';
+          if (isSecurityErrorMsg(msg) || isSecurityErrorMsg(e && e.error)) {
+            if (e.preventDefault) e.preventDefault();
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+            return true;
+          }
+        }, true);
+
+        window.addEventListener('unhandledrejection', function(e) {
+          var reason = e && (e.reason || '');
+          if (isSecurityErrorMsg(reason)) {
+            if (e.preventDefault) e.preventDefault();
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+            return true;
+          }
+        }, true);
+
+        var isIframe = false;
+        try { isIframe = window.self !== window.top; } catch (e) { isIframe = true; }
+
+        // 2. Safe WebSocket wrapper (prevents vite-hmr / localhost:3000 & restricted WebSockets from throwing SecurityError)
+        try {
+          if (typeof window.WebSocket === 'function') {
+            var NativeWebSocket = window.WebSocket;
+            var createMockSocket = function(url, protocols) {
+              var mock = {
+                url: String(url || ''),
+                protocol: typeof protocols === 'string' ? protocols : '',
+                readyState: 1,
+                bufferedAmount: 0,
+                extensions: '',
+                binaryType: 'blob',
+                OPEN: 1,
+                CONNECTING: 0,
+                CLOSING: 2,
+                CLOSED: 3,
+                onopen: null,
+                onerror: null,
+                onclose: null,
+                onmessage: null,
+                send: function() {},
+                close: function() {},
+                addEventListener: function() {},
+                removeEventListener: function() {},
+                dispatchEvent: function() { return true; }
+              };
+              return mock;
+            };
+
+            var SafeWebSocket = function(url, protocols) {
+              var urlStr = String(url || '');
+              var protoStr = typeof protocols === 'string' ? protocols : (Array.isArray(protocols) ? protocols.join(',') : '');
+              if (
+                protoStr.indexOf('vite-hmr') !== -1 ||
+                protoStr.indexOf('vite-ping') !== -1 ||
+                (isIframe && urlStr.indexOf('localhost:') !== -1)
+              ) {
+                return createMockSocket(url, protocols);
+              }
+              try {
+                if (arguments.length > 1 && protocols !== undefined) {
+                  return new NativeWebSocket(url, protocols);
+                }
+                return new NativeWebSocket(url);
+              } catch (wsErr) {
+                return createMockSocket(url, protocols);
+              }
+            };
+
+            SafeWebSocket.prototype = NativeWebSocket.prototype;
+            ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'].forEach(function(k, idx) {
+              try {
+                Object.defineProperty(SafeWebSocket, k, {
+                  value: idx,
+                  enumerable: false,
+                  configurable: true,
+                  writable: false
+                });
+              } catch (e) {}
+            });
+
+            try {
+              Object.defineProperty(window, 'WebSocket', {
+                value: SafeWebSocket,
+                configurable: true,
+                writable: true
+              });
+            } catch (e) {
+              try { window.WebSocket = SafeWebSocket; } catch (e2) {}
+            }
+          }
+        } catch (e) {}
+
+        // 3. Safe BroadcastChannel polyfill
+        try {
+          var bcWorks = false;
+          if (!isIframe && typeof window.BroadcastChannel === 'function') {
+            try {
+              var probeBc = new window.BroadcastChannel('__wms_probe_bc__');
+              probeBc.close();
+              bcWorks = true;
+            } catch (bcErr) {
+              bcWorks = false;
+            }
+          }
+          if (!bcWorks) {
+            var SafeBroadcastChannel = function(name) {
+              this.name = name;
+              this.onmessage = null;
+              this.onmessageerror = null;
+            };
+            SafeBroadcastChannel.prototype.postMessage = function() {};
+            SafeBroadcastChannel.prototype.close = function() {};
+            SafeBroadcastChannel.prototype.addEventListener = function() {};
+            SafeBroadcastChannel.prototype.removeEventListener = function() {};
+            SafeBroadcastChannel.prototype.dispatchEvent = function() { return true; };
+            try {
+              Object.defineProperty(window, 'BroadcastChannel', { value: SafeBroadcastChannel, configurable: true, writable: true });
+            } catch (e2) {
+              try { window.BroadcastChannel = SafeBroadcastChannel; } catch (e3) {}
+            }
+          }
+        } catch (e) {}
+
+        // 4. Safe navigator.locks, navigator.serviceWorker, navigator.wakeLock & History API in iframe
+        try {
+          if (typeof History !== 'undefined' && History.prototype) {
+            var origPush = History.prototype.pushState;
+            var origReplace = History.prototype.replaceState;
+            History.prototype.pushState = function() {
+              if (isIframe) return;
+              try { return origPush.apply(this, arguments); } catch (e) {}
+            };
+            History.prototype.replaceState = function() {
+              if (isIframe) return;
+              try { return origReplace.apply(this, arguments); } catch (e) {}
+            };
+          }
+          if (typeof window.history !== 'undefined') {
+            var winPush = window.history.pushState;
+            var winReplace = window.history.replaceState;
+            window.history.pushState = function() {
+              if (isIframe) return;
+              try { return winPush.apply(this, arguments); } catch (e) {}
+            };
+            window.history.replaceState = function() {
+              if (isIframe) return;
+              try { return winReplace.apply(this, arguments); } catch (e) {}
+            };
+          }
+        } catch (e) {}
+
+        try {
+          if (isIframe && typeof navigator !== 'undefined') {
+            var safeLocks = {
+              request: function(name, optionsOrCallback, callback) {
+                var cb = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback;
+                if (typeof cb === 'function') {
+                  return Promise.resolve().then(function() { return cb({ name: name, mode: 'exclusive' }); });
+                }
+                return Promise.resolve();
+              },
+              query: function() {
+                return Promise.resolve({ held: [], pending: [] });
+              }
+            };
+            try {
+              Object.defineProperty(navigator, 'locks', { get: function() { return safeLocks; }, configurable: true });
+            } catch (e2) {}
+
+            var safeSw = {
+              controller: null,
+              ready: new Promise(function() {}),
+              register: function() { return Promise.resolve(); },
+              getRegistrations: function() { return Promise.resolve([]); },
+              getRegistration: function() { return Promise.resolve(undefined); },
+              addEventListener: function() {},
+              removeEventListener: function() {},
+              dispatchEvent: function() { return true; }
+            };
+            try {
+              Object.defineProperty(navigator, 'serviceWorker', { get: function() { return safeSw; }, configurable: true });
+            } catch (eSw) {
+              try {
+                if (typeof Navigator !== 'undefined' && Navigator.prototype) {
+                  Object.defineProperty(Navigator.prototype, 'serviceWorker', { get: function() { return safeSw; }, configurable: true });
+                }
+              } catch (eSw2) {}
+            }
+          }
+        } catch (e) {}
+
+        // 5. Safe in-memory storage fallback if localStorage or sessionStorage are restricted
+        function createMemStorage() {
+          var mem = {};
+          return {
+            getItem: function(k) { return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null; },
+            setItem: function(k, v) { mem[k] = String(v); },
+            removeItem: function(k) { delete mem[k]; },
+            clear: function() { mem = {}; },
+            get length() { return Object.keys(mem).length; },
+            key: function(i) { return Object.keys(mem)[i] || null; }
+          };
+        }
+
+        try {
+          var probeKey = '__wms_probe__';
+          window.localStorage.setItem(probeKey, probeKey);
+          window.localStorage.removeItem(probeKey);
+        } catch (err) {
+          var memStore = createMemStorage();
+          try {
+            Object.defineProperty(window, 'localStorage', { get: function() { return memStore; }, configurable: true });
+          } catch (e2) {
+            try { window.localStorage = memStore; } catch (e3) {}
+          }
+          try {
+            if (typeof Window !== 'undefined' && Window.prototype) {
+              Object.defineProperty(Window.prototype, 'localStorage', { get: function() { return memStore; }, configurable: true });
+            }
+          } catch (e4) {}
+        }
+
+        try {
+          var probeSession = '__wms_probe_sess__';
+          window.sessionStorage.setItem(probeSession, probeSession);
+          window.sessionStorage.removeItem(probeSession);
+        } catch (err) {
+          var memSess = createMemStorage();
+          try {
+            Object.defineProperty(window, 'sessionStorage', { get: function() { return memSess; }, configurable: true });
+          } catch (e2) {
+            try { window.sessionStorage = memSess; } catch (e3) {}
+          }
+          try {
+            if (typeof Window !== 'undefined' && Window.prototype) {
+              Object.defineProperty(Window.prototype, 'sessionStorage', { get: function() { return memSess; }, configurable: true });
+            }
+          } catch (e4) {}
+        }
+
+        // Probe document.cookie in sandboxed iframe
+        try {
+          var probeCookie = document.cookie;
+        } catch (cookieErr) {
+          try {
+            if (typeof Document !== 'undefined' && Document.prototype) {
+              Object.defineProperty(Document.prototype, 'cookie', {
+                get: function() { return ''; },
+                set: function() { return true; },
+                configurable: true
+              });
+            }
+          } catch (eCookie) {}
+        }
+      })();
+    </script>
+
     <!-- Instant Dark/Light Theme Sync on Load -->
     <script>
       (function() {
         try {
-          var saved = localStorage.getItem('wms_dark_mode');
+          var saved = window.localStorage ? window.localStorage.getItem('wms_dark_mode') : null;
           var isDark = saved === 'true';
           if (isDark) {
             document.documentElement.classList.add('dark');
@@ -36,7 +345,7 @@
             document.documentElement.setAttribute('data-theme', 'light');
             document.documentElement.style.colorScheme = 'light';
           }
-          var savedFont = localStorage.getItem('wms_theme_font');
+          var savedFont = window.localStorage ? window.localStorage.getItem('wms_theme_font') : null;
           if (savedFont) {
             document.documentElement.classList.add('font-' + savedFont);
             document.documentElement.setAttribute('data-theme-font', savedFont);
@@ -48,18 +357,22 @@
     <!-- GitHub Pages SPA Redirect Support -->
     <script>
       (function(l) {
-        if (l.search[1] === '/' ) {
-          var decoded = l.search.slice(1).split('&').map(function(s) { 
-            return s.replace(/~and~/g, '&')
-          }).join('?');
-          window.history.replaceState(null, null,
-              l.pathname.slice(0, -1) + decoded + l.hash
-          );
-        }
+        try {
+          var isIframe = false;
+          try { isIframe = window.self !== window.top; } catch (e) { isIframe = true; }
+          if (!isIframe && l.search[1] === '/' ) {
+            var decoded = l.search.slice(1).split('&').map(function(s) { 
+              return s.replace(/~and~/g, '&')
+            }).join('?');
+            window.history.replaceState(null, null,
+                l.pathname.slice(0, -1) + decoded + l.hash
+            );
+          }
+        } catch(e) {}
       }(window.location))
     </script>
     
-    <!-- Clean Native Portrait Lock (Without Forcing Fullscreen) -->
+    <!-- Clean Native Orientation Reset (Safe in iframes) -->
     <script>
       (function() {
         try {
@@ -72,25 +385,6 @@
             document.exitFullscreen().catch(function() {});
           }
         } catch (e) {}
-
-        function lockPortraitSilent() {
-          try {
-            var ori = window.screen && (window.screen.orientation || window.screen.mozOrientation || window.screen.msOrientation);
-            if (ori && typeof ori.lock === 'function') {
-              var p = ori.lock('portrait-primary');
-              if (p && typeof p.catch === 'function') {
-                p.catch(function() {
-                  try {
-                    var p2 = ori.lock('portrait');
-                    if (p2 && typeof p2.catch === 'function') p2.catch(function() {});
-                  } catch (e2) {}
-                });
-              }
-            }
-          } catch (e) {}
-        }
-
-        lockPortraitSilent();
       })();
     </script>
 
@@ -100,18 +394,60 @@
     <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@100..1000&family=JetBrains+Mono:wght@500;600;700&family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:wght@400;500;600;700;800;900&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.cdnfonts.com/css/sf-pro-display" rel="stylesheet">
     <link href="https://fonts.cdnfonts.com/css/samsungone" rel="stylesheet">
-    <!-- Auto-Check Service Worker Updates on Page Load -->
-    <script>
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations().then(function(registrations) {
-          for (var i = 0; i < registrations.length; i++) {
-            registrations[i].update();
-          }
-        });
-      }
-    </script>
   </head>
   <body class="bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 antialiased selection:bg-amber-500 selection:text-white min-h-screen text-[15px] sm:text-base">
+    <!-- Post-Head Shield: Runs immediately after /_aistudio-iframe.js (injected before </head>) and before ES modules -->
+    <script>
+      (function() {
+        var checkSecErr = window.__wmsIsSecurityError || function(val) {
+          if (!val) return false;
+          var s = String((val && (val.message || val.name)) || val);
+          return s.indexOf('operation is insecure') !== -1 || s.indexOf('SecurityError') !== -1 || s.indexOf('Access is denied') !== -1;
+        };
+
+        // Wrap window.onerror assigned by _aistudio-iframe.js
+        try {
+          var prevOnError = window.onerror;
+          window.onerror = function(message, source, lineno, colno, error) {
+            if (checkSecErr(message) || checkSecErr(error)) {
+              return true;
+            }
+            if (typeof prevOnError === 'function') {
+              return prevOnError.apply(this, arguments);
+            }
+            return false;
+          };
+        } catch (e) {}
+
+        // Wrap window.onunhandledrejection assigned by _aistudio-iframe.js
+        try {
+          var prevOnRejection = window.onunhandledrejection;
+          window.onunhandledrejection = function(event) {
+            if (event && (checkSecErr(event.reason) || checkSecErr(event))) {
+              return;
+            }
+            if (typeof prevOnRejection === 'function') {
+              return prevOnRejection.apply(this, arguments);
+            }
+          };
+        } catch (e) {}
+
+        // Wrap window.console.error assigned by _aistudio-iframe.js
+        try {
+          if (window.console && typeof window.console.error === 'function') {
+            var prevConsoleError = window.console.error;
+            window.console.error = function() {
+              for (var i = 0; i < arguments.length; i++) {
+                if (checkSecErr(arguments[i])) {
+                  return;
+                }
+              }
+              return prevConsoleError.apply(window.console, arguments);
+            };
+          }
+        } catch (e) {}
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

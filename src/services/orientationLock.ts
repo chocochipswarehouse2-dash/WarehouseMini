@@ -6,6 +6,15 @@
  * Never triggers HTML5 Fullscreen (`requestFullscreen`) and never blocks touch swiping/scrolling.
  */
 
+export function isRunningInIframe(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.self !== window.top;
+  } catch {
+    return true;
+  }
+}
+
 export function isMobilePhoneDevice(): boolean {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent || '';
@@ -20,7 +29,8 @@ export function isMobilePhoneDevice(): boolean {
 }
 
 export async function lockOrientationToPortrait(): Promise<boolean> {
-  if (typeof window === 'undefined' || !isMobilePhoneDevice()) return false;
+  // Screen orientation lock is prohibited and throws SecurityError inside iframes
+  if (typeof window === 'undefined' || isRunningInIframe() || !isMobilePhoneDevice()) return false;
 
   try {
     const orientation: any =
@@ -54,7 +64,7 @@ export async function lockOrientationToPortrait(): Promise<boolean> {
       );
     }
   } catch {
-    // Ignore when browser does not allow orientation.lock in regular tab
+    // Ignore when browser does not allow orientation.lock in regular tab or iframe
   }
   return false;
 }
@@ -64,7 +74,7 @@ export async function lockOrientationWithFullscreen(): Promise<boolean> {
 }
 
 export function unlockOrientation(): boolean {
-  if (typeof window === 'undefined') return false;
+  if (typeof window === 'undefined' || isRunningInIframe()) return false;
   if (isMobilePhoneDevice()) {
     void lockOrientationToPortrait();
     return false;
@@ -87,7 +97,7 @@ export function unlockOrientation(): boolean {
 }
 
 export function setupOrientationAutoLock() {
-  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  if (typeof window === 'undefined' || typeof document === 'undefined' || isRunningInIframe()) return;
 
   try {
     const docEl = document.documentElement;

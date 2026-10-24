@@ -12,11 +12,40 @@ const DB_VERSION = 5;
 let dbInstance: IDBDatabase | null = null;
 let dbPromise: Promise<IDBDatabase> | null = null;
 
+let _idbChecked = false;
+let _idbSupported = false;
+
 /**
  * Check if IndexedDB is supported in the current environment
  */
 export function isIndexedDBSupported(): boolean {
-  return typeof window !== 'undefined' && typeof window.indexedDB !== 'undefined';
+  if (_idbChecked) return _idbSupported;
+  _idbChecked = true;
+  try {
+    if (typeof window === 'undefined' || typeof window.indexedDB === 'undefined' || window.indexedDB === null) {
+      _idbSupported = false;
+      return false;
+    }
+    // Test if opening a database throws SecurityError in sandboxed or partitioned iframes
+    const testReq = window.indexedDB.open('__wms_probe_idb__');
+    testReq.onerror = (ev) => {
+      ev?.preventDefault?.();
+      ev?.stopPropagation?.();
+      _idbSupported = false;
+      try { testReq.result?.close?.(); } catch {}
+    };
+    testReq.onsuccess = () => {
+      try {
+        testReq.result?.close?.();
+        window.indexedDB.deleteDatabase('__wms_probe_idb__');
+      } catch {}
+    };
+    _idbSupported = true;
+    return true;
+  } catch {
+    _idbSupported = false;
+    return false;
+  }
 }
 
 /**
@@ -34,9 +63,10 @@ export async function getLocalDb(): Promise<IDBDatabase> {
   }
 
   dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
-    const request = window.indexedDB.open(DB_NAME, DB_VERSION);
+    try {
+      const request = window.indexedDB.open(DB_NAME, DB_VERSION);
 
-    request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
+      request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
       const db = (event.target as IDBOpenDBRequest).result;
       const oldVersion = event.oldVersion;
 
@@ -105,15 +135,23 @@ export async function getLocalDb(): Promise<IDBDatabase> {
     };
 
     request.onerror = (event: Event) => {
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
       dbPromise = null;
+      _idbSupported = false;
       const error = (event.target as IDBOpenDBRequest).error;
-      console.error('Failed to open IndexedDB:', error);
+      console.warn('IndexedDB unavailable in this environment, falling back to memory/localStorage:', error?.message || error);
       reject(error || new Error('Unknown IndexedDB open error'));
     };
 
     request.onblocked = () => {
       console.warn('IndexedDB open blocked: please close other tabs running the app');
     };
+    } catch (openErr) {
+      dbPromise = null;
+      console.warn('IndexedDB open threw error:', openErr);
+      reject(openErr || new Error('Failed to open IndexedDB'));
+    }
   });
 
   return dbPromise;
@@ -295,7 +333,7 @@ export async function saveProductsToLocalDb(
       };
     });
   } catch (err) {
-    console.error('Error saving products to local database:', err);
+    console.warn('Error saving products to local database:', err);
     // Fallback: save a small safe portion to localStorage so old functionality stays alive
     try {
       localStorage.setItem('wms_product_cache', JSON.stringify(cleanProducts.slice(0, 1000)));

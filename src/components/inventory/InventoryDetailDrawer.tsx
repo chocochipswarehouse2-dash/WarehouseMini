@@ -188,7 +188,7 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClo
     setActionLoading(true);
     try {
       const res = await updateLogProdukItem(editingLog.id, {
-        type: editForm.type,
+        type: editForm.type as any,
         qty,
         lokasi,
         keterangan: editForm.keterangan.trim(),

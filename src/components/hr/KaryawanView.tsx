@@ -362,7 +362,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={loadKaryawan}
+              onClick={() => { void loadKaryawan(); }}
               disabled={loading}
               className="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
               title="Refresh Data"

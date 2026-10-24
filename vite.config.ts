@@ -25,10 +25,10 @@ export default defineConfig(({ command }) => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        injectRegister: 'auto',
+        injectRegister: null,
         manifestFilename: 'manifest-portrait.json',
         devOptions: {
-          enabled: true,
+          enabled: false,
         },
         workbox: {
           skipWaiting: true,

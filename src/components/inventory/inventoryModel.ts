@@ -796,7 +796,7 @@ export function composeAreaRows(
     if (!size || size === '-') size = extractSizeFromSku(sku);
     if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = 'ALL';
 
-    const kategori = base?.kategori || stockRows[0]?.kategori || (stockRows[0] as any)?.category || 'CLOTHING';
+    const kategori = base?.kategori || (stockRows[0] as any)?.kategori || (stockRows[0] as any)?.category || 'CLOTHING';
     const sizeOrder = getSizeOrder(size);
     const pLower = produk.toLowerCase();
     const skuLower = sku.toLowerCase();

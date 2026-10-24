@@ -1,9 +1,13 @@
 // Screen Wake Lock API service to keep mobile screen awake during scanning
+import { isRunningInIframe } from './orientationLock';
 
 let wakeLockSentinel: WakeLockSentinel | null = null;
 let isWakeLockRequested = false;
 
 export async function requestScreenWakeLock(): Promise<boolean> {
+  if (isRunningInIframe()) {
+    return false;
+  }
   if (typeof navigator === 'undefined' || !('wakeLock' in navigator)) {
     return false;
   }
@@ -11,14 +15,13 @@ export async function requestScreenWakeLock(): Promise<boolean> {
   try {
     isWakeLockRequested = true;
     wakeLockSentinel = await navigator.wakeLock.request('screen');
-    
+
     wakeLockSentinel.addEventListener('release', () => {
       wakeLockSentinel = null;
     });
-    
+
     return true;
-  } catch (err) {
-    console.warn('Wake Lock error:', err);
+  } catch {
     return false;
   }
 }
@@ -35,8 +38,8 @@ export async function releaseScreenWakeLock(): Promise<void> {
   }
 }
 
-// Auto re-acquire wake lock when tab visibility changes back to visible
-if (typeof document !== 'undefined') {
+// Auto re-acquire wake lock when tab visibility changes back to visible (only in top-level window)
+if (typeof document !== 'undefined' && !isRunningInIframe()) {
   const reacquireWakeLock = async () => {
     if (isWakeLockRequested && !wakeLockSentinel) {
       await requestScreenWakeLock();

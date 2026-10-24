@@ -112,8 +112,8 @@ const HrApprovalView = lazyWithRetry(() => import('./components/hr/HrApprovalVie
 const HrRekapView = lazyWithRetry(() => import('./components/hr/HrRekapView').then(m => ({ default: m.HrRekapView })));
 const CetakLabelView = lazyWithRetry(() => import('./components/CetakLabelView').then(m => ({ default: m.CetakLabelView })));
 const CetakBarcodeProdukView = lazyWithRetry(() => import('./components/CetakBarcodeProdukView').then(m => ({ default: m.CetakBarcodeProdukView })));
-const PesananSayaView = lazyWithRetry(() => import('./components/PesananSaya/PesananSayaView').then(m => ({ default: m.PesananSayaView })));
-const PusatResolusiView = lazyWithRetry(() => import('./components/PusatResolusi/PusatResolusiView').then(m => ({ default: m.default })));
+import { PesananSayaView } from './components/PesananSaya/PesananSayaView';
+import PusatResolusiView from './components/PusatResolusi/PusatResolusiView';
 const JneRekapView = lazyWithRetry(() => import('./components/JneRekapView').then(m => ({ default: m.JneRekapView })));
 
 const SupabaseMigrationView = lazyWithRetry(() => import('./components/SupabaseMigrationView').then(m => ({ default: m.SupabaseMigrationView })));
@@ -162,6 +162,7 @@ import {
   showPushNotification,
 } from './services/pushNotification';
 import { releaseScreenWakeLock, requestScreenWakeLock } from './services/wakeLock';
+import { isRunningInIframe } from './services/orientationLock';
 import { getStoredGasEndpoint, fetchWmsSettings } from './services/settings';
 
 // URL Path mapping untuk mendukung Deep-linking dan sinkronisasi address bar browser
@@ -196,9 +197,12 @@ const PAGE_TO_PATH: Record<ActivePage, string> = {
   penerimaan: 'penerimaan',
   manual_shipment: 'manual-shipment',
   pusat_resolusi: 'pusat-resolusi',
+  rekap_tagihan_jne: 'rekap-tagihan-jne',
 };
 
 const PATH_TO_PAGE: Record<string, ActivePage> = {
+  'rekap-tagihan-jne': 'rekap_tagihan_jne',
+  'tagihan-jne': 'rekap_tagihan_jne',
   'operasi-stok': 'operasi_stok',
   'katalog-produk': 'katalog_produk',
   'katalog': 'katalog_produk',
@@ -257,13 +261,23 @@ const PATH_TO_PAGE: Record<string, ActivePage> = {
 
 function getPageFromUrl(session: UserSession | null): ActivePage {
   if (typeof window === 'undefined') return getDefaultPageForSession(session);
-  const path = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
-  const matchedPage = PATH_TO_PAGE[path];
-  if (matchedPage) {
-    if (!session || canAccessPage(session, matchedPage)) {
-      return matchedPage;
+  try {
+    if (isRunningInIframe()) {
+      const savedPage = localStorage.getItem('wms_last_active_page') as ActivePage | null;
+      if (savedPage && PAGE_TO_PATH[savedPage]) {
+        if (!session || canAccessPage(session, savedPage)) {
+          return savedPage;
+        }
+      }
     }
-  }
+    const path = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+    const matchedPage = PATH_TO_PAGE[path];
+    if (matchedPage) {
+      if (!session || canAccessPage(session, matchedPage)) {
+        return matchedPage;
+      }
+    }
+  } catch {}
   return getDefaultPageForSession(session);
 }
 
@@ -331,16 +345,24 @@ export default function App() {
   const [activePage, setActivePage] = useState<ActivePage>(() => getPageFromUrl(session));
   const [visitedPages, setVisitedPages] = useState<Set<ActivePage>>(() => new Set<ActivePage>([getPageFromUrl(session)]));
 
-  // Sinkronisasi activePage ke browser URL address bar secara transparan (HTML5 History API)
+  // Sinkronisasi activePage ke browser URL address bar secara transparan (hanya di top-level window, dilewati di iframe agar bebas SecurityError)
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const currentPath = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
-    const targetPath = PAGE_TO_PATH[activePage] || activePage;
-    const expectedUrl = targetPath === 'dashboard' && currentPath === '' ? '/' : `/${targetPath}`;
-    const currentUrl = currentPath === '' ? '/' : `/${currentPath}`;
+    try {
+      localStorage.setItem('wms_last_active_page', activePage);
+    } catch {}
+    if (isRunningInIframe()) return;
+    try {
+      const currentPath = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+      const targetPath = PAGE_TO_PATH[activePage] || activePage;
+      const expectedUrl = targetPath === 'dashboard' && currentPath === '' ? '/' : `/${targetPath}`;
+      const currentUrl = currentPath === '' ? '/' : `/${currentPath}`;
 
-    if (currentUrl !== expectedUrl) {
-      window.history.pushState({ page: activePage }, '', expectedUrl);
+      if (currentUrl !== expectedUrl) {
+        window.history.pushState({ page: activePage }, '', expectedUrl);
+      }
+    } catch {
+      // In sandboxed iframes (e.g. AI Studio preview), history.pushState may throw SecurityError
     }
   }, [activePage]);
 
@@ -1106,11 +1128,18 @@ export default function App() {
     localStorage.removeItem('wms_user_nik');
     localStorage.removeItem('wms_user_store_code');
     localStorage.removeItem('wms_user_store_name');
+    localStorage.removeItem('wms_last_active_page');
     setSession(null);
     setScannedData([]);
     releaseScreenWakeLock();
-    if (typeof window !== 'undefined') {
-      window.history.pushState({ page: 'dashboard' }, '', '/');
+    if (!isRunningInIframe()) {
+      try {
+        if (typeof window !== 'undefined') {
+          window.history.pushState({ page: 'dashboard' }, '', '/');
+        }
+      } catch {
+        // In sandboxed iframes, pushState may be restricted
+      }
     }
     showToast('Berhasil keluar dari akun.', 'info');
   };

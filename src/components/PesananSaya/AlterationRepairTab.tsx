@@ -354,10 +354,10 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
     return allCatalogProducts.filter((p) =>
       partialSearchMatch(
         cleanQ,
-        p.k || (p as any).sku,
-        p.n || p.p || (p as any).nama_produk || (p as any).deskripsi,
-        p.size || p.s,
-        p.category || (p as any).kategori
+        String(p.k || (p as any).sku || ''),
+        String(p.n || p.p || (p as any).nama_produk || (p as any).deskripsi || ''),
+        String(p.size || p.s || ''),
+        String(p.category || (p as any).kategori || '')
       )
     );
   };

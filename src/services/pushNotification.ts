@@ -1,58 +1,68 @@
 // Push Notification & Local Alert Service
+import { isRunningInIframe } from './orientationLock';
 
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
-  if (typeof window === 'undefined' || !('Notification' in window)) {
+  if (isRunningInIframe() || typeof window === 'undefined' || !('Notification' in window)) {
     return 'denied';
   }
 
-  if (Notification.permission === 'granted') {
-    return 'granted';
-  }
-
   try {
+    if (Notification.permission === 'granted') {
+      return 'granted';
+    }
     const permission = await Notification.requestPermission();
     return permission;
-  } catch (e) {
-    console.warn('Error requesting notification permission:', e);
+  } catch {
     return 'denied';
   }
 }
 
 export function isNotificationSupported(): boolean {
-  return typeof window !== 'undefined' && 'Notification' in window;
+  if (isRunningInIframe()) return false;
+  try {
+    return typeof window !== 'undefined' && 'Notification' in window;
+  } catch {
+    return false;
+  }
 }
 
 export function getNotificationPermissionStatus(): NotificationPermission {
   if (!isNotificationSupported()) return 'denied';
-  return Notification.permission;
+  try {
+    return Notification.permission;
+  } catch {
+    return 'denied';
+  }
 }
 
 export function showPushNotification(title: string, options?: { body?: string; icon?: string; tag?: string }) {
   if (!isNotificationSupported()) return;
 
-  if (Notification.permission === 'granted') {
-    try {
+  try {
+    if (Notification.permission === 'granted') {
       const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '');
       const defaultIcon = `${baseUrl}/icon-192.png`;
 
       if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-        navigator.serviceWorker.ready.then((registration) => {
-          registration.showNotification(title, {
-            body: options?.body || 'Aktivitas WMS Scanner baru',
-            icon: options?.icon || defaultIcon,
-            tag: options?.tag || 'wms-notification',
-            vibrate: [200, 100, 200]
-          } as NotificationOptions);
-        });
+        navigator.serviceWorker.ready
+          .then((registration) => {
+            registration.showNotification(title, {
+              body: options?.body || 'Aktivitas WMS Scanner baru',
+              icon: options?.icon || defaultIcon,
+              tag: options?.tag || 'wms-notification',
+              vibrate: [200, 100, 200],
+            } as NotificationOptions);
+          })
+          .catch(() => {});
       } else {
         new Notification(title, {
           body: options?.body,
           icon: options?.icon || defaultIcon,
-          tag: options?.tag
+          tag: options?.tag,
         });
       }
-    } catch (e) {
-      console.warn('Notification error:', e);
     }
+  } catch {
+    // Ignore notification errors in restricted environments
   }
 }

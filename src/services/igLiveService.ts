@@ -467,11 +467,10 @@ export async function syncIgLiveOrdersToSupabase(orders: IGLiveOrder[]): Promise
     if (payload.length === 0) return;
 
     await supabaseFetch(
-      'ig_live_orders?on_conflict=no_pesanan',
+      'ig_live_orders',
       'POST',
       payload,
-      undefined,
-      { Prefer: 'resolution=merge-duplicates,return=minimal' }
+      'on_conflict=no_pesanan'
     );
   } catch (err) {
     console.warn('[IGLIVE] Gagal sinkronisasi ke Supabase ig_live_orders:', err);

@@ -1390,7 +1390,7 @@ export interface RiwayatHandoverPaket {
 
 export interface StoreHelpBadge {
   label: string;
-  color?: 'indigo' | 'rose' | 'amber' | 'emerald' | 'purple' | 'blue';
+  color?: 'indigo' | 'rose' | 'amber' | 'emerald' | 'purple' | 'blue' | 'slate' | 'pink';
   icon?: string;
 }
 

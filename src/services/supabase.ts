@@ -39,6 +39,7 @@ import {
   ProjectItem,
   NoteItem,
 } from '../types';
+export type { StockRealtimeItem };
 import { extractSizeFromSku, formatProductNameWithSize, cleanProductName } from '../utils/sortUtils';
 import { registerUserNames, getUserPersonName } from '../utils/userResolver';
 import { ALL_PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, isSuperadmin } from './permissions';
@@ -4286,8 +4287,8 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
               nama_produk: cleanName,
               s: r.size || 'Default',
               size: r.size || 'Default',
-              category: r.category || 'Physical Stock',
-              kategori: r.category || 'Physical Stock',
+              category: (r as any).category || (r as any).kategori || 'Physical Stock',
+              kategori: (r as any).category || (r as any).kategori || 'Physical Stock',
               lokasi: r.lokasi ? String(r.lokasi).trim() : '',
               price: 0,
               stokMap: Number(r.sisa_stok || 0),
