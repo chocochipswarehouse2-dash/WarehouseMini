@@ -1,6 +1,6 @@
 {
-  "summary":  "Rencana perbaikan menyeluruh performa modul Laporan QC & Perbaikan agar instan, bebas freeze/not responding, menggunakan Lazy Fetch per Tab, batas 300 data terbaru dengan filter tanggal, optimasi pencocokan katalog SKU tanpa duplikasi memori, dan pembersihan Base64 dari localStorage.",
-  "updatedAt":  "2026-10-22T15:13:25.864457629Z",
+  "summary":  "Rencana implementasi Dashboard Interaktif Simulasi Kapasitas Rak Penyimpanan pada halaman Inventory lengkap dengan mode ganda (Grid Visual Animasi & Tabel Ringkas), Setup Kapasitas Massal & Spesifik Rak, Simulasi Pindah Barang, Rekomendasi Rak Kosong Terdekat, serta integrasi Tab Log Produk & Mutasi.",
+  "updatedAt":  "2026-10-24T13:27:57.523566312Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

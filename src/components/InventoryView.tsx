@@ -14,6 +14,8 @@ import {
   ChevronDown,
   X,
   Boxes,
+  LayoutGrid,
+  ClipboardList,
 } from 'lucide-react';
 import type { ProductItem, UserSession } from '../types';
 import { hasPermission } from '../services/permissions';
@@ -38,6 +40,10 @@ import {
 } from './inventory/useInventoryStock';
 import { InventoryList } from './inventory/InventoryList';
 import { InventoryDetailDrawer } from './inventory/InventoryDetailDrawer';
+import { RackCapacityDashboard } from './inventory/RackCapacityDashboard';
+import { MutasiLogView } from './MutasiLogView';
+
+export type InventoryPageTab = 'capacity' | 'inventory' | 'logs';
 
 export interface InventoryViewProps {
   session?: UserSession | null;
@@ -64,6 +70,9 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   onNotify,
   onRefreshCatalog,
 }) => {
+  // 0. Top-level Inventory Sub-Tab (Dashboard Interaktif Kapasitas | Data Inventory Produk | Log Produk)
+  const [activeTab, setActiveTab] = useState<InventoryPageTab>('capacity');
+
   // 1. Stock store & realtime sync
   const { version: stockVersion, phase, error: stockError, isEmpty, reload } = useInventoryStock();
 
@@ -169,20 +178,104 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     if (onNotify) onNotify(`File CSV berhasil diunduh (${sortedAreaRows.length} baris area)!`, 'success');
   };
 
-  // Stock list snapshot for Lokasi Export Modal
+  // Stock list snapshot for Capacity Dashboard & Lokasi Export Modal
+  const flatStockSnapshot = useMemo(() => {
+    void stockVersion;
+    return flattenStock();
+  }, [stockVersion]);
+
   const exportStockSnapshot = useMemo(() => {
     if (!isLokasiExportModalOpen) return [];
-    return flattenStock();
-  }, [isLokasiExportModalOpen, stockVersion]);
+    return flatStockSnapshot;
+  }, [isLokasiExportModalOpen, flatStockSnapshot]);
 
   return (
     <div className="space-y-4 w-full animate-in fade-in duration-150">
       {/* ========================================================
-          1. KPI CARDS HEADER (Stok Fisik Nyata Gudang)
+          0. NAVIGATION TABS: DASHBOARD KAPASITAS | DATA INVENTORY | LOG PRODUK
           ======================================================== */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
-        {/* KPI 1: Total SKU */}
-        <div className="p-3.5 rounded-2xl border bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 shadow-xs">
+      <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl p-2 flex flex-wrap items-center justify-between gap-2 shadow-xs">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setActiveTab('capacity')}
+            className={`px-4 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
+              activeTab === 'capacity'
+                ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <LayoutGrid className="w-4 h-4" />
+            <span>Dashboard Interaktif Kapasitas</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('inventory')}
+            className={`px-4 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
+              activeTab === 'inventory'
+                ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Boxes className="w-4 h-4" />
+            <span>Data Inventory Produk</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('logs')}
+            className={`px-4 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
+              activeTab === 'logs'
+                ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <ClipboardList className="w-4 h-4" />
+            <span>Log Produk (Mutasi Scan)</span>
+          </button>
+        </div>
+
+        <div className="hidden md:flex items-center gap-2 text-[11px] text-slate-400 px-2 font-mono tabular-nums">
+          <span>{stats.skuCount.toLocaleString('id-ID')} SKU</span>
+          <span aria-hidden="true">·</span>
+          <span>{stats.totalFisik.toLocaleString('id-ID')} pcs fisik</span>
+          <span aria-hidden="true">·</span>
+          <span>{stats.activeLocationsCount.toLocaleString('id-ID')} titik rak aktif</span>
+        </div>
+      </div>
+
+      {activeTab === 'capacity' && (
+        <RackCapacityDashboard
+          stockRows={flatStockSnapshot}
+          session={session}
+          onNotify={onNotify}
+          onOpenPrintModal={handleOpenLokasiExport}
+          onRefreshStock={handleManualRefresh}
+          isRefreshingStock={isRefreshing || phase === 'syncing'}
+        />
+      )}
+
+      {activeTab === 'logs' && (
+        <MutasiLogView
+          session={session}
+          productCatalog={productCatalog}
+          onNotify={onNotify}
+          onRefreshCatalog={() => {
+            reload(true);
+            if (onRefreshCatalog) onRefreshCatalog(true);
+          }}
+        />
+      )}
+
+      {activeTab === 'inventory' && (
+        <>
+          {/* ========================================================
+              1. KPI CARDS HEADER (Stok Fisik Nyata Gudang)
+              ======================================================== */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+            {/* KPI 1: Total SKU */}
+            <div className="p-3.5 rounded-2xl border bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-bold mb-1">
             <span>TOTAL SKU TERDATA</span>
             <div className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center">
@@ -441,6 +534,8 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           Virtual Rendering Aktif · 60 FPS
         </span>
       </div>
+      </>
+      )}
 
       {/* ========================================================
           5. DETAIL DRAWER (Per-SKU Audit & Mutasi History)
