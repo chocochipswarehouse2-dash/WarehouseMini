@@ -2342,7 +2342,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
               <thead className="bg-slate-50 dark:bg-[#0b1324] text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-wider sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
                 {selectedChannel === 'ALL' ? (
                   <tr>
-                    <th className="p-2.5">Produk & SKU</th>
+                    <th className="p-2.5">Produk & Lokasi</th>
                     <th className="p-2.5 text-center w-10">Size</th>
                     <th className="p-2.5 text-center w-12 text-blue-600 dark:text-blue-400">Studio</th>
                     <th className="p-2.5 text-center w-12 text-amber-600 dark:text-amber-400">SHP</th>
@@ -2351,7 +2351,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                   </tr>
                 ) : (
                   <tr>
-                    <th className="p-2.5">Produk & Lokasi</th>
+                    <th className="p-2.5">Produk & SKU</th>
                     <th className="p-2.5 text-center w-12">Size</th>
                     <th className="p-2.5 text-center w-14">
                       {selectedChannel === 'STUDIO' ? 'Studio' : selectedChannel === 'SHOPEE' ? 'Shopee' : 'TikTok'}
@@ -2414,8 +2414,32 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                             </div>
                             <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-0.5">
                               <span className="font-semibold text-slate-600 dark:text-slate-300">{stk.sku}</span>
-                              <span>&bull;</span>
-                              <span className="text-blue-600 dark:text-blue-400 font-semibold">{stk.locStr}</span>
+                              {stk.whLocStr && (
+                                <>
+                                  <span>&bull;</span>
+                                  <span className="text-blue-600 dark:text-blue-400 font-semibold" title="Rak Gudang">
+                                    {stk.whLocStr}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                            {/* Location Badges displayed ONLY in Tab Semua */}
+                            <div className="flex flex-wrap gap-1 mt-1.5">
+                              {stk.studioQty > 0 && (
+                                <span className="inline-flex items-center text-[9px] px-1.5 py-0.5 bg-blue-500/15 text-blue-700 dark:text-blue-300 rounded font-mono font-bold border border-blue-500/20">
+                                  📍 Studio: {stk.studioQty}
+                                </span>
+                              )}
+                              {stk.shpQty > 0 && (
+                                <span className="inline-flex items-center text-[9px] px-1.5 py-0.5 bg-amber-500/15 text-amber-700 dark:text-amber-300 rounded font-mono font-bold border border-amber-500/20">
+                                  🧡 Shopee: {stk.shpQty}
+                                </span>
+                              )}
+                              {stk.ttkQty > 0 && (
+                                <span className="inline-flex items-center text-[9px] px-1.5 py-0.5 bg-slate-900 text-white dark:bg-slate-800 dark:text-slate-200 rounded font-mono font-bold">
+                                  🖤 TikTok: {stk.ttkQty}
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td className="p-2.5 text-center">
@@ -2458,25 +2482,13 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                           </div>
                           <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-0.5">
                             <span className="font-semibold text-slate-600 dark:text-slate-300">{stk.sku}</span>
-                            <span>&bull;</span>
-                            <span className="text-blue-600 dark:text-blue-400 font-semibold">{stk.locStr}</span>
-                          </div>
-                          {/* Channel breakdown pills */}
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {stk.ttkQty > 0 && (
-                              <span className="inline-flex items-center text-[9px] px-1.5 py-0.5 bg-slate-900 text-white dark:bg-slate-800 dark:text-slate-200 rounded font-mono font-bold">
-                                🖤 TikTok: {stk.ttkQty}
-                              </span>
-                            )}
-                            {stk.shpQty > 0 && (
-                              <span className="inline-flex items-center text-[9px] px-1.5 py-0.5 bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded font-mono font-bold">
-                                🧡 Shopee: {stk.shpQty}
-                              </span>
-                            )}
-                            {stk.studioQty > 0 && (
-                              <span className="inline-flex items-center text-[9px] px-1.5 py-0.5 bg-blue-500/20 text-blue-700 dark:text-blue-300 rounded font-mono font-bold">
-                                📍 Studio: {stk.studioQty}
-                              </span>
+                            {stk.whLocStr && (
+                              <>
+                                <span>&bull;</span>
+                                <span className="text-blue-600 dark:text-blue-400 font-semibold" title="Rak Gudang">
+                                  {stk.whLocStr}
+                                </span>
+                              </>
                             )}
                           </div>
                         </td>
