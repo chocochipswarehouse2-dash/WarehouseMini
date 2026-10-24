@@ -129,6 +129,54 @@ export const DEFAULT_RACK_ZONES: RackZoneRule[] = [
     color: 'amber',
   },
   {
+    id: 'zone_transit',
+    area: 'Transit',
+    zoneName: 'Area Transit X (X001 - X100)',
+    prefix: 'X',
+    startNum: 1,
+    endNum: 100,
+    padLength: 3,
+    category: 'Transit',
+    defaultMaxCapacity: 100,
+    color: 'cyan',
+  },
+  {
+    id: 'zone_koli_r',
+    area: 'Kolian',
+    zoneName: 'Lokasi Koli R (R001 - R100)',
+    prefix: 'R',
+    startNum: 1,
+    endNum: 100,
+    padLength: 3,
+    category: 'Koli R',
+    defaultMaxCapacity: 100,
+    color: 'amber',
+  },
+  {
+    id: 'zone_koli_v',
+    area: 'Kolian',
+    zoneName: 'Lokasi Koli V (V001 - V100)',
+    prefix: 'V',
+    startNum: 1,
+    endNum: 100,
+    padLength: 3,
+    category: 'Koli V',
+    defaultMaxCapacity: 100,
+    color: 'purple',
+  },
+  {
+    id: 'zone_koli_z',
+    area: 'Kolian',
+    zoneName: 'Lokasi Koli Z (Z001 - Z100)',
+    prefix: 'Z',
+    startNum: 1,
+    endNum: 100,
+    padLength: 3,
+    category: 'Koli Z',
+    defaultMaxCapacity: 100,
+    color: 'emerald',
+  },
+  {
     id: 'zone_blok_f',
     area: 'Blok F',
     zoneName: 'Area Blok F (Live & Studio)',
@@ -141,27 +189,83 @@ export const DEFAULT_RACK_ZONES: RackZoneRule[] = [
     defaultMaxCapacity: 80,
     color: 'purple',
   },
-  {
-    id: 'zone_transit',
-    area: 'Transit',
-    zoneName: 'Area Transit',
-    prefix: 'TRANSIT',
-    startNum: 0,
-    endNum: 0,
-    padLength: 0,
-    staticLocations: ['X', 'TRANSIT'],
-    category: 'Transit',
-    defaultMaxCapacity: 100,
-    color: 'cyan',
-  },
 ];
 
 export function getDefaultRackCapacityConfig(): RackCapacityConfig {
   return {
-    version: 1,
+    version: 2,
     updatedAt: new Date().toISOString(),
     zones: DEFAULT_RACK_ZONES,
     overrides: {},
+  };
+}
+
+/**
+ * Ensures any previously saved v1 config automatically upgrades:
+ * 1. Area Transit ('zone_transit') from static ['X', 'TRANSIT'] to variable range X (X001 - X100)
+ * 2. Missing Koli / Kolian zones (prefix R, V, Z: R001-R100, V001-V100, Z001-Z100)
+ */
+export function normalizeAndMigrateRackConfig(raw: RackCapacityConfig): RackCapacityConfig {
+  const incomingZones = Array.isArray(raw?.zones) ? raw.zones : [];
+  if (incomingZones.length === 0) {
+    return getDefaultRackCapacityConfig();
+  }
+
+  // Upgrade zone_transit if it was saved as staticLocations in v1
+  const upgradedZones: RackZoneRule[] = incomingZones.map((z) => {
+    if (
+      z.id === 'zone_transit' &&
+      ((z.staticLocations && z.staticLocations.length > 0) ||
+        z.prefix === 'TRANSIT' ||
+        z.startNum === 0)
+    ) {
+      return {
+        ...z,
+        area: 'Transit',
+        zoneName:
+          z.zoneName === 'Area Transit' ? 'Area Transit X (X001 - X100)' : z.zoneName,
+        prefix: 'X',
+        startNum: z.startNum > 0 ? z.startNum : 1,
+        endNum: z.endNum > 0 ? z.endNum : 100,
+        padLength: z.padLength > 0 ? z.padLength : 3,
+        staticLocations: undefined,
+        category: z.category || 'Transit',
+        defaultMaxCapacity: z.defaultMaxCapacity || 100,
+        color: z.color || 'cyan',
+      };
+    }
+    if (z.area === 'Koli') {
+      return { ...z, area: 'Kolian' };
+    }
+    return z;
+  });
+
+  // Ensure Koli R, V, Z and Transit X exist if config was from v1
+  const requiredZones = DEFAULT_RACK_ZONES.filter((dz) =>
+    ['zone_transit', 'zone_koli_r', 'zone_koli_v', 'zone_koli_z'].includes(dz.id)
+  );
+
+  for (const req of requiredZones) {
+    const exists = upgradedZones.some(
+      (z) => z.id === req.id || (z.prefix && z.prefix.toUpperCase() === req.prefix)
+    );
+    if (!exists) {
+      // Insert before zone_blok_f if present, otherwise push
+      const blokFIdx = upgradedZones.findIndex((z) => z.id === 'zone_blok_f');
+      if (blokFIdx >= 0) {
+        upgradedZones.splice(blokFIdx, 0, { ...req });
+      } else {
+        upgradedZones.push({ ...req });
+      }
+    }
+  }
+
+  return {
+    version: Math.max(2, raw.version || 2),
+    updatedAt: raw.updatedAt || new Date().toISOString(),
+    updatedBy: raw.updatedBy,
+    zones: upgradedZones,
+    overrides: raw.overrides || {},
   };
 }
 
@@ -171,11 +275,7 @@ export function loadLocalRackCapacityConfig(): RackCapacityConfig {
     if (raw) {
       const parsed = JSON.parse(raw) as RackCapacityConfig;
       if (parsed && Array.isArray(parsed.zones) && parsed.zones.length > 0) {
-        return {
-          ...getDefaultRackCapacityConfig(),
-          ...parsed,
-          overrides: parsed.overrides || {},
-        };
+        return normalizeAndMigrateRackConfig(parsed);
       }
     }
   } catch {
@@ -200,13 +300,13 @@ export async function fetchRackCapacityConfig(): Promise<RackCapacityConfig> {
     if (target && target.content) {
       const remote = JSON.parse(target.content) as RackCapacityConfig;
       if (remote && Array.isArray(remote.zones) && remote.zones.length > 0) {
-        const merged: RackCapacityConfig = {
-          version: remote.version || 1,
+        const merged = normalizeAndMigrateRackConfig({
+          version: remote.version || 2,
           updatedAt: remote.updatedAt || target.updated_at || new Date().toISOString(),
           updatedBy: remote.updatedBy || target.updated_by,
           zones: remote.zones,
           overrides: remote.overrides || {},
-        };
+        });
         saveLocalRackCapacityConfig(merged);
         return merged;
       }
@@ -223,6 +323,7 @@ export async function persistRackCapacityConfig(
 ): Promise<RackCapacityConfig> {
   const next: RackCapacityConfig = {
     ...config,
+    version: Math.max(2, config.version || 2),
     updatedAt: new Date().toISOString(),
     updatedBy,
   };
@@ -272,9 +373,39 @@ function inferZoneForUnmappedLocation(lokasi: string): {
   const loc = lokasi.trim().toUpperCase();
   const area = getAreaFromLokasi(loc);
 
-  if (area === 'Koli') {
+  if (area === 'Kolian' || area === 'Koli') {
+    if (loc.startsWith('R')) {
+      return {
+        area: 'Kolian',
+        zoneId: 'zone_koli_r',
+        zoneName: 'Lokasi Koli R (R001 - R100)',
+        category: 'Koli R',
+        defaultMaxCapacity: 100,
+        color: 'amber',
+      };
+    }
+    if (loc.startsWith('V')) {
+      return {
+        area: 'Kolian',
+        zoneId: 'zone_koli_v',
+        zoneName: 'Lokasi Koli V (V001 - V100)',
+        category: 'Koli V',
+        defaultMaxCapacity: 100,
+        color: 'purple',
+      };
+    }
+    if (loc.startsWith('Z')) {
+      return {
+        area: 'Kolian',
+        zoneId: 'zone_koli_z',
+        zoneName: 'Lokasi Koli Z (Z001 - Z100)',
+        category: 'Koli Z',
+        defaultMaxCapacity: 100,
+        color: 'emerald',
+      };
+    }
     return {
-      area: 'Koli',
+      area: 'Kolian',
       zoneId: 'zone_auto_koli',
       zoneName: 'Area Kolian (R / V / Z)',
       category: 'Kolian',
@@ -316,7 +447,7 @@ function inferZoneForUnmappedLocation(lokasi: string): {
     return {
       area: 'Transit',
       zoneId: 'zone_transit',
-      zoneName: 'Area Transit',
+      zoneName: 'Area Transit X (X001 - X100)',
       category: 'Transit',
       defaultMaxCapacity: 100,
       color: 'cyan',

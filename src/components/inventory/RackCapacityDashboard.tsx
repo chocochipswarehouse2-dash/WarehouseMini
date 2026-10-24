@@ -170,6 +170,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
 
   // Filters & View State
   const [viewMode, setViewMode] = useState<ViewMode>('GRID');
+  const [selectedArea, setSelectedArea] = useState<string>('ALL');
   const [selectedZoneId, setSelectedZoneId] = useState<string>('ALL');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
@@ -374,7 +375,15 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     };
   }, [allSlots, config.zones, simulationMoves.length]);
 
-  // Distinct Categories for Filter
+  // Distinct Areas & Categories for Filter
+  const availableAreas = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of allSlots) {
+      if (s.area) set.add(s.area);
+    }
+    return Array.from(set);
+  }, [allSlots]);
+
   const availableCategories = useMemo(() => {
     const set = new Set<string>();
     for (const s of allSlots) {
@@ -387,6 +396,9 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   const filteredSlots = useMemo(() => {
     const q = searchQuery.trim().toUpperCase();
     return allSlots.filter((s) => {
+      if (selectedArea !== 'ALL' && s.area.toUpperCase() !== selectedArea.toUpperCase()) {
+        return false;
+      }
       if (selectedZoneId !== 'ALL' && s.zoneId !== selectedZoneId) return false;
       if (selectedCategory !== 'ALL' && s.category.toUpperCase() !== selectedCategory.toUpperCase()) {
         return false;
@@ -412,7 +424,15 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
 
       return true;
     });
-  }, [allSlots, selectedZoneId, selectedCategory, statusFilter, searchQuery, simulationMoves.length]);
+  }, [
+    allSlots,
+    selectedArea,
+    selectedZoneId,
+    selectedCategory,
+    statusFilter,
+    searchQuery,
+    simulationMoves.length,
+  ]);
 
   // Nearby empty/available recommendations for selected rack
   const recommendedRacks = useMemo(() => {
@@ -732,14 +752,17 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               Kapasitas Per Area &amp; Kategori Zona Rak
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Klik kartu zona di bawah untuk memfilter rak (Contoh: A = Dress, B = Bottom, C = Top, D = Sale)
+              Klik kartu zona di bawah untuk memfilter rak (Warehouse: A–D · Transit: X001–X100 · Kolian: R, V, Z · Blok F)
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {selectedZoneId !== 'ALL' && (
+            {(selectedZoneId !== 'ALL' || selectedArea !== 'ALL') && (
               <button
                 type="button"
-                onClick={() => setSelectedZoneId('ALL')}
+                onClick={() => {
+                  setSelectedZoneId('ALL');
+                  setSelectedArea('ALL');
+                }}
                 className="px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 cursor-pointer whitespace-nowrap"
               >
                 Tampilkan Semua Zona
@@ -769,6 +792,49 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               <span>Setup Kapasitas &amp; Lokasi</span>
             </button>
           </div>
+        </div>
+
+        {/* Quick Area Filter Tabs */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedArea('ALL');
+              setSelectedZoneId('ALL');
+            }}
+            className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer ${
+              selectedArea === 'ALL'
+                ? 'bg-slate-900 text-white border-slate-900 dark:bg-amber-500 dark:text-black dark:border-amber-500'
+                : 'bg-slate-50 dark:bg-[#0E1420] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
+            }`}
+          >
+            Semua Area ({allSlots.length} lokasi)
+          </button>
+          {availableAreas.map((areaName) => {
+            const countInArea = allSlots.filter(
+              (s) => s.area.toUpperCase() === areaName.toUpperCase()
+            ).length;
+            const active = selectedArea.toUpperCase() === areaName.toUpperCase();
+            return (
+              <button
+                key={areaName}
+                type="button"
+                onClick={() => {
+                  setSelectedArea((prev) =>
+                    prev.toUpperCase() === areaName.toUpperCase() ? 'ALL' : areaName
+                  );
+                  setSelectedZoneId('ALL');
+                }}
+                className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer ${
+                  active
+                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-amber-500 dark:text-black dark:border-amber-500'
+                    : 'bg-slate-50 dark:bg-[#0E1420] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
+                }`}
+              >
+                {areaName === 'Kolian' ? 'Kolian / Koli (R, V, Z)' : areaName === 'Transit' ? 'Transit (X)' : areaName} ({countInArea})
+              </button>
+            );
+          })}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
@@ -1720,7 +1786,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-slate-500">
-                      Ubah kategori produk, rentang nomor rak, dan kapasitas maksimal default untuk setiap zona.
+                      Ubah kategori produk, prefix &amp; rentang nomor (001 - 100), serta kapasitas maksimal default untuk Warehouse (A–D), Transit (X), Kolian/Koli (R, V, Z), dan Blok F.
                     </span>
                     <button
                       type="button"
