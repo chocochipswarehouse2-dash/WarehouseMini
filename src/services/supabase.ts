@@ -4461,70 +4461,73 @@ export async function searchActiveProductsLive(keyword: string): Promise<Product
 
   const foundMap = new Map<string, ProductItem>();
   const { url: supaUrl, key: supaKey } = getStoredSupabaseConfig();
-  const encoded = encodeURIComponent(`%${cleanQ}%`);
+  const encodedQ = encodeURIComponent(cleanQ);
+  const encodedWildcard = encodeURIComponent(`%${cleanQ}%`);
 
+  const headers = {
+    apikey: supaKey,
+    Authorization: 'Bearer ' + supaKey,
+    'Content-Type': 'application/json',
+  };
+
+  // 1. Search master_produk directly by SKU prefix & exact SKU (instant index scan)
+  // and by nama_produk wildcard (parallel)
   try {
-    // 1. Fast search on stok_real_fisik (instant response < 300ms)
-    const r1 = await fetch(
-      `${supaUrl}/rest/v1/stok_real_fisik?select=sku,nama_produk,size,lokasi,sisa_stok&or=(nama_produk.ilike.${encoded},sku.ilike.${encoded})&limit=30`,
-      {
-        headers: {
-          apikey: supaKey,
-          Authorization: 'Bearer ' + supaKey,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-    if (r1.ok) {
-      const rows = await r1.json();
-      if (Array.isArray(rows)) {
-        for (const r of rows) {
-          const sku = String(r.sku || '').trim().toUpperCase();
-          if (!sku || foundMap.has(sku)) continue;
-          const cleanName = cleanProductName(r.nama_produk || sku);
-          foundMap.set(sku, {
-            k: sku,
-            sku: sku,
-            p: cleanName,
-            nama_produk: cleanName,
-            s: r.size || 'Default',
-            size: r.size || 'Default',
-            category: 'Pakaian',
-            kategori: 'Pakaian',
-            lokasi: '',
-            price: 0,
-          });
-        }
+    const [resMasterSku, resMasterName] = await Promise.all([
+      fetch(
+        `${supaUrl}/rest/v1/master_produk?select=sku,nama_produk,kategori,size,price&sku=ilike.${encodedQ}%25&limit=30`,
+        { headers }
+      ).then(r => r.ok ? r.json() : []).catch(() => []),
+      fetch(
+        `${supaUrl}/rest/v1/master_produk?select=sku,nama_produk,kategori,size,price&nama_produk=ilike.${encodedWildcard}&limit=30`,
+        { headers }
+      ).then(r => r.ok ? r.json() : []).catch(() => [])
+    ]);
+
+    const masterRows = [...(Array.isArray(resMasterSku) ? resMasterSku : []), ...(Array.isArray(resMasterName) ? resMasterName : [])];
+    for (const r of masterRows) {
+      const item = extractProductFromRow(r);
+      if (item && item.k && !isDummyProduct(item) && !foundMap.has(item.k)) {
+        foundMap.set(item.k, item);
       }
     }
   } catch (err) {
-    console.warn('Live search on stok_real_fisik error:', err);
+    console.warn('Live search on master_produk error:', err);
   }
 
-  // 2. Exact or prefix SKU search on master_produk (fast indexed scan)
-  try {
-    const r2 = await fetch(
-      `${supaUrl}/rest/v1/master_produk?select=sku,nama_produk,kategori,size,price&sku=ilike.${encodeURIComponent(`${cleanQ}%`)}&limit=25`,
-      {
-        headers: {
-          apikey: supaKey,
-          Authorization: 'Bearer ' + supaKey,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-    if (r2.ok) {
-      const rows = await r2.json();
-      if (Array.isArray(rows)) {
-        for (const r of rows) {
-          const item = extractProductFromRow(r);
-          if (item && !isDummyProduct(item) && !foundMap.has(item.k)) {
-            foundMap.set(item.k, item);
+  // 2. Also check stok_real_fisik for any active physically located products
+  if (foundMap.size < 20) {
+    try {
+      const r1 = await fetch(
+        `${supaUrl}/rest/v1/stok_real_fisik?select=sku,nama_produk,size,lokasi,sisa_stok&or=(nama_produk.ilike.${encodedWildcard},sku.ilike.${encodedWildcard})&limit=30`,
+        { headers }
+      );
+      if (r1.ok) {
+        const rows = await r1.json();
+        if (Array.isArray(rows)) {
+          for (const r of rows) {
+            const sku = String(r.sku || '').trim().toUpperCase();
+            if (!sku || foundMap.has(sku)) continue;
+            const cleanName = cleanProductName(r.nama_produk || sku);
+            foundMap.set(sku, {
+              k: sku,
+              sku: sku,
+              p: cleanName,
+              nama_produk: cleanName,
+              s: r.size || 'Default',
+              size: r.size || 'Default',
+              category: 'Pakaian',
+              kategori: 'Pakaian',
+              lokasi: r.lokasi || '',
+              price: 0,
+            });
           }
         }
       }
+    } catch (err) {
+      console.warn('Live search on stok_real_fisik error:', err);
     }
-  } catch {}
+  }
 
   return Array.from(foundMap.values());
 }

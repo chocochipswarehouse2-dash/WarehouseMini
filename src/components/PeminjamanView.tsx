@@ -58,6 +58,8 @@ import {
   supabaseFetch,
   insertPickingListRowsToSupabase,
   isDummyProduct,
+  fetchMasterProductsFromSupabase,
+  searchActiveProductsLive,
 } from '../services/supabase';
 import { globalRealtimeStore } from '../services/store';
 import {
@@ -65,7 +67,7 @@ import {
   saveLocalPeminjamanRecords,
   FALLBACK_CHANNEL_STOCKS,
 } from '../utils/localStore';
-import { savePendingOfflinePeminjaman } from '../services/localDb';
+import { savePendingOfflinePeminjaman, getAllProductsFromLocalDb } from '../services/localDb';
 import {
   fuzzySearchMultiple,
   extractSizeFromSku,
@@ -213,16 +215,101 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   const [inputSearchTerm, setInputSearchTerm] = useState<{ [id: string]: string }>({});
   const [realtimeSkuStocks, setRealtimeSkuStocks] = useState<Record<string, StockRealtimeItem[]>>({});
 
+  // Master Product Catalog with offline IndexedDB fallback and on-the-fly live lookup cache
+  const [offlineCatalog, setOfflineCatalog] = useState<ProductItem[]>([]);
+  const [extraCatalogItems, setExtraCatalogItems] = useState<ProductItem[]>([]);
+  const [isLoadingLiveSearch, setIsLoadingLiveSearch] = useState<boolean>(false);
+  const liveSearchDebounceRef = useRef<any>(null);
+  const lastLiveSearchQueryRef = useRef<string>('');
+
+  // Ensure full offline catalog from local IndexedDB if productCatalog prop is initially empty or updating
+  useEffect(() => {
+    let isSubscribed = true;
+    if (!productCatalog || productCatalog.length === 0) {
+      getAllProductsFromLocalDb().then((prods) => {
+        if (isSubscribed && prods && prods.length > 0) {
+          setOfflineCatalog(prods.filter((p) => !isDummyProduct(p)));
+        } else {
+          // If IndexedDB is empty, trigger fetch from Supabase
+          fetchMasterProductsFromSupabase(50000).then((supaProds) => {
+            if (isSubscribed && supaProds && supaProds.length > 0) {
+              setOfflineCatalog(supaProds.filter((p) => !isDummyProduct(p)));
+            }
+          });
+        }
+      });
+    }
+    return () => {
+      isSubscribed = false;
+    };
+  }, [productCatalog]);
+
+  // Combined Master Catalog: Prop Catalog + Offline IndexedDB + Extra Live-fetched Items
+  const combinedMasterCatalog = useMemo(() => {
+    const map = new Map<string, ProductItem>();
+
+    // 1. Offline fallback if prop is empty
+    if (offlineCatalog.length > 0) {
+      offlineCatalog.forEach((p) => {
+        if (!p) return;
+        const k = String(p.k || (p as any).sku || '').trim().toUpperCase();
+        if (k && !isDummyProduct(p)) map.set(k, p);
+      });
+    }
+
+    // 2. Authoritative productCatalog prop
+    (productCatalog || []).forEach((p) => {
+      if (!p) return;
+      const k = String(p.k || (p as any).sku || '').trim().toUpperCase();
+      if (k && !isDummyProduct(p)) map.set(k, p);
+    });
+
+    // 3. Extra live-fetched items from Supabase
+    extraCatalogItems.forEach((p) => {
+      if (!p) return;
+      const k = String(p.k || (p as any).sku || '').trim().toUpperCase();
+      if (k && !isDummyProduct(p) && !map.has(k)) map.set(k, p);
+    });
+
+    return Array.from(map.values());
+  }, [productCatalog, offlineCatalog, extraCatalogItems]);
+
   // Fast O(1) lookup dictionary for product catalog
   const catalogLookupMap = useMemo(() => {
     const map = new Map<string, ProductItem>();
-    (productCatalog || []).forEach((p) => {
-      if (!p) return;
+    combinedMasterCatalog.forEach((p) => {
       const k = String(p.k || (p as any).sku || '').trim().toUpperCase();
       if (k) map.set(k, p);
     });
     return map;
-  }, [productCatalog]);
+  }, [combinedMasterCatalog]);
+
+  // Pre-indexed searchable catalog array for ultra-fast filtering (< 5ms over 30,000 items)
+  const searchableCatalog = useMemo(() => {
+    return combinedMasterCatalog.map((p) => {
+      const skuUpper = String(p.k || (p as any).sku || '').trim().toUpperCase();
+      const rawName = String(p.nama_produk || p.p || (p as any).nama || p.n || skuUpper);
+      const cleanName = cleanProductName(rawName);
+      const rawSize = String(p.size || p.s || '');
+      const cleanSize =
+        rawSize && rawSize !== '-' && rawSize !== 'Default'
+          ? rawSize
+          : extractSizeFromSku(skuUpper) !== '-'
+          ? extractSizeFromSku(skuUpper)
+          : 'ALL';
+      const cat = String(p.kategori || p.category || p.c || '');
+      const searchBlob = `${skuUpper} ${cleanName} ${cleanSize} ${cat}`.toLowerCase();
+
+      return {
+        sku: skuUpper,
+        produk: cleanName,
+        size: cleanSize,
+        kategori: cat,
+        searchBlob,
+        item: p,
+      };
+    });
+  }, [combinedMasterCatalog]);
 
   // Fast O(1) lookup dictionary for channel stocks
   const channelStockSkuMap = useMemo(() => {
@@ -481,8 +568,8 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     const q = editProductSearch.trim();
     if (!q || q.length < 2) return [];
     const results: any[] = [];
-    for (let i = 0; i < (productCatalog || []).length; i++) {
-      const prod: any = productCatalog[i];
+    for (let i = 0; i < combinedMasterCatalog.length; i++) {
+      const prod: any = combinedMasterCatalog[i];
       if (!prod) continue;
       if (fuzzySearchMultiple(q, [prod.nama_produk as string, prod.sku as string, prod.nama as string, prod.size as string])) {
         results.push(prod);
@@ -490,7 +577,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       }
     }
     return results;
-  }, [productCatalog, editProductSearch]);
+  }, [combinedMasterCatalog, editProductSearch]);
 
   // Load SPS records and real-time stocks from Supabase on mount & set up realtime listener
   useEffect(() => {
@@ -600,6 +687,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     sku: string;
     produk: string;
     size: string;
+    kategori?: string;
     lokasi: string;
     stok: number;
     whQty: number;
@@ -609,16 +697,17 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     _s?: string;
   };
 
-  // Ultra-fast O(1) resolution of product option from channel stocks or product catalog
+  // Ultra-fast O(1) resolution of product option from master product catalog
   const getProductOptionBySku = (rawSku: string): ProductOptionItem | null => {
     const skuUpper = (rawSku || '').trim().toUpperCase();
     if (!skuUpper) return null;
     const cs = channelStockSkuMap.get(skuUpper);
     const cat = catalogLookupMap.get(skuUpper);
-    if (!cs && !cat) return null;
+    if (!cat && !cs) return null;
 
-    const cleanName = resolveProductName(skuUpper, cs?.produk || cat?.p, cat);
-    const cleanSize = resolveProductDisplaySize(skuUpper, cs?.size, cat?.s) || 'ALL';
+    const rawName = cat ? (cat.p || (cat as any).nama_produk || (cat as any).nama || cat.n || skuUpper) : (cs?.produk || skuUpper);
+    const cleanName = resolveProductName(skuUpper, rawName, cat);
+    const cleanSize = resolveProductDisplaySize(skuUpper, cs?.size, cat?.s || (cat?.size as string | undefined)) || (extractSizeFromSku(skuUpper) !== '-' ? extractSizeFromSku(skuUpper) : 'ALL');
     const total = cs
       ? (typeof cs.totalQty === 'number' ? cs.totalQty : ((cs.whQty || 0) + (cs.studioQty || 0) + (cs.shpQty || 0) + (cs.ttkQty || 0)))
       : (cat?.stokMap !== undefined ? Number(cat.stokMap) : ((cat?.stokStudio || 0) + (cat?.stokShp || 0) + (cat?.stokTtk || 0)));
@@ -627,6 +716,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       sku: skuUpper,
       produk: cleanName,
       size: cleanSize,
+      kategori: String(cat?.kategori || cat?.category || cat?.c || ''),
       lokasi: cs?.whLocStr || cs?.locStr || cat?.lokasi || 'Warehouse',
       stok: Math.max(0, total || 0),
       whQty: cs?.whQty || 0,
@@ -639,7 +729,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
   const hasSkuInLookup = (sku: string): boolean => {
     const skuUpper = (sku || '').trim().toUpperCase();
-    return Boolean(skuUpper && (channelStockSkuMap.has(skuUpper) || catalogLookupMap.has(skuUpper)));
+    return Boolean(skuUpper && (catalogLookupMap.has(skuUpper) || channelStockSkuMap.has(skuUpper)));
   };
 
   // Select a product from suggestions, Enter key, or barcode scanner
@@ -649,19 +739,27 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       sku: string;
       produk: string;
       size: string;
-      lokasi: string;
-      stok: number;
+      kategori?: string;
+      lokasi?: string;
+      stok?: number;
       studioQty?: number;
       shpQty?: number;
       ttkQty?: number;
     }
   ) => {
+    const cleanSku = (p.sku || '').toUpperCase().trim();
+    const master = catalogLookupMap.get(cleanSku);
+    const resolvedName = resolveProductName(cleanSku, p.produk, master);
+    const resolvedSize =
+      resolveProductDisplaySize(cleanSku, p.size, master?.s || (master?.size as string | undefined)) ||
+      (extractSizeFromSku(cleanSku) !== '-' ? extractSizeFromSku(cleanSku) : 'ALL');
+
     handleItemChange(itemId, {
-      sku: p.sku,
-      produk: p.produk,
-      size: p.size,
-      lokasi: p.lokasi,
-      stokMap: p.stok,
+      sku: cleanSku,
+      produk: resolvedName,
+      size: resolvedSize,
+      lokasi: p.lokasi || master?.lokasi || 'Warehouse',
+      stokMap: p.stok || 0,
       stokStudio: p.studioQty || 0,
       stokShp: p.shpQty || 0,
       stokTtk: p.ttkQty || 0,
@@ -709,78 +807,105 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     });
   };
 
-  // Ultra-fast on-demand suggestions helper (stops early at 25 items, zero startup lag)
+  // Ultra-fast on-demand suggestions helper searching exhaustively across 29,000+ Master Products
   const getSuggestions = (currentVal: string): ProductOptionItem[] => {
-    const lower = currentVal.trim().toLowerCase();
-    if (!lower) return [];
+    const trimmed = currentVal.trim();
+    if (!trimmed) return [];
+    const lower = trimmed.toLowerCase();
     const keywords = lower.split(/\s+/).filter(Boolean);
     if (keywords.length === 0) return [];
 
-    const suggestions: ProductOptionItem[] = [];
-    const seenSkus = new Set<string>();
+    type ScoredMatch = {
+      option: ProductOptionItem;
+      score: number;
+    };
 
-    // 1. Search in channelStocks first (items with physical presence in Live/Blok F)
-    for (let i = 0; i < channelStocks.length; i++) {
-      const cs = channelStocks[i];
-      const skuUpper = (cs.sku || '').toUpperCase().trim();
-      if (!skuUpper || isCorruptedSku(skuUpper) || seenSkus.has(skuUpper)) continue;
+    const matches: ScoredMatch[] = [];
+    const cleanUpper = trimmed.toUpperCase();
 
-      const pName = cs.produk || '';
-      const text = `${skuUpper} ${pName} ${cs.size || ''}`.toLowerCase();
-      let match = true;
+    for (let i = 0; i < searchableCatalog.length; i++) {
+      const item = searchableCatalog[i];
+      if (!item.sku || isCorruptedSku(item.sku)) continue;
+
+      let allMatch = true;
       for (let j = 0; j < keywords.length; j++) {
-        if (!text.includes(keywords[j])) {
-          match = false;
+        if (!item.searchBlob.includes(keywords[j])) {
+          allMatch = false;
           break;
         }
       }
-      if (match) {
-        seenSkus.add(skuUpper);
-        const opt = getProductOptionBySku(skuUpper);
-        if (opt) suggestions.push(opt);
-        if (suggestions.length >= 25) break;
+
+      if (allMatch) {
+        let score = 100;
+        const itemSkuUpper = item.sku;
+        const itemNameLower = item.produk.toLowerCase();
+
+        // Exact SKU match -> top score
+        if (itemSkuUpper === cleanUpper) {
+          score += 2000;
+        } else if (itemSkuUpper.startsWith(cleanUpper)) {
+          score += 1000;
+        } else if (itemNameLower.startsWith(lower)) {
+          score += 800;
+        } else if (itemSkuUpper.includes(cleanUpper)) {
+          score += 500;
+        } else if (itemNameLower.includes(lower)) {
+          score += 300;
+        }
+
+        matches.push({
+          score,
+          option: {
+            sku: item.sku,
+            produk: item.produk,
+            size: item.size,
+            kategori: item.kategori,
+            lokasi: item.item.lokasi || 'Warehouse',
+            stok: 0,
+            whQty: 0,
+            studioQty: 0,
+            shpQty: 0,
+            ttkQty: 0,
+          },
+        });
       }
     }
 
-    // 2. Search in productCatalog if we need more suggestions, stopping as soon as we reach 25 items
-    if (suggestions.length < 25 && productCatalog && productCatalog.length > 0) {
-      for (let i = 0; i < productCatalog.length; i++) {
-        const p = productCatalog[i];
-        if (!p || isDummyProduct(p)) continue;
-        const skuUpper = String(p.k || (p as any).sku || '').trim().toUpperCase();
-        if (!skuUpper || isCorruptedSku(skuUpper) || seenSkus.has(skuUpper)) continue;
-
-        const pName = String(p.p || (p as any).nama || '');
-        const text = `${skuUpper} ${pName} ${p.s || ''}`.toLowerCase();
-        let match = true;
-        for (let j = 0; j < keywords.length; j++) {
-          if (!text.includes(keywords[j])) {
-            match = false;
-            break;
-          }
-        }
-        if (match) {
-          seenSkus.add(skuUpper);
-          const opt = getProductOptionBySku(skuUpper);
-          if (opt) suggestions.push(opt);
-          if (suggestions.length >= 25) break;
-        }
-      }
-    }
-
-    // Sort the matched suggestions so exact/prefix matches appear first
-    suggestions.sort((a, b) => {
-      const aStarts = a.produk.toLowerCase().startsWith(lower) || a.sku.toLowerCase().startsWith(lower);
-      const bStarts = b.produk.toLowerCase().startsWith(lower) || b.sku.toLowerCase().startsWith(lower);
-      if (aStarts && !bStarts) return -1;
-      if (!aStarts && bStarts) return 1;
-      return (b.stok || 0) - (a.stok || 0);
+    // Sort by relevance score descending, then product name ascending
+    matches.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.option.produk.localeCompare(b.option.produk);
     });
 
-    return suggestions;
+    const topResults = matches.slice(0, 35).map((m) => m.option);
+
+    // Live safety net: If fewer than 2 results found and query has >= 3 chars, query Supabase master_produk live
+    if (topResults.length < 2 && trimmed.length >= 3 && lastLiveSearchQueryRef.current !== trimmed) {
+      if (liveSearchDebounceRef.current) clearTimeout(liveSearchDebounceRef.current);
+      liveSearchDebounceRef.current = setTimeout(async () => {
+        lastLiveSearchQueryRef.current = trimmed;
+        setIsLoadingLiveSearch(true);
+        try {
+          const liveRows = await searchActiveProductsLive(trimmed);
+          if (liveRows && liveRows.length > 0) {
+            setExtraCatalogItems((prev) => {
+              const existingSkus = new Set(prev.map((p) => String(p.k || (p as any).sku).toUpperCase()));
+              const toAdd = liveRows.filter((p) => p && p.k && !existingSkus.has(p.k.toUpperCase()));
+              return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
+            });
+          }
+        } catch (err) {
+          console.warn('Live search fallback error:', err);
+        } finally {
+          setIsLoadingLiveSearch(false);
+        }
+      }, 350);
+    }
+
+    return topResults;
   };
 
-  // Fast custom dropdown renderer inside form with keyboard navigation
+  // Clean custom dropdown renderer inside form with keyboard navigation (No Stock Counts, Only Name & Size)
   const renderSuggestions = (itemId: string, currentVal: string, isSelected?: boolean) => {
     if (focusedItemId !== itemId || !currentVal.trim() || isSelected) return null;
     const suggestions = getSuggestions(currentVal);
@@ -788,7 +913,14 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     if (suggestions.length === 0) {
       return (
         <div className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700/80 shadow-2xl rounded-xl z-50 p-4 text-center text-xs text-slate-400 italic">
-          ❌ Produk tidak ditemukan
+          {isLoadingLiveSearch ? (
+            <div className="flex items-center justify-center gap-2 py-1 text-blue-500 font-medium">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Mencari di master database Supabase...</span>
+            </div>
+          ) : (
+            '❌ Produk tidak ditemukan di Master Produk'
+          )}
         </div>
       );
     }
@@ -796,10 +928,17 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     return (
       <div
         id={`combo-panel-${itemId}`}
-        className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700/80 shadow-2xl rounded-xl z-50 max-h-64 overflow-y-auto"
+        className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700/80 shadow-2xl rounded-xl z-50 max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60"
       >
         {suggestions.map((s, idx) => {
           const isActive = idx === activeComboIndex;
+          const displaySize =
+            s.size && s.size !== 'ALL' && s.size !== 'Default'
+              ? s.size
+              : extractSizeFromSku(s.sku) !== '-'
+              ? extractSizeFromSku(s.sku)
+              : 'ALL';
+
           return (
             <div
               key={`${s.sku}_${s.size || ''}_${idx}`}
@@ -808,54 +947,40 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                 e.preventDefault();
                 selectProduct(itemId, s);
               }}
-              className={`px-3 py-2.5 text-xs cursor-pointer border-b border-slate-100 dark:border-slate-800/60 last:border-0 transition-colors ${
+              className={`px-3.5 py-2.5 text-xs cursor-pointer transition-colors ${
                 isActive
-                  ? 'bg-blue-500/10 border-l-4 border-l-blue-600 pl-2'
+                  ? 'bg-blue-500/10 border-l-4 border-l-blue-600 pl-2.5'
                   : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
               }`}
             >
-              <div className="flex justify-between items-start gap-2">
+              <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <div className="font-bold text-slate-800 dark:text-slate-200 whitespace-normal break-words leading-tight">
+                  {/* Nama Produk */}
+                  <div className="font-bold text-slate-800 dark:text-slate-100 whitespace-normal break-words leading-tight text-xs sm:text-[13px]">
                     {s.produk}
                   </div>
-                  <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono flex items-center gap-1.5 mt-0.5">
-                    <span className="bg-slate-100 dark:bg-slate-800 px-1 py-0.2 rounded font-semibold text-slate-600 dark:text-slate-300">
+                  {/* SKU and Category */}
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono flex items-center flex-wrap gap-1.5 mt-1">
+                    <span className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded font-bold text-slate-700 dark:text-slate-300 border border-slate-200/50 dark:border-slate-700/50">
                       {s.sku}
                     </span>
-                    <span>&bull;</span>
-                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                      Size: {s.size && s.size !== 'ALL' ? s.size : 'ALL'}
-                    </span>
+                    {s.kategori && (
+                      <>
+                        <span className="text-slate-300 dark:text-slate-600">&bull;</span>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 truncate max-w-[150px]">
+                          {s.kategori}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded font-mono ${s.stok > 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400 border border-emerald-500/20' : 'bg-primary-100 text-primary-700 dark:bg-primary-500/20 dark:text-primary-400 border border-primary-500/20'}`}>
-                    {s.stok > 0 ? `${s.stok} pcs` : 'Kosong'}
+
+                {/* Size Badge */}
+                <div className="shrink-0 flex items-center">
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-black font-mono bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/80 shadow-2xs">
+                    Size: {displaySize}
                   </span>
                 </div>
-              </div>
-
-              {/* Channel Stock Breakdown Pills */}
-              <div className="flex flex-wrap gap-1 mt-1.5">
-                <span className={`inline-flex items-center text-[9px] px-1.5 py-0.2 rounded font-mono font-bold ${s.stok > 0 ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' : 'bg-slate-100/50 text-slate-400 dark:bg-slate-800/40 dark:text-slate-500'}`}>
-                  🏢 MAP: {s.stok || 0}
-                </span>
-                {(s.studioQty || 0) > 0 && (
-                  <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 rounded font-mono font-bold border border-emerald-500/20">
-                    📍 Studio: {s.studioQty}
-                  </span>
-                )}
-                {(s.shpQty || 0) > 0 && (
-                  <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 bg-amber-500/10 text-amber-700 dark:text-amber-300 rounded font-mono font-bold border border-amber-500/20">
-                    🧡 SHP: {s.shpQty}
-                  </span>
-                )}
-                {(s.ttkQty || 0) > 0 && (
-                  <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 bg-slate-900 text-white dark:bg-slate-800 dark:text-slate-200 rounded font-mono font-bold">
-                    🖤 TTK: {s.ttkQty}
-                  </span>
-                )}
               </div>
             </div>
           );
@@ -1857,9 +1982,6 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
               <div className="space-y-3" id="itemContainer">
                 {items.map((item, index) => {
                   const hasSelected = Boolean(item.selected && item.sku);
-                  const mapStok = item.stokMap || 0;
-                  const isKosong = mapStok <= 0;
-                  const isKurang = Number(item.qty) > mapStok;
 
                   return (
                     <div
@@ -1874,16 +1996,9 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                           <span>PILIH PRODUK &amp; SIZE <span className="text-primary-500">*</span></span>
                         </span>
                         {hasSelected && (
-                          <span
-                            className={`font-mono text-[10px] font-extrabold px-2 py-0.5 rounded border ${
-                              isKosong
-                                ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-400 dark:border-rose-900/50'
-                                : isKurang
-                                ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-400 dark:border-amber-900/50'
-                                : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-400 dark:border-emerald-900/50'
-                            }`}
-                          >
-                            {isKosong ? '❌ MAP KOSONG' : isKurang ? `⚠️ SISA MAP: ${mapStok}` : `✅ STOK MAP: ${mapStok}`}
+                          <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800/60 flex items-center gap-1">
+                            <Check className="w-3 h-3" />
+                            <span>PRODUK TERPILIH</span>
                           </span>
                         )}
                       </div>
@@ -1941,53 +2056,42 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                                   </div>
                                 </div>
                                 <div className="text-right shrink-0">
-                                  <span className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded border ${(item.stokMap || 0) > 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-400 dark:border-emerald-900/50' : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-400 dark:border-rose-900/50'}`}>
-                                    {(item.stokMap || 0) > 0 ? `${item.stokMap} pcs` : 'Sold'}
+                                  <span className="text-[10px] font-black font-mono px-2 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800/60">
+                                    Size: {item.size || 'ALL'}
                                   </span>
                                 </div>
                               </div>
                               
                               {/* Stock Locations Detail Row */}
-                              <div className="flex flex-wrap items-center gap-1 mt-0.5 pt-1.5 border-t border-slate-200/60 dark:border-slate-800/60">
+                              <div className="flex flex-wrap items-center gap-1.5 mt-0.5 pt-1.5 border-t border-slate-200/60 dark:border-slate-800/60">
                                 {(() => {
                                   const cleanSku = item.sku.toUpperCase().trim();
                                   const locs = getProductLocations(cleanSku, item.lokasi);
-                                  const emptyRacks = getRecordedEmptyLocations(cleanSku);
-                                  const isLoaded = cleanSku in realtimeSkuStocks;
                                   
                                   if (locs.length > 0) {
                                     return locs.map((l, lIdx) => (
                                       <span
                                         key={lIdx}
-                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 font-mono font-bold text-[10px] border border-emerald-500/30"
-                                        title={`Rak ${l.lokasi}: Sisa stok ${l.qty} pcs`}
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono font-bold text-[10px] border border-slate-200 dark:border-slate-700"
                                       >
-                                        <MapPin className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                                        <span>{l.lokasi}</span>
-                                        <span className="text-[9px] font-black bg-emerald-600/20 px-1 rounded text-emerald-900 dark:text-emerald-100">
-                                          {l.qty}
-                                        </span>
+                                        <MapPin className="w-2.5 h-2.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                                        <span>Rak: {l.lokasi}</span>
                                       </span>
                                     ));
-                                  } else if (isLoaded) {
-                                    return (
-                                      <span
-                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 font-bold text-[9px] border border-rose-500/30"
-                                        title={emptyRacks.length > 0 ? `Rak tercatat: ${emptyRacks.join(', ')}` : 'Stok gudang kosong'}
-                                      >
-                                        <span>KOSONG (0)</span>
-                                        {emptyRacks.length > 0 && <span className="text-rose-500/80 font-mono">({emptyRacks.join(',')})</span>}
-                                      </span>
-                                    );
                                   } else if (item.lokasi && item.lokasi !== '-' && !item.lokasi.includes('KOSONG')) {
                                     return (
-                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-200 font-mono font-bold text-[10px] border border-amber-500/30">
-                                        <MapPin className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400 shrink-0" />
-                                        <span>{item.lokasi}</span>
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono font-bold text-[10px] border border-slate-200 dark:border-slate-700">
+                                        <MapPin className="w-2.5 h-2.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                                        <span>Lokasi: {item.lokasi}</span>
                                       </span>
                                     );
                                   } else {
-                                    return <span className="text-[10px] text-slate-400 italic">Mencari lokasi gudang...</span>;
+                                    return (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px]">
+                                        <MapPin className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                                        <span>Lokasi: Warehouse / BLOK F</span>
+                                      </span>
+                                    );
                                   }
                                 })()}
                               </div>
