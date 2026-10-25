@@ -2624,49 +2624,108 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
           ============================================================================ */}
       {isSetupModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-          <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+          <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
             {/* Modal Header */}
-            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
               <div>
                 <h3 className="text-base font-black text-slate-900 dark:text-white">
                   Setup Kapasitas Rak, Kategori Zona &amp; Lokasi Gudang
                 </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   Atur kapasitas maksimal secara massal per zona (A=Dress, B=Bottom, C=Top, D=Sale), tambah area baru, atau ubah spesifik per rak.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsSetupModalOpen(false)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+                title="Tutup Modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Modal Tabs */}
-            <div className="px-5 pt-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2 bg-slate-50/60 dark:bg-[#0E1420] overflow-x-auto">
-              {(
-                [
-                  { id: 'ZONES', label: '1. Setup Massal Per Zona (A - D & Area)' },
-                  { id: 'SINGLE_OVERRIDE', label: '2. Edit Spesifik Per Nomor Rak' },
-                  { id: 'ADD_ZONE', label: '3. Tambah Area / Rentang Lokasi Baru' },
-                  { id: 'BUFFER_RULES', label: '4. Setup Buffer & Aturan Evakuasi / Refill' },
-                ] as const
-              ).map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setSetupTab(t.id)}
-                  className={`px-3.5 py-2 text-xs font-extrabold rounded-t-xl border-b-2 transition-colors cursor-pointer whitespace-nowrap ${
-                    setupTab === t.id
-                      ? 'border-amber-500 text-slate-900 dark:text-white bg-white dark:bg-[#131d31]'
-                      : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
+            {/* Modal Tabs (Responsive Grid 2x2 on Mobile, 4-Cols on Desktop - Bebas Tenggelam & Anti-Scrollbar) */}
+            <div className="p-3 sm:px-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-[#0E1420] shrink-0">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                {[
+                  {
+                    id: 'ZONES' as const,
+                    number: '1',
+                    title: 'Setup Zona Massal',
+                    subtitle: 'Zona A - D & Area',
+                  },
+                  {
+                    id: 'SINGLE_OVERRIDE' as const,
+                    number: '2',
+                    title: 'Edit Spesifik Rak',
+                    subtitle: 'Per Nomor Lokasi',
+                  },
+                  {
+                    id: 'ADD_ZONE' as const,
+                    number: '3',
+                    title: 'Tambah Area Baru',
+                    subtitle: 'Rentang Lokasi Baru',
+                  },
+                  {
+                    id: 'BUFFER_RULES' as const,
+                    number: '4',
+                    title: 'Buffer & Evakuasi',
+                    subtitle: 'Aturan Refill Koli',
+                    badge: 'REFILL',
+                  },
+                ].map((t) => {
+                  const isActive = setupTab === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setSetupTab(t.id)}
+                      className={`p-2.5 rounded-xl border transition-all text-left flex items-start gap-2.5 cursor-pointer relative overflow-hidden ${
+                        isActive
+                          ? 'bg-white dark:bg-[#131d31] border-amber-500 shadow-sm ring-1 ring-amber-500/30'
+                          : 'bg-slate-100/70 hover:bg-white dark:bg-slate-800/40 dark:hover:bg-slate-800 border-slate-200/80 dark:border-slate-800/80 text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      <div
+                        className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 text-xs font-black transition-colors ${
+                          isActive
+                            ? 'bg-amber-500 text-white shadow-xs'
+                            : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        {t.number}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`text-xs font-extrabold truncate block ${
+                              isActive
+                                ? 'text-slate-900 dark:text-white'
+                                : 'text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            {t.title}
+                          </span>
+                          {'badge' in t && t.badge && (
+                            <span className="hidden sm:inline-block text-[8px] font-black px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                              {t.badge}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 truncate block mt-0.5">
+                          {t.subtitle}
+                        </span>
+                      </div>
+
+                      {isActive && (
+                        <div className="absolute top-0 right-0 w-2 h-2 bg-amber-500 rounded-bl-md" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Modal Content */}
