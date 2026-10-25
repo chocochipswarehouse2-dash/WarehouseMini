@@ -66,6 +66,7 @@ import {
   fetchOutlets,
   DEFAULT_OUTLETS,
   getFullStoreName,
+  getStoreContact,
   OutletItem
 } from '../../services/gasManualShipment';
 import { formatProductNameWithSize } from '../../utils/sortUtils';
@@ -436,14 +437,22 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
 
   // Init form fields
   useEffect(() => {
+    const effectiveOutlet = formOutlet || userAssignedStore || (outlets.length > 0 ? outlets[0].nama : DEFAULT_OUTLETS[0].nama);
     if (!formOutlet && userAssignedStore) {
       setFormOutlet(userAssignedStore);
+    }
+    // Default no. WA PIC Store beracuan pada data resmi kontak store
+    if (!formPicStorePhone && effectiveOutlet) {
+      const contact = getStoreContact(effectiveOutlet);
+      if (contact && contact.no_wa) {
+        setFormPicStorePhone(contact.no_wa);
+      }
     }
     // PIC Store sengaja dibiarkan KOSONG agar PIC / SA toko wajib mengetikkan nama asli mereka sendiri
     if (!formPerkiraanSelesai) {
       setFormPerkiraanSelesai(getDefaultTargetDate());
     }
-  }, [userAssignedStore, formOutlet, formPerkiraanSelesai]);
+  }, [userAssignedStore, formOutlet, formPicStorePhone, formPerkiraanSelesai, outlets]);
 
   // Filter only Alteration & Repair orders count for Rekap indicator
   const alterationOrdersCount = useMemo(() => {
@@ -1081,7 +1090,14 @@ _WMS Warehouse & Alteration System_`;
               </label>
               <select
                 value={formOutlet || (outlets.length > 0 ? outlets[0].nama : DEFAULT_OUTLETS[0].nama)}
-                onChange={(e) => setFormOutlet(e.target.value)}
+                onChange={(e) => {
+                  const newOut = e.target.value;
+                  setFormOutlet(newOut);
+                  const storeContact = getStoreContact(newOut);
+                  if (storeContact && storeContact.no_wa) {
+                    setFormPicStorePhone(storeContact.no_wa);
+                  }
+                }}
                 className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-rose-500 text-xs"
               >
                 {(outlets.length > 0 ? outlets : DEFAULT_OUTLETS).map((o) => (

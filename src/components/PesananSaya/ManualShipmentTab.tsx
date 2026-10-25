@@ -883,8 +883,11 @@ _WMS Warehouse System_`;
         }
       }
 
-      // 2. Resolve Phone Number from session or database
-      if (!telpPengirim) {
+      // 2. Resolve Phone Number: Default ke nomor WhatsApp resmi store
+      const storeContact = getStoreContact(targetStore);
+      if (storeContact && storeContact.no_wa && storeContact.no_wa.trim()) {
+        if (isMounted) setTelpPengirim(storeContact.no_wa.trim());
+      } else if (!telpPengirim) {
         if (session.no_hp && session.no_hp.trim()) {
           if (isMounted) setTelpPengirim(session.no_hp.trim());
         } else {
@@ -1641,6 +1644,10 @@ _WMS Warehouse System_`;
                     const newStore = e.target.value;
                     setPengirim(newStore);
                     setTransCustomer(generateManualShipmentOrderId(orders, newStore));
+                    const contact = getStoreContact(newStore);
+                    if (contact && contact.no_wa) {
+                      setTelpPengirim(contact.no_wa);
+                    }
                   }}
                   className={`w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-xs sm:text-sm py-2 px-3 font-semibold ${
                     !userIsAdmin && !!userAssignedStore

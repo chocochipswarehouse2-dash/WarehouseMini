@@ -236,6 +236,43 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
   },
 
   {
+    id: 'faq-default-no-wa-store-pic',
+    category: 'manual_shipment',
+    question: 'Dari mana nomor WhatsApp PIC Store terisi otomatis di form Manual Shipment & Alteration?',
+    answer: 'Nomor WhatsApp PIC Store otomatis terisi secara default dari Master Kontak Toko (Pengaturan > Store & Outlet) yang tersimpan di database Supabase.',
+    target_audience: 'all',
+
+    // PERSPEKTIF ADMIN GUDANG
+    answer_admin: 'Admin dapat memperbarui nomor WhatsApp resmi masing-masing store melalui menu Pengaturan ➔ Tab "Store & Outlet". Seluruh notifikasi otomatis Fonnte (konfirmasi submit, penerbitan resi, pembatalan pesanan, dan kendala barang kosong) akan mengacu ke nomor WA resmi toko yang terdaftar.',
+    action_steps_admin: [
+      { step: 1, title: 'Buka Pengaturan Store & Outlet', desc: 'Buka SettingsModal ➔ klik tab "Store & Outlet".' },
+      { step: 2, title: 'Klik Edit (Pensil) pada Baris Toko', desc: 'Perbarui nomor WhatsApp resmi toko. Data otomatis tersimpan ke Cloud Supabase.' },
+      { step: 3, title: 'Notifikasi Otomatis Terintegrasi', desc: 'Sistem Fonnte akan otomatis mengarahkan seluruh broadcast dan alert order ke nomor resmi tersebut.' }
+    ],
+    button_badges_admin: [
+      { label: 'Store & Outlet', color: 'blue', icon: 'Store' },
+      { label: 'Master No. WhatsApp', color: 'emerald', icon: 'Phone' }
+    ],
+    admin_notes: 'ℹ️ Nomor WA yang disimpan di Store & Outlet langsung menjadi default saat form Manual Shipment atau Alteration dibuka oleh cabang.',
+
+    // PERSPEKTIF TIM STORE / OUTLET
+    answer_store: 'Nomor WhatsApp PIC Store akan terisi secara otomatis dengan nomor resmi toko Anda sesuai akun login atau pilihan toko pengirim. Jika ada staf/SA tertentu yang memegang kendali atas pesanan khusus ini, nomor tersebut tetap dapat diedit secara manual sebelum mengirim pesanan.',
+    action_steps_store: [
+      { step: 1, title: 'Buka Form Pesanan / Alterasi', desc: 'Pilih nama toko pengirim. Nomor WhatsApp resmi toko akan otomatis muncul di kolom No. HP Store.' },
+      { step: 2, title: 'Ketik Nama Asli PIC Store', desc: 'Tuliskan nama Anda di kolom PIC Store / SA.' },
+      { step: 3, title: 'Kirim Pesanan', desc: 'Notifikasi status dan pesan konfirmasi dari sistem gudang akan dikirim ke nomor WA toko tersebut.' }
+    ],
+    button_badges_store: [
+      { label: 'No. HP PIC Terisi Otomatis', color: 'emerald', icon: 'Phone' },
+      { label: 'PIC Store * (Wajib Isi Nama)', color: 'rose', icon: 'User' }
+    ],
+    store_notes: '💡 Nomor WA toko terisi otomatis agar seluruh update gudang langsung masuk ke HP operasional toko Anda.',
+
+    keywords: ['no wa store', 'no hp store', 'pic store', 'kontak toko', 'notifikasi wa', 'fonnte', 'default hp', 'store outlet'],
+    view_count: 85
+  },
+
+  {
     id: 'faq-id-form-alter-manual',
     category: 'alteration_repair',
     question: 'No. ID Form Alter diisi apa dan oleh siapa? Apakah boleh dikosongkan?',

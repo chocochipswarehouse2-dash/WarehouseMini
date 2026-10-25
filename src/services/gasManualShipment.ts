@@ -16,6 +16,7 @@ export const STORE_CODE_TO_FULL_NAME: Record<string, string> = {
   DPM: 'Deli Park Medan',
   GST: 'Gading Serpong Tangerang',
   LMP: 'Lippo Mall Puri',
+  LVT: 'La Vela Tangerang',
   LVL: 'La Vela Tangerang',
   LWS: 'Living World Tangerang',
   MKG: 'Mall Kelapa Gading',
@@ -26,6 +27,7 @@ export const STORE_CODE_TO_FULL_NAME: Record<string, string> = {
   SPM: 'Sun Plaza Medan',
   TP: 'Tunjungan Plaza Surabaya',
   KYTE: 'Kyte',
+  SMS: 'Bazaar Summarecon Mall Serpong',
 };
 
 /**
@@ -106,7 +108,7 @@ export function getFullStoreName(storeNameOrCode?: string): string {
   if (lower === 'lippomallpuri' || lower === 'lippopuri' || lower === 'lmp' || lower === 'chocolmp') {
     return 'Lippo Mall Puri';
   }
-  if (lower === 'lavela' || lower === 'lavelatangerang' || lower === 'lvl' || lower === 'chocolvl') {
+  if (lower === 'lavela' || lower === 'lavelatangerang' || lower === 'lvl' || lower === 'lvt' || lower === 'chocolvl' || lower === 'chocolvt') {
     return 'La Vela Tangerang';
   }
   if (lower === 'neosoho' || lower === 'neosohojakarta' || lower === 'nsj' || lower === 'choconsj') {
@@ -164,7 +166,7 @@ export const DEFAULT_OUTLETS: { nama: string; fulfillment: string; kode: string 
   { nama: 'Deli Park Medan', fulfillment: 'Deli Park Medan', kode: 'DPM' },
   { nama: 'Gading Serpong Tangerang', fulfillment: 'Gading Serpong Tangerang', kode: 'GST' },
   { nama: 'Lippo Mall Puri', fulfillment: 'Lippo Mall Puri', kode: 'LMP' },
-  { nama: 'La Vela Tangerang', fulfillment: 'La Vela Tangerang', kode: 'LVL' },
+  { nama: 'La Vela Tangerang', fulfillment: 'La Vela Tangerang', kode: 'LVT' },
   { nama: 'Living World Tangerang', fulfillment: 'Living World Tangerang', kode: 'LWS' },
   { nama: 'Mall Kelapa Gading', fulfillment: 'Mall Kelapa Gading', kode: 'MKG' },
   { nama: 'Neo Soho Jakarta', fulfillment: 'Neo Soho Jakarta', kode: 'NSJ' },
@@ -174,6 +176,7 @@ export const DEFAULT_OUTLETS: { nama: string; fulfillment: string; kode: string 
   { nama: 'Sun Plaza Medan', fulfillment: 'Sun Plaza Medan', kode: 'SPM' },
   { nama: 'Tunjungan Plaza Surabaya', fulfillment: 'Tunjungan Plaza Surabaya', kode: 'TP' },
   { nama: 'Kyte', fulfillment: 'Kyte', kode: 'KYTE' },
+  { nama: 'Bazaar Summarecon Mall Serpong', fulfillment: 'Bazaar Summarecon Mall Serpong', kode: 'SMS' },
 ];
 
 /**
@@ -189,23 +192,24 @@ export interface OutletContactInfo {
 }
 
 export const DEFAULT_STORE_CONTACTS: Record<string, OutletContactInfo> = {
-  'Central Park Jakarta': { nama: 'Central Park Jakarta', kode: 'CPJ', no_wa: '081288990011', alamat_store: 'Mall Central Park Lt. 1 No. 102, Jakarta Barat', email_store: 'cpj.store@chocochips.id' },
-  'Gading Serpong Tangerang': { nama: 'Gading Serpong Tangerang', kode: 'GST', no_wa: '081288990022', alamat_store: 'Ruko Gading Serpong Blok AA3 No. 12, Tangerang', email_store: 'gst.store@chocochips.id' },
-  'By The Sea PIK': { nama: 'By The Sea PIK', kode: 'BTS', no_wa: '081288990033', alamat_store: 'By The Sea Shopping District PIK Unit 18, Jakarta Utara', email_store: 'bts.store@chocochips.id' },
-  'Lippo Mall Puri': { nama: 'Lippo Mall Puri', kode: 'LMP', no_wa: '081288990044', alamat_store: 'Lippo Mall Puri Lt. LG Unit 45, Jakarta Barat', email_store: 'lmp.store@chocochips.id' },
-  'Mall Kelapa Gading': { nama: 'Mall Kelapa Gading', kode: 'MKG', no_wa: '081288990055', alamat_store: 'Mall Kelapa Gading 3 Lt. 2 No. 201, Jakarta Utara', email_store: 'mkg.store@chocochips.id' },
-  'Neo Soho Jakarta': { nama: 'Neo Soho Jakarta', kode: 'NSJ', no_wa: '081288990066', alamat_store: 'Neo Soho Mall Lt. UG Unit 210, Jakarta Barat', email_store: 'nsj.store@chocochips.id' },
-  'Pondok Indah Mall': { nama: 'Pondok Indah Mall', kode: 'PIM', no_wa: '081288990077', alamat_store: 'Pondok Indah Mall 2 Lt. 1 No. 115, Jakarta Selatan', email_store: 'pim.store@chocochips.id' },
-  'La Vela Tangerang': { nama: 'La Vela Tangerang', kode: 'LVL', no_wa: '081288990088', alamat_store: 'Ruko La Vela No. 8 Gading Serpong, Tangerang', email_store: 'lvl.store@chocochips.id' },
-  'Living World Tangerang': { nama: 'Living World Tangerang', kode: 'LWS', no_wa: '081288990099', alamat_store: 'Living World Alam Sutera Lt. 1 No. 108, Tangerang', email_store: 'lws.store@chocochips.id' },
-  'Gaia Pontianak': { nama: 'Gaia Pontianak', kode: 'GAIA', no_wa: '081288990100', alamat_store: 'Gaia Bumi Raya City Lt. Ground No. 22, Pontianak', email_store: 'gaia.store@chocochips.id' },
-  'Ciputra World Surabaya': { nama: 'Ciputra World Surabaya', kode: 'CWS', no_wa: '081288990111', alamat_store: 'Ciputra World Surabaya Lt. 2 Unit 214, Surabaya', email_store: 'cws.store@chocochips.id' },
-  'Pakuwon Mall Surabaya': { nama: 'Pakuwon Mall Surabaya', kode: 'PMS', no_wa: '081288990122', alamat_store: 'Pakuwon Mall Lt. 1 No. 152, Surabaya', email_store: 'pms.store@chocochips.id' },
-  'Tunjungan Plaza Surabaya': { nama: 'Tunjungan Plaza Surabaya', kode: 'TP', no_wa: '081288990133', alamat_store: 'Tunjungan Plaza 3 Lt. 3 No. 308, Surabaya', email_store: 'tp.store@chocochips.id' },
-  'Deli Park Medan': { nama: 'Deli Park Medan', kode: 'DPM', no_wa: '081288990144', alamat_store: 'Deli Park Mall Lt. LG Unit 12, Medan', email_store: 'dpm.store@chocochips.id' },
-  'Sun Plaza Medan': { nama: 'Sun Plaza Medan', kode: 'SPM', no_wa: '081288990155', alamat_store: 'Sun Plaza Lt. 1 No. 118, Medan', email_store: 'spm.store@chocochips.id' },
-  'Paskal Hyper Square Bandung': { nama: 'Paskal Hyper Square Bandung', kode: 'PHB', no_wa: '081288990166', alamat_store: '23 Paskal Shopping Center Lt. 1 No. 122, Bandung', email_store: 'phb.store@chocochips.id' },
-  'Kyte': { nama: 'Kyte', kode: 'KYTE', no_wa: '081288990177', alamat_store: 'Kyte Flagship Store No. 5, Jakarta', email_store: 'kyte.store@chocochips.id' },
+  'Central Park Jakarta': { nama: 'Central Park Jakarta', kode: 'CPJ', no_wa: '+62 851-1989-9880', alamat_store: '', email_store: '' },
+  'Gading Serpong Tangerang': { nama: 'Gading Serpong Tangerang', kode: 'GST', no_wa: '+62 851-1989-8833', alamat_store: '', email_store: '' },
+  'La Vela Tangerang': { nama: 'La Vela Tangerang', kode: 'LVT', no_wa: '+62 851-7780-0877', alamat_store: '', email_store: '' },
+  'Living World Tangerang': { nama: 'Living World Tangerang', kode: 'LWS', no_wa: '+62 851-1989-8811', alamat_store: '', email_store: '' },
+  'Lippo Mall Puri': { nama: 'Lippo Mall Puri', kode: 'LMP', no_wa: '+62 851-1989-8855', alamat_store: '', email_store: '' },
+  'Paskal Hyper Square Bandung': { nama: 'Paskal Hyper Square Bandung', kode: 'PHB', no_wa: '+62 851-1989-9009', alamat_store: '', email_store: '' },
+  'By The Sea PIK': { nama: 'By The Sea PIK', kode: 'BTS', no_wa: '+62 882-9104-2802', alamat_store: '', email_store: '' },
+  'Pakuwon Mall Surabaya': { nama: 'Pakuwon Mall Surabaya', kode: 'PMS', no_wa: '+62 851-2277-8805', alamat_store: '', email_store: '' },
+  'Ciputra World Surabaya': { nama: 'Ciputra World Surabaya', kode: 'CWS', no_wa: '+62 851-2277-8885', alamat_store: '', email_store: '' },
+  'Gaia Pontianak': { nama: 'Gaia Pontianak', kode: 'GAIA', no_wa: '+62 851-1989-7900', alamat_store: '', email_store: '' },
+  'Mall Kelapa Gading': { nama: 'Mall Kelapa Gading', kode: 'MKG', no_wa: '+62 851-1989-3339', alamat_store: '', email_store: '' },
+  'Sun Plaza Medan': { nama: 'Sun Plaza Medan', kode: 'SPM', no_wa: '+62 851-1989-7800', alamat_store: '', email_store: '' },
+  'Deli Park Medan': { nama: 'Deli Park Medan', kode: 'DPM', no_wa: '+62 851-1989-9008', alamat_store: '', email_store: '' },
+  'Bazaar Summarecon Mall Serpong': { nama: 'Bazaar Summarecon Mall Serpong', kode: 'SMS', no_wa: '', alamat_store: '', email_store: '' },
+  'Neo Soho Jakarta': { nama: 'Neo Soho Jakarta', kode: 'NSJ', no_wa: '', alamat_store: '', email_store: '' },
+  'Pondok Indah Mall': { nama: 'Pondok Indah Mall', kode: 'PIM', no_wa: '', alamat_store: '', email_store: '' },
+  'Tunjungan Plaza Surabaya': { nama: 'Tunjungan Plaza Surabaya', kode: 'TP', no_wa: '', alamat_store: '', email_store: '' },
+  'Kyte': { nama: 'Kyte', kode: 'KYTE', no_wa: '', alamat_store: '', email_store: '' },
 };
 
 export function getAllStoreContacts(): Record<string, OutletContactInfo> {
@@ -501,14 +505,13 @@ export async function fetchOutlets(): Promise<OutletItem[]> {
           if (docData.section_id === 'store_contacts_directory' && docData.content) {
             try {
               const parsed = JSON.parse(docData.content);
-              const localRaw = localStorage.getItem('wms_store_contacts_directory');
-              const localContacts = localRaw ? JSON.parse(localRaw) : {};
-              const merged = { ...localContacts, ...parsed };
-              // Auto-heal jika kode Gading Serpong Tangerang sempat tertimpa menjadi SMS
-              if (merged['Gading Serpong Tangerang'] && merged['Gading Serpong Tangerang'].kode === 'SMS') {
-                merged['Gading Serpong Tangerang'].kode = 'GST';
+              if (parsed && typeof parsed === 'object') {
+                // Auto-heal jika kode Gading Serpong Tangerang sempat tertimpa menjadi SMS
+                if (parsed['Gading Serpong Tangerang'] && parsed['Gading Serpong Tangerang'].kode === 'SMS') {
+                  parsed['Gading Serpong Tangerang'].kode = 'GST';
+                }
+                localStorage.setItem('wms_store_contacts_directory', JSON.stringify(parsed));
               }
-              localStorage.setItem('wms_store_contacts_directory', JSON.stringify(merged));
             } catch {}
           }
           if (docData.section_id === 'deleted_outlets_directory' && docData.content) {
