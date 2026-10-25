@@ -42,6 +42,7 @@ import {
   DEFAULT_OUTLETS,
   OutletItem,
   getStoreContact,
+  resolveOrderFulfillmentStores,
 } from '../../services/gasManualShipment';
 import { clearDeltaSyncCache } from '../../services/gasSync';
 import { sendFonnteMessage, getFonnteConfig } from '../../services/whatsapp';
@@ -1423,6 +1424,61 @@ _WMS Warehouse System_`;
                 }
               })
               .catch((err) => console.warn('WA submit notice error:', err));
+          }
+        }
+
+        // 3. Notifikasi Otomatis ke Store Penyedia Barang (Inter-Store Fulfillment)
+        // Jika ada produk yang dialokasikan dari toko cabang lain, kirim permintaan kirim barang langsung ke WA resmi store penyedia!
+        if (!editingOrder) {
+          try {
+            const fulfillmentData = resolveOrderFulfillmentStores(orderData);
+            fulfillmentData.groups.forEach((group) => {
+              if (group.isInterStore && !group.isGudangGroup && group.phone) {
+                const itemsText = group.items.map((it, idx) => {
+                  const sizeStr = it.size && it.size !== 'ALL' && it.size !== '-' ? ` (Size: *${it.size}*)` : '';
+                  const alterText = isRealAlterItem(it)
+                    ? `\n     ✂️ *Instruksi Alter:* ${it.alteration_detail || it.layanan_type || 'Perlu Alterasi'}`
+                    : '';
+                  return `  ${idx + 1}. *${it.sku || '-'}* - ${it.nama_produk}${sizeStr} - *${it.qty || 1} pcs*${alterText}`;
+                }).join('\n');
+
+                const interStoreMsg = `📦 *PERMINTAAN PENGIRIMAN PRODUK (STORE ➔ WAREHOUSE)*
+--------------------------------------------------
+Halo Tim *${group.storeName}*,
+Terdapat pesanan penarikan barang dari Store Anda yang diajukan oleh *${fulfillmentData.requesterStoreName}* untuk dikirimkan ke Gudang Pusat Chocochips:
+
+📋 *Rincian Pesanan:*
+• *Order ID / No. Pesanan:* ${orderData.no_transaksi_customer || orderData.no_pesanan}
+• *Store Pemohon:* ${fulfillmentData.requesterStoreName} (PIC: ${orderData.pic_store || '-'})
+• *Store Penyedia Barang:* ${group.storeName}
+• *Customer Tujuan Akhir:* ${orderData.nama_tujuan || '-'}
+• *Waktu Permintaan:* ${new Date().toLocaleString('id-ID')}
+
+👕 *Daftar Produk yang Wajib Dikirim dari Store ${group.storeName}:*
+${itemsText || '  1. Produk Pakaian Pesanan'}
+
+🚚 *Tujuan Pengiriman:* WAREHOUSE CHOCOCHIPS (Gudang Pusat)
+📄 *Dokumen Wajib:*
+Mohon buka sistem WMS, login akun toko *${group.storeName}*, dan cetak *Surat Jalan Kirim (Struk Rangkap 2)*:
+  - Lembar 1: Simpan sebagai arsip bukti pengiriman toko Anda
+  - Lembar 2: Lampirkan pada fisik pakaian / polybag yang dikirim ke gudang.
+
+Mohon segera diproses dan kirimkan fisik barang ke gudang. Terima kasih!
+_WMS Warehouse System_`;
+
+                sendFonnteMessage(group.phone, interStoreMsg, fonnteCfg.token)
+                  .then((res) => {
+                    if (res.success) {
+                      onShowToast(`✅ Permintaan kirim barang terkirim otomatis ke WA Store ${group.storeName}!`, 'success');
+                    } else {
+                      console.warn(`Gagal kirim WA ke store penyedia ${group.storeName}:`, res.message);
+                    }
+                  })
+                  .catch((err) => console.warn(`Error kirim WA ke store penyedia ${group.storeName}:`, err));
+              }
+            });
+          } catch (e) {
+            console.warn('Error sending inter-store WA notification on submit:', e);
           }
         }
       }

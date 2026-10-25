@@ -273,6 +273,43 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
   },
 
   {
+    id: 'faq-notif-wa-store-penyedia-otomatis',
+    category: 'manual_shipment',
+    question: 'Apakah Store Penyedia Barang otomatis menerima notifikasi WA saat pesanan disubmit?',
+    answer: 'Ya, sistem WMS secara otomatis mengirim notifikasi WhatsApp permintaan penarikan barang ke nomor resmi Store Penyedia begitu pesanan yang membutuhkan pemenuhan antar-toko (Inter-Store) disubmit.',
+    target_audience: 'all',
+
+    // PERSPEKTIF ADMIN GUDANG
+    answer_admin: 'Ketika Store Pemohon mensubmit pesanan dengan produk yang diambil dari toko cabang lain (bukan gudang marketplace), Fonnte langsung memicu pengiriman pesan resmi "📦 PERMINTAAN PENGIRIMAN PRODUK (STORE ➔ WAREHOUSE)" ke nomor WhatsApp Store Penyedia barang tersebut. Admin juga tetap memiliki tombol "Notif WA Store" di kartu rekap jika sewaktu-waktu ingin memicu pengiriman ulang secara manual.',
+    action_steps_admin: [
+      { step: 1, title: 'Otomatisasi Saat Submit', desc: 'Sistem mendeteksi kolom fulfillment tiap item. Jika dialokasikan dari toko cabang, pesan WA penarikan otomatis terkirim.' },
+      { step: 2, title: 'Tombol Notif WA Store Manual (Opsional)', desc: 'Admin dapat menekan tombol "Notif WA Store" pada kartu pesanan rekap untuk mengirim ulang follow up.' },
+      { step: 3, title: 'Pantau Pengiriman Fisik', desc: 'Pastikan store penyedia segera mengirimkan pakaian ke gudang pusat dengan melampirkan Surat Jalan Struk.' }
+    ],
+    button_badges_admin: [
+      { label: 'Auto-Send WA Inter-Store', color: 'emerald', icon: 'Send' },
+      { label: 'Notif WA Store (Manual)', color: 'blue', icon: 'MessageCircle' }
+    ],
+    admin_notes: 'ℹ️ Pesan otomatis memuat rincian SKU, nama produk, size, qty, dan instruksi pencetakan Surat Jalan Rangkap 2 bagi toko penyedia.',
+
+    // PERSPEKTIF TIM STORE / OUTLET
+    answer_store: 'Jika Anda membuat pesanan dan memilih barang dari toko cabang lain, Anda tidak perlu repot menghubungi toko penyedia secara terpisah. Sistem WMS akan otomatis mengirimkan pesan WhatsApp ke HP operasional toko penyedia barang berisi instruksi untuk mengirimkan pakaian tersebut ke Gudang Pusat.',
+    action_steps_store: [
+      { step: 1, title: 'Pilih Fulfillment Store pada Produk', desc: 'Di form pesanan manual, tentukan toko cabang yang menyediakan stok produk.' },
+      { step: 2, title: 'Submit Pesanan', desc: 'Klik Simpan Pesanan. Notifikasi permintaan kirim barang langsung masuk otomatis ke WA toko penyedia.' },
+      { step: 3, title: 'Toko Penyedia Mengirim Barang', desc: 'Toko penyedia akan mencetak Surat Jalan Kirim Struk dan mengirimkan fisik produk ke Gudang.' }
+    ],
+    button_badges_store: [
+      { label: 'Kirim Otomatis ke WA Cabang', color: 'emerald', icon: 'CheckCircle2' },
+      { label: 'Fulfillment Antar-Store', color: 'indigo', icon: 'Truck' }
+    ],
+    store_notes: '💡 Pastikan toko tujuan fulfillment dipilih dengan benar agar notifikasi penarikan terkirim ke cabang yang tepat.',
+
+    keywords: ['notif wa store penyedia', 'inter store fulfillment', 'tarik barang cabang', 'surat jalan struk', 'kirim ke gudang', 'notifikasi otomatis'],
+    view_count: 92
+  },
+
+  {
     id: 'faq-id-form-alter-manual',
     category: 'alteration_repair',
     question: 'No. ID Form Alter diisi apa dan oleh siapa? Apakah boleh dikosongkan?',
