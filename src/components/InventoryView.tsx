@@ -528,11 +528,11 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       {/* Bottom status note */}
       <div className="flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-400 px-2 gap-1">
         <span>
-          Menampilkan <strong className="text-slate-700 dark:text-slate-300 font-mono">{sortedAreaRows.length.toLocaleString('id-ID')}</strong> baris produk per area (dari{' '}
-          <strong className="text-slate-700 dark:text-slate-300 font-mono">{stats.skuCount.toLocaleString('id-ID')}</strong> total SKU fisik). Klik baris produk untuk melihat rincian titik rak dan qty.
+          Menampilkan <strong className="text-slate-700 dark:text-slate-300 font-mono">{sortedAreaRows.length.toLocaleString('id-ID')}</strong> baris area (dari{' '}
+          <strong className="text-slate-700 dark:text-slate-300 font-mono">{stats.skuCount.toLocaleString('id-ID')}</strong> total SKU fisik). Data tersaji berdampingan dengan DealPOS tanpa kalkulasi selisih.
         </span>
-        <span className="text-[10px]">
-          Virtual Rendering Aktif · 60 FPS
+        <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+          Side-by-Side DP &amp; Fisik Aktif
         </span>
       </div>
       </>

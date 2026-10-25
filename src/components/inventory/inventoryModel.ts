@@ -770,6 +770,118 @@ export interface InventoryAreaRow {
   search: string;
   active: boolean;
   isNeg: boolean;
+
+  // SIDE-BY-SIDE DEALPOS INTEGRATION (Tanpa Selisih)
+  dp: number; // Nilai DealPOS untuk kelompok area ini
+  groupType: 'COMMERCIAL' | 'PERBAIKAN';
+  isFirstOfGroup: boolean; // Baris pertama di grup area (untuk rowSpan DP)
+  groupRowSpan: number; // Jumlah baris yang di-span cell DP
+  isFirstOfSku: boolean; // Baris pertama SKU (untuk rowSpan Product / Variant / Code)
+  skuRowSpan: number; // Total seluruh baris dalam SKU ini
+  commercialDp: number;
+  perbaikanDp: number;
+  commercialFisikTotal: number;
+  perbaikanFisikTotal: number;
+  skuTotalFisik: number;
+  skuTotalDp: number;
+}
+
+export interface InventorySkuGroup {
+  sku: string;
+  produk: string;
+  size: string;
+  sizeOrder: number;
+  kategori: string;
+  pLower: string;
+  skuLower: string;
+  commercialDp: number;
+  commercialAreas: InventoryAreaRow[];
+  commercialFisikTotal: number;
+  perbaikanDp: number;
+  perbaikanAreas: InventoryAreaRow[];
+  perbaikanFisikTotal: number;
+  totalFisik: number;
+  totalDp: number;
+  active: boolean;
+  rows: InventoryAreaRow[];
+}
+
+export const isPerbaikanArea = (area: string): boolean => {
+  const a = (area || '').toUpperCase();
+  return a.includes('PERBAIKAN') || a.includes('CUCI') || a.includes('PERMAK') || a.includes('DEFECT');
+};
+
+export function groupRowsBySku(rows: InventoryAreaRow[]): InventorySkuGroup[] {
+  const map = new Map<string, InventorySkuGroup>();
+  const order: string[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    let g = map.get(r.sku);
+    if (!g) {
+      g = {
+        sku: r.sku,
+        produk: r.produk,
+        size: r.size,
+        sizeOrder: r.sizeOrder,
+        kategori: r.kategori,
+        pLower: r.pLower,
+        skuLower: r.skuLower,
+        commercialDp: r.commercialDp,
+        commercialAreas: [],
+        commercialFisikTotal: r.commercialFisikTotal,
+        perbaikanDp: r.perbaikanDp,
+        perbaikanAreas: [],
+        perbaikanFisikTotal: r.perbaikanFisikTotal,
+        totalFisik: r.skuTotalFisik,
+        totalDp: r.skuTotalDp,
+        active: r.active,
+        rows: [],
+      };
+      map.set(r.sku, g);
+      order.push(r.sku);
+    }
+    g.rows.push(r);
+    if (r.groupType === 'PERBAIKAN') {
+      g.perbaikanAreas.push(r);
+    } else {
+      g.commercialAreas.push(r);
+    }
+  }
+  return order.map((sku) => map.get(sku)!);
+}
+
+export function recalculateRowSpans(rows: InventoryAreaRow[]): InventoryAreaRow[] {
+  const out: InventoryAreaRow[] = [];
+  const groups = groupRowsBySku(rows);
+  for (let g = 0; g < groups.length; g++) {
+    const group = groups[g];
+    const totalRows = group.commercialAreas.length + group.perbaikanAreas.length;
+
+    // Commercial areas
+    for (let i = 0; i < group.commercialAreas.length; i++) {
+      const r = group.commercialAreas[i];
+      out.push({
+        ...r,
+        isFirstOfSku: i === 0,
+        skuRowSpan: totalRows,
+        isFirstOfGroup: i === 0,
+        groupRowSpan: group.commercialAreas.length,
+      });
+    }
+
+    // Perbaikan areas
+    for (let i = 0; i < group.perbaikanAreas.length; i++) {
+      const r = group.perbaikanAreas[i];
+      out.push({
+        ...r,
+        isFirstOfSku: group.commercialAreas.length === 0 && i === 0,
+        skuRowSpan: totalRows,
+        isFirstOfGroup: i === 0,
+        groupRowSpan: group.perbaikanAreas.length,
+      });
+    }
+  }
+  return out;
 }
 
 export function composeAreaRows(
@@ -784,7 +896,18 @@ export function composeAreaRows(
 
   const seenSkus = new Set<string>();
 
-  // 1. Process all SKUs that have physical stock records
+  // Helper prioritizing areas: Warehouse, Koli, Blok F, Transit, Aksesoris, then Perbaikan
+  const areaPriority: Record<string, number> = {
+    'Warehouse': 1,
+    'Koli': 2,
+    'Blok F': 3,
+    'Transit': 4,
+    'Aksesoris': 5,
+    'Perbaikan': 10,
+    'Anomali': 99,
+  };
+
+  // 1. Process all SKUs with physical stock records
   stockBySku.forEach((stockRows, sku) => {
     if (!sku || !isListableSku(sku)) return;
     seenSkus.add(sku);
@@ -801,6 +924,16 @@ export function composeAreaRows(
     const pLower = produk.toLowerCase();
     const skuLower = sku.toLowerCase();
     const kategoriLower = kategori.toLowerCase();
+
+    // DealPOS calculation per area group
+    let commercialDp = (base?.dp.MAP || 0) + (base?.dp.LIVE || 0) + (base?.dp.STUDIO || 0);
+    if (commercialDp === 0 && (base?.channels['WH'] || 0) > 0) {
+      commercialDp = base?.channels['WH'] || 0;
+    }
+    const perbaikanDp = (base?.dp.PERMAK || 0) + (base?.dp.DEFECT || 0) + (base?.channels['QC'] || 0);
+    if (commercialDp === 0 && perbaikanDp === 0 && (base?.dpTotal || 0) > 0) {
+      commercialDp = base!.dpTotal;
+    }
 
     // Group locations by Area
     const areaMap = new Map<string, { totalQty: number; locs: AreaLocationEntry[] }>();
@@ -824,122 +957,283 @@ export function composeAreaRows(
       entry.locs.push({ lokasi, qty: q, neg: q < 0 });
     }
 
-    // Sort areas by business priority: Blok F, Warehouse, Perbaikan, Koli, Aksesoris, Transit, Anomali
-    const areaPriority: Record<string, number> = {
-      'Blok F': 1,
-      'Warehouse': 2,
-      'Perbaikan': 3,
-      'Koli': 4,
-      'Aksesoris': 5,
-      'Transit': 6,
-      'Anomali': 7,
-    };
-
     const sortedAreas = Array.from(areaMap.entries()).sort((a, b) => {
       const pA = areaPriority[a[0]] ?? 99;
       const pB = areaPriority[b[0]] ?? 99;
       return pA - pB;
     });
 
+    // Partition into Commercial and Perbaikan
+    const commercialEntries: Array<{ area: string; totalQty: number; locs: AreaLocationEntry[] }> = [];
+    const perbaikanEntries: Array<{ area: string; totalQty: number; locs: AreaLocationEntry[] }> = [];
+
     for (let i = 0; i < sortedAreas.length; i++) {
       const [area, data] = sortedAreas[i];
       data.locs.sort((a, b) => b.qty - a.qty || a.lokasi.localeCompare(b.lokasi));
-      const locStr = data.locs.map((l) => `${l.lokasi} (${l.qty})`).join(', ');
-      const areaLower = area.toLowerCase();
+      if (isPerbaikanArea(area)) {
+        perbaikanEntries.push({ area, totalQty: data.totalQty, locs: data.locs });
+      } else {
+        commercialEntries.push({ area, totalQty: data.totalQty, locs: data.locs });
+      }
+    }
+
+    // If commercial DP > 0 but no physical commercial entries found, add a placeholder Warehouse entry
+    if (commercialEntries.length === 0 && commercialDp > 0) {
+      commercialEntries.push({ area: 'Warehouse', totalQty: 0, locs: [] });
+    }
+
+    // If perbaikan DP > 0 but no physical perbaikan entries found, add a placeholder Perbaikan entry
+    if (perbaikanEntries.length === 0 && perbaikanDp > 0) {
+      perbaikanEntries.push({ area: 'Perbaikan', totalQty: 0, locs: [] });
+    }
+
+    // If both empty, ensure at least 1 default commercial entry
+    if (commercialEntries.length === 0 && perbaikanEntries.length === 0) {
+      commercialEntries.push({ area: 'Warehouse', totalQty: 0, locs: [] });
+    }
+
+    let commercialFisikTotal = 0;
+    for (let i = 0; i < commercialEntries.length; i++) commercialFisikTotal += commercialEntries[i].totalQty;
+    let perbaikanFisikTotal = 0;
+    for (let i = 0; i < perbaikanEntries.length; i++) perbaikanFisikTotal += perbaikanEntries[i].totalQty;
+
+    const skuTotalFisik = commercialFisikTotal + perbaikanFisikTotal;
+    const skuTotalDp = commercialDp + perbaikanDp;
+    const totalSkuRows = commercialEntries.length + perbaikanEntries.length;
+    const isSkuActive = skuTotalFisik !== 0 || skuTotalDp !== 0;
+
+    // Build commercial rows
+    for (let i = 0; i < commercialEntries.length; i++) {
+      const entry = commercialEntries[i];
+      const locStr = entry.locs.length ? entry.locs.map((l) => `${l.lokasi} (${l.qty})`).join(', ') : '-';
+      const areaLower = entry.area.toLowerCase();
 
       out.push({
-        id: `${sku}__${area}`,
+        id: `${sku}__${entry.area}`,
         sku,
         produk,
         size,
         sizeOrder,
         kategori,
-        area,
-        qty: data.totalQty,
-        locations: data.locs,
+        area: entry.area,
+        qty: entry.totalQty,
+        locations: entry.locs,
         locStr,
         pLower,
         skuLower,
         kategoriLower,
         areaLower,
-        search: `${pLower} ${skuLower} ${kategoriLower} ${size.toLowerCase()} ${areaLower} ${locStr.toLowerCase()}`,
-        active: data.totalQty !== 0,
-        isNeg: data.totalQty < 0,
+        search: `${pLower} ${skuLower} ${kategoriLower} ${size.toLowerCase()} ${areaLower} ${locStr.toLowerCase()} ${entry.area.toLowerCase()}`,
+        active: isSkuActive,
+        isNeg: entry.totalQty < 0,
+        dp: commercialDp,
+        groupType: 'COMMERCIAL',
+        isFirstOfGroup: i === 0,
+        groupRowSpan: commercialEntries.length,
+        isFirstOfSku: i === 0,
+        skuRowSpan: totalSkuRows,
+        commercialDp,
+        perbaikanDp,
+        commercialFisikTotal,
+        perbaikanFisikTotal,
+        skuTotalFisik,
+        skuTotalDp,
+      });
+    }
+
+    // Build perbaikan rows
+    for (let i = 0; i < perbaikanEntries.length; i++) {
+      const entry = perbaikanEntries[i];
+      const locStr = entry.locs.length ? entry.locs.map((l) => `${l.lokasi} (${l.qty})`).join(', ') : '-';
+      const areaLower = entry.area.toLowerCase();
+
+      out.push({
+        id: `${sku}__${entry.area}`,
+        sku,
+        produk,
+        size,
+        sizeOrder,
+        kategori,
+        area: entry.area,
+        qty: entry.totalQty,
+        locations: entry.locs,
+        locStr,
+        pLower,
+        skuLower,
+        kategoriLower,
+        areaLower,
+        search: `${pLower} ${skuLower} ${kategoriLower} ${size.toLowerCase()} ${areaLower} ${locStr.toLowerCase()} ${entry.area.toLowerCase()}`,
+        active: isSkuActive,
+        isNeg: entry.totalQty < 0,
+        dp: perbaikanDp,
+        groupType: 'PERBAIKAN',
+        isFirstOfGroup: i === 0,
+        groupRowSpan: perbaikanEntries.length,
+        isFirstOfSku: commercialEntries.length === 0 && i === 0,
+        skuRowSpan: totalSkuRows,
+        commercialDp,
+        perbaikanDp,
+        commercialFisikTotal,
+        perbaikanFisikTotal,
+        skuTotalFisik,
+        skuTotalDp,
       });
     }
   });
 
-  // 2. Also include catalog products that currently have 0 physical stock
+  // 2. Also process catalog products with 0 physical stock in database
   for (let i = 0; i < bases.length; i++) {
     const base = bases[i];
     if (seenSkus.has(base.sku)) continue;
     seenSkus.add(base.sku);
 
-    const area = 'Warehouse';
-    const areaLower = area.toLowerCase();
+    let commercialDp = (base.dp.MAP || 0) + (base.dp.LIVE || 0) + (base.dp.STUDIO || 0);
+    if (commercialDp === 0 && (base.channels['WH'] || 0) > 0) {
+      commercialDp = base.channels['WH'] || 0;
+    }
+    const perbaikanDp = (base.dp.PERMAK || 0) + (base.dp.DEFECT || 0) + (base.channels['QC'] || 0);
+    if (commercialDp === 0 && perbaikanDp === 0 && (base.dpTotal || 0) > 0) {
+      commercialDp = base.dpTotal;
+    }
+
+    const hasPerbaikan = perbaikanDp > 0;
+    const totalSkuRows = hasPerbaikan ? 2 : 1;
+    const skuTotalDp = commercialDp + perbaikanDp;
+    const isSkuActive = skuTotalDp !== 0;
+
+    // Commercial row
     out.push({
-      id: `${base.sku}__${area}`,
+      id: `${base.sku}__Warehouse`,
       sku: base.sku,
       produk: base.produk,
       size: base.size,
       sizeOrder: base.sizeOrder,
       kategori: base.kategori,
-      area,
+      area: 'Warehouse',
       qty: 0,
       locations: [],
       locStr: '-',
       pLower: base.pLower,
       skuLower: base.skuLower,
       kategoriLower: base.kategori.toLowerCase(),
-      areaLower,
-      search: `${base.pLower} ${base.skuLower} ${base.kategori.toLowerCase()} ${base.size.toLowerCase()} ${areaLower}`,
-      active: false,
+      areaLower: 'warehouse',
+      search: `${base.pLower} ${base.skuLower} ${base.kategori.toLowerCase()} ${base.size.toLowerCase()} warehouse`,
+      active: isSkuActive,
       isNeg: false,
+      dp: commercialDp,
+      groupType: 'COMMERCIAL',
+      isFirstOfGroup: true,
+      groupRowSpan: 1,
+      isFirstOfSku: true,
+      skuRowSpan: totalSkuRows,
+      commercialDp,
+      perbaikanDp,
+      commercialFisikTotal: 0,
+      perbaikanFisikTotal: 0,
+      skuTotalFisik: 0,
+      skuTotalDp,
     });
+
+    // Perbaikan row if perbaikan DP exists
+    if (hasPerbaikan) {
+      out.push({
+        id: `${base.sku}__Perbaikan`,
+        sku: base.sku,
+        produk: base.produk,
+        size: base.size,
+        sizeOrder: base.sizeOrder,
+        kategori: base.kategori,
+        area: 'Perbaikan',
+        qty: 0,
+        locations: [],
+        locStr: '-',
+        pLower: base.pLower,
+        skuLower: base.skuLower,
+        kategoriLower: base.kategori.toLowerCase(),
+        areaLower: 'perbaikan',
+        search: `${base.pLower} ${base.skuLower} ${base.kategori.toLowerCase()} ${base.size.toLowerCase()} perbaikan`,
+        active: isSkuActive,
+        isNeg: false,
+        dp: perbaikanDp,
+        groupType: 'PERBAIKAN',
+        isFirstOfGroup: true,
+        groupRowSpan: 1,
+        isFirstOfSku: false,
+        skuRowSpan: totalSkuRows,
+        commercialDp,
+        perbaikanDp,
+        commercialFisikTotal: 0,
+        perbaikanFisikTotal: 0,
+        skuTotalFisik: 0,
+        skuTotalDp,
+      });
+    }
   }
 
   return out;
 }
 
 export function sortAreaRows(rows: InventoryAreaRow[], option: InventorySortOption): InventoryAreaRow[] {
-  const sorted = rows.slice();
-  const byName = (a: InventoryAreaRow, b: InventoryAreaRow): number =>
-    cmpStr(a.pLower, b.pLower) || a.sizeOrder - b.sizeOrder || cmpStr(a.areaLower, b.areaLower) || cmpStr(a.skuLower, b.skuLower);
+  // Sort at the SKU Group level to preserve contiguous rowSpan and area priority order
+  const groups = groupRowsBySku(rows);
+
+  const byName = (a: InventorySkuGroup, b: InventorySkuGroup): number =>
+    cmpStr(a.pLower, b.pLower) || a.sizeOrder - b.sizeOrder || cmpStr(a.skuLower, b.skuLower);
 
   switch (option) {
     case 'NAME_ASC':
-      return sorted.sort(byName);
+      groups.sort(byName);
+      break;
     case 'NAME_DESC':
-      return sorted.sort((a, b) => cmpStr(b.pLower, a.pLower) || cmpStr(b.skuLower, a.skuLower));
+      groups.sort((a, b) => cmpStr(b.pLower, a.pLower) || cmpStr(b.skuLower, a.skuLower));
+      break;
     case 'KATEGORI_ASC':
-      return sorted.sort((a, b) => cmpStr(a.kategoriLower, b.kategoriLower) || byName(a, b));
+      groups.sort((a, b) => cmpStr(a.kategori.toLowerCase(), b.kategori.toLowerCase()) || byName(a, b));
+      break;
     case 'KATEGORI_DESC':
-      return sorted.sort((a, b) => cmpStr(b.kategoriLower, a.kategoriLower) || byName(a, b));
+      groups.sort((a, b) => cmpStr(b.kategori.toLowerCase(), a.kategori.toLowerCase()) || byName(a, b));
+      break;
     case 'SIZE_ASC':
-      return sorted.sort((a, b) => a.sizeOrder - b.sizeOrder || byName(a, b));
+      groups.sort((a, b) => a.sizeOrder - b.sizeOrder || byName(a, b));
+      break;
     case 'SIZE_DESC':
-      return sorted.sort((a, b) => b.sizeOrder - a.sizeOrder || byName(a, b));
+      groups.sort((a, b) => b.sizeOrder - a.sizeOrder || byName(a, b));
+      break;
     case 'SKU_ASC':
-      return sorted.sort((a, b) => cmpStr(a.skuLower, b.skuLower) || cmpStr(a.areaLower, b.areaLower));
+      groups.sort((a, b) => cmpStr(a.skuLower, b.skuLower));
+      break;
     case 'SKU_DESC':
-      return sorted.sort((a, b) => cmpStr(b.skuLower, a.skuLower) || cmpStr(a.areaLower, b.areaLower));
-    case 'AREA_ASC':
-      return sorted.sort((a, b) => cmpStr(a.areaLower, b.areaLower) || byName(a, b));
-    case 'AREA_DESC':
-      return sorted.sort((a, b) => cmpStr(b.areaLower, a.areaLower) || byName(a, b));
+      groups.sort((a, b) => cmpStr(b.skuLower, a.skuLower));
+      break;
     case 'QTY_DESC':
     case 'FISIK_DESC':
-      return sorted.sort((a, b) => b.qty - a.qty || byName(a, b));
+      groups.sort((a, b) => b.totalFisik - a.totalFisik || byName(a, b));
+      break;
     case 'QTY_ASC':
     case 'FISIK_ASC':
-      return sorted.sort((a, b) => a.qty - b.qty || byName(a, b));
-    case 'LOC_ASC':
-      return sorted.sort((a, b) => cmpStr(a.locStr, b.locStr) || byName(a, b));
-    case 'LOC_DESC':
-      return sorted.sort((a, b) => cmpStr(b.locStr, a.locStr) || byName(a, b));
+      groups.sort((a, b) => a.totalFisik - b.totalFisik || byName(a, b));
+      break;
+    case 'DP_DESC':
+      groups.sort((a, b) => b.totalDp - a.totalDp || byName(a, b));
+      break;
+    case 'DP_ASC':
+      groups.sort((a, b) => a.totalDp - b.totalDp || byName(a, b));
+      break;
     default:
-      return sorted.sort(byName);
+      groups.sort(byName);
+      break;
   }
+
+  // Flatten back to array of rows
+  const sortedRows: InventoryAreaRow[] = [];
+  for (let i = 0; i < groups.length; i++) {
+    const g = groups[i];
+    for (let j = 0; j < g.rows.length; j++) {
+      sortedRows.push(g.rows[j]);
+    }
+  }
+
+  return recalculateRowSpans(sortedRows);
 }
 
 export interface InventoryAreaFilter {
@@ -952,7 +1246,7 @@ export function filterAreaRows(rows: InventoryAreaRow[], f: InventoryAreaFilter)
   const keywords = f.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const selArea = f.selectedArea && f.selectedArea !== 'ALL' ? f.selectedArea.toLowerCase() : null;
 
-  const out: InventoryAreaRow[] = [];
+  const rawOut: InventoryAreaRow[] = [];
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     if (f.onlyActive && !r.active) continue;
@@ -965,14 +1259,17 @@ export function filterAreaRows(rows: InventoryAreaRow[], f: InventoryAreaFilter)
         break;
       }
     }
-    if (ok) out.push(r);
+    if (ok) rawOut.push(r);
   }
-  return out;
+
+  // Recalculate rowSpans cleanly for the filtered subset
+  return recalculateRowSpans(rawOut);
 }
 
 export interface InventoryAreaStats {
   skuCount: number;
   totalFisik: number;
+  totalDp: number;
   areaRowCount: number;
   activeLocationsCount: number;
 }
@@ -981,10 +1278,14 @@ export function computeAreaStats(rows: InventoryAreaRow[]): InventoryAreaStats {
   const skus = new Set<string>();
   const locs = new Set<string>();
   let totalFisik = 0;
+  let totalDp = 0;
 
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
-    skus.add(r.sku);
+    if (!skus.has(r.sku)) {
+      skus.add(r.sku);
+      totalDp += r.skuTotalDp;
+    }
     totalFisik += r.qty;
     for (let j = 0; j < r.locations.length; j++) {
       if (r.locations[j].qty > 0) {
@@ -996,13 +1297,14 @@ export function computeAreaStats(rows: InventoryAreaRow[]): InventoryAreaStats {
   return {
     skuCount: skus.size,
     totalFisik,
+    totalDp,
     areaRowCount: rows.length,
     activeLocationsCount: locs.size,
   };
 }
 
 export function buildAreaInventoryCsv(rows: InventoryAreaRow[]): string {
-  const headers = ['KATEGORI', 'NAMA_PRODUK', 'SIZE', 'SKU', 'AREA', 'QTY_FISIK', 'RINCIAN_LOKASI'];
+  const headers = ['KATEGORI', 'NAMA_PRODUK', 'SIZE', 'SKU', 'AREA', 'DEALPOS', 'QTY_FISIK', 'RINCIAN_LOKASI'];
   const lines: string[] = new Array(rows.length);
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
@@ -1012,6 +1314,7 @@ export function buildAreaInventoryCsv(rows: InventoryAreaRow[]): string {
       csvText(r.size || '-'),
       csvText(r.sku),
       csvText(r.area),
+      r.dp,
       r.qty,
       csvText(r.locStr || '-'),
     ];
