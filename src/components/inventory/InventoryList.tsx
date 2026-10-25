@@ -35,6 +35,38 @@ export const AreaBadge: React.FC<{ area: string }> = ({ area }) => {
 };
 
 // ----------------------------------------------------------------
+// SelisihCell for Detail Drawer
+// ----------------------------------------------------------------
+const Dot = () => <span className="text-slate-300 dark:text-slate-600 text-[10px]">·</span>;
+
+export const SelisihCell: React.FC<{ v: number; hasData: boolean }> = ({ v, hasData }) => {
+  if (v === 0) {
+    return hasData ? (
+      <span className="font-mono text-[10px] font-bold text-emerald-600 dark:text-emerald-400" title="Fisik = DealPOS">
+        =
+      </span>
+    ) : (
+      <Dot />
+    );
+  }
+  return v > 0 ? (
+    <span
+      className="font-mono text-xs font-black text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-1 rounded border border-amber-200/80 dark:border-amber-900/60"
+      title="Fisik lebih banyak dari DealPOS"
+    >
+      +{v}
+    </span>
+  ) : (
+    <span
+      className="font-mono text-xs font-black text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-1 rounded border border-rose-200/80 dark:border-rose-900/60"
+      title="Fisik kurang dari DealPOS"
+    >
+      {v}
+    </span>
+  );
+};
+
+// ----------------------------------------------------------------
 // Number / Qty Cell
 // ----------------------------------------------------------------
 const QtyCell: React.FC<{ v: number; isBold?: boolean }> = ({ v, isBold = false }) => {
