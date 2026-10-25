@@ -31,6 +31,7 @@ import {
   ShieldCheck,
   Banknote,
   Image as ImageIcon,
+  ArrowUpDown,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { UserSession, ProductItem } from '../../types';
@@ -252,6 +253,18 @@ export default function ReturBarangTab({
   const [filterOutlet, setFilterOutlet] = useState('all');
   const [filterPrintStatus, setFilterPrintStatus] = useState<'all' | 'unprinted_label' | 'unprinted_picking' | 'printed_all'>('all');
   const [filterDealposDoc, setFilterDealposDoc] = useState<'all' | 'need_sj_retur' | 'need_invoice_return' | 'complete_doc'>('all');
+  const [sortBy, setSortBy] = useState<
+    | 'newest'
+    | 'oldest'
+    | 'outlet_asc'
+    | 'outlet_desc'
+    | 'customer_asc'
+    | 'customer_desc'
+    | 'courier_asc'
+    | 'qty_desc'
+    | 'alasan_asc'
+    | 'unprinted_first'
+  >('newest');
   const [selectedReturIds, setSelectedReturIds] = useState<Set<string>>(new Set());
 
   // Modals Aksi Cepat Admin di Rekap
@@ -764,8 +777,77 @@ export default function ReturBarangTab({
       );
     }
 
+    const getReturTimestamp = (o: ReturBarangOrder): number => {
+      const raw = o.created_at || o.updated_at || '';
+      if (!raw) return 0;
+      const t = new Date(raw).getTime();
+      return isNaN(t) ? 0 : t;
+    };
+
+    const getReturRepQty = (o: ReturBarangOrder): number => {
+      return (o.produk_pengganti || []).reduce((acc, it) => acc + (Number(it.qty) || 0), 0);
+    };
+
+    list.sort((a, b) => {
+      const timeA = getReturTimestamp(a);
+      const timeB = getReturTimestamp(b);
+
+      switch (sortBy) {
+        case 'oldest':
+          return timeA - timeB;
+        case 'outlet_asc': {
+          const outA = (a.outlet_order || '').trim().toLowerCase();
+          const outB = (b.outlet_order || '').trim().toLowerCase();
+          const cmp = outA.localeCompare(outB, 'id');
+          return cmp !== 0 ? cmp : timeB - timeA;
+        }
+        case 'outlet_desc': {
+          const outA = (a.outlet_order || '').trim().toLowerCase();
+          const outB = (b.outlet_order || '').trim().toLowerCase();
+          const cmp = outB.localeCompare(outA, 'id');
+          return cmp !== 0 ? cmp : timeB - timeA;
+        }
+        case 'customer_asc': {
+          const custA = (a.nama_customer || '').trim().toLowerCase();
+          const custB = (b.nama_customer || '').trim().toLowerCase();
+          const cmp = custA.localeCompare(custB, 'id');
+          return cmp !== 0 ? cmp : timeB - timeA;
+        }
+        case 'customer_desc': {
+          const custA = (a.nama_customer || '').trim().toLowerCase();
+          const custB = (b.nama_customer || '').trim().toLowerCase();
+          const cmp = custB.localeCompare(custA, 'id');
+          return cmp !== 0 ? cmp : timeB - timeA;
+        }
+        case 'courier_asc': {
+          const jkA = (a.opsi_pengiriman || 'ZZZ').trim().toLowerCase();
+          const jkB = (b.opsi_pengiriman || 'ZZZ').trim().toLowerCase();
+          const cmp = jkA.localeCompare(jkB, 'id');
+          return cmp !== 0 ? cmp : timeB - timeA;
+        }
+        case 'qty_desc': {
+          const diff = getReturRepQty(b) - getReturRepQty(a);
+          return diff !== 0 ? diff : timeB - timeA;
+        }
+        case 'alasan_asc': {
+          const alA = (a.alasan_retur || '').trim().toLowerCase();
+          const alB = (b.alasan_retur || '').trim().toLowerCase();
+          const cmp = alA.localeCompare(alB, 'id');
+          return cmp !== 0 ? cmp : timeB - timeA;
+        }
+        case 'unprinted_first': {
+          const scoreA = (a.status === 'batal' ? 3 : 0) + (a.is_label_printed ? 1 : 0) + (a.is_picking_printed ? 1 : 0);
+          const scoreB = (b.status === 'batal' ? 3 : 0) + (b.is_label_printed ? 1 : 0) + (b.is_picking_printed ? 1 : 0);
+          return scoreA !== scoreB ? scoreA - scoreB : timeA - timeB;
+        }
+        case 'newest':
+        default:
+          return timeB - timeA;
+      }
+    });
+
     return list;
-  }, [stageScopedOrders, filterOutlet, filterPrintStatus, filterDealposDoc, searchTerm]);
+  }, [stageScopedOrders, filterOutlet, filterPrintStatus, filterDealposDoc, searchTerm, sortBy]);
 
   // Enrich lokasi rak gudang untuk Produk Pengganti saat Cetak Picking List / WA Grup
   const enrichReplacementItemsWithLocations = async (
@@ -2202,6 +2284,33 @@ _Pusat Resolusi WMS Chocochips_`;
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                {/* Dropdown Urutkan (Custom Sort) Retur Barang */}
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xs">
+                  <ArrowUpDown className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+                  <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Urutkan:</span>
+                  <select
+                    value={sortBy}
+                    onChange={e => setSortBy(e.target.value as any)}
+                    className={`text-xs bg-transparent focus:outline-none cursor-pointer ${
+                      sortBy !== 'newest'
+                        ? 'font-extrabold text-rose-600 dark:text-rose-400'
+                        : 'font-semibold text-slate-700 dark:text-slate-200'
+                    }`}
+                    title="Urutkan daftar tiket retur berdasarkan waktu, outlet, customer, kurir, atau alasan"
+                  >
+                    <option value="newest">🕒 Terbaru ➔ Terlama</option>
+                    <option value="oldest">⏳ Terlama ➔ Terbaru (FIFO)</option>
+                    <option value="outlet_asc">🏬 Per Outlet / Toko (A ➔ Z)</option>
+                    <option value="outlet_desc">🏬 Per Outlet / Toko (Z ➔ A)</option>
+                    <option value="customer_asc">👤 Nama Customer (A ➔ Z)</option>
+                    <option value="customer_desc">👤 Nama Customer (Z ➔ A)</option>
+                    <option value="courier_asc">🚚 Jasa Kirim / Kurir (A ➔ Z)</option>
+                    <option value="qty_desc">📦 Jumlah Qty Pengganti (Terbanyak)</option>
+                    <option value="alasan_asc">📋 Alasan Retur (A ➔ Z)</option>
+                    <option value="unprinted_first">🖨️ Prioritas Belum Cetak</option>
+                  </select>
+                </div>
+
                 <select
                   value={filterOutlet}
                   onChange={e => setFilterOutlet(e.target.value)}
@@ -2236,6 +2345,24 @@ _Pusat Resolusi WMS Chocochips_`;
                   <option value="unprinted_picking">Belum Cetak Picking List</option>
                   <option value="printed_all">Sudah Cetak Label & Picking</option>
                 </select>
+
+                {(searchTerm || sortBy !== 'newest' || filterOutlet !== 'all' || filterDealposDoc !== 'all' || filterPrintStatus !== 'all') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchTerm('');
+                      setSortBy('newest');
+                      setFilterOutlet('all');
+                      setFilterDealposDoc('all');
+                      setFilterPrintStatus('all');
+                    }}
+                    className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                    title="Reset Filter & Urutan"
+                  >
+                    <RefreshCcw className="w-3.5 h-3.5" />
+                    <span>Reset</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -2318,12 +2445,48 @@ _Pusat Resolusi WMS Chocochips_`;
                   <thead>
                     <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       <th className="p-3 w-8 text-center">#</th>
-                      <th className="p-3 min-w-[175px]">No. Pesanan & Outlet</th>
-                      <th className="p-3 min-w-[180px]">Customer & Pengiriman</th>
-                      <th className="p-3 min-w-[230px]">Produk Diretur ➔ Pengganti</th>
+                      <th
+                        onClick={() => setSortBy(prev => prev === 'newest' ? 'oldest' : prev === 'oldest' ? 'outlet_asc' : prev === 'outlet_asc' ? 'outlet_desc' : 'newest')}
+                        className="p-3 min-w-[175px] cursor-pointer hover:text-rose-600 dark:hover:text-rose-400 select-none transition-colors"
+                        title="Klik untuk mengurutkan berdasarkan Waktu (Terbaru/Terlama) atau Outlet (A-Z)"
+                      >
+                        <div className="inline-flex items-center gap-1">
+                          <span>No. Pesanan & Outlet</span>
+                          <ArrowUpDown className={`w-3 h-3 ${['newest', 'oldest', 'outlet_asc', 'outlet_desc'].includes(sortBy) ? 'text-rose-600 dark:text-rose-400' : 'opacity-40'}`} />
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => setSortBy(prev => prev === 'customer_asc' ? 'customer_desc' : prev === 'customer_desc' ? 'courier_asc' : 'customer_asc')}
+                        className="p-3 min-w-[180px] cursor-pointer hover:text-rose-600 dark:hover:text-rose-400 select-none transition-colors"
+                        title="Klik untuk mengurutkan berdasarkan Nama Customer atau Jasa Kirim"
+                      >
+                        <div className="inline-flex items-center gap-1">
+                          <span>Customer & Pengiriman</span>
+                          <ArrowUpDown className={`w-3 h-3 ${['customer_asc', 'customer_desc', 'courier_asc'].includes(sortBy) ? 'text-rose-600 dark:text-rose-400' : 'opacity-40'}`} />
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => setSortBy(prev => prev === 'qty_desc' ? 'alasan_asc' : 'qty_desc')}
+                        className="p-3 min-w-[230px] cursor-pointer hover:text-rose-600 dark:hover:text-rose-400 select-none transition-colors"
+                        title="Klik untuk mengurutkan berdasarkan Jumlah Qty atau Alasan Retur"
+                      >
+                        <div className="inline-flex items-center gap-1">
+                          <span>Produk Diretur ➔ Pengganti</span>
+                          <ArrowUpDown className={`w-3 h-3 ${['qty_desc', 'alasan_asc'].includes(sortBy) ? 'text-rose-600 dark:text-rose-400' : 'opacity-40'}`} />
+                        </div>
+                      </th>
                       <th className="p-3 min-w-[165px]">Selisih, Ongkir & Bukti</th>
                       <th className="p-3 min-w-[210px]">DealPOS Admin (SJ & Invoice Return)</th>
-                      <th className="p-3 min-w-[165px]">Resi & Cetak</th>
+                      <th
+                        onClick={() => setSortBy(prev => prev === 'unprinted_first' ? 'newest' : 'unprinted_first')}
+                        className="p-3 min-w-[165px] cursor-pointer hover:text-rose-600 dark:hover:text-rose-400 select-none transition-colors"
+                        title="Klik untuk memprioritaskan tiket yang Belum Cetak Label/Picking"
+                      >
+                        <div className="inline-flex items-center gap-1">
+                          <span>Resi & Cetak</span>
+                          <ArrowUpDown className={`w-3 h-3 ${sortBy === 'unprinted_first' ? 'text-rose-600 dark:text-rose-400' : 'opacity-40'}`} />
+                        </div>
+                      </th>
                       <th className="p-3 text-right min-w-[140px]">Aksi</th>
                     </tr>
                   </thead>

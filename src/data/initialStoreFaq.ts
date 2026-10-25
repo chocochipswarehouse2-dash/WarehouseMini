@@ -501,6 +501,49 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
 
     keywords: ['belum cetak label', 'cetak label massal', 'picking list', 'lembar ceklis', 'pesanan baru', 'sedang diproses', '2 klik', 'indikator label', 'filter label'],
     view_count: 120
+  },
+
+  {
+    id: 'faq-custom-sort-rekap-pesanan',
+    category: 'manual_shipment',
+    is_pinned: true,
+    question: 'Bagaimana cara mengurutkan (Custom Sort) daftar pesanan di Rekap Manual Shipment, Alter, dan Retur Barang (Terlama-Terbaru / Per Toko / Ekspedisi)?',
+    answer: 'Seluruh tabel dan kartu di Rekap Pesanan Toko (Manual Shipment & Alteration/Repair) serta Rekap Retur Barang (Pusat Resolusi) telah dilengkapi dropdown "Urutkan" (Custom Sort) dan header kolom tabel interaktif untuk mengurutkan berdasarkan Waktu (Terbaru/Terlama FIFO), Nama Toko/Outlet, Customer, Jasa Kirim, Jumlah Qty, hingga Prioritas Belum Cetak.',
+    target_audience: 'all',
+
+    // PERSPEKTIF ADMIN GUDANG
+    answer_admin: 'Sebagai Admin Gudang / CS, Anda dapat menggunakan menu dropdown "Urutkan:" yang berada tepat di sebelah kanan kolom pencarian (maupun dengan mengklik langsung judul kolom pada tampilan Tabel) baik di Rekap Pesanan Toko (Manual Shipment & Alter) maupun di Rekap Retur Barang. Fitur ini memudahkan tim gudang memproses antrean berdasarkan sistem FIFO (Terlama ➔ Terbaru), mengelompokkan paket per Outlet/Store (A ➔ Z), mengelompokkan per Kurir/Ekspedisi saat handover manifest, atau memprioritaskan pesanan yang Belum Cetak Label/Picking.',
+    action_steps_admin: [
+      { step: 1, title: 'Gunakan Dropdown [Urutkan:] di Toolbar Pencarian', desc: 'Pada tab Rekap Pesanan Toko atau Rekap Retur Barang, klik menu "Urutkan:" di sebelah kolom pencarian.' },
+      { step: 2, title: 'Pilih Kriteria Urutan Operasional', desc: 'Pilih "⏳ Terlama ➔ Terbaru (FIFO)" untuk memproses antrean paling awal lebih dulu, "🏬 Per Toko / Store (A ➔ Z)" untuk pengelompokan cabang, "🚚 Jasa Kirim (A ➔ Z)" untuk serah terima kurir, atau "🖨️ Prioritas Belum Cetak" & "✂️ Target Selesai Alter Terdekat".' },
+      { step: 3, title: 'Klik Header Kolom pada Mode Tabel', desc: 'Jika menggunakan tampilan Tabel, Anda juga dapat mengklik judul kolom ("No. Pesanan & Store", "Customer & Pengiriman", "Rincian Produk", "Resi & Cetak") untuk membalik urutan secara cepat.' },
+      { step: 4, title: 'Klik [Reset] untuk Kembali ke Default', desc: 'Klik tombol merah "Reset" di sebelah kanan toolbar untuk mengembalikan urutan ke default (🕒 Terbaru ➔ Terlama).' }
+    ],
+    button_badges_admin: [
+      { label: 'Urutkan: Terbaru / Terlama (FIFO)', color: 'indigo', icon: 'ArrowUpDown' },
+      { label: 'Per Toko / Store (A ➔ Z)', color: 'blue', icon: 'Store' },
+      { label: 'Prioritas Belum Cetak', color: 'amber', icon: 'Printer' },
+      { label: 'Reset', color: 'rose', icon: 'RefreshCw' }
+    ],
+    admin_notes: '💡 Urutan yang Anda pilih juga otomatis berlaku ketika Anda mengekspor data ke CSV (Export CSV) maupun saat melakukan Cetak Picking List / Label A6 Massal.',
+
+    // PERSPEKTIF TIM STORE / OUTLET
+    answer_store: 'Tim Store dapat mengurutkan daftar pesanan di tab Rekap Pesanan Toko menggunakan menu dropdown "Urutkan:" di sebelah kolom pencarian. Anda bisa melihat pesanan dari yang paling baru diinput (Terbaru ➔ Terlama), mengurutkan dari antrean paling lama (Terlama ➔ Terbaru), mengurutkan berdasarkan Nama Customer (A ➔ Z), Jasa Kirim, maupun Target Selesai Alterasi.',
+    action_steps_store: [
+      { step: 1, title: 'Buka Tab Rekap Pesanan Toko', desc: 'Masuk ke menu Pesanan Saya ➔ klik tab "Rekap Pesanan".' },
+      { step: 2, title: 'Klik Menu [Urutkan:] di Samping Kolom Cari', desc: 'Pilih urutan yang diinginkan: "🕒 Terbaru ➔ Terlama", "⏳ Terlama ➔ Terbaru (FIFO)", "👤 Nama Customer (A ➔ Z)", "🚚 Jasa Kirim", atau "✂️ Target Selesai Alter Terdekat".' },
+      { step: 3, title: 'Klik Judul Kolom di Tampilan Tabel', desc: 'Pada mode tampilan Tabel, klik langsung judul kolom untuk mengganti urutan naik/turun secara instan.' }
+    ],
+    button_badges_store: [
+      { label: 'Urutkan: Terbaru / Terlama', color: 'indigo', icon: 'ArrowUpDown' },
+      { label: 'Nama Customer (A ➔ Z)', color: 'emerald', icon: 'User' },
+      { label: 'Jasa Kirim (A ➔ Z)', color: 'blue', icon: 'Truck' }
+    ],
+    store_notes: 'ℹ️ Jika ingin kembali ke urutan awal (pesanan terbaru di bagian paling atas), cukup pilih "🕒 Terbaru ➔ Terlama" atau klik tombol "Reset".',
+
+    keywords: ['sort', 'urutkan', 'sorting', 'terlama', 'terbaru', 'fifo', 'urut toko', 'per toko', 'urut customer', 'urut kurir', 'rekap pesanan', 'rekap retur'],
+    view_count: 95
   }
 ];
+
 
