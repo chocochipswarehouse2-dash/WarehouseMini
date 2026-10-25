@@ -1,6 +1,7 @@
 import { ManualShipmentOrder, ManualShipmentHistoryLog, ManualShipmentItem } from '../types';
 import { supabaseFetch } from './supabase';
 import { hasValidArData } from '../utils/alterationUtils';
+import { globalRealtimeStore } from './store';
 
 export const DEFAULT_MANUAL_SHIPMENT_GAS_URL = '';
 
@@ -35,6 +36,29 @@ export function getFullStoreName(storeNameOrCode?: string): string {
   const trimmed = storeNameOrCode.trim();
   const upper = trimmed.toUpperCase().replace(/\s+/g, '').replace(/[-_]/g, '');
 
+  // 1. Cek di direktori kontak custom pengguna terlebih dahulu (agar store baru / bazaar seperti SMS tidak tertimpa)
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const raw = localStorage.getItem('wms_store_contacts_directory');
+      if (raw) {
+        const savedContacts: Record<string, OutletContactInfo> = JSON.parse(raw);
+        if (savedContacts[trimmed]) {
+          return savedContacts[trimmed].nama || trimmed;
+        }
+        const trimmedLower = trimmed.toLowerCase();
+        const exactMatch = Object.values(savedContacts).find(
+          (c) =>
+            c &&
+            ((c.nama && c.nama.trim().toLowerCase() === trimmedLower) ||
+              (c.kode && c.kode.trim().toUpperCase() === upper))
+        );
+        if (exactMatch && exactMatch.nama) {
+          return exactMatch.nama;
+        }
+      }
+    } catch {}
+  }
+
   if (STORE_CODE_TO_FULL_NAME[upper]) {
     return STORE_CODE_TO_FULL_NAME[upper];
   }
@@ -47,57 +71,63 @@ export function getFullStoreName(storeNameOrCode?: string): string {
     }
   }
 
-  // Cek alias nama toko / outlet
+  // Cek alias eksak nama toko / outlet (tanpa .includes bebas agar tidak menimpa nama store baru seperti "Bazaar Summarecon Mall Serpong")
   const lower = trimmed.toLowerCase().replace(/\s+/g, '').replace(/[-_]/g, '');
-  if (lower.includes('gadingserpong') || lower.includes('serpong') || lower === 'gst' || lower === 'chocogst' || lower === 'chocogs') {
+  if (
+    lower === 'gadingserpong' ||
+    lower === 'gadingserpongtangerang' ||
+    lower === 'gst' ||
+    lower === 'chocogst' ||
+    lower === 'chocogs'
+  ) {
     return 'Gading Serpong Tangerang';
   }
-  if (lower.includes('centralpark') || lower === 'cpj' || lower === 'chococpj') {
+  if (lower === 'centralpark' || lower === 'centralparkjakarta' || lower === 'cpj' || lower === 'chococpj') {
     return 'Central Park Jakarta';
   }
-  if (lower.includes('livingworld') || lower === 'lws' || lower === 'chocolws') {
+  if (lower === 'livingworld' || lower === 'livingworldtangerang' || lower === 'lws' || lower === 'chocolws') {
     return 'Living World Tangerang';
   }
-  if (lower.includes('kelapagading') || lower === 'mkg' || lower === 'chocomkg') {
+  if (lower === 'kelapagading' || lower === 'mallkelapagading' || lower === 'mkg' || lower === 'chocomkg') {
     return 'Mall Kelapa Gading';
   }
-  if (lower.includes('bythesea') || lower === 'bts' || lower === 'chocobts') {
+  if (lower === 'bythesea' || lower === 'bytheseapik' || lower === 'bts' || lower === 'chocobts') {
     return 'By The Sea PIK';
   }
-  if (lower.includes('pontianak') || lower.includes('gaia') || lower === 'chocogaia') {
+  if (lower === 'gaiapontianak' || lower === 'gaia' || lower === 'chocogaia') {
     return 'Gaia Pontianak';
   }
-  if (lower.includes('ciputra') || lower === 'cws' || lower === 'chococws') {
+  if (lower === 'ciputraworld' || lower === 'ciputraworldsurabaya' || lower === 'cws' || lower === 'chococws') {
     return 'Ciputra World Surabaya';
   }
-  if (lower.includes('delipark') || lower === 'dpm' || lower === 'chocodpm') {
+  if (lower === 'delipark' || lower === 'deliparkmedan' || lower === 'dpm' || lower === 'chocodpm') {
     return 'Deli Park Medan';
   }
-  if (lower.includes('lippomallpuri') || lower.includes('lippopuri') || lower === 'lmp' || lower === 'chocolmp') {
+  if (lower === 'lippomallpuri' || lower === 'lippopuri' || lower === 'lmp' || lower === 'chocolmp') {
     return 'Lippo Mall Puri';
   }
-  if (lower.includes('lavela') || lower === 'lvl' || lower === 'chocolvl') {
+  if (lower === 'lavela' || lower === 'lavelatangerang' || lower === 'lvl' || lower === 'chocolvl') {
     return 'La Vela Tangerang';
   }
-  if (lower.includes('neosoho') || lower === 'nsj' || lower === 'choconsj') {
+  if (lower === 'neosoho' || lower === 'neosohojakarta' || lower === 'nsj' || lower === 'choconsj') {
     return 'Neo Soho Jakarta';
   }
-  if (lower.includes('paskal') || lower === 'phb' || lower === 'chocophb') {
+  if (lower === 'paskal' || lower === 'paskalhypersquare' || lower === 'paskalhypersquarebandung' || lower === 'phb' || lower === 'chocophb') {
     return 'Paskal Hyper Square Bandung';
   }
-  if (lower.includes('pondokindah') || lower === 'pim' || lower === 'chocopim') {
+  if (lower === 'pondokindah' || lower === 'pondokindahmall' || lower === 'pim' || lower === 'chocopim') {
     return 'Pondok Indah Mall';
   }
-  if (lower.includes('pakuwon') || lower === 'pms' || lower === 'chocopms') {
+  if (lower === 'pakuwon' || lower === 'pakuwonmall' || lower === 'pakuwonmallsurabaya' || lower === 'pms' || lower === 'chocopms') {
     return 'Pakuwon Mall Surabaya';
   }
-  if (lower.includes('sunplaza') || lower === 'spm' || lower === 'chocospm') {
+  if (lower === 'sunplaza' || lower === 'sunplazamedan' || lower === 'spm' || lower === 'chocospm') {
     return 'Sun Plaza Medan';
   }
-  if (lower.includes('tunjungan') || lower === 'tp' || lower === 'chocotp') {
+  if (lower === 'tunjunganplaza' || lower === 'tunjunganplazasurabaya' || lower === 'tp' || lower === 'chocotp') {
     return 'Tunjungan Plaza Surabaya';
   }
-  if (lower.includes('kyte')) {
+  if (lower === 'kyte' || lower === 'chocokyte') {
     return 'Kyte';
   }
 
@@ -474,6 +504,10 @@ export async function fetchOutlets(): Promise<OutletItem[]> {
               const localRaw = localStorage.getItem('wms_store_contacts_directory');
               const localContacts = localRaw ? JSON.parse(localRaw) : {};
               const merged = { ...localContacts, ...parsed };
+              // Auto-heal jika kode Gading Serpong Tangerang sempat tertimpa menjadi SMS
+              if (merged['Gading Serpong Tangerang'] && merged['Gading Serpong Tangerang'].kode === 'SMS') {
+                merged['Gading Serpong Tangerang'].kode = 'GST';
+              }
               localStorage.setItem('wms_store_contacts_directory', JSON.stringify(merged));
             } catch {}
           }
@@ -504,13 +538,26 @@ export async function fetchOutlets(): Promise<OutletItem[]> {
       data.forEach(d => {
         if (d.nama) {
           const rawName = d.nama.trim();
-          const fullName = getFullStoreName(d.fulfillment || rawName);
+          const fullName = getFullStoreName(rawName);
           const nameLower = fullName.toLowerCase();
           if (deletedSet.has(nameLower) || deletedSet.has(rawName.toLowerCase())) {
             return; // Lewati jika sudah dihapus pengguna
           }
           const contact = getStoreContact(fullName);
-          const kode = d.kode || contact.kode || Object.keys(STORE_CODE_TO_FULL_NAME).find(k => STORE_CODE_TO_FULL_NAME[k].toLowerCase() === nameLower) || rawName.toUpperCase();
+          const defaultCode = Object.keys(STORE_CODE_TO_FULL_NAME).find(
+            k => STORE_CODE_TO_FULL_NAME[k].toLowerCase() === nameLower
+          );
+          const kode =
+            d.kode ||
+            (contact.kode && contact.kode !== 'STORE' ? contact.kode : '') ||
+            defaultCode ||
+            rawName
+              .split(/\s+/)
+              .filter(Boolean)
+              .map((w: string) => w[0]?.toUpperCase() || '')
+              .join('')
+              .slice(0, 4) ||
+            rawName.toUpperCase();
           if (!seenNames.has(nameLower)) {
             seenNames.add(nameLower);
             result.push({
@@ -790,7 +837,15 @@ export async function submitManualShipment(payload: ManualShipmentOrder): Promis
       submitPayload.pic_store = String(submitPayload.pic_store).trim();
     }
 
+    // Tandai di perangkat PIC penginput agar HP/perangkat penginput tidak memunculkan alarm notifikasi pesanan baru ke diri sendiri
+    globalRealtimeStore.markOrderSubmittedLocally(submitPayload.no_pesanan);
+    globalRealtimeStore.markOrderSubmittedLocally(submitPayload.no_transaksi_customer);
+
     await supabaseFetch('manual_shipment', 'POST', [submitPayload]);
+
+    // Broadcast instan ke Laptop & HP Admin yang sedang aktif (< 100ms)
+    globalRealtimeStore.broadcastEvent('new_manual_shipment', submitPayload).catch(() => {});
+
     return { success: true, message: 'Berhasil menyimpan data ke Supabase' };
   } catch (err: any) {
     return { success: false, message: err.message || 'Gagal menyimpan ke Supabase' };

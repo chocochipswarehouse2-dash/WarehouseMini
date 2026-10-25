@@ -589,55 +589,57 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
 
-      {/* Notifikasi HP / Aplikasi (Untuk Semua Pengguna) */}
-      <button
-        type="button"
-        onClick={() => {
-          onRequestNotification();
-          onCloseMobile();
-        }}
-        title={
-          notificationPermission === 'granted'
-            ? 'Notifikasi HP Aktif — Klik untuk tes bunyi & pop-up notifikasi'
-            : 'Aktifkan Notifikasi HP untuk Pesanan Baru Store & Tugas Picking'
-        }
-        className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
-          collapsed ? 'justify-center px-2' : ''
-        }`}
-      >
-        <div
-          className={`p-1.5 rounded-lg shrink-0 relative ${
+      {/* Notifikasi Admin (HP / Laptop Admin) */}
+      {userIsAdmin && (
+        <button
+          type="button"
+          onClick={() => {
+            onRequestNotification();
+            onCloseMobile();
+          }}
+          title={
             notificationPermission === 'granted'
-              ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
-              : 'bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400'
+              ? 'Notifikasi Admin (HP/Laptop) Aktif — Klik untuk tes bunyi & pop-up notifikasi'
+              : 'Aktifkan Notifikasi di HP/Laptop Admin untuk Pesanan Baru dari Store'
+          }
+          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
+            collapsed ? 'justify-center px-2' : ''
           }`}
         >
-          {notificationPermission === 'granted' ? (
-            <BellRing className="w-4 h-4" />
-          ) : (
-            <Bell className="w-4 h-4 animate-bounce" />
-          )}
-          {notificationPermission !== 'granted' && (
-            <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-500 rounded-full animate-ping" />
-          )}
-        </div>
-        {!collapsed && (
-          <div className="flex-1 text-left truncate flex items-center justify-between">
-            <span className="font-extrabold text-slate-800 dark:text-slate-200">
-              Notifikasi HP
-            </span>
-            <span
-              className={`text-[9px] px-1.5 py-0.2 rounded font-black border ${
-                notificationPermission === 'granted'
-                  ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                  : 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800 animate-pulse'
-              }`}
-            >
+          <div
+            className={`p-1.5 rounded-lg shrink-0 relative ${
+              notificationPermission === 'granted'
+                ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
+                : 'bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400'
+            }`}
+          >
+            {notificationPermission === 'granted' ? (
+              <BellRing className="w-4 h-4" />
+            ) : (
+              <Bell className="w-4 h-4 animate-bounce" />
+            )}
+            {notificationPermission !== 'granted' && (
+              <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-500 rounded-full animate-ping" />
+            )}
+          </div>
+          {!collapsed && (
+            <div className="flex-1 text-left truncate flex items-center justify-between">
+              <span className="font-extrabold text-slate-800 dark:text-slate-200">
+                Notifikasi Admin
+              </span>
+              <span
+                className={`text-[9px] px-1.5 py-0.2 rounded font-black border ${
+                  notificationPermission === 'granted'
+                    ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                    : 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800 animate-pulse'
+                }`}
+              >
               {notificationPermission === 'granted' ? 'AKTIF · TES' : 'AKTIFKAN'}
             </span>
           </div>
         )}
       </button>
+      )}
 
       {/* Tema & Tampilan (Untuk Semua Pengguna) */}
       <button

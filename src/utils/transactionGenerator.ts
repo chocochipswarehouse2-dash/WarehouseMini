@@ -49,9 +49,10 @@ export const STORE_ACRONYM_MAP: Record<string, string> = {
   'gaia': 'GAIA',
   'gading serpong tangerang': 'GST',
   'gading serpong': 'GST',
-  'summarecon mall serpong': 'GST',
-  'sms': 'GST',
   'gst': 'GST',
+  'bazaar summarecon mall serpong': 'SMS',
+  'summarecon mall serpong': 'SMS',
+  'sms': 'SMS',
   'supermal karawaci': 'SMK',
   'senayan city': 'SNC',
   'grand indonesia': 'GI',
@@ -75,13 +76,32 @@ export const STORE_ACRONYM_MAP: Record<string, string> = {
  * Menghasilkan kode store singkat (akronim) dari nama store yang diinput
  * Misal:
  * - "Lippo Mall Puri" -> "LMP"
- * - "central park jakarta" -> "CPJ"
- * - "Grand Indonesia" -> "GI"
+ * - "Bazaar Summarecon Mall Serpong" -> "SMS"
  */
 export function getStoreCode(storeName?: string): string {
   if (!storeName || !storeName.trim()) return '';
-  const clean = storeName.trim().toLowerCase();
-  
+  const trimmed = storeName.trim();
+  const clean = trimmed.toLowerCase();
+
+  // 1. Cek kode yang tersimpan di Master Store (wms_store_contacts_directory) terlebih dahulu
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const raw = localStorage.getItem('wms_store_contacts_directory');
+      if (raw) {
+        const contacts = JSON.parse(raw);
+        if (contacts[trimmed]?.kode) {
+          return String(contacts[trimmed].kode).trim().toUpperCase();
+        }
+        const match = Object.values(contacts).find(
+          (c: any) => c && c.nama && String(c.nama).trim().toLowerCase() === clean
+        ) as any;
+        if (match?.kode) {
+          return String(match.kode).trim().toUpperCase();
+        }
+      }
+    } catch {}
+  }
+
   if (STORE_ACRONYM_MAP[clean]) {
     return STORE_ACRONYM_MAP[clean];
   }

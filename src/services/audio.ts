@@ -5,8 +5,6 @@ let audioCtxInitialized = false;
 function getAudioContext(): AudioContext | null {
   try {
     if (!audioCtxInitialized) {
-      // Only create AudioContext when called from a user gesture (click/tap/scan)
-      // Chrome mobile / TWA blocks AudioContext creation without user gesture
       const AudioCtxClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (AudioCtxClass) {
         audioCtx = new AudioCtxClass();
@@ -14,12 +12,29 @@ function getAudioContext(): AudioContext | null {
       }
     }
     if (audioCtx && audioCtx.state === 'suspended') {
-      audioCtx.resume();
+      audioCtx.resume().catch(() => {});
     }
     return audioCtx;
   } catch {
     return null;
   }
+}
+
+// Auto-unlock AudioContext on first user interaction on Admin Laptop / HP so background realtime notifications can play sound
+if (typeof window !== 'undefined') {
+  const unlockAudioOnGesture = () => {
+    try {
+      const ctx = getAudioContext();
+      if (ctx && ctx.state === 'running') {
+        window.removeEventListener('click', unlockAudioOnGesture, true);
+        window.removeEventListener('touchstart', unlockAudioOnGesture, true);
+        window.removeEventListener('keydown', unlockAudioOnGesture, true);
+      }
+    } catch {}
+  };
+  window.addEventListener('click', unlockAudioOnGesture, true);
+  window.addEventListener('touchstart', unlockAudioOnGesture, true);
+  window.addEventListener('keydown', unlockAudioOnGesture, true);
 }
 
 /**

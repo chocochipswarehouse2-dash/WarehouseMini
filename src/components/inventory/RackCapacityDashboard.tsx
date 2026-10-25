@@ -1302,82 +1302,110 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
           ============================================================================ */}
       {(isSimPanelOpen || simulationMoves.length > 0) && (
         <div className="bg-purple-50/70 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900/60 rounded-2xl p-4 space-y-3.5">
-          <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
-            <div className="space-y-1">
-              <h4 className="text-sm font-black text-purple-950 dark:text-purple-200 flex items-center gap-2">
-                <ArrowRightLeft className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                <span>
-                  Rekomendasi Pindah &amp; Refill Rak (Konsolidasi Tugas Picker — WA &amp; Cetak SJ A4)
-                </span>
-              </h4>
-              <p className="text-xs text-slate-600 dark:text-slate-400 max-w-3xl">
-                Susun rekomendasi suplai stok dari <strong>Rak Koli (R, V, Z) ➔ Rak Utama (ABCD)</strong> saat stok di ABCD kosong, atau rapikan rak overload. Sistem otomatis <strong>memadatkan rak tujuan (anti-acak)</strong> agar picker tidak pusing membuka banyak lokasi. Area Blok F (Shopee, TikTok, Studio) &amp; Perbaikan dipisahkan.
-              </p>
+          {/* Top Header Row: Title & Full-Width Description */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-purple-200/60 dark:border-purple-800/50">
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5">
+                <ArrowRightLeft className="w-4 h-4" />
+              </div>
+              <div className="min-w-0 space-y-0.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h4 className="text-sm font-black text-purple-950 dark:text-purple-100">
+                    Rekomendasi Pindah &amp; Refill Rak
+                  </h4>
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-purple-200/80 dark:bg-purple-900/70 text-purple-900 dark:text-purple-200">
+                    Konsolidasi Tugas Picker — WA &amp; SJ A4
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                  Suplai stok dari <strong>Rak Koli (R, V, Z) ➔ Rak Utama (ABCD)</strong> saat stok di ABCD kosong, atau rapikan rak overload. Sistem otomatis <strong>memadatkan rak tujuan (anti-acak)</strong> agar picker mudah mengambil barang (Blok F &amp; Perbaikan dipisahkan).
+                </p>
+              </div>
             </div>
 
-            {/* Action Buttons: Auto-Refill Koli -> ABCD & Auto-Relokasi Overload */}
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {/* Secondary / Export Actions (Shown on Right) */}
+            {simulationMoves.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleCopySimulationTask}
+                  className="px-3 py-2 text-xs font-extrabold bg-purple-600 hover:bg-purple-500 text-white rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs transition-colors"
+                >
+                  {copiedSimText ? (
+                    <Check className="w-3.5 h-3.5" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                  <span>{copiedSimText ? 'Teks WA Tersalin!' : 'Salin Tugas WA'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsSjPrintModalOpen(true)}
+                  className="px-3 py-2 text-xs font-extrabold bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs transition-colors"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Cetak SJ Tugas Picker (A4)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSimulationMoves([])}
+                  className="px-3 py-2 text-xs font-bold bg-white dark:bg-slate-900 text-rose-600 border border-rose-200 dark:border-rose-900 rounded-xl hover:bg-rose-50 cursor-pointer flex items-center gap-1.5 whitespace-nowrap transition-colors"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Generator Action Cards Row: Auto-Refill Koli -> ABCD & Auto-Relokasi Overload */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white dark:bg-[#131d31] border border-emerald-200 dark:border-emerald-900/60">
+              <div className="min-w-0">
+                <div className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <Boxes className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span className="truncate">Suplai Otomatis Koli (R, V, Z) ➔ Rak ABCD</span>
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                  Deteksi SKU yang kosong (0 pcs) di rak ABCD namun tersedia di Koli
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={handleGenerateKoliRefill}
-                className="px-3 py-1.5 text-xs font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs"
-                title="Deteksi otomatis barang yang kosong (0 pcs) di Rak Utama ABCD namun tersedia di Rak Koli (R, V, Z), dipadatkan ke rak tujuan terdekat"
+                className="px-3.5 py-2 text-xs font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs shrink-0 transition-colors"
               >
                 <Boxes className="w-3.5 h-3.5" />
                 <span>
-                  Refill Koli ➔ Rak ABCD
+                  Refill Koli ➔ ABCD
                   {koliRefillSummary.totalRefillableSkus > 0
-                    ? ` (${koliRefillSummary.totalRefillableSkus} SKU siap suplai)`
+                    ? ` (${koliRefillSummary.totalRefillableSkus} SKU)`
                     : ''}
                 </span>
               </button>
+            </div>
 
-              {summaryStats.overloadCount > 0 && (
-                <button
-                  type="button"
-                  onClick={handleGenerateOverloadRelocation}
-                  className="px-3 py-1.5 text-xs font-extrabold bg-amber-500 hover:bg-amber-600 text-black rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs"
-                  title="Konsolidasikan kelebihan stok dari rak ABCD yang overload ke rak kosong/longgar terdekat dalam kategori yang sama"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Rapikan Rak Overload ({summaryStats.overloadCount})</span>
-                </button>
-              )}
-
-              {simulationMoves.length > 0 && (
-                <>
-                  <button
-                    type="button"
-                    onClick={handleCopySimulationTask}
-                    className="px-3 py-1.5 text-xs font-extrabold bg-purple-600 hover:bg-purple-500 text-white rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs"
-                  >
-                    {copiedSimText ? (
-                      <Check className="w-3.5 h-3.5" />
-                    ) : (
-                      <Copy className="w-3.5 h-3.5" />
-                    )}
-                    <span>{copiedSimText ? 'Teks WA Tersalin!' : 'Salin Tugas WA'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setIsSjPrintModalOpen(true)}
-                    className="px-3 py-1.5 text-xs font-extrabold bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs"
-                  >
-                    <Printer className="w-3.5 h-3.5" />
-                    <span>Cetak SJ Tugas Picker (A4)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSimulationMoves([])}
-                    className="px-2.5 py-1.5 text-xs font-bold bg-white dark:bg-slate-900 text-rose-600 border border-rose-200 dark:border-rose-900 rounded-xl hover:bg-rose-50 cursor-pointer flex items-center gap-1 whitespace-nowrap"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Reset</span>
-                  </button>
-                </>
-              )}
+            <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white dark:bg-[#131d31] border border-amber-200 dark:border-amber-900/60">
+              <div className="min-w-0">
+                <div className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  <span className="truncate">Relokasi Rak Overload (&gt;100% Kapasitas)</span>
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                  Pindahkan kelebihan pcs dari rak penuh ke rak kosong/longgar terdekat
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleGenerateOverloadRelocation}
+                disabled={summaryStats.overloadCount === 0}
+                className="px-3.5 py-2 text-xs font-extrabold bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-black rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs shrink-0 transition-colors"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Rapikan Rak Overload ({summaryStats.overloadCount})</span>
+              </button>
             </div>
           </div>
 
