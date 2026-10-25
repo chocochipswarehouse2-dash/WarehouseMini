@@ -248,6 +248,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       {activeTab === 'capacity' && (
         <RackCapacityDashboard
           stockRows={flatStockSnapshot}
+          productCatalog={productCatalog}
           session={session}
           onNotify={onNotify}
           onOpenPrintModal={handleOpenLokasiExport}

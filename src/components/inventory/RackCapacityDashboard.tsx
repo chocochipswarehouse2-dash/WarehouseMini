@@ -22,9 +22,14 @@ import {
   ArrowRight,
   History,
   RotateCcw,
+  Printer,
+  Send,
+  Boxes,
+  FileText,
 } from 'lucide-react';
-import type { StockRealtimeItem, UserSession, LogProdukItem } from '../../types';
+import type { StockRealtimeItem, UserSession, LogProdukItem, ProductItem } from '../../types';
 import { supabaseFetch } from '../../services/supabase';
+import { cleanProductName, extractCleanSizeToken, extractSizeFromSku } from '../../utils/sortUtils';
 import {
   type RackCapacityConfig,
   type RackZoneRule,
@@ -32,16 +37,22 @@ import {
   type ComputedRackSlot,
   type SimulationMove,
   type RackStatusLevel,
+  type EnrichedCatalogEntry,
   loadLocalRackCapacityConfig,
   fetchRackCapacityConfig,
   persistRackCapacityConfig,
   computeAllRackSlots,
   getRecommendedNearbyRacks,
   getDefaultRackCapacityConfig,
+  isExcludedFromWarehouseRelocation,
+  getKoliToAbcdRefillSummary,
+  generateConsolidatedKoliRefillMoves,
+  generateConsolidatedOverloadMoves,
 } from '../../services/rackCapacityService';
 
 interface RackCapacityDashboardProps {
   stockRows: StockRealtimeItem[];
+  productCatalog?: ProductItem[];
   session?: UserSession | null;
   onNotify?: (msg: string, type: 'success' | 'error' | 'info' | 'warning') => void;
   onOpenPrintModal?: (lokasi: string) => void;
@@ -159,6 +170,7 @@ function getStatusVisual(status: RackStatusLevel) {
 
 export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   stockRows,
+  productCatalog = [],
   session,
   onNotify,
   onOpenPrintModal,
@@ -208,7 +220,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   const [newZoneCap, setNewZoneCap] = useState<number>(30);
   const [newZoneColor, setNewZoneColor] = useState<RackZoneColor>('blue');
 
-  // Pre-Execution Relocation Simulation State
+  // Rekomendasi Pindah & Refill Rak State
   const [simulationMoves, setSimulationMoves] = useState<SimulationMove[]>([]);
   const [isSimPanelOpen, setIsSimPanelOpen] = useState(false);
   const [simFromLoc, setSimFromLoc] = useState('');
@@ -216,6 +228,38 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   const [simSku, setSimSku] = useState('');
   const [simQty, setSimQty] = useState<number>(1);
   const [copiedSimText, setCopiedSimText] = useState(false);
+  const [isSjPrintModalOpen, setIsSjPrintModalOpen] = useState(false);
+
+  // Build Master Produk lookup map (SKU -> { nama_produk, size, kategori })
+  const catalogMap = useMemo(() => {
+    const map = new Map<string, EnrichedCatalogEntry>();
+    for (let i = 0; i < productCatalog.length; i++) {
+      const item = productCatalog[i];
+      if (!item) continue;
+      const sku = String(item.k || (item as Record<string, unknown>).sku || '')
+        .trim()
+        .toUpperCase();
+      if (!sku) continue;
+      const rawName = String(
+        item.n || item.p || (item as Record<string, unknown>).nama_produk || sku
+      ).trim();
+      const nama_produk = cleanProductName(rawName) || rawName || sku;
+      let size = extractCleanSizeToken(
+        String(item.s || (item as Record<string, unknown>).size || '')
+      );
+      if (!size || size === '-') size = extractSizeFromSku(sku);
+      if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = 'ALL';
+      const kategori = String(
+        (item as Record<string, unknown>).kategori ||
+          item.category ||
+          item.c ||
+          (item as Record<string, unknown>).jenis ||
+          'Apparel'
+      ).trim();
+      map.set(sku, { sku, nama_produk, size, kategori });
+    }
+    return map;
+  }, [productCatalog]);
 
   // Load remote config on mount
   useEffect(() => {
@@ -228,10 +272,10 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     };
   }, []);
 
-  // Compute all rack slots in real-time
+  // Compute all rack slots in real-time (enriched with Master Produk names & sizes)
   const allSlots = useMemo(
-    () => computeAllRackSlots(config, stockRows, simulationMoves),
-    [config, stockRows, simulationMoves]
+    () => computeAllRackSlots(config, stockRows, simulationMoves, catalogMap),
+    [config, stockRows, simulationMoves, catalogMap]
   );
 
   const slotByLokasi = useMemo(() => {
@@ -563,7 +607,73 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     onNotify?.('Pengaturan kapasitas dikembalikan ke standar default (A001-D100).', 'info');
   };
 
-  // Simulation Handlers
+  // Summary of SKUs empty in ABCD (0 pcs) and available only in Koli (R, V, Z)
+  const koliRefillSummary = useMemo(
+    () => getKoliToAbcdRefillSummary(allSlots, simulationMoves),
+    [allSlots, simulationMoves]
+  );
+
+  // Group recommendation moves by route (fromLokasi -> toLokasi) to prevent picker confusion
+  const groupedRecommendationRoutes = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        routeKey: string;
+        fromLokasi: string;
+        toLokasi: string;
+        totalPcs: number;
+        items: SimulationMove[];
+      }
+    >();
+    for (const m of simulationMoves) {
+      const key = `${m.fromLokasi}__${m.toLokasi}`;
+      let group = map.get(key);
+      if (!group) {
+        group = {
+          routeKey: key,
+          fromLokasi: m.fromLokasi,
+          toLokasi: m.toLokasi,
+          totalPcs: 0,
+          items: [],
+        };
+        map.set(key, group);
+      }
+      group.totalPcs += m.qty;
+      group.items.push(m);
+    }
+    return Array.from(map.values());
+  }, [simulationMoves]);
+
+  const recommendationSummary = useMemo(() => {
+    const fromSet = new Set<string>();
+    const toSet = new Set<string>();
+    const skuSet = new Set<string>();
+    let totalPcs = 0;
+    for (const m of simulationMoves) {
+      fromSet.add(m.fromLokasi);
+      toSet.add(m.toLokasi);
+      skuSet.add(m.sku);
+      totalPcs += m.qty;
+    }
+    return {
+      totalMoves: simulationMoves.length,
+      uniqueSkus: skuSet.size,
+      totalPcs,
+      uniqueFromRacks: fromSet.size,
+      uniqueToRacks: toSet.size,
+    };
+  }, [simulationMoves]);
+
+  const sjDocumentNumber = useMemo(() => {
+    const d = new Date();
+    const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(
+      d.getDate()
+    ).padStart(2, '0')}`;
+    const hm = `${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`;
+    return `SJ-RKP-${ymd}-${hm}`;
+  }, [simulationMoves.length]);
+
+  // Recommendation Handlers
   const handleAddSimulationMove = () => {
     const from = simFromLoc.trim().toUpperCase();
     const to = simToLoc.trim().toUpperCase();
@@ -574,41 +684,317 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     }
 
     const srcSlot = slotByLokasi.get(from);
-    const matchedItem = srcSlot?.items.find((i) => i.sku === simSku) || srcSlot?.items[0];
+    const dstSlot = slotByLokasi.get(to);
+
+    // Enforce operational separation: Blok F (SHOPEE, TIKTOK, STUDIO) & Perbaikan cannot be mixed with ABCD/Koli/X
+    const srcExcluded = isExcludedFromWarehouseRelocation(srcSlot?.area || '', from);
+    const dstExcluded = isExcludedFromWarehouseRelocation(dstSlot?.area || '', to);
+    if (srcExcluded !== dstExcluded) {
+      onNotify?.(
+        `Perhatian: Lokasi ${from} dan ${to} berbeda fungsi operasional (Blok F / Perbaikan tidak boleh disamakan dengan Gudang ABCD / Koli / Transit).`,
+        'warning'
+      );
+      return;
+    }
+
+    const rawSku = simSku.trim().toUpperCase();
+    const matchedItem =
+      (rawSku ? srcSlot?.items.find((i) => i.sku.toUpperCase() === rawSku) : undefined) ||
+      srcSlot?.items[0];
+    const finalSku = rawSku || matchedItem?.sku || 'BARANG-CAMPURAN';
+    const catInfo = catalogMap.get(finalSku);
+
+    const resolvedName =
+      (catInfo?.nama_produk && catInfo.nama_produk !== finalSku ? catInfo.nama_produk : '') ||
+      (matchedItem?.nama_produk && matchedItem.nama_produk !== finalSku
+        ? matchedItem.nama_produk
+        : '') ||
+      catInfo?.nama_produk ||
+      matchedItem?.nama_produk ||
+      finalSku;
+
+    const resolvedSize =
+      (catInfo?.size && catInfo.size !== '-' ? catInfo.size : '') ||
+      (matchedItem?.size && matchedItem.size !== '-' ? matchedItem.size : '') ||
+      extractSizeFromSku(finalSku) ||
+      'ALL';
+
     const move: SimulationMove = {
       id: `sim_${Date.now()}`,
       fromLokasi: from,
       toLokasi: to,
-      sku: simSku || matchedItem?.sku || 'BARANG-CAMPURAN',
-      nama_produk: matchedItem?.nama_produk || 'Relokasi Kapasitas Rak',
+      sku: finalSku,
+      nama_produk: resolvedName,
+      size: resolvedSize,
+      category: dstSlot?.category || srcSlot?.category || catInfo?.kategori || 'Umum',
+      moveType: 'MANUAL',
       qty,
       createdAt: new Date().toISOString(),
     };
 
     setSimulationMoves((prev) => [...prev, move]);
-    onNotify?.(`Simulasi pindah ${qty} pcs dari ${from} ke ${to} ditambahkan.`, 'info');
+    onNotify?.(
+      `Rekomendasi pindah ${qty} pcs ${resolvedName} (Size ${resolvedSize}) dari ${from} ke ${to} ditambahkan.`,
+      'info'
+    );
+  };
+
+  const handleGenerateKoliRefill = () => {
+    const generated = generateConsolidatedKoliRefillMoves(
+      allSlots,
+      catalogMap,
+      simulationMoves,
+      20
+    );
+    if (generated.length === 0) {
+      onNotify?.(
+        'Tidak ditemukan SKU di Rak Koli (R/V/Z) yang sedang kosong (0 pcs) di Rak Utama ABCD, atau seluruh rekomendasi sudah masuk daftar.',
+        'info'
+      );
+      return;
+    }
+    const fromRacks = new Set(generated.map((m) => m.fromLokasi)).size;
+    const toRacks = new Set(generated.map((m) => m.toLokasi)).size;
+    const totalPcs = generated.reduce((acc, m) => acc + m.qty, 0);
+    setSimulationMoves((prev) => [...prev, ...generated]);
+    setIsSimPanelOpen(true);
+    onNotify?.(
+      `Berhasil menyusun ${generated.length} SKU (${totalPcs} pcs) Refill dari ${fromRacks} Rak Koli → dipadatkan ke ${toRacks} Rak ABCD!`,
+      'success'
+    );
+  };
+
+  const handleGenerateOverloadRelocation = () => {
+    const generated = generateConsolidatedOverloadMoves(allSlots, catalogMap, simulationMoves);
+    if (generated.length === 0) {
+      onNotify?.(
+        'Tidak ada Rak ABCD yang sedang Overload (>100%) atau seluruh kelebihan sudah masuk rekomendasi.',
+        'info'
+      );
+      return;
+    }
+    const fromRacks = new Set(generated.map((m) => m.fromLokasi)).size;
+    const toRacks = new Set(generated.map((m) => m.toLokasi)).size;
+    const totalPcs = generated.reduce((acc, m) => acc + m.qty, 0);
+    setSimulationMoves((prev) => [...prev, ...generated]);
+    setIsSimPanelOpen(true);
+    onNotify?.(
+      `Berhasil menyusun rekomendasi rapikan ${fromRacks} Rak Overload (${totalPcs} pcs) → dipadatkan ke ${toRacks} Rak tujuan!`,
+      'success'
+    );
+  };
+
+  const buildWhatsAppTaskText = () => {
+    const lines: string[] = [
+      `*FORM TUGAS PICKER — REKOMENDASI PINDAH & REFILL RAK*`,
+      `No. Dokumen: *${sjDocumentNumber}*`,
+      `Tanggal: ${new Date().toLocaleDateString('id-ID', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      })}`,
+      `Ringkasan: *${recommendationSummary.uniqueSkus} SKU (${recommendationSummary.totalPcs} pcs)* | *${recommendationSummary.uniqueFromRacks} Rak Asal ➔ ${recommendationSummary.uniqueToRacks} Rak Tujuan*`,
+      `----------------------------------------`,
+    ];
+
+    groupedRecommendationRoutes.forEach((route, rIdx) => {
+      lines.push(
+        `\n*RUTE ${rIdx + 1}: RAK ASAL [${route.fromLokasi}] ➔ KE RAK TUJUAN [${route.toLokasi}]* (${route.totalPcs} pcs)`
+      );
+      route.items.forEach((m, iIdx) => {
+        const sizeLabel = m.size && m.size !== '-' ? m.size : 'ALL';
+        lines.push(
+          `  ${iIdx + 1}. *${m.nama_produk}* | Size: *${sizeLabel}*\n     SKU: \`${m.sku}\` — Ambil: *${m.qty} pcs*`
+        );
+      });
+    });
+
+    lines.push(
+      `\n----------------------------------------`,
+      `_SOP Picker: Scan #OUT pada Rak Asal saat mengambil barang, lalu Scan #IN pada Rak Tujuan saat menaruh barang._`
+    );
+    return lines.join('\n');
   };
 
   const handleCopySimulationTask = async () => {
     if (simulationMoves.length === 0) return;
-    const lines = [
-      `*INSTRUKSI RELOKASI KAPASITAS RAK GUDANG*`,
-      `Tanggal: ${new Date().toLocaleDateString('id-ID')}`,
-      `----------------------------------------`,
-      ...simulationMoves.map(
-        (m, idx) =>
-          `${idx + 1}. Pindahkan *${m.qty} pcs* (${m.sku})\n   Dari Rak: *${m.fromLokasi}* -> Ke Rak: *${m.toLokasi}*`
-      ),
-      `----------------------------------------`,
-      `_Catatan Picker: Lakukan scan #OUT pada rak asal lalu scan #IN pada rak tujuan._`,
-    ];
     try {
-      await navigator.clipboard.writeText(lines.join('\n'));
+      await navigator.clipboard.writeText(buildWhatsAppTaskText());
       setCopiedSimText(true);
       setTimeout(() => setCopiedSimText(false), 2000);
-      onNotify?.('Instruksi tugas pindah rak berhasil disalin ke clipboard!', 'success');
+      onNotify?.(
+        'Teks tugas WhatsApp (lengkap dengan Nama Produk, Size, SKU & Rute Rak) berhasil disalin!',
+        'success'
+      );
     } catch {
       onNotify?.('Gagal menyalin teks ke clipboard.', 'error');
+    }
+  };
+
+  const handleTriggerA4Print = () => {
+    if (simulationMoves.length === 0) return;
+    const dateStr = new Date().toLocaleString('id-ID', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const operatorName = session?.name || session?.username || 'Admin Gudang';
+
+    let rowsHtml = '';
+    let globalNo = 1;
+    for (const route of groupedRecommendationRoutes) {
+      rowsHtml += `
+        <tr style="background:#f1f5f9;font-weight:800;">
+          <td colspan="8" style="padding:7px 10px;border:1px solid #334155;font-size:11px;letter-spacing:0.02em;">
+            RUTE PEMINDAHAN: DARI RAK ASAL [ ${route.fromLokasi} ] &nbsp;&rarr;&nbsp; MENUJU RAK TUJUAN [ ${route.toLokasi} ]
+            &nbsp;&nbsp;(Subtotal: ${route.items.length} SKU / ${route.totalPcs} pcs)
+          </td>
+        </tr>
+      `;
+      for (const m of route.items) {
+        const sizeStr = m.size && m.size !== '-' ? m.size : 'ALL';
+        const typeLabel =
+          m.moveType === 'REFILL_KOLI'
+            ? 'Refill Koli → ABCD'
+            : m.moveType === 'RELOKASI_OVERLOAD'
+            ? 'Rapikan Overload'
+            : 'Relokasi Rak';
+        rowsHtml += `
+          <tr>
+            <td style="padding:6px 8px;border:1px solid #cbd5e1;text-align:center;font-family:monospace;">${globalNo++}</td>
+            <td style="padding:6px 8px;border:1px solid #cbd5e1;text-align:center;font-family:monospace;font-weight:800;font-size:12px;">${m.fromLokasi}</td>
+            <td style="padding:6px 8px;border:1px solid #cbd5e1;text-align:center;font-family:monospace;font-weight:800;font-size:12px;">${m.toLokasi}</td>
+            <td style="padding:6px 8px;border:1px solid #cbd5e1;font-family:monospace;font-weight:700;">${m.sku}</td>
+            <td style="padding:6px 8px;border:1px solid #cbd5e1;font-weight:600;">${m.nama_produk}</td>
+            <td style="padding:6px 8px;border:1px solid #cbd5e1;text-align:center;font-weight:700;">${sizeStr}</td>
+            <td style="padding:6px 8px;border:1px solid #cbd5e1;text-align:right;font-family:monospace;font-weight:800;font-size:12px;">${m.qty} pcs</td>
+            <td style="padding:6px 8px;border:1px solid #cbd5e1;text-align:center;font-size:10px;">
+              [ &nbsp; ] #OUT &nbsp;&nbsp; [ &nbsp; ] #IN
+              <div style="font-size:9px;color:#64748b;margin-top:2px;">${typeLabel}</div>
+            </td>
+          </tr>
+        `;
+      }
+    }
+
+    const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${sjDocumentNumber} - Surat Jalan Tugas Relokasi & Refill Rak</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; margin: 0; padding: 0; font-size: 11px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 12px; }
+    .title { font-size: 16px; font-weight: 900; margin: 0 0 4px 0; letter-spacing: 0.02em; }
+    .subtitle { font-size: 11px; color: #475569; margin: 0; }
+    .meta-box { text-align: right; font-size: 11px; line-height: 1.5; }
+    .summary-strip { display: flex; gap: 12px; margin-bottom: 12px; background: #f8fafc; border: 1px solid #cbd5e1; padding: 8px 12px; border-radius: 6px; }
+    .summary-item { flex: 1; }
+    .summary-label { font-size: 9px; text-transform: uppercase; color: #64748b; font-weight: 700; }
+    .summary-val { font-size: 13px; font-weight: 900; font-family: monospace; margin-top: 2px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+    th { background: #0f172a; color: #ffffff; font-size: 10px; text-transform: uppercase; padding: 7px 8px; border: 1px solid #0f172a; }
+    .sop-note { font-size: 10px; background: #fffbeb; border: 1px solid #fcd34d; padding: 8px 10px; border-radius: 6px; margin-bottom: 20px; }
+    .signatures { display: flex; justify-content: space-between; margin-top: 28px; page-break-inside: avoid; }
+    .sig-col { width: 30%; text-align: center; }
+    .sig-line { margin-top: 52px; border-top: 1px solid #334155; padding-top: 4px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="title">SURAT JALAN / FORM TUGAS PICKER (REFILL &amp; RELOKASI RAK)</div>
+      <div class="subtitle">Warehouse Management System — Konsolidasi Putaway Rak Koli (R/V/Z) &amp; Rak Utama (ABCD)</div>
+    </div>
+    <div class="meta-box">
+      <div><strong>No. Dokumen:</strong> ${sjDocumentNumber}</div>
+      <div><strong>Tanggal Cetak:</strong> ${dateStr}</div>
+      <div><strong>Dibuat Oleh:</strong> ${operatorName}</div>
+    </div>
+  </div>
+
+  <div class="summary-strip">
+    <div class="summary-item">
+      <div class="summary-label">Total Baris Tugas</div>
+      <div class="summary-val">${recommendationSummary.totalMoves} Baris (${recommendationSummary.uniqueSkus} SKU)</div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-label">Total Kuantitas Fisik</div>
+      <div class="summary-val">${recommendationSummary.totalPcs} Pcs</div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-label">Konsolidasi Titik Rak</div>
+      <div class="summary-val">${recommendationSummary.uniqueFromRacks} Rak Asal &rarr; ${recommendationSummary.uniqueToRacks} Rak Tujuan</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:32px;">No</th>
+        <th style="width:68px;">Rak Asal</th>
+        <th style="width:68px;">Rak Tujuan</th>
+        <th style="width:115px;">Kode SKU</th>
+        <th>Nama Produk</th>
+        <th style="width:48px;">Size</th>
+        <th style="width:64px;">Qty Pindah</th>
+        <th style="width:120px;">Ceklis Scan Fisik</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHtml}
+    </tbody>
+  </table>
+
+  <div class="sop-note">
+    <strong>Instruksi Wajib Picker / Operator Gudang:</strong>
+    1. Ambil barang sesuai <strong>Rak Asal</strong>, pastikan <strong>SKU, Nama Produk, Size, dan Qty</strong> sesuai fisik, lalu lakukan scan <strong>#OUT</strong> pada Rak Asal.<br/>
+    2. Tempatkan barang secara rapi ke <strong>Rak Tujuan</strong> yang telah dikonsolidasi (jangan dipecah ke rak lain tanpa scan), lalu lakukan scan <strong>#IN</strong> pada Rak Tujuan.
+  </div>
+
+  <div class="signatures">
+    <div class="sig-col">
+      <div>Ditugaskan Oleh (Admin / Leader)</div>
+      <div class="sig-line">${operatorName}</div>
+    </div>
+    <div class="sig-col">
+      <div>Dikerjakan Oleh (Picker Gudang)</div>
+      <div class="sig-line">( ........................................ )</div>
+    </div>
+    <div class="sig-col">
+      <div>Diverifikasi Oleh (Supervisor / QC)</div>
+      <div class="sig-line">( ........................................ )</div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow?.document;
+    if (doc) {
+      doc.open();
+      doc.write(htmlContent);
+      doc.close();
+      setTimeout(() => {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+        setTimeout(() => {
+          if (document.body.contains(iframe)) {
+            document.body.removeChild(iframe);
+          }
+        }, 2000);
+      }, 250);
     }
   };
 
@@ -752,10 +1138,10 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               Kapasitas Per Area &amp; Kategori Zona Rak
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Klik kartu zona di bawah untuk memfilter rak (Warehouse: A–D · Transit: X001–X100 · Kolian: R, V, Z · Blok F)
+              Klik kartu zona di bawah untuk memfilter rak (Warehouse Utama: A–D · Suplai Kolian: R, V, Z · Transit: X · Blok F: Shopee, TikTok, Studio · Perbaikan: CC, PMK, DF)
             </p>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             {(selectedZoneId !== 'ALL' || selectedArea !== 'ALL') && (
               <button
                 type="button"
@@ -779,7 +1165,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             >
               <ArrowRightLeft className="w-3.5 h-3.5" />
               <span>
-                Simulasi Pindah Rak
+                Rekomendasi Pindah Rak
                 {simulationMoves.length > 0 ? ` (${simulationMoves.length})` : ''}
               </span>
             </button>
@@ -831,7 +1217,14 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                     : 'bg-slate-50 dark:bg-[#0E1420] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
                 }`}
               >
-                {areaName === 'Kolian' ? 'Kolian / Koli (R, V, Z)' : areaName === 'Transit' ? 'Transit (X)' : areaName} ({countInArea})
+                {areaName === 'Kolian'
+                  ? 'Kolian / Koli (R, V, Z)'
+                  : areaName === 'Transit'
+                  ? 'Transit (X)'
+                  : areaName === 'Perbaikan'
+                  ? 'Perbaikan (CC, PMK, DF)'
+                  : areaName}{' '}
+                ({countInArea})
               </button>
             );
           })}
@@ -905,59 +1298,106 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       </div>
 
       {/* ============================================================================
-          3. PRE-EXECUTION RELOCATION SIMULATOR PANEL (Collapsible)
+          3. REKOMENDASI PINDAH & REFILL RAK (Koli -> ABCD & Relokasi Overload)
           ============================================================================ */}
       {(isSimPanelOpen || simulationMoves.length > 0) && (
-        <div className="bg-purple-50/70 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900/60 rounded-2xl p-4 space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
+        <div className="bg-purple-50/70 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900/60 rounded-2xl p-4 space-y-3.5">
+          <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
+            <div className="space-y-1">
               <h4 className="text-sm font-black text-purple-950 dark:text-purple-200 flex items-center gap-2">
                 <ArrowRightLeft className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                <span>Simulator Pindah Barang Antar Rak (Sebelum Dieksekusi Picker)</span>
+                <span>
+                  Rekomendasi Pindah &amp; Refill Rak (Konsolidasi Tugas Picker — WA &amp; Cetak SJ A4)
+                </span>
               </h4>
-              <p className="text-xs text-slate-600 dark:text-slate-400">
-                Uji coba pemindahan stok dari rak overload ke rak kosong untuk melihat perubahan persentase secara langsung tanpa merusak data stok asli.
+              <p className="text-xs text-slate-600 dark:text-slate-400 max-w-3xl">
+                Susun rekomendasi suplai stok dari <strong>Rak Koli (R, V, Z) ➔ Rak Utama (ABCD)</strong> saat stok di ABCD kosong, atau rapikan rak overload. Sistem otomatis <strong>memadatkan rak tujuan (anti-acak)</strong> agar picker tidak pusing membuka banyak lokasi. Area Blok F (Shopee, TikTok, Studio) &amp; Perbaikan dipisahkan.
               </p>
             </div>
-            {simulationMoves.length > 0 && (
-              <div className="flex items-center gap-2 shrink-0">
+
+            {/* Action Buttons: Auto-Refill Koli -> ABCD & Auto-Relokasi Overload */}
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleGenerateKoliRefill}
+                className="px-3 py-1.5 text-xs font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs"
+                title="Deteksi otomatis barang yang kosong (0 pcs) di Rak Utama ABCD namun tersedia di Rak Koli (R, V, Z), dipadatkan ke rak tujuan terdekat"
+              >
+                <Boxes className="w-3.5 h-3.5" />
+                <span>
+                  Refill Koli ➔ Rak ABCD
+                  {koliRefillSummary.totalRefillableSkus > 0
+                    ? ` (${koliRefillSummary.totalRefillableSkus} SKU siap suplai)`
+                    : ''}
+                </span>
+              </button>
+
+              {summaryStats.overloadCount > 0 && (
                 <button
                   type="button"
-                  onClick={handleCopySimulationTask}
-                  className="px-3 py-1.5 text-xs font-extrabold bg-purple-600 hover:bg-purple-500 text-white rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                  onClick={handleGenerateOverloadRelocation}
+                  className="px-3 py-1.5 text-xs font-extrabold bg-amber-500 hover:bg-amber-600 text-black rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs"
+                  title="Konsolidasikan kelebihan stok dari rak ABCD yang overload ke rak kosong/longgar terdekat dalam kategori yang sama"
                 >
-                  {copiedSimText ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedSimText ? 'Tersalin!' : 'Salin Instruksi Picker (WA)'}</span>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Rapikan Rak Overload ({summaryStats.overloadCount})</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setSimulationMoves([])}
-                  className="px-3 py-1.5 text-xs font-bold bg-white dark:bg-slate-900 text-rose-600 border border-rose-200 dark:border-rose-900 rounded-xl hover:bg-rose-50 cursor-pointer flex items-center gap-1 whitespace-nowrap"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Reset Simulasi</span>
-                </button>
-              </div>
-            )}
+              )}
+
+              {simulationMoves.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleCopySimulationTask}
+                    className="px-3 py-1.5 text-xs font-extrabold bg-purple-600 hover:bg-purple-500 text-white rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs"
+                  >
+                    {copiedSimText ? (
+                      <Check className="w-3.5 h-3.5" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                    <span>{copiedSimText ? 'Teks WA Tersalin!' : 'Salin Tugas WA'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsSjPrintModalOpen(true)}
+                    className="px-3 py-1.5 text-xs font-extrabold bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Cetak SJ Tugas Picker (A4)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSimulationMoves([])}
+                    className="px-2.5 py-1.5 text-xs font-bold bg-white dark:bg-slate-900 text-rose-600 border border-rose-200 dark:border-rose-900 rounded-xl hover:bg-rose-50 cursor-pointer flex items-center gap-1 whitespace-nowrap"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Reset</span>
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
-          {/* Add Move Form */}
+          {/* Manual Add Recommendation Form */}
           <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 items-end bg-white dark:bg-[#131d31] p-3 rounded-xl border border-purple-200/70 dark:border-slate-800">
             <div>
               <label className="block text-[11px] font-bold text-slate-500 mb-1">
-                Dari Rak Asal
+                Dari Rak Asal (Koli / ABCD)
               </label>
               <input
                 type="text"
                 value={simFromLoc}
                 onChange={(e) => setSimFromLoc(e.target.value.toUpperCase())}
-                placeholder="Contoh: A001"
+                placeholder="Contoh: R001 atau A001"
                 className="w-full px-3 py-1.5 text-xs font-mono bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
               />
             </div>
             <div>
               <label className="block text-[11px] font-bold text-slate-500 mb-1">
-                Ke Rak Tujuan
+                Ke Rak Tujuan (ABCD / X)
               </label>
               <input
                 type="text"
@@ -969,13 +1409,13 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             </div>
             <div>
               <label className="block text-[11px] font-bold text-slate-500 mb-1">
-                SKU (Opsional)
+                Kode SKU Produk
               </label>
               <input
                 type="text"
                 value={simSku}
                 onChange={(e) => setSimSku(e.target.value.toUpperCase())}
-                placeholder="Pilih / Ketik SKU"
+                placeholder="Ketik SKU (Nama & Size otomatis)"
                 className="w-full px-3 py-1.5 text-xs font-mono bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
               />
             </div>
@@ -997,54 +1437,116 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               className="px-4 py-1.5 text-xs font-extrabold bg-purple-600 hover:bg-purple-500 text-white rounded-lg flex items-center justify-center gap-1.5 cursor-pointer h-[32px] whitespace-nowrap"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Tambah Simulasi</span>
+              <span>Tambah Tugas Pindah</span>
             </button>
           </div>
 
-          {/* Active Simulation Moves List */}
+          {/* Consolidated Routes & Items Table */}
           {simulationMoves.length > 0 && (
-            <div className="space-y-1.5">
-              {simulationMoves.map((m) => {
-                const fromSlot = slotByLokasi.get(m.fromLokasi);
-                const toSlot = slotByLokasi.get(m.toLokasi);
-                return (
-                  <div
-                    key={m.id}
-                    className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-white dark:bg-[#131d31] rounded-xl border border-slate-200 dark:border-slate-800 text-xs"
-                  >
-                    <div className="flex items-center gap-2 font-mono tabular-nums">
-                      <strong className="text-slate-900 dark:text-white">{m.fromLokasi}</strong>
-                      {fromSlot && (
-                        <span className="text-slate-400">
-                          ({fromSlot.fillPercent}% → {fromSlot.simulatedPercent}%)
-                        </span>
-                      )}
-                      <ArrowRight className="w-3.5 h-3.5 text-purple-500" />
-                      <strong className="text-purple-600 dark:text-purple-400">{m.toLokasi}</strong>
-                      {toSlot && (
-                        <span className="text-slate-400">
-                          ({toSlot.fillPercent}% → {toSlot.simulatedPercent}%)
-                        </span>
-                      )}
-                      <span aria-hidden="true">·</span>
-                      <span className="font-bold text-slate-700 dark:text-slate-300">
-                        {m.qty} pcs
-                      </span>
-                      <span className="text-slate-400">({m.sku})</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setSimulationMoves((prev) => prev.filter((x) => x.id !== m.id))
-                      }
-                      className="text-rose-500 hover:text-rose-600 p-1 cursor-pointer"
-                      title="Hapus baris simulasi"
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-purple-100/70 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 text-xs">
+                <div className="flex flex-wrap items-center gap-2 font-bold text-purple-950 dark:text-purple-200">
+                  <FileText className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                  <span>No. SJ Tugas:</span>
+                  <span className="font-mono font-black">{sjDocumentNumber}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>
+                    Total: <strong>{recommendationSummary.uniqueSkus} SKU</strong> (
+                    <strong>{recommendationSummary.totalPcs} pcs</strong>)
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span className="text-emerald-700 dark:text-emerald-300">
+                    Konsolidasi Rute: Dari{' '}
+                    <strong>{recommendationSummary.uniqueFromRacks} Rak Asal</strong> ➔ Dipadatkan ke{' '}
+                    <strong>{recommendationSummary.uniqueToRacks} Rak Tujuan</strong>
+                  </span>
+                </div>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Stok asli baru berubah saat Picker melakukan scan #OUT &amp; #IN
+                </span>
+              </div>
+
+              <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                {groupedRecommendationRoutes.map((route, rIdx) => {
+                  const fromSlot = slotByLokasi.get(route.fromLokasi);
+                  const toSlot = slotByLokasi.get(route.toLokasi);
+                  return (
+                    <div
+                      key={route.routeKey}
+                      className="bg-white dark:bg-[#131d31] rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                );
-              })}
+                      {/* Route Header */}
+                      <div className="px-3.5 py-2 bg-slate-50 dark:bg-[#0E1420] border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2 font-mono tabular-nums">
+                          <span className="font-sans font-extrabold text-slate-500">
+                            RUTE #{rIdx + 1}:
+                          </span>
+                          <strong className="text-slate-900 dark:text-white text-sm">
+                            {route.fromLokasi}
+                          </strong>
+                          {fromSlot && (
+                            <span className="text-slate-400 text-[11px]">
+                              ({fromSlot.fillPercent}% ➔ {fromSlot.simulatedPercent}%)
+                            </span>
+                          )}
+                          <ArrowRight className="w-3.5 h-3.5 text-purple-500" />
+                          <strong className="text-purple-600 dark:text-purple-400 text-sm">
+                            {route.toLokasi}
+                          </strong>
+                          {toSlot && (
+                            <span className="text-slate-400 text-[11px]">
+                              ({toSlot.fillPercent}% ➔ {toSlot.simulatedPercent}% · Max{' '}
+                              {toSlot.maxCapacity} pcs)
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] font-bold text-slate-600 dark:text-slate-300 font-mono tabular-nums">
+                          {route.items.length} SKU · Subtotal {route.totalPcs} pcs
+                        </div>
+                      </div>
+
+                      {/* Items in this Route */}
+                      <div className="divide-y divide-slate-100 dark:divide-slate-800/70">
+                        {route.items.map((m) => (
+                          <div
+                            key={m.id}
+                            className="px-3.5 py-2 flex flex-wrap items-center justify-between gap-2 text-xs hover:bg-slate-50/70 dark:hover:bg-slate-800/30"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-bold text-slate-900 dark:text-white">
+                                  {m.nama_produk}
+                                </span>
+                                <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 font-mono">
+                                  Size: {m.size || 'ALL'}
+                                </span>
+                                <span className="text-[11px] font-mono text-slate-500">
+                                  ({m.sku})
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 shrink-0">
+                              <span className="font-mono tabular-nums font-black text-slate-900 dark:text-white">
+                                {m.qty} pcs
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSimulationMoves((prev) => prev.filter((x) => x.id !== m.id))
+                                }
+                                className="text-rose-500 hover:text-rose-600 p-1 cursor-pointer"
+                                title="Hapus baris rekomendasi ini"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
@@ -1425,170 +1927,197 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       </div>
 
       {/* ============================================================================
-          6. RACK DETAIL & SMART RECOMMENDATION DRAWER
+          6. RACK DETAIL & SMART RECOMMENDATION CENTERED POPUP MODAL
           ============================================================================ */}
       {selectedSlot && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="relative w-full max-w-xl bg-white dark:bg-[#131d31] h-full overflow-y-auto shadow-2xl border-l border-slate-200 dark:border-slate-800 p-5 flex flex-col justify-between">
-            <div className="space-y-5">
-              {/* Drawer Header */}
-              <div className="flex items-start justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl font-black font-mono text-slate-900 dark:text-white">
-                      Rak {selectedSlot.lokasi}
-                    </span>
-                    <span
-                      className={`text-xs font-extrabold ${
-                        getStatusVisual(selectedSlot.status).textColor
-                      }`}
-                    >
-                      · {getStatusVisual(selectedSlot.status).label} ({selectedSlot.fillPercent}%)
-                    </span>
-                  </div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    <span>Area: {selectedSlot.area}</span>
-                    <span aria-hidden="true"> · </span>
-                    <span>Kategori: {selectedSlot.category}</span>
-                    <span aria-hidden="true"> · </span>
-                    <span className="font-mono tabular-nums">
-                      {selectedSlot.skuCount} SKU aktif
-                    </span>
-                  </div>
+        <div
+          onClick={() => setSelectedRackLokasi(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-5xl max-h-[90vh] bg-white dark:bg-[#131d31] rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden"
+          >
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 bg-slate-50/70 dark:bg-[#0E1420]">
+              <div>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <span className="text-2xl font-black font-mono text-slate-900 dark:text-white">
+                    Rak {selectedSlot.lokasi}
+                  </span>
+                  <span
+                    className={`text-sm font-extrabold ${
+                      getStatusVisual(selectedSlot.status).textColor
+                    }`}
+                  >
+                    · {getStatusVisual(selectedSlot.status).label} ({selectedSlot.fillPercent}%)
+                  </span>
                 </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  <span>Area: {selectedSlot.area}</span>
+                  <span aria-hidden="true"> · </span>
+                  <span>Kategori: {selectedSlot.category}</span>
+                  <span aria-hidden="true"> · </span>
+                  <span className="font-mono tabular-nums font-bold text-slate-700 dark:text-slate-300">
+                    {selectedSlot.skuCount} SKU aktif ({selectedSlot.currentQty} pcs)
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {onOpenPrintModal && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const loc = selectedSlot.lokasi;
+                      setSelectedRackLokasi(null);
+                      onOpenPrintModal(loc);
+                    }}
+                    className="px-3.5 py-2 rounded-xl text-xs font-extrabold bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/60 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Cetak / Ekspor Isi Rak Ini</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setSelectedRackLokasi(null)}
-                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-800 cursor-pointer"
+                  title="Tutup"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
+            </div>
 
-              {/* Capacity Visual Meter */}
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 space-y-2.5">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-xs font-bold text-slate-500">
-                    KETERISIAN FISIK SAAT INI
-                  </span>
-                  <span className="text-lg font-black font-mono tabular-nums text-slate-900 dark:text-white">
-                    {selectedSlot.currentQty} / {selectedSlot.maxCapacity} pcs (
-                    {selectedSlot.fillPercent}%)
-                  </span>
-                </div>
-                <div className="h-3 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full origin-left transition-transform duration-200 ${
-                      getStatusVisual(selectedSlot.status).barBg
-                    }`}
-                    style={{
-                      transform: `scaleX(${Math.min(1, selectedSlot.fillPercent / 100)})`,
-                    }}
-                  />
-                </div>
-                <div className="flex items-center justify-between text-xs text-slate-500 font-mono tabular-nums">
-                  {selectedSlot.overCapacityQty > 0 ? (
-                    <span className="text-rose-600 dark:text-rose-400 font-bold">
-                      Melebihi kapasitas sebanyak +{selectedSlot.overCapacityQty} pcs!
+            {/* Modal Scrollable Body */}
+            <div className="p-6 overflow-y-auto space-y-5 flex-1">
+              {/* Top Row: Capacity Meter + Quick Capacity Override */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                {/* Capacity Visual Meter */}
+                <div className="lg:col-span-5 p-4 rounded-2xl bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-3">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
+                      Keterisian Fisik Saat Ini
                     </span>
-                  ) : (
-                    <span>Sisa ruang tersedia: {selectedSlot.availableSpace} pcs</span>
-                  )}
-                  {onOpenPrintModal && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const loc = selectedSlot.lokasi;
-                        setSelectedRackLokasi(null);
-                        onOpenPrintModal(loc);
+                    <span className="text-xl font-black font-mono tabular-nums text-slate-900 dark:text-white">
+                      {selectedSlot.currentQty} / {selectedSlot.maxCapacity} pcs (
+                      {selectedSlot.fillPercent}%)
+                    </span>
+                  </div>
+                  <div className="h-3.5 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full origin-left transition-transform duration-200 ${
+                        getStatusVisual(selectedSlot.status).barBg
+                      }`}
+                      style={{
+                        transform: `scaleX(${Math.min(1, selectedSlot.fillPercent / 100)})`,
                       }}
-                      className="text-blue-600 dark:text-blue-400 font-sans font-bold hover:underline cursor-pointer"
-                    >
-                      Cetak / Ekspor Isi Rak Ini
-                    </button>
-                  )}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-slate-500 font-mono tabular-nums">
+                    {selectedSlot.overCapacityQty > 0 ? (
+                      <span className="text-rose-600 dark:text-rose-400 font-bold">
+                        Melebihi kapasitas sebanyak +{selectedSlot.overCapacityQty} pcs!
+                      </span>
+                    ) : (
+                      <span>
+                        Sisa ruang tersedia:{' '}
+                        <strong className="text-slate-800 dark:text-slate-200">
+                          {selectedSlot.availableSpace} pcs
+                        </strong>
+                      </span>
+                    )}
+                    <span>Max: {selectedSlot.maxCapacity} pcs</span>
+                  </div>
                 </div>
-              </div>
 
-              {/* Quick Edit Capacity for this Specific Rack */}
-              <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
-                <div className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
-                  Pengaturan Kapasitas Spesifik Rak {selectedSlot.lokasi}
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-500 mb-1">
-                      Kapasitas Max (Pcs)
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={editCapValue}
-                      onChange={(e) => setEditCapValue(Math.max(1, Number(e.target.value) || 1))}
-                      className="w-full px-3 py-1.5 text-xs font-mono tabular-nums bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
-                    />
+                {/* Quick Edit Capacity for this Specific Rack */}
+                <div className="lg:col-span-7 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-3">
+                  <div className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
+                    Pengaturan Kapasitas Spesifik Rak {selectedSlot.lokasi}
                   </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-500 mb-1">
-                      Kategori Produk
-                    </label>
-                    <input
-                      type="text"
-                      value={editCatValue}
-                      onChange={(e) => setEditCatValue(e.target.value)}
-                      placeholder="Dress / Bottom / Top / Sale"
-                      className="w-full px-3 py-1.5 text-xs bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
-                    />
-                  </div>
-                  <div className="flex items-end">
-                    <button
-                      type="button"
-                      disabled={isSavingConfig}
-                      onClick={() =>
-                        handleSaveSingleRackOverride(
-                          selectedSlot.lokasi,
-                          editCapValue,
-                          editCatValue,
-                          selectedSlot.area,
-                          editNotesValue
-                        )
-                      }
-                      className="w-full px-3 py-1.5 text-xs font-extrabold bg-slate-900 dark:bg-amber-500 text-white dark:text-black rounded-lg hover:opacity-90 cursor-pointer flex items-center justify-center gap-1.5 h-[32px] whitespace-nowrap"
-                    >
-                      <Save className="w-3.5 h-3.5" />
-                      <span>Simpan Rak Ini</span>
-                    </button>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 mb-1">
+                        Kapasitas Max (Pcs)
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={editCapValue}
+                        onChange={(e) => setEditCapValue(Math.max(1, Number(e.target.value) || 1))}
+                        className="w-full px-3 py-2 text-xs font-mono font-bold tabular-nums bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 mb-1">
+                        Kategori Produk
+                      </label>
+                      <input
+                        type="text"
+                        value={editCatValue}
+                        onChange={(e) => setEditCatValue(e.target.value)}
+                        placeholder="Dress / Bottom / Top / Sale"
+                        className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <button
+                        type="button"
+                        disabled={isSavingConfig}
+                        onClick={() =>
+                          handleSaveSingleRackOverride(
+                            selectedSlot.lokasi,
+                            editCapValue,
+                            editCatValue,
+                            selectedSlot.area,
+                            editNotesValue
+                          )
+                        }
+                        className="w-full px-4 py-2 text-xs font-extrabold bg-slate-900 dark:bg-amber-500 text-white dark:text-black rounded-xl hover:opacity-90 cursor-pointer flex items-center justify-center gap-1.5 h-[36px] whitespace-nowrap"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>Simpan Rak Ini</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Smart Recommendation: Nearest Empty / Low-Occupancy Racks in Same Category */}
               {recommendedRacks.length > 0 && (
-                <div className="p-4 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/60 space-y-2.5">
-                  <div className="flex items-center justify-between">
+                <div className="p-4 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/60 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="text-xs font-extrabold text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5">
                       <Sparkles className="w-4 h-4 text-emerald-600" />
                       <span>
                         Rekomendasi Rak Kosong / Longgar Terdekat (Kategori: {selectedSlot.category})
                       </span>
                     </div>
+                    <span className="text-[11px] text-emerald-700 dark:text-emerald-400">
+                      Klik tombol di bawah untuk menyiapkan tugas pindah ke rak tujuan
+                    </span>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {recommendedRacks.map((rec) => (
                       <div
                         key={rec.lokasi}
-                        className="p-2.5 rounded-xl bg-white dark:bg-[#131d31] border border-emerald-200/80 dark:border-slate-800 flex flex-col justify-between gap-1.5"
+                        className="p-3 rounded-xl bg-white dark:bg-[#131d31] border border-emerald-200/80 dark:border-slate-800 flex flex-col justify-between gap-2 shadow-2xs"
                       >
                         <div className="flex items-center justify-between">
-                          <span className="font-mono font-black text-xs text-slate-900 dark:text-white">
-                            {rec.lokasi}
+                          <span className="font-mono font-black text-sm text-slate-900 dark:text-white">
+                            Rak {rec.lokasi}
                           </span>
-                          <span className="font-mono tabular-nums text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                            {rec.fillPercent}% ({rec.currentQty}/{rec.maxCapacity})
+                          <span className="font-mono tabular-nums text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                            {rec.fillPercent}% ({rec.currentQty}/{rec.maxCapacity} pcs)
                           </span>
                         </div>
-                        <div className="text-[10px] text-slate-500">
-                          Sisa ruang: <strong className="font-mono">{rec.availableSpace} pcs</strong>
+                        <div className="text-xs text-slate-500">
+                          Sisa ruang tersedia:{' '}
+                          <strong className="font-mono text-slate-800 dark:text-slate-200">
+                            {rec.availableSpace} pcs
+                          </strong>
                         </div>
                         {selectedSlot.currentQty > 0 && (
                           <button
@@ -1606,14 +2135,15 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                                 )
                               );
                               setIsSimPanelOpen(true);
+                              setSelectedRackLokasi(null);
                               onNotify?.(
-                                `Form simulasi disiapkan: ${selectedSlot.lokasi} → ${rec.lokasi}`,
+                                `Form rekomendasi pindah disiapkan: ${selectedSlot.lokasi} → ${rec.lokasi}`,
                                 'info'
                               );
                             }}
-                            className="mt-1 px-2 py-1 text-[10px] font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg cursor-pointer text-center whitespace-nowrap"
+                            className="mt-1 px-3 py-1.5 text-xs font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg cursor-pointer text-center"
                           >
-                            Simulasi Pindah ke {rec.lokasi}
+                            Rekomendasi Pindah ke {rec.lokasi}
                           </button>
                         )}
                       </div>
@@ -1622,110 +2152,138 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 </div>
               )}
 
-              {/* SKU Items in This Rack */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
-                    Daftar Produk Fisik di Rak {selectedSlot.lokasi} ({selectedSlot.items.length} SKU)
-                  </h4>
+              {/* Bottom Two-Column Layout: Physical Products in Rack (Left) + Recent Scan Logs (Right) */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                {/* SKU Items in This Rack */}
+                <div className="lg:col-span-7 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
+                      Daftar Produk Fisik di Rak {selectedSlot.lokasi} ({selectedSlot.items.length}{' '}
+                      SKU)
+                    </h4>
+                    <span className="text-[11px] font-mono text-slate-500">
+                      Total: {selectedSlot.currentQty} pcs
+                    </span>
+                  </div>
+                  {selectedSlot.items.length === 0 ? (
+                    <div className="p-8 text-center rounded-xl border border-slate-200 dark:border-slate-800 text-xs text-slate-400">
+                      Rak ini sedang kosong (0 pcs).
+                    </div>
+                  ) : (
+                    <div className="border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800 max-h-80 overflow-y-auto">
+                      {selectedSlot.items.map((item) => (
+                        <div
+                          key={item.sku}
+                          className="p-3 flex items-center justify-between gap-3 text-xs hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="font-bold text-slate-900 dark:text-white">
+                              {item.nama_produk}{' '}
+                              <span className="inline-block ml-1 px-1.5 py-0.5 text-[10px] font-mono font-extrabold rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                                Size: {item.size}
+                              </span>
+                            </div>
+                            <div className="text-[11px] font-mono text-slate-500 mt-0.5">
+                              SKU: {item.sku}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2.5 shrink-0">
+                            <span className="font-mono tabular-nums text-sm font-black text-slate-900 dark:text-white">
+                              {item.qty} pcs
+                            </span>
+                            {recommendedRacks[0] && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSimFromLoc(selectedSlot.lokasi);
+                                  setSimToLoc(recommendedRacks[0].lokasi);
+                                  setSimSku(item.sku);
+                                  setSimQty(item.qty);
+                                  setIsSimPanelOpen(true);
+                                  setSelectedRackLokasi(null);
+                                  onNotify?.(
+                                    `Item ${item.nama_produk} (${item.size}) disiapkan pada form Rekomendasi Pindah (${selectedSlot.lokasi} → ${recommendedRacks[0].lokasi}).`,
+                                    'info'
+                                  );
+                                }}
+                                className="px-2.5 py-1.5 text-[11px] font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 border border-purple-200/70 dark:border-purple-800/50 rounded-lg hover:bg-purple-100 dark:hover:bg-purple-900/50 cursor-pointer whitespace-nowrap"
+                              >
+                                Rekomendasi Pindah
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                {selectedSlot.items.length === 0 ? (
-                  <div className="p-6 text-center rounded-xl border border-slate-200 dark:border-slate-800 text-xs text-slate-400">
-                    Rak ini sedang kosong (0 pcs).
-                  </div>
-                ) : (
-                  <div className="border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800 max-h-64 overflow-y-auto">
-                    {selectedSlot.items.map((item) => (
-                      <div
-                        key={item.sku}
-                        className="p-2.5 flex items-center justify-between gap-2 text-xs hover:bg-slate-50 dark:hover:bg-slate-800/40"
-                      >
-                        <div className="min-w-0">
-                          <div className="font-mono font-bold text-slate-900 dark:text-white truncate">
-                            {item.sku}
-                          </div>
-                          <div className="text-[11px] text-slate-500 truncate">
-                            {item.nama_produk} · Size {item.size}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="font-mono tabular-nums font-black text-slate-900 dark:text-white">
-                            {item.qty} pcs
-                          </span>
-                          {recommendedRacks[0] && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSimFromLoc(selectedSlot.lokasi);
-                                setSimToLoc(recommendedRacks[0].lokasi);
-                                setSimSku(item.sku);
-                                setSimQty(item.qty);
-                                setIsSimPanelOpen(true);
-                              }}
-                              className="px-2 py-1 text-[10px] font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 rounded-lg hover:underline cursor-pointer whitespace-nowrap"
-                            >
-                              Simulasi Pindah
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
 
-              {/* Recent Scan History in This Rack */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-1.5 text-xs font-extrabold text-slate-800 dark:text-slate-200">
-                  <History className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Riwayat Scan Operator Terakhir di Rak {selectedSlot.lokasi}</span>
-                </div>
-                {loadingRackLogs ? (
-                  <div className="p-4 text-xs text-slate-400">Memuat riwayat scan...</div>
-                ) : rackLogs.length === 0 ? (
-                  <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 text-xs text-slate-400">
-                    Belum ada riwayat mutasi tercatat untuk lokasi {selectedSlot.lokasi}.
+                {/* Recent Scan History in This Rack */}
+                <div className="lg:col-span-5 space-y-2.5">
+                  <div className="flex items-center gap-1.5 text-xs font-extrabold text-slate-800 dark:text-slate-200">
+                    <History className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Riwayat Scan Operator Terakhir di Rak {selectedSlot.lokasi}</span>
                   </div>
-                ) : (
-                  <div className="border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800 max-h-48 overflow-y-auto">
-                    {rackLogs.map((log, i) => (
-                      <div
-                        key={log.id || i}
-                        className="p-2.5 flex items-center justify-between gap-2 text-xs"
-                      >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span
-                              className={`font-mono font-black ${
-                                log.type === 'IN' || log.type === 'ADJ_IN'
-                                  ? 'text-emerald-600 dark:text-emerald-400'
-                                  : log.type === 'OUT' || log.type === 'ADJ_OUT'
-                                  ? 'text-rose-600 dark:text-rose-400'
-                                  : 'text-blue-600 dark:text-blue-400'
-                              }`}
-                            >
-                              #{log.type}
-                            </span>
-                            <span aria-hidden="true">·</span>
-                            <span className="font-mono font-bold text-slate-800 dark:text-slate-200 truncate">
-                              {log.sku}
-                            </span>
+                  {loadingRackLogs ? (
+                    <div className="p-6 text-xs text-slate-400 border border-slate-200 dark:border-slate-800 rounded-xl">
+                      Memuat riwayat scan...
+                    </div>
+                  ) : rackLogs.length === 0 ? (
+                    <div className="p-8 text-center rounded-xl border border-slate-200 dark:border-slate-800 text-xs text-slate-400">
+                      Belum ada riwayat mutasi tercatat untuk lokasi {selectedSlot.lokasi}.
+                    </div>
+                  ) : (
+                    <div className="border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800 max-h-80 overflow-y-auto">
+                      {rackLogs.map((log, i) => (
+                        <div
+                          key={log.id || i}
+                          className="p-3 flex items-center justify-between gap-2 text-xs"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className={`font-mono font-black ${
+                                  log.type === 'IN' || log.type === 'ADJ_IN'
+                                    ? 'text-emerald-600 dark:text-emerald-400'
+                                    : log.type === 'OUT' || log.type === 'ADJ_OUT'
+                                    ? 'text-rose-600 dark:text-rose-400'
+                                    : 'text-blue-600 dark:text-blue-400'
+                                }`}
+                              >
+                                #{log.type}
+                              </span>
+                              <span aria-hidden="true">·</span>
+                              <span className="font-mono font-bold text-slate-800 dark:text-slate-200 truncate">
+                                {log.sku}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-slate-400 truncate mt-0.5">
+                              {log.operator || 'Operator'} ·{' '}
+                              {log.created_at
+                                ? new Date(log.created_at).toLocaleString('id-ID')
+                                : '-'}
+                            </div>
                           </div>
-                          <div className="text-[10px] text-slate-400 truncate">
-                            {log.operator || 'Operator'} ·{' '}
-                            {log.created_at
-                              ? new Date(log.created_at).toLocaleString('id-ID')
-                              : '-'}
-                          </div>
+                          <span className="font-mono tabular-nums font-bold text-slate-900 dark:text-white shrink-0">
+                            {log.qty} pcs
+                          </span>
                         </div>
-                        <span className="font-mono tabular-nums font-bold text-slate-900 dark:text-white shrink-0">
-                          {log.qty} pcs
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3.5 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end bg-slate-50/70 dark:bg-[#0E1420]">
+              <button
+                type="button"
+                onClick={() => setSelectedRackLokasi(null)}
+                className="px-5 py-2 text-xs font-extrabold text-slate-700 dark:text-slate-200 bg-slate-200/80 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 rounded-xl cursor-pointer"
+              >
+                Tutup Detail Rak
+              </button>
             </div>
           </div>
         </div>
@@ -1786,7 +2344,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-slate-500">
-                      Ubah kategori produk, prefix &amp; rentang nomor (001 - 100), serta kapasitas maksimal default untuk Warehouse (A–D), Transit (X), Kolian/Koli (R, V, Z), dan Blok F.
+                      Ubah kategori produk, prefix &amp; rentang nomor, serta kapasitas maksimal default untuk Warehouse (A–D), Transit (X), Kolian/Koli (R, V, Z), Blok F (Shopee, TikTok, Studio), dan Perbaikan (Cuci CC, Permak PMK, Defect DF).
                     </span>
                     <button
                       type="button"
@@ -2231,6 +2789,215 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                   <span>{isSavingConfig ? 'Menyimpan...' : 'Simpan Semua Perubahan Zona'}</span>
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================================
+          8. A4 SURAT JALAN (FORM TUGAS PICKER) PREVIEW & PRINT MODAL
+          ============================================================================ */}
+      {isSjPrintModalOpen && simulationMoves.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-xs p-4">
+          <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 bg-slate-50 dark:bg-[#0E1420]">
+              <div>
+                <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <Printer className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <span>
+                    Pratinjau Surat Jalan / Form Tugas Picker (A4) — {sjDocumentNumber}
+                  </span>
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Dokumen kerja fisik untuk Picker melakukan pengambilan dari Rak Koli / Rak Asal dan penempatan terkonsolidasi ke Rak Tujuan.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopySimulationTask}
+                  className="px-3 py-1.5 text-xs font-extrabold bg-purple-600 hover:bg-purple-500 text-white rounded-xl flex items-center gap-1.5 cursor-pointer"
+                >
+                  {copiedSimText ? <Check className="w-3.5 h-3.5" /> : <Send className="w-3.5 h-3.5" />}
+                  <span>{copiedSimText ? 'Tersalin!' : 'Salin Format WA'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleTriggerA4Print}
+                  className="px-4 py-1.5 text-xs font-extrabold bg-slate-900 dark:bg-amber-500 text-white dark:text-black rounded-xl flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Cetak Sekarang (A4)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsSjPrintModalOpen(false)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* A4 Sheet Preview Content */}
+            <div className="p-6 overflow-y-auto bg-slate-100 dark:bg-[#0A0F18] flex-1">
+              <div className="bg-white text-slate-900 rounded-xl shadow-md border border-slate-300 p-6 max-w-3xl mx-auto space-y-4">
+                {/* Sheet Header */}
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b-2 border-slate-900 pb-3">
+                  <div>
+                    <div className="text-base font-black tracking-tight text-slate-900">
+                      SURAT JALAN / FORM TUGAS PICKER (REFILL &amp; RELOKASI RAK)
+                    </div>
+                    <div className="text-xs text-slate-600">
+                      Konsolidasi Putaway Rak Koli (R, V, Z) &amp; Rak Utama Picking (ABCD)
+                    </div>
+                  </div>
+                  <div className="text-xs font-mono sm:text-right space-y-0.5 text-slate-700">
+                    <div>
+                      <strong>No. Dokumen:</strong> {sjDocumentNumber}
+                    </div>
+                    <div>
+                      <strong>Tanggal:</strong>{' '}
+                      {new Date().toLocaleDateString('id-ID', {
+                        day: '2-digit',
+                        month: 'long',
+                        year: 'numeric',
+                      })}
+                    </div>
+                    <div>
+                      <strong>Dibuat Oleh:</strong>{' '}
+                      {session?.name || session?.username || 'Admin Gudang'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Summary Strip */}
+                <div className="grid grid-cols-3 gap-3 p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs">
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-500 uppercase">
+                      Total Produk &amp; Baris
+                    </div>
+                    <div className="text-sm font-black font-mono text-slate-900 mt-0.5">
+                      {recommendationSummary.uniqueSkus} SKU ({recommendationSummary.totalMoves}{' '}
+                      baris)
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-500 uppercase">
+                      Total Kuantitas Pindah
+                    </div>
+                    <div className="text-sm font-black font-mono text-slate-900 mt-0.5">
+                      {recommendationSummary.totalPcs} Pcs
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-500 uppercase">
+                      Konsolidasi Titik Rak
+                    </div>
+                    <div className="text-sm font-black font-mono text-emerald-700 mt-0.5">
+                      {recommendationSummary.uniqueFromRacks} Rak Asal ➔{' '}
+                      {recommendationSummary.uniqueToRacks} Rak Tujuan
+                    </div>
+                  </div>
+                </div>
+
+                {/* Grouped Route Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs border border-slate-300">
+                    <thead>
+                      <tr className="bg-slate-900 text-white text-[10px] uppercase font-extrabold">
+                        <th className="py-2 px-2.5 border border-slate-700 text-center w-9">No</th>
+                        <th className="py-2 px-2.5 border border-slate-700 text-center w-20">
+                          Rak Asal
+                        </th>
+                        <th className="py-2 px-2.5 border border-slate-700 text-center w-20">
+                          Rak Tujuan
+                        </th>
+                        <th className="py-2 px-2.5 border border-slate-700 w-32">Kode SKU</th>
+                        <th className="py-2 px-2.5 border border-slate-700">Nama Produk</th>
+                        <th className="py-2 px-2.5 border border-slate-700 text-center w-14">
+                          Size
+                        </th>
+                        <th className="py-2 px-2.5 border border-slate-700 text-right w-20">
+                          Qty Pindah
+                        </th>
+                        <th className="py-2 px-2.5 border border-slate-700 text-center w-32">
+                          Ceklis Scan Fisik
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {groupedRecommendationRoutes.map((route, rIdx) => (
+                        <React.Fragment key={route.routeKey}>
+                          <tr className="bg-slate-100 font-extrabold text-slate-900 text-[11px]">
+                            <td colSpan={8} className="py-1.5 px-3 border border-slate-300">
+                              RUTE #{rIdx + 1}: DARI RAK ASAL [{route.fromLokasi}] ➔ KE RAK TUJUAN [
+                              {route.toLokasi}] ({route.items.length} SKU / {route.totalPcs} pcs)
+                            </td>
+                          </tr>
+                          {route.items.map((m, idx) => (
+                            <tr key={m.id} className="border-b border-slate-200">
+                              <td className="py-2 px-2.5 border border-slate-200 text-center font-mono">
+                                {idx + 1}
+                              </td>
+                              <td className="py-2 px-2.5 border border-slate-200 text-center font-mono font-black text-slate-900">
+                                {m.fromLokasi}
+                              </td>
+                              <td className="py-2 px-2.5 border border-slate-200 text-center font-mono font-black text-purple-700">
+                                {m.toLokasi}
+                              </td>
+                              <td className="py-2 px-2.5 border border-slate-200 font-mono font-bold text-slate-800">
+                                {m.sku}
+                              </td>
+                              <td className="py-2 px-2.5 border border-slate-200 font-semibold text-slate-900">
+                                {m.nama_produk}
+                              </td>
+                              <td className="py-2 px-2.5 border border-slate-200 text-center font-mono font-bold">
+                                {m.size || 'ALL'}
+                              </td>
+                              <td className="py-2 px-2.5 border border-slate-200 text-right font-mono font-black text-slate-900">
+                                {m.qty} pcs
+                              </td>
+                              <td className="py-2 px-2.5 border border-slate-200 text-center text-[10px] font-mono text-slate-600">
+                                [ &nbsp; ] #OUT &nbsp; [ &nbsp; ] #IN
+                              </td>
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* SOP Note & Signatures */}
+                <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-950">
+                  <strong>SOP Eksekusi Picker Gudang:</strong> Lakukan scan <strong>#OUT</strong>{' '}
+                  pada Rak Asal saat mengambil fisik barang, kemudian tempatkan sesuai Rak Tujuan
+                  yang telah dikonsolidasi dan lakukan scan <strong>#IN</strong> pada Rak Tujuan.
+                </div>
+
+                <div className="grid grid-cols-3 gap-4 pt-6 text-center text-xs text-slate-700">
+                  <div>
+                    <div>Ditugaskan Oleh (Admin)</div>
+                    <div className="mt-12 border-t border-slate-400 pt-1 font-bold text-slate-900">
+                      {session?.name || session?.username || 'Admin Gudang'}
+                    </div>
+                  </div>
+                  <div>
+                    <div>Dikerjakan Oleh (Picker)</div>
+                    <div className="mt-12 border-t border-slate-400 pt-1 font-bold text-slate-500">
+                      ( .................................... )
+                    </div>
+                  </div>
+                  <div>
+                    <div>Diverifikasi Oleh (SPV / QC)</div>
+                    <div className="mt-12 border-t border-slate-400 pt-1 font-bold text-slate-500">
+                      ( .................................... )
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
