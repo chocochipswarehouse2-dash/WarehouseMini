@@ -14,17 +14,29 @@ import {
   HardDriveDownload,
   Info,
   RotateCw,
-  Trash2
+  Trash2,
+  Database,
+  Lock,
+  UserCheck
 } from 'lucide-react';
 import { useAppUpdate } from '../../hooks/useAppUpdate';
 import { CURRENT_APP_VERSION, CURRENT_APP_VERSION_INFO } from '../../config/appVersion';
+import { UserSession } from '../../types';
+import { isSuperadmin } from '../../services/permissions';
 
 interface AppUpdateModalProps {
   isOpen: boolean;
   onClose: () => void;
+  session?: UserSession | null;
+  onOpenUpdateDatabase?: () => void;
 }
 
-export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({ isOpen, onClose }) => {
+export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
+  isOpen,
+  onClose,
+  session = null,
+  onOpenUpdateDatabase
+}) => {
   const {
     status,
     currentVersion,
@@ -42,6 +54,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({ isOpen, onClose 
   } = useAppUpdate();
 
   const [isClearingCache, setIsClearingCache] = useState(false);
+  const userIsAdmin = isSuperadmin(session);
 
   if (!isOpen) return null;
 
@@ -54,7 +67,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({ isOpen, onClose 
   };
 
   const handleEmergencyReset = async () => {
-    if (window.confirm('Tindakan ini akan membersihkan semua cache browser, unregister Service Worker, dan me-reload aplikasi. Lanjutkan?')) {
+    if (window.confirm('Tindakan ini akan membersihkan semua cache browser di perangkat ini, me-reset Service Worker, dan me-reload aplikasi. Data stok di server tetap aman. Lanjutkan?')) {
       setIsClearingCache(true);
       await clearCacheAndReload();
     }
@@ -73,13 +86,19 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({ isOpen, onClose 
               </div>
               <div>
                 <h3 className="text-base font-black tracking-tight text-white flex items-center gap-2">
-                  Pembaruan Sistem WMS
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary-500/30 text-primary-300 border border-primary-500/40">
-                    OTA Update
+                  {userIsAdmin ? 'Pembaruan Sistem WMS' : 'Pembaruan Aplikasi WMS'}
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                    userIsAdmin 
+                      ? 'bg-purple-500/30 text-purple-200 border-purple-400/40' 
+                      : 'bg-primary-500/30 text-primary-300 border-primary-500/40'
+                  }`}>
+                    {userIsAdmin ? 'SUPERADMIN' : 'CLIENT PWA'}
                   </span>
                 </h3>
                 <p className="text-xs text-slate-300">
-                  Pusat manajemen versi & rilis aplikasi pergudangan
+                  {userIsAdmin 
+                    ? 'Pusat manajemen rilis aplikasi & status sistem gudang' 
+                    : 'Pembaruan berkas aplikasi di perangkat Anda'}
                 </p>
               </div>
             </div>
@@ -314,6 +333,47 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({ isOpen, onClose 
               </ul>
             </div>
           </div>
+
+          {/* SUPERADMIN ONLY TOOLS: Database Update & Master Produk */}
+          {userIsAdmin && (
+            <div className="p-3.5 rounded-2xl bg-purple-500/10 border border-purple-500/30 space-y-2 animate-in fade-in">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-purple-700 dark:text-purple-300 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-purple-500" />
+                  Menu Superadmin: Database Master Produk
+                </span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded font-black bg-purple-200 dark:bg-purple-900 text-purple-800 dark:text-purple-200 border border-purple-300 dark:border-purple-800">
+                  SUPERADMIN ONLY
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                Pembaruan ini adalah kode aplikasi web (PWA). Jika ingin mengunggah master produk CSV ke database Supabase, gunakan fitur Update Database di bawah:
+              </p>
+              {onOpenUpdateDatabase && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenUpdateDatabase();
+                  }}
+                  className="w-full py-2.5 px-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                >
+                  <Database className="w-3.5 h-3.5" />
+                  Buka Menu Update Database Master Produk (2 CSV)
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* NON-ADMIN EXPLANATION NOTE */}
+          {!userIsAdmin && (
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 flex items-start gap-2">
+              <Info className="w-4 h-4 text-primary-500 shrink-0 mt-0.5" />
+              <span>
+                <strong>Aman Digunakan:</strong> Pembaruan ini hanya mengunduh pembaruan tampilan dan sistem pembacaan scanner di perangkat/browser Anda. Data stok server, nomor resi, dan riwayat mutasi tidak akan terpengaruh.
+              </span>
+            </div>
+          )}
 
           {/* TOMBOL TINDAKAN: PERIKSA PEMBARUAN & BERSIHKAN CACHE */}
           <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">

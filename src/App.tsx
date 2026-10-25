@@ -2480,6 +2480,8 @@ export default function App() {
       <AppUpdateModal
         isOpen={isUpdateModalOpen}
         onClose={() => setIsUpdateModalOpen(false)}
+        session={session}
+        onOpenUpdateDatabase={() => setIsUpdateDatabaseOpen(true)}
       />
 
       {/* Non-blocking Floating Download Progress Widget */}

@@ -702,7 +702,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {!collapsed && (
             <div className="flex-1 text-left truncate flex items-center justify-between">
               <span className="font-extrabold text-slate-800 dark:text-slate-200">
-                Pembaruan Sistem
+                {userIsAdmin ? 'Pembaruan Sistem' : 'Pembaruan Aplikasi'}
               </span>
               <span
                 className={`text-[9px] px-1.5 py-0.2 rounded font-black border font-mono ${
