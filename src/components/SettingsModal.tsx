@@ -66,6 +66,7 @@ import {
   MapPin,
   Mail
 } from 'lucide-react';
+import { CURRENT_APP_VERSION } from '../config/appVersion';
 import { fetchOutlets, saveOutlet, deleteOutlet, OutletItem, getStoreContact } from '../services/gasManualShipment';
 import { UserSession, UserRole, UserPermissions, UserPermissionKey, LocalUserRecord, KaryawanRecord } from '../types';
 import { getLocalUsers, saveLocalUsersList } from '../utils/localStore';
@@ -123,6 +124,7 @@ interface SettingsModalProps {
   isRealtimeConnected: boolean;
   onOpenUpdateDatabase?: () => void;
   onOpenLocationPurge?: () => void;
+  onOpenUpdateModal?: () => void;
   onNotify: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
   // Theme Preferences (Akses Bebas Semua Pengguna)
   themeColor?: string;
@@ -158,6 +160,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   isRealtimeConnected,
   onOpenUpdateDatabase,
   onOpenLocationPurge,
+  onOpenUpdateModal,
   onNotify,
   themeColor = 'rose',
   setThemeColor = () => {},
@@ -1062,13 +1065,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {onOpenUpdateModal && (
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenUpdateModal();
+                  onClose();
+                }}
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-primary-50 dark:bg-slate-800 dark:hover:bg-primary-950/40 text-slate-700 dark:text-slate-300 hover:text-primary-600 dark:hover:text-primary-400 text-xs font-mono font-bold transition-all border border-slate-200 dark:border-slate-700 cursor-pointer"
+                title="Pusat Pembaruan Sistem WMS"
+              >
+                <Smartphone className="w-3.5 h-3.5 text-primary-500" />
+                <span>{CURRENT_APP_VERSION}</span>
+                <span className="text-[10px] text-primary-500 font-sans font-bold hover:underline ml-0.5">
+                  • Cek Update
+                </span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Tab Navigation */}
@@ -2851,6 +2873,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 >
                   {notificationPermission === 'granted' ? '🔔 Aktif' : 'Minta Izin'}
                 </button>
+              </div>
+
+              {/* Pusat Pembaruan Sistem (OTA Update ala Android) */}
+              <div className="p-4 bg-gradient-to-r from-emerald-500/10 via-primary-500/10 to-transparent rounded-2xl border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-md">
+                    <Smartphone className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                      Pembaruan Sistem WMS (OTA)
+                      <span className="font-mono text-primary-600 dark:text-primary-400 font-extrabold normal-case">
+                        {CURRENT_APP_VERSION}
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Periksa versi terbaru server, unduh dengan progress 0-100%, dan terapkan tanpa reload berulang.
+                    </p>
+                  </div>
+                </div>
+
+                {onOpenUpdateModal && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onOpenUpdateModal();
+                      onClose();
+                    }}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Periksa Pembaruan</span>
+                  </button>
+                )}
               </div>
 
               {/* Clear Cache */}

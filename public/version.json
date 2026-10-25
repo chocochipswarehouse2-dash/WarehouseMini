@@ -1,0 +1,15 @@
+{
+  "version": "v2.5.0",
+  "versionCode": 250,
+  "buildDate": "24 Oktober 2026",
+  "buildHash": "wms-261024-v250",
+  "releaseTitle": "WMS v2.5.0 — Smart Update Manager & Evakuasi Koli",
+  "releaseNotes": [
+    "Sistem Pembaruan Mandiri ala Android: Periksa pembaruan, unduh dengan progress 0-100%, dan terapkan tanpa reload berulang.",
+    "Indikator Versi Real-time: Informasi versi terpasang vs versi server terlihat jelas di Sidebar & Pengaturan.",
+    "Rekomendasi Evakuasi Stok ABCD ke Koli (Refill Balik): Optimasi kapasitas rak picking dan pemindahan over-stock.",
+    "Pengaturan Buffer Dinamis: Kapasitas rak, ambang batas evakuasi, dan buffer picking tersimpan aman di cloud Supabase.",
+    "Optimasi Cache Service Worker: Pencegahan jebakan cache lama dan peningkatan keandalan offline PWA."
+  ],
+  "minSupportedVersion": "v2.0.0"
+}

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, Sparkles, X } from 'lucide-react';
 
+import { appUpdateManager } from '../services/appUpdateService';
+
 export const PwaUpdatePrompt: React.FC = () => {
   const [needRefresh, setNeedRefresh] = useState(false);
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
@@ -55,7 +57,7 @@ export const PwaUpdatePrompt: React.FC = () => {
     if (waitingWorker) {
       waitingWorker.postMessage({ type: 'SKIP_WAITING' });
     }
-    window.location.reload();
+    appUpdateManager.applyUpdate();
   };
 
   if (!needRefresh) return null;

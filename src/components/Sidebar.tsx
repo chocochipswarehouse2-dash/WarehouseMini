@@ -39,10 +39,13 @@ import {
   ShieldAlert,
   Factory,
   Receipt,
+  Download,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { hasPermission, isSuperadmin, canAccessSettings, canAccessJneRekap, ROLE_DETAILS } from '../services/permissions';
 import { getUserPersonName } from '../utils/userResolver';
+import { CURRENT_APP_VERSION } from '../config/appVersion';
+import { useAppUpdate } from '../hooks/useAppUpdate';
 
 interface SidebarProps {
   session: UserSession | null;
@@ -52,13 +55,14 @@ interface SidebarProps {
   onCloseMobile: () => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
-    onOpenThemePicker: () => void;
+  onOpenThemePicker: () => void;
   notificationPermission: NotificationPermission;
   onRequestNotification: () => void;
   isRealtimeConnected: boolean;
   onOpenSettings: () => void;
   onOpenApkModal: () => void;
   onOpenUpdateDatabase?: () => void;
+  onOpenUpdateModal?: () => void;
   onLogout: () => void;
   totalScannedCount: number;
   hasNewPickingAlert?: boolean;
@@ -75,18 +79,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCloseMobile,
   isCollapsed,
   onToggleCollapse,
-    onOpenThemePicker,
+  onOpenThemePicker,
   notificationPermission,
   onRequestNotification,
   isRealtimeConnected,
   onOpenSettings,
   onOpenApkModal,
   onOpenUpdateDatabase,
+  onOpenUpdateModal,
   onLogout,
   totalScannedCount,
   hasNewPickingAlert = false,
   hasNewPesananAlert = false,
 }) => {
+  const { status: updateStatus, latestVersion } = useAppUpdate();
+  const hasUpdatePending = updateStatus === 'available' || updateStatus === 'ready';
+  const isUpdateDownloading = updateStatus === 'downloading';
+
   const userIsAdmin = isSuperadmin(session);
   const userCanAccessSettings = canAccessSettings(session);
 
@@ -665,6 +674,49 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         )}
       </button>
+
+      {/* Pembaruan Sistem (OTA Update ala Android) */}
+      {onOpenUpdateModal && (
+        <button
+          type="button"
+          onClick={() => {
+            onOpenUpdateModal();
+            onCloseMobile();
+          }}
+          title={`Pembaruan Sistem WMS (Versi ${CURRENT_APP_VERSION})${hasUpdatePending ? ` — Tersedia Versi ${latestVersion}` : ''}`}
+          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+            hasUpdatePending
+              ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30'
+              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+          } ${collapsed ? 'justify-center px-2' : ''}`}
+        >
+          <div className="p-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 shrink-0 relative">
+            <Smartphone className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            {hasUpdatePending && (
+              <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-500 rounded-full animate-ping" />
+            )}
+            {isUpdateDownloading && (
+              <span className="absolute -top-1 -right-1 w-2 h-2 bg-primary-500 rounded-full animate-pulse" />
+            )}
+          </div>
+          {!collapsed && (
+            <div className="flex-1 text-left truncate flex items-center justify-between">
+              <span className="font-extrabold text-slate-800 dark:text-slate-200">
+                Pembaruan Sistem
+              </span>
+              <span
+                className={`text-[9px] px-1.5 py-0.2 rounded font-black border font-mono ${
+                  hasUpdatePending
+                    ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border-amber-300 animate-pulse'
+                    : 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                }`}
+              >
+                {hasUpdatePending ? 'UPDATE' : CURRENT_APP_VERSION}
+              </span>
+            </div>
+          )}
+        </button>
+      )}
     </div>
     );
   };
@@ -762,6 +814,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
             ) : (
               <div className="text-center text-xs text-slate-400 py-1">Belum login</div>
             )}
+
+            {/* Version & Update Indicator Mobile */}
+            <div className="mt-2.5 pt-2 border-t border-slate-200/70 dark:border-slate-800/70 flex items-center justify-between text-[10px] text-slate-400">
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenUpdateModal?.();
+                  onCloseMobile();
+                }}
+                className="flex items-center gap-1.5 hover:text-primary-500 font-mono font-bold transition-colors cursor-pointer"
+                title="Buka Pusat Pembaruan Sistem"
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${hasUpdatePending ? 'bg-amber-500 animate-ping' : 'bg-emerald-500'}`} />
+                <span>WMS {CURRENT_APP_VERSION}</span>
+              </button>
+              {onOpenUpdateModal && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenUpdateModal();
+                    onCloseMobile();
+                  }}
+                  className={`px-2 py-0.5 rounded-md font-bold text-[9px] transition-colors cursor-pointer ${
+                    hasUpdatePending
+                      ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 animate-pulse'
+                      : 'text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-950/40'
+                  }`}
+                >
+                  {hasUpdatePending ? 'Update Baru' : 'Cek Update'}
+                </button>
+              )}
+            </div>
           </div>
         </aside>
       </div>
@@ -839,32 +923,79 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 <LogOut className="w-4 h-4" />
               </button>
+
+              {/* Collapsed Version / Update Icon */}
+              {onOpenUpdateModal && (
+                <button
+                  type="button"
+                  onClick={onOpenUpdateModal}
+                  title={`Pembaruan Sistem WMS (${CURRENT_APP_VERSION})${hasUpdatePending ? ` — Ada Update ${latestVersion}` : ''}`}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors cursor-pointer relative ${
+                    hasUpdatePending
+                      ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/40 shadow-sm'
+                      : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Smartphone className="w-4 h-4" />
+                  {hasUpdatePending && (
+                    <span className="absolute top-2 right-2 w-2 h-2 bg-amber-500 rounded-full animate-ping" />
+                  )}
+                </button>
+              )}
             </div>
           ) : (
             session && (
-              <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="w-8 h-8 rounded-lg bg-primary-500/10 border border-primary-500/20 flex items-center justify-center text-primary-500 shrink-0 font-extrabold text-xs">
-                    <ShieldCheck className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                      {session.name || getUserPersonName(session.username) || session.username}
+              <div>
+                <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-primary-500/10 border border-primary-500/20 flex items-center justify-center text-primary-500 shrink-0 font-extrabold text-xs">
+                      <ShieldCheck className="w-4 h-4" />
                     </div>
-                    <div className="text-[9px] font-semibold text-slate-500 dark:text-slate-400 truncate">
-                      @{session.username} • <span className="text-primary-500 font-bold uppercase">{session.role}</span>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                        {session.name || getUserPersonName(session.username) || session.username}
+                      </div>
+                      <div className="text-[9px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+                        @{session.username} • <span className="text-primary-500 font-bold uppercase">{session.role}</span>
+                      </div>
                     </div>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={onLogout}
+                    title="Logout"
+                    className="p-1.5 text-slate-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-950/30 rounded-lg transition-colors cursor-pointer"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={onLogout}
-                  title="Logout"
-                  className="p-1.5 text-slate-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-950/30 rounded-lg transition-colors cursor-pointer"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
+                {/* Version & Update Indicator Desktop Expanded */}
+                <div className="mt-2 pt-2 border-t border-slate-200/70 dark:border-slate-800/70 flex items-center justify-between text-[10px] text-slate-400">
+                  <button
+                    type="button"
+                    onClick={onOpenUpdateModal}
+                    className="flex items-center gap-1.5 hover:text-primary-500 font-mono font-bold transition-colors cursor-pointer"
+                    title="Buka Pusat Pembaruan Sistem"
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${hasUpdatePending ? 'bg-amber-500 animate-ping' : 'bg-emerald-500'}`} />
+                    <span>WMS {CURRENT_APP_VERSION}</span>
+                  </button>
+                  {onOpenUpdateModal && (
+                    <button
+                      type="button"
+                      onClick={onOpenUpdateModal}
+                      className={`px-2 py-0.5 rounded-md font-bold text-[9px] transition-colors cursor-pointer ${
+                        hasUpdatePending
+                          ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 animate-pulse'
+                          : 'text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-950/40'
+                      }`}
+                    >
+                      {hasUpdatePending ? 'Update Baru' : 'Cek Update'}
+                    </button>
+                  )}
+                </div>
               </div>
             )
           )}

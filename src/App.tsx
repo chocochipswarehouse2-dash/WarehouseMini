@@ -34,6 +34,9 @@ import { BottomSaveBar } from './components/BottomSaveBar';
 import { ApkInstallModal } from './components/ApkInstallModal';
 import { DesktopPwaBanner } from './components/DesktopPwaBanner';
 import { PwaUpdatePrompt } from './components/PwaUpdatePrompt';
+import { AppUpdateModal } from './components/common/AppUpdateModal';
+import { AppUpdateFloatingWidget } from './components/common/AppUpdateFloatingWidget';
+import { appUpdateManager } from './services/appUpdateService';
 import { MobileOrientationWarning } from './components/MobileOrientationWarning';
 import { ToastContainer } from './components/Toast';
 import { SettingsModal } from './components/SettingsModal';
@@ -683,12 +686,29 @@ export default function App() {
   const [isUpdateDatabaseOpen, setIsUpdateDatabaseOpen] = useState<boolean>(false);
   const [isLocationPurgeOpen, setIsLocationPurgeOpen] = useState<boolean>(false);
   const [isApkModalOpen, setIsApkModalOpen] = useState<boolean>(false);
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState<boolean>(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     return localStorage.getItem('wms_sidebar_collapsed') === 'true';
   });
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [gmpQuotaExceeded, setGmpQuotaExceeded] = useState<boolean>(false);
+
+  // Periodik & Otomatis Cek Pembaruan Versi WMS (Latar Belakang ala Android)
+  useEffect(() => {
+    const bootTimer = setTimeout(() => {
+      appUpdateManager.checkForUpdates(true);
+    }, 4000);
+
+    const intervalTimer = setInterval(() => {
+      appUpdateManager.checkForUpdates(true);
+    }, 30 * 60 * 1000); // Setiap 30 menit
+
+    return () => {
+      clearTimeout(bootTimer);
+      clearInterval(intervalTimer);
+    };
+  }, []);
 
   useEffect(() => {
     const handleQuota = () => setGmpQuotaExceeded(true);
@@ -2123,6 +2143,7 @@ export default function App() {
         onOpenSettings={handleOpenSettings}
         onOpenApkModal={() => setIsApkModalOpen(true)}
         onOpenUpdateDatabase={() => setIsUpdateDatabaseOpen(true)}
+        onOpenUpdateModal={() => setIsUpdateModalOpen(true)}
         onLogout={handleLogout}
         totalScannedCount={scannedData.length}
         hasNewPickingAlert={!!newPickingTaskAlert}
@@ -2455,6 +2476,17 @@ export default function App() {
       {/* PWA Background Update Prompt Banner */}
       <PwaUpdatePrompt />
 
+      {/* Android-Style System Update Modal (OTA & 0-100% Progress) */}
+      <AppUpdateModal
+        isOpen={isUpdateModalOpen}
+        onClose={() => setIsUpdateModalOpen(false)}
+      />
+
+      {/* Non-blocking Floating Download Progress Widget */}
+      <AppUpdateFloatingWidget
+        onOpenModal={() => setIsUpdateModalOpen(true)}
+      />
+
       {/* Settings Modal (Supabase, GAS, Users, Device) */}
       <ThemePickerModal
         isOpen={isThemePickerOpen}
@@ -2511,6 +2543,7 @@ export default function App() {
         isRealtimeConnected={isRealtimeConnected}
         onOpenUpdateDatabase={() => setIsUpdateDatabaseOpen(true)}
         onOpenLocationPurge={() => setIsLocationPurgeOpen(true)}
+        onOpenUpdateModal={() => setIsUpdateModalOpen(true)}
         onNotify={showToast}
         themeColor={themeColor}
         setThemeColor={setThemeColor}
