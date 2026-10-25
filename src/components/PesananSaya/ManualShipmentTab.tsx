@@ -56,6 +56,7 @@ import {
   generateShortOrderId,
 } from '../../utils/transactionGenerator';
 import { getUserPersonName, formatOperatorWithPersonName } from '../../utils/userResolver';
+import { globalRealtimeStore } from '../../services/store';
 
 interface ManualShipmentViewProps {
   session: UserSession | null;
@@ -938,6 +939,19 @@ _WMS Warehouse System_`;
     loadOutlets();
     loadOrders();
     loadJasaKirim();
+
+    let debounceTimer: any = null;
+    const unsubscribe = globalRealtimeStore.subscribe('manual_shipment', () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadOrders();
+      }, 600);
+    });
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      unsubscribe();
+    };
   }, []);
 
   const loadJasaKirim = async () => {

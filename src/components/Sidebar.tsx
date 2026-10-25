@@ -62,6 +62,7 @@ interface SidebarProps {
   onLogout: () => void;
   totalScannedCount: number;
   hasNewPickingAlert?: boolean;
+  hasNewPesananAlert?: boolean;
 }
 
 import { AppLogo } from './Logo';
@@ -84,6 +85,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
   totalScannedCount,
   hasNewPickingAlert = false,
+  hasNewPesananAlert = false,
 }) => {
   const userIsAdmin = isSuperadmin(session);
   const userCanAccessSettings = canAccessSettings(session);
@@ -329,7 +331,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             const Icon = item.icon;
             const isActive = activePage === item.id;
             const isPicking = item.id === 'picking_tasks';
+            const isPesanan = item.id === 'pesanan_saya';
             const showPickingBadge = isPicking && hasNewPickingAlert;
+            const showPesananBadge = isPesanan && hasNewPesananAlert;
+            const showAlertBadge = showPickingBadge || showPesananBadge;
             return (
               <button
                 key={item.id}
@@ -350,7 +355,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }`}
                 >
                   <Icon className="w-4 h-4" />
-                  {showPickingBadge && (
+                  {showAlertBadge && (
                     <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-primary-500 rounded-full animate-ping" />
                   )}
                 </div>
@@ -359,7 +364,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-1">
                       <div className="text-xs truncate leading-snug">{item.label}</div>
-                      {showPickingBadge && (
+                      {showAlertBadge && (
                         <span className="px-1.5 py-0.5 text-[9px] font-black bg-primary-500 text-white rounded-full animate-pulse shrink-0">
                           BARU
                         </span>
@@ -583,6 +588,56 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
       )}
 
+
+      {/* Notifikasi HP / Aplikasi (Untuk Semua Pengguna) */}
+      <button
+        type="button"
+        onClick={() => {
+          onRequestNotification();
+          onCloseMobile();
+        }}
+        title={
+          notificationPermission === 'granted'
+            ? 'Notifikasi HP Aktif — Klik untuk tes bunyi & pop-up notifikasi'
+            : 'Aktifkan Notifikasi HP untuk Pesanan Baru Store & Tugas Picking'
+        }
+        className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
+          collapsed ? 'justify-center px-2' : ''
+        }`}
+      >
+        <div
+          className={`p-1.5 rounded-lg shrink-0 relative ${
+            notificationPermission === 'granted'
+              ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
+              : 'bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400'
+          }`}
+        >
+          {notificationPermission === 'granted' ? (
+            <BellRing className="w-4 h-4" />
+          ) : (
+            <Bell className="w-4 h-4 animate-bounce" />
+          )}
+          {notificationPermission !== 'granted' && (
+            <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-500 rounded-full animate-ping" />
+          )}
+        </div>
+        {!collapsed && (
+          <div className="flex-1 text-left truncate flex items-center justify-between">
+            <span className="font-extrabold text-slate-800 dark:text-slate-200">
+              Notifikasi HP
+            </span>
+            <span
+              className={`text-[9px] px-1.5 py-0.2 rounded font-black border ${
+                notificationPermission === 'granted'
+                  ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                  : 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800 animate-pulse'
+              }`}
+            >
+              {notificationPermission === 'granted' ? 'AKTIF · TES' : 'AKTIFKAN'}
+            </span>
+          </div>
+        )}
+      </button>
 
       {/* Tema & Tampilan (Untuk Semua Pengguna) */}
       <button

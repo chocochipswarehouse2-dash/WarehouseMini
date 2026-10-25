@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useCallback, useRef, startTransition } from 'react';
 import confetti from 'canvas-confetti';
 import {
-  Menu, Scan, FileText, ShieldAlert, Package, X, Tag } from 'lucide-react';
+  Menu, Scan, FileText, ShieldAlert, Package, X, Tag, BellRing, ShoppingBag } from 'lucide-react';
 
 import {
   CategoryType,
@@ -158,6 +158,7 @@ import {
 } from './services/audio';
 import {
   getNotificationPermissionStatus,
+  isNotificationSupported,
   requestNotificationPermission,
   showPushNotification,
 } from './services/pushNotification';
@@ -332,6 +333,13 @@ export default function App() {
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(() =>
     getNotificationPermissionStatus()
   );
+  const [dismissedNotifPrompt, setDismissedNotifPrompt] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem('wms_dismiss_notif_prompt') === 'true';
+    } catch {
+      return false;
+    }
+  });
 
   // Realtime Incoming Picking Task Alert
   const [newPickingTaskAlert, setNewPickingTaskAlert] = useState<{
@@ -340,6 +348,20 @@ export default function App() {
     tujuan: string;
     timestamp: number;
   } | null>(null);
+
+  // Realtime Incoming Manual Shipment (Store Order) Alert
+  const [newManualShipmentAlert, setNewManualShipmentAlert] = useState<{
+    orderId: string;
+    storeName: string;
+    customerName: string;
+    itemCount: number;
+    jasaKirim: string;
+    isAlter: boolean;
+    timestamp: number;
+  } | null>(null);
+
+  // Deduplication set for notified Manual Shipment order IDs
+  const notifiedOrderIdsRef = useRef<Set<string>>(new Set());
 
   // Active module page (mendukung deep link & reload F5 dari URL)
   const [activePage, setActivePage] = useState<ActivePage>(() => getPageFromUrl(session));
@@ -366,7 +388,7 @@ export default function App() {
     }
   }, [activePage]);
 
-  // Listener navigasi tombol Back & Forward di browser
+  // Listener navigasi tombol Back & Forward di browser + klik Notifikasi HP (Service Worker)
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
       const pageFromState = event.state?.page as ActivePage | undefined;
@@ -382,8 +404,38 @@ export default function App() {
       }
     };
 
+    const handleNavigateCustom = (event: Event) => {
+      const targetPage = (event as CustomEvent)?.detail?.page as ActivePage | undefined;
+      if (targetPage && (!session || canAccessPage(session, targetPage))) {
+        startTransition(() => {
+          setActivePage(targetPage);
+        });
+      }
+    };
+
+    const handleSwMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'WMS_NOTIFICATION_CLICK') {
+        const targetPage = (event.data.page || 'pesanan_saya') as ActivePage;
+        if (!session || canAccessPage(session, targetPage)) {
+          startTransition(() => {
+            setActivePage(targetPage);
+          });
+        }
+      }
+    };
+
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    window.addEventListener('wms_navigate_page', handleNavigateCustom);
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleSwMessage);
+    }
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('wms_navigate_page', handleNavigateCustom);
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+      }
+    };
   }, [session]);
 
   // Auto-redirect jika halaman aktif tidak diizinkan untuk sesi user
@@ -395,6 +447,10 @@ export default function App() {
     // Dismiss alert tugas picking jika user sedang berada di halaman picking
     if (activePage === 'picking_tasks') {
       setNewPickingTaskAlert(null);
+    }
+    // Dismiss alert pesanan baru jika user sedang berada di halaman pesanan_saya
+    if (activePage === 'pesanan_saya' || activePage === 'manual_shipment') {
+      setNewManualShipmentAlert(null);
     }
   }, [session, activePage]);
 
@@ -1017,6 +1073,7 @@ export default function App() {
                 showPushNotification(notifTitle, {
                   body: notifBody,
                   tag: `picking-task-${firstSj}`,
+                  page: 'picking_tasks',
                 });
 
                 // 4. In-App Toast
@@ -1038,6 +1095,57 @@ export default function App() {
             }
           }
         )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'manual_shipment' },
+          (payload) => {
+            globalRealtimeStore.notify('manual_shipment', payload);
+
+            if (payload.eventType === 'INSERT' && payload.new) {
+              const row = payload.new as any;
+              handleIncomingManualShipmentNotification(row);
+            } else if (payload.eventType === 'UPDATE' && payload.new) {
+              const row = payload.new as any;
+              const oldRow = (payload.old || {}) as any;
+              // Jika resi baru saja diinput oleh Admin, beri notifikasi ke akun Store pengirim
+              if (row.no_resi && row.no_resi !== oldRow.no_resi) {
+                const orderId = row.no_transaksi_customer || row.no_pesanan || 'Pesanan';
+                const storeName = row.nama_pengirim || 'Store';
+                const userStore = (session.store_name || session.name || '').toLowerCase();
+                if (userStore && storeName.toLowerCase().includes(userStore)) {
+                  playNewTaskChime();
+                  vibrateDevice([200, 100, 300]);
+                  showPushNotification(`🚚 Resi Pesanan Diupdate (#${orderId})`, {
+                    body: `Pesanan ${row.nama_tujuan || 'Customer'} telah diupdate dengan No. Resi: ${row.no_resi} (${row.jasa_kirim || 'Ekspedisi'})`,
+                    tag: `resi-update-${orderId}`,
+                    page: 'pesanan_saya',
+                  });
+                  showToast(`🚚 Resi pesanan #${orderId} telah diupdate: ${row.no_resi}`, 'info');
+                }
+              }
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'retur_barang' },
+          (payload) => {
+            globalRealtimeStore.notify('retur_barang', payload);
+            if (payload.eventType === 'INSERT' && payload.new) {
+              const row = payload.new as any;
+              const noRetur = row.no_retur || 'RTR-BARU';
+              const customer = row.nama_customer || 'Customer';
+              playNewTaskChime();
+              vibrateDevice([250, 100, 250]);
+              showPushNotification('🔄 Tiket Retur Barang Baru!', {
+                body: `Tiket #${noRetur} atas nama ${customer} baru saja diajukan di Pusat Resolusi.`,
+                tag: `retur-new-${noRetur}`,
+                page: 'pusat_resolusi',
+              });
+              showToast(`🔄 Tiket Retur Barang Baru: #${noRetur} (${customer})`, 'info');
+            }
+          }
+        )
         .subscribe((status) => {
           setIsRealtimeConnected(status === 'SUBSCRIBED');
         });
@@ -1051,6 +1159,173 @@ export default function App() {
       console.warn('Supabase realtime subscription error:', err);
     }
   }, [session, loadProducts]);
+
+  // Handler terpusat untuk memicu bunyi, getar, Push Notification HP, & Banner saat ada Pesanan Baru (Manual Shipment)
+  const handleIncomingManualShipmentNotification = useCallback(
+    (row: any) => {
+      if (!row || !session) return;
+      const noPesanan = String(row.no_pesanan || '').trim().toUpperCase();
+      const rawNotes = String(row.notes_paket || '');
+      // Abaikan jika record retur barang
+      if (noPesanan.startsWith('RTR-') || rawNotes.includes('[RETUR_BARANG]:')) {
+        return;
+      }
+
+      const uniqueKey = String(row.id || row.no_pesanan || row.no_transaksi_customer || '').trim();
+      if (!uniqueKey || notifiedOrderIdsRef.current.has(uniqueKey)) {
+        return;
+      }
+      notifiedOrderIdsRef.current.add(uniqueKey);
+
+      const orderId = String(row.no_transaksi_customer || row.no_pesanan || 'Pesanan Baru').trim();
+      const storeName = String(row.nama_pengirim || 'Store').trim();
+      const picStore = String(row.pic_store || '').trim();
+      const customerName = String(row.nama_tujuan || 'Customer').trim();
+      const jasaKirim = String(row.jasa_kirim || 'Ekspedisi').trim();
+      const isAlter =
+        noPesanan.startsWith('AR-') ||
+        noPesanan.startsWith('ALT-') ||
+        noPesanan.startsWith('REP-') ||
+        rawNotes.includes('[ALTERATION_REPAIR]:');
+
+      // Hitung jumlah kuantitas barang
+      let parsedItems: any[] = [];
+      if (Array.isArray(row.items)) {
+        parsedItems = row.items;
+      } else if (typeof row.items === 'string' && row.items.trim()) {
+        try {
+          const parsed = JSON.parse(row.items);
+          if (Array.isArray(parsed)) parsedItems = parsed;
+        } catch {}
+      }
+      const totalQty =
+        parsedItems.length > 0
+          ? parsedItems.reduce((sum, it) => sum + (Number(it?.qty) || 1), 0)
+          : Number(row.qty) || 1;
+
+      // Jangan bunyikan notifikasi pesanan baru ke diri sendiri jika user store baru saja menekan tombol submit sendiri
+      const currentUsername = (session.username || '').toLowerCase().trim();
+      const submittedBy = String(row.submitted_by || '').toLowerCase().trim();
+      const isSelfSubmittedStore =
+        !isSuperadmin(session) &&
+        submittedBy &&
+        (submittedBy === currentUsername ||
+          submittedBy === (session.name || '').toLowerCase().trim());
+      if (isSelfSubmittedStore) {
+        return;
+      }
+
+      // 1. Putar nada lonceng pesanan baru
+      playNewTaskChime();
+
+      // 2. Getarkan HP
+      vibrateDevice([300, 120, 300, 120, 500]);
+
+      // 3. Tampilkan Push Notification Sistem di Status Bar HP / Aplikasi PWA
+      const notifTitle = isAlter
+        ? `✂️ Form Alter/Repair Baru — ${storeName}`
+        : `🛍️ Pesanan Store Baru — ${storeName}`;
+      const notifBody = `Order #${orderId}${picStore ? ` (PIC: ${picStore})` : ''} • Tujuan: ${customerName} (${totalQty} pcs via ${jasaKirim})`;
+
+      showPushNotification(notifTitle, {
+        body: notifBody,
+        tag: `manual-shipment-${uniqueKey}`,
+        page: 'pesanan_saya',
+        requireInteraction: true,
+      });
+
+      // 4. Tampilkan Toast di dalam aplikasi
+      showToast(
+        `${isAlter ? '✂️ Request Alter/Repair Baru' : '🛍️ Pesanan Baru Store'} dari ${storeName}: #${orderId} (${totalQty} pcs - ${customerName})`,
+        'info'
+      );
+
+      // 5. Tampilkan Floating Alert Banner & Badge di menu Pesanan Saya
+      setNewManualShipmentAlert({
+        orderId,
+        storeName,
+        customerName,
+        itemCount: totalQty,
+        jasaKirim,
+        isAlter,
+        timestamp: Date.now(),
+      });
+    },
+    [session, showToast]
+  );
+
+  // Background / Screen-Wake Delta Poller untuk Manual Shipment (menjamin notifikasi HP tetap masuk walau WebSocket sempat terputus saat layar HP mati/berpindah aplikasi)
+  useEffect(() => {
+    if (!session) return;
+    let isMounted = true;
+    let lastCheckedTime = Date.now();
+
+    // Seed initial IDs so existing orders on app launch don't trigger false new notifications
+    const seedExistingOrders = async () => {
+      try {
+        const recent = await supabaseFetch<any[]>(
+          'manual_shipment',
+          'GET',
+          null,
+          'select=id,no_pesanan,no_transaksi_customer,created_at&order=created_at.desc&limit=15'
+        );
+        if (!isMounted || !Array.isArray(recent)) return;
+        recent.forEach((r) => {
+          const key = String(r.id || r.no_pesanan || r.no_transaksi_customer || '').trim();
+          if (key) notifiedOrderIdsRef.current.add(key);
+        });
+        if (recent[0]?.created_at) {
+          const latestTs = new Date(recent[0].created_at).getTime();
+          if (!isNaN(latestTs)) lastCheckedTime = latestTs;
+        }
+      } catch {}
+    };
+
+    const checkNewStoreOrdersDelta = async () => {
+      try {
+        const sinceIso = new Date(lastCheckedTime - 60000).toISOString();
+        const freshRows = await supabaseFetch<any[]>(
+          'manual_shipment',
+          'GET',
+          null,
+          `select=id,no_pesanan,no_transaksi_customer,nama_pengirim,pic_store,nama_tujuan,jasa_kirim,items,notes_paket,submitted_by,created_at&created_at=gte.${encodeURIComponent(sinceIso)}&order=created_at.asc&limit=10`
+        );
+        if (!isMounted || !Array.isArray(freshRows) || freshRows.length === 0) return;
+
+        for (const r of freshRows) {
+          const key = String(r.id || r.no_pesanan || r.no_transaksi_customer || '').trim();
+          const rowTs = r.created_at ? new Date(r.created_at).getTime() : Date.now();
+          if (key && !notifiedOrderIdsRef.current.has(key)) {
+            handleIncomingManualShipmentNotification(r);
+            globalRealtimeStore.notify('manual_shipment', { eventType: 'INSERT', new: r });
+          }
+          if (!isNaN(rowTs) && rowTs > lastCheckedTime) {
+            lastCheckedTime = rowTs;
+          }
+        }
+      } catch {}
+    };
+
+    seedExistingOrders();
+
+    const intervalId = setInterval(checkNewStoreOrdersDelta, 25000);
+    const handleVisibilityOrOnline = () => {
+      if (document.visibilityState === 'visible') {
+        setNotificationPermission(getNotificationPermissionStatus());
+        checkNewStoreOrdersDelta();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityOrOnline);
+    window.addEventListener('online', handleVisibilityOrOnline);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityOrOnline);
+      window.removeEventListener('online', handleVisibilityOrOnline);
+    };
+  }, [session, handleIncomingManualShipmentNotification]);
 
   const handleLogin = async (user: string, pass: string) => {
     const res = await verifySupabaseLogin(user, pass);
@@ -1144,17 +1419,24 @@ export default function App() {
     showToast('Berhasil keluar dari akun.', 'info');
   };
 
-  // Notification permission requester
+  // Notification permission requester & live test trigger
   const handleRequestNotification = async () => {
     const perm = await requestNotificationPermission();
     setNotificationPermission(perm);
     if (perm === 'granted') {
-      showToast('Push Notifikasi berhasil diaktifkan!', 'success');
-      showPushNotification('🔔 Notifikasi Aktif', {
-        body: 'WMS Scanner Gudang siap mengirim update aktivitas real-time.',
+      playNewTaskChime();
+      vibrateDevice([200, 100, 200]);
+      showToast('Notifikasi HP aktif! Mengirim tes notifikasi ke layar HP Anda...', 'success');
+      await showPushNotification('🔔 Notifikasi Aplikasi WMS Aktif!', {
+        body: 'HP Anda siap menerima bunyi & pop-up otomatis saat Store menginput Pesanan Baru (Manual Shipment) atau Tugas Picking.',
+        tag: `wms-test-notif-${Date.now()}`,
+        page: 'pesanan_saya',
       });
     } else {
-      showToast('Izin notifikasi tidak diizinkan oleh browser.', 'warning');
+      showToast(
+        'Izin notifikasi belum diizinkan di browser/HP. Silakan izinkan Notifikasi pada pengaturan situs Chrome/Safari di HP Anda.',
+        'warning'
+      );
     }
   };
 
@@ -1657,6 +1939,61 @@ export default function App() {
       {/* Toast Notifications */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
+      {/* Floating Incoming Manual Shipment (Store Order) Banner */}
+      {newManualShipmentAlert && activePage !== 'pesanan_saya' && activePage !== 'manual_shipment' && (
+        <aside
+          role="status"
+          aria-live="polite"
+          aria-label="Notifikasi Pesanan Store Baru"
+          className="fixed bottom-36 sm:bottom-24 right-4 left-4 sm:left-auto sm:max-w-md z-50 animate-in fade-in slide-in-from-bottom-5 duration-300"
+        >
+          <div className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white p-3.5 rounded-2xl shadow-xl shadow-indigo-600/30 border border-indigo-300/40 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0 animate-pulse">
+                <ShoppingBag className="w-5 h-5 text-white" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[10px] font-black uppercase tracking-wider text-indigo-200 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                  <span>
+                    {newManualShipmentAlert.isAlter
+                      ? 'Form Alter / Repair Store Masuk!'
+                      : 'Pesanan Baru Store Masuk!'}
+                  </span>
+                </div>
+                <div className="text-sm font-black truncate">
+                  {newManualShipmentAlert.storeName} • #{newManualShipmentAlert.orderId}
+                </div>
+                <div className="text-[11px] text-indigo-100 truncate font-medium">
+                  Customer: {newManualShipmentAlert.customerName} ({newManualShipmentAlert.itemCount} pcs •{' '}
+                  {newManualShipmentAlert.jasaKirim})
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  handleSelectPage('pesanan_saya');
+                  setNewManualShipmentAlert(null);
+                }}
+                className="px-3 py-1.5 bg-white text-indigo-600 hover:bg-indigo-50 rounded-xl text-xs font-black shadow-sm cursor-pointer transition-all active:scale-95"
+              >
+                Buka
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewManualShipmentAlert(null)}
+                aria-label="Tutup pemberitahuan pesanan baru"
+                className="p-1.5 text-white/80 hover:text-white rounded-lg hover:bg-white/10 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </aside>
+      )}
+
       {/* Floating Incoming Picking Task Banner */}
       {newPickingTaskAlert && activePage !== 'picking_tasks' && (
         <aside
@@ -1733,6 +2070,7 @@ export default function App() {
         onLogout={handleLogout}
         totalScannedCount={scannedData.length}
         hasNewPickingAlert={!!newPickingTaskAlert}
+        hasNewPesananAlert={!!newManualShipmentAlert}
       />
 
       {/* Main App Container (Page Content) */}
@@ -1742,6 +2080,46 @@ export default function App() {
           <DesktopPwaBanner onOpenInstallModal={() => setIsApkModalOpen(true)} />
           {/* Offline Connection & Work Protection Banner */}
           <OfflineProtectionBar onNotify={(msg, type) => showToast(msg, type)} />
+
+          {/* Mobile & Desktop Push Notification Activation Prompt Bar */}
+          {session &&
+            isNotificationSupported() &&
+            notificationPermission !== 'granted' &&
+            !dismissedNotifPrompt && (
+              <div className="bg-amber-50 dark:bg-amber-950/50 border-b border-amber-200 dark:border-amber-800/70 px-3 sm:px-5 py-2.5 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5 text-xs text-amber-900 dark:text-amber-200">
+                  <div className="p-1.5 rounded-lg bg-amber-500 text-white shrink-0 animate-bounce">
+                    <BellRing className="w-3.5 h-3.5" />
+                  </div>
+                  <span>
+                    <strong>Notifikasi HP Belum Aktif:</strong> Aktifkan agar HP Anda otomatis berbunyi &amp; memunculkan pop-up saat ada{' '}
+                    <strong>Pesanan Baru (Manual Shipment) dari Store</strong> atau Tugas Picking.
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 ml-auto">
+                  <button
+                    type="button"
+                    onClick={handleRequestNotification}
+                    className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-amber-500 hover:bg-amber-600 text-black shadow-xs cursor-pointer transition-all active:scale-95"
+                  >
+                    Aktifkan Notifikasi HP
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDismissedNotifPrompt(true);
+                      try {
+                        sessionStorage.setItem('wms_dismiss_notif_prompt', 'true');
+                      } catch {}
+                    }}
+                    className="p-1 text-amber-700 dark:text-amber-400 hover:opacity-75 cursor-pointer"
+                    title="Sembunyikan sementara"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
         </div>
 
         {/* Floating Mobile Sidebar Toggle */}
