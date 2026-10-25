@@ -29,12 +29,26 @@ export interface RackLocationOverride {
   isCustomLocation?: boolean;
 }
 
+export interface AbcdToKoliRuleConfig {
+  minStockThreshold: number;      // e.g. 25: Hanya evaluasi SKU jika stok di rak ABCD >= 25 pcs
+  mandatoryPickingBuffer: number; // e.g. 10: Minimal 10 pcs WAJIB tertinggal di rak ABCD untuk picker
+  evacuatePercent: number;        // e.g. 60: Persentase kuantitas yang dipindahkan ke kolian
+}
+
+export const DEFAULT_ABCD_TO_KOLI_RULE: AbcdToKoliRuleConfig = {
+  minStockThreshold: 25,
+  mandatoryPickingBuffer: 10,
+  evacuatePercent: 60,
+};
+
 export interface RackCapacityConfig {
   version: number;
   updatedAt: string;
   updatedBy?: string;
   zones: RackZoneRule[];
   overrides: Record<string, RackLocationOverride>;
+  evacuationRule?: AbcdToKoliRuleConfig;
+  refillMaxPerSkuAbcd?: number;
 }
 
 export interface RackSkuItem {
@@ -69,7 +83,7 @@ export interface ComputedRackSlot {
   notes?: string;
 }
 
-export type RecommendationMoveType = 'REFILL_KOLI' | 'RELOKASI_OVERLOAD' | 'MANUAL';
+export type RecommendationMoveType = 'REFILL_KOLI' | 'RELOKASI_OVERLOAD' | 'EVAKUASI_KOLI' | 'MANUAL';
 
 export interface SimulationMove {
   id: string;
@@ -267,21 +281,24 @@ export const DEFAULT_RACK_ZONES: RackZoneRule[] = [
 
 export function getDefaultRackCapacityConfig(): RackCapacityConfig {
   return {
-    version: 4,
+    version: 5,
     updatedAt: new Date().toISOString(),
     zones: DEFAULT_RACK_ZONES,
     overrides: {},
+    evacuationRule: { ...DEFAULT_ABCD_TO_KOLI_RULE },
+    refillMaxPerSkuAbcd: 12,
   };
 }
 
 /**
- * Ensures any previously saved v1/v2/v3 config automatically upgrades:
+ * Ensures any previously saved v1/v2/v3/v4 config automatically upgrades:
  * 1. Area Transit ('zone_transit') from static ['X', 'TRANSIT'] to variable range X (X001 - X100)
  * 2. Missing Koli / Kolian zones (prefix R, V, Z: R001-R100, V001-V100, Z001-Z100)
  * 3. Splits combined 'zone_blok_f' (['TIKTOK', 'SHOPEE', 'STUDIO']) into 3 independent zones
  *    so SHOPEE, TIKTOK, and STUDIO each have their own independent maxCapacity.
  * 4. Adds Area Perbaikan zones ('zone_perbaikan_cc', 'zone_perbaikan_pmk', 'zone_perbaikan_df')
  *    so Cuci (CC), Permak (PMK), and Defect (DF) each have their own setup row & capacity.
+ * 5. Migrates evacuationRule & refillMaxPerSkuAbcd for customizable picker buffer configuration.
  */
 export function normalizeAndMigrateRackConfig(raw: RackCapacityConfig): RackCapacityConfig {
   const incomingZones = Array.isArray(raw?.zones) ? raw.zones : [];
@@ -375,12 +392,32 @@ export function normalizeAndMigrateRackConfig(raw: RackCapacityConfig): RackCapa
     }
   }
 
+  const rawEvac = raw.evacuationRule;
+  const migratedEvac: AbcdToKoliRuleConfig = rawEvac
+    ? {
+        minStockThreshold: Math.max(
+          5,
+          Number(rawEvac.minStockThreshold) || DEFAULT_ABCD_TO_KOLI_RULE.minStockThreshold
+        ),
+        mandatoryPickingBuffer: Math.max(
+          1,
+          Number(rawEvac.mandatoryPickingBuffer) || DEFAULT_ABCD_TO_KOLI_RULE.mandatoryPickingBuffer
+        ),
+        evacuatePercent: Math.max(
+          10,
+          Math.min(95, Number(rawEvac.evacuatePercent) || DEFAULT_ABCD_TO_KOLI_RULE.evacuatePercent)
+        ),
+      }
+    : { ...DEFAULT_ABCD_TO_KOLI_RULE };
+
   return {
-    version: Math.max(4, raw.version || 4),
+    version: Math.max(5, raw.version || 5),
     updatedAt: raw.updatedAt || new Date().toISOString(),
     updatedBy: raw.updatedBy,
     zones: upgradedZones,
     overrides: raw.overrides || {},
+    evacuationRule: migratedEvac,
+    refillMaxPerSkuAbcd: Math.max(1, Number(raw.refillMaxPerSkuAbcd) || 12),
   };
 }
 
@@ -416,11 +453,13 @@ export async function fetchRackCapacityConfig(): Promise<RackCapacityConfig> {
       const remote = JSON.parse(target.content) as RackCapacityConfig;
       if (remote && Array.isArray(remote.zones) && remote.zones.length > 0) {
         const merged = normalizeAndMigrateRackConfig({
-          version: remote.version || 2,
+          version: remote.version || 5,
           updatedAt: remote.updatedAt || target.updated_at || new Date().toISOString(),
           updatedBy: remote.updatedBy || target.updated_by,
           zones: remote.zones,
           overrides: remote.overrides || {},
+          evacuationRule: remote.evacuationRule,
+          refillMaxPerSkuAbcd: remote.refillMaxPerSkuAbcd,
         });
         saveLocalRackCapacityConfig(merged);
         return merged;
@@ -438,7 +477,7 @@ export async function persistRackCapacityConfig(
 ): Promise<RackCapacityConfig> {
   const next: RackCapacityConfig = {
     ...config,
-    version: Math.max(2, config.version || 2),
+    version: Math.max(5, config.version || 5),
     updatedAt: new Date().toISOString(),
     updatedBy,
   };
@@ -1297,4 +1336,239 @@ export function generateConsolidatedOverloadMoves(
 
   return generated;
 }
+
+export interface AbcdToKoliCandidateSummary {
+  candidateRacksCount: number;
+  candidateSkusCount: number;
+  totalExcessPcs: number;
+}
+
+/**
+ * Returns a summary of items in ABCD Warehouse racks that qualify for evacuation/storage into Koli
+ * based on user-defined threshold, mandatory picking buffer, and percentage:
+ * 1. SKU in ABCD must meet minStockThreshold (e.g. >= 25 pcs) or be in an Overloaded rack.
+ * 2. Leaves at least mandatoryPickingBuffer (e.g. >= 10 pcs) in ABCD for picker operations.
+ * 3. Moves evacuatePercent (e.g. 60%) of eligible stock to Koli.
+ */
+export function getAbcdToKoliEvacuationSummary(
+  allSlots: ComputedRackSlot[],
+  existingMoves: SimulationMove[] = [],
+  rule: AbcdToKoliRuleConfig = DEFAULT_ABCD_TO_KOLI_RULE
+): AbcdToKoliCandidateSummary {
+  const existingPairs = new Set(
+    existingMoves.map((m) => `${m.fromLokasi}__${m.sku}`.toUpperCase())
+  );
+
+  const candidateRacks = new Set<string>();
+  const candidateSkus = new Set<string>();
+  let totalExcessPcs = 0;
+
+  for (const s of allSlots) {
+    if (
+      isExcludedFromWarehouseRelocation(s.area, s.lokasi) ||
+      s.area.toUpperCase() !== 'WAREHOUSE' ||
+      !/^[ABCD]\d+$/i.test(s.lokasi)
+    ) {
+      continue;
+    }
+
+    const isOverload = s.simulatedQty > s.maxCapacity;
+
+    for (const it of s.items) {
+      if (it.qty <= 0) continue;
+      const pairKey = `${s.lokasi}__${it.sku}`.toUpperCase();
+      if (existingPairs.has(pairKey)) continue;
+
+      // Syarat 1: Hanya evaluasi jika stok >= minStockThreshold atau rak sedang overload
+      if (it.qty < rule.minStockThreshold && !isOverload) continue;
+
+      // Syarat 2: Wajib menyisakan buffer picking di rak ABCD
+      const targetKeep = Math.max(
+        rule.mandatoryPickingBuffer,
+        Math.round(it.qty * (1 - rule.evacuatePercent / 100))
+      );
+      const eligibleToEvacuate = Math.max(0, it.qty - targetKeep);
+
+      if (eligibleToEvacuate > 0) {
+        candidateRacks.add(s.lokasi);
+        candidateSkus.add(it.sku.toUpperCase());
+        totalExcessPcs += eligibleToEvacuate;
+      }
+    }
+  }
+
+  return {
+    candidateRacksCount: candidateRacks.size,
+    candidateSkusCount: candidateSkus.size,
+    totalExcessPcs,
+  };
+}
+
+/**
+ * Generates Consolidated Evacuation / Bulk Storage Recommendations from Rak ABCD -> Rak Koli (R, V, Z).
+ *
+ * WMS REVERSE REPLENISHMENT & PICKER PROTECTION RULES:
+ * 1. MANDATORY PICKING BUFFER: Never strip a picking rack empty! Leaves at least `rule.mandatoryPickingBuffer`
+ *    (e.g., 10 pcs) in ABCD so pickers can always fulfill daily customer orders directly from ABCD.
+ * 2. MINIMUM THRESHOLD: Only items with quantity >= `rule.minStockThreshold` (e.g., >= 25 pcs) or on overloaded
+ *    racks are eligible.
+ * 3. PERCENTAGE SPLIT: Moves `rule.evacuatePercent` (e.g., 60%) of eligible stock into Koli reserve.
+ * 4. TARGET CONSOLIDATION (Priority 1): If a Koli rack already holds this exact SKU, directs the excess
+ *    there so all units of that SKU are unified in the same Koli box.
+ * 5. CONSOLIDATED BIN-PACKING (Priority 2): If no Koli holds that SKU, packs items into the Koli rack
+ *    with the highest remaining space to avoid scattering across many Koli bins.
+ */
+export function generateConsolidatedAbcdToKoliMoves(
+  allSlots: ComputedRackSlot[],
+  catalogMap?: Map<string, EnrichedCatalogEntry>,
+  existingMoves: SimulationMove[] = [],
+  rule: AbcdToKoliRuleConfig = DEFAULT_ABCD_TO_KOLI_RULE,
+  maxMovesToGenerate = 30
+): SimulationMove[] {
+  // 1. Gather all available Koli slots
+  const koliSlots = allSlots
+    .filter(
+      (s) =>
+        !isExcludedFromWarehouseRelocation(s.area, s.lokasi) &&
+        (s.area.toUpperCase() === 'KOLIAN' || s.area.toUpperCase() === 'KOLI') &&
+        /^[RVZ]\d+$/i.test(s.lokasi)
+    )
+    .map((s) => ({
+      lokasi: s.lokasi,
+      maxCapacity: s.maxCapacity,
+      currentSimulated: s.simulatedQty,
+      remainingSpace: Math.max(0, s.maxCapacity - s.simulatedQty),
+      existingSkus: new Set(s.items.map((it) => it.sku.toUpperCase())),
+    }));
+
+  if (koliSlots.length === 0) return [];
+
+  // 2. Identify candidate source items in ABCD
+  interface AbcdCandidate {
+    srcLokasi: string;
+    sku: string;
+    nama_produk: string;
+    size: string;
+    category: string;
+    moveQty: number;
+    initialQty: number;
+    remainingInAbcd: number;
+    priorityScore: number;
+  }
+
+  const existingPairs = new Set(
+    existingMoves.map((m) => `${m.fromLokasi}__${m.sku}`.toUpperCase())
+  );
+  const candidates: AbcdCandidate[] = [];
+
+  for (const s of allSlots) {
+    if (
+      isExcludedFromWarehouseRelocation(s.area, s.lokasi) ||
+      s.area.toUpperCase() !== 'WAREHOUSE' ||
+      !/^[ABCD]\d+$/i.test(s.lokasi)
+    ) {
+      continue;
+    }
+
+    const isOverload = s.simulatedQty > s.maxCapacity;
+
+    for (const it of s.items) {
+      if (it.qty <= 0) continue;
+      const pairKey = `${s.lokasi}__${it.sku}`.toUpperCase();
+      if (existingPairs.has(pairKey)) continue;
+
+      // Filter: Syarat minimal stok untuk layak dievakuasi ke Koli
+      if (it.qty < rule.minStockThreshold && !isOverload) continue;
+
+      // Hitung buffer wajib tinggal di rak ABCD untuk picker
+      const targetKeep = Math.max(
+        rule.mandatoryPickingBuffer,
+        Math.round(it.qty * (1 - rule.evacuatePercent / 100))
+      );
+      const moveQty = Math.max(0, it.qty - targetKeep);
+
+      if (moveQty > 0) {
+        const catInfo = catalogMap?.get(it.sku.toUpperCase());
+        const nama =
+          (catInfo?.nama_produk && catInfo.nama_produk !== it.sku ? catInfo.nama_produk : '') ||
+          it.nama_produk ||
+          it.sku;
+        const size =
+          (catInfo?.size && catInfo.size !== '-' ? catInfo.size : '') || it.size || 'ALL';
+
+        const priorityScore = isOverload
+          ? 100 + (s.simulatedQty - s.maxCapacity)
+          : 50 + moveQty;
+
+        candidates.push({
+          srcLokasi: s.lokasi,
+          sku: it.sku.toUpperCase(),
+          nama_produk: nama,
+          size,
+          category: s.category || catInfo?.kategori || 'Umum',
+          moveQty,
+          initialQty: it.qty,
+          remainingInAbcd: it.qty - moveQty,
+          priorityScore,
+        });
+      }
+    }
+  }
+
+  if (candidates.length === 0) return [];
+
+  // Sort candidates by priorityScore descending
+  candidates.sort((a, b) => b.priorityScore - a.priorityScore);
+
+  // 3. Bin-pack candidates into target Koli racks
+  const generated: SimulationMove[] = [];
+  const nowIso = new Date().toISOString();
+  let seq = 1;
+
+  for (const item of candidates) {
+    if (generated.length >= maxMovesToGenerate) break;
+
+    // Check Priority 1: Koli rack that already contains this SKU and has room
+    let targetKoli = koliSlots.find(
+      (k) => k.existingSkus.has(item.sku) && k.remainingSpace >= Math.min(item.moveQty, 5)
+    );
+
+    // If none, Priority 2: Koli rack with most remaining space
+    if (!targetKoli) {
+      const availableKolis = koliSlots
+        .filter((k) => k.remainingSpace > 0)
+        .sort(
+          (a, b) =>
+            b.remainingSpace - a.remainingSpace ||
+            a.lokasi.localeCompare(b.lokasi, undefined, { numeric: true })
+        );
+      targetKoli = availableKolis[0];
+    }
+
+    if (!targetKoli || targetKoli.remainingSpace <= 0) continue;
+
+    const actualQty = Math.min(item.moveQty, targetKoli.remainingSpace);
+    if (actualQty <= 0) continue;
+
+    targetKoli.remainingSpace -= actualQty;
+    targetKoli.currentSimulated += actualQty;
+    targetKoli.existingSkus.add(item.sku);
+
+    generated.push({
+      id: `evac_${Date.now()}_${seq++}`,
+      fromLokasi: item.srcLokasi,
+      toLokasi: targetKoli.lokasi,
+      sku: item.sku,
+      nama_produk: item.nama_produk,
+      size: item.size,
+      category: item.category,
+      moveType: 'EVAKUASI_KOLI',
+      qty: actualQty,
+      createdAt: nowIso,
+    });
+  }
+
+  return generated;
+}
+
 

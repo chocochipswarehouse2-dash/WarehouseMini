@@ -26,6 +26,7 @@ import {
   Send,
   Boxes,
   FileText,
+  Archive,
 } from 'lucide-react';
 import type { StockRealtimeItem, UserSession, LogProdukItem, ProductItem } from '../../types';
 import { supabaseFetch } from '../../services/supabase';
@@ -48,6 +49,10 @@ import {
   getKoliToAbcdRefillSummary,
   generateConsolidatedKoliRefillMoves,
   generateConsolidatedOverloadMoves,
+  getAbcdToKoliEvacuationSummary,
+  generateConsolidatedAbcdToKoliMoves,
+  type AbcdToKoliRuleConfig,
+  DEFAULT_ABCD_TO_KOLI_RULE,
 } from '../../services/rackCapacityService';
 
 interface RackCapacityDashboardProps {
@@ -62,7 +67,7 @@ interface RackCapacityDashboardProps {
 
 type ViewMode = 'GRID' | 'TABLE';
 type StatusFilter = 'ALL' | 'OVERLOAD' | 'WARNING_FULL' | 'SAFE' | 'EMPTY';
-type SetupTab = 'ZONES' | 'SINGLE_OVERRIDE' | 'ADD_ZONE';
+type SetupTab = 'ZONES' | 'SINGLE_OVERRIDE' | 'ADD_ZONE' | 'BUFFER_RULES';
 
 const COLOR_STYLES: Record<
   RackZoneColor,
@@ -229,6 +234,10 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   const [simQty, setSimQty] = useState<number>(1);
   const [copiedSimText, setCopiedSimText] = useState(false);
   const [isSjPrintModalOpen, setIsSjPrintModalOpen] = useState(false);
+  const [evacRule, setEvacRule] = useState<AbcdToKoliRuleConfig>(
+    () => config.evacuationRule || DEFAULT_ABCD_TO_KOLI_RULE
+  );
+  const [showEvacConfig, setShowEvacConfig] = useState(false);
 
   // Build Master Produk lookup map (SKU -> { nama_produk, size, kategori })
   const catalogMap = useMemo(() => {
@@ -265,7 +274,12 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   useEffect(() => {
     let mounted = true;
     fetchRackCapacityConfig().then((remote) => {
-      if (mounted) setConfig(remote);
+      if (mounted) {
+        setConfig(remote);
+        if (remote.evacuationRule) {
+          setEvacRule(remote.evacuationRule);
+        }
+      }
     });
     return () => {
       mounted = false;
@@ -553,6 +567,30 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     }
   };
 
+  const handleSaveEvacuationRule = async (ruleToSave: AbcdToKoliRuleConfig) => {
+    setIsSavingConfig(true);
+    try {
+      const nextConfig: RackCapacityConfig = {
+        ...config,
+        evacuationRule: ruleToSave,
+      };
+      const saved = await persistRackCapacityConfig(
+        nextConfig,
+        session?.name || session?.username || 'Admin'
+      );
+      setConfig(saved);
+      setEvacRule(ruleToSave);
+      onNotify?.(
+        `Pengaturan buffer picking tersimpan ke database! (Min ${ruleToSave.minStockThreshold} pcs, Sisa Buffer ${ruleToSave.mandatoryPickingBuffer} pcs, Pindah ${ruleToSave.evacuatePercent}%)`,
+        'success'
+      );
+    } catch {
+      onNotify?.('Pengaturan buffer disimpan di penyimpanan lokal.', 'warning');
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
+
   const handleAddCustomZone = async () => {
     const prefix = newZonePrefix.trim().toUpperCase();
     const category = newZoneCat.trim() || 'Umum';
@@ -611,6 +649,12 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   const koliRefillSummary = useMemo(
     () => getKoliToAbcdRefillSummary(allSlots, simulationMoves),
     [allSlots, simulationMoves]
+  );
+
+  // Summary of excess items in ABCD qualifying for evacuation/storage into Koli
+  const abcdToKoliSummary = useMemo(
+    () => getAbcdToKoliEvacuationSummary(allSlots, simulationMoves, evacRule),
+    [allSlots, simulationMoves, evacRule]
   );
 
   // Group recommendation moves by route (fromLokasi -> toLokasi) to prevent picker confusion
@@ -784,6 +828,31 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     );
   };
 
+  const handleGenerateAbcdToKoliEvacuation = () => {
+    const generated = generateConsolidatedAbcdToKoliMoves(
+      allSlots,
+      catalogMap,
+      simulationMoves,
+      evacRule
+    );
+    if (generated.length === 0) {
+      onNotify?.(
+        `Tidak ada SKU di Rak ABCD yang memenuhi syarat (Stok ≥ ${evacRule.minStockThreshold} pcs), atau seluruhnya sudah masuk daftar rekomendasi.`,
+        'info'
+      );
+      return;
+    }
+    const fromRacks = new Set(generated.map((m) => m.fromLokasi)).size;
+    const toRacks = new Set(generated.map((m) => m.toLokasi)).size;
+    const totalPcs = generated.reduce((acc, m) => acc + m.qty, 0);
+    setSimulationMoves((prev) => [...prev, ...generated]);
+    setIsSimPanelOpen(true);
+    onNotify?.(
+      `Berhasil menyusun rekomendasi evakuasi ${generated.length} SKU (${totalPcs} pcs) ke Koli! Buffer picking disisakan min ${evacRule.mandatoryPickingBuffer} pcs di rak ABCD agar picker tidak kesulitan.`,
+      'success'
+    );
+  };
+
   const buildWhatsAppTaskText = () => {
     const lines: string[] = [
       `*FORM TUGAS PICKER — REKOMENDASI PINDAH & REFILL RAK*`,
@@ -798,13 +867,27 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     ];
 
     groupedRecommendationRoutes.forEach((route, rIdx) => {
+      const isToKoli = /^[RVZ]\d+$/i.test(route.toLokasi);
+      const isFromKoli = /^[RVZ]\d+$/i.test(route.fromLokasi);
+      const directionLabel = isFromKoli
+        ? ' [Refill Koli ➔ ABCD]'
+        : isToKoli
+        ? ' [Evakuasi ABCD ➔ Koli]'
+        : ' [Relokasi Rak ABCD]';
+
       lines.push(
-        `\n*RUTE ${rIdx + 1}: RAK ASAL [${route.fromLokasi}] ➔ KE RAK TUJUAN [${route.toLokasi}]* (${route.totalPcs} pcs)`
+        `\n*RUTE ${rIdx + 1}: RAK ASAL [${route.fromLokasi}] ➔ KE RAK TUJUAN [${route.toLokasi}]*${directionLabel} (${route.totalPcs} pcs)`
       );
       route.items.forEach((m, iIdx) => {
         const sizeLabel = m.size && m.size !== '-' ? m.size : 'ALL';
+        const typeBadge =
+          m.moveType === 'EVAKUASI_KOLI'
+            ? ' _(Simpan ke Koli)_'
+            : m.moveType === 'REFILL_KOLI'
+            ? ' _(Refill ke ABCD)_'
+            : '';
         lines.push(
-          `  ${iIdx + 1}. *${m.nama_produk}* | Size: *${sizeLabel}*\n     SKU: \`${m.sku}\` — Ambil: *${m.qty} pcs*`
+          `  ${iIdx + 1}. *${m.nama_produk}* | Size: *${sizeLabel}*${typeBadge}\n     SKU: \`${m.sku}\` — Ambil: *${m.qty} pcs*`
         );
       });
     });
@@ -860,6 +943,8 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             ? 'Refill Koli → ABCD'
             : m.moveType === 'RELOKASI_OVERLOAD'
             ? 'Rapikan Overload'
+            : m.moveType === 'EVAKUASI_KOLI'
+            ? 'Evakuasi ABCD → Koli'
             : 'Relokasi Rak';
         rowsHtml += `
           <tr>
@@ -1360,28 +1445,28 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             )}
           </div>
 
-          {/* Generator Action Cards Row: Auto-Refill Koli -> ABCD & Auto-Relokasi Overload */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+          {/* Generator Action Cards Row: Auto-Refill Koli -> ABCD, Auto-Relokasi Overload, & Evakuasi ABCD -> Koli */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
             <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white dark:bg-[#131d31] border border-emerald-200 dark:border-emerald-900/60">
               <div className="min-w-0">
                 <div className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
                   <Boxes className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                  <span className="truncate">Suplai Otomatis Koli (R, V, Z) ➔ Rak ABCD</span>
+                  <span className="truncate">Suplai Koli ➔ Rak ABCD</span>
                 </div>
                 <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                  Deteksi SKU yang kosong (0 pcs) di rak ABCD namun tersedia di Koli
+                  Refill SKU kosong (0 pcs) di ABCD dari Koli
                 </div>
               </div>
               <button
                 type="button"
                 onClick={handleGenerateKoliRefill}
-                className="px-3.5 py-2 text-xs font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs shrink-0 transition-colors"
+                className="px-3 py-2 text-xs font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs shrink-0 transition-colors"
               >
                 <Boxes className="w-3.5 h-3.5" />
                 <span>
                   Refill Koli ➔ ABCD
                   {koliRefillSummary.totalRefillableSkus > 0
-                    ? ` (${koliRefillSummary.totalRefillableSkus} SKU)`
+                    ? ` (${koliRefillSummary.totalRefillableSkus})`
                     : ''}
                 </span>
               </button>
@@ -1391,23 +1476,225 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               <div className="min-w-0">
                 <div className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                  <span className="truncate">Relokasi Rak Overload (&gt;100% Kapasitas)</span>
+                  <span className="truncate">Rapikan Overload (&gt;100%)</span>
                 </div>
                 <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                  Pindahkan kelebihan pcs dari rak penuh ke rak kosong/longgar terdekat
+                  Pindahkan ke rak ABCD terdekat yang longgar
                 </div>
               </div>
               <button
                 type="button"
                 onClick={handleGenerateOverloadRelocation}
                 disabled={summaryStats.overloadCount === 0}
-                className="px-3.5 py-2 text-xs font-extrabold bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-black rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs shrink-0 transition-colors"
+                className="px-3 py-2 text-xs font-extrabold bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-black rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs shrink-0 transition-colors"
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Rapikan Rak Overload ({summaryStats.overloadCount})</span>
+                <span>Rapikan ({summaryStats.overloadCount})</span>
               </button>
             </div>
+
+            <div className="flex flex-col justify-between gap-2 p-3 rounded-xl bg-white dark:bg-[#131d31] border border-blue-200 dark:border-blue-900/60">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <Archive className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                    <span className="truncate">Evakuasi ke Koli (ABCD ➔ Koli)</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                    Simpan kelebihan buffer ke Koli (konsolidasi SKU)
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowEvacConfig((v) => !v)}
+                  className={`p-1.5 rounded-lg border text-xs font-bold transition-colors cursor-pointer shrink-0 ${
+                    showEvacConfig
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                      : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-blue-400'
+                  }`}
+                  title="Atur Syarat: Minimal Stok, Sisa Buffer Picking & % Pindah"
+                >
+                  <Sliders className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Active Parameter Badges */}
+              <div className="flex flex-wrap items-center gap-1 text-[10px]">
+                <span className="px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-bold border border-blue-200/60 dark:border-blue-800">
+                  Stok &ge; {evacRule.minStockThreshold} pcs
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-200/60 dark:border-emerald-800">
+                  Sisa Buffer: {evacRule.mandatoryPickingBuffer} pcs
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 font-bold border border-amber-200/60 dark:border-amber-800">
+                  Pindah: {evacRule.evacuatePercent}%
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+                  {abcdToKoliSummary.candidateSkusCount > 0 ? (
+                    <span>
+                      Kandidat: <strong>{abcdToKoliSummary.candidateSkusCount} SKU</strong> ({abcdToKoliSummary.totalExcessPcs} pcs)
+                    </span>
+                  ) : (
+                    <span>Stok picking aman</span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleGenerateAbcdToKoliEvacuation}
+                  disabled={abcdToKoliSummary.candidateSkusCount === 0 && summaryStats.overloadCount === 0}
+                  className="px-3 py-1.5 text-xs font-extrabold bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs shrink-0 transition-colors"
+                >
+                  <Archive className="w-3.5 h-3.5" />
+                  <span>
+                    Simpan Koli
+                    {abcdToKoliSummary.candidateSkusCount > 0
+                      ? ` (${abcdToKoliSummary.candidateSkusCount})`
+                      : ''}
+                  </span>
+                </button>
+              </div>
+            </div>
           </div>
+
+          {/* Collapsible Parameter Configuration Panel for Evakuasi ke Koli */}
+          {showEvacConfig && (
+            <div className="p-4 rounded-xl bg-white dark:bg-[#131d31] border border-blue-300 dark:border-blue-800 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sliders className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  <span className="text-xs font-black text-slate-900 dark:text-white">
+                    Pengaturan Syarat Evakuasi ABCD ➔ Koli (Perlindungan Buffer Picker)
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowEvacConfig(false)}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                Prinsip WMS: <strong>Stok rak picking (ABCD) tidak boleh dikosongkan total!</strong> Picker selalu membutuhkan stok aktif di rak utama untuk mengambil pesanan harian tanpa harus berjalan ke area Kolian.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                {/* 1. Min Stock Threshold */}
+                <div className="p-3 rounded-lg bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 space-y-1.5">
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                    1. Minimal Stok di Rak ABCD
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={10}
+                      max={150}
+                      step={5}
+                      value={evacRule.minStockThreshold}
+                      onChange={(e) =>
+                        setEvacRule((prev) => ({
+                          ...prev,
+                          minStockThreshold: Math.max(5, Number(e.target.value) || 25),
+                        }))
+                      }
+                      className="w-20 px-2 py-1 text-xs font-bold font-mono bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded text-slate-900 dark:text-white"
+                    />
+                    <span className="text-xs text-slate-500 font-bold">pcs</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400">
+                    Hanya SKU dengan stok &ge; {evacRule.minStockThreshold} pcs yang dievaluasi. SKU dengan stok sedikit diabaikan.
+                  </p>
+                </div>
+
+                {/* 2. Mandatory Picking Buffer */}
+                <div className="p-3 rounded-lg bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 space-y-1.5">
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                    2. Sisa Wajib Tinggal di Rak ABCD
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={3}
+                      max={40}
+                      step={1}
+                      value={evacRule.mandatoryPickingBuffer}
+                      onChange={(e) =>
+                        setEvacRule((prev) => ({
+                          ...prev,
+                          mandatoryPickingBuffer: Math.max(1, Number(e.target.value) || 10),
+                        }))
+                      }
+                      className="w-20 px-2 py-1 text-xs font-bold font-mono bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded text-slate-900 dark:text-white"
+                    />
+                    <span className="text-xs text-slate-500 font-bold">pcs</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400">
+                    Stok minimal yang <strong>WAJIB tertinggal</strong> di rak ABCD untuk kebutuhan pesanan picker harian.
+                  </p>
+                </div>
+
+                {/* 3. Evacuate Percentage */}
+                <div className="p-3 rounded-lg bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 space-y-1.5">
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                    3. Persentase Dipindah ke Koli
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    {[40, 50, 60, 70, 80].map((pct) => (
+                      <button
+                        key={pct}
+                        type="button"
+                        onClick={() =>
+                          setEvacRule((prev) => ({
+                            ...prev,
+                            evacuatePercent: pct,
+                          }))
+                        }
+                        className={`px-2 py-1 text-xs font-bold rounded cursor-pointer transition-colors ${
+                          evacRule.evacuatePercent === pct
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        {pct}%
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-slate-400">
+                    Dari kelebihan stok, pindahkan {evacRule.evacuatePercent}% ke Koli (R, V, Z).
+                  </p>
+                </div>
+              </div>
+
+              {/* Interactive Simulation Example & Save Button */}
+              <div className="px-3 py-2.5 rounded-lg bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/60 text-[11px] text-blue-900 dark:text-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <span className="leading-relaxed">
+                  💡 <strong>Simulasi Riil:</strong> Jika ada SKU berisi <strong>30 pcs</strong> di rak A001 ➔ sistem akan menyisakan <strong>{Math.max(evacRule.mandatoryPickingBuffer, Math.round(30 * (1 - evacRule.evacuatePercent / 100)))} pcs</strong> di rak A001 (untuk picking harian), dan merekomendasikan <strong>{30 - Math.max(evacRule.mandatoryPickingBuffer, Math.round(30 * (1 - evacRule.evacuatePercent / 100)))} pcs ({Math.round(((30 - Math.max(evacRule.mandatoryPickingBuffer, Math.round(30 * (1 - evacRule.evacuatePercent / 100)))) / 30) * 100)}%)</strong> dipindah ke Koli R/V/Z.
+                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    disabled={isSavingConfig}
+                    onClick={() => handleSaveEvacuationRule(evacRule)}
+                    className="px-3 py-1.5 text-xs font-extrabold bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors whitespace-nowrap"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>{isSavingConfig ? 'Menyimpan...' : 'Simpan ke Database'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEvacRule(DEFAULT_ABCD_TO_KOLI_RULE)}
+                    className="text-xs font-bold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 underline cursor-pointer"
+                  >
+                    Reset Standar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Manual Add Recommendation Form */}
           <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 items-end bg-white dark:bg-[#131d31] p-3 rounded-xl border border-purple-200/70 dark:border-slate-800">
@@ -1551,6 +1838,21 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                                 <span className="text-[11px] font-mono text-slate-500">
                                   ({m.sku})
                                 </span>
+                                {m.moveType === 'EVAKUASI_KOLI' && (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
+                                    Evakuasi ABCD ➔ Koli
+                                  </span>
+                                )}
+                                {m.moveType === 'REFILL_KOLI' && (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300">
+                                    Refill Koli ➔ ABCD
+                                  </span>
+                                )}
+                                {m.moveType === 'RELOKASI_OVERLOAD' && (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300">
+                                    Rapikan Overload
+                                  </span>
+                                )}
                               </div>
                             </div>
                             <div className="flex items-center gap-3 shrink-0">
@@ -2343,12 +2645,13 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             </div>
 
             {/* Modal Tabs */}
-            <div className="px-5 pt-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2 bg-slate-50/60 dark:bg-[#0E1420]">
+            <div className="px-5 pt-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2 bg-slate-50/60 dark:bg-[#0E1420] overflow-x-auto">
               {(
                 [
                   { id: 'ZONES', label: '1. Setup Massal Per Zona (A - D & Area)' },
                   { id: 'SINGLE_OVERRIDE', label: '2. Edit Spesifik Per Nomor Rak' },
                   { id: 'ADD_ZONE', label: '3. Tambah Area / Rentang Lokasi Baru' },
+                  { id: 'BUFFER_RULES', label: '4. Setup Buffer & Aturan Evakuasi / Refill' },
                 ] as const
               ).map((t) => (
                 <button
@@ -2795,6 +3098,166 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                   </div>
                 </div>
               )}
+
+              {setupTab === 'BUFFER_RULES' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+                    <div>
+                      <h4 className="text-sm font-black text-slate-900 dark:text-white">
+                        Setup Buffer Picking &amp; Aturan Evakuasi Gudang (Tersimpan di Database)
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Atur ambang batas stok minimum, buffer wajib tinggal untuk picker di rak ABCD, dan persentase yang disimpan ke Koli (R, V, Z).
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setEvacRule(DEFAULT_ABCD_TO_KOLI_RULE)}
+                      className="text-xs font-bold text-rose-600 hover:underline cursor-pointer shrink-0"
+                    >
+                      Kembalikan ke Default Standar
+                    </button>
+                  </div>
+
+                  {/* Section A: Evakuasi ABCD -> Koli */}
+                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Archive className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      <span className="text-xs font-black text-slate-900 dark:text-white">
+                        A. Aturan Evakuasi / Penyimpanan ke Koli (ABCD ➔ Koli)
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {/* 1. Min Stock Threshold */}
+                      <div className="p-3 rounded-lg bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 space-y-1.5">
+                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                          1. Minimal Stok di Rak ABCD (Syarat Evaluasi)
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={5}
+                            max={200}
+                            step={5}
+                            value={evacRule.minStockThreshold}
+                            onChange={(e) =>
+                              setEvacRule((prev) => ({
+                                ...prev,
+                                minStockThreshold: Math.max(5, Number(e.target.value) || 25),
+                              }))
+                            }
+                            className="w-24 px-2.5 py-1.5 text-xs font-bold font-mono bg-slate-50 dark:bg-[#0E1420] border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
+                          />
+                          <span className="text-xs text-slate-500 font-bold">pcs</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400">
+                          Hanya SKU dengan stok &ge; {evacRule.minStockThreshold} pcs di rak ABCD yang dievaluasi. SKU dengan kuantitas kecil (stok normal harian) dilewati.
+                        </p>
+                      </div>
+
+                      {/* 2. Mandatory Picking Buffer */}
+                      <div className="p-3 rounded-lg bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 space-y-1.5">
+                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                          2. Sisa Wajib Tinggal di Rak ABCD (Buffer Picker)
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={1}
+                            max={50}
+                            step={1}
+                            value={evacRule.mandatoryPickingBuffer}
+                            onChange={(e) =>
+                              setEvacRule((prev) => ({
+                                ...prev,
+                                mandatoryPickingBuffer: Math.max(1, Number(e.target.value) || 10),
+                              }))
+                            }
+                            className="w-24 px-2.5 py-1.5 text-xs font-bold font-mono bg-slate-50 dark:bg-[#0E1420] border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
+                          />
+                          <span className="text-xs text-slate-500 font-bold">pcs</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400">
+                          Kuantitas minimal yang <strong>WAJIB tertinggal</strong> di rak ABCD agar picker tidak perlu jalan jauh ke koli saat ada order harian.
+                        </p>
+                      </div>
+
+                      {/* 3. Evacuate Percentage */}
+                      <div className="p-3 rounded-lg bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 space-y-1.5">
+                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                          3. Persentase Dipindahkan ke Koli
+                        </label>
+                        <div className="flex items-center gap-1.5 pt-0.5">
+                          {[40, 50, 60, 70, 80].map((pct) => (
+                            <button
+                              key={pct}
+                              type="button"
+                              onClick={() =>
+                                setEvacRule((prev) => ({
+                                  ...prev,
+                                  evacuatePercent: pct,
+                                }))
+                              }
+                              className={`px-2.5 py-1 text-xs font-bold rounded-lg cursor-pointer transition-colors ${
+                                evacRule.evacuatePercent === pct
+                                  ? 'bg-blue-600 text-white shadow-xs'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                              }`}
+                            >
+                              {pct}%
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-[10px] text-slate-400">
+                          Persentase dari kelebihan kuantitas yang dialihkan ke rak Koli ({evacRule.evacuatePercent}%).
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Live Simulation Explanation */}
+                    <div className="p-3 rounded-lg bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/60 text-xs text-blue-900 dark:text-blue-200 leading-relaxed">
+                      💡 <strong>Prinsip Simulasi:</strong> Jika ada SKU berisi <strong>30 pcs</strong> di rak A001 ➔ sistem akan menyisakan <strong>{Math.max(evacRule.mandatoryPickingBuffer, Math.round(30 * (1 - evacRule.evacuatePercent / 100)))} pcs</strong> di rak A001 untuk picking harian, dan memindahkan <strong>{30 - Math.max(evacRule.mandatoryPickingBuffer, Math.round(30 * (1 - evacRule.evacuatePercent / 100)))} pcs ({Math.round(((30 - Math.max(evacRule.mandatoryPickingBuffer, Math.round(30 * (1 - evacRule.evacuatePercent / 100)))) / 30) * 100)}%)</strong> ke Koli R/V/Z.
+                    </div>
+                  </div>
+
+                  {/* Section B: Refill Koli -> ABCD */}
+                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Boxes className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                      <span className="text-xs font-black text-slate-900 dark:text-white">
+                        B. Aturan Suplai / Refill dari Koli ke Rak ABCD (Koli ➔ ABCD)
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-lg bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                          Batas Maksimal Refill Per SKU ke Rak ABCD
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Mencegah 1 SKU memonopoli 100% ruang rak ABCD jika di Koli terdapat ratusan pcs.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs font-mono font-bold text-slate-500">Maks</span>
+                        <input
+                          type="number"
+                          min={3}
+                          max={30}
+                          value={config.refillMaxPerSkuAbcd || 12}
+                          onChange={(e) => {
+                            const val = Math.max(3, Number(e.target.value) || 12);
+                            setConfig((prev) => ({ ...prev, refillMaxPerSkuAbcd: val }));
+                          }}
+                          className="w-20 px-2 py-1 text-xs font-bold font-mono bg-slate-50 dark:bg-[#0E1420] border border-slate-300 dark:border-slate-700 rounded text-slate-900 dark:text-white"
+                        />
+                        <span className="text-xs text-slate-500 font-bold">pcs/SKU</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Modal Footer */}
@@ -2815,6 +3278,17 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 >
                   <Save className="w-4 h-4" />
                   <span>{isSavingConfig ? 'Menyimpan...' : 'Simpan Semua Perubahan Zona'}</span>
+                </button>
+              )}
+              {setupTab === 'BUFFER_RULES' && (
+                <button
+                  type="button"
+                  disabled={isSavingConfig}
+                  onClick={() => handleSaveEvacuationRule(evacRule)}
+                  className="px-5 py-2 text-xs font-extrabold bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{isSavingConfig ? 'Menyimpan...' : 'Simpan Pengaturan Buffer ke Database'}</span>
                 </button>
               )}
             </div>
