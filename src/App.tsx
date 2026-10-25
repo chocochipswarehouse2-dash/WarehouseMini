@@ -803,6 +803,11 @@ export default function App() {
             if (clean.length > 0) {
               setProductDatabase(clean);
               hasLocalData = true;
+              // If local indexedDB contains products without dealpos_channels, auto-refresh immediately
+              const hasDealposChannels = clean.some((it) => it.dealpos_channels && Object.keys(it.dealpos_channels).length > 0);
+              if (!hasDealposChannels) {
+                setTimeout(() => fetchFromSupabase(true), 100);
+              }
             }
           }
         } catch (err) {
@@ -835,6 +840,7 @@ export default function App() {
             await saveProductsToLocalDb(finalList, 'replace');
             try {
               localStorage.setItem('wms_master_products_last_sync', String(Date.now()));
+              localStorage.setItem('wms_catalog_v3_dealpos_channels', 'true');
             } catch {}
             if (forceRefresh) {
               showToast(`Katalog berhasil disinkronkan (${finalList.length} produk dari Supabase)!`, 'success');
@@ -854,11 +860,11 @@ export default function App() {
       } else {
         // Non-blocking background sync (SWR): check if last sync was > 30 mins ago or missing physical stock sync
         const lastSync = Number(localStorage.getItem('wms_master_products_last_sync') || '0');
-        const hasV2Catalog = localStorage.getItem('wms_catalog_v2_synced') === 'true';
+        const hasV3Catalog = localStorage.getItem('wms_catalog_v3_dealpos_channels') === 'true';
         const THIRTY_MINS = 30 * 60 * 1000;
-        if (!hasV2Catalog || Date.now() - lastSync > THIRTY_MINS) {
+        if (!hasV3Catalog || Date.now() - lastSync > THIRTY_MINS) {
           fetchFromSupabase(true).then(() => {
-            try { localStorage.setItem('wms_catalog_v2_synced', 'true'); } catch {}
+            try { localStorage.setItem('wms_catalog_v3_dealpos_channels', 'true'); } catch {}
           }).catch((err) => {
             console.warn('Background sync error:', err);
           });

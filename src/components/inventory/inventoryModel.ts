@@ -195,11 +195,11 @@ function parseCatalogItem(item: ProductItem): CatalogBase | null {
   const d: Record<string, any> = { ...dpRaw, ...(dpD || {}), ...(isObj(item.d) ? item.d : {}) };
   const b: Record<string, any> = { ...dpRaw, ...(dpCabang || {}), ...(dpB || {}), ...(isObj(item.b) ? item.b : {}) };
 
-  const src = [d, dpRaw, dpD];
+  const src = [d, dpRaw, dpD, item as Record<string, any>];
   const dp = emptyKomparasi();
-  dp.MAP = pickNum(src, ['MAP', 'Gudang Utama', 'Marketplace']) ?? toNum(item.q);
-  dp.LIVE = pickNum(src, ['LIVE', 'Barang Live', 'Sample Live']) ?? 0;
-  dp.STUDIO = pickNum(src, ['STUDIO', 'Sample Studio']) ?? 0;
+  dp.MAP = pickNum(src, ['MAP', 'Gudang Utama', 'Marketplace', 'stokMap', 'q']) ?? toNum(item.q || item.stokMap);
+  dp.LIVE = pickNum(src, ['LIVE', 'Barang Live', 'Sample Live', 'stokLive', 'stokShp', 'stokTtk']) ?? 0;
+  dp.STUDIO = pickNum(src, ['STUDIO', 'Sample Studio', 'stokStudio']) ?? 0;
   dp.PERMAK = pickNum(src, ['PERMAK', 'Permak / Cuci', 'Permak']) ?? 0;
   dp.DEFECT = pickNum(src, ['DEFECT', 'Barang Cacat', 'Diskon Defect', 'Cacat']) ?? 0;
   const dpTotal = dp.MAP + dp.LIVE + dp.STUDIO + dp.PERMAK + dp.DEFECT;
@@ -891,7 +891,7 @@ export function composeAreaRows(
   const out: InventoryAreaRow[] = [];
   const catalogMap = new Map<string, CatalogBase>();
   for (let i = 0; i < bases.length; i++) {
-    catalogMap.set(bases[i].sku, bases[i]);
+    catalogMap.set(String(bases[i].sku || '').trim().toUpperCase(), bases[i]);
   }
 
   const seenSkus = new Set<string>();
@@ -909,11 +909,12 @@ export function composeAreaRows(
 
   // 1. Process all SKUs with physical stock records
   stockBySku.forEach((stockRows, sku) => {
-    if (!sku || !isListableSku(sku)) return;
-    seenSkus.add(sku);
+    const cleanSku = String(sku || '').trim().toUpperCase();
+    if (!cleanSku || !isListableSku(cleanSku)) return;
+    seenSkus.add(cleanSku);
 
-    const base = catalogMap.get(sku);
-    const rawProduk = base?.produk || stockRows[0]?.nama_produk || sku;
+    const base = catalogMap.get(cleanSku);
+    const rawProduk = base?.produk || stockRows[0]?.nama_produk || cleanSku;
     const produk = cleanProductName(rawProduk) || rawProduk;
     let size = base?.size || extractCleanSizeToken(stockRows[0]?.size || '');
     if (!size || size === '-') size = extractSizeFromSku(sku);

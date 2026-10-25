@@ -4160,7 +4160,7 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
             let retries = 3;
             while (retries > 0) {
               try {
-                const r = await fetch(`${supaUrl}/rest/v1/master_produk?select=sku,nama_produk,kategori,size,price&order=sku.asc&limit=${pageSize}&offset=${off}`, {
+                const r = await fetch(`${supaUrl}/rest/v1/master_produk?select=sku,nama_produk,kategori,size,price,dealpos_channels&order=sku.asc&limit=${pageSize}&offset=${off}`, {
                   headers: {
                     apikey: supaKey,
                     Authorization: 'Bearer ' + supaKey,
@@ -4475,11 +4475,11 @@ export async function searchActiveProductsLive(keyword: string): Promise<Product
   try {
     const [resMasterSku, resMasterName] = await Promise.all([
       fetch(
-        `${supaUrl}/rest/v1/master_produk?select=sku,nama_produk,kategori,size,price&sku=ilike.${encodedQ}%25&limit=30`,
+        `${supaUrl}/rest/v1/master_produk?select=sku,nama_produk,kategori,size,price,dealpos_channels&sku=ilike.${encodedQ}%25&limit=30`,
         { headers }
       ).then(r => r.ok ? r.json() : []).catch(() => []),
       fetch(
-        `${supaUrl}/rest/v1/master_produk?select=sku,nama_produk,kategori,size,price&nama_produk=ilike.${encodedWildcard}&limit=30`,
+        `${supaUrl}/rest/v1/master_produk?select=sku,nama_produk,kategori,size,price,dealpos_channels&nama_produk=ilike.${encodedWildcard}&limit=30`,
         { headers }
       ).then(r => r.ok ? r.json() : []).catch(() => [])
     ]);

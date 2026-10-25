@@ -96,6 +96,16 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     setIsLokasiExportModalOpen(true);
   }, []);
 
+  // Auto-heal: verify if productCatalog has dealpos_channels, if not, trigger fresh sync from Supabase
+  useEffect(() => {
+    if (productCatalog && productCatalog.length > 0 && onRefreshCatalog) {
+      const hasDp = productCatalog.some((it) => it.dealpos_channels && Object.keys(it.dealpos_channels).length > 0);
+      if (!hasDp) {
+        onRefreshCatalog(true);
+      }
+    }
+  }, [productCatalog, onRefreshCatalog]);
+
   // 5. Data composition (Memoized O(N) pipeline)
   // Step A: Catalog parsing (cached via WeakMap per item)
   const catalogBases = useMemo(() => {
