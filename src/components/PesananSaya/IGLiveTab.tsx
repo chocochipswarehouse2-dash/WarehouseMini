@@ -120,6 +120,21 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
   // Print Mode State ('labelA6' | 'pickingMassal' | null)
   const [printMode, setPrintMode] = useState<'labelA6' | 'pickingMassal' | null>(null);
   const [printOrders, setPrintOrders] = useState<IGLiveOrder[]>([]);
+  const [printQrMap, setPrintQrMap] = useState<Record<string, string>>({});
+  const [printTimestamp, setPrintTimestamp] = useState<number>(0);
+
+  // Auto-trigger window.print saat payload cetak siap (QR sudah selesai di-generate)
+  useEffect(() => {
+    if (!printMode || printOrders.length === 0 || !printTimestamp) return;
+    const timer = setTimeout(() => {
+      try {
+        window.print();
+      } catch (err) {
+        console.warn('Window print direct error:', err);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [printTimestamp, printMode, printOrders.length]);
 
   // Form State for Add / Edit
   const [formNoPesanan, setFormNoPesanan] = useState<string>('');
@@ -325,11 +340,6 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
 
   // Load Initial Data from Supabase & Google Apps Script (GAS) Backend
   useEffect(() => {
-    const handleAfterPrint = () => {
-      setPrintMode(null);
-      setPrintOrders([]);
-    };
-    window.addEventListener('afterprint', handleAfterPrint);
 
     if (!hasInitialFetchedRef.current) {
       hasInitialFetchedRef.current = true;
@@ -390,10 +400,6 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
         }))
       );
     }
-
-    return () => {
-      window.removeEventListener('afterprint', handleAfterPrint);
-    };
   }, [productCatalog]);
 
   // Sync / Refresh from GAS / Google Sheets
@@ -944,13 +950,39 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
     }
   };
 
-  // Print Handlers
-  const handlePrintSingleLabelA6 = (order: IGLiveOrder) => {
-    setPrintOrders([order]);
+  // Print Handlers (Pre-generate QR codes before triggering print dialog)
+  const prepareAndPrintLabelA6 = async (targetOrders: IGLiveOrder[]) => {
+    if (targetOrders.length === 0) {
+      onShowToast('Tidak ada pesanan untuk dicetak label', 'warning');
+      return;
+    }
+
+    const qrMap: Record<string, string> = {};
+    await Promise.all(
+      targetOrders.map(async (ord) => {
+        const key = ord.no_pesanan || ord.id;
+        if (!key) return;
+        try {
+          qrMap[key] = await QRCode.toDataURL(ord.no_pesanan || ord.id, {
+            width: 150,
+            margin: 1,
+            color: { dark: '#000000', light: '#ffffff' },
+          });
+        } catch (err) {
+          console.warn('QR generation error:', err);
+        }
+      })
+    );
+
+    setPrintQrMap(qrMap);
+    setPrintOrders(targetOrders);
     setPrintMode('labelA6');
-    setTimeout(() => {
-      window.print();
-    }, 250);
+    setPrintTimestamp(Date.now());
+    onShowToast(`Menyiapkan cetak Label A6 (${targetOrders.length} paket)...`, 'info');
+  };
+
+  const handlePrintSingleLabelA6 = (order: IGLiveOrder) => {
+    prepareAndPrintLabelA6([order]);
   };
 
   const handlePrintBatchLabelA6 = () => {
@@ -958,16 +990,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
       ? orders.filter((o) => selectedOrderIds.includes(o.id))
       : filteredOrders;
 
-    if (target.length === 0) {
-      onShowToast('Tidak ada pesanan untuk dicetak label', 'warning');
-      return;
-    }
-
-    setPrintOrders(target);
-    setPrintMode('labelA6');
-    setTimeout(() => {
-      window.print();
-    }, 250);
+    prepareAndPrintLabelA6(target);
   };
 
   const handlePrintMassalPicking = () => {
@@ -979,9 +1002,8 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
 
     setPrintOrders(target);
     setPrintMode('pickingMassal');
-    setTimeout(() => {
-      window.print();
-    }, 250);
+    setPrintTimestamp(Date.now());
+    onShowToast(`Menyiapkan cetak Picking List (${target.length} pesanan)...`, 'info');
   };
 
   return (
@@ -2200,146 +2222,290 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
 
       </div>
 
+      {/* Floating Print Bar (Memudahkan pemicu ulang di HP / menutup mode cetak) */}
+      {printMode && printOrders.length > 0 && (
+        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 z-50 bg-slate-900 text-white p-3.5 rounded-2xl shadow-2xl flex items-center justify-between gap-3 border border-slate-700 print:hidden">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="p-2 rounded-xl bg-pink-600 text-white shrink-0">
+              <Printer className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-bold truncate">
+                {printMode === 'labelA6'
+                  ? `Siap Cetak Label A6 IG Live (${printOrders.length} Paket)`
+                  : `Siap Cetak Picking List IG Live (${printOrders.length} Pesanan)`}
+              </div>
+              <div className="text-[10px] text-slate-300 truncate">
+                Tekan Cetak jika dialog belum muncul di layar / HP
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="px-3.5 py-1.5 bg-pink-600 hover:bg-pink-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>Cetak</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPrintMode(null);
+                setPrintOrders([]);
+              }}
+              className="p-1.5 text-slate-400 hover:text-white rounded-xl cursor-pointer"
+              title="Tutup mode cetak"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* PRINT AREA (Hidden in Screen, Visible in @media print) */}
       {/* ========================================================================= */}
+      {printMode && printOrders.length > 0 && (
+        <style>{`
+          @media print {
+            html, body {
+              background: #ffffff !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              height: auto !important;
+              overflow: visible !important;
+            }
+            body * {
+              visibility: hidden;
+            }
+            #iglive-print-area,
+            #iglive-print-area * {
+              visibility: visible !important;
+            }
+            #iglive-print-area {
+              display: block !important;
+              position: absolute !important;
+              left: 0 !important;
+              top: 0 !important;
+              width: 100% !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #ffffff !important;
+              color: #000000 !important;
+              z-index: 9999999 !important;
+            }
+            .fixed, [class*="fixed"], .overflow-y-auto, .overflow-hidden, [class*="overflow-"] {
+              position: static !important;
+              overflow: visible !important;
+              max-height: none !important;
+              height: auto !important;
+              inset: auto !important;
+              transform: none !important;
+              box-shadow: none !important;
+              border: none !important;
+              background: transparent !important;
+            }
+            header, nav, aside, footer, [role="navigation"], .no-print, .print\\:hidden, [class*="print:hidden"], button {
+              display: none !important;
+              height: 0 !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              overflow: hidden !important;
+            }
+            @page {
+              size: ${printMode === 'labelA6' ? '100mm 150mm' : 'A4 portrait'};
+              margin: ${printMode === 'labelA6' ? '0mm' : '4mm 6mm'};
+            }
+          }
+        `}</style>
+      )}
 
-      {/* A. Print Label Pengiriman Thermal A6 */}
+      {/* A. Print Label Pengiriman Thermal A6 (Standar Chocochips 100mm x 150mm) */}
       {printMode === 'labelA6' && (
-        <div id="print-area" className="hidden print:block bg-white text-black p-0 m-0">
+        <div id="iglive-print-area" className="hidden print:block bg-white w-full text-black p-0 m-0">
           {printOrders.map((order, oIdx) => {
             const storeBrand = getFormalStoreBrandName('Store IG Live');
+            const qrKey = order.no_pesanan || order.id;
+            const qrDataUrl = printQrMap[qrKey] || '';
+            const totalQty = (order.items || []).reduce((acc, it) => acc + (Number(it.qty) || 1), 0);
+            const courierLabel = [order.ekspedisi, order.layanan].filter(Boolean).join(' ') || 'JNE REG';
+
             return (
               <div
                 key={order.id || oIdx}
-                className="p-4 mx-auto bg-white text-black border border-black mb-4 font-sans text-xs"
+                className="page-break w-full h-[148mm] max-h-[148mm] box-border bg-white relative flex flex-col justify-between overflow-hidden"
                 style={{
-                  width: '105mm',
-                  minHeight: '148mm',
-                  pageBreakAfter: 'always',
-                  breakAfter: 'page',
-                  boxSizing: 'border-box',
+                  pageBreakAfter: oIdx < printOrders.length - 1 ? 'always' : 'auto',
+                  breakAfter: oIdx < printOrders.length - 1 ? 'page' : 'auto',
+                  pageBreakInside: 'avoid',
+                  breakInside: 'avoid',
                 }}
               >
-                {/* Header Label KOP Chocochips */}
-                <div className="border-b-2 border-black pb-2 mb-2 flex justify-between items-center">
-                  <div>
-                    <div className="text-base font-black tracking-widest uppercase">
-                      CHOCOCHIPS
-                    </div>
-                    <div className="text-[9px] uppercase tracking-wider text-gray-700">
-                      Official Boutique & Tailoring Care
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <span className="border-2 border-black px-2 py-0.5 rounded text-[11px] font-black uppercase">
-                      {order.ekspedisi}
-                    </span>
-                    <div className="text-[9px] font-bold mt-0.5">
-                      {order.layanan || 'Reguler'}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Resi & Barcode Visual Block */}
-                <div className="border border-black p-2 text-center bg-gray-50 mb-2">
-                  <div className="text-[9px] font-bold uppercase tracking-wider text-gray-700">
-                    No. Resi Pengiriman
-                  </div>
-                  <div className="font-mono font-black text-lg tracking-wider">
-                    {order.no_resi || order.no_pesanan}
-                  </div>
-                  {/* QR Code Pattern */}
-                  <div className="my-1">
-                    <QRCodeDisplay text={order.no_pesanan} />
-                  </div>
-                  <div className="text-[10px] font-mono font-bold">
-                    Order ID: {order.no_pesanan}
-                  </div>
-                </div>
-
-                {/* Sender & Receiver Box */}
-                <div className="grid grid-cols-2 gap-2 border border-black p-2 mb-2 text-[10.5px]">
-                  {/* Penerima */}
-                  <div className="border-r border-black pr-2">
-                    <div className="text-[9px] font-black uppercase text-gray-600 mb-0.5">
-                      KEPADA (PENERIMA):
-                    </div>
-                    <div className="font-black text-sm text-black">
-                      {order.nama_pembeli}
-                    </div>
-                    <div className="font-mono font-bold text-xs mt-0.5">
-                      {order.no_telp || '-'}
-                    </div>
-                    <div className="mt-1 text-[10px] leading-tight text-gray-900">
-                      {order.alamat_lengkap}
-                    </div>
-                    {order.kota_kabupaten && (
-                      <div className="text-[10px] font-bold mt-1">
-                        📍 {order.kota_kabupaten} {order.kode_pos ? `(${order.kode_pos})` : ''}
+                <div className="w-full h-full border-[2px] border-black flex flex-col bg-white box-border text-black overflow-hidden">
+                  {/* TOP FIXED AREA */}
+                  <div className="flex flex-col shrink-0">
+                    {/* 1. Header Label (Standar Chocochips) */}
+                    <div className="border-b-[2px] border-black px-3 py-2 bg-gray-50 flex justify-between items-center break-inside-avoid">
+                      <div className="text-xl font-black tracking-widest uppercase leading-none text-black flex items-center gap-2">
+                        <img
+                          src="/logo.svg"
+                          alt="CHOCOCHIPS"
+                          referrerPolicy="no-referrer"
+                          className="h-7 object-contain block"
+                          onError={(e) => (e.currentTarget.style.display = 'none')}
+                        />
+                        <span className="text-[10px] font-black border border-black px-1.5 py-0.5">
+                          IG LIVE
+                        </span>
                       </div>
-                    )}
+                      <div className="text-lg font-black tracking-wider uppercase leading-none text-black">
+                        {courierLabel}
+                      </div>
+                    </div>
+
+                    {/* 2. Sender / Receiver + QR Code block */}
+                    <div className="flex border-b-[2px] border-black bg-white break-inside-avoid">
+                      {/* Main Left Column (Penerima & Pengirim Stacked) */}
+                      <div className="flex-1 flex flex-col border-r-[2px] border-black min-w-0">
+                        {/* PENERIMA (Top, Gets Maximum Space) */}
+                        <div className="p-3 border-b-[2px] border-black flex-1">
+                          <div className="text-[11px] font-black uppercase text-gray-600 mb-1">
+                            Kepada / Penerima:
+                          </div>
+                          <div className="text-[18px] font-black uppercase mb-1 leading-tight text-black">
+                            {order.nama_pembeli || '-'}
+                          </div>
+                          {order.no_telp && (
+                            <div className="text-[14px] font-black font-mono text-black mb-1.5 leading-none">
+                              {order.no_telp}
+                            </div>
+                          )}
+                          <div className="text-[13px] font-bold leading-snug whitespace-pre-wrap text-black">
+                            {order.alamat_lengkap || '-'}
+                            {order.kota_kabupaten
+                              ? `\n${order.kota_kabupaten}${order.kode_pos ? ` (${order.kode_pos})` : ''}`
+                              : ''}
+                          </div>
+                          {order.catatan && (
+                            <div className="mt-2 pt-1.5 border-t border-dashed border-gray-300">
+                              <span className="text-[10px] font-black uppercase text-gray-500 mr-1">
+                                NOTE:
+                              </span>
+                              <span className="text-[12px] font-bold text-black whitespace-pre-wrap">
+                                {order.catatan}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* PENGIRIM (Bottom) */}
+                        <div className="p-2.5 flex items-center justify-between gap-2 shrink-0 bg-white">
+                          <div className="flex-1">
+                            <div className="text-[9px] font-black uppercase text-gray-600 mb-0.5">
+                              Dari / Pengirim:
+                            </div>
+                            <div className="text-[12px] font-black uppercase text-black leading-tight">
+                              {storeBrand || 'CHOCOCHIPS — IG LIVE'}
+                            </div>
+                          </div>
+                          {order.username_ig && (
+                            <div className="px-2 border-l border-gray-300 text-right">
+                              <div className="text-[9px] font-black uppercase text-gray-600 mb-0.5">
+                                Akun IG:
+                              </div>
+                              <div className="text-[11px] font-bold text-gray-800 leading-tight">
+                                {order.username_ig}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* QR Code and ID */}
+                      <div className="w-[110px] p-2 flex flex-col items-center justify-center shrink-0">
+                        {qrDataUrl ? (
+                          <img
+                            src={qrDataUrl}
+                            alt="QR Code"
+                            className="w-[75px] h-[75px] block object-contain mb-1.5"
+                          />
+                        ) : (
+                          <div className="mb-1.5">
+                            <QRCodeDisplay text={order.no_pesanan} />
+                          </div>
+                        )}
+                        <div className="text-[10px] font-black text-center break-all mb-0.5 text-black leading-tight">
+                          ID: {order.no_pesanan}
+                        </div>
+                        {order.no_resi && order.no_resi !== '-' && (
+                          <div className="text-[9px] font-bold font-mono text-center break-all text-neutral-700 leading-tight mt-0.5">
+                            Resi: {order.no_resi}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 3. Warning Box */}
+                    <div className="border-b-[2px] border-black py-1.5 px-2 bg-gray-100 flex items-center justify-center text-center break-inside-avoid">
+                      <div className="text-[8.5px] font-black text-black tracking-wide uppercase leading-tight">
+                        ⚠️ PERHATIAN: JANGAN DITERIMA JIKA KONDISI PAKET RUSAK ATAU SEGEL TERBUKA &bull; MOHON DOKUMENTASIKAN PENERIMAAN DAN UNBOXING PAKET UNTUK KLAIM KOMPLAIN PAKET YANG DITERIMA
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Pengirim */}
-                  <div className="pl-1">
-                    <div className="text-[9px] font-black uppercase text-gray-600 mb-0.5">
-                      DARI (PENGIRIM):
+                  {/* BOTTOM DYNAMIC AREA: Table for IG Live Items */}
+                  <div className="p-3 bg-white flex-1 flex flex-col">
+                    <div className="text-[12px] font-black uppercase text-gray-600 border-b border-black pb-1 mb-1.5">
+                      ISI PRODUK PESANAN
                     </div>
-                    <div className="font-black text-xs text-black">
-                      {storeBrand}
-                    </div>
-                    <div className="text-[10px] text-gray-700 mt-0.5">
-                      IG Live Session
-                    </div>
-                    <div className="text-[9px] text-gray-600 mt-1">
-                      Customer IG: <span className="font-bold text-black">{order.username_ig}</span>
+                    <div className="flex-1">
+                      <table className="w-full border-collapse text-[12px]">
+                        <thead>
+                          <tr className="border-b border-dashed border-black">
+                            <th className="text-left py-1 w-[5%] font-bold">No.</th>
+                            <th className="text-left py-1 w-[50%] font-bold">Nama Produk</th>
+                            <th className="text-left py-1 w-[15%] font-bold">Size</th>
+                            <th className="text-left py-1 w-[20%] font-bold">SKU</th>
+                            <th className="text-center py-1 w-[10%] font-bold">Qty</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(order.items || []).length > 0 ? (
+                            (order.items || []).map((it, itIdx) => (
+                              <tr key={itIdx} className="border-b border-dashed border-black">
+                                <td className="py-1 align-top">{itIdx + 1}.</td>
+                                <td className="py-1 align-top leading-snug line-clamp-2 pr-1">
+                                  {it.nama_produk || '-'}
+                                </td>
+                                <td className="py-1 align-top">{it.size || '-'}</td>
+                                <td className="py-1 align-top font-mono">{it.sku || ''}</td>
+                                <td className="py-1 align-top text-center font-bold">
+                                  {it.qty || 1}
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td
+                                colSpan={5}
+                                className="py-2 text-center border-b border-dashed border-black text-gray-500"
+                              >
+                                Tidak ada detail produk
+                              </td>
+                            </tr>
+                          )}
+                          <tr>
+                            <td colSpan={4} className="text-right py-1 pr-2 font-bold uppercase">
+                              Total Item
+                            </td>
+                            <td className="text-center py-1 font-bold text-[14px]">{totalQty}</td>
+                          </tr>
+                        </tbody>
+                      </table>
                     </div>
                   </div>
-                </div>
-
-                {/* Items Summary Table */}
-                <div className="border border-black mb-2 overflow-hidden">
-                  <table className="w-full border-collapse text-[9.5px]">
-                    <thead>
-                      <tr className="bg-gray-100 border-b border-black font-bold uppercase text-[8.5px]">
-                        <th className="p-1 text-center w-5 border-r border-black">No</th>
-                        <th className="p-1 text-left border-r border-black">SKU / Nama Barang</th>
-                        <th className="p-1 text-center w-10 border-r border-black">Size</th>
-                        <th className="p-1 text-center w-8">Qty</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(order.items || []).map((it, itIdx) => (
-                        <tr key={itIdx} className="border-b border-gray-300">
-                          <td className="p-1 text-center border-r border-black font-bold">
-                            {itIdx + 1}
-                          </td>
-                          <td className="p-1 border-r border-black">
-                            <span className="font-mono font-bold">{it.sku}</span>
-                            <span className="text-gray-700 ml-1">- {it.nama_produk}</span>
-                          </td>
-                          <td className="p-1 text-center font-bold border-r border-black">
-                            {it.size}
-                          </td>
-                          <td className="p-1 text-center font-black">
-                            {it.qty}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Footer Notes */}
-                {order.catatan && (
-                  <div className="border border-black p-1 text-[9px] bg-gray-50 mb-2">
-                    <strong>Catatan:</strong> {order.catatan}
-                  </div>
-                )}
-
-                <div className="text-[8px] text-center text-gray-500 mt-2">
-                  Terima kasih telah berbelanja di Chocochips Official Boutique &bull; Paket Resmi
                 </div>
               </div>
             );
@@ -2349,7 +2515,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
 
       {/* B. Print Picking List Massal (Shopee Tabular Style) */}
       {printMode === 'pickingMassal' && (
-        <div id="print-area" className="hidden print:block bg-white w-full text-black p-4 max-w-[850px] mx-auto text-[9.5px]">
+        <div id="iglive-print-area" className="hidden print:block bg-white w-full text-black p-4 max-w-[850px] mx-auto text-[9.5px]">
           {/* Print Header */}
           <div className="border-b-2 border-black pb-2 mb-3">
             <div className="flex justify-between items-start">

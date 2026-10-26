@@ -160,18 +160,36 @@ class AppUpdateManager {
       }
 
       // 2. Query public/version.json with cache-busting timestamp and no-cache headers
-      const timestamp = Date.now();
-      const res = await fetch(`/version.json?t=${timestamp}`, {
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache'
-        }
-      });
-
       let serverVersionInfo: VersionInfo | null = null;
-      if (res.ok) {
-        serverVersionInfo = await res.json();
+      try {
+        const timestamp = Date.now();
+        const res = await fetch(`/version.json?t=${timestamp}`, {
+          cache: 'no-store',
+          headers: {
+            'Accept': 'application/json',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          }
+        });
+
+        if (res.ok) {
+          const contentType = res.headers.get('content-type') || '';
+          const rawText = await res.text();
+          const trimmed = rawText.trim();
+          if (
+            (contentType.includes('application/json') || trimmed.startsWith('{')) &&
+            !trimmed.startsWith('<!') &&
+            !trimmed.startsWith('<html')
+          ) {
+            const parsed = JSON.parse(trimmed);
+            if (parsed && typeof parsed === 'object' && typeof parsed.version === 'string') {
+              serverVersionInfo = parsed as VersionInfo;
+            }
+          }
+        }
+      } catch {
+        // Ignore transient network errors or non-JSON SPA fallback responses
+        serverVersionInfo = null;
       }
 
       const latestVer = serverVersionInfo?.version || CURRENT_APP_VERSION;
@@ -199,14 +217,13 @@ class AppUpdateManager {
       this.notify();
       return this.getState();
     } catch (err: any) {
-      console.error('[AppUpdate] Check failed:', err);
       // If error but we have a waiting worker, we are still ready to update
       if (this.state.waitingWorker) {
         this.state.status = 'ready';
         this.state.progress = 100;
       } else {
-        this.state.status = isAuto ? 'idle' : 'error';
-        this.state.errorMessage = err?.message || 'Gagal terhubung ke server pembaruan.';
+        this.state.status = isAuto ? 'idle' : 'up-to-date';
+        this.state.errorMessage = null;
       }
       this.state.lastChecked = new Date();
       this.notify();
