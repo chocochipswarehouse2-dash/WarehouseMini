@@ -23,6 +23,8 @@ import {
   ShieldCheck,
   X,
   Save,
+  Eye,
+  Info,
 } from 'lucide-react';
 import { isSuperadmin, hasPermission } from '../../services/permissions';
 import {
@@ -57,6 +59,12 @@ import {
 } from '../../services/supabase';
 import { calculateKpiAbsensiBatch } from '../../utils/kpiCalculator';
 import { getUserPersonName } from '../../utils/userResolver';
+import {
+  buildDetailedHrReport,
+  exportHrReportToXlsx,
+  exportHrReportToCsv,
+  SummaryKaryawanRow,
+} from '../../utils/hrExportUtils';
 
 interface HrRekapViewProps {
   session: UserSession | null;
@@ -70,6 +78,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
   const [editingLembur, setEditingLembur] = useState<LemburRecord | null>(null);
   const [editingCuti, setEditingCuti] = useState<PerijinanCutiRecord | null>(null);
   const [editingPresensi, setEditingPresensi] = useState<PresensiRecord | null>(null);
+  const [selectedEmployeeDetail, setSelectedEmployeeDetail] = useState<SummaryKaryawanRow | null>(null);
   const [actionLoadingId, setActionLoadingId] = useState<string | number | null>(null);
   const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const startOfMonthStr = useMemo(() => {
@@ -403,64 +412,20 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
     });
   }, [presensiList, startDate, endDate, selectedNik, selectedDivisi, searchQuery, karyawanList]);
 
-  // Rekap Per Karyawan Aggregation
-  const summaryPerKaryawan = useMemo(() => {
-    return filteredKaryawan.map((k) => {
-      const pRecords = presensiList.filter(
-        (p) => p.nik === k.nik && p.tanggal >= startDate && p.tanggal <= endDate
-      );
-      const totalHadir = pRecords.filter((p) => p.jam_masuk).length;
-      const totalTerlambat = pRecords.filter((p) => p.status === 'Terlambat').length;
-      const totalTepatWaktu = pRecords.filter((p) => p.status === 'Tepat Waktu' || p.status === 'Hadir').length;
-
-      // Lembur Disetujui
-      const lRecords = lemburList.filter(
-        (l) =>
-          l.nik === k.nik &&
-          l.tanggal >= startDate &&
-          l.tanggal <= endDate &&
-          l.status === 'Disetujui'
-      );
-      const totalJamLembur = lRecords.reduce((acc, curr) => acc + (Number(curr.durasi_jam) || 0), 0);
-      const totalUangLembur = lRecords.reduce((acc, curr) => acc + (Number(curr.total_lembur) || 0), 0);
-
-      // Cuti Disetujui
-      const cRecords = cutiList.filter(
-        (c) =>
-          c.nik === k.nik &&
-          c.status === 'Disetujui' &&
-          !(c.tgl_selesai < startDate || c.tgl_mulai > endDate)
-      );
-      const totalHariCuti = cRecords.reduce((acc, curr) => acc + (Number(curr.jumlah_hari) || 0), 0);
-
-      // Scheduled workdays from Roster
-      const rRecords = rosterList.filter(
-        (r) =>
-          r.nik === k.nik &&
-          r.tanggal >= startDate &&
-          r.tanggal <= endDate &&
-          r.shift &&
-          r.shift.toUpperCase() !== 'OFF' &&
-          r.shift.toUpperCase() !== 'LIBUR'
-      );
-      const totalJadwalKerja = rRecords.length;
-      const totalTidakMasuk = totalJadwalKerja > 0 ? Math.max(0, totalJadwalKerja - totalHadir) : 0;
-
-      return {
-        nik: k.nik,
-        nama: k.nama,
-        divisi: k.divisi || '-',
-        totalJadwalKerja,
-        totalHadir,
-        totalTidakMasuk,
-        totalTerlambat,
-        totalTepatWaktu,
-        totalJamLembur,
-        totalUangLembur,
-        totalHariCuti,
-      };
+  // Rekap Per Karyawan Aggregation with Leave, Absence (Bolos) & Overtime
+  const detailedReport = useMemo(() => {
+    return buildDetailedHrReport({
+      karyawanList: filteredKaryawan,
+      presensiList,
+      rosterList,
+      lemburList,
+      cutiList,
+      startDate,
+      endDate,
     });
-  }, [filteredKaryawan, presensiList, lemburList, cutiList, rosterList, startDate, endDate]);
+  }, [filteredKaryawan, presensiList, rosterList, lemburList, cutiList, startDate, endDate]);
+
+  const summaryPerKaryawan = detailedReport.summaryRows;
 
   // KPI Summary Evaluation across filtered period (O(N+M) batch)
   const kpiBatchMap = useMemo(() => {
@@ -494,6 +459,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
     let terlambat = 0;
     let cuti = 0;
     let tidakMasuk = 0;
+    let bolos = 0;
 
     summaryPerKaryawan.forEach((s) => {
       jamLembur += s.totalJamLembur;
@@ -502,10 +468,30 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
       terlambat += s.totalTerlambat;
       cuti += s.totalHariCuti;
       tidakMasuk += s.totalTidakMasuk;
+      bolos += s.totalHariBolos;
     });
 
-    return { jamLembur, uangLembur, hadir, terlambat, cuti, tidakMasuk };
+    return { jamLembur, uangLembur, hadir, terlambat, cuti, tidakMasuk, bolos };
   }, [summaryPerKaryawan]);
+
+  // Export to Excel XLSX (Multi-sheet with neat table formatting)
+  const exportToXLSX = () => {
+    if (summaryPerKaryawan.length === 0) {
+      onShowToast('Tidak ada data karyawan untuk diekspor.', 'warning');
+      return;
+    }
+    try {
+      exportHrReportToXlsx({
+        data: detailedReport,
+        startDate,
+        endDate,
+      });
+      onShowToast('File Excel (.xlsx) Rekap Karyawan berhasil diunduh!', 'success');
+    } catch (err: any) {
+      console.error('Error export XLSX:', err);
+      onShowToast('Gagal mengekspor file Excel: ' + (err?.message || 'Error'), 'error');
+    }
+  };
 
   // Export CSV Helper
   const exportToCSV = () => {
@@ -514,15 +500,25 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
       return;
     }
 
+    if (activeTab === 'ringkasan') {
+      try {
+        exportHrReportToCsv({
+          data: detailedReport,
+          startDate,
+          endDate,
+        });
+        onShowToast('File CSV Rekap Lengkap berhasil diunduh!', 'success');
+      } catch (err: any) {
+        console.error('Error export CSV:', err);
+        onShowToast('Gagal mengekspor CSV: ' + (err?.message || 'Error'), 'error');
+      }
+      return;
+    }
+
     let csvContent = 'data:text/csv;charset=utf-8,';
     csvContent += `REKAPITULASI KARYAWAN & ABSENSI (${startDate} s/d ${endDate})\n\n`;
 
-    if (activeTab === 'ringkasan') {
-      csvContent += 'NIK,Nama,Divisi,Jadwal Hari,Total Masuk,Tidak Masuk,Tepat Waktu,Terlambat,Lembur Disetujui (Jam),Estimasi Upah Lembur (Rp),Cuti (Hari)\n';
-      summaryPerKaryawan.forEach((s) => {
-        csvContent += `"${s.nik}","${s.nama}","${s.divisi}",${s.totalJadwalKerja},${s.totalHadir},${s.totalTidakMasuk},${s.totalTepatWaktu},${s.totalTerlambat},${s.totalJamLembur},${s.totalUangLembur},${s.totalHariCuti}\n`;
-      });
-    } else if (activeTab === 'kpi') {
+    if (activeTab === 'kpi') {
       csvContent += 'Rank,NIK,Nama,Divisi,Grade,Nilai KPI,Status Kedisiplinan,Skor Berangkat,Skor Pulang,% On-Time,% Kehadiran,Total Hadir,Jadwal Kerja,Terlambat (x),Total Menit Terlambat,Pulang Normal,Izin Pulang Awal,Alpha\n';
       kpiSummaryList.forEach((k, idx) => {
         csvContent += `${idx + 1},"${k.nik}","${k.nama}","${k.divisi}","${k.grade}",${k.nilaiKpiAbsensi},"${k.labelStatus}",${k.skorBerangkat},${k.skorPulang},${k.persenOnTime}%,${k.persenKehadiran}%,${k.totalHadir},${k.totalHariKerja},${k.totalTerlambat},${k.totalMenitTerlambat},${k.totalPulangNormal},${k.totalPulangAwalIzin},${k.totalAlpha}\n`;
@@ -579,14 +575,23 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
           <button
             onClick={loadData}
             disabled={loading}
-            className="flex items-center gap-2 px-2 py-2.5 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+            className="flex items-center gap-2 px-3 py-2.5 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
           >
             <RotateCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             <span>Refresh Data</span>
           </button>
           <button
+            onClick={exportToXLSX}
+            className="flex items-center gap-2 px-3.5 py-2.5 text-xs font-extrabold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/25 transition-all cursor-pointer"
+            title="Download file Excel .xlsx dengan tabel rapi, multi-sheet, format kolom & data lengkap"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Export Excel (.xlsx) Rapi</span>
+          </button>
+          <button
             onClick={exportToCSV}
-            className="flex items-center gap-2 px-2 py-2.5 text-xs font-bold rounded-xl bg-primary-500 hover:bg-primary-600 text-white shadow-md shadow-primary-500/20 transition-colors cursor-pointer"
+            className="flex items-center gap-2 px-3 py-2.5 text-xs font-bold rounded-xl bg-primary-500 hover:bg-primary-600 text-white shadow-md shadow-primary-500/20 transition-colors cursor-pointer"
+            title="Download file CSV rekapitulasi data"
           >
             <Download className="w-4 h-4" />
             <span>Export CSV</span>
@@ -720,7 +725,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
       </div>
 
       {/* STATS OVERVIEW CARDS */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
         <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 p-4 rounded-3xl shadow-sm">
           <div className="flex items-center gap-2 text-slate-400 text-xs font-bold mb-1">
             <Users className="w-4 h-4 text-blue-500" />
@@ -762,7 +767,29 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
           <div className="text-2xl font-black text-amber-600 dark:text-amber-400">
             {grandTotals.tidakMasuk}
           </div>
-          <div className="text-[10px] text-slate-400 mt-0.5">Tanpa presensi</div>
+          <div className="text-[10px] text-slate-400 mt-0.5">Total hari absen</div>
+        </div>
+
+        <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 p-4 rounded-3xl shadow-sm">
+          <div className="flex items-center gap-2 text-slate-400 text-xs font-bold mb-1">
+            <Palmtree className="w-4 h-4 text-teal-500" />
+            <span>Cuti / Ijin</span>
+          </div>
+          <div className="text-2xl font-black text-teal-600 dark:text-teal-400">
+            {grandTotals.cuti} <span className="text-xs font-bold">Hari</span>
+          </div>
+          <div className="text-[10px] text-slate-400 mt-0.5">Izin/Cuti resmi</div>
+        </div>
+
+        <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 p-4 rounded-3xl shadow-sm">
+          <div className="flex items-center gap-2 text-rose-500 text-xs font-bold mb-1">
+            <AlertCircle className="w-4 h-4 text-rose-500" />
+            <span>Bolos (Tanpa Absen)</span>
+          </div>
+          <div className="text-2xl font-black text-rose-600 dark:text-rose-400">
+            {grandTotals.bolos} <span className="text-xs font-bold">Hari</span>
+          </div>
+          <div className="text-[10px] text-slate-400 mt-0.5">Jadwal tanpa presensi</div>
         </div>
 
         <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 p-4 rounded-3xl shadow-sm">
@@ -776,17 +803,6 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
           <div className="text-[10px] text-slate-400 mt-0.5">
             Rp {grandTotals.uangLembur.toLocaleString('id-ID')}
           </div>
-        </div>
-
-        <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 p-4 rounded-3xl shadow-sm">
-          <div className="flex items-center gap-2 text-slate-400 text-xs font-bold mb-1">
-            <Palmtree className="w-4 h-4 text-teal-500" />
-            <span>Cuti / Ijin</span>
-          </div>
-          <div className="text-2xl font-black text-teal-600 dark:text-teal-400">
-            {grandTotals.cuti} <span className="text-xs font-bold">Hari</span>
-          </div>
-          <div className="text-[10px] text-slate-400 mt-0.5">Cuti disetujui</div>
         </div>
       </div>
 
@@ -1062,6 +1078,34 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
       {/* TAB 1: RINGKASAN PER KARYAWAN */}
       {activeTab === 'ringkasan' && (
         <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+          <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h2 className="text-sm font-extrabold text-slate-800 dark:text-slate-200">
+                Ringkasan Kehadiran, Cuti & Lembur Karyawan
+              </h2>
+              <span className="text-xs text-slate-400 font-bold">
+                Periode: {startDate} s/d {endDate} • {summaryPerKaryawan.length} Karyawan
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={exportToXLSX}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm shadow-emerald-600/20 transition-all cursor-pointer"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>Export Excel (.xlsx) Rapi</span>
+              </button>
+              <button
+                type="button"
+                onClick={exportToCSV}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary-500 hover:bg-primary-600 text-white text-xs font-bold shadow-sm shadow-primary-500/20 transition-all cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export CSV Lengkap</span>
+              </button>
+            </div>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
@@ -1072,25 +1116,29 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                   <th className="py-2 px-3 text-center text-emerald-600 dark:text-emerald-400">
                     Masuk
                   </th>
-                  <th className="py-2 px-3 text-center text-amber-600 dark:text-amber-400">
-                    Tidak Masuk
-                  </th>
                   <th className="py-2 px-3 text-center text-primary-600 dark:text-primary-400">
                     Terlambat
+                  </th>
+                  <th className="py-2 px-3 text-center text-teal-600 dark:text-teal-400">
+                    Cuti / Izin
+                  </th>
+                  <th className="py-2 px-3 text-center text-rose-600 dark:text-rose-400">
+                    Bolos
+                  </th>
+                  <th className="py-2 px-3 text-center text-amber-600 dark:text-amber-400">
+                    Total Tidak Masuk
                   </th>
                   <th className="py-2 px-3 text-center text-primary-500">
                     Lembur (Jam)
                   </th>
                   <th className="py-2 px-3 text-right">Est. Upah Lembur</th>
-                  <th className="py-2 px-3 text-center text-teal-600 dark:text-teal-400">
-                    Cuti (Hari)
-                  </th>
+                  <th className="py-2 px-3 text-center">Detail</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
                 {summaryPerKaryawan.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="py-12 text-center text-slate-400">
+                    <td colSpan={11} className="py-12 text-center text-slate-400">
                       Tidak ada data karyawan yang cocok dengan filter.
                     </td>
                   </tr>
@@ -1100,37 +1148,26 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                       key={s.nik}
                       className="hover:bg-slate-50/70 dark:hover:bg-slate-900/40 transition-colors"
                     >
-                      <td className="py-3.5 px-2">
+                      <td className="py-3 px-2">
                         <div className="font-extrabold text-slate-900 dark:text-white">{s.nama}</div>
                         <div className="text-[11px] text-slate-400 font-mono">
                           NIK: {s.nik}
                         </div>
                       </td>
-                      <td className="py-3.5 px-3">
+                      <td className="py-3 px-3">
                         <span className="px-2.5 py-1 rounded-full text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold">
                           {s.divisi}
                         </span>
                       </td>
-                      <td className="py-3.5 px-3 text-center font-bold">
+                      <td className="py-3 px-3 text-center font-bold">
                         {s.totalJadwalKerja > 0 ? s.totalJadwalKerja : '-'}
                       </td>
-                      <td className="py-3.5 px-3 text-center">
+                      <td className="py-3 px-3 text-center">
                         <span className="inline-flex items-center justify-center font-black px-2.5 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400">
                           {s.totalHadir}
                         </span>
                       </td>
-                      <td className="py-3.5 px-3 text-center">
-                        <span
-                          className={`inline-flex items-center justify-center font-black px-2.5 py-0.5 rounded-lg ${
-                            s.totalTidakMasuk > 0
-                              ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'
-                              : 'text-slate-400'
-                          }`}
-                        >
-                          {s.totalTidakMasuk}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-3 text-center">
+                      <td className="py-3 px-3 text-center">
                         <span
                           className={`inline-flex items-center justify-center font-black px-2.5 py-0.5 rounded-lg ${
                             s.totalTerlambat > 0
@@ -1141,16 +1178,57 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                           {s.totalTerlambat}
                         </span>
                       </td>
-                      <td className="py-3.5 px-3 text-center font-black text-primary-500">
+                      <td className="py-3 px-3 text-center">
+                        <span
+                          className={`inline-flex items-center justify-center font-black px-2.5 py-0.5 rounded-lg ${
+                            s.totalHariCuti > 0
+                              ? 'bg-teal-50 dark:bg-teal-950/40 text-teal-600 dark:text-teal-400'
+                              : 'text-slate-400'
+                          }`}
+                        >
+                          {s.totalHariCuti > 0 ? `${s.totalHariCuti} Hari` : '-'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <span
+                          className={`inline-flex items-center justify-center font-black px-2.5 py-0.5 rounded-lg ${
+                            s.totalHariBolos > 0
+                              ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 font-bold'
+                              : 'text-slate-400'
+                          }`}
+                        >
+                          {s.totalHariBolos > 0 ? `${s.totalHariBolos} Hari` : '-'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <span
+                          className={`inline-flex items-center justify-center font-black px-2.5 py-0.5 rounded-lg ${
+                            s.totalTidakMasuk > 0
+                              ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'
+                              : 'text-slate-400'
+                          }`}
+                        >
+                          {s.totalTidakMasuk > 0 ? `${s.totalTidakMasuk} Hari` : '-'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-center font-black text-primary-500">
                         {s.totalJamLembur > 0 ? `${s.totalJamLembur} Jam` : '-'}
                       </td>
-                      <td className="py-3.5 px-3 text-right font-bold text-slate-700 dark:text-slate-300 font-mono">
+                      <td className="py-3 px-3 text-right font-bold text-slate-700 dark:text-slate-300 font-mono">
                         {s.totalUangLembur > 0
                           ? `Rp ${s.totalUangLembur.toLocaleString('id-ID')}`
                           : '-'}
                       </td>
-                      <td className="py-3.5 px-3 text-center font-black text-teal-600 dark:text-teal-400">
-                        {s.totalHariCuti > 0 ? `${s.totalHariCuti} Hari` : '-'}
+                      <td className="py-3 px-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedEmployeeDetail(s)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                          title="Lihat rincian tanggal cuti, tidak masuk, bolos & lembur"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-primary-500" />
+                          <span>Rincian</span>
+                        </button>
                       </td>
                     </tr>
                   ))
@@ -1761,6 +1839,201 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
               >
                 <Save className="w-3.5 h-3.5" />
                 <span>Simpan Perubahan</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL RINCIAN KETIDAKHADIRAN, CUTI & LEMBUR PER KARYAWAN */}
+      {selectedEmployeeDetail && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-3xl max-w-3xl w-full p-5 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-primary-500/10 text-primary-500">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white">
+                    {selectedEmployeeDetail.nama}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    NIK: <span className="font-mono font-bold">{selectedEmployeeDetail.nik}</span> • Divisi: {selectedEmployeeDetail.divisi} • Periode: {startDate} s/d {endDate}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedEmployeeDetail(null)}
+                className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Quick Metrics */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/80">
+                <span className="text-[10px] font-bold text-slate-400 block uppercase">Jadwal & Hadir</span>
+                <span className="text-lg font-black text-slate-900 dark:text-white">
+                  {selectedEmployeeDetail.totalHadir} / {selectedEmployeeDetail.totalJadwalKerja} Hari
+                </span>
+              </div>
+              <div className="p-3 rounded-2xl bg-teal-50 dark:bg-teal-950/30 border border-teal-100 dark:border-teal-900/40">
+                <span className="text-[10px] font-bold text-teal-600 dark:text-teal-400 block uppercase">Cuti / Izin</span>
+                <span className="text-lg font-black text-teal-700 dark:text-teal-300">
+                  {selectedEmployeeDetail.totalHariCuti} Hari
+                </span>
+              </div>
+              <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/40">
+                <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 block uppercase">Bolos (Tanpa Absen)</span>
+                <span className="text-lg font-black text-rose-700 dark:text-rose-300">
+                  {selectedEmployeeDetail.totalHariBolos} Hari
+                </span>
+              </div>
+              <div className="p-3 rounded-2xl bg-primary-50 dark:bg-primary-950/30 border border-primary-100 dark:border-primary-900/40">
+                <span className="text-[10px] font-bold text-primary-600 dark:text-primary-400 block uppercase">Lembur ACC</span>
+                <span className="text-lg font-black text-primary-700 dark:text-primary-300">
+                  {selectedEmployeeDetail.totalJamLembur} Jam
+                </span>
+              </div>
+            </div>
+
+            {/* Section 1: Rincian Ketidakhadiran & Cuti */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Palmtree className="w-4 h-4 text-teal-500" />
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                  Rincian Tanggal Tidak Masuk, Cuti & Bolos ({selectedEmployeeDetail.tidakMasukItems.length})
+                </h4>
+              </div>
+              {selectedEmployeeDetail.tidakMasukItems.length === 0 ? (
+                <div className="p-4 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-xs font-medium flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-500" />
+                  <span>Karyawan ini hadir 100% pada semua jadwal kerja periode ini (Nihil bolos atau izin).</span>
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800 text-slate-400 font-extrabold uppercase text-[10px]">
+                        <th className="py-2 px-3">Tanggal</th>
+                        <th className="py-2 px-3">Kategori</th>
+                        <th className="py-2 px-3">Status</th>
+                        <th className="py-2 px-3">Alasan / Surat</th>
+                        <th className="py-2 px-3">Shift</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
+                      {selectedEmployeeDetail.tidakMasukItems.map((item, i) => (
+                        <tr key={i} className="hover:bg-slate-50/60 dark:hover:bg-slate-900/30">
+                          <td className="py-2.5 px-3 font-bold text-slate-900 dark:text-white whitespace-nowrap">
+                            {item.tanggal}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <span
+                              className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-black ${
+                                item.isBolos
+                                  ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
+                                  : 'bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300'
+                              }`}
+                            >
+                              {item.kategori}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-600 dark:text-slate-300 font-bold">
+                            {item.isBolos ? (
+                              <span className="text-rose-600 dark:text-rose-400">BOLOS (Tanpa Absen)</span>
+                            ) : (
+                              <span className="text-teal-600 dark:text-teal-400">Izin/Cuti Resmi</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-700 dark:text-slate-300">
+                            {item.alasan}
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-500 font-mono text-[11px]">
+                            {item.shiftJadwal}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Section 2: Rincian Lembur */}
+            <div className="space-y-2 pt-2">
+              <div className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-primary-500" />
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                  Rincian Data Lembur Karyawan ({selectedEmployeeDetail.lemburItems.length})
+                </h4>
+              </div>
+              {selectedEmployeeDetail.lemburItems.length === 0 ? (
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800/80 text-slate-500 text-xs font-medium">
+                  Tidak ada catatan lembur untuk karyawan ini pada periode terpilih.
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800 text-slate-400 font-extrabold uppercase text-[10px]">
+                        <th className="py-2 px-3">Tanggal</th>
+                        <th className="py-2 px-3 text-center">Waktu</th>
+                        <th className="py-2 px-3 text-center">Durasi</th>
+                        <th className="py-2 px-3">Tugas / Alasan</th>
+                        <th className="py-2 px-3 text-center">Status</th>
+                        <th className="py-2 px-3 text-right">Upah (Rp)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
+                      {selectedEmployeeDetail.lemburItems.map((item, i) => (
+                        <tr key={i} className="hover:bg-slate-50/60 dark:hover:bg-slate-900/30">
+                          <td className="py-2.5 px-3 font-bold text-slate-900 dark:text-white whitespace-nowrap">
+                            {item.tanggal}
+                          </td>
+                          <td className="py-2.5 px-3 text-center whitespace-nowrap font-mono text-[11px] text-slate-600 dark:text-slate-300">
+                            {item.jamMulai} - {item.jamSelesai}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-black text-primary-500">
+                            {item.durasiJam} Jam
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-700 dark:text-slate-300">
+                            {item.deskripsi}
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            <span
+                              className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-black ${
+                                item.status === 'Disetujui'
+                                  ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400'
+                                  : 'bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400'
+                              }`}
+                            >
+                              {item.status}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-bold font-mono text-slate-700 dark:text-slate-300">
+                            {item.totalLembur > 0 ? `Rp ${item.totalLembur.toLocaleString('id-ID')}` : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setSelectedEmployeeDetail(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+              >
+                Tutup
               </button>
             </div>
           </div>
