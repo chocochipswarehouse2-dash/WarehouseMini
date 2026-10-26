@@ -935,24 +935,75 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
           ? String(item.no_transaksi_pengirim).split(',').map((t: string) => t.trim().toLowerCase()).filter(Boolean)
           : [];
 
+      const effectiveTglJadwalStore = store_metadata?.tgl_jadwal_kirim_store || item.tgl_jadwal_kirim_store || alteration_repair_data?.tgl_kirim_kembali || (item as any).tgl_kirim_store || '';
+      const rawOrderStatus = String(item.status || '').toLowerCase().trim();
+      const isOrderShippedOrDone =
+        rawOrderStatus !== 'batal' &&
+        (rawOrderStatus === 'dikirim' ||
+          rawOrderStatus === 'selesai' ||
+          Boolean(item.no_resi && String(item.no_resi).trim()) ||
+          Boolean(effectiveTglJadwalStore && String(effectiveTglJadwalStore).trim()));
+      const flowStageStr = String(alteration_repair_data?.status_flow || '').toLowerCase().trim();
+      const isOrderWarehouseReceived =
+        Boolean(alteration_repair_data?.tgl_terima_warehouse) ||
+        ['diterima_warehouse', 'dalam_pengerjaan', 'selesai_qc', 'siap_dikirim', 'dikirim_kembali', 'selesai'].includes(flowStageStr);
+
       let parsedItems: ManualShipmentItem[] = (Array.isArray(rawItems) ? rawItems : []).map((it: any) => {
         const rawSj = String(it?.no_sj_dealpos || '').trim();
         // Jangan pernah menganggap No. Transaksi DealPOS Store sebagai No. SJ DealPOS Admin WH
         const isDuplicateStoreTx = rawSj && storeTxList.includes(rawSj.toLowerCase()) && !it?.sj_updated_by;
+        const ful = String(it?.fulfillment || it?.toko_asal || it?.store_name || '').trim();
+        const fulLower = ful.toLowerCase();
+        const isStoreFulfill =
+          Boolean(ful) &&
+          !fulLower.includes('marketplace') &&
+          !fulLower.includes('gudang') &&
+          !fulLower.includes('warehouse');
+        const autoReceived =
+          isStoreFulfill &&
+          it?.item_status !== 'sold_out' &&
+          it?.item_status !== 'cancelled' &&
+          (Boolean(it?.received_at_warehouse) || isOrderShippedOrDone || isOrderWarehouseReceived);
+
         return {
           ...it,
           no_sj_dealpos: isDuplicateStoreTx ? '' : rawSj,
+          ...(autoReceived
+            ? {
+                received_at_warehouse: true,
+                received_by:
+                  it?.received_by ||
+                  (isOrderShippedOrDone
+                    ? 'Otomatis (Pesanan Terkirim)'
+                    : alteration_repair_data?.pic_terima_warehouse || 'Warehouse'),
+              }
+            : {}),
         };
       });
 
       if (parsedItems.length === 0 && (item.sku || item.nama_produk)) {
+        const fallbackFul = String(item.nama_pengirim || '').trim();
+        const fallbackFulLower = fallbackFul.toLowerCase();
+        const isFallbackStore =
+          Boolean(fallbackFul) &&
+          !fallbackFulLower.includes('marketplace') &&
+          !fallbackFulLower.includes('gudang') &&
+          !fallbackFulLower.includes('warehouse');
         parsedItems = [{
           id: item.id || `item-1`,
           sku: item.sku || '',
           nama_produk: item.nama_produk || '',
           size: item.size || 'Default',
           qty: Number(item.qty) || 1,
-          fulfillment: item.nama_pengirim || '',
+          fulfillment: fallbackFul,
+          ...(isFallbackStore && (isOrderShippedOrDone || isOrderWarehouseReceived)
+            ? {
+                received_at_warehouse: true,
+                received_by: isOrderShippedOrDone
+                  ? 'Otomatis (Pesanan Terkirim)'
+                  : alteration_repair_data?.pic_terima_warehouse || 'Warehouse',
+              }
+            : {}),
         }];
       }
 

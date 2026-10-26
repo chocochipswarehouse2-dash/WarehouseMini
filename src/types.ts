@@ -553,6 +553,10 @@ export interface ManualShipmentItem {
   sold_note?: string;
   sold_at?: string;
   sold_by?: string;
+  // Status penerimaan fisik di gudang untuk item yang difulfill dari Store
+  received_at_warehouse?: boolean;
+  received_at?: string;
+  received_by?: string;
   // Detail khusus pengerjaan Alteration & Repair per-item
   needs_alteration?: boolean;
   id_form_alter?: string;

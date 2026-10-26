@@ -46,39 +46,40 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
     id: 'faq-sold-out-handling',
     category: 'manual_shipment',
     is_pinned: true,
-    question: 'Barang di toko/gudang ternyata kosong atau reject (Sold Out), apa alur penanganannya?',
-    answer: 'Alur barang sold out membedakan antara aksi eksekusi Admin Gudang (menandai sold & opsi partial) dan tindakan fisik Tim Store (verifikasi rak toko & pelaporan cepat).',
+    question: 'Apa perbedaan tombol "Tandai Sold" (Fulfill Marketplace) dan "Tandai Terima" (Fulfill Store), serta bagaimana alur barang kosong?',
+    answer: 'Pada rincian produk pesanan, item dengan Fulfillment Marketplace/Gudang menampilkan tombol "Tandai Sold" (untuk menandai stok gudang kosong), sedangkan item dengan Fulfillment dari Store menampilkan tombol "Tandai Terima" (untuk menandai barang kiriman toko sudah diterima di Gudang). Apabila status pesanan berubah menjadi Terkirim / Selesai, sistem otomatis mengubah status item Store menjadi "Sudah Terima".',
     target_audience: 'all',
 
     // PERSPEKTIF ADMIN GUDANG
-    answer_admin: 'Admin Gudang berwenang menandai item produk sebagai "Sold Out" ketika stok fisik di rak gudang kosong/reject, atau ketika menerima laporan fisik kosong dari cabang. Admin dapat memilih opsi solusi: apakah pesanan dikirim sebagian (Partial Fulfillment) atau dibatalkan utuh, serta otomatis mengirimkan draft notifikasi resmi ke WA PIC Store.',
+    answer_admin: 'Di tabel dan kartu Rekap Pesanan, aksi per-item disesuaikan otomatis berdasarkan sumber fulfillment: (1) Untuk item "Fulfillment Marketplace / Gudang", tersedia tombol merah "Tandai Sold" apabila stok fisik di gudang kosong/reject (dengan opsi Partial Fulfillment atau Batalkan Pesanan + WA otomatis ke Store). (2) Untuk item "Fulfillment dari Store" (misal Gading Serpong, Central Park, dll), tersedia tombol biru "Tandai Terima" untuk memverifikasi bahwa fisik barang dari toko cabang telah tiba di Gudang Pusat. Sekalipun Admin belum sempat mengklik "Tandai Terima", begitu pesanan diinput nomor resi / berstatus "Dikirim", sistem otomatis menandai item Store tersebut menjadi "Sudah Terima".',
     action_steps_admin: [
-      { step: 1, title: 'Buka Kartu Pesanan', desc: 'Cari pesanan terkait di tab Manual Shipment. Lihat daftar item produk.' },
-      { step: 2, title: 'Klik Tombol [Tandai Sold]', desc: 'Klik tombol oranye "Tandai Sold" pada baris produk yang stoknya kosong atau rusak.' },
-      { step: 3, title: 'Pilih Resolusi Alur', desc: 'Pilih "Kirim Sebagian (Partial Fulfillment)" untuk mengirim item yang ready saja, atau "Batalkan Seluruh Pesanan". Tuliskan catatan penjelasan.' },
-      { step: 4, title: 'Kirim Notifikasi WA ke Store', desc: 'Centang opsi kirim WA Fonnte agar PIC Store otomatis mendapatkan rincian barang yang kosong dan tindakan gudang.' }
+      { step: 1, title: 'Fulfill Marketplace: Klik [Tandai Sold] Jika Kosong', desc: 'Untuk produk yang diambil dari alokasi Marketplace/Gudang, klik tombol "Tandai Sold" jika stok fisik di rak gudang kosong.' },
+      { step: 2, title: 'Pilih Resolusi Partial / Batal', desc: 'Pilih "Kirim Sebagian (Partial Fulfillment)" atau "Batalkan Seluruh Pesanan", lalu centang kirim WA Fonnte ke PIC Store.' },
+      { step: 3, title: 'Fulfill Store: Klik [Tandai Terima] Saat Barang Tiba', desc: 'Untuk produk yang dikirim dari Store cabang, klik tombol biru "Tandai Terima" saat barang tiba di gudang agar berubah menjadi badge hijau "Sudah Terima".' },
+      { step: 4, title: 'Otomatis "Sudah Terima" Saat Pesanan Terkirim', desc: 'Apabila Admin menginput No. Resi / menyelesaikan pengiriman sebelum sempat mengklik Tandai Terima, sistem otomatis mengubah status item Store menjadi "Sudah Terima".' }
     ],
     button_badges_admin: [
-      { label: 'Tandai Sold', color: 'amber', icon: 'AlertTriangle' },
-      { label: 'Kirim Sebagian (Partial)', color: 'purple', icon: 'Package' },
-      { label: 'Pulihkan Ready', color: 'emerald', icon: 'RotateCcw' }
+      { label: 'Tandai Sold (Marketplace)', color: 'rose', icon: 'AlertTriangle' },
+      { label: 'Tandai Terima (Store)', color: 'blue', icon: 'CheckCircle2' },
+      { label: 'Sudah Terima', color: 'emerald', icon: 'CheckCircle2' }
     ],
-    admin_notes: 'ℹ️ Jika status barang ternyata ditemukan kembali di rak lain, Admin dapat mengklik tombol "Pulihkan Status Ready" kapan saja sebelum paket dikirim.',
+    admin_notes: 'ℹ️ Jika item Marketplace yang ditandai Sold Out ditemukan kembali, Admin dapat mengklik "Pulihkan". Untuk item Store yang belum terkirim, klik badge "Sudah Terima" jika ingin membatalkan status terima.',
 
     // PERSPEKTIF TIM STORE / OUTLET
-    answer_store: 'Staf Store tidak memiliki tombol "Tandai Sold" di sistem. Jika fisik pakaian di rak toko Anda ternyata kosong atau rusak permanen saat hendak disiapkan, Store wajib segera melaporkan hal ini ke Admin Gudang agar pesanan tidak macet.',
+    answer_store: 'Staf Store tidak memiliki tombol eksekusi "Tandai Sold" maupun "Tandai Terima" (wewenang Admin Gudang), namun Store dapat memantau langsung badge status penerimaan barang toko di Gudang ("Belum Terima WH" ➔ "Sudah Terima"). Jika fisik pakaian di rak toko Anda ternyata kosong/cacat saat hendak dikirim ke gudang, segera laporkan ke Admin Gudang via Pusat Bantuan.',
     action_steps_store: [
-      { step: 1, title: 'Verifikasi Fisik di Rak Toko', desc: 'Pastikan barang di toko Anda memang benar-benar kosong, hilang, atau memiliki noda/cacat permanen yang tidak lolos QC.' },
-      { step: 2, title: 'Laporkan ke Admin Gudang Segera', desc: 'Klik tombol "Ajukan ke Admin Sekarang" di bawah panduan ini. Sebutkan No. Pesanan dan SKU produk yang kosong.' },
-      { step: 3, title: 'Admin Eksekusi di Sistem', desc: 'Admin Gudang akan menekan tombol "Tandai Sold" di sistem dan berkoordinasi apakah pesanan dikirim sebagian atau dialihkan ke toko lain.' }
+      { step: 1, title: 'Pantau Badge Penerimaan Gudang', desc: 'Pada item yang difulfill dari toko Anda, status awal akan menampilkan "Belum Terima WH" dan berubah menjadi "Sudah Terima" setelah diterima Admin Gudang atau saat paket terkirim ke customer.' },
+      { step: 2, title: 'Verifikasi Fisik Jika Stok Toko Kosong', desc: 'Jika barang di toko Anda ternyata kosong atau cacat permanen sebelum dikirim ke gudang, segera cek fisik rak toko.' },
+      { step: 3, title: 'Laporkan ke Admin Gudang Segera', desc: 'Klik tombol "Ajukan ke Admin Sekarang" di Pusat Bantuan dengan menyebutkan No. Pesanan dan SKU agar Admin dapat mengalihkan fulfillment atau memproses partial.' }
     ],
     button_badges_store: [
-      { label: 'Ajukan ke Admin Gudang', color: 'rose', icon: 'AlertTriangle' },
-      { label: 'Cek Fisik Rak Toko', color: 'blue', icon: 'Search' }
+      { label: 'Belum Terima WH (View Only)', color: 'amber', icon: 'Clock' },
+      { label: 'Sudah Terima (View Only)', color: 'emerald', icon: 'CheckCircle2' },
+      { label: 'Ajukan ke Admin Gudang', color: 'rose', icon: 'AlertTriangle' }
     ],
-    store_notes: '⚠️ Penting: Jangan biarkan pesanan menggantung tanpa konfirmasi. Laporkan barang kosong maksimal pukul 12:00 siang agar Admin bisa mengalihkan pemenuhan.',
+    store_notes: '⚠️ Penting: Jangan biarkan pesanan menggantung tanpa konfirmasi jika stok toko kosong. Begitu pesanan telah memiliki resi / berstatus Dikirim, status item toko otomatis tercatat Sudah Terima di Gudang.',
 
-    keywords: ['sold out', 'kosong', 'habis', 'reject', 'rusak', 'cacat', 'batal', 'partial', 'kirim sebagian', 'toko kosong', 'gudang kosong'],
+    keywords: ['sold out', 'tandai sold', 'tandai terima', 'sudah terima', 'belum terima wh', 'kosong', 'habis', 'reject', 'partial', 'fulfill store', 'fulfill marketplace'],
     view_count: 142
   },
 
@@ -165,36 +166,37 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
     id: 'faq-send-store-to-wh',
     category: 'multi_store',
     question: 'Kapan Store harus mengirimkan barang fisik ke Gudang Pusat dan bagaimana alurnya?',
-    answer: 'Pengiriman barang fisik dari Toko ke Gudang dilakukan jika toko menjadi penyedia barang untuk pesanan multi-store atau pakaian membutuhkan alterasi/repair di gudang.',
+    answer: 'Pengiriman barang fisik dari Toko ke Gudang dilakukan jika toko menjadi penyedia barang untuk pesanan multi-store atau pakaian membutuhkan alterasi/repair di gudang. Saat barang tiba di Gudang, Admin mengklik "Tandai Terima" pada item tersebut (atau otomatis berubah menjadi "Sudah Terima" saat pesanan terkirim).',
     target_audience: 'all',
 
     // PERSPEKTIF ADMIN GUDANG
-    answer_admin: 'Admin Gudang bertugas memantau paket fisik yang dikirimkan oleh cabang melalui tab Distribusi Store dan Alteration & Repair. Saat driver internal tiba mengantar paket, Admin mencocokkan Surat Jalan Struk dengan fisik pakaian sebelum diteruskan ke meja packing/penjahit.',
+    answer_admin: 'Admin Gudang memantau barang yang dikirim oleh cabang pada Rekap Pesanan maupun Tab Distribusi Store. Ketika fisik barang dari Store tiba di gudang, Admin langsung mengklik tombol "Tandai Terima" pada baris produk Store tersebut sehingga berubah menjadi badge hijau "Sudah Terima". Apabila pesanan langsung diinput resi / berubah status menjadi "Dikirim" sebelum Admin sempat mengklik "Tandai Terima", sistem secara otomatis mengubah status item Store tersebut menjadi "Sudah Terima".',
     action_steps_admin: [
-      { step: 1, title: 'Pantau Barang Dalam Perjalanan', desc: 'Buka menu Pesanan Saya ➔ Tab Distribusi Store. Lihat daftar barang yang dikirim toko cabang.' },
-      { step: 2, title: 'Terima Fisik dari Driver', desc: 'Saat driver tiba, periksa fisik pakaian dan scan Surat Jalan Struk yang tertempel di kemasan.' },
-      { step: 3, title: 'Konsolidasi Paket Customer', desc: 'Jika multi-store, satukan barang cabang dengan barang marketplace di rak staging sebelum packing final.' }
+      { step: 1, title: 'Pantau Barang Kiriman Store', desc: 'Lihat item dengan badge nama cabang (misal Gading Serpong Tangerang, Central Park Jakarta) pada kolom Rincian Produk.' },
+      { step: 2, title: 'Klik [Tandai Terima] Saat Barang Tiba', desc: 'Saat driver internal menyerahkan fisik pakaian beserta Struk SJ, klik tombol biru "Tandai Terima" pada item produk tersebut.' },
+      { step: 3, title: 'Otomatis "Sudah Terima" Saat Terkirim', desc: 'Saat resi pengiriman ke customer diinput (status pesanan Dikirim/Selesai), seluruh item fulfillment Store pada pesanan tersebut otomatis tercatat "Sudah Terima".' }
     ],
     button_badges_admin: [
-      { label: 'Tab Distribusi Store', color: 'blue', icon: 'Layers' },
-      { label: 'Verifikasi Penerimaan Fisik', color: 'emerald', icon: 'CheckCircle2' }
+      { label: 'Tandai Terima', color: 'blue', icon: 'CheckCircle2' },
+      { label: 'Sudah Terima', color: 'emerald', icon: 'CheckCircle2' }
     ],
-    admin_notes: 'ℹ️ Jika paket tiba dalam kondisi rusak atau tidak sesuai struk, segera dokumentasikan foto dan laporkan ke PIC toko pengirim. Pada filter Rekap Pesanan Toko, pesanan Manual Shipment (MS...) yang diatur "Kirim ke WH" tetap berada di kategori Manual (atau + Alter jika disertai permak), sedangkan tab AR Standalone khusus menampilkan tiket registrasi AR-... murni.',
+    admin_notes: 'ℹ️ Jika paket tiba dalam kondisi rusak atau tidak sesuai struk, segera dokumentasikan foto dan laporkan ke PIC toko pengirim.',
 
     // PERSPEKTIF TIM STORE / OUTLET
-    answer_store: 'Store WAJIB mengirimkan fisik pakaian ke Gudang Pusat jika toko Anda ditunjuk sebagai penyedia barang untuk pesanan cabang lain (Multi-Store Fulfillment), atau pakaian customer butuh alterasi oleh penjahit gudang. Jika pesanan berasal dari Marketplace murni, toko tidak perlu kirim barang.',
+    answer_store: 'Store WAJIB mengirimkan fisik pakaian ke Gudang Pusat jika toko Anda ditunjuk sebagai penyedia barang (Fulfillment Store), atau pakaian customer butuh alterasi oleh penjahit gudang. Anda dapat memantau apakah barang sudah diterima oleh Gudang melalui badge "Belum Terima WH" / "Sudah Terima" pada baris produk.',
     action_steps_store: [
-      { step: 1, title: 'Cek Tab Rekap Pesanan Toko', desc: 'Buka Pesanan Saya ➔ Manual Shipment setiap pagi pukul 10:00. Temukan pesanan dengan label toko Anda sebagai penyedia barang.' },
-      { step: 2, title: 'Klik [Cetak SJ Struk]', desc: 'Pilih tombol "Cetak SJ Struk", print struknya, dan masukkan ke dalam plastik bersama pakaian bersih.' },
-      { step: 3, title: 'Serahkan ke Kurir / Driver', desc: 'Serahkan paket fisik beserta struk ke kurir/driver internal untuk diantar ke Gudang Pusat Chocochips.' }
+      { step: 1, title: 'Cek Tab Rekap Pesanan Toko', desc: 'Buka Pesanan Saya ➔ Manual Shipment. Temukan pesanan dengan label toko Anda sebagai penyedia barang.' },
+      { step: 2, title: 'Klik [SJ Struk] & [Kirim ke Gudang]', desc: 'Cetak Surat Jalan Struk Rangkap 2, masukkan ke dalam kemasan pakaian, lalu atur pengiriman ke Gudang Pusat.' },
+      { step: 3, title: 'Pantau Status "Sudah Terima"', desc: 'Setelah barang tiba dan diverifikasi Admin Gudang (atau saat pesanan telah dikirim ke customer), badge item akan otomatis berubah menjadi "Sudah Terima".' }
     ],
     button_badges_store: [
-      { label: 'Cetak Surat Jalan Struk', color: 'blue', icon: 'Printer' },
-      { label: 'Kirim ke Gudang', color: 'emerald', icon: 'Truck' }
+      { label: 'SJ Struk', color: 'amber', icon: 'Printer' },
+      { label: 'Kirim ke Gudang', color: 'blue', icon: 'Truck' },
+      { label: 'Sudah Terima (View Only)', color: 'emerald', icon: 'CheckCircle2' }
     ],
-    store_notes: '⚠️ Jangan kirim barang tanpa menyertakan Surat Jalan Struk fisik, karena gudang tidak dapat mengidentifikasi tujuan paket customer tanpa struk tersebut. Pesanan MS... yang sudah diatur Kirim ke WH tetap tampil di tab Manual, bukan di AR Standalone.',
+    store_notes: '⚠️ Jangan kirim barang tanpa menyertakan Surat Jalan Struk fisik, karena gudang membutuhkan struk tersebut saat melakukan verifikasi "Tandai Terima".',
 
-    keywords: ['kirim ke gudang', 'surat jalan struk', 'antar fisik', 'multi store', 'kurir internal', 'ekspedisi', 'packing', 'cabang ke gudang', 'ar standalone'],
+    keywords: ['kirim ke gudang', 'tandai terima', 'sudah terima', 'surat jalan struk', 'antar fisik', 'multi store', 'kurir internal', 'ekspedisi', 'packing', 'cabang ke gudang'],
     view_count: 98
   },
 

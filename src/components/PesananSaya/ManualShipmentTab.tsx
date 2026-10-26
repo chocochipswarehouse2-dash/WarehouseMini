@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft, Copy, Clock, MessageCircle, ExternalLink, Store, FileCheck, Layers, AlertOctagon, RotateCcw, Ban, SendHorizonal, Scissors, Sparkles, Camera, Image as ImageIcon, Upload, Eye, Loader2, Mail, Filter, Cog, Play, CheckSquare, Building2, LayoutGrid, Table, GitFork, ShieldAlert, HelpCircle, ArrowUpDown
+  Package, PackageCheck, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft, Copy, Clock, MessageCircle, ExternalLink, Store, FileCheck, Layers, AlertOctagon, RotateCcw, Ban, SendHorizonal, Scissors, Sparkles, Camera, Image as ImageIcon, Upload, Eye, Loader2, Mail, Filter, Cog, Play, CheckSquare, Building2, LayoutGrid, Table, GitFork, ShieldAlert, HelpCircle, ArrowUpDown
 } from 'lucide-react';
 import { AlterationCameraModal } from './AlterationCameraModal';
 import { PhotoLightboxModal } from './PhotoLightboxModal';
@@ -3985,7 +3985,45 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                                 <span>SOLD OUT {item.sold_note ? `(${item.sold_note})` : ''}</span>
                               </span>
                             )}
-                            {item.item_status !== 'sold_out' && (item.fulfillment || '').toLowerCase().includes('marketplace') && (
+                            {item.item_status !== 'sold_out' && isStoreFulfilledItem(selectedOrderDetails, item) && (
+                              isStoreItemReceived(selectedOrderDetails, item) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (userIsAdmin && !isOrderSelesai(selectedOrderDetails)) {
+                                      handleMarkStoreItemReceived(selectedOrderDetails, item, idx, false);
+                                    }
+                                  }}
+                                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-[10px] font-bold text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 ${
+                                    userIsAdmin && !isOrderSelesai(selectedOrderDetails) ? 'cursor-pointer hover:bg-emerald-100' : 'cursor-default'
+                                  }`}
+                                  title={
+                                    isOrderSelesai(selectedOrderDetails) && !item.received_at_warehouse
+                                      ? 'Otomatis ditandai Sudah Terima karena status pesanan sudah Terkirim / Selesai'
+                                      : `Sudah diterima di Gudang${item.received_by ? ` oleh ${item.received_by}` : ''}${userIsAdmin && !isOrderSelesai(selectedOrderDetails) ? ' (Klik untuk batalkan)' : ''}`
+                                  }
+                                >
+                                  <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                                  <span>Sudah Terima</span>
+                                </button>
+                              ) : userIsAdmin && selectedOrderDetails.status !== 'batal' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleMarkStoreItemReceived(selectedOrderDetails, item, idx, true)}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold shadow-2xs transition-colors cursor-pointer"
+                                  title="Tandai fisik produk dari store ini sudah diterima di Gudang Pusat"
+                                >
+                                  <PackageCheck className="w-2.5 h-2.5" />
+                                  <span>Tandai Terima</span>
+                                </button>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 text-[10px] font-medium text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                                  <Clock className="w-2.5 h-2.5" />
+                                  <span>Belum Terima WH</span>
+                                </span>
+                              )
+                            )}
+                            {item.item_status !== 'sold_out' && !isStoreFulfilledItem(selectedOrderDetails, item) && (
                               getValidItemSjDealpos(selectedOrderDetails, item) ? (
                                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-[10px] font-mono font-bold text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
                                   <FileCheck className="w-2.5 h-2.5" />
@@ -4271,11 +4309,38 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
     try {
       const success = await updateShipmentResi(no_pesanan, cleanResi);
       if (success) {
-        setOrders(prev => prev.map(o => (o.no_pesanan === no_pesanan || (o as any).id === no_pesanan) ? { ...o, no_resi: cleanResi, status: 'dikirim' } : o));
-        if (selectedOrderDetails && (selectedOrderDetails.no_pesanan === no_pesanan || (selectedOrderDetails as any).id === no_pesanan)) {
-          setSelectedOrderDetails(prev => prev ? { ...prev, no_resi: cleanResi, status: 'dikirim' } : null);
+        const nowIso = new Date().toISOString();
+        const autoReceiveItems = (itemsList?: ManualShipmentItem[]) =>
+          (itemsList || []).map((it) => {
+            if (isStoreFulfilledItem(resiModalOrder, it) && it.item_status !== 'sold_out' && it.item_status !== 'cancelled' && !it.received_at_warehouse) {
+              return {
+                ...it,
+                received_at_warehouse: true,
+                received_at: nowIso,
+                received_by: 'Otomatis (Pesanan Terkirim)',
+              };
+            }
+            return it;
+          });
+
+        const updatedItemsForDb = autoReceiveItems(resiModalOrder.items);
+        const hadUnreceivedStoreItems = (resiModalOrder.items || []).some(
+          (it) => isStoreFulfilledItem(resiModalOrder, it) && it.item_status !== 'sold_out' && it.item_status !== 'cancelled' && !it.received_at_warehouse
+        );
+        if (hadUnreceivedStoreItems) {
+          editManualShipment({
+            ...resiModalOrder,
+            no_resi: cleanResi,
+            status: 'dikirim',
+            items: updatedItemsForDb,
+          }).catch((err) => console.warn('Auto-receive store items on resi update warning:', err));
         }
-        onShowToast('Resi berhasil diupdate & status otomatis berubah menjadi Dikirim', 'success');
+
+        setOrders(prev => prev.map(o => (o.no_pesanan === no_pesanan || (o as any).id === no_pesanan) ? { ...o, no_resi: cleanResi, status: 'dikirim', items: autoReceiveItems(o.items) } : o));
+        if (selectedOrderDetails && (selectedOrderDetails.no_pesanan === no_pesanan || (selectedOrderDetails as any).id === no_pesanan)) {
+          setSelectedOrderDetails(prev => prev ? { ...prev, no_resi: cleanResi, status: 'dikirim', items: autoReceiveItems(prev.items) } : null);
+        }
+        onShowToast('Resi berhasil diupdate & status otomatis berubah menjadi Dikirim (Item Store otomatis Sudah Terima)', 'success');
 
         // OTOMATIS FONNTE: Kirim notifikasi WhatsApp ke Store
         const storePhone = resiModalOrder.no_telp_store;
@@ -4645,8 +4710,137 @@ _WMS Warehouse System_`;
     return itemsList.some(it => isSameStore(it.fulfillment, userAssignedStore));
   };
 
+  // Helper: Cek apakah suatu item dipenuhi dari Store Cabang (bukan Marketplace / Gudang / Warehouse)
+  const isStoreFulfilledItem = (order: ManualShipmentOrder, it: ManualShipmentItem): boolean => {
+    const ful = (it?.fulfillment || (it as any)?.toko_asal || (it as any)?.store_name || '').trim();
+    if (!ful) return false;
+    const fulLower = ful.toLowerCase();
+    return (
+      !fulLower.includes('marketplace') &&
+      !fulLower.includes('gudang') &&
+      !fulLower.includes('warehouse')
+    );
+  };
+
+  // Helper: Cek apakah item yang difulfill dari Store sudah diterima fisik di Gudang (atau otomatis dianggap Sudah Terima saat status pesanan Terkirim / Selesai)
+  const isStoreItemReceived = (order: ManualShipmentOrder, it: ManualShipmentItem): boolean => {
+    if (!isStoreFulfilledItem(order, it)) return false;
+    if (it.received_at_warehouse) return true;
+    // AUTO-RECEIVE RULE: Sekalipun Admin belum klik Tandai Terima, begitu status pesanan Terkirim / Selesai, otomatis dianggap Sudah Terima
+    if (isOrderSelesai(order)) return true;
+    const ar = order?.alteration_repair_data;
+    if (ar?.tgl_terima_warehouse) return true;
+    const flowStr = (ar?.status_flow || '').toLowerCase();
+    if (['diterima_warehouse', 'dalam_pengerjaan', 'selesai_qc', 'siap_dikirim', 'dikirim_kembali', 'selesai'].includes(flowStr)) {
+      return true;
+    }
+    return false;
+  };
+
+  // Helper: Cek apakah seluruh item fulfillment store pada pesanan ini sudah diterima di Gudang
+  const areAllStoreItemsReceived = (order: ManualShipmentOrder): boolean => {
+    const storeItems = (order.items || []).filter(
+      (it) => isStoreFulfilledItem(order, it) && it.item_status !== 'sold_out' && it.item_status !== 'cancelled'
+    );
+    if (storeItems.length === 0) return false;
+    return storeItems.every((it) => isStoreItemReceived(order, it));
+  };
+
+  // Handler: Tandai item fulfillment Store sudah diterima fisik di Gudang Pusat (1-Click Admin Action)
+  const handleMarkStoreItemReceived = async (
+    order: ManualShipmentOrder,
+    targetItem: ManualShipmentItem,
+    targetIdx?: number,
+    markAsReceived = true
+  ) => {
+    if (!userIsAdmin) {
+      onShowToast('Akses ditolak: Hanya Admin Gudang / Superadmin yang dapat menandai penerimaan barang dari Store.', 'error');
+      return;
+    }
+    if (!markAsReceived && isOrderSelesai(order)) {
+      onShowToast('Pesanan yang sudah berstatus Terkirim / Selesai otomatis tercatat Sudah Terima di Gudang.', 'info');
+      return;
+    }
+
+    const actor = session?.name || getUserPersonName(session?.username) || session?.username || 'Admin Gudang';
+    const nowIso = new Date().toISOString();
+
+    const updatedItems = (order.items || []).map((it, idx) => {
+      const isMatch =
+        (it.id && targetItem.id && it.id === targetItem.id) ||
+        (targetIdx !== undefined && idx === targetIdx) ||
+        (!it.id && !targetItem.id && it.sku === targetItem.sku && it.fulfillment === targetItem.fulfillment);
+      if (!isMatch) return it;
+      return {
+        ...it,
+        received_at_warehouse: markAsReceived,
+        received_at: markAsReceived ? nowIso : undefined,
+        received_by: markAsReceived ? actor : undefined,
+      };
+    });
+
+    const storeItemsAfter = updatedItems.filter(
+      (it) => isStoreFulfilledItem(order, it) && it.item_status !== 'sold_out' && it.item_status !== 'cancelled'
+    );
+    const allStoreReceivedNow = storeItemsAfter.length > 0 && storeItemsAfter.every((it) => Boolean(it.received_at_warehouse));
+
+    let updatedArData = order.alteration_repair_data ? { ...order.alteration_repair_data } : undefined;
+    if (allStoreReceivedNow && updatedArData) {
+      updatedArData.tgl_terima_warehouse = updatedArData.tgl_terima_warehouse || nowIso.slice(0, 10);
+      updatedArData.pic_terima_warehouse = updatedArData.pic_terima_warehouse || actor;
+      if (!updatedArData.status_flow || updatedArData.status_flow === 'diajukan' || updatedArData.status_flow === 'dikirim_store') {
+        updatedArData.status_flow = 'diterima_warehouse';
+      }
+    } else if (!markAsReceived && updatedArData && updatedArData.status_flow === 'diterima_warehouse' && !allStoreReceivedNow) {
+      updatedArData.tgl_terima_warehouse = undefined;
+      updatedArData.status_flow = updatedArData.tgl_kirim_store ? 'dikirim_store' : 'diajukan';
+    }
+
+    const newLog = {
+      id: `log-recv-${Date.now()}`,
+      timestamp: nowIso,
+      actor,
+      action: 'edited' as const,
+      note: markAsReceived
+        ? `Produk fulfillment store [${targetItem.sku}] ${targetItem.nama_produk} (${targetItem.fulfillment}) ditandai SUDAH TERIMA di Gudang.`
+        : `Status terima gudang untuk [${targetItem.sku}] ${targetItem.nama_produk} (${targetItem.fulfillment}) dibatalkan.`,
+      affected_sku: targetItem.sku,
+      affected_item_name: targetItem.nama_produk,
+    };
+
+    const existingLogs = Array.isArray(order.history_logs) ? order.history_logs : [];
+    const updatedOrder: ManualShipmentOrder = {
+      ...order,
+      items: updatedItems,
+      ...(updatedArData ? { alteration_repair_data: updatedArData } : {}),
+      history_logs: [newLog, ...existingLogs],
+    };
+
+    const orderKey = order.no_pesanan || (order as any).id;
+    setOrders((prev) =>
+      prev.map((o) => (o.no_pesanan === orderKey || (o as any).id === orderKey ? updatedOrder : o))
+    );
+    if (selectedOrderDetails && (selectedOrderDetails.no_pesanan === orderKey || (selectedOrderDetails as any).id === orderKey)) {
+      setSelectedOrderDetails(updatedOrder);
+    }
+
+    const res = await editManualShipment(updatedOrder);
+    if (res.success) {
+      onShowToast(
+        markAsReceived
+          ? `✅ [${targetItem.sku}] dari ${targetItem.fulfillment} ditandai Sudah Terima di Gudang!`
+          : `Status terima [${targetItem.sku}] dibatalkan`,
+        markAsReceived ? 'success' : 'info'
+      );
+    } else {
+      onShowToast(`Gagal menyimpan status terima: ${res.message}`, 'error');
+      loadOrders();
+    }
+  };
+
   // Helper: Cek apakah produk fisik sudah diatur kirim dari store ke warehouse
   const isOrderSentToWarehouse = (order: ManualShipmentOrder): boolean => {
+    if (areAllStoreItemsReceived(order)) return true;
     const ar = order?.alteration_repair_data;
     if (!ar) return false;
     if (['dikirim_store', 'diterima_warehouse', 'dalam_pengerjaan', 'selesai_qc', 'dikirim_kembali', 'selesai'].includes(ar.status_flow || '')) {
@@ -4664,7 +4858,7 @@ _WMS Warehouse System_`;
   // 2. Produk yang difulfill dari store yang sedang login (myStoreItems)
   // 3. Pesanan Alteration/Repair yang fisiknya berada di store dan perlu dikirim ke gudang/penjahit pusat
   const isOrderEligibleKirimKeGudang = (order: ManualShipmentOrder): boolean => {
-    if (!order || order.status === 'batal' || order.status === 'selesai') return false;
+    if (!order || order.status === 'batal' || isOrderSelesai(order) || areAllStoreItemsReceived(order)) return false;
 
     // 1. Incoming cross-store fulfillment
     if (isOrderIncomingFulfillment(order)) return true;
@@ -4756,6 +4950,20 @@ _WMS Warehouse System_`;
       const res = await updateJadwalKirimStore(orderId, inputJadwalDate, inputJadwalCatatan, actorName);
 
       if (res.success) {
+        const nowIso = new Date().toISOString();
+        const autoReceiveItems = (itemsList?: ManualShipmentItem[]) =>
+          (itemsList || []).map((it) => {
+            if (isStoreFulfilledItem(jadwalModalOrder, it) && it.item_status !== 'sold_out' && it.item_status !== 'cancelled' && !it.received_at_warehouse) {
+              return {
+                ...it,
+                received_at_warehouse: true,
+                received_at: nowIso,
+                received_by: 'Otomatis (Pesanan Terkirim)',
+              };
+            }
+            return it;
+          });
+
         onShowToast('Tanggal jadwal kirim ke store berhasil disimpan & status pesanan ditandai Selesai!', 'success');
         setOrders(prev => prev.map(o => {
           if (o.no_pesanan === jadwalModalOrder.no_pesanan || (o as any).id === orderId) {
@@ -4764,6 +4972,7 @@ _WMS Warehouse System_`;
               tgl_jadwal_kirim_store: inputJadwalDate,
               catatan_jadwal_store: inputJadwalCatatan,
               status: 'dikirim',
+              items: autoReceiveItems(o.items),
             };
           }
           return o;
@@ -4774,6 +4983,7 @@ _WMS Warehouse System_`;
             tgl_jadwal_kirim_store: inputJadwalDate,
             catatan_jadwal_store: inputJadwalCatatan,
             status: 'dikirim',
+            items: autoReceiveItems(prev.items),
           } : null);
         }
         setJadwalModalOrder(null);
@@ -6527,25 +6737,69 @@ _WMS Warehouse System_`;
                                   </span>
                                 </div>
 
-                                {it.item_status !== 'sold_out' && userIsAdmin && order.status !== 'batal' && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const isMulti = (order.items || []).length > 1;
-                                      setSoldModalData({
-                                        order,
-                                        item: it,
-                                        resolution: isMulti ? 'partial_fulfill' : 'cancel_order',
-                                        note: 'Stok kosong di alokasi DealPOS Marketplace.',
-                                        sendWaToStore: true
-                                      });
-                                    }}
-                                    className="text-[8.5px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 px-1 py-0.2 rounded border border-red-200 dark:border-red-800/60 cursor-pointer inline-flex items-center gap-0.5 shrink-0"
-                                    title="Tandai stok ini kosong / sold"
-                                  >
-                                    <AlertOctagon className="w-2.5 h-2.5" />
-                                    <span>Tandai Sold</span>
-                                  </button>
+                                {it.item_status !== 'sold_out' && order.status !== 'batal' && (
+                                  isStoreFulfilledItem(order, it) ? (
+                                    isStoreItemReceived(order, it) ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (userIsAdmin && !isOrderSelesai(order)) {
+                                            handleMarkStoreItemReceived(order, it, idx, false);
+                                          }
+                                        }}
+                                        className={`text-[8.5px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-300 dark:border-emerald-700 inline-flex items-center gap-0.5 shrink-0 ${
+                                          userIsAdmin && !isOrderSelesai(order) ? 'cursor-pointer hover:bg-emerald-100' : 'cursor-default'
+                                        }`}
+                                        title={
+                                          isOrderSelesai(order) && !it.received_at_warehouse
+                                            ? 'Otomatis ditandai Sudah Terima karena status pesanan sudah Terkirim / Selesai'
+                                            : `Produk dari ${it.fulfillment} sudah diterima di Gudang${it.received_by ? ` (${it.received_by})` : ''}${userIsAdmin && !isOrderSelesai(order) ? ' — Klik untuk batalkan' : ''}`
+                                        }
+                                      >
+                                        <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                                        <span>Sudah Terima</span>
+                                      </button>
+                                    ) : userIsAdmin ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleMarkStoreItemReceived(order, it, idx, true)}
+                                        className="text-[8.5px] font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 px-1.5 py-0.2 rounded border border-blue-300 dark:border-blue-700 cursor-pointer inline-flex items-center gap-0.5 shrink-0 shadow-2xs transition-colors"
+                                        title={`Tandai fisik produk dari ${it.fulfillment} sudah diterima di Gudang`}
+                                      >
+                                        <PackageCheck className="w-2.5 h-2.5 text-blue-600" />
+                                        <span>Tandai Terima</span>
+                                      </button>
+                                    ) : (
+                                      <span
+                                        className="text-[8.5px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 px-1 py-0.2 rounded border border-amber-200 dark:border-amber-800 inline-flex items-center gap-0.5 shrink-0"
+                                        title="Menunggu verifikasi penerimaan fisik di Gudang Pusat"
+                                      >
+                                        <Clock className="w-2.5 h-2.5 text-amber-600" />
+                                        <span>Belum Terima WH</span>
+                                      </span>
+                                    )
+                                  ) : (
+                                    userIsAdmin && !isOrderSelesai(order) && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const isMulti = (order.items || []).length > 1;
+                                          setSoldModalData({
+                                            order,
+                                            item: it,
+                                            resolution: isMulti ? 'partial_fulfill' : 'cancel_order',
+                                            note: 'Stok kosong di alokasi DealPOS Marketplace.',
+                                            sendWaToStore: true
+                                          });
+                                        }}
+                                        className="text-[8.5px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 px-1 py-0.2 rounded border border-red-200 dark:border-red-800/60 cursor-pointer inline-flex items-center gap-0.5 shrink-0"
+                                        title="Tandai stok Marketplace ini kosong / sold"
+                                      >
+                                        <AlertOctagon className="w-2.5 h-2.5" />
+                                        <span>Tandai Sold</span>
+                                      </button>
+                                    )
+                                  )
                                 )}
                               </div>
 
@@ -7268,9 +7522,49 @@ _WMS Warehouse System_`;
                                 </div>
                                 <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-0.5 flex-wrap gap-1">
                                   <span>{it.sku} {it.size && it.size !== 'ALL' && it.size !== '-' ? `| Size: ${it.size}` : ''}</span>
-                                  <span className="text-blue-800 dark:text-blue-200 font-sans font-extrabold bg-blue-100/70 dark:bg-blue-950 px-1.5 py-0.2 rounded border border-blue-300 dark:border-blue-800">
-                                    🏬 {it.fulfillment || 'Store'}
-                                  </span>
+                                  <div className="flex items-center gap-1 flex-wrap font-sans">
+                                    <span className="text-blue-800 dark:text-blue-200 font-extrabold bg-blue-100/70 dark:bg-blue-950 px-1.5 py-0.2 rounded border border-blue-300 dark:border-blue-800">
+                                      🏬 {it.fulfillment || 'Store'}
+                                    </span>
+                                    {it.item_status !== 'sold_out' && order.status !== 'batal' && (
+                                      isStoreItemReceived(order, it) ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (userIsAdmin && !isOrderSelesai(order)) {
+                                              handleMarkStoreItemReceived(order, it, idx, false);
+                                            }
+                                          }}
+                                          className={`text-[9.5px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/70 px-1.5 py-0.5 rounded border border-emerald-300 dark:border-emerald-700 inline-flex items-center gap-1 ${
+                                            userIsAdmin && !isOrderSelesai(order) ? 'cursor-pointer hover:bg-emerald-100' : 'cursor-default'
+                                          }`}
+                                          title={
+                                            isOrderSelesai(order) && !it.received_at_warehouse
+                                              ? 'Otomatis ditandai Sudah Terima karena status pesanan sudah Terkirim / Selesai'
+                                              : `Produk dari ${it.fulfillment} sudah diterima di Gudang${it.received_by ? ` (${it.received_by})` : ''}${userIsAdmin && !isOrderSelesai(order) ? ' — Klik untuk batalkan' : ''}`
+                                          }
+                                        >
+                                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                          <span>Sudah Terima</span>
+                                        </button>
+                                      ) : userIsAdmin ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleMarkStoreItemReceived(order, it, idx, true)}
+                                          className="text-[9.5px] font-bold text-blue-700 dark:text-blue-200 bg-blue-100/90 dark:bg-blue-900/70 hover:bg-blue-200 dark:hover:bg-blue-800 px-2 py-0.5 rounded border border-blue-300 dark:border-blue-700 cursor-pointer inline-flex items-center gap-1 transition-colors"
+                                          title={`Tandai fisik produk dari ${it.fulfillment} sudah diterima di Gudang`}
+                                        >
+                                          <PackageCheck className="w-3 h-3 text-blue-600 dark:text-blue-300" />
+                                          <span>Tandai Terima</span>
+                                        </button>
+                                      ) : (
+                                        <span className="text-[9.5px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800 inline-flex items-center gap-1">
+                                          <Clock className="w-3 h-3 text-amber-600" />
+                                          <span>Belum Terima WH</span>
+                                        </span>
+                                      )
+                                    )}
+                                  </div>
                                 </div>
                                 {isRealAlterItem(it) && (
                                   <div className="mt-1 text-[9.5px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 p-1 rounded border border-rose-200 dark:border-rose-800 flex items-center gap-1">
@@ -7422,7 +7716,7 @@ _WMS Warehouse System_`;
                                         </div>
                                       )}
 
-                                      {userIsAdmin && order.status !== 'batal' && (
+                                      {userIsAdmin && order.status !== 'batal' && !isOrderSelesai(order) && (
                                         <button
                                           type="button"
                                           onClick={() => {
