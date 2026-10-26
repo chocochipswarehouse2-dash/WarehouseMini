@@ -1,154 +1,198 @@
-// Push Notification & Local Alert Service
-import { isRunningInIframe } from './orientationLock';
-import { ActivePage } from '../types';
-
-const NOTIF_ENABLED_KEY = 'wms_push_notif_enabled';
-
-export function isPushNotificationEnabled(): boolean {
-  try {
-    const saved = localStorage.getItem(NOTIF_ENABLED_KEY);
-    if (saved !== null) return saved === 'true';
-  } catch {}
-  return true;
-}
-
-export function setPushNotificationEnabled(enabled: boolean): void {
-  try {
-    localStorage.setItem(NOTIF_ENABLED_KEY, String(enabled));
-  } catch {}
-}
-
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
-  if (isRunningInIframe() || typeof window === 'undefined' || !('Notification' in window)) {
+  if (!('Notification' in window)) {
+    console.warn('Browser does not support notifications.');
     return 'denied';
   }
-
-  try {
-    if (Notification.permission === 'granted') {
-      setPushNotificationEnabled(true);
-      return 'granted';
-    }
+  if (Notification.permission === 'granted') {
+    await registerBackgroundOrderSync();
+    return 'granted';
+  }
+  if (Notification.permission !== 'denied') {
     const permission = await Notification.requestPermission();
     if (permission === 'granted') {
-      setPushNotificationEnabled(true);
+      await registerBackgroundOrderSync();
     }
     return permission;
-  } catch {
-    return 'denied';
   }
+  return Notification.permission;
 }
 
 export function isNotificationSupported(): boolean {
-  if (isRunningInIframe()) return false;
-  try {
-    return typeof window !== 'undefined' && 'Notification' in window;
-  } catch {
-    return false;
-  }
+  return typeof window !== 'undefined' && 'Notification' in window;
 }
 
 export function getNotificationPermissionStatus(): NotificationPermission {
-  if (!isNotificationSupported()) return 'denied';
-  try {
-    return Notification.permission;
-  } catch {
+  if (!isNotificationSupported()) {
     return 'denied';
+  }
+  return Notification.permission;
+}
+
+const NOTIFIED_IDS_STORAGE_KEY = 'wms_notified_order_ids_v1';
+const LAST_CHECK_TS_STORAGE_KEY = 'wms_last_order_check_ts_v1';
+
+export function loadPersistedNotifiedOrderIds(): string[] {
+  try {
+    const raw = localStorage.getItem(NOTIFIED_IDS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+  } catch {
+    return [];
   }
 }
 
-export interface PushNotificationOptions {
-  body?: string;
-  icon?: string;
-  tag?: string;
-  page?: ActivePage;
-  url?: string;
-  requireInteraction?: boolean;
+export function savePersistedNotifiedOrderIds(ids: Iterable<string>): void {
+  try {
+    const arr = Array.from(new Set(Array.from(ids).filter(Boolean))).slice(-350);
+    localStorage.setItem(NOTIFIED_IDS_STORAGE_KEY, JSON.stringify(arr));
+  } catch {
+    // ignore storage quota errors
+  }
 }
 
-export async function showPushNotification(
-  title: string,
-  options?: PushNotificationOptions
-): Promise<boolean> {
-  if (!isNotificationSupported() || !isPushNotificationEnabled()) return false;
-
+export function getLastOrderCheckTimestamp(): number | null {
   try {
-    if (Notification.permission !== 'granted') {
-      return false;
-    }
+    const raw = localStorage.getItem(LAST_CHECK_TS_STORAGE_KEY);
+    if (!raw) return null;
+    const num = Number(raw);
+    return Number.isFinite(num) && num > 0 ? num : null;
+  } catch {
+    return null;
+  }
+}
 
-    const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '');
-    const defaultIcon = `${baseUrl}/icon-192.png`;
-    const uniqueTag = options?.tag || `wms-notif-${Date.now()}`;
-    const targetUrl = options?.url || `${baseUrl}/`;
+export function setLastOrderCheckTimestamp(ts: number = Date.now()): void {
+  try {
+    localStorage.setItem(LAST_CHECK_TS_STORAGE_KEY, String(ts));
+  } catch {
+    // ignore
+  }
+}
 
-    const swOptions: any = {
-      body: options?.body || 'Aktivitas baru di Warehouse Mini',
-      icon: options?.icon || defaultIcon,
-      badge: defaultIcon,
-      tag: uniqueTag,
-      renotify: true,
-      requireInteraction: options?.requireInteraction ?? false,
-      vibrate: [250, 100, 250, 100, 400],
-      data: {
-        url: targetUrl,
-        page: options?.page || null,
-        timestamp: Date.now(),
-      },
-    };
-
-    // 1. Prioritaskan ServiceWorkerRegistration.showNotification (Wajib untuk Android Chrome & PWA HP)
-    if ('serviceWorker' in navigator) {
+/**
+ * Registers Periodic Background Sync & Background Sync on supported PWA browsers (Chrome/Edge Android & Desktop)
+ */
+export async function registerBackgroundOrderSync(): Promise<void> {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    // 1. Periodic Background Sync (fires periodically even when PWA window is closed on Android/Desktop PWA)
+    if ('periodicSync' in registration) {
       try {
-        const reg =
-          (await navigator.serviceWorker.getRegistration()) ||
-          (await Promise.race([
-            navigator.serviceWorker.ready,
-            new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500)),
-          ]));
-
-        if (reg && typeof reg.showNotification === 'function') {
-          await reg.showNotification(title, swOptions);
-          return true;
-        }
-      } catch (swErr) {
-        console.warn('ServiceWorker showNotification fallback:', swErr);
-      }
-
-      // 2. Fallback kirim pesan ke active Service Worker controller jika ada
-      if (navigator.serviceWorker.controller) {
-        try {
-          navigator.serviceWorker.controller.postMessage({
-            type: 'SHOW_WMS_NOTIFICATION',
-            title,
-            options: swOptions,
+        const status = await (navigator as any).permissions?.query?.({
+          name: 'periodic-background-sync',
+        });
+        if (!status || status.state === 'granted') {
+          await (registration as any).periodicSync.register('wms-order-sync', {
+            minInterval: 60 * 1000, // 1 minute minimum interval request
           });
-          return true;
+        }
+      } catch {
+        // Fallback direct attempt
+        try {
+          await (registration as any).periodicSync.register('wms-order-sync', {
+            minInterval: 60 * 1000,
+          });
         } catch {}
       }
     }
 
-    // 3. Fallback Desktop Browser Notification API
-    const desktopNotif = new Notification(title, {
-      body: swOptions.body,
-      icon: swOptions.icon,
-      tag: uniqueTag,
-    });
-
-    desktopNotif.onclick = () => {
+    // 2. One-off Background Sync
+    if ('sync' in registration) {
       try {
-        window.focus();
-        if (options?.page) {
-          window.dispatchEvent(
-            new CustomEvent('wms_navigate_page', { detail: { page: options.page } })
-          );
-        }
-        desktopNotif.close();
+        await (registration as any).sync.register('wms-order-sync');
       } catch {}
-    };
+    }
+  } catch {}
+}
 
-    return true;
-  } catch {
-    // Ignore notification errors in restricted environments
-    return false;
+/**
+ * Configures the Service Worker background watcher with Supabase credentials and role info
+ */
+export async function configureServiceWorkerOrderWatcher(params: {
+  enabled: boolean;
+  supabaseUrl: string;
+  supabaseAnonKey: string;
+  isAdmin: boolean;
+  storeName?: string;
+  username?: string;
+  notifiedIds?: string[];
+  lastCheckedAt?: number;
+}): Promise<void> {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    await registerBackgroundOrderSync();
+    const registration = await navigator.serviceWorker.ready;
+    const targetSw = navigator.serviceWorker.controller || registration.active;
+    if (targetSw) {
+      targetSw.postMessage({
+        type: 'WMS_CONFIGURE_SW_WATCHER',
+        ...params,
+      });
+    }
+  } catch {}
+}
+
+export async function syncNotifiedOrdersToServiceWorker(notifiedIds: string[]): Promise<void> {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const targetSw = navigator.serviceWorker.controller || registration.active;
+    if (targetSw) {
+      targetSw.postMessage({
+        type: 'WMS_SYNC_NOTIFIED_ORDERS',
+        notifiedIds,
+      });
+    }
+  } catch {}
+}
+
+export async function showPushNotification(
+  title: string,
+  options?: NotificationOptions & { url?: string; page?: string }
+) {
+  if (!('Notification' in window)) return;
+
+  if (Notification.permission === 'default') {
+    await requestNotificationPermission();
+  }
+
+  if (Notification.permission !== 'granted') return;
+
+  const defaultOptions: any = {
+    icon: '/pwa-192x192.png',
+    badge: '/pwa-192x192.png',
+    vibrate: [250, 100, 250, 100, 400],
+    tag: options?.tag || 'wms-notification-' + Date.now(),
+    renotify: true,
+    requireInteraction: options?.requireInteraction ?? true,
+    data: {
+      url: options?.url || '/',
+      page: options?.page || '',
+    },
+    ...options,
+  };
+
+  try {
+    if ('serviceWorker' in navigator) {
+      const registration = await navigator.serviceWorker.ready;
+      if (registration && 'showNotification' in registration) {
+        await registration.showNotification(title, defaultOptions);
+        return;
+      }
+    }
+  } catch (e) {
+    console.warn('ServiceWorker notification fallback to regular Notification:', e);
+  }
+
+  try {
+    const notif = new Notification(title, defaultOptions);
+    notif.onclick = () => {
+      window.focus();
+      notif.close();
+    };
+  } catch (e) {
+    console.error('Failed to show notification:', e);
   }
 }

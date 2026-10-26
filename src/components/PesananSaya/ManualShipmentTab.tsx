@@ -1437,6 +1437,14 @@ _WMS Warehouse System_`;
                 }
               })
               .catch((err) => console.warn('WA submit notice error:', err));
+
+            // Kirim juga ke Grup Gudang / Admin agar Admin menerima notifikasi WA instan meski aplikasi/browser ditutup
+            if (fonnteCfg.groupTarget && fonnteCfg.groupTarget.trim() && fonnteCfg.groupTarget.trim() !== orderData.no_telp_store.trim()) {
+              const adminGroupMsg = `🛍️ *PESANAN MANUAL SHIPMENT BARU MASUK*\n--------------------------------------------\n• *Order ID:* ${orderData.no_transaksi_customer || orderData.no_pesanan}\n• *Store Pengirim:* ${orderData.nama_pengirim} (PIC: ${orderData.pic_store || '-'})\n• *No. DealPOS:* ${dealposStr}\n• *Customer:* ${orderData.nama_tujuan} (${orderData.no_telp_tujuan || '-'})\n• *Jasa Kirim:* ${orderData.jasa_kirim || '-'}\n\n📦 *Daftar Produk (${totalQty} Pcs):*\n${itemsListStr}\n${orderData.notes_paket ? `\n📝 *Catatan Paket:* ${orderData.notes_paket}\n` : ''}\n_Silakan buka menu Pesanan Saya di WMS untuk cetak Label & Picking List._`;
+              sendFonnteMessage(fonnteCfg.groupTarget, adminGroupMsg, fonnteCfg.token).catch((err) =>
+                console.warn('WA group submit notice error:', err)
+              );
+            }
           }
         }
 
