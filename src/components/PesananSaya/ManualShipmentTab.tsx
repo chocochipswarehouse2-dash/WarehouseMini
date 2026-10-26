@@ -46,7 +46,7 @@ import {
 } from '../../services/gasManualShipment';
 import { clearDeltaSyncCache } from '../../services/gasSync';
 import { sendFonnteMessage, getFonnteConfig } from '../../services/whatsapp';
-import { supabaseFetch, fetchStockForSkus, isWarehouseLocation, StockRealtimeItem, searchActiveProductsLive, fetchMasterProductsFromSupabase } from '../../services/supabase';
+import { supabaseFetch, fetchStockForSkus, isWarehouseLocation, getPickingPriority, StockRealtimeItem, searchActiveProductsLive, fetchMasterProductsFromSupabase } from '../../services/supabase';
 import { lookupProductBySku } from '../../utils/productLookup';
 import QRCode from 'qrcode';
 import {
@@ -2449,8 +2449,13 @@ _WMS Warehouse System_`;
         const validLocStocks = stocks.filter(s => s.lokasi && s.lokasi !== '-' && s.lokasi !== 'KOSONG');
         const activeWarehouse = validLocStocks.filter(s => (s.sisa_stok ?? 0) > 0 && isWarehouseLocation(s.lokasi || '', s.area || ''));
         if (activeWarehouse.length > 0) {
-          activeWarehouse.sort((a, b) => (b.sisa_stok ?? 0) - (a.sisa_stok ?? 0));
-          const formattedLoc = Array.from(new Set(activeWarehouse.map(l => l.lokasi).filter(Boolean))).join(', ');
+          activeWarehouse.sort((a, b) => {
+            const pA = getPickingPriority(a.lokasi || '', a.area || '');
+            const pB = getPickingPriority(b.lokasi || '', b.area || '');
+            if (pA !== pB) return pA - pB;
+            return (b.sisa_stok ?? 0) - (a.sisa_stok ?? 0);
+          });
+          const formattedLoc = Array.from(new Set(activeWarehouse.map(l => `${l.lokasi} (${l.sisa_stok ?? 0} pcs)`).filter(Boolean))).join(', ');
           skuLocationMap.set(cleanSku, formattedLoc || activeWarehouse[0].lokasi || '-');
         } else {
           const anyWarehouse = validLocStocks.filter(s => isWarehouseLocation(s.lokasi || '', s.area || ''));

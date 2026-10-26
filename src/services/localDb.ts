@@ -7,7 +7,7 @@ import { ProductItem, StockRealtimeItem, PengecekanSJDraft } from '../types';
 import { isDummyProduct } from './supabase';
 
 const DB_NAME = 'WMS_LOCAL_DB';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 let dbInstance: IDBDatabase | null = null;
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -70,8 +70,8 @@ export async function getLocalDb(): Promise<IDBDatabase> {
       const db = (event.target as IDBOpenDBRequest).result;
       const oldVersion = event.oldVersion;
 
-      // v3: Clear stale cache from old Supabase DB — delete and recreate products & inventory_stocks
-      if (oldVersion < 3) {
+      // v6: Clear stale cached locations/stocks after rack reorganization & SO resets
+      if (oldVersion < 6) {
         if (db.objectStoreNames.contains('products')) {
           db.deleteObjectStore('products');
         }
@@ -413,7 +413,10 @@ export async function saveInventoryStocksToLocalDb(stocks: StockRealtimeItem[]):
   try {
     const db = await getLocalDb();
     return new Promise<void>((resolve, reject) => {
-      const transaction = db.transaction('inventory_stocks', 'readwrite');
+      const storeNames = db.objectStoreNames.contains('meta')
+        ? ['inventory_stocks', 'meta']
+        : ['inventory_stocks'];
+      const transaction = db.transaction(storeNames, 'readwrite');
       const store = transaction.objectStore('inventory_stocks');
       store.clear();
 
@@ -421,6 +424,16 @@ export async function saveInventoryStocksToLocalDb(stocks: StockRealtimeItem[]):
         const item = stocks[i];
         const recordId = item.id || `${item.sku}_${item.lokasi}_${i}`;
         store.put({ ...item, id: recordId });
+      }
+
+      if (db.objectStoreNames.contains('meta')) {
+        const metaStore = transaction.objectStore('meta');
+        metaStore.put({
+          key: 'stocks_sync_meta',
+          lastSync: Date.now(),
+          count: stocks.length,
+          updatedAt: new Date().toISOString(),
+        });
       }
 
       transaction.oncomplete = () => resolve();

@@ -448,25 +448,32 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     return emptyLocs;
   };
 
-  // Key to track unique SKUs in active items for reactive realtime stock fetching
-  const activeSkusKey = React.useMemo(() => {
-    return (activeItems || [])
-      .map((it) => (it.sku || '').trim().toUpperCase())
-      .filter(Boolean)
-      .sort()
-      .join(',');
-  }, [activeItems]);
+  // Key to track unique SKUs across active items AND pending SJs for reactive realtime stock fetching
+  const allPendingAndActiveSkusKey = React.useMemo(() => {
+    const skuSet = new Set<string>();
+    (activeItems || []).forEach((it) => {
+      const s = (it.sku || '').trim().toUpperCase();
+      if (s) skuSet.add(s);
+    });
+    (rawItems || []).forEach((it) => {
+      if (it.status !== 'SELESAI') {
+        const s = (it.sku || '').trim().toUpperCase();
+        if (s) skuSet.add(s);
+      }
+    });
+    return Array.from(skuSet).sort().join(',');
+  }, [activeItems, rawItems]);
 
-  // Fetch realtime inventory by SKUs across warehouse locations whenever active SJ items change
+  // Fetch realtime inventory by SKUs across warehouse locations whenever active or pending SJ items change
   useEffect(() => {
-    if (activeItems.length > 0) {
-      const skus = activeItems.map((it) => (it.sku || '').trim().toUpperCase()).filter(Boolean);
-      const uniqueSkus = Array.from(new Set(skus));
-      if (!uniqueSkus.length) return;
+    if (!allPendingAndActiveSkusKey) return;
+    const uniqueSkus = allPendingAndActiveSkusKey.split(',').filter(Boolean);
+    if (!uniqueSkus.length) return;
 
-      fetchStockForSkus(uniqueSkus)
-        .then((stocks) => {
-          const map: Record<string, StockRealtimeItem[]> = {};
+    fetchStockForSkus(uniqueSkus)
+      .then((stocks) => {
+        setRealtimeSkuStocks((prev) => {
+          const map: Record<string, StockRealtimeItem[]> = { ...prev };
           // Pre-initialize all requested SKUs so we know they were checked
           uniqueSkus.forEach((s) => {
             map[s] = [];
@@ -476,11 +483,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             if (!map[key]) map[key] = [];
             map[key].push(stk);
           });
-          setRealtimeSkuStocks(map);
-        })
-        .catch((err) => console.warn('Gagal memuat stok lokasi realtime:', err));
-    }
-  }, [activeSkusKey, activeSJ?.no_sj]);
+          return map;
+        });
+      })
+      .catch((err) => console.warn('Gagal memuat stok lokasi realtime:', err));
+  }, [allPendingAndActiveSkusKey, activeSJ?.no_sj]);
 
   // Group items by no_sj
   const sjGroups: PickingSuratJalanGroup[] = React.useMemo(() => {
@@ -734,6 +741,27 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   };
 
   const handleSendPickingWa = async (group: PickingSuratJalanGroup, mode: 'send' | 'copy' = 'send') => {
+    const groupSkus = Array.from(
+      new Set(group.items.map((it) => (it.sku || '').trim().toUpperCase()).filter(Boolean))
+    );
+    let liveMap: Record<string, StockRealtimeItem[]> = { ...realtimeSkuStocks };
+    if (groupSkus.length > 0) {
+      try {
+        const freshStocks = await fetchStockForSkus(groupSkus);
+        groupSkus.forEach((s) => {
+          liveMap[s] = [];
+        });
+        freshStocks.forEach((stk) => {
+          const key = (stk.sku || '').toUpperCase().trim();
+          if (!liveMap[key]) liveMap[key] = [];
+          liveMap[key].push(stk);
+        });
+        setRealtimeSkuStocks((prev) => ({ ...prev, ...liveMap }));
+      } catch (err) {
+        console.warn('Gagal memuat stok live sebelum kirim WA:', err);
+      }
+    }
+
     const firstInvoice = group.items.find((it) => it.invoice_picking)?.invoice_picking;
     const text = generateRefillPickingGroupMessage({
       no_sj: group.no_sj,
@@ -745,15 +773,47 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       status: group.status || 'PENDING PICKING',
       items: group.items.map((it) => {
         const cleanSku = (it.sku || '').toUpperCase().trim();
-        const locs = getProductLocations(cleanSku, it.lokasi);
+        const stkList = liveMap[cleanSku];
         let locText = it.lokasi || '-';
         let isKosong = false;
-        if (locs.length > 0) {
-          locText = locs.map((l) => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ');
-        } else if (cleanSku in realtimeSkuStocks) {
-          const empty = getRecordedEmptyLocations(cleanSku);
-          locText = empty.length > 0 ? `KOSONG (Rak: ${empty.join(', ')})` : 'KOSONG (0 pcs)';
-          isKosong = true;
+        if (Array.isArray(stkList)) {
+          const locMap = new Map<string, { lokasi: string; qty: number; area?: string }>();
+          stkList.forEach((stk) => {
+            const loc = String(stk.lokasi || '').trim().toUpperCase();
+            const qty = Number(stk.sisa_stok) || 0;
+            if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc, stk.area) && qty > 0) {
+              const existing = locMap.get(loc);
+              if (existing) {
+                existing.qty += qty;
+              } else {
+                locMap.set(loc, { lokasi: loc, qty, area: stk.area });
+              }
+            }
+          });
+          const sortedLocs = Array.from(locMap.values()).sort((a, b) => {
+            const pA = getPickingPriority(a.lokasi, a.area);
+            const pB = getPickingPriority(b.lokasi, b.area);
+            if (pA !== pB) return pA - pB;
+            return b.qty - a.qty;
+          });
+          if (sortedLocs.length > 0) {
+            locText = sortedLocs.map((l) => `${l.lokasi} (${l.qty} pcs)`).join(', ');
+          } else {
+            const emptyLocs = Array.from(
+              new Set(
+                stkList
+                  .filter((stk) => stk.lokasi && isWarehouseLocation(stk.lokasi, stk.area) && (Number(stk.sisa_stok) || 0) <= 0)
+                  .map((stk) => String(stk.lokasi).trim().toUpperCase())
+              )
+            );
+            locText = emptyLocs.length > 0 ? `KOSONG (Rak: ${emptyLocs.join(', ')})` : 'KOSONG (0 pcs)';
+            isKosong = true;
+          }
+        } else {
+          const locs = getProductLocations(cleanSku, it.lokasi);
+          if (locs.length > 0) {
+            locText = locs.map((l) => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ');
+          }
         }
         return {
           sku: it.sku,
@@ -809,16 +869,23 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
     const itemsRows = group.items
       .map(
-        (it, idx) => `
+        (it, idx) => {
+          const cleanSku = (it.sku || '').toUpperCase().trim();
+          const locs = getProductLocations(cleanSku, it.lokasi);
+          const locText = locs.length > 0
+            ? locs.map((l) => (l.qty && l.qty > 0 ? `${l.lokasi} (${l.qty} pcs)` : l.lokasi)).join(', ')
+            : it.lokasi || '-';
+          return `
       <tr>
         <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${idx + 1}</td>
         <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${resolveProductName(it.sku, it.nama_produk)}</td>
         <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${it.size || '-'}</td>
         <td style="padding: 6px; border: 1px solid #cbd5e1; font-family: monospace;">${it.sku}</td>
         <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${it.qty_req}</td>
-        <td style="padding: 6px; border: 1px solid #cbd5e1;">${it.lokasi}</td>
+        <td style="padding: 6px; border: 1px solid #cbd5e1;">${locText}</td>
       </tr>
-    `
+    `;
+        }
       )
       .join('');
 

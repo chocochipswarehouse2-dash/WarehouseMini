@@ -85,9 +85,27 @@ export function lookupMasterProduct(sku: string, catalog: ProductItem[]): {
   );
 
   if (match) {
-    const rawLokasi = match.lokasi || '-';
-    const area = getAreaFromLokasi(rawLokasi);
-    const priority = getPickingPriority(rawLokasi, area);
+    let rawLokasi = match.lokasi || '-';
+    if (Array.isArray(match.locList) && match.locList.length > 0) {
+      const validLocs = match.locList
+        .map((l: any) => {
+          if (typeof l === 'string') return { lokasi: l.trim().toUpperCase(), qty: 0 };
+          return { lokasi: String(l?.lokasi || '').trim().toUpperCase(), qty: Number(l?.qty) || 0 };
+        })
+        .filter((l) => l.lokasi && l.lokasi !== '-' && getPickingPriority(l.lokasi) <= 3 && l.qty > 0)
+        .sort((a, b) => {
+          const pA = getPickingPriority(a.lokasi);
+          const pB = getPickingPriority(b.lokasi);
+          if (pA !== pB) return pA - pB;
+          return b.qty - a.qty;
+        });
+      if (validLocs.length > 0) {
+        rawLokasi = validLocs.map((l) => (l.qty > 0 ? `${l.lokasi} (${l.qty} pcs)` : l.lokasi)).join(', ');
+      }
+    }
+    const primaryLoc = rawLokasi.split(',')[0]?.replace(/\s*\([^)]*\)\s*$/, '').trim() || rawLokasi;
+    const area = getAreaFromLokasi(primaryLoc);
+    const priority = getPickingPriority(primaryLoc, area);
     const rawName = match.n || match.p || cleanSku;
     const standardName = cleanProductName(rawName);
     const standardSize = (match.s && match.s !== '-' ? match.s : extractSizeFromSku(cleanSku)) || '-';

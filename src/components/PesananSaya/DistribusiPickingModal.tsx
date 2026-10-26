@@ -94,27 +94,44 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
     const map = new Map<string, ProductLocationInfo>();
 
     // 1. Authoritative check: live Supabase stok_real_fisik data
-    const realtimeList = realtimeSkuStocks[cleanSku] || [];
-    realtimeList.forEach((stk) => {
-      const loc = String(stk.lokasi || '').trim().toUpperCase();
-      const qty = Number(stk.sisa_stok) || 0;
-      if (loc && isWarehouseLocation(loc, stk.area)) {
-        const existing = map.get(loc);
-        if (existing) {
-          existing.qty = (existing.qty || 0) + qty;
-        } else {
-          map.set(loc, {
-            lokasi: loc,
-            qty: qty,
-            isPrimary: false,
-            source: 'REALTIME_STOCK',
-            area: stk.area || 'Warehouse',
-          });
+    // Once a SKU has been checked against live stok_real_fisik, NEVER merge stale catalog/SJ locations!
+    const isRealtimeChecked = cleanSku in realtimeSkuStocks;
+    if (isRealtimeChecked) {
+      const realtimeList = realtimeSkuStocks[cleanSku] || [];
+      realtimeList.forEach((stk) => {
+        const loc = String(stk.lokasi || '').trim().toUpperCase();
+        const qty = Number(stk.sisa_stok) || 0;
+        if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc, stk.area) && qty > 0) {
+          const existing = map.get(loc);
+          if (existing) {
+            existing.qty = (existing.qty || 0) + qty;
+          } else {
+            map.set(loc, {
+              lokasi: loc,
+              qty: qty,
+              isPrimary: false,
+              source: 'REALTIME_STOCK',
+              area: stk.area || 'Warehouse',
+            });
+          }
         }
-      }
-    });
+      });
 
-    // 2. Check catalog locations (p.locList & p.lokasi)
+      const sorted = Array.from(map.values()).sort((a, b) => {
+        const pA = getPickingPriority(a.lokasi, a.area);
+        const pB = getPickingPriority(b.lokasi, b.area);
+        if (pA !== pB) return pA - pB;
+        const qtyDiff = (b.qty || 0) - (a.qty || 0);
+        if (qtyDiff !== 0) return qtyDiff;
+        return a.lokasi.localeCompare(b.lokasi, undefined, { numeric: true, sensitivity: 'base' });
+      });
+      if (sorted.length > 0) {
+        sorted[0].isPrimary = true;
+      }
+      return sorted;
+    }
+
+    // 2. Fallback only while realtime data is still loading
     const catMatch = productCatalog.find(
       (p) => (p.k && p.k.trim().toUpperCase() === cleanSku) || ((p as any).sku && String((p as any).sku).trim().toUpperCase() === cleanSku)
     );
@@ -126,7 +143,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
             const qty = Number(itemLoc.qty) || 0;
             const parts = rawLocStr.split(/[,/;\n|]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
             parts.forEach((loc) => {
-              if (loc && isWarehouseLocation(loc) && !map.has(loc)) {
+              if (loc && isWarehouseLocation(loc) && qty > 0 && !map.has(loc)) {
                 map.set(loc, {
                   lokasi: loc,
                   qty: parts.length === 1 ? qty : 0,
@@ -150,7 +167,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
           }
         });
       }
-      if (catMatch.lokasi) {
+      if (catMatch.lokasi && map.size === 0) {
         const parts = String(catMatch.lokasi).split(/[,/;\n|]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
         parts.forEach((loc) => {
           if (loc && isWarehouseLocation(loc) && !map.has(loc)) {
@@ -165,9 +182,9 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
       }
     }
 
-    // 3. Check Surat Jalan Item Lokasi (if specified in CSV/document)
+    // 3. Check Surat Jalan Item Lokasi (if specified in CSV/document and still loading)
     const strItemLokasi = String(itemLokasi || '').trim();
-    if (strItemLokasi && strItemLokasi !== '-' && strItemLokasi !== '--') {
+    if (strItemLokasi && strItemLokasi !== '-' && strItemLokasi !== '--' && map.size === 0) {
       const parts = strItemLokasi
         .split(/[,/;\n|]+/)
         .map((s) => String(s || '').trim().toUpperCase())
@@ -185,7 +202,6 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
     }
 
     const allLocs = Array.from(map.values()).filter((l) => l && l.lokasi && isWarehouseLocation(l.lokasi, l.area));
-    // Sort: locations with stock > 0 first (descending by qty), then locations with 0 stock
     allLocs.sort((a, b) => {
       const pA = getPickingPriority(a.lokasi, a.area);
       const pB = getPickingPriority(b.lokasi, b.area);
@@ -243,22 +259,28 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
 
       const locs = getProductLocations(cleanSku, (it as any).lokasi);
       const locsWithStock = locs.filter((l) => (l.qty || 0) > 0);
-      const locsZeroStock = locs.filter((l) => (l.qty || 0) <= 0);
+      const recordedEmpty = getRecordedEmptyLocations(cleanSku);
+      const isRealtimeChecked = cleanSku in realtimeSkuStocks;
 
       let lokasiDisplay = '-';
       let isKosong = false;
       let primaryLokasi = 'Belum Ada Rak';
 
       if (locsWithStock.length > 0) {
-        // Ambil data lokasi rak gudang (stok > 0) terurut prioritas
+        // Ambil semua lokasi rak gudang (stok > 0) terurut prioritas (Warehouse A-D -> Kolian R/V/Z -> Blok F)
         lokasiDisplay = locsWithStock.map((l) => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ');
         primaryLokasi = locsWithStock[0].lokasi;
         isKosong = false;
-      } else if (locsZeroStock.length > 0) {
-        // Jika stok 0, ambil data rak gudang tercatat
+      } else if (isRealtimeChecked) {
+        // Sudah dicek ke stok_real_fisik dan tidak ada stok > 0
         isKosong = true;
-        lokasiDisplay = locsZeroStock.map((l) => l.lokasi).join(', ');
-        primaryLokasi = locsZeroStock[0].lokasi;
+        if (recordedEmpty.length > 0) {
+          lokasiDisplay = recordedEmpty.join(', ');
+          primaryLokasi = recordedEmpty[0];
+        } else {
+          lokasiDisplay = 'KOSONG (0 pcs)';
+          primaryLokasi = 'KOSONG';
+        }
       } else if ((it as any).lokasi && (it as any).lokasi !== '-' && (it as any).lokasi !== 'KOSONG') {
         lokasiDisplay = (it as any).lokasi;
         primaryLokasi = (it as any).lokasi;
@@ -287,7 +309,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
         lokasi: lokasiDisplay,
         primaryLokasi,
         locList: locs,
-        emptyRacks: locsZeroStock.map(l => l.lokasi),
+        emptyRacks: recordedEmpty,
         isKosong,
         qty: it.qty_sj || 1,
       };
@@ -367,7 +389,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
         (it, idx) => `
         <tr>
           <td style="text-align:center; font-weight:bold;">${idx + 1}</td>
-          <td style="font-weight:800; color:${it.isKosong ? '#e11d48' : '#0f172a'}; font-family:monospace; background:${it.isKosong ? '#fff1f2' : '#f8fafc'}; text-align:center;">${it.primaryLokasi || it.lokasi}</td>
+          <td style="font-weight:800; color:${it.isKosong ? '#e11d48' : '#0f172a'}; font-family:monospace; background:${it.isKosong ? '#fff1f2' : '#f8fafc'}; text-align:center;">${it.lokasi}</td>
           <td style="font-family:monospace; font-weight:700;">${it.sku}</td>
           <td>${it.nama_produk}</td>
           <td style="text-align:center; font-weight:bold;">${it.size}</td>
@@ -637,13 +659,19 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
   const handleSendToPickingApp = async () => {
     setIsSendingToApp(true);
     try {
-      const itemsForApp = enrichedItems.map((it) => ({
-        sku: it.sku,
-        nama_produk: it.nama_produk,
-        size: it.size,
-        lokasi: it.primaryLokasi || it.lokasi,
-        qty_req: it.qty,
-      }));
+      const itemsForApp = enrichedItems.map((it) => {
+        const allValidCodes = (it.locList || [])
+          .filter((l) => (l.qty || 0) > 0)
+          .map((l) => l.lokasi)
+          .join(', ');
+        return {
+          sku: it.sku,
+          nama_produk: it.nama_produk,
+          size: it.size,
+          lokasi: allValidCodes || it.primaryLokasi || it.lokasi,
+          qty_req: it.qty,
+        };
+      });
 
       const res = await createPickingSuratJalanSupabase(
         draft.no_sj,

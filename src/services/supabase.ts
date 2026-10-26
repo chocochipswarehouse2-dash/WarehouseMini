@@ -6,6 +6,7 @@ import {
   saveProductsToLocalDb,
   saveInventoryStocksToLocalDb,
   getAllInventoryStocksFromLocalDb,
+  getLocalDbMeta,
   clearLocalDb,
 } from './localDb';
 import { fetchWithDeltaSync } from './gasSync';
@@ -310,10 +311,38 @@ export function getAreaFromLokasi(lokasi: string, _area?: string): string {
 }
 
 /**
+ * Clean display suffixes such as "A013 (5 pcs)" -> "A013" before evaluating rack area/priority
+ */
+function stripLocationQtySuffix(raw: string): string {
+  return String(raw || '')
+    .replace(/\s*\([^)]*\)\s*$/g, '')
+    .trim();
+}
+
+/**
  * Check if a given location & area belongs to the warehouse area (for picking & fulfillment)
  */
 export function getPickingPriority(lokasi: string, area?: string): number {
-  const locArea = getAreaFromLokasi(lokasi, area);
+  const raw = String(lokasi || '').trim();
+  if (!raw) return 4;
+
+  if (/[,/;\n|]/.test(raw)) {
+    const tokens = raw
+      .split(/[,/;\n|]+/)
+      .map((t) => stripLocationQtySuffix(t))
+      .filter(Boolean);
+    if (tokens.length > 0) {
+      let best = 5;
+      for (const tok of tokens) {
+        const p = getPickingPriority(tok, area);
+        if (p < best) best = p;
+      }
+      return best;
+    }
+  }
+
+  const cleanLok = stripLocationQtySuffix(raw);
+  const locArea = getAreaFromLokasi(cleanLok, area);
   if (locArea === 'Warehouse' || locArea === 'Aksesoris' || locArea === 'Transit') return 1;
   if (locArea === 'Kolian') return 2;
   if (locArea === 'Blok F') return 3;
@@ -326,7 +355,7 @@ export function getPickingPriority(lokasi: string, area?: string): number {
  */
 export function isWarehouseLocation(lokasi: string, area?: string): boolean {
   if (!lokasi) return false;
-  const lok = String(lokasi || '').trim().toUpperCase();
+  const lok = stripLocationQtySuffix(String(lokasi || '')).toUpperCase();
   if (
     !lok ||
     lok === '-' ||
@@ -336,13 +365,14 @@ export function isWarehouseLocation(lokasi: string, area?: string): boolean {
     lok === 'NULL' ||
     lok === 'UNDEFINED' ||
     lok === 'UNKNOWN' ||
-    lok === 'BELUM ADA RAK'
+    lok === 'BELUM ADA RAK' ||
+    lok === 'KOSONG'
   ) {
     return false;
   }
-  
-  const priority = getPickingPriority(lokasi, area);
-  // Recommend for picking if Priority is 1, 2, or 3
+
+  const priority = getPickingPriority(lok, area);
+  // Recommend for picking if Priority is 1 (Warehouse/Aksesoris/Transit), 2 (Kolian R/V/Z), or 3 (Blok F)
   return priority <= 3;
 }
 
@@ -1072,64 +1102,89 @@ export async function fetchStockForLocations(locations: string[]): Promise<Stock
 }
 
 /**
- * Fetch real-time system stock by SKUs across all warehouse locations
+ * Fetch real-time system stock by SKUs across all warehouse locations.
+ * Always prioritizes live Supabase `stok_real_fisik` so Picking Lists never show stale/purged racks
+ * (e.g. A009 instead of A013) or miss newly stocked Kolian (R, V, Z) racks.
  */
 export async function fetchStockForSkus(skus: string[]): Promise<StockRealtimeItem[]> {
   if (!skus || !skus.length) return [];
-  const cleanSkus = Array.from(new Set(skus.map((s) => s.trim().toUpperCase()).filter(Boolean)));
+  const cleanSkus = Array.from(new Set(skus.map((s) => String(s || '').trim().toUpperCase()).filter(Boolean)));
   if (cleanSkus.length === 0) return [];
   const cleanSkuSet = new Set(cleanSkus);
 
   const matchedItems: StockRealtimeItem[] = [];
-  const foundSkus = new Set<string>();
+  const fetchedOnlineSkus = new Set<string>();
 
-  const addMatched = (items: StockRealtimeItem[]) => {
-    items.forEach(r => {
-      const clean = (r.sku || '').trim().toUpperCase();
-      if (cleanSkuSet.has(clean) && r.lokasi && r.lokasi !== '-' && r.lokasi !== 'KOSONG') {
-        matchedItems.push(r);
-        foundSkus.add(clean);
-      }
-    });
-  };
+  // 1. Authoritative Live Fetch from Supabase PostgREST `stok_real_fisik` in chunks
+  const CHUNK_SIZE = 80;
+  for (let i = 0; i < cleanSkus.length; i += CHUNK_SIZE) {
+    const chunk = cleanSkus.slice(i, i + CHUNK_SIZE);
+    const formattedSkus = chunk.map((s) => `"${s.replace(/"/g, '""')}"`).join(',');
+    const queryParams = `sku=in.(${encodeURIComponent(formattedSkus)})&select=sku,nama_produk,size,lokasi,area,sisa_stok,updated_at`;
 
-  // 1. Check in-memory cache
-  if (memoryStokFisikCache && memoryStokFisikCache.length > 0) {
-    addMatched(memoryStokFisikCache);
-  }
-
-  // 2. Check local IndexedDB cache if any SKUs missing
-  if (foundSkus.size < cleanSkuSet.size) {
     try {
-      const localStocks = await getAllInventoryStocksFromLocalDb();
-      if (localStocks && localStocks.length > 0) {
-        if (!memoryStokFisikCache || memoryStokFisikCache.length === 0) {
-          memoryStokFisikCache = localStocks;
-          memoryStokFisikLastFetch = Date.now();
-        }
-        addMatched(localStocks);
-      }
-    } catch {}
-  }
-
-  // 3. Fallback to Supabase PostgREST for missing SKUs or full refresh
-  if (foundSkus.size < cleanSkuSet.size) {
-    try {
-      const missingSkus = cleanSkus.filter(s => !foundSkus.has(s));
-      const formattedSkus = missingSkus.map(s => `"${s.replace(/"/g, '""')}"`).join(',');
-      const queryParams = `sku=in.(${encodeURIComponent(formattedSkus)})&select=sku,nama_produk,size,lokasi,area,sisa_stok,updated_at`;
-      
       const rows = await supabaseFetch<StockRealtimeItem[]>(
         'stok_real_fisik',
         'GET',
         null,
         queryParams
       );
-      if (Array.isArray(rows) && rows.length > 0) {
-        addMatched(rows);
+      if (Array.isArray(rows)) {
+        chunk.forEach((s) => fetchedOnlineSkus.add(s));
+        rows.forEach((r) => {
+          const clean = String(r.sku || '').trim().toUpperCase();
+          const lok = String(r.lokasi || '').trim();
+          if (cleanSkuSet.has(clean) && lok && lok !== '-' && lok !== 'KOSONG') {
+            matchedItems.push({
+              ...r,
+              sku: clean,
+              lokasi: lok,
+              area: getAreaFromLokasi(lok, r.area),
+              sisa_stok: Number(r.sisa_stok) || 0,
+            });
+          }
+        });
       }
     } catch (err) {
-      console.warn('Error fetching realtime stock by SKUs from Supabase:', err);
+      console.warn('Error fetching live realtime stock chunk by SKUs from Supabase:', err);
+    }
+  }
+
+  // Update in-memory cache for all SKUs that were successfully queried online
+  if (fetchedOnlineSkus.size > 0 && memoryStokFisikCache && memoryStokFisikCache.length > 0) {
+    memoryStokFisikCache = [
+      ...memoryStokFisikCache.filter((r) => !fetchedOnlineSkus.has(String(r.sku || '').trim().toUpperCase())),
+      ...matchedItems.filter((r) => Number(r.sisa_stok) !== 0),
+    ];
+  }
+
+  // 2. Offline Fallback ONLY for SKUs whose live Supabase request failed
+  if (fetchedOnlineSkus.size < cleanSkuSet.size) {
+    const addOfflineFallback = (items: StockRealtimeItem[]) => {
+      items.forEach((r) => {
+        const clean = String(r.sku || '').trim().toUpperCase();
+        const lok = String(r.lokasi || '').trim();
+        if (cleanSkuSet.has(clean) && !fetchedOnlineSkus.has(clean) && lok && lok !== '-' && lok !== 'KOSONG') {
+          matchedItems.push({
+            ...r,
+            sku: clean,
+            lokasi: lok,
+            area: getAreaFromLokasi(lok, r.area),
+            sisa_stok: Number(r.sisa_stok) || 0,
+          });
+        }
+      });
+    };
+
+    if (memoryStokFisikCache && memoryStokFisikCache.length > 0) {
+      addOfflineFallback(memoryStokFisikCache);
+    } else {
+      try {
+        const localStocks = await getAllInventoryStocksFromLocalDb();
+        if (localStocks && localStocks.length > 0) {
+          addOfflineFallback(localStocks);
+        }
+      } catch {}
     }
   }
 
@@ -2832,14 +2887,18 @@ export async function fetchSupabaseStokFisikDirect(forceRefresh = false): Promis
     return memoryStokFisikCache;
   }
 
-  // SWR Local Database (IndexedDB) check: 0ms instant load if fresh within 1 minute
+  // SWR Local Database (IndexedDB) check: 0ms instant load ONLY if synced within the last 60 seconds
   if (!forceRefresh) {
     try {
-      const localDbStock = await getAllInventoryStocksFromLocalDb();
-      if (localDbStock && localDbStock.length > 0) {
-        memoryStokFisikCache = localDbStock;
-        if (!memoryStokFisikLastFetch) memoryStokFisikLastFetch = Date.now();
-        return localDbStock;
+      const meta = await getLocalDbMeta<{ lastSync?: number }>('stocks_sync_meta');
+      const isLocalFresh = Boolean(meta?.lastSync && Date.now() - meta.lastSync < 60 * 1000);
+      if (isLocalFresh) {
+        const localDbStock = await getAllInventoryStocksFromLocalDb();
+        if (localDbStock && localDbStock.length > 0) {
+          memoryStokFisikCache = localDbStock;
+          memoryStokFisikLastFetch = meta?.lastSync || Date.now();
+          return localDbStock;
+        }
       }
     } catch (err) {
       console.warn('Error reading physical stock from local indexedDB:', err);
@@ -2859,6 +2918,17 @@ export async function fetchSupabaseStokFisikDirect(forceRefresh = false): Promis
     }
   } catch (err) {
     console.error('Error fetching direct fizik stok from Supabase:', err);
+  }
+
+  // Offline fallback to IndexedDB if network failed
+  if (!memoryStokFisikCache || memoryStokFisikCache.length === 0) {
+    try {
+      const localDbStock = await getAllInventoryStocksFromLocalDb();
+      if (localDbStock && localDbStock.length > 0) {
+        memoryStokFisikCache = localDbStock;
+        return localDbStock;
+      }
+    } catch {}
   }
 
   return memoryStokFisikCache || [];
@@ -4251,25 +4321,43 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
 
   const fetchStockTable = async () => {
     try {
-      let allStok = memoryStokFisikCache;
-      if (!allStok || allStok.length === 0) {
-        try {
-          allStok = await getAllInventoryStocksFromLocalDb();
-        } catch {}
-      }
-      // If local cache is empty, fetch positive physical stock directly from Supabase
-      if (!allStok || allStok.length === 0) {
+      let allStok: StockRealtimeItem[] | null = null;
+      const isMemFresh = Boolean(
+        !forceRefresh &&
+        memoryStokFisikCache &&
+        memoryStokFisikCache.length > 0 &&
+        Date.now() - memoryStokFisikLastFetch < 60 * 1000
+      );
+      if (isMemFresh) {
+        allStok = memoryStokFisikCache;
+      } else {
         try {
           allStok = await fetchSupabaseStokFisikDirect(forceRefresh);
         } catch {}
       }
       if (!allStok || allStok.length === 0) return;
 
+      // Reset any stale cached locations on existing productsMap items before populating from authoritative stok_real_fisik
+      for (const existingItem of productsMap.values()) {
+        existingItem.lokasi = '';
+        existingItem.locList = [];
+        existingItem.stokMap = 0;
+        existingItem.stokStudio = 0;
+        existingItem.stokShp = 0;
+        existingItem.stokTtk = 0;
+        existingItem.f = {};
+      }
+
       for (const r of allStok) {
-        if (!r.sisa_stok || r.sisa_stok === 0) continue;
+        const qty = Number(r.sisa_stok || 0);
+        if (qty <= 0) continue;
 
         const sku = String(r.sku || '').trim().toUpperCase();
         if (!sku) continue;
+
+        const locClean = r.lokasi ? String(r.lokasi).trim() : '';
+        const resolvedArea = getAreaFromLokasi(locClean, r.area);
+        const isPickableLoc = locClean ? isWarehouseLocation(locClean, resolvedArea) : false;
 
         let item = productsMap.get(sku);
         // If product is NOT in master_produk but has real physical stock in warehouse with a valid name,
@@ -4287,10 +4375,10 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
               size: r.size || 'Default',
               category: (r as any).category || (r as any).kategori || 'Physical Stock',
               kategori: (r as any).category || (r as any).kategori || 'Physical Stock',
-              lokasi: r.lokasi ? String(r.lokasi).trim() : '',
+              lokasi: isPickableLoc ? locClean : '',
               price: 0,
-              stokMap: Number(r.sisa_stok || 0),
-              locList: r.lokasi ? [{ lokasi: String(r.lokasi).trim(), qty: Number(r.sisa_stok || 0) }] : [],
+              stokMap: 0,
+              locList: isPickableLoc ? [{ lokasi: locClean, qty }] : [],
             };
             productsMap.set(sku, item);
           } else {
@@ -4298,35 +4386,24 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
           }
         }
 
-        if (item && r.lokasi) {
-          const locClean = String(r.lokasi).trim();
-          const qty = Number(r.sisa_stok || 0);
-
-          // Populate locList array
-          if (!item.locList) item.locList = [];
-          const locList = item.locList as Array<{ lokasi: string; qty?: number } | string>;
-          const existingLoc = locList.find((l: any) =>
-            (typeof l === 'string' ? l.toUpperCase() : l.lokasi.toUpperCase()) === locClean.toUpperCase()
-          );
-          if (!existingLoc) {
-            locList.push({ lokasi: locClean, qty });
-          } else if (typeof existingLoc === 'object') {
-            existingLoc.qty = (existingLoc.qty || 0) + qty;
-          }
-
-          // Append to comma-separated lokasi string
-          if (!item.lokasi || item.lokasi === '-') {
-            item.lokasi = locClean;
-          } else {
-            const locArray = item.lokasi.split(/[,/;\n|]+/).map((x) => x.trim().toUpperCase());
-            if (!locArray.includes(locClean.toUpperCase())) {
-              item.lokasi = `${item.lokasi}, ${locClean}`;
+        if (item && locClean) {
+          // Only populate pickable locations (Priority 1 Warehouse/Aksesoris/Transit, Priority 2 Kolian R/V/Z, Priority 3 Blok F) into locList & lokasi
+          if (isPickableLoc) {
+            if (!item.locList) item.locList = [];
+            const locList = item.locList as Array<{ lokasi: string; qty?: number } | string>;
+            const existingLoc = locList.find((l: any) =>
+              (typeof l === 'string' ? l.toUpperCase() : l.lokasi.toUpperCase()) === locClean.toUpperCase()
+            );
+            if (!existingLoc) {
+              locList.push({ lokasi: locClean, qty });
+            } else if (typeof existingLoc === 'object') {
+              existingLoc.qty = (existingLoc.qty || 0) + qty;
             }
           }
 
           // Detect studio / shopee / tiktok physical stock
           const locUpper = locClean.toUpperCase();
-          const areaUpper = String(r.area || '').toUpperCase();
+          const areaUpper = resolvedArea.toUpperCase();
           if (locUpper.includes('STUDIO') || areaUpper.includes('STUDIO')) {
             item.stokStudio = (item.stokStudio || 0) + qty;
           }
@@ -4353,6 +4430,29 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
           if (fKey === 'Gudang Utama') {
             item.stokMap = (item.stokMap || 0) + qty;
           }
+        }
+      }
+
+      // Sort each item's locList strictly by Picking Priority (P1: A-D/Aksesoris/Transit -> P2: Kolian R/V/Z -> P3: Blok F), then qty desc
+      for (const item of productsMap.values()) {
+        if (Array.isArray(item.locList) && item.locList.length > 0) {
+          const normalizedLocs = item.locList
+            .map((l: any) => (typeof l === 'string' ? { lokasi: l, qty: 0 } : { lokasi: String(l.lokasi || '').trim(), qty: Number(l.qty) || 0 }))
+            .filter((l) => l.lokasi && l.qty > 0 && isWarehouseLocation(l.lokasi));
+
+          normalizedLocs.sort((a, b) => {
+            const pA = getPickingPriority(a.lokasi);
+            const pB = getPickingPriority(b.lokasi);
+            if (pA !== pB) return pA - pB;
+            if ((b.qty || 0) !== (a.qty || 0)) return (b.qty || 0) - (a.qty || 0);
+            return a.lokasi.localeCompare(b.lokasi, undefined, { numeric: true, sensitivity: 'base' });
+          });
+
+          item.locList = normalizedLocs;
+          item.lokasi = normalizedLocs.map((l) => l.lokasi).join(', ');
+        } else {
+          item.locList = [];
+          item.lokasi = '';
         }
       }
     } catch (err) {

@@ -351,7 +351,12 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         }
       });
 
-      const sorted = Array.from(map.values()).sort((a, b) => (b.qty || 0) - (a.qty || 0));
+      const sorted = Array.from(map.values()).sort((a, b) => {
+        const pA = getPickingPriority(a.lokasi, a.area);
+        const pB = getPickingPriority(b.lokasi, b.area);
+        if (pA !== pB) return pA - pB;
+        return (b.qty || 0) - (a.qty || 0);
+      });
       if (sorted.length > 0) {
         sorted[0].isPrimary = true;
       }

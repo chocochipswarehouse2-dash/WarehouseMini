@@ -478,7 +478,12 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
                 const stockList = map[skuUpper] || [];
                 const validStockLocs = stockList
                   .filter(stk => stk.lokasi && stk.lokasi !== '-' && stk.lokasi !== '--' && isWarehouseLocation(stk.lokasi, stk.area) && (Number(stk.sisa_stok) || 0) > 0)
-                  .sort((a, b) => (Number(b.sisa_stok) || 0) - (Number(a.sisa_stok) || 0));
+                  .sort((a, b) => {
+                    const pA = getPickingPriority(a.lokasi, a.area);
+                    const pB = getPickingPriority(b.lokasi, b.area);
+                    if (pA !== pB) return pA - pB;
+                    return (Number(b.sisa_stok) || 0) - (Number(a.sisa_stok) || 0);
+                  });
                 
                 if (validStockLocs.length > 0) {
                   it.lokasi = validStockLocs.map(l => `${l.lokasi} (${l.sisa_stok} pcs)`).join(', ');
@@ -744,14 +749,14 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
         const formattedItems = group.items.map((it) => {
           const cleanSku = it.sku.toUpperCase().trim();
           const locs = getProductLocations(cleanSku, it.lokasi);
-          const primaryLoc = locs.length > 0 
-            ? locs[0].lokasi 
+          const allValidLocs = locs.length > 0 
+            ? locs.map((l) => l.lokasi).join(', ')
             : (it.lokasi && it.lokasi !== 'KOSONG' && it.lokasi !== '-' ? it.lokasi : 'A-01');
           return {
             sku: it.sku,
             nama_produk: it.nama,
             size: it.size || '-',
-            lokasi: primaryLoc,
+            lokasi: allValidLocs,
             qty_req: it.qty,
           };
         });
@@ -824,7 +829,12 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
                   isWarehouseLocation(stk.lokasi, stk.area) &&
                   (Number(stk.sisa_stok) || 0) > 0
               )
-              .sort((a, b) => (Number(b.sisa_stok) || 0) - (Number(a.sisa_stok) || 0));
+              .sort((a, b) => {
+                const pA = getPickingPriority(a.lokasi, a.area);
+                const pB = getPickingPriority(b.lokasi, b.area);
+                if (pA !== pB) return pA - pB;
+                return (Number(b.sisa_stok) || 0) - (Number(a.sisa_stok) || 0);
+              });
 
             setManualRows((currentRows) => {
               if (currentRows[index]?.sku?.trim().toUpperCase() === cleanSku) {
