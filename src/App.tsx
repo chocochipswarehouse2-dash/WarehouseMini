@@ -142,6 +142,9 @@ import {
   invalidateQcReportsCache,
   invalidateStokFisikCache,
   syncPendingStockOpnameFromLogProduk,
+  syncSmartLowEgressCache,
+  getPickingPriority,
+  isWarehouseLocation,
 } from './services/supabase';
 import { WmsUser } from './types';
 import {
@@ -863,24 +866,107 @@ export default function App() {
       };
 
       if (!hasLocalData || forceRefresh) {
-        // Blocking fetch if no local data or manual refresh requested
+        // Blocking fetch ONLY if local IndexedDB is empty or user explicitly clicked manual Force Refresh
         await fetchFromSupabase(forceRefresh);
+        try {
+          localStorage.setItem('wms_loc_sync_v6_done', 'true');
+        } catch {}
       } else {
-        // Non-blocking background sync (SWR): check if last sync was > 30 mins ago or missing physical stock sync
-        const lastSync = Number(localStorage.getItem('wms_master_products_last_sync') || '0');
-        const hasV3Catalog = localStorage.getItem('wms_catalog_v3_dealpos_channels') === 'true';
-        const THIRTY_MINS = 30 * 60 * 1000;
-        if (!hasV3Catalog || Date.now() - lastSync > THIRTY_MINS) {
-          fetchFromSupabase(true).then(() => {
-            try { localStorage.setItem('wms_catalog_v3_dealpos_channels', 'true'); } catch {}
-          }).catch((err) => {
-            console.warn('Background sync error:', err);
-          });
-        }
+        // Ultra-Low Egress Background Sync:
+        // Never re-download 28,000 rows of `master_produk` unless `masterImportEpoch` changed!
+        // Instead, check 250-byte watermark and delta-sync only mutated SKUs or active stock locations.
+        syncSmartLowEgressCache().catch((err) => {
+          console.warn('Smart low-egress delta sync warning:', err);
+        });
       }
     },
     [showToast]
   );
+
+  // Listen for targeted SKU location patches & full location refreshes so `productDatabase` in memory stays 100% up-to-date
+  useEffect(() => {
+    const handleSkuPatched = (ev: Event) => {
+      const detail = (ev as CustomEvent)?.detail;
+      if (!detail || !Array.isArray(detail.skus)) return;
+      const skuSet = new Set<string>(detail.skus.map((s: string) => String(s || '').trim().toUpperCase()));
+      const stocks: any[] = Array.isArray(detail.stocks) ? detail.stocks : [];
+
+      const stockBySku = new Map<string, any[]>();
+      skuSet.forEach((s) => stockBySku.set(s, []));
+      stocks.forEach((r) => {
+        const clean = String(r.sku || '').trim().toUpperCase();
+        if (stockBySku.has(clean)) stockBySku.get(clean)!.push(r);
+      });
+
+      setProductDatabase((prev) => {
+        if (!prev || prev.length === 0) return prev;
+        let mutated = false;
+        const next = prev.map((prod) => {
+          const clean = String(prod.k || (prod as any).sku || '').trim().toUpperCase();
+          if (!skuSet.has(clean)) return prod;
+          mutated = true;
+          const rows = stockBySku.get(clean) || [];
+          const locMap = new Map<string, { lokasi: string; qty: number; area: string }>();
+          rows.forEach((r) => {
+            const loc = String(r.lokasi || '').trim().toUpperCase();
+            const qty = Number(r.sisa_stok) || 0;
+            const area = getAreaFromLokasi(loc, r.area);
+            if (loc && loc !== '-' && loc !== 'KOSONG' && qty > 0 && isWarehouseLocation(loc, area)) {
+              const prevLoc = locMap.get(loc);
+              if (prevLoc) prevLoc.qty += qty;
+              else locMap.set(loc, { lokasi: loc, qty, area });
+            }
+          });
+          const sortedLocs = Array.from(locMap.values()).sort((a, b) => {
+            const pA = getPickingPriority(a.lokasi, a.area);
+            const pB = getPickingPriority(b.lokasi, b.area);
+            if (pA !== pB) return pA - pB;
+            if (b.qty !== a.qty) return b.qty - a.qty;
+            return a.lokasi.localeCompare(b.lokasi, undefined, { numeric: true, sensitivity: 'base' });
+          });
+          return {
+            ...prod,
+            locList: sortedLocs.map((l) => ({ lokasi: l.lokasi, qty: l.qty })),
+            lokasi: sortedLocs.map((l) => l.lokasi).join(', '),
+          };
+        });
+        return mutated ? next : prev;
+      });
+    };
+
+    const handleFullLocationsRefreshed = (ev: Event) => {
+      const updatedProducts = (ev as CustomEvent)?.detail;
+      if (Array.isArray(updatedProducts) && updatedProducts.length > 0) {
+        setProductDatabase(updatedProducts.filter((it: ProductItem) => !isDummyProduct(it)));
+      }
+    };
+
+    window.addEventListener('wms_sku_locations_patched', handleSkuPatched);
+    window.addEventListener('wms_full_locations_refreshed', handleFullLocationsRefreshed);
+
+    // Periodic & Tab-Focus Low-Egress Watermark Check (every 3 minutes + on tab focus)
+    let lastFocusCheck = 0;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastFocusCheck > 60 * 1000) {
+        lastFocusCheck = Date.now();
+        syncSmartLowEgressCache().catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    const deltaInterval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        syncSmartLowEgressCache().catch(() => {});
+      }
+    }, 3 * 60 * 1000);
+
+    return () => {
+      window.removeEventListener('wms_sku_locations_patched', handleSkuPatched);
+      window.removeEventListener('wms_full_locations_refreshed', handleFullLocationsRefreshed);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearInterval(deltaInterval);
+    };
+  }, []);
 
   const handleAddDiscoveredProducts = useCallback((newItems: ProductItem[]) => {
     setProductDatabase((prev) => {

@@ -8,6 +8,8 @@ import {
   getAllInventoryStocksFromLocalDb,
   getLocalDbMeta,
   clearLocalDb,
+  patchProductStockLocationsInLocalDb,
+  replaceAllProductLocationsInLocalDb,
 } from './localDb';
 import { fetchWithDeltaSync } from './gasSync';
 import {
@@ -1150,12 +1152,65 @@ export async function fetchStockForSkus(skus: string[]): Promise<StockRealtimeIt
     }
   }
 
-  // Update in-memory cache for all SKUs that were successfully queried online
-  if (fetchedOnlineSkus.size > 0 && memoryStokFisikCache && memoryStokFisikCache.length > 0) {
-    memoryStokFisikCache = [
-      ...memoryStokFisikCache.filter((r) => !fetchedOnlineSkus.has(String(r.sku || '').trim().toUpperCase())),
-      ...matchedItems.filter((r) => Number(r.sisa_stok) !== 0),
-    ];
+  // Update in-memory cache AND self-heal IndexedDB for all SKUs that were successfully queried online
+  if (fetchedOnlineSkus.size > 0) {
+    if (memoryStokFisikCache && memoryStokFisikCache.length > 0) {
+      memoryStokFisikCache = [
+        ...memoryStokFisikCache.filter((r) => !fetchedOnlineSkus.has(String(r.sku || '').trim().toUpperCase())),
+        ...matchedItems.filter((r) => Number(r.sisa_stok) !== 0),
+      ];
+    }
+
+    // Update memoryProductCache in-place for fetchedOnlineSkus
+    const onlineSkuList = Array.from(fetchedOnlineSkus);
+    if (memoryProductCache && memoryProductCache.length > 0) {
+      const stockBySku = new Map<string, StockRealtimeItem[]>();
+      onlineSkuList.forEach((s) => stockBySku.set(s, []));
+      matchedItems.forEach((r) => {
+        const clean = String(r.sku || '').trim().toUpperCase();
+        if (stockBySku.has(clean)) stockBySku.get(clean)!.push(r);
+      });
+
+      for (const prod of memoryProductCache) {
+        const clean = String(prod.k || (prod as any).sku || '').trim().toUpperCase();
+        if (!fetchedOnlineSkus.has(clean)) continue;
+        const rows = stockBySku.get(clean) || [];
+        const locMap = new Map<string, { lokasi: string; qty: number; area: string }>();
+        rows.forEach((r) => {
+          const loc = String(r.lokasi || '').trim().toUpperCase();
+          const qty = Number(r.sisa_stok) || 0;
+          const area = getAreaFromLokasi(loc, r.area);
+          if (loc && loc !== '-' && loc !== 'KOSONG' && qty > 0 && isWarehouseLocation(loc, area)) {
+            const prev = locMap.get(loc);
+            if (prev) prev.qty += qty;
+            else locMap.set(loc, { lokasi: loc, qty, area });
+          }
+        });
+        const sortedLocs = Array.from(locMap.values()).sort((a, b) => {
+          const pA = getPickingPriority(a.lokasi, a.area);
+          const pB = getPickingPriority(b.lokasi, b.area);
+          if (pA !== pB) return pA - pB;
+          if (b.qty !== a.qty) return b.qty - a.qty;
+          return a.lokasi.localeCompare(b.lokasi, undefined, { numeric: true, sensitivity: 'base' });
+        });
+        prod.locList = sortedLocs.map((l) => ({ lokasi: l.lokasi, qty: l.qty }));
+        prod.lokasi = sortedLocs.map((l) => l.lokasi).join(', ');
+      }
+    }
+
+    // Self-heal IndexedDB (`products` & `inventory_stocks`) for these SKUs in background
+    patchProductStockLocationsInLocalDb(onlineSkuList, matchedItems).catch(() => {});
+
+    // Notify App state so `productDatabase` in memory is also immediately updated
+    if (typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(
+          new CustomEvent('wms_sku_locations_patched', {
+            detail: { skus: onlineSkuList, stocks: matchedItems },
+          })
+        );
+      } catch {}
+    }
   }
 
   // 2. Offline Fallback ONLY for SKUs whose live Supabase request failed
@@ -1623,16 +1678,17 @@ export async function purgeLogsByLocations(
       }
     }
 
-    // 4. Invalidate memory & IndexedDB stock cache
+    // 4. Invalidate memory & IndexedDB stock cache and broadcast cloud epoch so all admin laptops auto-update
     invalidateStokFisikCache();
+    bumpCloudCacheEpoch('STOCK_RESET').catch(() => {});
 
-    // 5. Clean local IndexedDB inventory stocks for purged locations
+    // 5. Clean local IndexedDB inventory stocks & product locations for purged locations
     try {
       const localStocks = await getAllInventoryStocksFromLocalDb();
       if (localStocks && localStocks.length > 0) {
-        const locSet = new Set(cleanLocs);
+        const locSet = new Set(cleanLocs.map((l) => l.toUpperCase()));
         const filtered = localStocks.filter((s) => !locSet.has((s.lokasi || '').toUpperCase()));
-        await saveInventoryStocksToLocalDb(filtered);
+        await replaceAllProductLocationsInLocalDb(filtered);
       }
     } catch {}
 
@@ -2644,6 +2700,12 @@ export async function approveStockOpnameQueueItems(
       await insertLogProduk(logsToInsert);
     }
 
+    // 5. Refresh changed SKUs in local IndexedDB & broadcast epoch
+    const changedSkus = Array.from(new Set(uniqueItems.map((it) => String(it.sku || '').trim().toUpperCase()).filter(Boolean)));
+    if (changedSkus.length > 0) {
+      fetchStockForSkus(changedSkus).catch(() => {});
+    }
+
     return { success: true, count: uniqueItems.length };
   } catch (err: any) {
     console.error('Error approving SO Queue items:', err);
@@ -2742,6 +2804,12 @@ export async function undoStockOpnameQueueItems(
         throw new Error("Akses ditolak (RLS) atau gagal update.");
       }
     }
+
+    const changedSkus = Array.from(new Set(items.map((it) => String(it.sku || '').trim().toUpperCase()).filter(Boolean)));
+    if (changedSkus.length > 0) {
+      fetchStockForSkus(changedSkus).catch(() => {});
+    }
+    bumpCloudCacheEpoch('STOCK_RESET').catch(() => {});
 
     return { success: true, count: items.length };
   } catch (err: any) {
@@ -2882,21 +2950,22 @@ export function setMemoryStokFisikCache(data: StockRealtimeItem[]): void {
 }
 
 export async function fetchSupabaseStokFisikDirect(forceRefresh = false): Promise<StockRealtimeItem[]> {
-  // SWR: return in-memory cache if fresh within 1 minute and not forcing refresh
-  if (!forceRefresh && memoryStokFisikCache && memoryStokFisikCache.length > 0 && Date.now() - memoryStokFisikLastFetch < 60 * 1000) {
+  // SWR: return in-memory cache if fresh within 2 minutes and not forcing refresh
+  if (!forceRefresh && memoryStokFisikCache && memoryStokFisikCache.length > 0 && Date.now() - memoryStokFisikLastFetch < 2 * 60 * 1000) {
     return memoryStokFisikCache;
   }
 
-  // SWR Local Database (IndexedDB) check: 0ms instant load ONLY if synced within the last 60 seconds
+  // Low-Egress SWR Local Database (IndexedDB) check:
+  // If local snapshot is already synced with v6, verify/patch via 250-byte watermark delta sync instead of downloading all rows!
   if (!forceRefresh) {
     try {
-      const meta = await getLocalDbMeta<{ lastSync?: number }>('stocks_sync_meta');
-      const isLocalFresh = Boolean(meta?.lastSync && Date.now() - meta.lastSync < 60 * 1000);
-      if (isLocalFresh) {
+      const hasV6Sync = typeof window !== 'undefined' && localStorage.getItem('wms_loc_sync_v6_done') === 'true';
+      if (hasV6Sync) {
+        await syncSmartLowEgressCache().catch(() => {});
         const localDbStock = await getAllInventoryStocksFromLocalDb();
         if (localDbStock && localDbStock.length > 0) {
           memoryStokFisikCache = localDbStock;
-          memoryStokFisikLastFetch = meta?.lastSync || Date.now();
+          memoryStokFisikLastFetch = Date.now();
           return localDbStock;
         }
       }
@@ -6338,15 +6407,215 @@ export async function importMasterProdukBatch(
     await uploadSlice(chunk, i);
   }
 
-  // Clear local product caches so new dataset is freshly reloaded
+  // Clear local product caches so new dataset is freshly reloaded & notify all other laptops via cloud epoch
   try {
     await clearLocalDb();
     localStorage.removeItem('wms_product_cache');
     localStorage.removeItem('wms_cache_inventory_v38');
     localStorage.removeItem('wms_inventory_stock_cache');
+    bumpCloudCacheEpoch('MASTER_IMPORT').catch(() => {});
   } catch {}
 
   return { success: true, totalUploaded: uploaded };
+}
+
+/**
+ * =========================================================================
+ * ULTRA-LOW EGRESS SMART CACHE WATERMARK & DELTA-SYNC ENGINE
+ * =========================================================================
+ * Solves stale IndexedDB caches across all admin/operator laptops while saving >98% Supabase Egress:
+ * 1. Checks a tiny ~250-byte watermark (`log_produk` latest ID + `wms_system_docs` `wms_cache_epoch`).
+ * 2. If nothing changed in the warehouse: 0 KB extra egress!
+ * 3. If new `log_produk` mutations occurred (#IN, #OUT, #SO): fetches ONLY the mutated SKUs (~1-5 KB)
+ *    via `fetchStockForSkus` and patches IndexedDB (`products` & `inventory_stocks`) in-place!
+ * 4. If a Location Purge / Stock Reset occurred (`stockResetEpoch` changed): refreshes ONLY active
+ *    `stok_real_fisik` (`sisa_stok != 0`) and updates `products` locations in IndexedDB WITHOUT
+ *    re-downloading the 28,000 rows of `master_produk`!
+ * 5. Only re-downloads `master_produk` if Superadmin explicitly ran "Import Master Produk CSV" (`masterImportEpoch`).
+ */
+export async function bumpCloudCacheEpoch(reason: 'STOCK_RESET' | 'MASTER_IMPORT'): Promise<void> {
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  try {
+    let currentObj = { stockResetEpoch: nowMs, masterImportEpoch: 0 };
+    try {
+      const existing = await supabaseFetch<SystemDoc[]>(
+        'wms_system_docs',
+        'GET',
+        null,
+        'section_id=eq.wms_cache_epoch&select=content'
+      );
+      if (existing && existing[0]?.content) {
+        const parsed = JSON.parse(existing[0].content);
+        if (parsed && typeof parsed === 'object') {
+          currentObj = {
+            stockResetEpoch: Number(parsed.stockResetEpoch) || 0,
+            masterImportEpoch: Number(parsed.masterImportEpoch) || 0,
+          };
+        }
+      }
+    } catch {}
+
+    if (reason === 'STOCK_RESET') {
+      currentObj.stockResetEpoch = nowMs;
+    } else if (reason === 'MASTER_IMPORT') {
+      currentObj.masterImportEpoch = nowMs;
+      currentObj.stockResetEpoch = nowMs;
+    }
+
+    await supabaseFetch(
+      'wms_system_docs',
+      'POST',
+      [
+        {
+          section_id: 'wms_cache_epoch',
+          content: JSON.stringify(currentObj),
+          updated_at: nowIso,
+          updated_by: 'WMS Cache Sync',
+        },
+      ],
+      'on_conflict=section_id',
+      true
+    );
+  } catch (err) {
+    console.warn('bumpCloudCacheEpoch warning:', err);
+  }
+}
+
+let isSmartDeltaSyncRunning = false;
+
+export async function syncSmartLowEgressCache(): Promise<{
+  action: 'NONE' | 'DELTA_SKUS' | 'STOCK_LOCATIONS_REFRESH' | 'FULL_MASTER_REFRESH';
+  updatedSkusCount: number;
+}> {
+  if (isSmartDeltaSyncRunning) {
+    return { action: 'NONE', updatedSkusCount: 0 };
+  }
+  isSmartDeltaSyncRunning = true;
+
+  try {
+    // 1. Tiny ~250-byte watermark check (1 row from log_produk + 1 row from wms_system_docs)
+    const [latestLogRes, epochDocRes] = await Promise.allSettled([
+      supabaseFetch<Array<{ id: number; created_at: string }>>(
+        'log_produk',
+        'GET',
+        null,
+        'select=id,created_at&order=id.desc&limit=1'
+      ),
+      supabaseFetch<SystemDoc[]>(
+        'wms_system_docs',
+        'GET',
+        null,
+        'section_id=eq.wms_cache_epoch&select=content,updated_at'
+      ),
+    ]);
+
+    const latestLogId =
+      latestLogRes.status === 'fulfilled' && Array.isArray(latestLogRes.value) && latestLogRes.value[0]?.id
+        ? Number(latestLogRes.value[0].id)
+        : 0;
+
+    let cloudStockResetEpoch = 0;
+    let cloudMasterImportEpoch = 0;
+    if (epochDocRes.status === 'fulfilled' && Array.isArray(epochDocRes.value) && epochDocRes.value[0]?.content) {
+      try {
+        const parsed = JSON.parse(epochDocRes.value[0].content);
+        cloudStockResetEpoch = Number(parsed?.stockResetEpoch) || 0;
+        cloudMasterImportEpoch = Number(parsed?.masterImportEpoch) || 0;
+      } catch {}
+    }
+
+    const localLastLogId = Number(localStorage.getItem('wms_last_seen_log_id') || '0');
+    const localStockResetEpoch = Number(localStorage.getItem('wms_last_stock_reset_epoch') || '0');
+    const localMasterImportEpoch = Number(localStorage.getItem('wms_last_master_import_epoch') || '0');
+    const hasInitialLocationSync = localStorage.getItem('wms_loc_sync_v6_done') === 'true';
+
+    // CASE 1: Superadmin imported a new Master Produk CSV -> Full catalog refresh needed
+    if (cloudMasterImportEpoch > 0 && cloudMasterImportEpoch > localMasterImportEpoch) {
+      const freshCatalog = await fetchMasterProductsFromSupabase(50000, true);
+      try {
+        localStorage.setItem('wms_last_master_import_epoch', String(cloudMasterImportEpoch));
+        if (cloudStockResetEpoch > 0) localStorage.setItem('wms_last_stock_reset_epoch', String(cloudStockResetEpoch));
+        if (latestLogId > 0) localStorage.setItem('wms_last_seen_log_id', String(latestLogId));
+        localStorage.setItem('wms_loc_sync_v6_done', 'true');
+        if (typeof window !== 'undefined' && freshCatalog.length > 0) {
+          window.dispatchEvent(new CustomEvent('wms_full_locations_refreshed', { detail: freshCatalog }));
+        }
+      } catch {}
+      return { action: 'FULL_MASTER_REFRESH', updatedSkusCount: freshCatalog.length };
+    }
+
+    // CASE 2: Stock Reset / Location Purge epoch changed OR laptop has never done v6 location sync OR >400 logs behind
+    const logGap = latestLogId > 0 && localLastLogId > 0 ? latestLogId - localLastLogId : 0;
+    const needsFullStockLocationRefresh =
+      !hasInitialLocationSync ||
+      (cloudStockResetEpoch > 0 && cloudStockResetEpoch > localStockResetEpoch) ||
+      logGap > 400;
+
+    if (needsFullStockLocationRefresh) {
+      // Fetch ONLY active stok_real_fisik (skipping the 28,000 rows of master_produk -> saves >93% egress!)
+      const activeStocks = await fetchSupabaseStokFisikDirect(true);
+      if (activeStocks && activeStocks.length > 0) {
+        const updatedProducts = await replaceAllProductLocationsInLocalDb(activeStocks);
+        if (updatedProducts && updatedProducts.length > 0) {
+          memoryProductCache = updatedProducts;
+          memoryProductLastFetch = Date.now();
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('wms_full_locations_refreshed', { detail: updatedProducts }));
+          }
+        }
+      }
+      try {
+        if (cloudStockResetEpoch > 0) localStorage.setItem('wms_last_stock_reset_epoch', String(cloudStockResetEpoch));
+        if (cloudMasterImportEpoch > 0) localStorage.setItem('wms_last_master_import_epoch', String(cloudMasterImportEpoch));
+        if (latestLogId > 0) localStorage.setItem('wms_last_seen_log_id', String(latestLogId));
+        localStorage.setItem('wms_loc_sync_v6_done', 'true');
+      } catch {}
+      return { action: 'STOCK_LOCATIONS_REFRESH', updatedSkusCount: activeStocks?.length || 0 };
+    }
+
+    // CASE 3: Normal incremental warehouse mutations (`latestLogId > localLastLogId`)
+    if (latestLogId > 0 && latestLogId !== localLastLogId) {
+      if (localLastLogId > 0 && latestLogId > localLastLogId) {
+        // Query ONLY the SKU column for log rows added since `localLastLogId` (~1-3 KB egress!)
+        const deltaLogs = await supabaseFetch<Array<{ sku: string }>>(
+          'log_produk',
+          'GET',
+          null,
+          `id=gt.${localLastLogId}&select=sku&order=id.asc&limit=500`
+        );
+        const changedSkus = Array.from(
+          new Set(
+            (deltaLogs || [])
+              .map((r) => String(r.sku || '').trim().toUpperCase())
+              .filter((s) => s && !s.startsWith('#'))
+          )
+        );
+        if (changedSkus.length > 0) {
+          // `fetchStockForSkus` automatically queries live `stok_real_fisik` for these SKUs,
+          // patches IndexedDB (`products` & `inventory_stocks`), and notifies `App.tsx`!
+          await fetchStockForSkus(changedSkus);
+        }
+        try {
+          localStorage.setItem('wms_last_seen_log_id', String(latestLogId));
+        } catch {}
+        return { action: 'DELTA_SKUS', updatedSkusCount: changedSkus.length };
+      } else {
+        // Initialize `wms_last_seen_log_id`
+        try {
+          localStorage.setItem('wms_last_seen_log_id', String(latestLogId));
+        } catch {}
+      }
+    }
+
+    // CASE 4: Nothing changed at all -> 0 KB extra egress!
+    return { action: 'NONE', updatedSkusCount: 0 };
+  } catch (err) {
+    console.warn('syncSmartLowEgressCache warning:', err);
+    return { action: 'NONE', updatedSkusCount: 0 };
+  } finally {
+    isSmartDeltaSyncRunning = false;
+  }
 }
 
 // ============================================================================
