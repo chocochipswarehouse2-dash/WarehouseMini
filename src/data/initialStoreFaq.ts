@@ -465,31 +465,31 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
     id: 'faq-two-step-print-diproses',
     category: 'manual_shipment',
     is_pinned: true,
-    question: 'Kapan pesanan Manual Shipment / Alter berpindah dari tab "Pesanan Baru" ke "Sedang Diproses", dan bagaimana cara filter "Belum Cetak Label" untuk cetak massal?',
-    answer: 'Pesanan hanya berpindah dari tab "Pesanan Baru" ke "Sedang Diproses" setelah Admin Gudang menyelesaikan 2 tahapan klik cetak: (1) Cetak Picking List (lembar ceklis) DAN (2) Cetak Label Paket. Jika baru 1 tahap yang dicetak, pesanan tetap berada di tab Pesanan Baru. Setiap kartu pesanan dilengkapi badge indikator status cetak ("Belum Cetak Label" / "Label Dicetak" & "Belum Cetak Picking" / "Picking Dicetak") serta tombol filter cepat untuk memudahkan cetak label massal.',
+    question: 'Kapan pesanan Manual Shipment / Alter berpindah dari tab "Pesanan Baru" ke "Sedang Diproses", dan bagaimana cara kirim Picking via WA Grup (Fonnte) atau cetak massal?',
+    answer: 'Pesanan berpindah dari tab "Pesanan Baru" ke "Sedang Diproses" setelah Admin Gudang menyelesaikan 2 tahapan: (1) Picking List (via Cetak Lembar Ceklis A4 ATAU Kirim Picking ke WA Grup via Fonnte) DAN (2) Cetak Label Paket (A6). Jika baru 1 tahap yang dilakukan, pesanan tetap berada di tab Pesanan Baru.',
     target_audience: 'all',
 
     // PERSPEKTIF ADMIN GUDANG
-    answer_admin: 'Sebagai Admin Gudang, memindahkan pesanan dari tab "Pesanan Baru" ke "Sedang Diproses" wajib melalui 2 klik tahapan cetak: (1) Cetak Picking List (lembar ceklis) dan (2) Cetak Label Paket (A6). Jika Anda baru mencetak salah satu saja, pesanan tidak akan pindah ke tab Sedang Diproses agar tidak ada paket yang terlewat dicetak label atau lembar ceklisnya. Gunakan bar "Filter Cepat Cetak" di atas tabel untuk memfilter pesanan "Belum Cetak Label" dan mengeksekusi "⚡ Cetak Label Massal" dalam 1 klik.',
+    answer_admin: 'Sebagai Admin Gudang, memindahkan pesanan dari tab "Pesanan Baru" ke "Sedang Diproses" wajib melalui 2 tahapan: (1) Tahap Picking — dapat dilakukan dengan klik "Cetak Picking List" (A4) ATAU klik "📲 Picking WA Grup (Fonnte)" untuk mengirim daftar barang beserta lokasi rak gudang langsung ke grup WhatsApp tim picker, dan (2) Tahap Label — klik "Cetak Label Paket (A6)". Gunakan bar "Filter Cepat Cetak" di atas tabel untuk memfilter pesanan dan mengeksekusi "📲 Picking WA Grup" atau "⚡ Cetak Label Massal" dalam 1 klik.',
     action_steps_admin: [
-      { step: 1, title: 'Cek Indikator Status Cetak pada Pesanan', desc: 'Setiap pesanan menampilkan badge indikator ringkas dalam 1 baris ("Belum Label" / "Label OK" serta "Belum Picking" / "Picking OK"). Anda juga bisa mengklik langsung badge tersebut untuk mencetak satuan.' },
-      { step: 2, title: 'Tahap 1: Cetak Picking List (Lembar Ceklis)', desc: 'Pilih pesanan (atau klik tombol Filter Cepat "Belum Cetak Picking" ➔ "⚡ Cetak Picking Massal") untuk mencetak lembar ceklis pengambilan barang.' },
+      { step: 1, title: 'Cek Indikator Status Cetak & Picking', desc: 'Setiap pesanan menampilkan tombol status "Cetak Label (A6)", "Picking List (A4)", serta "Picking WA (Grup)".' },
+      { step: 2, title: 'Tahap 1: Cetak Picking List atau Kirim ke WA Grup (Fonnte)', desc: 'Pilih pesanan (atau gunakan tombol cepat "📲 Picking WA Grup" di bar Filter Cepat Cetak / toolbar multi-select) untuk mengirim rincian SKU, Qty, Lokasi Rak Gudang, dan Instruksi Alterasi langsung ke Grup WA Gudang via Fonnte.' },
       { step: 3, title: 'Tahap 2: Filter "Belum Cetak Label" & Cetak Massal', desc: 'Klik tombol filter cepat "Belum Cetak Label" pada toolbar Rekap Pesanan, lalu klik "⚡ Cetak Label Massal" (atau centang Pilih Semua ➔ "Cetak Label A6").' },
-      { step: 4, title: 'Otomatis Pindah ke "Sedang Diproses"', desc: 'Begitu kedua tahapan (Picking List ✓ dan Label Paket ✓) selesai dicetak, status pesanan otomatis berubah menjadi "Diproses" dan berpindah ke tab "Sedang Diproses".' }
+      { step: 4, title: 'Otomatis Pindah ke "Sedang Diproses"', desc: 'Begitu kedua tahapan (Picking List / WA Grup ✓ dan Label Paket ✓) selesai, status pesanan otomatis berubah menjadi "Diproses" dan berpindah ke tab "Sedang Diproses".' }
     ],
     button_badges_admin: [
-      { label: 'Belum Label', color: 'amber', icon: 'Printer' },
+      { label: '📲 Picking WA Grup', color: 'emerald', icon: 'Send' },
       { label: '⚡ Cetak Label Massal', color: 'amber', icon: 'Printer' },
-      { label: 'Belum Picking', color: 'indigo', icon: 'FileText' },
+      { label: 'Picking List A4', color: 'indigo', icon: 'FileText' },
       { label: 'Label OK', color: 'emerald', icon: 'CheckCircle2' }
     ],
-    admin_notes: '💡 Fitur Filter Cepat "Belum Cetak Label" menghitung otomatis jumlah pesanan aktif yang belum dicetak labelnya sehingga Admin dapat mencetak label A6 secara massal tanpa perlu memilah satu per satu.',
+    admin_notes: '💡 Fitur "📲 Picking WA Grup" otomatis menarik lokasi rak gudang real-time (prioritas rak Warehouse) dan menandai Tahap 1/2 Picking selesai begitu pesan Fonnte terkirim ke grup.',
 
     // PERSPEKTIF TIM STORE / OUTLET
-    answer_store: 'Tim Store dapat memantau progres penyiapan pesanan di Gudang Pusat melalui indikator badge pada kartu/tabel pesanan. Pesanan yang baru Anda submit akan berada di tab "Pesanan Baru" sampai Admin Gudang menyelesaikan kedua tahapan cetak internal gudang (Picking List dan Label Paket). Tim Store tidak mencetak Label Paket A6 maupun Picking List Gudang (Store hanya mencetak "SJ Struk Rangkap 2" bila mengirimkan fisik barang dari toko ke gudang).',
+    answer_store: 'Tim Store dapat memantau progres penyiapan pesanan di Gudang Pusat melalui indikator badge pada kartu/tabel pesanan. Pesanan yang baru Anda submit akan berada di tab "Pesanan Baru" sampai Admin Gudang menyelesaikan kedua tahapan internal gudang (Picking List via cetak/WA Grup dan Cetak Label Paket A6). Tim Store tidak mencetak Label Paket A6 maupun mengirim Picking List Gudang (Store hanya mencetak "SJ Struk Rangkap 2" bila mengirimkan fisik barang dari toko ke gudang).',
     action_steps_store: [
-      { step: 1, title: 'Pantau Indikator di Pesanan', desc: 'Pada tab Rekap Pesanan Toko, Anda dapat melihat badge status ringkas dalam 1 baris "Belum Label" atau "Label OK" (view-only untuk Store).' },
-      { step: 2, title: 'Pindah ke "Sedang Diproses" Setelah 2 Tahap Gudang', desc: 'Setelah Admin Gudang mencetak Lembar Picking dan Label Paket A6, pesanan Anda akan otomatis berpindah ke tab "Sedang Diproses".' },
+      { step: 1, title: 'Pantau Indikator di Pesanan', desc: 'Pada tab Rekap Pesanan Toko, Anda dapat melihat progres status pesanan Anda (view-only untuk Store).' },
+      { step: 2, title: 'Pindah ke "Sedang Diproses" Setelah 2 Tahap Gudang', desc: 'Setelah Admin Gudang meneruskan Picking List (cetak/WA Grup) dan mencetak Label Paket A6, pesanan Anda akan otomatis berpindah ke tab "Sedang Diproses".' },
       { step: 3, title: 'Cetak SJ Struk (Khusus Kirim Barang Toko ke WH)', desc: 'Jika pesanan menggunakan stok fisik dari toko Anda, klik tombol "SJ Struk" / "Kirim" untuk mencetak struk tanda terima pengantaran ke gudang.' }
     ],
     button_badges_store: [
@@ -497,10 +497,10 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
       { label: 'Label OK', color: 'emerald', icon: 'CheckCircle2' },
       { label: 'SJ Struk (Khusus Store)', color: 'amber', icon: 'Printer' }
     ],
-    store_notes: 'ℹ️ Jika pesanan masih berada di tab "Pesanan Baru" meskipun sudah terlihat "Picking OK", artinya Admin Gudang sedang dalam tahap pengambilan barang dan segera mencetak Label Paketnya.',
+    store_notes: 'ℹ️ Jika pesanan masih berada di tab "Pesanan Baru" meskipun sudah terlihat "Picking OK", artinya Admin Gudang sedang dalam tahap pengambilan barang di rak dan segera mencetak Label Paketnya.',
 
-    keywords: ['belum cetak label', 'cetak label massal', 'picking list', 'lembar ceklis', 'pesanan baru', 'sedang diproses', '2 klik', 'indikator label', 'filter label'],
-    view_count: 120
+    keywords: ['belum cetak label', 'cetak label massal', 'picking list', 'picking wa grup', 'fonnte', 'lembar ceklis', 'pesanan baru', 'sedang diproses', '2 klik', 'indikator label', 'filter label'],
+    view_count: 135
   },
 
   {

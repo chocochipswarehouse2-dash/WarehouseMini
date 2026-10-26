@@ -480,7 +480,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
         return false;
       }
       // Shift filter
-      if (selectedShift !== 'all' && !r.shift.toLowerCase().includes(selectedShift.toLowerCase())) {
+      if (selectedShift !== 'all' && !(r.shift || '').toLowerCase().includes(selectedShift.toLowerCase())) {
         return false;
       }
       // Department filter
@@ -1224,15 +1224,17 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
   };
 
   // Helper badge color
-  const getShiftBadgeStyle = (shiftName: string) => {
-    const match = DEFAULT_SHIFTS[shiftName];
+  const getShiftBadgeStyle = (shiftName?: string | null) => {
+    const safeShift = String(shiftName || '').trim();
+    const match = DEFAULT_SHIFTS[safeShift];
     if (match) {
       return { bg: match.badgeBg, text: match.badgeText };
     }
-    const sLower = (shiftName || '').toLowerCase();
+    const sLower = safeShift.toLowerCase();
+    if (sLower.includes('3b')) return { bg: DEFAULT_SHIFTS['Shift 3b'].badgeBg, text: DEFAULT_SHIFTS['Shift 3b'].badgeText };
+    if (sLower.includes('3a') || sLower.includes('3')) return { bg: DEFAULT_SHIFTS['Shift 3a'].badgeBg, text: DEFAULT_SHIFTS['Shift 3a'].badgeText };
     if (sLower.includes('1')) return { bg: DEFAULT_SHIFTS['Shift 1'].badgeBg, text: DEFAULT_SHIFTS['Shift 1'].badgeText };
     if (sLower.includes('2')) return { bg: DEFAULT_SHIFTS['Shift 2'].badgeBg, text: DEFAULT_SHIFTS['Shift 2'].badgeText };
-    if (sLower.includes('3')) return { bg: DEFAULT_SHIFTS['Shift 3'].badgeBg, text: DEFAULT_SHIFTS['Shift 3'].badgeText };
     if (sLower.includes('libur') || sLower.includes('off')) return { bg: DEFAULT_SHIFTS['Libur'].badgeBg, text: DEFAULT_SHIFTS['Libur'].badgeText };
     if (sLower.includes('cuti')) return { bg: DEFAULT_SHIFTS['Cuti'].badgeBg, text: DEFAULT_SHIFTS['Cuti'].badgeText };
     if (sLower.includes('izin') || sLower.includes('ijin')) return { bg: DEFAULT_SHIFTS['Izin'].badgeBg, text: DEFAULT_SHIFTS['Izin'].badgeText };
@@ -1600,7 +1602,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2.5">
                           <div className="w-8 h-8 rounded-xl bg-primary-500/10 text-primary-600 dark:text-primary-400 font-black flex items-center justify-center text-xs shrink-0">
-                            {emp?.nama ? emp.nama.slice(0, 2).toUpperCase() : r.nik.slice(0, 2)}
+                            {emp?.nama ? emp.nama.slice(0, 2).toUpperCase() : (r.nik || '-').slice(0, 2)}
                           </div>
                           <div>
                             <div className="font-extrabold text-slate-900 dark:text-white">
@@ -1783,7 +1785,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                   <div className="flex items-start justify-between gap-2 mb-3">
                     <div className="flex items-center gap-2.5">
                       <div className="w-10 h-10 rounded-2xl bg-primary-500/10 text-primary-600 dark:text-primary-400 font-black flex items-center justify-center text-sm">
-                        {emp?.nama ? emp.nama.slice(0, 2).toUpperCase() : r.nik.slice(0, 2)}
+                        {emp?.nama ? emp.nama.slice(0, 2).toUpperCase() : (r.nik || '-').slice(0, 2)}
                       </div>
                       <div>
                         <h4 className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white leading-tight">
@@ -1943,8 +1945,8 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                     if (!searchQuery.trim()) return true;
                     const q = searchQuery.toLowerCase();
                     return (
-                      k.nik.toLowerCase().includes(q) ||
-                      k.nama.toLowerCase().includes(q) ||
+                      (k.nik || '').toLowerCase().includes(q) ||
+                      (k.nama || '').toLowerCase().includes(q) ||
                       (k.divisi && k.divisi.toLowerCase().includes(q))
                     );
                   })
