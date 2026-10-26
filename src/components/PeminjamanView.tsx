@@ -105,6 +105,8 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   const canEditData = userIsAdmin || hasPermission(session, 'action_edit_master');
   const canDeleteData = userIsAdmin || hasPermission(session, 'action_delete_master');
   const canExportData = userIsAdmin || hasPermission(session, 'action_export_data');
+  // Lokasi & jumlah stok gudang hanya dibutuhkan di sisi Admin & Picker (Picking List), tidak ditampilkan ke peminta (chocolive / chocostyling / dll)
+  const canViewWarehousePickingInfo = userIsAdmin || hasPermission(session, 'menu_ops_picking');
 
   // Navigation tabs for mobile / view switcher
   const [activeTab, setActiveTab] = useState<'form' | 'stok' | 'riwayat'>('form');
@@ -363,25 +365,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       return sorted;
     }
 
-    // 2. Check channelStocks if available (O(1) map lookup)
-    const csMatch = channelStockSkuMap.get(cleanSku);
-    if (csMatch && (csMatch.whQty || 0) > 0 && csMatch.whLocStr) {
-      const parts = csMatch.whLocStr
-        .split(/[,/;\n|]+/)
-        .map((s) => String(s || '').trim().toUpperCase())
-        .filter((loc) => loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc));
-      parts.forEach((loc) => {
-        map.set(loc, {
-          lokasi: loc,
-          qty: csMatch.whQty,
-          isPrimary: map.size === 0,
-          source: 'REALTIME_STOCK',
-        });
-      });
-      if (map.size > 0) return Array.from(map.values());
-    }
-
-    // 3. Fallback only while realtime data is still loading
+    // 2. Fallback only while realtime data is still loading
     const strItemLokasi = String(itemLokasi || '').trim();
     if (strItemLokasi && strItemLokasi !== '-' && strItemLokasi !== '--' && !strItemLokasi.toUpperCase().includes('BLOK F')) {
       const parts = strItemLokasi
@@ -453,6 +437,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   }, [items]);
 
   useEffect(() => {
+    if (!canViewWarehousePickingInfo) return;
     const skus = items.map((it) => (it.sku || '').trim().toUpperCase()).filter(Boolean);
     const uniqueSkus = Array.from(new Set(skus)).filter((s) => !(s in realtimeSkuStocks));
     if (!uniqueSkus.length) return;
@@ -469,7 +454,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         setRealtimeSkuStocks((prev) => ({ ...prev, ...map }));
       })
       .catch((err) => console.warn('Gagal memuat stok lokasi realtime peminjaman:', err));
-  }, [formSkusKey]);
+  }, [formSkusKey, canViewWarehousePickingInfo]);
   
   const isFetchingChannelStocksRef = useRef<boolean>(false);
 
@@ -558,8 +543,30 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   useEffect(() => {
     if (selectedRecordForModal) {
       setModalWaPeminjam(selectedRecordForModal.noWaPeminjam || selectedRecordForModal.no_wa_peminjam || '');
+      // Selalu tarik data stok lokasi terbaru (anti-stale cache) saat modal detail dibuka oleh Admin/Picker
+      if (canViewWarehousePickingInfo && Array.isArray(selectedRecordForModal.items)) {
+        const modalSkus = Array.from(
+          new Set(selectedRecordForModal.items.map((it) => String(it.sku || '').trim().toUpperCase()).filter(Boolean))
+        );
+        if (modalSkus.length > 0) {
+          fetchStockForSkus(modalSkus)
+            .then((stocks) => {
+              const map: Record<string, StockRealtimeItem[]> = {};
+              modalSkus.forEach((s) => {
+                map[s] = [];
+              });
+              stocks.forEach((stk) => {
+                const key = (stk.sku || '').toUpperCase().trim();
+                if (!map[key]) map[key] = [];
+                map[key].push(stk);
+              });
+              setRealtimeSkuStocks((prev) => ({ ...prev, ...map }));
+            })
+            .catch(() => {});
+        }
+      }
     }
-  }, [selectedRecordForModal]);
+  }, [selectedRecordForModal, canViewWarehousePickingInfo]);
 
   // Edit & Delete Modal States
   const [editingRecord, setEditingRecord] = useState<PeminjamanRecord | null>(null);
@@ -1085,6 +1092,75 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       const noSps = `SPS-${Date.now().toString().slice(-6)}`;
       const nowIso = new Date().toISOString();
 
+      // Tandai bahwa SPS ini di-submit dari perangkat ini agar tidak memicu bunyi notifikasi sendiri
+      globalRealtimeStore.markOrderSubmittedLocally(noSps);
+
+      // 0. Tarik data lokasi rak gudang LIVE dari Supabase (stok_real_fisik) agar Picking List & WA Grup tidak pernah terjebak cache lokasi lama
+      const uniqueSubmitSkus = Array.from(
+        new Set(validItems.map((it) => String(it.sku || '').trim().toUpperCase()).filter(Boolean))
+      );
+      const liveStockMap: Record<string, StockRealtimeItem[]> = { ...realtimeSkuStocks };
+      if (uniqueSubmitSkus.length > 0) {
+        try {
+          const freshStocks = await fetchStockForSkus(uniqueSubmitSkus);
+          uniqueSubmitSkus.forEach((s) => {
+            liveStockMap[s] = [];
+          });
+          freshStocks.forEach((stk) => {
+            const key = String(stk.sku || '').trim().toUpperCase();
+            if (!liveStockMap[key]) liveStockMap[key] = [];
+            liveStockMap[key].push(stk);
+          });
+          setRealtimeSkuStocks((prev) => ({ ...prev, ...liveStockMap }));
+        } catch (err) {
+          console.warn('Gagal menarik stok live saat submit SPS, menggunakan fallback:', err);
+        }
+      }
+
+      const resolveLiveLocationsForSku = (cleanSku: string, fallbackLokasi?: string) => {
+        const stkRows = liveStockMap[cleanSku];
+        if (Array.isArray(stkRows)) {
+          const locMap = new Map<string, { lokasi: string; qty: number; area?: string }>();
+          const emptyRacks: string[] = [];
+          stkRows.forEach((stk) => {
+            const loc = String(stk.lokasi || '').trim().toUpperCase();
+            const qty = Number(stk.sisa_stok) || 0;
+            if (!loc || loc === '-' || loc === '--' || !isWarehouseLocation(loc, stk.area)) return;
+            if (qty > 0) {
+              const existing = locMap.get(loc);
+              if (existing) existing.qty += qty;
+              else locMap.set(loc, { lokasi: loc, qty, area: stk.area });
+            } else if (!emptyRacks.includes(loc)) {
+              emptyRacks.push(loc);
+            }
+          });
+          const sortedLocs = Array.from(locMap.values()).sort((a, b) => {
+            const pA = getPickingPriority(a.lokasi, a.area);
+            const pB = getPickingPriority(b.lokasi, b.area);
+            if (pA !== pB) return pA - pB;
+            return b.qty - a.qty;
+          });
+          if (sortedLocs.length > 0) {
+            return {
+              withQty: sortedLocs.map((l) => `${l.lokasi} (${l.qty} pcs)`).join(', '),
+              rackOnly: sortedLocs.map((l) => l.lokasi).join(', '),
+            };
+          }
+          const emptyLabel = emptyRacks.length > 0 ? `KOSONG (${emptyRacks.join(',')})` : 'KOSONG (0 pcs)';
+          return { withQty: emptyLabel, rackOnly: emptyLabel };
+        }
+
+        const locs = getProductLocations(cleanSku, fallbackLokasi);
+        if (locs.length > 0) {
+          return {
+            withQty: locs.map((l) => (l.qty && l.qty > 0 ? `${l.lokasi} (${l.qty} pcs)` : l.lokasi)).join(', '),
+            rackOnly: locs.map((l) => l.lokasi).join(', '),
+          };
+        }
+        const fb = fallbackLokasi && fallbackLokasi !== '-' && !fallbackLokasi.includes('BLOK F') ? fallbackLokasi : 'BLOK F';
+        return { withQty: fb, rackOnly: fb };
+      };
+
       const newRecord: PeminjamanRecord = {
         id: noSps,
         noPeminjaman: noSps,
@@ -1102,19 +1178,13 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             : (extractSizeFromSku(it.sku) !== '-' ? extractSizeFromSku(it.sku) : 'ALL');
           const formattedNama = it.produk;
           const cleanSku = (it.sku || '').toUpperCase().trim();
-          const locs = getProductLocations(cleanSku, it.lokasi);
-          const emptyRacks = getRecordedEmptyLocations(cleanSku);
-          const primaryLoc = locs.length > 0 
-            ? locs[0].lokasi 
-            : (it.lokasi && it.lokasi !== '-' && !it.lokasi.includes('BLOK F') 
-                ? it.lokasi 
-                : (emptyRacks.length > 0 ? `KOSONG (${emptyRacks.join(',')})` : 'BLOK F'));
+          const resolvedLoc = resolveLiveLocationsForSku(cleanSku, it.lokasi);
           return {
             produk: formattedNama,
             sku: it.sku || `SKU-${it.produk.slice(0, 4).toUpperCase()}`,
             size: cleanSize,
             qty: it.qty,
-            lokasi: primaryLoc,
+            lokasi: resolvedLoc.withQty,
           };
         }),
         username: session?.username || 'Operator',
@@ -1132,6 +1202,18 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         savePendingOfflinePeminjaman(newRecord);
       }
 
+      // Broadcast instant push notification event to Admin & Picker devices
+      globalRealtimeStore.broadcastEvent('new_sps_request', {
+        no_peminjaman: noSps,
+        noPeminjaman: noSps,
+        pic: newRecord.namaPeminjam,
+        namaPeminjam: newRecord.namaPeminjam,
+        keperluan: newRecord.keperluan,
+        tanggal_pinjam: newRecord.tglPinjam,
+        items: newRecord.items,
+        created_at: nowIso,
+      });
+
       // 2. Also create picking tasks in Supabase for Fulfillment
       try {
         const dateStr = nowIso.slice(2, 10).replace(/-/g, ''); // YYMMDD
@@ -1145,13 +1227,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             : (extractSizeFromSku(it.sku) !== '-' ? extractSizeFromSku(it.sku) : 'ALL');
           const formattedNama = it.produk;
           const cleanSku = (it.sku || '').toUpperCase().trim();
-          const locs = getProductLocations(cleanSku, it.lokasi);
-          const emptyRacks = getRecordedEmptyLocations(cleanSku);
-          const primaryLoc = locs.length > 0 
-            ? locs[0].lokasi 
-            : (it.lokasi && it.lokasi !== '-' && !it.lokasi.includes('BLOK F') 
-                ? it.lokasi 
-                : (emptyRacks.length > 0 ? `KOSONG (${emptyRacks.join(',')})` : 'BLOK F'));
+          const resolvedLoc = resolveLiveLocationsForSku(cleanSku, it.lokasi);
           return {
             invoice_picking: generatedInvoice,
             no_sj: noSps,
@@ -1162,7 +1238,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             size: cleanSize,
             qty_req: it.qty,
             qty_picked: 0,
-            lokasi: primaryLoc,
+            lokasi: resolvedLoc.rackOnly,
             status: 'PENDING',
             created_at: nowIso,
           };
@@ -1277,12 +1353,11 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     let rows: (string | number)[][] = [];
 
     if (selectedChannel === 'ALL') {
-      headers = ['PRODUK', 'SIZE', 'SKU', 'LOKASI / RAK', 'STUDIO (BLOK F)', 'SHOPEE (SHP)', 'TIKTOK (TTK)', 'TOTAL LIVE'];
+      headers = ['PRODUK', 'SIZE', 'SKU', 'STUDIO (BLOK F)', 'SHOPEE (SHP)', 'TIKTOK (TTK)', 'TOTAL LIVE'];
       rows = filteredStocks.map((it) => [
         `"${it.produk.replace(/"/g, '""')}"`,
         `"${it.size}"`,
         `"${it.sku}"`,
-        `"${it.locStr || '-'}"`,
         it.studioQty,
         it.shpQty,
         it.ttkQty,
@@ -1290,14 +1365,13 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       ]);
     } else {
       const channelLabel = selectedChannel === 'STUDIO' ? 'STUDIO' : selectedChannel === 'SHOPEE' ? 'SHOPEE' : 'TIKTOK';
-      headers = ['PRODUK', 'SIZE', 'SKU', 'LOKASI / RAK', `QTY ${channelLabel}`];
+      headers = ['PRODUK', 'SIZE', 'SKU', `QTY ${channelLabel}`];
       rows = filteredStocks.map((it) => {
         const qty = selectedChannel === 'STUDIO' ? it.studioQty : selectedChannel === 'SHOPEE' ? it.shpQty : it.ttkQty;
         return [
           `"${it.produk.replace(/"/g, '""')}"`,
           `"${it.size}"`,
           `"${it.sku}"`,
-          `"${it.locStr || '-'}"`,
           qty,
         ];
       });
@@ -1314,7 +1388,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     onShowToast('Data stok peminjaman berhasil diexport ke CSV', 'success');
   };
 
-  // Filter channel stocks
+  // Filter channel stocks (Strictly Studio, Shopee, and TikTok only)
   const deferredSearchStock = useDeferredValue(searchStock);
   const filteredStocks = useMemo(() => {
     const sTerm = deferredSearchStock.trim().toLowerCase();
@@ -1329,12 +1403,12 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       } else if (selectedChannel === 'TIKTOK') {
         if (it.ttkQty <= 0) return false;
       } else if (selectedChannel === 'ALL') {
-        if (it.studioQty <= 0 && it.shpQty <= 0 && it.ttkQty <= 0 && (it.totalQty || 0) <= 0) return false;
+        if ((it.studioQty || 0) + (it.shpQty || 0) + (it.ttkQty || 0) <= 0) return false;
       }
 
-      // Search query filter (Multi-keyword partial matching)
+      // Search query filter (Multi-keyword partial matching on SKU, Name, Size)
       if (sKeywords.length === 0) return true;
-      const combined = `${it.sku} ${it.produk} ${it.size} ${it.locStr}`.toLowerCase();
+      const combined = `${it.sku} ${it.produk} ${it.size}`.toLowerCase();
       return sKeywords.every((kw) => combined.includes(kw));
     });
   }, [channelStocks, selectedChannel, deferredSearchStock]);
@@ -1399,7 +1473,58 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       }
     }
 
-    const text = generateWaMessage(record, type, target);
+    let recordToUse = record;
+    if (!isPersonal && Array.isArray(record.items) && record.items.length > 0) {
+      const skus = Array.from(new Set(record.items.map((it) => String(it.sku || '').trim().toUpperCase()).filter(Boolean)));
+      if (skus.length > 0) {
+        try {
+          const freshStocks = await fetchStockForSkus(skus);
+          const liveMap: Record<string, StockRealtimeItem[]> = {};
+          skus.forEach((s) => { liveMap[s] = []; });
+          freshStocks.forEach((stk) => {
+            const key = String(stk.sku || '').trim().toUpperCase();
+            if (!liveMap[key]) liveMap[key] = [];
+            liveMap[key].push(stk);
+          });
+          setRealtimeSkuStocks((prev) => ({ ...prev, ...liveMap }));
+          recordToUse = {
+            ...record,
+            items: record.items.map((it) => {
+              const cleanSku = String(it.sku || '').trim().toUpperCase();
+              const stkList = liveMap[cleanSku] || [];
+              const locMap = new Map<string, { lokasi: string; qty: number; area?: string }>();
+              const emptyRacks: string[] = [];
+              stkList.forEach((stk) => {
+                const loc = String(stk.lokasi || '').trim().toUpperCase();
+                const qty = Number(stk.sisa_stok) || 0;
+                if (!loc || loc === '-' || loc === '--' || !isWarehouseLocation(loc, stk.area)) return;
+                if (qty > 0) {
+                  const prev = locMap.get(loc);
+                  if (prev) prev.qty += qty;
+                  else locMap.set(loc, { lokasi: loc, qty, area: stk.area });
+                } else if (!emptyRacks.includes(loc)) {
+                  emptyRacks.push(loc);
+                }
+              });
+              const sorted = Array.from(locMap.values()).sort((a, b) => {
+                const pA = getPickingPriority(a.lokasi, a.area);
+                const pB = getPickingPriority(b.lokasi, b.area);
+                if (pA !== pB) return pA - pB;
+                return b.qty - a.qty;
+              });
+              const freshLoc = sorted.length > 0
+                ? sorted.map((l) => `${l.lokasi} (${l.qty} pcs)`).join(', ')
+                : (emptyRacks.length > 0 ? `KOSONG (${emptyRacks.join(',')})` : 'KOSONG (0 pcs)');
+              return { ...it, lokasi: freshLoc };
+            }),
+          };
+        } catch (err) {
+          console.warn('Gagal menyegarkan lokasi sebelum kirim WA grup SPS:', err);
+        }
+      }
+    }
+
+    const text = generateWaMessage(recordToUse, type, target);
 
     // Always copy text to clipboard as safety net
     try {
@@ -1441,28 +1566,72 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     }
   };
 
-  // Print Surat Jalan
-  const handlePrintSJ = (record: PeminjamanRecord) => {
+  // Print Surat Jalan (Always fetches live locations from Supabase stok_real_fisik to prevent stale cache)
+  const handlePrintSJ = async (record: PeminjamanRecord) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       onShowToast('Popup terblokir, izinkan popup browser untuk cetak PDF', 'warning');
       return;
     }
 
+    const skus = Array.from(new Set((record.items || []).map((it) => String(it.sku || '').trim().toUpperCase()).filter(Boolean)));
+    const liveMap: Record<string, StockRealtimeItem[]> = { ...realtimeSkuStocks };
+    if (skus.length > 0) {
+      try {
+        const freshStocks = await fetchStockForSkus(skus);
+        skus.forEach((s) => { liveMap[s] = []; });
+        freshStocks.forEach((stk) => {
+          const key = String(stk.sku || '').trim().toUpperCase();
+          if (!liveMap[key]) liveMap[key] = [];
+          liveMap[key].push(stk);
+        });
+        setRealtimeSkuStocks((prev) => ({ ...prev, ...liveMap }));
+      } catch (err) {
+        console.warn('Gagal memuat lokasi live sebelum cetak SJ SPS:', err);
+      }
+    }
+
     const itemsRows = record.items
       .map((it, idx) => {
         const cleanSku = (it.sku || '').toUpperCase().trim();
-        const locs = getProductLocations(cleanSku, it.lokasi);
         let locText = it.lokasi || '-';
         let isKosong = false;
-        if (locs.length > 0) {
-          locText = locs.map((l) => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ');
-        } else if (cleanSku in realtimeSkuStocks) {
-          const empty = getRecordedEmptyLocations(cleanSku);
-          locText = empty.length > 0 ? `KOSONG (Rak: ${empty.join(', ')})` : 'KOSONG (0 pcs)';
-          isKosong = true;
-        } else if (it.lokasi && it.lokasi.includes('KOSONG')) {
-          isKosong = true;
+
+        if (cleanSku in liveMap) {
+          const stkList = liveMap[cleanSku] || [];
+          const locMap = new Map<string, { lokasi: string; qty: number; area?: string }>();
+          const emptyRacks: string[] = [];
+          stkList.forEach((stk) => {
+            const loc = String(stk.lokasi || '').trim().toUpperCase();
+            const qty = Number(stk.sisa_stok) || 0;
+            if (!loc || loc === '-' || loc === '--' || !isWarehouseLocation(loc, stk.area)) return;
+            if (qty > 0) {
+              const prev = locMap.get(loc);
+              if (prev) prev.qty += qty;
+              else locMap.set(loc, { lokasi: loc, qty, area: stk.area });
+            } else if (!emptyRacks.includes(loc)) {
+              emptyRacks.push(loc);
+            }
+          });
+          const sorted = Array.from(locMap.values()).sort((a, b) => {
+            const pA = getPickingPriority(a.lokasi, a.area);
+            const pB = getPickingPriority(b.lokasi, b.area);
+            if (pA !== pB) return pA - pB;
+            return b.qty - a.qty;
+          });
+          if (sorted.length > 0) {
+            locText = sorted.map((l) => `${l.lokasi} (${l.qty} pcs)`).join(', ');
+          } else {
+            locText = emptyRacks.length > 0 ? `KOSONG (Rak: ${emptyRacks.join(', ')})` : 'KOSONG (0 pcs)';
+            isKosong = true;
+          }
+        } else {
+          const locs = getProductLocations(cleanSku, it.lokasi);
+          if (locs.length > 0) {
+            locText = locs.map((l) => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ');
+          } else if (it.lokasi && it.lokasi.includes('KOSONG')) {
+            isKosong = true;
+          }
         }
 
         return `
@@ -2066,40 +2235,6 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                                   </span>
                                 </div>
                               </div>
-                              
-                              {/* Stock Locations Detail Row */}
-                              <div className="flex flex-wrap items-center gap-1.5 mt-0.5 pt-1.5 border-t border-slate-200/60 dark:border-slate-800/60">
-                                {(() => {
-                                  const cleanSku = item.sku.toUpperCase().trim();
-                                  const locs = getProductLocations(cleanSku, item.lokasi);
-                                  
-                                  if (locs.length > 0) {
-                                    return locs.map((l, lIdx) => (
-                                      <span
-                                        key={lIdx}
-                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono font-bold text-[10px] border border-slate-200 dark:border-slate-700"
-                                      >
-                                        <MapPin className="w-2.5 h-2.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                                        <span>Rak: {l.lokasi}</span>
-                                      </span>
-                                    ));
-                                  } else if (item.lokasi && item.lokasi !== '-' && !item.lokasi.includes('KOSONG')) {
-                                    return (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono font-bold text-[10px] border border-slate-200 dark:border-slate-700">
-                                        <MapPin className="w-2.5 h-2.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                                        <span>Lokasi: {item.lokasi}</span>
-                                      </span>
-                                    );
-                                  } else {
-                                    return (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px]">
-                                        <MapPin className="w-2.5 h-2.5 text-slate-400 shrink-0" />
-                                        <span>Lokasi: Warehouse / BLOK F</span>
-                                      </span>
-                                    );
-                                  }
-                                })()}
-                              </div>
                             </div>
                           )}
                         </div>
@@ -2336,7 +2471,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
               type="text"
               value={searchStock}
               onChange={(e) => setSearchStock(e.target.value)}
-              placeholder="Cari nama produk / SKU / lokasi..."
+              placeholder="Cari nama produk / SKU..."
               className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-700/80 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
             />
           </div>
@@ -2347,7 +2482,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
               <thead className="bg-slate-50 dark:bg-[#0b1324] text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-wider sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
                 {selectedChannel === 'ALL' ? (
                   <tr>
-                    <th className="p-2.5">Produk & Lokasi</th>
+                    <th className="p-2.5">Produk &amp; SKU</th>
                     <th className="p-2.5 text-center w-10">Size</th>
                     <th className="p-2.5 text-center w-12 text-blue-600 dark:text-blue-400">Studio</th>
                     <th className="p-2.5 text-center w-12 text-amber-600 dark:text-amber-400">SHP</th>
@@ -2419,16 +2554,8 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                             </div>
                             <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-0.5">
                               <span className="font-semibold text-slate-600 dark:text-slate-300">{stk.sku}</span>
-                              {stk.whLocStr && (
-                                <>
-                                  <span>&bull;</span>
-                                  <span className="text-blue-600 dark:text-blue-400 font-semibold" title="Rak Gudang">
-                                    {stk.whLocStr}
-                                  </span>
-                                </>
-                              )}
                             </div>
-                            {/* Location Badges displayed ONLY in Tab Semua */}
+                            {/* Channel Stock Badges displayed ONLY in Tab Semua */}
                             <div className="flex flex-wrap gap-1 mt-1.5">
                               {stk.studioQty > 0 && (
                                 <span className="inline-flex items-center text-[9px] px-1.5 py-0.5 bg-blue-500/15 text-blue-700 dark:text-blue-300 rounded font-mono font-bold border border-blue-500/20">
@@ -2487,14 +2614,6 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                           </div>
                           <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-0.5">
                             <span className="font-semibold text-slate-600 dark:text-slate-300">{stk.sku}</span>
-                            {stk.whLocStr && (
-                              <>
-                                <span>&bull;</span>
-                                <span className="text-blue-600 dark:text-blue-400 font-semibold" title="Rak Gudang">
-                                  {stk.whLocStr}
-                                </span>
-                              </>
-                            )}
                           </div>
                         </td>
                         <td className="p-2.5 text-center">
@@ -2638,7 +2757,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
                   {/* Actions */}
                   <div className="space-y-1.5 pt-1">
-                    <div className="grid grid-cols-3 gap-1.5">
+                    <div className={`grid ${canViewWarehousePickingInfo ? 'grid-cols-3' : 'grid-cols-2'} gap-1.5`}>
                       <button
                         type="button"
                         onClick={() => setSelectedRecordForModal(rec)}
@@ -2655,14 +2774,16 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                         <Printer className="w-3 h-3" />
                         <span>Cetak SJ</span>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => handleSendWa(rec, 'grup')}
-                        className="py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-[10px] flex items-center justify-center gap-1 transition-colors cursor-pointer shadow-xs"
-                      >
-                        <Share2 className="w-3 h-3" />
-                        <span>Kirim WA</span>
-                      </button>
+                      {canViewWarehousePickingInfo && (
+                        <button
+                          type="button"
+                          onClick={() => handleSendWa(rec, 'grup')}
+                          className="py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-[10px] flex items-center justify-center gap-1 transition-colors cursor-pointer shadow-xs"
+                        >
+                          <Share2 className="w-3 h-3" />
+                          <span>Kirim WA</span>
+                        </button>
+                      )}
                     </div>
 
                     {(canEditData || canDeleteData) && (
@@ -2780,7 +2901,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                         <th className="p-2.5">Produk</th>
                         <th className="p-2.5 text-center">Size</th>
                         <th className="p-2.5 text-center">Qty</th>
-                        <th className="p-2.5">Lokasi</th>
+                        {canViewWarehousePickingInfo && <th className="p-2.5">Lokasi</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-mono">
@@ -2795,39 +2916,41 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                             <td className="p-2.5 font-sans font-semibold text-slate-900 dark:text-slate-100">{it.produk}</td>
                             <td className="p-2.5 text-center text-slate-500 dark:text-slate-400">{it.size}</td>
                             <td className="p-2.5 text-center font-bold text-blue-600 dark:text-blue-400">{it.qty}</td>
-                            <td className="p-2.5 text-slate-400">
-                              <div className="flex flex-wrap items-center gap-1">
-                                {locs.length > 0 ? (
-                                  locs.map((l, lIdx) => (
-                                    <span
-                                      key={lIdx}
-                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/50 text-blue-800 dark:text-blue-200 font-mono font-bold text-[10px] border border-blue-500/30"
-                                      title={`Rak ${l.lokasi}: Sisa stok ${l.qty} pcs`}
-                                    >
-                                      <MapPin className="w-2.5 h-2.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                                      <span>{l.lokasi}</span>
-                                      <span className="text-[9px] font-bold bg-blue-600/20 px-1 rounded text-blue-900 dark:text-blue-100">
-                                        {l.qty}
+                            {canViewWarehousePickingInfo && (
+                              <td className="p-2.5 text-slate-400">
+                                <div className="flex flex-wrap items-center gap-1">
+                                  {locs.length > 0 ? (
+                                    locs.map((l, lIdx) => (
+                                      <span
+                                        key={lIdx}
+                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/50 text-blue-800 dark:text-blue-200 font-mono font-bold text-[10px] border border-blue-500/30"
+                                        title={`Rak ${l.lokasi}: Sisa stok ${l.qty} pcs`}
+                                      >
+                                        <MapPin className="w-2.5 h-2.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                                        <span>{l.lokasi}</span>
+                                        <span className="text-[9px] font-bold bg-blue-600/20 px-1 rounded text-blue-900 dark:text-blue-100">
+                                          {l.qty}
+                                        </span>
                                       </span>
+                                    ))
+                                  ) : isLoaded ? (
+                                    <span
+                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 font-bold text-[9px] border border-rose-500/30"
+                                      title={emptyRacks.length > 0 ? `Rak tercatat: ${emptyRacks.join(', ')}` : 'Stok gudang kosong'}
+                                    >
+                                      <span>KOSONG (0)</span>
+                                      {emptyRacks.length > 0 && <span className="text-[8px] text-rose-500/80 font-mono">({emptyRacks.join(',')})</span>}
                                     </span>
-                                  ))
-                                ) : isLoaded ? (
-                                  <span
-                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 font-bold text-[9px] border border-rose-500/30"
-                                    title={emptyRacks.length > 0 ? `Rak tercatat: ${emptyRacks.join(', ')}` : 'Stok gudang kosong'}
-                                  >
-                                    <span>KOSONG (0)</span>
-                                    {emptyRacks.length > 0 && <span className="text-[8px] text-rose-500/80 font-mono">({emptyRacks.join(',')})</span>}
-                                  </span>
-                                ) : it.lokasi && it.lokasi !== '-' && !it.lokasi.includes('KOSONG') ? (
-                                  <span className="font-mono font-bold text-[10px] text-amber-600 dark:text-amber-400">{it.lokasi}</span>
-                                ) : it.lokasi && it.lokasi.includes('KOSONG') ? (
-                                  <span className="font-mono font-bold text-[10px] text-rose-600 dark:text-rose-400">{it.lokasi}</span>
-                                ) : (
-                                  <span className="text-[10px] text-slate-400 italic">-</span>
-                                )}
-                              </div>
-                            </td>
+                                  ) : it.lokasi && it.lokasi !== '-' && !it.lokasi.includes('KOSONG') ? (
+                                    <span className="font-mono font-bold text-[10px] text-amber-600 dark:text-amber-400">{it.lokasi}</span>
+                                  ) : it.lokasi && it.lokasi.includes('KOSONG') ? (
+                                    <span className="font-mono font-bold text-[10px] text-rose-600 dark:text-rose-400">{it.lokasi}</span>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-400 italic">-</span>
+                                  )}
+                                </div>
+                              </td>
+                            )}
                           </tr>
                         );
                       })}
@@ -2848,48 +2971,50 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* Card 1: Grup Gudang (Picking List) */}
-                  <div className="p-3.5 bg-slate-50/70 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-900 dark:text-slate-100 text-xs">
-                        📦 1. Picking List ke Grup Gudang
-                      </span>
-                      {copiedWaType === 'grup' && (
-                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">Terkirim!</span>
-                      )}
-                    </div>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                      Target Grup: <code className="text-blue-600 dark:text-blue-400 font-mono">{modalFonnteConfig.groupTarget || '(Belum diset di Pengaturan)'}</code>
-                    </p>
-                    <div className="flex items-center gap-1.5 pt-1">
-                      <button
-                        type="button"
-                        disabled={isSendingWaType === 'grup'}
-                        onClick={() => handleSendWa(selectedRecordForModal, 'grup')}
-                        className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-[11px] flex items-center justify-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer shadow-xs"
-                      >
-                        {isSendingWaType === 'grup' ? (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
-                        ) : (
-                          <Send className="w-3.5 h-3.5" />
+                <div className={`grid grid-cols-1 ${canViewWarehousePickingInfo ? 'sm:grid-cols-2' : ''} gap-3`}>
+                  {/* Card 1: Grup Gudang (Picking List) - Hanya untuk Admin & Picker */}
+                  {canViewWarehousePickingInfo && (
+                    <div className="p-3.5 bg-slate-50/70 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-900 dark:text-slate-100 text-xs">
+                          📦 1. Picking List ke Grup Gudang
+                        </span>
+                        {copiedWaType === 'grup' && (
+                          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">Terkirim!</span>
                         )}
-                        <span>Kirim Fonnte</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const text = generateWaMessage(selectedRecordForModal, 'grup');
-                          navigator.clipboard.writeText(text);
-                          onShowToast('Teks pesan grup berhasil disalin!', 'success');
-                        }}
-                        title="Salin Teks Pesan"
-                        className="p-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs transition-colors cursor-pointer"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                      </button>
+                      </div>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                        Target Grup: <code className="text-blue-600 dark:text-blue-400 font-mono">{modalFonnteConfig.groupTarget || '(Belum diset di Pengaturan)'}</code>
+                      </p>
+                      <div className="flex items-center gap-1.5 pt-1">
+                        <button
+                          type="button"
+                          disabled={isSendingWaType === 'grup'}
+                          onClick={() => handleSendWa(selectedRecordForModal, 'grup')}
+                          className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-[11px] flex items-center justify-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer shadow-xs"
+                        >
+                          {isSendingWaType === 'grup' ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
+                          ) : (
+                            <Send className="w-3.5 h-3.5" />
+                          )}
+                          <span>Kirim Fonnte</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const text = generateWaMessage(selectedRecordForModal, 'grup');
+                            navigator.clipboard.writeText(text);
+                            onShowToast('Teks pesan grup berhasil disalin!', 'success');
+                          }}
+                          title="Salin Teks Pesan"
+                          className="p-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs transition-colors cursor-pointer"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Card 2: Personal Peminjam */}
                   <div className="p-3.5 bg-slate-50/70 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-800 rounded-xl space-y-2">

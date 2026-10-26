@@ -1115,11 +1115,25 @@ export default function App() {
           }
         )
         .on(
+          'broadcast',
+          { event: 'new_sps_request' },
+          ({ payload }) => {
+            if (payload) {
+              invalidatePickingListCache();
+              globalRealtimeStore.notify('peminjaman', { eventType: 'INSERT', new: payload });
+              handleIncomingSpsRef.current(payload);
+            }
+          }
+        )
+        .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'peminjaman' },
           (payload) => {
             invalidatePickingListCache();
             globalRealtimeStore.notify('peminjaman', payload);
+            if (payload.eventType === 'INSERT' && payload.new) {
+              handleIncomingSpsRef.current(payload.new);
+            }
           }
         )
         .on(
@@ -1410,15 +1424,90 @@ export default function App() {
   const handleIncomingManualShipmentRef = useRef(handleIncomingManualShipmentNotification);
   handleIncomingManualShipmentRef.current = handleIncomingManualShipmentNotification;
 
-  // Background, Service Worker & Screen-Wake Delta Poller KHUSUS ADMIN (Laptop & HP Admin)
-  // Termasuk Catch-Up Notification untuk pesanan yang masuk saat aplikasi/browser ditutup
+  // Handler terpusat KHUSUS ADMIN & PICKER saat ada Permintaan Peminjaman Sementara (SPS) baru
+  const handleIncomingSpsNotification = useCallback(
+    (rowOrRecord: any) => {
+      if (!rowOrRecord || !session) return;
+
+      const userIsAdmin = isSuperadmin(session);
+      const userIsPicker = canAccessPage(session, 'picking_tasks');
+      if (!userIsAdmin && !userIsPicker) {
+        return;
+      }
+
+      const noSps = String(rowOrRecord.no_peminjaman || rowOrRecord.noPeminjaman || rowOrRecord.id || '')
+        .trim()
+        .toUpperCase();
+      if (!noSps || !noSps.startsWith('SPS')) return;
+
+      // Jangan bunyikan di perangkat/tab tempat SPS itu baru saja di-submit secara lokal
+      if (globalRealtimeStore.isOrderSubmittedLocally(noSps)) {
+        return;
+      }
+
+      if (notifiedOrderIdsRef.current.has(noSps)) {
+        return;
+      }
+
+      notifiedOrderIdsRef.current.add(noSps);
+      savePersistedNotifiedOrderIds(notifiedOrderIdsRef.current);
+      setLastOrderCheckTimestamp(Date.now());
+      syncNotifiedOrdersToServiceWorker(Array.from(notifiedOrderIdsRef.current));
+
+      const picName = String(rowOrRecord.pic || rowOrRecord.namaPeminjam || 'Divisi Live / Studio').trim();
+      const keperluanText = String(rowOrRecord.keperluan || 'Peminjaman SPS').trim();
+      const itemsList = Array.isArray(rowOrRecord.items) ? rowOrRecord.items : null;
+      const itemCount = itemsList
+        ? itemsList.length
+        : Number(rowOrRecord.skuCount) || 1;
+      const totalQty = itemsList
+        ? itemsList.reduce((acc: number, it: any) => acc + (Number(it?.qty) || 1), 0)
+        : Number(rowOrRecord.totalQty || rowOrRecord.qty) || 1;
+
+      playNewTaskChime();
+      vibrateDevice([250, 100, 250, 100, 450]);
+
+      const notifTitle = `📋 Permintaan SPS Baru — ${picName}`;
+      const notifBody = `Invoice #${noSps} • ${keperluanText} (${itemCount} SKU / ${totalQty} pcs). Buka untuk proses picking.`;
+
+      showPushNotification(notifTitle, {
+        body: notifBody,
+        tag: `sps-new-${noSps}`,
+        page: 'picking_tasks',
+        requireInteraction: true,
+      });
+
+      showToast(
+        `📋 Permintaan SPS Baru: #${noSps} dari ${picName} (${keperluanText} - ${totalQty} pcs)`,
+        'info'
+      );
+
+      setNewPickingTaskAlert({
+        no_sj: noSps,
+        count: itemCount,
+        tujuan: `SPS: ${picName} - ${keperluanText}`,
+        timestamp: Date.now(),
+      });
+    },
+    [session, showToast]
+  );
+
+  const handleIncomingSpsRef = useRef(handleIncomingSpsNotification);
+  handleIncomingSpsRef.current = handleIncomingSpsNotification;
+
+  // Background, Service Worker & Screen-Wake Delta Poller KHUSUS ADMIN & PICKER
+  // Termasuk Catch-Up Notification untuk pesanan toko & pengajuan SPS yang masuk saat aplikasi/browser ditutup
   useEffect(() => {
-    if (!session || !isSuperadmin(session)) {
+    const userIsAdmin = Boolean(session && isSuperadmin(session));
+    const userIsPicker = Boolean(session && canAccessPage(session, 'picking_tasks'));
+
+    if (!session || (!userIsAdmin && !userIsPicker)) {
       configureServiceWorkerOrderWatcher({
         enabled: false,
         supabaseUrl: DEFAULT_SUPABASE_URL,
         supabaseAnonKey: DEFAULT_SUPABASE_ANON_KEY,
         isAdmin: false,
+        isPicker: false,
       });
       return;
     }
@@ -1435,14 +1524,15 @@ export default function App() {
       if (k3) notifiedOrderIdsRef.current.add(k3);
     };
 
-    // Sinkronkan konfigurasi ke Service Worker agar bisa mengecek pesanan di background (periodicsync / sync / push)
+    // Sinkronkan konfigurasi ke Service Worker agar bisa mengecek pesanan & SPS di background (periodicsync / sync / push)
     const customUrl = localStorage.getItem('wms_supabase_url') || DEFAULT_SUPABASE_URL;
     const customKey = localStorage.getItem('wms_supabase_key') || DEFAULT_SUPABASE_ANON_KEY;
     configureServiceWorkerOrderWatcher({
       enabled: true,
       supabaseUrl: customUrl,
       supabaseAnonKey: customKey,
-      isAdmin: true,
+      isAdmin: userIsAdmin,
+      isPicker: userIsPicker,
       username: session.username,
       notifiedIds: Array.from(notifiedOrderIdsRef.current),
       lastCheckedAt: getLastOrderCheckTimestamp() || Date.now(),
@@ -1466,71 +1556,113 @@ export default function App() {
       navigator.serviceWorker.addEventListener('message', handleSwMessage);
     }
 
-    // 2. Cek pesanan baru setiap 10 detik, saat layar aktif kembali, & saat aplikasi baru dibuka (catch-up)
+    // 2. Cek pesanan baru & SPS baru setiap 10 detik, saat layar aktif kembali, & saat aplikasi baru dibuka (catch-up)
     const checkNewStoreOrdersDelta = async () => {
       if (!isSeeded) return;
       try {
-        const latestRows = await supabaseFetch<any[]>(
-          'manual_shipment',
-          'GET',
-          null,
-          'select=*&order=created_at.desc&limit=15'
-        );
-        if (!isMounted) return;
-
         const nowMs = Date.now();
-        const MAX_AGE_MS = 12 * 60 * 60 * 1000; // Hanya pesanan yang dibuat dalam 12 jam terakhir
+        const MAX_AGE_MS = 12 * 60 * 60 * 1000; // Hanya yang dibuat dalam 12 jam terakhir
 
-        if (Array.isArray(latestRows) && latestRows.length > 0) {
-          // Iterasi dari yang paling awal di antara yang baru masuk
-          for (const r of [...latestRows].reverse()) {
-            const k1 = String(r.no_pesanan || '').trim().toUpperCase();
-            const k2 = String(r.no_transaksi_customer || '').trim().toUpperCase();
-            const k3 = String(r.id || '').trim().toUpperCase();
-            const alreadyKnown =
-              (k1 && notifiedOrderIdsRef.current.has(k1)) ||
-              (k2 && notifiedOrderIdsRef.current.has(k2)) ||
-              (k3 && notifiedOrderIdsRef.current.has(k3));
-
-            if (!alreadyKnown) {
-              const rowTs = r.created_at ? new Date(r.created_at).getTime() : nowMs;
-              if (isNaN(rowTs) || Math.abs(nowMs - rowTs) <= MAX_AGE_MS) {
-                handleIncomingManualShipmentRef.current(r);
-                globalRealtimeStore.notify('manual_shipment', { eventType: 'INSERT', new: r });
-              } else {
-                recordOrderKeys(r);
-              }
-            }
-          }
-        }
-
-        // Cek juga tiket Retur Barang baru untuk Admin
-        try {
-          const latestRetur = await supabaseFetch<any[]>(
-            'retur_barang',
+        if (userIsAdmin) {
+          const latestRows = await supabaseFetch<any[]>(
+            'manual_shipment',
             'GET',
             null,
-            'select=id,no_retur,nama_customer,created_at&order=created_at.desc&limit=6'
+            'select=*&order=created_at.desc&limit=15'
           );
-          if (isMounted && Array.isArray(latestRetur)) {
-            for (const r of [...latestRetur].reverse()) {
-              const noRetur = String(r.no_retur || '').trim().toUpperCase();
-              if (!noRetur || notifiedOrderIdsRef.current.has(noRetur)) continue;
-              const rowTs = r.created_at ? new Date(r.created_at).getTime() : nowMs;
-              notifiedOrderIdsRef.current.add(noRetur);
-              if (!isNaN(rowTs) && Math.abs(nowMs - rowTs) <= MAX_AGE_MS) {
-                playNewTaskChime();
-                vibrateDevice([250, 100, 250]);
-                showPushNotification('🔄 Tiket Retur Barang Baru!', {
-                  body: `Tiket #${noRetur} atas nama ${r.nama_customer || 'Customer'} baru diajukan di Pusat Resolusi.`,
-                  tag: `retur-new-${noRetur}`,
-                  page: 'pusat_resolusi',
-                });
-                showToast(`🔄 Tiket Retur Barang Baru: #${noRetur} (${r.nama_customer || 'Customer'})`, 'info');
+          if (!isMounted) return;
+
+          if (Array.isArray(latestRows) && latestRows.length > 0) {
+            for (const r of [...latestRows].reverse()) {
+              const k1 = String(r.no_pesanan || '').trim().toUpperCase();
+              const k2 = String(r.no_transaksi_customer || '').trim().toUpperCase();
+              const k3 = String(r.id || '').trim().toUpperCase();
+              const alreadyKnown =
+                (k1 && notifiedOrderIdsRef.current.has(k1)) ||
+                (k2 && notifiedOrderIdsRef.current.has(k2)) ||
+                (k3 && notifiedOrderIdsRef.current.has(k3));
+
+              if (!alreadyKnown) {
+                const rowTs = r.created_at ? new Date(r.created_at).getTime() : nowMs;
+                if (isNaN(rowTs) || Math.abs(nowMs - rowTs) <= MAX_AGE_MS) {
+                  handleIncomingManualShipmentRef.current(r);
+                  globalRealtimeStore.notify('manual_shipment', { eventType: 'INSERT', new: r });
+                } else {
+                  recordOrderKeys(r);
+                }
               }
             }
           }
-        } catch {}
+
+          // Cek juga tiket Retur Barang baru untuk Admin
+          try {
+            const latestRetur = await supabaseFetch<any[]>(
+              'retur_barang',
+              'GET',
+              null,
+              'select=id,no_retur,nama_customer,created_at&order=created_at.desc&limit=6'
+            );
+            if (isMounted && Array.isArray(latestRetur)) {
+              for (const r of [...latestRetur].reverse()) {
+                const noRetur = String(r.no_retur || '').trim().toUpperCase();
+                if (!noRetur || notifiedOrderIdsRef.current.has(noRetur)) continue;
+                const rowTs = r.created_at ? new Date(r.created_at).getTime() : nowMs;
+                notifiedOrderIdsRef.current.add(noRetur);
+                if (!isNaN(rowTs) && Math.abs(nowMs - rowTs) <= MAX_AGE_MS) {
+                  playNewTaskChime();
+                  vibrateDevice([250, 100, 250]);
+                  showPushNotification('🔄 Tiket Retur Barang Baru!', {
+                    body: `Tiket #${noRetur} atas nama ${r.nama_customer || 'Customer'} baru diajukan di Pusat Resolusi.`,
+                    tag: `retur-new-${noRetur}`,
+                    page: 'pusat_resolusi',
+                  });
+                  showToast(`🔄 Tiket Retur Barang Baru: #${noRetur} (${r.nama_customer || 'Customer'})`, 'info');
+                }
+              }
+            }
+          } catch {}
+        }
+
+        // Cek Permintaan Peminjaman Sementara (SPS) baru untuk Admin & Picker
+        if (userIsAdmin || userIsPicker) {
+          try {
+            const latestSps = await supabaseFetch<any[]>(
+              'peminjaman',
+              'GET',
+              null,
+              'select=id,no_peminjaman,pic,keperluan,sku,nama_produk,qty,created_at&order=created_at.desc&limit=20'
+            );
+            if (isMounted && Array.isArray(latestSps) && latestSps.length > 0) {
+              const spsGroups = new Map<string, any>();
+              for (const r of latestSps) {
+                const noSps = String(r.no_peminjaman || '').trim().toUpperCase();
+                if (!noSps) continue;
+                if (!spsGroups.has(noSps)) {
+                  spsGroups.set(noSps, {
+                    no_peminjaman: noSps,
+                    pic: r.pic || 'Divisi Live / Studio',
+                    keperluan: r.keperluan || 'Peminjaman SPS',
+                    created_at: r.created_at,
+                    skuCount: 0,
+                    totalQty: 0,
+                  });
+                }
+                const g = spsGroups.get(noSps)!;
+                g.skuCount += 1;
+                g.totalQty += Number(r.qty) || 1;
+              }
+              for (const g of Array.from(spsGroups.values()).reverse()) {
+                if (notifiedOrderIdsRef.current.has(g.no_peminjaman)) continue;
+                const rowTs = g.created_at ? new Date(g.created_at).getTime() : nowMs;
+                if (isNaN(rowTs) || Math.abs(nowMs - rowTs) <= MAX_AGE_MS) {
+                  handleIncomingSpsRef.current(g);
+                } else {
+                  notifiedOrderIdsRef.current.add(g.no_peminjaman);
+                }
+              }
+            }
+          } catch {}
+        }
 
         savePersistedNotifiedOrderIds(notifiedOrderIdsRef.current);
         setLastOrderCheckTimestamp(nowMs);
@@ -1538,49 +1670,74 @@ export default function App() {
       } catch {}
     };
 
-    // 1. Seed existing order IDs (tapi JANGAN telan pesanan yang masuk saat aplikasi ditutup!)
+    // 1. Seed existing order & SPS IDs (tapi JANGAN telan pesanan/SPS yang masuk saat aplikasi ditutup!)
     const seedExistingOrders = async () => {
       const prevLastCheckTs = getLastOrderCheckTimestamp();
       const hasPersistedHistory = notifiedOrderIdsRef.current.size > 0 && prevLastCheckTs !== null;
 
       try {
-        const recent = await supabaseFetch<any[]>(
-          'manual_shipment',
-          'GET',
-          null,
-          'select=id,no_pesanan,no_transaksi_customer,created_at&order=created_at.desc&limit=30'
-        );
-        if (!isMounted) return;
-        if (Array.isArray(recent)) {
-          if (!hasPersistedHistory) {
-            // Pertama kali perangkat ini login Admin: tandai semua 30 pesanan lama agar tidak spam
-            recent.forEach(recordOrderKeys);
-          } else {
-            // Perangkat sudah pernah buka aplikasi sebelumnya: hanya tandai pesanan sebelum prevLastCheckTs
-            // agar pesanan baru yang masuk saat aplikasi/browser ditutup tetap memicu Catch-Up Notification!
-            for (const r of recent) {
-              const rowTs = r.created_at ? new Date(r.created_at).getTime() : 0;
-              if (rowTs > 0 && rowTs < prevLastCheckTs) {
-                recordOrderKeys(r);
+        if (userIsAdmin) {
+          const recent = await supabaseFetch<any[]>(
+            'manual_shipment',
+            'GET',
+            null,
+            'select=id,no_pesanan,no_transaksi_customer,created_at&order=created_at.desc&limit=30'
+          );
+          if (!isMounted) return;
+          if (Array.isArray(recent)) {
+            if (!hasPersistedHistory) {
+              recent.forEach(recordOrderKeys);
+            } else {
+              for (const r of recent) {
+                const rowTs = r.created_at ? new Date(r.created_at).getTime() : 0;
+                if (rowTs > 0 && rowTs < prevLastCheckTs) {
+                  recordOrderKeys(r);
+                }
               }
             }
           }
+
+          if (!hasPersistedHistory) {
+            try {
+              const recentRetur = await supabaseFetch<any[]>(
+                'retur_barang',
+                'GET',
+                null,
+                'select=no_retur,created_at&order=created_at.desc&limit=15'
+              );
+              if (Array.isArray(recentRetur)) {
+                recentRetur.forEach((r) => {
+                  const nr = String(r.no_retur || '').trim().toUpperCase();
+                  if (nr) notifiedOrderIdsRef.current.add(nr);
+                });
+              }
+            } catch {}
+          }
         }
 
-        // Seed Retur Barang lama jika belum ada history
-        if (!hasPersistedHistory) {
+        if (userIsAdmin || userIsPicker) {
           try {
-            const recentRetur = await supabaseFetch<any[]>(
-              'retur_barang',
+            const recentSps = await supabaseFetch<any[]>(
+              'peminjaman',
               'GET',
               null,
-              'select=no_retur,created_at&order=created_at.desc&limit=15'
+              'select=no_peminjaman,created_at&order=created_at.desc&limit=30'
             );
-            if (Array.isArray(recentRetur)) {
-              recentRetur.forEach((r) => {
-                const nr = String(r.no_retur || '').trim().toUpperCase();
-                if (nr) notifiedOrderIdsRef.current.add(nr);
-              });
+            if (Array.isArray(recentSps)) {
+              if (!hasPersistedHistory) {
+                recentSps.forEach((r) => {
+                  const ns = String(r.no_peminjaman || '').trim().toUpperCase();
+                  if (ns) notifiedOrderIdsRef.current.add(ns);
+                });
+              } else {
+                for (const r of recentSps) {
+                  const ns = String(r.no_peminjaman || '').trim().toUpperCase();
+                  const rowTs = r.created_at ? new Date(r.created_at).getTime() : 0;
+                  if (ns && rowTs > 0 && rowTs < prevLastCheckTs) {
+                    notifiedOrderIdsRef.current.add(ns);
+                  }
+                }
+              }
             }
           } catch {}
         }
@@ -1592,7 +1749,7 @@ export default function App() {
         syncNotifiedOrdersToServiceWorker(Array.from(notifiedOrderIdsRef.current));
         isSeeded = true;
 
-        // Jika ada pesanan yang masuk saat aplikasi ditutup, langsung cek & bunyikan sekarang!
+        // Jika ada pesanan atau SPS yang masuk saat aplikasi ditutup, langsung cek & bunyikan sekarang!
         if (hasPersistedHistory) {
           checkNewStoreOrdersDelta();
         }

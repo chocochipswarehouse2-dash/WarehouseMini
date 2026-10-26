@@ -4773,37 +4773,8 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
       }
     }
 
-    // 2. Also incorporate warehouse stock rows from memory cache or localDb ONLY for relevant SKUs (channel SKUs or search keyword)
-    const channelSkus = new Set<string>();
-    for (const r of channelRows) {
-      const sku = String(r.sku || '').trim().toUpperCase();
-      if (sku) channelSkus.add(sku);
-    }
-
     const searchFilterUpper = searchKeyword ? searchKeyword.trim().toUpperCase() : '';
-
-    let warehouseRows: StockRealtimeItem[] = [];
-    if (!forceRefresh && memoryStokFisikCache && memoryStokFisikCache.length > 0) {
-      warehouseRows = memoryStokFisikCache;
-    }
-
-    // Combine channelRows and relevant warehouseRows, with fresh channelRows taking precedence for channel locations
-    const allRowsMap = new Map<string, StockRealtimeItem>();
-    for (const w of warehouseRows) {
-      const sku = String(w.sku || w.kode || '').trim().toUpperCase();
-      if (!sku) continue;
-      // High-performance filter: only include warehouse rows if SKU exists in channels or matches search filter
-      if (!channelSkus.has(sku) && (!searchFilterUpper || (!sku.includes(searchFilterUpper) && !String(w.nama_produk || w.nama || '').toUpperCase().includes(searchFilterUpper)))) {
-        continue;
-      }
-      const lok = String(w.lokasi || 'Warehouse').trim().toUpperCase();
-      allRowsMap.set(`${sku}__${lok}`, w);
-    }
-    for (const [k, c] of channelMap.entries()) {
-      allRowsMap.set(k, c);
-    }
-
-    const viewRowsNonZero = Array.from(allRowsMap.values());
+    const viewRowsNonZero = Array.from(channelMap.values());
 
     if (viewRowsNonZero && Array.isArray(viewRowsNonZero) && viewRowsNonZero.length > 0) {
       for (const r of viewRowsNonZero) {
@@ -4958,28 +4929,30 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
       }
     }
 
-    // Default formatting of location string
+    // Default formatting of location string (only Studio, Shopee, TikTok)
     let locStr = locParts.length > 0 ? locParts.join(', ') : 'BLOK F (0)';
-    let whLocStr = whLocParts.length > 0 ? whLocParts.join(', ') : '';
+    const channelTotalQty = studioQty + shpQty + ttkQty;
 
     channelStockList.push({
       sku: entry.sku,
       produk: entry.produk,
       size: entry.size || 'ALL',
       locStr,
-      whLocStr,
+      whLocStr: '',
       studioQty,
       shpQty,
       ttkQty,
       blokFQty,
-      whQty,
-      totalQty,
+      whQty: 0,
+      totalQty: channelTotalQty,
     });
   }
 
-  // Sort: Items with available stock first, then alphabetically (fast string comparison)
+  // Sort: Items with available channel stock (Studio + Shopee + TikTok) first, then alphabetically
   channelStockList.sort((a, b) => {
-    if (b.totalQty !== a.totalQty) return b.totalQty - a.totalQty;
+    const totA = (a.studioQty || 0) + (a.shpQty || 0) + (a.ttkQty || 0);
+    const totB = (b.studioQty || 0) + (b.shpQty || 0) + (b.ttkQty || 0);
+    if (totB !== totA) return totB - totA;
     const nA = a.produk.toLowerCase();
     const nB = b.produk.toLowerCase();
     return nA < nB ? -1 : nA > nB ? 1 : 0;
@@ -5240,7 +5213,7 @@ export function extractPickingItemFromRow(row: any): PickingListItem | null {
   }
 
   const rawTujuan = String(row.tujuan || row.destination || row.channel || 'Marketplace').trim();
-  const isStoreTujuan = /store|toko|sps|outlet/i.test(rawTujuan);
+  const isStoreTujuan = /store|toko|outlet/i.test(rawTujuan);
   let rawLokasi = String(row.lokasi || row.location || row.rak || '').trim();
 
   if (isStoreTujuan) {
@@ -5802,7 +5775,7 @@ export async function createPickingSuratJalanSupabase(
     const formattedNama = rawNama || cleanSku;
     const safeNumericId = baseTime * 1000 + (idx % 1000);
 
-    const isStoreTujuan = /store|toko|sps|outlet/i.test(cleanTujuan);
+    const isStoreTujuan = /store|toko|outlet/i.test(cleanTujuan);
     let itemLokasi = (it.lokasi || '').trim();
     if (!itemLokasi || itemLokasi === '-' || itemLokasi === '--' || itemLokasi === 'KOSONG') {
       if (isStoreTujuan) {

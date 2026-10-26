@@ -115,6 +115,7 @@ export async function configureServiceWorkerOrderWatcher(params: {
   supabaseUrl: string;
   supabaseAnonKey: string;
   isAdmin: boolean;
+  isPicker?: boolean;
   storeName?: string;
   username?: string;
   notifiedIds?: string[];

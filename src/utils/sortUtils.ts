@@ -52,6 +52,17 @@ function getTerms(query: string): string[] {
   return lastTermsFuzzy;
 }
 
+let lastQueryPartial = '';
+let lastKeywordsPartial: string[] = [];
+
+function getPartialKeywords(query: string): string[] {
+  if (query !== lastQueryPartial) {
+    lastQueryPartial = query;
+    lastKeywordsPartial = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  }
+  return lastKeywordsPartial;
+}
+
 /**
  * Partial multi-keyword search (identical to Inventory search):
  * Splits query by whitespace, checks if every keyword exists within any of the provided target fields.
@@ -61,15 +72,23 @@ export function partialSearchMatch(
   ...targets: (string | number | boolean | null | undefined)[]
 ): boolean {
   if (!query || !query.trim()) return true;
-  const keywords = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  const keywords = getPartialKeywords(query);
   if (keywords.length === 0) return true;
 
-  const combinedText = targets
-    .map((t) => (t !== null && t !== undefined ? String(t) : ''))
-    .join(' ')
-    .toLowerCase();
+  // Build combined text with minimal allocations
+  let combinedText = '';
+  for (let i = 0; i < targets.length; i++) {
+    const t = targets[i];
+    if (t !== null && t !== undefined && t !== '') {
+      combinedText += (combinedText ? ' ' : '') + String(t);
+    }
+  }
+  const lower = combinedText.toLowerCase();
 
-  return keywords.every((kw) => combinedText.includes(kw));
+  for (let k = 0; k < keywords.length; k++) {
+    if (!lower.includes(keywords[k])) return false;
+  }
+  return true;
 }
 
 /**

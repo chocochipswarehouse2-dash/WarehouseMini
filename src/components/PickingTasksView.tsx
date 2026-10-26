@@ -518,7 +518,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(item.sku));
       const effectiveName = item.nama_produk;
 
-      const isStoreItem = /store|toko|sps|outlet/i.test(item.tujuan || '');
+      const isStoreItem = /store|toko|outlet/i.test(item.tujuan || '');
       let effectiveLokasi = (item.lokasi || '').trim();
       if (!effectiveLokasi || effectiveLokasi === '-' || effectiveLokasi === '--' || effectiveLokasi === 'KOSONG') {
         if (isStoreItem) {
@@ -860,21 +860,72 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     }
   };
 
-  const handlePrintSPS = (group: PickingSuratJalanGroup) => {
+  const handlePrintSPS = async (group: PickingSuratJalanGroup) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       onNotify('Popup terblokir, izinkan popup browser untuk cetak PDF', 'warning');
       return;
     }
 
+    const groupSkus = Array.from(
+      new Set(group.items.map((it) => (it.sku || '').trim().toUpperCase()).filter(Boolean))
+    );
+    const liveMap: Record<string, StockRealtimeItem[]> = { ...realtimeSkuStocks };
+    if (groupSkus.length > 0) {
+      try {
+        const freshStocks = await fetchStockForSkus(groupSkus);
+        groupSkus.forEach((s) => {
+          liveMap[s] = [];
+        });
+        freshStocks.forEach((stk) => {
+          const key = (stk.sku || '').toUpperCase().trim();
+          if (!liveMap[key]) liveMap[key] = [];
+          liveMap[key].push(stk);
+        });
+        setRealtimeSkuStocks((prev) => ({ ...prev, ...liveMap }));
+      } catch (err) {
+        console.warn('Gagal memuat stok live sebelum cetak SPS:', err);
+      }
+    }
+
     const itemsRows = group.items
       .map(
         (it, idx) => {
           const cleanSku = (it.sku || '').toUpperCase().trim();
-          const locs = getProductLocations(cleanSku, it.lokasi);
-          const locText = locs.length > 0
-            ? locs.map((l) => (l.qty && l.qty > 0 ? `${l.lokasi} (${l.qty} pcs)` : l.lokasi)).join(', ')
-            : it.lokasi || '-';
+          let locText = it.lokasi || '-';
+          if (cleanSku in liveMap) {
+            const stkList = liveMap[cleanSku] || [];
+            const locMap = new Map<string, { lokasi: string; qty: number; area?: string }>();
+            const emptyRacks: string[] = [];
+            stkList.forEach((stk) => {
+              const loc = String(stk.lokasi || '').trim().toUpperCase();
+              const qty = Number(stk.sisa_stok) || 0;
+              if (!loc || loc === '-' || loc === '--' || !isWarehouseLocation(loc, stk.area)) return;
+              if (qty > 0) {
+                const existing = locMap.get(loc);
+                if (existing) existing.qty += qty;
+                else locMap.set(loc, { lokasi: loc, qty, area: stk.area });
+              } else if (!emptyRacks.includes(loc)) {
+                emptyRacks.push(loc);
+              }
+            });
+            const sortedLocs = Array.from(locMap.values()).sort((a, b) => {
+              const pA = getPickingPriority(a.lokasi, a.area);
+              const pB = getPickingPriority(b.lokasi, b.area);
+              if (pA !== pB) return pA - pB;
+              return b.qty - a.qty;
+            });
+            if (sortedLocs.length > 0) {
+              locText = sortedLocs.map((l) => `${l.lokasi} (${l.qty} pcs)`).join(', ');
+            } else {
+              locText = emptyRacks.length > 0 ? `KOSONG (Rak: ${emptyRacks.join(', ')})` : 'KOSONG (0 pcs)';
+            }
+          } else {
+            const locs = getProductLocations(cleanSku, it.lokasi);
+            if (locs.length > 0) {
+              locText = locs.map((l) => (l.qty && l.qty > 0 ? `${l.lokasi} (${l.qty} pcs)` : l.lokasi)).join(', ');
+            }
+          }
           return `
       <tr>
         <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${idx + 1}</td>
@@ -1165,7 +1216,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(cleanSku));
         const effectiveName = it.nama_produk || cleanSku;
 
-        const isStoreSJ = /store|toko|sps|outlet/i.test(sj.tujuan || '');
+        const isStoreSJ = /store|toko|outlet/i.test(sj.tujuan || '');
         let itemLokasi = (it.lokasi || '').trim();
         if (!itemLokasi || itemLokasi === '-' || itemLokasi === '--' || itemLokasi === 'KOSONG') {
           if (isStoreSJ) {

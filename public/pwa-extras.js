@@ -199,6 +199,58 @@ async function checkNewOrdersInBackground() {
     } catch {}
   }
 
+  // 2. Jika Admin/Superadmin ATAU Picker: Cek Permintaan Peminjaman Sementara (SPS) baru
+  if (cfg.isAdmin || cfg.isPicker) {
+    try {
+      const spsUrl = `${cfg.supabaseUrl}/rest/v1/peminjaman?select=id,no_peminjaman,pic,keperluan,sku,nama_produk,qty,created_at&order=created_at.desc&limit=15`;
+      const resSps = await fetch(spsUrl, { method: 'GET', headers });
+      if (resSps.ok) {
+        const rowsSps = await resSps.json();
+        if (Array.isArray(rowsSps) && rowsSps.length > 0) {
+          const spsGroups = new Map();
+          for (const r of rowsSps) {
+            const noSps = String(r.no_peminjaman || '').trim().toUpperCase();
+            if (!noSps) continue;
+            if (!spsGroups.has(noSps)) {
+              spsGroups.set(noSps, {
+                noSps,
+                pic: String(r.pic || 'Peminjam').trim(),
+                keperluan: String(r.keperluan || 'Peminjaman SPS').trim(),
+                created_at: r.created_at,
+                totalQty: 0,
+                skuCount: 0,
+              });
+            }
+            const g = spsGroups.get(noSps);
+            g.totalQty += Number(r.qty) || 1;
+            g.skuCount += 1;
+          }
+
+          for (const g of Array.from(spsGroups.values()).reverse()) {
+            if (notifiedSet.has(g.noSps)) continue;
+            const rowTs = g.created_at ? new Date(g.created_at).getTime() : nowMs;
+            if (rowTs >= lastCheckMs - 60000 && Math.abs(nowMs - rowTs) <= MAX_AGE_MS) {
+              notifiedSet.add(g.noSps);
+              newlyNotifiedIds.push(g.noSps);
+              updated = true;
+
+              await self.registration.showNotification(`📋 Permintaan SPS Baru — ${g.pic}`, {
+                body: `Invoice #${g.noSps} • ${g.keperluan} (${g.skuCount} SKU / ${g.totalQty} pcs). Buka untuk proses picking.`,
+                icon: '/pwa-192x192.png',
+                badge: '/pwa-192x192.png',
+                vibrate: [250, 100, 250, 100, 450],
+                tag: `sps-new-${g.noSps}`,
+                renotify: true,
+                requireInteraction: true,
+                data: { url: '/', page: 'picking_tasks' },
+              });
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
   if (updated) {
     const trimmedIds = Array.from(notifiedSet).slice(-300);
     await saveSwConfig({
@@ -253,6 +305,7 @@ self.addEventListener('message', (event) => {
           supabaseUrl: data.supabaseUrl || existing.supabaseUrl || '',
           supabaseAnonKey: data.supabaseAnonKey || existing.supabaseAnonKey || '',
           isAdmin: Boolean(data.isAdmin),
+          isPicker: Boolean(data.isPicker),
           storeName: data.storeName || '',
           username: data.username || '',
           notifiedIds: mergedIds,
