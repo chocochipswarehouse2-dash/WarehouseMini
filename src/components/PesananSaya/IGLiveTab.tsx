@@ -2348,7 +2348,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                   <div className="flex flex-col shrink-0">
                     {/* 1. Header Label (Standar Chocochips) */}
                     <div className="border-b-[2px] border-black px-3 py-2 bg-gray-50 flex justify-between items-center break-inside-avoid">
-                      <div className="text-xl font-black tracking-widest uppercase leading-none text-black flex items-center gap-2">
+                      <div className="text-xl font-black tracking-widest uppercase leading-none text-black flex items-center">
                         <img
                           src="/logo.svg"
                           alt="CHOCOCHIPS"
@@ -2356,9 +2356,6 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                           className="h-7 object-contain block"
                           onError={(e) => (e.currentTarget.style.display = 'none')}
                         />
-                        <span className="text-[10px] font-black border border-black px-1.5 py-0.5">
-                          IG LIVE
-                        </span>
                       </div>
                       <div className="text-lg font-black tracking-wider uppercase leading-none text-black">
                         {courierLabel}
@@ -2407,11 +2404,11 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                               Dari / Pengirim:
                             </div>
                             <div className="text-[12px] font-black uppercase text-black leading-tight">
-                              {storeBrand || 'CHOCOCHIPS — IG LIVE'}
+                              {storeBrand || 'CHOCOCHIPS — STORE IG LIVE'}
                             </div>
                           </div>
                           {order.username_ig && (
-                            <div className="px-2 border-l border-gray-300 text-right">
+                            <div className="px-2 border-l border-gray-300">
                               <div className="text-[9px] font-black uppercase text-gray-600 mb-0.5">
                                 Akun IG:
                               </div>
@@ -2440,7 +2437,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                           ID: {order.no_pesanan}
                         </div>
                         {order.no_resi && order.no_resi !== '-' && (
-                          <div className="text-[9px] font-bold font-mono text-center break-all text-neutral-700 leading-tight mt-0.5">
+                          <div className="text-[9px] font-bold text-center break-all text-neutral-600 leading-tight mt-0.5">
                             Resi: {order.no_resi}
                           </div>
                         )}
@@ -2473,19 +2470,30 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                         </thead>
                         <tbody>
                           {(order.items || []).length > 0 ? (
-                            (order.items || []).map((it, itIdx) => (
-                              <tr key={itIdx} className="border-b border-dashed border-black">
-                                <td className="py-1 align-top">{itIdx + 1}.</td>
-                                <td className="py-1 align-top leading-snug line-clamp-2 pr-1">
-                                  {it.nama_produk || '-'}
-                                </td>
-                                <td className="py-1 align-top">{it.size || '-'}</td>
-                                <td className="py-1 align-top font-mono">{it.sku || ''}</td>
-                                <td className="py-1 align-top text-center font-bold">
-                                  {it.qty || 1}
-                                </td>
-                              </tr>
-                            ))
+                            (order.items || []).map((it, itIdx) => {
+                              let cleanName = it.nama_produk || '-';
+                              let size = it.size || '';
+                              if (!size && it.nama_produk) {
+                                const parts = it.nama_produk.split('-');
+                                if (parts.length > 1) {
+                                  size = parts[parts.length - 1].trim();
+                                  cleanName = parts.slice(0, parts.length - 1).join('-').trim();
+                                }
+                              }
+                              return (
+                                <tr key={itIdx} className="border-b border-dashed border-black">
+                                  <td className="py-1 align-top">{itIdx + 1}.</td>
+                                  <td className="py-1 align-top leading-snug line-clamp-2 pr-1">
+                                    {cleanName}
+                                  </td>
+                                  <td className="py-1 align-top">{size}</td>
+                                  <td className="py-1 align-top">{it.sku || ''}</td>
+                                  <td className="py-1 align-top text-center font-bold">
+                                    {it.qty || 1}
+                                  </td>
+                                </tr>
+                              );
+                            })
                           ) : (
                             <tr>
                               <td
