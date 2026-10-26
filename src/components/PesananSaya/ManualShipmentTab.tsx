@@ -2663,6 +2663,11 @@ _WMS Warehouse System_`;
   const [isSendingPickingWa, setIsSendingPickingWa] = useState(false);
 
   const handleSendPickingWaGroup = async (singleOrBatchOrder?: ManualShipmentOrder | ManualShipmentOrder[] | any) => {
+    if (!userIsAdmin || isStoreUser) {
+      onShowToast('Akses ditolak: Fitur Picking WA Grup hanya tersedia untuk Admin Gudang / Superadmin.', 'error');
+      return;
+    }
+
     const isOrderArray = Array.isArray(singleOrBatchOrder);
     const isRealOrder = Boolean(
       !isOrderArray &&
@@ -2702,74 +2707,90 @@ _WMS Warehouse System_`;
     setIsSendingPickingWa(true);
     try {
       const enrichedOrders = await enrichOrdersWithLocations(validOrdersToSend);
-      const operatorName = session?.name || getUserPersonName(session?.username) || session?.role || 'Admin Gudang';
-      const nowStr = new Date().toLocaleString('id-ID', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
+
+      let totalItems = 0;
+      let totalPcs = 0;
+      enrichedOrders.forEach(ord => {
+        const activeItems = ensureOrderItems(ord).filter(
+          it => it.item_status !== 'sold_out' && it.item_status !== 'cancelled'
+        );
+        totalItems += activeItems.length;
+        totalPcs += activeItems.reduce((s, it) => s + (Number(it.qty) || 1), 0);
       });
 
-      const totalPcs = enrichedOrders.reduce((sum, ord) => {
-        const activeItems = (ord.items || []).filter(it => it.item_status !== 'sold_out' && it.item_status !== 'cancelled');
-        return sum + activeItems.reduce((s, it) => s + (Number(it.qty) || 1), 0);
-      }, 0);
+      const formatOrderItemsList = (ord: ManualShipmentOrder): string => {
+        const activeItems = ensureOrderItems(ord).filter(
+          it => it.item_status !== 'sold_out' && it.item_status !== 'cancelled'
+        );
+        return activeItems
+          .map((it, idx) => {
+            const itemNum = idx + 1;
+            const cleanSku = (it.sku || '-').trim();
+            const cleanName = (it.nama_produk || cleanSku || '-').trim();
 
-      const msgLines: string[] = [
-        `📋 *PICKING LIST PESANAN BARU (MANUAL SHIPMENT / ALTER)*`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `📅 *Waktu Request:* ${nowStr}`,
-        `👤 *Diminta Oleh:* ${operatorName}`,
-        `📦 *Total Antrean:* ${enrichedOrders.length} Pesanan (*${totalPcs} pcs*)`,
-        ``,
-      ];
+            let rawSize = (it.size || '').trim();
+            if (!rawSize || rawSize === '-' || rawSize.toLowerCase() === 'default') {
+              const parts = cleanName.split('-');
+              if (parts.length > 1) {
+                const candidate = parts[parts.length - 1].trim();
+                if (candidate && candidate.length <= 10) {
+                  rawSize = candidate;
+                }
+              }
+            }
+            const cleanSize = rawSize && rawSize.toLowerCase() !== 'default' ? rawSize : '-';
 
-      enrichedOrders.forEach((ord, oIdx) => {
-        const isAr = isStandaloneArOrder(ord);
-        const hasAlter = hasRealAlterItems(ord);
-        const typeLabel = isAr ? '✂️ [ALTERATION & REPAIR]' : hasAlter ? '📦✂️ [MANUAL + ALTER]' : '📦 [MANUAL SHIPMENT]';
-        const txCustomer = Array.isArray(ord.no_transaksi_pengirim)
-          ? ord.no_transaksi_pengirim.filter(Boolean).join(', ')
-          : (ord.no_transaksi_pengirim || ord.no_transaksi_customer || '-');
-        const effectivePic = ord.pic_store || ord.alteration_repair_data?.pic_pemohon || '';
+            // Sama persis dengan Picking A4: jika fulfillment Store -> lokasi = kode/nama Store; jika Gudang/MKT -> lokasi rak
+            const ful = (it.fulfillment || (it as any).toko_asal || (it as any).store_name || '').trim();
+            const fulLower = ful.toLowerCase();
+            const isStoreFulfillment = Boolean(
+              ful &&
+                !fulLower.includes('marketplace') &&
+                !fulLower.includes('gudang') &&
+                !fulLower.includes('warehouse')
+            );
+            const cleanLoc = isStoreFulfillment
+              ? getStoreCode(ful) || ful
+              : it.lokasi && it.lokasi !== '-' && it.lokasi !== 'KOSONG'
+              ? it.lokasi
+              : '-';
 
-        msgLines.push(`*${oIdx + 1}. #${ord.no_pesanan}* ${typeLabel}`);
-        msgLines.push(`• *Store:* ${ord.nama_pengirim || '-'}${effectivePic ? ` (PIC: ${effectivePic})` : ''}`);
-        if (txCustomer && txCustomer !== '-') {
-          msgLines.push(`• *No. DealPOS:* ${txCustomer}`);
-        }
-        msgLines.push(`• *Customer:* ${ord.nama_tujuan || '-'} | *Kurir:* ${ord.jasa_kirim || '-'}`);
-        msgLines.push(`• *Daftar Item Picking:*`);
+            return (
+              `${itemNum}. 📦 *${cleanName}*\n` +
+              `   ├ Size    : *${cleanSize}*\n` +
+              `   ├ SKU     : \`${cleanSku}\`\n` +
+              `   ├ QTY     : *${Number(it.qty) || 1} pcs*\n` +
+              `   └ 📍 Lokasi: *${cleanLoc}*`
+            );
+          })
+          .join('\n\n');
+      };
 
-        const activeItems = (ord.items || []).filter(it => it.item_status !== 'sold_out' && it.item_status !== 'cancelled');
-        activeItems.forEach((it, iIdx) => {
-          const sizeStr = it.size && it.size !== '-' && it.size !== 'ALL' ? ` (Size: ${it.size})` : '';
-          const ful = (it.fulfillment || '').toLowerCase().trim();
-          const isMktOrWh = !ful || ful.includes('marketplace') || ful.includes('gudang') || ful.includes('warehouse') || isAr;
-          const cleanLoc = it.lokasi && it.lokasi !== '-' ? it.lokasi : '';
-          const locStr = isMktOrWh
-            ? `📍 Rak Gudang: *${cleanLoc || 'Cek Stok Gudang'}*`
-            : `🏬 Fulfil Store: *${it.fulfillment}* (${cleanLoc || getStoreCode(it.fulfillment)})`;
-          const sjStr = isMktOrWh && it.no_sj_dealpos ? ` | SJ MKT: ${it.no_sj_dealpos}` : '';
+      const msgLines: string[] = [];
 
-          msgLines.push(`   ${iIdx + 1}) *${it.sku || '-'}* — ${it.nama_produk || '-'}${sizeStr}`);
-          msgLines.push(`      Qty: *${it.qty || 1} pcs* | ${locStr}${sjStr}`);
-
-          if (isRealAlterItem(it)) {
-            const alterNote = it.alteration_detail || it.repair_detail || it.layanan_type || 'Perlu Alterasi';
-            msgLines.push(`      ✂️ _Alter${it.id_form_alter ? ` (${it.id_form_alter})` : ''}: ${alterNote}_`);
+      if (enrichedOrders.length === 1) {
+        const ord = enrichedOrders[0];
+        msgLines.push(
+          `*🚨 PICKING LIST MANUAL SHIPMENT / ALTER*`,
+          `*No. Pesanan:* \`${ord.no_pesanan || '-'}\``,
+          ``,
+          `📋 *DAFTAR ITEM UNTUK PICKING (${totalItems} Item / ${totalPcs} Pcs):*`,
+          formatOrderItemsList(ord)
+        );
+      } else {
+        msgLines.push(
+          `*🚨 PICKING LIST MANUAL SHIPMENT / ALTER*`,
+          `📋 *DAFTAR ITEM UNTUK PICKING (${enrichedOrders.length} Pesanan / ${totalItems} Item / ${totalPcs} Pcs):*`,
+          ``
+        );
+        enrichedOrders.forEach((ord, oIdx) => {
+          msgLines.push(`*${oIdx + 1}) No. Pesanan:* \`${ord.no_pesanan || '-'}\``);
+          msgLines.push(formatOrderItemsList(ord));
+          if (oIdx < enrichedOrders.length - 1) {
+            msgLines.push(``);
           }
         });
-
-        if (ord.notes_paket && !ord.notes_paket.includes('[STORE_METADATA]')) {
-          msgLines.push(`• *Catatan:* _${ord.notes_paket}_`);
-        }
-        msgLines.push(``);
-      });
-
-      msgLines.push(`━━━━━━━━━━━━━━━━━━━━`);
-      msgLines.push(`_Mohon tim Gudang segera melakukan picking barang sesuai lokasi rak di atas dan menyiapkan paket/alterasi. Terima kasih!_ 🙏`);
+      }
 
       const res = await sendFonnteMessage(cfg.groupTarget, msgLines.join('\n'), cfg.token);
       if (!res.success) {
@@ -2777,59 +2798,16 @@ _WMS Warehouse System_`;
         return;
       }
 
-      // Tandai tahapan Picking selesai (sama seperti Cetak Picking List)
-      const orderIds = enrichedOrders.map(o => o.no_pesanan || (o as any).id).filter(Boolean);
-      const nowIso = new Date().toISOString();
-      let movedToDiprosesCount = 0;
-
-      setOrders(prev => prev.map(o => {
-        const id = o.no_pesanan || (o as any).id;
-        if (orderIds.includes(id) || (o.no_pesanan && orderIds.includes(o.no_pesanan))) {
-          const bothDone = !!o.is_label_printed;
-          const flowStr = (o.alteration_repair_data?.status_flow || '').toLowerCase();
-          const isFlowAktif = ['dalam_pengerjaan', 'selesai_qc', 'diterima_warehouse', 'siap_dikirim'].includes(flowStr);
-          const canTransition = o.status !== 'batal' && !isOrderSelesai(o);
-          if (bothDone && canTransition && o.status !== 'diproses') movedToDiprosesCount++;
-          return {
-            ...o,
-            status: canTransition ? ((bothDone || isFlowAktif) ? 'diproses' : 'diterima') : o.status,
-            is_picking_printed: true,
-            tgl_cetak_picking: nowIso,
-          };
-        }
-        return o;
-      }));
-
-      if (selectedOrderDetails) {
-        const detailId = selectedOrderDetails.no_pesanan || (selectedOrderDetails as any).id;
-        if (orderIds.includes(detailId) || (selectedOrderDetails.no_pesanan && orderIds.includes(selectedOrderDetails.no_pesanan))) {
-          setSelectedOrderDetails(prev => {
-            if (!prev) return null;
-            const bothDone = !!prev.is_label_printed;
-            const flowStr = (prev.alteration_repair_data?.status_flow || '').toLowerCase();
-            const isFlowAktif = ['dalam_pengerjaan', 'selesai_qc', 'diterima_warehouse', 'siap_dikirim'].includes(flowStr);
-            const canTransition = prev.status !== 'batal' && !isOrderSelesai(prev);
-            return {
-              ...prev,
-              status: canTransition ? ((bothDone || isFlowAktif) ? 'diproses' : 'diterima') : prev.status,
-              is_picking_printed: true,
-              tgl_cetak_picking: nowIso,
-            };
-          });
-        }
-      }
-
-      updateOrderPrintStatus(orderIds, 'picking').catch(err => console.warn('Async WA picking status error:', err));
-
+      // Catatan Sesuai Aturan: Picking WA Grup hanya fitur pembantu.
+      // Syarat pindah dari Pesanan Baru ke Sedang Diproses tetap wajib: Cetak Picking List (A4) & Cetak Label Paket (A6).
       if (!isRealOrder && !isOrderArray) {
         setSelectedOrders(new Set());
       }
 
-      if (movedToDiprosesCount > 0) {
-        onShowToast(`Picking List (${enrichedOrders.length} pesanan) terkirim ke Grup WA via Fonnte! (2/2 tahap selesai — pindah ke Sedang Diproses)`, 'success');
-      } else {
-        onShowToast(`Picking List (${enrichedOrders.length} pesanan) terkirim ke Grup WA via Fonnte! (Tahap 1/2 Picking selesai)`, 'success');
-      }
+      onShowToast(
+        `Daftar Picking (${enrichedOrders.length} pesanan) terkirim ke Grup WA via Fonnte! (Tetap cetak Picking A4 & Label A6 untuk memindahkan ke Sedang Diproses)`,
+        'success'
+      );
     } catch (err: any) {
       onShowToast(`Gagal memproses pengiriman WA Grup: ${err?.message || 'Unknown error'}`, 'error');
     } finally {
@@ -3738,25 +3716,27 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                             ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100'
                             : 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100'
                         }`}
-                        title="Tahap 1/2: Cetak Lembar Ceklis Picking List"
+                        title="Tahap 1/2: Cetak Lembar Ceklis Picking List (A4)"
                       >
                         <FileText className="w-3.5 h-3.5 mr-1.5" />
                         {order.is_picking_printed ? 'Cetak Ulang Picking ✓' : 'Cetak Picking List'}
                       </button>
-                      <button
-                        type="button"
-                        disabled={isSendingPickingWa}
-                        onClick={() => handleSendPickingWaGroup(order)}
-                        className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-xs border border-emerald-700 flex items-center transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
-                        title="Tahap 1/2 Alternatif: Kirim Rincian Picking List (lengkap Lokasi Rak Gudang) ke Grup WA via Fonnte"
-                      >
-                        {isSendingPickingWa ? (
-                          <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                        ) : (
-                          <Send className="w-3.5 h-3.5 mr-1.5" />
-                        )}
-                        <span>Picking WA Grup (Fonnte)</span>
-                      </button>
+                      {userIsAdmin && (
+                        <button
+                          type="button"
+                          disabled={isSendingPickingWa}
+                          onClick={() => handleSendPickingWaGroup(order)}
+                          className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-xs border border-emerald-700 flex items-center transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
+                          title="Fitur Pembantu Admin: Kirim Rincian Picking List (lengkap Lokasi Rak Gudang) ke Grup WA via Fonnte"
+                        >
+                          {isSendingPickingWa ? (
+                            <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                          ) : (
+                            <Send className="w-3.5 h-3.5 mr-1.5" />
+                          )}
+                          <span>Picking WA Grup (Fonnte)</span>
+                        </button>
+                      )}
                       <button 
                         type="button"
                         onClick={() => { setSelectedOrderDetails(null); handlePrintLabel(order); }}
@@ -5851,7 +5831,7 @@ _WMS Warehouse System_`;
                 <span>⚡ Cetak Picking Massal ({filteredOrders.length})</span>
               </button>
             )}
-            {!isStoreUser && (filterPrintStatus === 'unprinted_picking' || stageTab === 'baru') && filteredOrders.length > 0 && (
+            {userIsAdmin && !isStoreUser && (filterPrintStatus === 'unprinted_picking' || stageTab === 'baru') && filteredOrders.length > 0 && (
               <button
                 type="button"
                 disabled={isSendingPickingWa}
@@ -5862,7 +5842,7 @@ _WMS Warehouse System_`;
                   handleSendPickingWaGroup(targetList.length > 0 ? targetList : filteredOrders);
                 }}
                 className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-50"
-                title="Kirim daftar Picking List (lengkap lokasi rak gudang) ke Grup WhatsApp Gudang via Fonnte"
+                title="Fitur Pembantu Admin: Kirim daftar Picking List (lengkap lokasi rak gudang) ke Grup WhatsApp Gudang via Fonnte"
               >
                 {isSendingPickingWa ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -6233,20 +6213,22 @@ _WMS Warehouse System_`;
                     <FileText className="w-3.5 h-3.5 mr-1" />
                     Cetak Picking ({selectedOrders.size})
                   </button>
-                  <button
-                    type="button"
-                    disabled={isSendingPickingWa}
-                    onClick={() => handleSendPickingWaGroup()}
-                    className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center transition-colors cursor-pointer shadow-xs disabled:opacity-50"
-                    title="Kirim Picking List pesanan terpilih ke Grup WhatsApp Gudang via Fonnte"
-                  >
-                    {isSendingPickingWa ? (
-                      <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
-                    ) : (
-                      <Send className="w-3.5 h-3.5 mr-1" />
-                    )}
-                    Picking WA Grup ({selectedOrders.size})
-                  </button>
+                  {userIsAdmin && (
+                    <button
+                      type="button"
+                      disabled={isSendingPickingWa}
+                      onClick={() => handleSendPickingWaGroup()}
+                      className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                      title="Fitur Pembantu Admin: Kirim Picking List pesanan terpilih ke Grup WhatsApp Gudang via Fonnte"
+                    >
+                      {isSendingPickingWa ? (
+                        <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                      ) : (
+                        <Send className="w-3.5 h-3.5 mr-1" />
+                      )}
+                      Picking WA Grup ({selectedOrders.size})
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => handlePrintLabel()}
@@ -6832,7 +6814,7 @@ _WMS Warehouse System_`;
                                 ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
                                 : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-indigo-50 hover:text-indigo-700'
                             }`}
-                            title={order.is_picking_printed ? 'Picking list sudah dicetak / dikirim WA (Klik cetak ulang)' : 'Klik untuk cetak Picking List'}
+                            title={order.is_picking_printed ? 'Picking list A4 sudah dicetak (Klik cetak ulang)' : 'Klik untuk cetak Picking List A4'}
                           >
                             <span className="flex items-center gap-1 truncate">
                               <FileText className="w-2.5 h-2.5 shrink-0" />
@@ -6841,19 +6823,21 @@ _WMS Warehouse System_`;
                             <span className="text-[8px] opacity-75 font-normal shrink-0 ml-1">A4</span>
                           </button>
 
-                          <button
-                            type="button"
-                            disabled={isSendingPickingWa}
-                            onClick={() => handleSendPickingWaGroup(order)}
-                            className="w-full px-1.5 py-0.5 rounded text-[9.5px] font-bold border border-emerald-300 dark:border-emerald-700 bg-emerald-50/80 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors cursor-pointer flex items-center justify-between disabled:opacity-50"
-                            title="Kirim Picking List (lengkap Lokasi Rak Gudang) ke Grup WA via Fonnte"
-                          >
-                            <span className="flex items-center gap-1 truncate">
-                              <Send className="w-2.5 h-2.5 shrink-0 text-emerald-600" />
-                              <span className="truncate">Picking WA</span>
-                            </span>
-                            <span className="text-[8px] opacity-75 font-normal shrink-0 ml-1">Grup</span>
-                          </button>
+                          {userIsAdmin && (
+                            <button
+                              type="button"
+                              disabled={isSendingPickingWa}
+                              onClick={() => handleSendPickingWaGroup(order)}
+                              className="w-full px-1.5 py-0.5 rounded text-[9.5px] font-bold border border-emerald-300 dark:border-emerald-700 bg-emerald-50/80 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors cursor-pointer flex items-center justify-between disabled:opacity-50"
+                              title="Fitur Pembantu Admin: Kirim Picking List (lengkap Lokasi Rak Gudang) ke Grup WA via Fonnte"
+                            >
+                              <span className="flex items-center gap-1 truncate">
+                                <Send className="w-2.5 h-2.5 shrink-0 text-emerald-600" />
+                                <span className="truncate">Picking WA</span>
+                              </span>
+                              <span className="text-[8px] opacity-75 font-normal shrink-0 ml-1">Grup</span>
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -7034,7 +7018,7 @@ _WMS Warehouse System_`;
                         {!isStoreUser && (
                           <>
                             <option value="print_picking">📋 Cetak Picking List</option>
-                            <option value="wa_picking_group">📲 Picking ke WA Grup (Fonnte)</option>
+                            {userIsAdmin && <option value="wa_picking_group">📲 Picking ke WA Grup (Fonnte)</option>}
                             <option value="print">🏷️ Cetak Label (A6)</option>
                           </>
                         )}
@@ -7601,15 +7585,17 @@ _WMS Warehouse System_`;
                             >
                               <FileText className="w-3.5 h-3.5" />
                             </button>
-                            <button
-                              type="button"
-                              disabled={isSendingPickingWa}
-                              onClick={() => handleSendPickingWaGroup(order)}
-                              title="Tahap 1/2 Alternatif: Kirim Picking List ke Grup WA Gudang via Fonnte"
-                              className="p-1.5 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 rounded-lg flex items-center justify-center transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
-                            >
-                              <Send className="w-3.5 h-3.5 text-emerald-600" />
-                            </button>
+                            {userIsAdmin && (
+                              <button
+                                type="button"
+                                disabled={isSendingPickingWa}
+                                onClick={() => handleSendPickingWaGroup(order)}
+                                title="Fitur Pembantu Admin: Kirim Picking List ke Grup WA Gudang via Fonnte"
+                                className="p-1.5 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 rounded-lg flex items-center justify-center transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
+                              >
+                                <Send className="w-3.5 h-3.5 text-emerald-600" />
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => handlePrintLabel(order)}
@@ -7757,7 +7743,7 @@ _WMS Warehouse System_`;
                           )}
                           <option value="notif_wa_store">📲 Notif WA Store</option>
                           {!isStoreUser && <option value="print_picking">📋 Cetak Picking List</option>}
-                          {!isStoreUser && <option value="wa_picking_group">📲 Picking WA Grup (Fonnte)</option>}
+                          {userIsAdmin && !isStoreUser && <option value="wa_picking_group">📲 Picking WA Grup (Fonnte)</option>}
                           {!isStoreUser && <option value="print">🏷️ Print Label A6</option>}
                           {userIsAdmin && <option value="jadwal_store">📅 Atur Jadwal Store</option>}
                           {userIsAdmin && order.status !== 'diproses' && order.status !== 'dikirim' && order.status !== 'selesai' && order.status !== 'batal' && (
