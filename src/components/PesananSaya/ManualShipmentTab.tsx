@@ -270,8 +270,8 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
   const [orders, setOrders] = useState<ManualShipmentOrder[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // 3 Tahap Utama Rekap Pesanan: 'baru' | 'diproses' | 'selesai' | 'semua'
-  const [stageTab, setStageTab] = useState<'baru' | 'diproses' | 'selesai' | 'semua'>('semua');
+  // Tahap Utama Rekap Pesanan: 'baru' | 'diproses' | 'selesai' | 'batal' | 'semua'
+  const [stageTab, setStageTab] = useState<'baru' | 'diproses' | 'selesai' | 'batal' | 'semua'>('semua');
 
   // Modal Input Jadwal Kirim ke Store
   const [jadwalModalOrder, setJadwalModalOrder] = useState<ManualShipmentOrder | null>(null);
@@ -4858,19 +4858,23 @@ _WMS Warehouse System_`;
   }, [scopedOrders, filterStoreDirection, userAssignedStore]);
 
   // Hitung jumlah pesanan per tahap untuk badges pada Tab Rekap (konsisten dengan directionScopedOrders)
-  const { countBaru, countDiproses, countSelesai } = useMemo(() => {
+  const { countBaru, countDiproses, countSelesai, countBatal } = useMemo(() => {
     let baru = 0;
     let diproses = 0;
     let selesai = 0;
+    let batal = 0;
 
     directionScopedOrders.forEach(o => {
-      if (o.status === 'batal') return;
+      if (o.status === 'batal') {
+        batal++;
+        return;
+      }
       if (isOrderSelesai(o)) selesai++;
       else if (isOrderSedangDiproses(o)) diproses++;
       else if (isOrderPesananBaru(o)) baru++;
     });
 
-    return { countBaru: baru, countDiproses: diproses, countSelesai: selesai };
+    return { countBaru: baru, countDiproses: diproses, countSelesai: selesai, countBatal: batal };
   }, [directionScopedOrders]);
 
   // Switch filter arah toko sekaligus set stageTab ke 'semua' agar semua pesanan arah tersebut langsung tampil
@@ -5117,13 +5121,15 @@ _WMS Warehouse System_`;
   const filteredOrders = useMemo(() => {
     let result = scopedOrders;
 
-    // 3 Tahap Utama Rekap Pesanan: 'baru' | 'diproses' | 'selesai' | 'semua'
+    // Tahap Utama Rekap Pesanan: 'baru' | 'diproses' | 'selesai' | 'batal' | 'semua'
     if (stageTab === 'baru') {
       result = result.filter(o => isOrderPesananBaru(o));
     } else if (stageTab === 'diproses') {
       result = result.filter(o => isOrderSedangDiproses(o));
     } else if (stageTab === 'selesai') {
       result = result.filter(o => isOrderSelesai(o));
+    } else if (stageTab === 'batal') {
+      result = result.filter(o => o.status === 'batal');
     }
 
     // Filter Arah Pesanan Toko (Semua vs Dibuat Toko Ini vs Permintaan Toko Lain)
@@ -5553,6 +5559,7 @@ _WMS Warehouse System_`;
       if (stageTab === 'baru') return isOrderPesananBaru(o);
       if (stageTab === 'diproses') return isOrderSedangDiproses(o);
       if (stageTab === 'selesai') return isOrderSelesai(o);
+      if (stageTab === 'batal') return o.status === 'batal';
       return true;
     });
     const totalArCount = stageScopedOrders.filter(o => isStandaloneArOrder(o)).length;
@@ -5798,6 +5805,24 @@ _WMS Warehouse System_`;
 
             <button
               type="button"
+              onClick={() => { setStageTab('batal'); setFilterPrintStatus('all'); }}
+              className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-2 cursor-pointer ${
+                stageTab === 'batal'
+                  ? 'bg-rose-600 text-white shadow-xs font-extrabold'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Ban className="w-3.5 h-3.5" />
+              <span>Dibatalkan</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                stageTab === 'batal' ? 'bg-rose-700 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+              }`}>
+                {countBatal}
+              </span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => { setStageTab('semua'); setFilterPrintStatus('all'); }}
               className={`px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
                 stageTab === 'semua'
@@ -5882,6 +5907,8 @@ _WMS Warehouse System_`;
             ? 'bg-blue-50/80 dark:bg-blue-950/30 text-blue-900 dark:text-blue-200 border-blue-200 dark:border-blue-800/50'
             : stageTab === 'selesai'
             ? 'bg-emerald-50/80 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200 border-emerald-200 dark:border-emerald-800/50'
+            : stageTab === 'batal'
+            ? 'bg-rose-50/80 dark:bg-rose-950/30 text-rose-900 dark:text-rose-200 border-rose-200 dark:border-rose-800/50'
             : 'bg-slate-100/80 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
         }`}>
           {stageTab === 'baru' && (
@@ -5902,10 +5929,16 @@ _WMS Warehouse System_`;
               <span><strong>Selesai:</strong> Paket sudah terisi nomor resi (kirim ke customer) atau sudah ditentukan tanggal jadwal kirim ke store.</span>
             </>
           )}
+          {stageTab === 'batal' && (
+            <>
+              <Ban className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+              <span><strong>Dibatalkan:</strong> Pesanan yang telah dibatalkan oleh Admin Gudang (disimpan beserta alasan &amp; histori pembatalan).</span>
+            </>
+          )}
           {stageTab === 'semua' && (
             <>
               <FileText className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-              <span>Menampilkan seluruh pesanan (termasuk dibatalkan dan belum diproses).</span>
+              <span>Menampilkan seluruh pesanan ({countBaru} Baru + {countDiproses} Diproses + {countSelesai} Selesai + {countBatal} Dibatalkan = {directionScopedOrders.length} Total).</span>
             </>
           )}
         </div>
@@ -6504,7 +6537,7 @@ _WMS Warehouse System_`;
                     ) : directionScopedOrders.length > 0 && stageTab !== 'semua' ? (
                       <div className="space-y-2 py-2">
                         <p className="text-slate-600 dark:text-slate-300 font-medium">
-                          Tidak ada pesanan pada tahap "{stageTab === 'baru' ? 'Pesanan Baru' : stageTab === 'diproses' ? 'Sedang Diproses' : 'Selesai'}". Terdapat <strong>{directionScopedOrders.length} pesanan</strong> di tahap lainnya.
+                          Tidak ada pesanan pada tahap "{stageTab === 'baru' ? 'Pesanan Baru' : stageTab === 'diproses' ? 'Sedang Diproses' : stageTab === 'batal' ? 'Dibatalkan' : 'Selesai'}". Terdapat <strong>{directionScopedOrders.length} pesanan</strong> di tahap lainnya.
                         </p>
                         <button
                           type="button"
@@ -7284,7 +7317,7 @@ _WMS Warehouse System_`;
                 ) : directionScopedOrders.length > 0 && stageTab !== 'semua' ? (
                   <div className="space-y-2 py-2">
                     <p className="text-slate-600 dark:text-slate-300 font-medium">
-                      Tidak ada pesanan pada tahap "{stageTab === 'baru' ? 'Pesanan Baru' : stageTab === 'diproses' ? 'Sedang Diproses' : 'Selesai'}". Terdapat <strong>{directionScopedOrders.length} pesanan</strong> di tahap lainnya.
+                      Tidak ada pesanan pada tahap "{stageTab === 'baru' ? 'Pesanan Baru' : stageTab === 'diproses' ? 'Sedang Diproses' : stageTab === 'batal' ? 'Dibatalkan' : 'Selesai'}". Terdapat <strong>{directionScopedOrders.length} pesanan</strong> di tahap lainnya.
                     </p>
                     <button
                       type="button"
