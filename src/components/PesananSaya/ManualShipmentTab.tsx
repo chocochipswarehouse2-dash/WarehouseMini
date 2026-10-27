@@ -47,7 +47,6 @@ import {
 import { clearDeltaSyncCache } from '../../services/gasSync';
 import { sendFonnteMessage, getFonnteConfig } from '../../services/whatsapp';
 import { supabaseFetch, fetchStockForSkus, isWarehouseLocation, getPickingPriority, StockRealtimeItem, searchActiveProductsLive, fetchMasterProductsFromSupabase } from '../../services/supabase';
-import { lookupProductBySku } from '../../utils/productLookup';
 import QRCode from 'qrcode';
 import {
   generateCustomerTransactionNumber,
@@ -2444,10 +2443,14 @@ _WMS Warehouse System_`;
         skuStocksMap.get(cleanSku)!.push(stk);
       });
 
-      // 1. Resolve locations from Supabase stok_real_fisik
-      skuStocksMap.forEach((stocks, cleanSku) => {
+      // 1. Authoritative check: live Supabase stok_real_fisik data
+      // Strictly enforce Rule 7: Priority 1 (Warehouse A-D, Aksesoris, Transit) -> Priority 2 (Kolian R/V/Z) -> Priority 3 (Blok F).
+      // Strictly exclude Perbaikan (Cuci, Permak, Defect) and Anomali from automated picking recommendations!
+      allSkus.forEach(cleanSku => {
+        const stocks = skuStocksMap.get(cleanSku) || [];
         const validLocStocks = stocks.filter(s => s.lokasi && s.lokasi !== '-' && s.lokasi !== 'KOSONG');
         const activeWarehouse = validLocStocks.filter(s => (s.sisa_stok ?? 0) > 0 && isWarehouseLocation(s.lokasi || '', s.area || ''));
+
         if (activeWarehouse.length > 0) {
           activeWarehouse.sort((a, b) => {
             const pA = getPickingPriority(a.lokasi || '', a.area || '');
@@ -2456,59 +2459,16 @@ _WMS Warehouse System_`;
             return (b.sisa_stok ?? 0) - (a.sisa_stok ?? 0);
           });
           const formattedLoc = Array.from(new Set(activeWarehouse.map(l => `${l.lokasi} (${l.sisa_stok ?? 0} pcs)`).filter(Boolean))).join(', ');
-          skuLocationMap.set(cleanSku, formattedLoc || activeWarehouse[0].lokasi || '-');
+          skuLocationMap.set(cleanSku, formattedLoc || activeWarehouse[0].lokasi || '- (Belum Ada Rak/Habis)');
         } else {
-          const anyWarehouse = validLocStocks.filter(s => isWarehouseLocation(s.lokasi || '', s.area || ''));
-          if (anyWarehouse.length > 0) {
-            const formattedLoc = Array.from(new Set(anyWarehouse.map(l => l.lokasi).filter(Boolean))).join(', ');
-            skuLocationMap.set(cleanSku, formattedLoc || anyWarehouse[0].lokasi || '-');
-          } else if (validLocStocks.length > 0) {
-            const formattedLoc = Array.from(new Set(validLocStocks.map(l => l.lokasi).filter(Boolean))).join(', ');
-            skuLocationMap.set(cleanSku, formattedLoc || validLocStocks[0].lokasi || '-');
-          }
+          // HAPUS FALLBACK CACHE LOKAL:
+          // Jika di database Supabase stok fisik habis / 0 / belum ditaruh di rak picking valid,
+          // tampilkan '- (Belum Ada Rak/Habis)' agar picker tidak tersesat atau disesatkan ke rak kosong!
+          skuLocationMap.set(cleanSku, '- (Belum Ada Rak/Habis)');
         }
       });
 
-      // 2. Fallback to productCatalog prop or lookupProductBySku (localStorage / master catalog)
-      allSkus.forEach(cleanSku => {
-        if (!skuLocationMap.has(cleanSku) || skuLocationMap.get(cleanSku) === '-') {
-          // Check productCatalog prop first
-          if (productCatalog && productCatalog.length > 0) {
-            const prod = productCatalog.find(p => 
-              (p.k && p.k.trim().toUpperCase() === cleanSku) || 
-              ((p as any).sku && String((p as any).sku).trim().toUpperCase() === cleanSku)
-            );
-            if (prod) {
-              if (prod.lokasi && prod.lokasi !== '-' && prod.lokasi !== 'KOSONG') {
-                skuLocationMap.set(cleanSku, prod.lokasi);
-              } else if (Array.isArray((prod as any).locList) && (prod as any).locList.length > 0) {
-                const locs = (prod as any).locList.map((l: any) => typeof l === 'string' ? l : l.lokasi).filter(Boolean);
-                if (locs.length > 0) {
-                  skuLocationMap.set(cleanSku, locs.join(', '));
-                }
-              }
-            }
-          }
-
-          // If still not found, check master product lookup (inspects localStorage wms_master_produk, etc.)
-          if (!skuLocationMap.has(cleanSku) || skuLocationMap.get(cleanSku) === '-') {
-            const lookup = lookupProductBySku(cleanSku, productCatalog || []);
-            if (lookup.found && lookup.masterItem) {
-              const m = lookup.masterItem;
-              if (m.lokasi && m.lokasi !== '-' && m.lokasi !== 'KOSONG') {
-                skuLocationMap.set(cleanSku, m.lokasi);
-              } else if (Array.isArray((m as any).locList) && (m as any).locList.length > 0) {
-                const locs = (m as any).locList.map((l: any) => typeof l === 'string' ? l : l.lokasi).filter(Boolean);
-                if (locs.length > 0) {
-                  skuLocationMap.set(cleanSku, locs.join(', '));
-                }
-              }
-            }
-          }
-        }
-      });
-
-      // 3. Map enriched locations back onto order items
+      // 2. Map enriched locations back onto order items
       return targetOrders.map(o => {
         const items = ensureOrderItems(o);
         return {
@@ -2532,15 +2492,11 @@ _WMS Warehouse System_`;
               };
             }
 
-            // Jika fulfillment Marketplace / Gudang, cari lokasi fisik penyimpanan rak gudang
+            // Jika fulfillment Marketplace / Gudang, gunakan hasil live query stok fisik Supabase
             const foundLoc = skuLocationMap.get(cleanSku);
-            const currentLoc = (it as any).lokasi;
-            const finalLoc = (foundLoc && foundLoc !== '-')
-              ? foundLoc
-              : (currentLoc && currentLoc !== '-' && currentLoc !== 'KOSONG' ? currentLoc : '-');
             return {
               ...it,
-              lokasi: finalLoc,
+              lokasi: foundLoc || '- (Belum Ada Rak/Habis)',
             };
           }),
         };
@@ -2558,7 +2514,7 @@ _WMS Warehouse System_`;
             !fulLower.includes('warehouse');
           return {
             ...it,
-            lokasi: isStoreFulfillment ? (getStoreCode(ful) || ful) : (it.lokasi || '-'),
+            lokasi: isStoreFulfillment ? (getStoreCode(ful) || ful) : '- (Gagal Memuat Lokasi)',
           };
         }),
       }));
