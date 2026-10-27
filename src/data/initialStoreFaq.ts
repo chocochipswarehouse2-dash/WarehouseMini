@@ -135,15 +135,15 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
     // PERSPEKTIF ADMIN GUDANG
     answer_admin: 'Admin Gudang bertugas menginput nomor resi ekspedisi setelah seluruh barang pesanan terkumpul, dipacking, dan ditempel label pengiriman. WMS menyediakan dua metode input resi: Satuan dan Massal (Bulk Update Resi via scan barcode).',
     action_steps_admin: [
-      { step: 1, title: 'Input Satuan (Per-Pesanan)', desc: 'Pada baris pesanan di tab Manual Shipment, klik tombol biru "Update Resi", ketik nomor resi kurir, lalu klik Simpan.' },
-      { step: 2, title: 'Input Massal (Bulk Update Resi)', desc: 'Klik tombol "⚡ Bulk Update Resi" di header tabel. Pilih kurir, lalu scan barcode nomor resi secara berurutan dengan scanner fisik.' },
-      { step: 3, title: 'Perubahan Status Otomatis', desc: 'Setelah resi tersimpan, status pesanan otomatis berganti dari "Diproses" menjadi "Dikirim" (shipped) dan tanggal kirim tercatat.' }
+      { step: 1, title: 'Input Satuan (Per-Pesanan)', desc: 'Pada baris pesanan di tab Manual Shipment, klik tombol biru "+ Input Resi" / "Update Resi", ketik nomor resi kurir, lalu klik Simpan.' },
+      { step: 2, title: 'Input Massal (Bulk Update Resi)', desc: 'Klik tombol "⚡ Bulk Update Resi" di header tabel. Pilih kurir, lalu scan atau ketik nomor resi pada tabel "Belum Ada Resi" atau unggah CSV.' },
+      { step: 3, title: 'Perubahan Status Otomatis ke Dikirim', desc: 'Pesanan dengan jasa kirim ekspedisi wajib memiliki No. Resi untuk berstatus "Dikirim". Selama resi belum diinput, status pesanan tetap "Diterima" atau "Diproses" (jika Label A6 & Picking List sudah dicetak).' }
     ],
     button_badges_admin: [
       { label: 'Update Resi (Satuan)', color: 'blue', icon: 'Truck' },
       { label: 'Bulk Update Resi (Scan Barcode)', color: 'indigo', icon: 'Sparkles' }
     ],
-    admin_notes: '💡 Pengisian resi akan otomatis memicu webhook notifikasi jika integrasi email/WA customer diaktifkan.',
+    admin_notes: '💡 Selama No. Resi belum diisi, pesanan ekspedisi tidak akan masuk ke tahap Dikirim/Selesai. Begitu resi tersimpan, status pesanan otomatis menjadi Dikirim dan item fulfillment Store otomatis tercatat Sudah Terima.',
 
     // PERSPEKTIF TIM STORE / OUTLET
     answer_store: 'Tim Store TIDAK PERLU menginput nomor resi kurir pengiriman ke customer. Saat mendaftarkan pesanan manual, staf toko cukup memilih jenis kurir yang diminta customer (misal: JNE REG, J&T, SiCepat). Nomor resi akan diisi oleh Gudang Pusat setelah barang selesai dipacking.',

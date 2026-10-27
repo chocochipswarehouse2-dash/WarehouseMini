@@ -753,17 +753,38 @@ export const BulkUpdateResiModal: React.FC<BulkUpdateResiModalProps> = ({
                               </td>
 
                               <td className="py-2 px-3 text-center">
-                                <span
-                                  className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold capitalize ${
-                                    order.status === 'dikirim'
-                                      ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
-                                      : order.status === 'diproses'
-                                      ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
-                                      : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
-                                  }`}
-                                >
-                                  {order.status || 'Pending'}
-                                </span>
+                                {(() => {
+                                  const hasExistingResi = Boolean((order.no_resi || '').trim());
+                                  const needsResi = orderNeedsResi(order);
+                                  const isDone = needsResi
+                                    ? hasExistingResi
+                                    : Boolean((order.tgl_jadwal_kirim_store || '').trim()) || order.status === 'dikirim' || order.status === 'selesai';
+                                  const isProcessed =
+                                    !isDone &&
+                                    (Boolean(order.is_picking_printed && order.is_label_printed) ||
+                                      order.status === 'diproses');
+                                  const displayStatus =
+                                    order.status === 'batal'
+                                      ? 'Batal'
+                                      : isDone
+                                      ? 'Dikirim'
+                                      : isProcessed
+                                      ? 'Diproses'
+                                      : 'Diterima';
+                                  return (
+                                    <span
+                                      className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold capitalize ${
+                                        displayStatus === 'Dikirim'
+                                          ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                                          : displayStatus === 'Diproses'
+                                          ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
+                                          : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
+                                      }`}
+                                    >
+                                      {displayStatus}
+                                    </span>
+                                  );
+                                })()}
                               </td>
                             </tr>
                           );

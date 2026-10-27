@@ -902,8 +902,8 @@ export function computeAllRackSlots(
 
 export const RACK_SAFE_TARGET_PERCENT = 75; // Maksimal keterisian 75% untuk rak tujuan agar barang tidak sesak dan picker leluasa
 
-export function getSafeTargetCapacity(maxCapacity: number): number {
-  return Math.max(1, Math.floor(maxCapacity * (RACK_SAFE_TARGET_PERCENT / 100)));
+export function getSafeTargetCapacity(maxCapacity: number, targetPercent = RACK_SAFE_TARGET_PERCENT): number {
+  return Math.max(1, Math.floor(maxCapacity * (targetPercent / 100)));
 }
 
 function extractNumericSuffix(lokasi: string): { prefix: string; num: number | null } {

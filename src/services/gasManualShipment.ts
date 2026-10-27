@@ -1,6 +1,6 @@
 import { ManualShipmentOrder, ManualShipmentHistoryLog, ManualShipmentItem } from '../types';
 import { supabaseFetch } from './supabase';
-import { hasValidArData } from '../utils/alterationUtils';
+import { hasValidArData, orderNeedsResi } from '../utils/alterationUtils';
 import { globalRealtimeStore } from './store';
 
 export const DEFAULT_MANUAL_SHIPMENT_GAS_URL = '';
@@ -935,18 +935,53 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
           ? String(item.no_transaksi_pengirim).split(',').map((t: string) => t.trim().toLowerCase()).filter(Boolean)
           : [];
 
-      const effectiveTglJadwalStore = store_metadata?.tgl_jadwal_kirim_store || item.tgl_jadwal_kirim_store || alteration_repair_data?.tgl_kirim_kembali || (item as any).tgl_kirim_store || '';
+      const tujuanPengiriman =
+        store_metadata?.tujuan_pengiriman ||
+        (item as any).tujuan_pengiriman ||
+        alteration_repair_data?.tujuan_pengembalian ||
+        undefined;
+      // PENTING: Jangan gunakan tgl_kirim_store (tanggal toko kirim ke gudang) sebagai jadwal kirim gudang ke store!
+      const effectiveTglJadwalStore =
+        store_metadata?.tgl_jadwal_kirim_store ||
+        item.tgl_jadwal_kirim_store ||
+        alteration_repair_data?.tgl_kirim_kembali ||
+        '';
+      const isPickingPrinted = !!(store_metadata?.is_picking_printed || (item as any).is_picking_printed);
+      const isLabelPrinted = !!(store_metadata?.is_label_printed || (item as any).is_label_printed);
+      const bothPrinted = isPickingPrinted && isLabelPrinted;
+
       const rawOrderStatus = String(item.status || '').toLowerCase().trim();
+      const needsResi = orderNeedsResi({
+        ...item,
+        tujuan_pengiriman: tujuanPengiriman,
+        alteration_repair_data,
+      });
+      const hasResi = Boolean(item.no_resi && String(item.no_resi).trim());
+      const hasJadwalStore = Boolean(effectiveTglJadwalStore && String(effectiveTglJadwalStore).trim());
+
+      // ATURAN KETAT: Pesanan yang wajib resi (Ekspedisi ke Customer / Store) HANYA dianggap Dikirim/Selesai jika No. Resi sudah terisi!
       const isOrderShippedOrDone =
         rawOrderStatus !== 'batal' &&
-        (rawOrderStatus === 'dikirim' ||
-          rawOrderStatus === 'selesai' ||
-          Boolean(item.no_resi && String(item.no_resi).trim()) ||
-          Boolean(effectiveTglJadwalStore && String(effectiveTglJadwalStore).trim()));
+        (needsResi
+          ? hasResi
+          : hasJadwalStore || rawOrderStatus === 'dikirim' || rawOrderStatus === 'selesai');
+
       const flowStageStr = String(alteration_repair_data?.status_flow || '').toLowerCase().trim();
       const isOrderWarehouseReceived =
         Boolean(alteration_repair_data?.tgl_terima_warehouse) ||
         ['diterima_warehouse', 'dalam_pengerjaan', 'selesai_qc', 'siap_dikirim', 'dikirim_kembali', 'selesai'].includes(flowStageStr);
+      const isFlowAktif = ['dalam_pengerjaan', 'selesai_qc', 'diterima_warehouse', 'siap_dikirim'].includes(flowStageStr);
+
+      let normalizedStatus: ManualShipmentOrder['status'] = item.status;
+      if (rawOrderStatus !== 'batal') {
+        if (isOrderShippedOrDone) {
+          normalizedStatus = rawOrderStatus === 'selesai' ? 'selesai' : 'dikirim';
+        } else if (bothPrinted || isFlowAktif || isOrderWarehouseReceived) {
+          normalizedStatus = 'diproses';
+        } else if (rawOrderStatus === 'dikirim' || rawOrderStatus === 'selesai') {
+          normalizedStatus = 'diterima';
+        }
+      }
 
       let parsedItems: ManualShipmentItem[] = (Array.isArray(rawItems) ? rawItems : []).map((it: any) => {
         const rawSj = String(it?.no_sj_dealpos || '').trim();
@@ -959,20 +994,30 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
           !fulLower.includes('marketplace') &&
           !fulLower.includes('gudang') &&
           !fulLower.includes('warehouse');
+
+        const wasAutoMarkedBefore = it?.received_by === 'Otomatis (Pesanan Terkirim)';
+        const explicitAdminReceived = Boolean(it?.received_at_warehouse) && !wasAutoMarkedBefore;
+
         const autoReceived =
           isStoreFulfill &&
           it?.item_status !== 'sold_out' &&
           it?.item_status !== 'cancelled' &&
-          (Boolean(it?.received_at_warehouse) || isOrderShippedOrDone || isOrderWarehouseReceived);
+          (explicitAdminReceived || isOrderShippedOrDone || isOrderWarehouseReceived);
+
+        const cleanedItem = { ...it };
+        if (wasAutoMarkedBefore && !isOrderShippedOrDone && !isOrderWarehouseReceived) {
+          delete cleanedItem.received_at_warehouse;
+          delete cleanedItem.received_by;
+        }
 
         return {
-          ...it,
+          ...cleanedItem,
           no_sj_dealpos: isDuplicateStoreTx ? '' : rawSj,
           ...(autoReceived
             ? {
                 received_at_warehouse: true,
                 received_by:
-                  it?.received_by ||
+                  (explicitAdminReceived ? it?.received_by : '') ||
                   (isOrderShippedOrDone
                     ? 'Otomatis (Pesanan Terkirim)'
                     : alteration_repair_data?.pic_terima_warehouse || 'Warehouse'),
@@ -1009,6 +1054,7 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
 
       return {
         ...item,
+        status: normalizedStatus,
         items: parsedItems,
         order_type,
         notes_paket: notes,
@@ -1030,11 +1076,11 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
         foto_urls: alteration_repair_data?.foto_urls || item.foto_urls || [],
         history_logs: history_logs.length > 0 ? history_logs : (item.history_logs || []),
         // Metadata jadwal kirim ke store & status cetak
-        tgl_jadwal_kirim_store: store_metadata?.tgl_jadwal_kirim_store || item.tgl_jadwal_kirim_store || alteration_repair_data?.tgl_kirim_kembali || (item as any).tgl_kirim_store || '',
+        tgl_jadwal_kirim_store: effectiveTglJadwalStore,
         catatan_jadwal_store: store_metadata?.catatan_jadwal_store || (item as any).catatan_jadwal_store || '',
-        tujuan_pengiriman: store_metadata?.tujuan_pengiriman || (item as any).tujuan_pengiriman || alteration_repair_data?.tujuan_pengembalian || undefined,
-        is_picking_printed: !!(store_metadata?.is_picking_printed || (item as any).is_picking_printed),
-        is_label_printed: !!(store_metadata?.is_label_printed || (item as any).is_label_printed),
+        tujuan_pengiriman: tujuanPengiriman,
+        is_picking_printed: isPickingPrinted,
+        is_label_printed: isLabelPrinted,
         tgl_cetak_picking: store_metadata?.tgl_cetak_picking || (item as any).tgl_cetak_picking || '',
         tgl_cetak_label: store_metadata?.tgl_cetak_label || (item as any).tgl_cetak_label || '',
       } as ManualShipmentOrder;
@@ -1060,9 +1106,10 @@ export async function updateShipmentStatus(idOrNoPesanan: string, status: string
 
 export async function updateShipmentResi(idOrNoPesanan: string, resi: string, timestamp?: string): Promise<boolean> {
   try {
+    const cleanResi = (resi || '').trim();
     const payload: any = { 
-      no_resi: resi,
-      status: 'dikirim' // Auto-update status when resi is inputted
+      no_resi: cleanResi,
+      status: cleanResi ? 'dikirim' : 'diproses' // Hanya 'dikirim' apabila resi benar-benar terisi
     };
     if (timestamp) {
       payload.tanggal_scan = timestamp;
@@ -1252,6 +1299,14 @@ export async function editManualShipment(payload: ManualShipmentOrder): Promise<
       } else if (patchPayload.status === 'pending') {
         patchPayload.status = 'diterima';
       }
+      // Jangan pernah menyimpan status 'dikirim' jika pesanan wajib resi namun no_resi masih kosong
+      if (
+        patchPayload.status === 'dikirim' &&
+        orderNeedsResi(payload) &&
+        !(payload.no_resi && String(payload.no_resi).trim())
+      ) {
+        patchPayload.status = payload.is_picking_printed && payload.is_label_printed ? 'diproses' : 'diterima';
+      }
     }
 
     delete patchPayload.layanan_type;
@@ -1376,9 +1431,14 @@ export async function updateOrderPrintStatus(
             const currentStatus = (targetOrder.status || 'diterima').toLowerCase().trim();
             const flowStr = (targetOrder.alteration_repair_data?.status_flow || '').toLowerCase();
             const isFlowAktif = ['dalam_pengerjaan', 'selesai_qc', 'diterima_warehouse', 'siap_dikirim'].includes(flowStr);
-            const hasResiOrJadwal = !!(targetOrder.no_resi && targetOrder.no_resi.trim()) || !!(targetOrder.tgl_jadwal_kirim_store && targetOrder.tgl_jadwal_kirim_store.trim());
+            const needsResi = orderNeedsResi(targetOrder);
+            const isAlreadyShipped = needsResi
+              ? !!(targetOrder.no_resi && targetOrder.no_resi.trim())
+              : !!(targetOrder.tgl_jadwal_kirim_store && targetOrder.tgl_jadwal_kirim_store.trim()) ||
+                currentStatus === 'dikirim' ||
+                currentStatus === 'selesai';
             let nextStatus = targetOrder.status;
-            if (currentStatus !== 'batal' && currentStatus !== 'dikirim' && currentStatus !== 'selesai' && !hasResiOrJadwal) {
+            if (currentStatus !== 'batal' && !isAlreadyShipped) {
               if (bothPrinted || isFlowAktif) {
                 nextStatus = 'diproses';
               } else {
@@ -1443,10 +1503,12 @@ export async function updateAlterationFlowStage(
     let newStatus: ManualShipmentOrder['status'] = order.status;
     if (newStage === 'diajukan' || newStage === 'diterima_warehouse') {
       newStatus = 'diterima';
-    } else if (newStage === 'dalam_pengerjaan' || newStage === 'selesai_qc') {
+    } else if (newStage === 'dalam_pengerjaan' || newStage === 'selesai_qc' || newStage === 'siap_dikirim') {
       newStatus = 'diproses';
-    } else if (newStage === 'siap_dikirim' || newStage === 'selesai') {
-      newStatus = 'dikirim';
+    } else if (newStage === 'dikirim_kembali' || newStage === 'selesai') {
+      const needsResi = orderNeedsResi(order);
+      const hasResi = !!(order.no_resi && order.no_resi.trim());
+      newStatus = !needsResi || hasResi ? 'dikirim' : 'diproses';
     }
 
     const updatedOrder: ManualShipmentOrder = {

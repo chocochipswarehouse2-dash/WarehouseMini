@@ -4510,17 +4510,16 @@ _WMS Warehouse System_`;
   };
 
   // Helper: Tahap Selesai
-  // Selesai = Sudah terisi resi paket untuk paket yang memerlukan resi (ke customer / store via ekpedisi) | Opsi kirim drop di toko tanpa jasa kirim tidak memerlukan resi paket
+  // Selesai = Sudah terisi resi paket untuk paket yang memerlukan resi (ke customer / store via ekspedisi) | Opsi kirim drop di toko tanpa jasa kirim tidak memerlukan resi paket
   const isOrderSelesai = (order: ManualShipmentOrder): boolean => {
     if (order.status === 'batal') return false;
-    if (order.status === 'selesai') return true;
 
     if (!orderNeedsResi(order)) {
       // Drop di toko tanpa jasa kirim eksternal: tidak wajib isi resi paket
-      return !!(order.tgl_jadwal_kirim_store && order.tgl_jadwal_kirim_store.trim()) || order.status === 'dikirim';
+      return !!(order.tgl_jadwal_kirim_store && order.tgl_jadwal_kirim_store.trim()) || order.status === 'dikirim' || order.status === 'selesai';
     } else {
-      // Kirim ke Customer atau Kirim ke Store via Ekspedisi
-      return !!(order.no_resi && order.no_resi.trim()) || order.status === 'dikirim';
+      // Kirim ke Customer atau Kirim ke Store via Ekspedisi: WAJIB sudah ada No. Resi!
+      return !!(order.no_resi && order.no_resi.trim());
     }
   };
 
