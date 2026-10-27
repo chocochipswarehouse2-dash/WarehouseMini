@@ -49,6 +49,9 @@ export interface RackCapacityConfig {
   overrides: Record<string, RackLocationOverride>;
   evacuationRule?: AbcdToKoliRuleConfig;
   refillMaxPerSkuAbcd?: number;
+  refillTriggerThreshold?: number;          // Default 3 pcs (Refill ditrigger jika total stok SKU di ABCD <= threshold, tidak perlu tunggu 0)
+  safeOccupancyCapPercent?: number;         // Default 75% (Kapasitas maksimum aman rak tujuan agar tidak sesak)
+  consolidationDistanceThreshold?: number;  // Default 3 nomor rak (Toleransi jarak penyatuan SKU terpencar)
 }
 
 export interface RackSkuItem {
@@ -83,7 +86,7 @@ export interface ComputedRackSlot {
   notes?: string;
 }
 
-export type RecommendationMoveType = 'REFILL_KOLI' | 'RELOKASI_OVERLOAD' | 'EVAKUASI_KOLI' | 'MANUAL';
+export type RecommendationMoveType = 'REFILL_KOLI' | 'RELOKASI_OVERLOAD' | 'EVAKUASI_KOLI' | 'KONSOLIDASI_SKU' | 'MANUAL';
 
 export interface SimulationMove {
   id: string;
@@ -287,6 +290,9 @@ export function getDefaultRackCapacityConfig(): RackCapacityConfig {
     overrides: {},
     evacuationRule: { ...DEFAULT_ABCD_TO_KOLI_RULE },
     refillMaxPerSkuAbcd: 12,
+    refillTriggerThreshold: 3,
+    safeOccupancyCapPercent: 75,
+    consolidationDistanceThreshold: 3,
   };
 }
 
@@ -418,6 +424,9 @@ export function normalizeAndMigrateRackConfig(raw: RackCapacityConfig): RackCapa
     overrides: raw.overrides || {},
     evacuationRule: migratedEvac,
     refillMaxPerSkuAbcd: Math.max(1, Number(raw.refillMaxPerSkuAbcd) || 12),
+    refillTriggerThreshold: Math.max(1, Number(raw.refillTriggerThreshold) || 3),
+    safeOccupancyCapPercent: Math.max(50, Math.min(95, Number(raw.safeOccupancyCapPercent) || 75)),
+    consolidationDistanceThreshold: Math.max(1, Number(raw.consolidationDistanceThreshold) || 3),
   };
 }
 
@@ -891,6 +900,12 @@ export function computeAllRackSlots(
   return result.sort((a, b) => a.lokasi.localeCompare(b.lokasi, undefined, { numeric: true }));
 }
 
+export const RACK_SAFE_TARGET_PERCENT = 75; // Maksimal keterisian 75% untuk rak tujuan agar barang tidak sesak dan picker leluasa
+
+export function getSafeTargetCapacity(maxCapacity: number): number {
+  return Math.max(1, Math.floor(maxCapacity * (RACK_SAFE_TARGET_PERCENT / 100)));
+}
+
 function extractNumericSuffix(lokasi: string): { prefix: string; num: number | null } {
   const m = lokasi.trim().toUpperCase().match(/^([A-Z]+)(\d+)$/);
   if (!m) return { prefix: lokasi, num: null };
@@ -900,6 +915,7 @@ function extractNumericSuffix(lokasi: string): { prefix: string; num: number | n
 /**
  * Recommends nearest empty or low-occupancy racks in the SAME operational area & category/zone.
  * Strictly excludes Blok F (SHOPEE, TIKTOK, STUDIO), Perbaikan (CC, PMK, DF), and Anomali.
+ * Strictly respects RACK_SAFE_TARGET_PERCENT (max 75%) so target racks NEVER become choked/full.
  */
 export function getRecommendedNearbyRacks(
   sourceSlot: ComputedRackSlot,
@@ -912,15 +928,16 @@ export function getRecommendedNearbyRacks(
 
   const srcParsed = extractNumericSuffix(sourceSlot.lokasi);
 
-  const candidates = allSlots.filter(
-    (s) =>
-      s.lokasi !== sourceSlot.lokasi &&
-      !isExcludedFromWarehouseRelocation(s.area, s.lokasi) &&
-      s.area.toUpperCase() === sourceSlot.area.toUpperCase() &&
-      s.category.toLowerCase() === sourceSlot.category.toLowerCase() &&
-      s.maxCapacity - s.simulatedQty > 0 &&
-      s.simulatedPercent < 85
-  );
+  const candidates = allSlots.filter((s) => {
+    if (s.lokasi === sourceSlot.lokasi) return false;
+    if (isExcludedFromWarehouseRelocation(s.area, s.lokasi)) return false;
+    if (s.area.toUpperCase() !== sourceSlot.area.toUpperCase()) return false;
+    if (s.category.toLowerCase() !== sourceSlot.category.toLowerCase()) return false;
+    const safeCap = getSafeTargetCapacity(s.maxCapacity);
+    const safeRem = safeCap - s.simulatedQty;
+    // Strictly exclude racks that are already full or near capacity (>70%) or have < 5 pcs safe room
+    return s.simulatedPercent <= 70 && safeRem >= 5;
+  });
 
   candidates.sort((a, b) => {
     const aParsed = extractNumericSuffix(a.lokasi);
@@ -931,13 +948,18 @@ export function getRecommendedNearbyRacks(
     const bSamePrefix = bParsed.prefix === srcParsed.prefix ? 0 : 1;
     if (aSamePrefix !== bSamePrefix) return aSamePrefix - bSamePrefix;
 
-    // Prefer close rack numbers without fragmenting
+    // Prefer empty racks (0 pcs) or racks with plenty of space (<= 30% occupancy)
+    const aEmpty = a.simulatedQty === 0 ? 0 : a.simulatedPercent <= 30 ? 1 : 2;
+    const bEmpty = b.simulatedQty === 0 ? 0 : b.simulatedPercent <= 30 ? 1 : 2;
+    if (aEmpty !== bEmpty) return aEmpty - bEmpty;
+
+    // Prefer close rack numbers within reasonable proximity tiers
     if (srcParsed.num !== null && aParsed.num !== null && bParsed.num !== null) {
       const distA = Math.abs(aParsed.num - srcParsed.num);
       const distB = Math.abs(bParsed.num - srcParsed.num);
-      const scoreA = distA + (a.simulatedQty > 0 ? 3 : 0);
-      const scoreB = distB + (b.simulatedQty > 0 ? 3 : 0);
-      if (scoreA !== scoreB) return scoreA - scoreB;
+      const tierA = Math.floor(distA / 10);
+      const tierB = Math.floor(distB / 10);
+      if (tierA !== tierB) return tierA - tierB;
     }
 
     return a.simulatedPercent - b.simulatedPercent;
@@ -982,27 +1004,35 @@ export interface KoliRefillCandidateSummary {
 }
 
 /**
- * Counts how many SKUs are currently empty (0 pcs) in Rak Utama ABCD ('Warehouse')
- * and only available in Rak Koli ('Kolian': R, V, Z).
+ * Counts how many SKUs qualify for refill from Rak Koli ('Kolian': R, V, Z) -> Rak Utama ABCD ('Warehouse').
+ * Rule: Triggers if total physical stock of that SKU in ABCD is <= triggerThreshold (default 3 pcs),
+ * without waiting for the rack to become completely 0 pcs!
  */
 export function getKoliToAbcdRefillSummary(
   allSlots: ComputedRackSlot[],
-  existingMoves: SimulationMove[] = []
+  existingMoves: SimulationMove[] = [],
+  triggerThreshold = 3
 ): KoliRefillCandidateSummary {
-  // 1. Collect all SKUs currently present in ABCD Warehouse (or already queued in existingMoves)
-  const skusInAbcd = new Set<string>();
+  // 1. Calculate current total qty per SKU in ABCD Warehouse (including simulated incoming moves)
+  const skuAbcdQty = new Map<string, number>();
   for (const s of allSlots) {
     if (s.area.toUpperCase() === 'WAREHOUSE' && /^[ABCD]\d+$/i.test(s.lokasi)) {
       for (const it of s.items) {
-        if (it.qty > 0) skusInAbcd.add(it.sku.toUpperCase());
+        if (it.qty > 0) {
+          const skuUp = it.sku.toUpperCase();
+          skuAbcdQty.set(skuUp, (skuAbcdQty.get(skuUp) || 0) + it.qty);
+        }
       }
     }
   }
   for (const m of existingMoves) {
-    if (m.sku) skusInAbcd.add(m.sku.toUpperCase());
+    if (m.sku && /^[ABCD]\d+$/i.test(m.toLokasi)) {
+      const skuUp = m.sku.toUpperCase();
+      skuAbcdQty.set(skuUp, (skuAbcdQty.get(skuUp) || 0) + m.qty);
+    }
   }
 
-  // 2. Find SKUs in Koli (R, V, Z) that are NOT in ABCD
+  // 2. Find SKUs in Koli (R, V, Z) where current ABCD quantity <= triggerThreshold
   const refillSkus = new Set<string>();
   const sourceKoliRacks = new Set<string>();
   let totalPcs = 0;
@@ -1015,7 +1045,8 @@ export function getKoliToAbcdRefillSummary(
 
     for (const it of s.items) {
       const skuUp = it.sku.toUpperCase();
-      if (it.qty > 0 && !skusInAbcd.has(skuUp)) {
+      const currentAbcd = skuAbcdQty.get(skuUp) || 0;
+      if (it.qty > 0 && currentAbcd <= triggerThreshold) {
         refillSkus.add(skuUp);
         sourceKoliRacks.add(s.lokasi);
         totalPcs += it.qty;
@@ -1033,29 +1064,48 @@ export function getKoliToAbcdRefillSummary(
 /**
  * Generates Consolidated Refill Recommendations from Rak Koli (R, V, Z) -> Rak Utama (ABCD).
  *
- * ANTI-FRAGMENTATION / CONSOLIDATED PUTAWAY RULE:
- * - Never scatter 20 SKUs across 13 different destination racks!
- * - Prioritizes source Koli racks that hold the most refillable SKUs so the picker opens as few Koli boxes as possible.
- * - Uses strict Bin-Packing on destination ABCD racks: fills ONE target rack (e.g., A001) up to its available
- *   capacity with multiple SKUs before moving to the next sequential rack (A002).
+ * REFILL & PLACEMENT LOGIC:
+ * 1. TRIGGER THRESHOLD: SKU in ABCD with total physical quantity <= triggerThreshold (e.g. 2-3 pcs).
+ * 2. PRIMARY TARGET (Existing Rack): If SKU already exists in a rack (e.g., A001), refill there IF A001 has safe space.
+ * 3. FALLBACK TARGET (Empty/Available Category Rack): If A001 is already full or safe cap reached,
+ *    refill into another available/empty rack in the same category zone (A=Dress, B=Bottom, C=Top, D=Sale).
+ * 4. SAFE CAP: Target racks are never packed past `safeOccupancyPercent` (default 75%).
+ * 5. ANTI-FRAGMENTATION: Prioritizes Koli boxes with the most refillable SKUs.
  */
 export function generateConsolidatedKoliRefillMoves(
   allSlots: ComputedRackSlot[],
   catalogMap?: Map<string, EnrichedCatalogEntry>,
   existingMoves: SimulationMove[] = [],
-  maxSkusToRecommend = 20
+  maxSkusToRecommend = 20,
+  triggerThreshold = 3,
+  safeOccupancyPercent = 75,
+  maxPerSku = 12
 ): SimulationMove[] {
-  // 1. Identify SKUs already present in ABCD Warehouse or already in existingMoves
-  const skusInAbcd = new Set<string>();
+  // 1. Calculate current total qty and track existing rack locations per SKU in ABCD Warehouse
+  const skuAbcdQty = new Map<string, number>();
+  const skuExistingRacks = new Map<string, string[]>();
+
   for (const s of allSlots) {
     if (s.area.toUpperCase() === 'WAREHOUSE' && /^[ABCD]\d+$/i.test(s.lokasi)) {
       for (const it of s.items) {
-        if (it.qty > 0) skusInAbcd.add(it.sku.toUpperCase());
+        if (it.qty > 0) {
+          const skuUp = it.sku.toUpperCase();
+          skuAbcdQty.set(skuUp, (skuAbcdQty.get(skuUp) || 0) + it.qty);
+          const list = skuExistingRacks.get(skuUp) || [];
+          if (!list.includes(s.lokasi)) list.push(s.lokasi);
+          skuExistingRacks.set(skuUp, list);
+        }
       }
     }
   }
   for (const m of existingMoves) {
-    if (m.sku) skusInAbcd.add(m.sku.toUpperCase());
+    if (m.sku && /^[ABCD]\d+$/i.test(m.toLokasi)) {
+      const skuUp = m.sku.toUpperCase();
+      skuAbcdQty.set(skuUp, (skuAbcdQty.get(skuUp) || 0) + m.qty);
+      const list = skuExistingRacks.get(skuUp) || [];
+      if (!list.includes(m.toLokasi)) list.push(m.toLokasi);
+      skuExistingRacks.set(skuUp, list);
+    }
   }
 
   // 2. Collect refillable items per Koli rack (R, V, Z)
@@ -1065,6 +1115,7 @@ export function generateConsolidatedKoliRefillMoves(
     nama_produk: string;
     size: string;
     availableQtyInKoli: number;
+    currentAbcdQty: number;
     targetPrefix: 'A' | 'B' | 'C' | 'D';
     categoryLabel: string;
   }
@@ -1080,7 +1131,8 @@ export function generateConsolidatedKoliRefillMoves(
     const list: RefillCandidateItem[] = [];
     for (const it of s.items) {
       const skuUp = it.sku.toUpperCase();
-      if (it.qty <= 0 || skusInAbcd.has(skuUp)) continue;
+      const currentAbcd = skuAbcdQty.get(skuUp) || 0;
+      if (it.qty <= 0 || currentAbcd > triggerThreshold) continue;
 
       const catInfo = catalogMap?.get(skuUp);
       const nama =
@@ -1097,6 +1149,7 @@ export function generateConsolidatedKoliRefillMoves(
         nama_produk: nama,
         size,
         availableQtyInKoli: it.qty,
+        currentAbcdQty: currentAbcd,
         targetPrefix: inferred.prefix,
         categoryLabel: inferred.categoryLabel,
       });
@@ -1109,35 +1162,36 @@ export function generateConsolidatedKoliRefillMoves(
 
   if (candidatesByKoliRack.size === 0) return [];
 
-  // Sort source Koli racks by number of refillable SKUs descending (so picker opens fewest Koli boxes)
+  // Sort source Koli racks by number of refillable SKUs descending
   const sortedKoliEntries = Array.from(candidatesByKoliRack.entries()).sort(
     (a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0], undefined, { numeric: true })
   );
 
-  // Pick up to maxSkusToRecommend unique SKUs, grouped by targetPrefix ('A' | 'B' | 'C' | 'D')
-  const selectedByPrefix: Record<'A' | 'B' | 'C' | 'D', RefillCandidateItem[]> = {
-    A: [],
-    B: [],
-    C: [],
-    D: [],
-  };
+  // Pick up to maxSkusToRecommend unique SKUs
   const pickedSkus = new Set<string>();
+  const selectedItems: RefillCandidateItem[] = [];
 
   for (const [, items] of sortedKoliEntries) {
     for (const item of items) {
       if (pickedSkus.size >= maxSkusToRecommend) break;
       if (pickedSkus.has(item.sku)) continue;
       pickedSkus.add(item.sku);
-      selectedByPrefix[item.targetPrefix].push(item);
+      selectedItems.push(item);
     }
     if (pickedSkus.size >= maxSkusToRecommend) break;
   }
 
-  // 3. Prepare mutable remaining space tracker for ABCD target racks
-  const abcdRacksByPrefix: Record<
-    'A' | 'B' | 'C' | 'D',
-    Array<{ lokasi: string; remainingSpace: number; maxCapacity: number; currentSimulated: number }>
-  > = {
+  // 3. Prepare mutable safe remaining space tracker for ABCD target racks
+  interface TargetBinTracker {
+    lokasi: string;
+    prefix: 'A' | 'B' | 'C' | 'D';
+    remainingSpace: number;
+    maxCapacity: number;
+    currentSimulated: number;
+  }
+
+  const abcdTargetBinsMap = new Map<string, TargetBinTracker>();
+  const abcdRacksByPrefix: Record<'A' | 'B' | 'C' | 'D', TargetBinTracker[]> = {
     A: [],
     B: [],
     C: [],
@@ -1149,18 +1203,24 @@ export function generateConsolidatedKoliRefillMoves(
     const m = s.lokasi.match(/^([ABCD])(\d+)$/i);
     if (!m) continue;
     const p = m[1].toUpperCase() as 'A' | 'B' | 'C' | 'D';
-    const rem = Math.max(0, s.maxCapacity - s.simulatedQty);
-    if (rem > 0) {
-      abcdRacksByPrefix[p].push({
-        lokasi: s.lokasi,
-        remainingSpace: rem,
-        maxCapacity: s.maxCapacity,
-        currentSimulated: s.simulatedQty,
-      });
+    const safeCap = getSafeTargetCapacity(s.maxCapacity, safeOccupancyPercent);
+    const rem = Math.max(0, safeCap - s.simulatedQty);
+    const bin: TargetBinTracker = {
+      lokasi: s.lokasi,
+      prefix: p,
+      remainingSpace: rem,
+      maxCapacity: s.maxCapacity,
+      currentSimulated: s.simulatedQty,
+    };
+    abcdTargetBinsMap.set(s.lokasi, bin);
+
+    // Only include in general pool if it has reasonable breathing room
+    if (rem >= 5 && (s.simulatedQty / (s.maxCapacity || 80)) * 100 < safeOccupancyPercent) {
+      abcdRacksByPrefix[p].push(bin);
     }
   }
 
-  // Sort target racks so EMPTY racks (or racks with maximum contiguous space) in sequential order come first
+  // Sort general pool: empty racks first, then lowest occupancy, sequential
   (['A', 'B', 'C', 'D'] as const).forEach((p) => {
     abcdRacksByPrefix[p].sort((a, b) => {
       const aEmpty = a.currentSimulated === 0 ? 0 : 1;
@@ -1170,67 +1230,362 @@ export function generateConsolidatedKoliRefillMoves(
     });
   });
 
-  // 4. Consolidated Bin-Packing: fill one target rack completely before moving to the next rack!
+  // 4. Generate Refill Moves
   const generatedMoves: SimulationMove[] = [];
   const nowIso = new Date().toISOString();
   let seq = 1;
 
-  (['A', 'B', 'C', 'D'] as const).forEach((prefix) => {
-    const itemsToPack = selectedByPrefix[prefix];
-    const targetBins = abcdRacksByPrefix[prefix];
-    if (itemsToPack.length === 0 || targetBins.length === 0) return;
+  for (const item of selectedItems) {
+    // Try primary target: existing rack of this SKU in ABCD
+    let targetBin: TargetBinTracker | null = null;
+    const existingRackLocs = skuExistingRacks.get(item.sku) || [];
 
-    let currentBinIdx = 0;
-
-    for (const item of itemsToPack) {
-      // Advance bin if current bin has < 2 pcs space left (avoid micro-splitting 1 SKU across multiple racks)
-      while (currentBinIdx < targetBins.length && targetBins[currentBinIdx].remainingSpace <= 0) {
-        currentBinIdx++;
+    for (const loc of existingRackLocs) {
+      const b = abcdTargetBinsMap.get(loc);
+      if (b && b.remainingSpace >= 3) {
+        targetBin = b;
+        break;
       }
-      if (currentBinIdx >= targetBins.length) break;
-
-      let activeBin = targetBins[currentBinIdx];
-      // Cap single-SKU refill qty to maxCapacity of a rack (e.g. max 15 pcs per SKU refill so 1 SKU doesn't hog 100% of a rack if Koli has 80 pcs)
-      const desiredRefillQty = Math.min(item.availableQtyInKoli, Math.min(12, activeBin.maxCapacity));
-
-      // If activeBin cannot fit desiredRefillQty and has very little space (< 3 pcs), move to next fresh bin so we don't split
-      if (activeBin.remainingSpace < Math.min(3, desiredRefillQty) && currentBinIdx + 1 < targetBins.length) {
-        currentBinIdx++;
-        activeBin = targetBins[currentBinIdx];
-      }
-
-      const moveQty = Math.min(desiredRefillQty, activeBin.remainingSpace);
-      if (moveQty <= 0) continue;
-
-      activeBin.remainingSpace -= moveQty;
-      activeBin.currentSimulated += moveQty;
-
-      generatedMoves.push({
-        id: `refill_${Date.now()}_${seq++}`,
-        fromLokasi: item.fromLokasi,
-        toLokasi: activeBin.lokasi,
-        sku: item.sku,
-        nama_produk: item.nama_produk,
-        size: item.size,
-        category: item.categoryLabel,
-        moveType: 'REFILL_KOLI',
-        qty: moveQty,
-        createdAt: nowIso,
-      });
     }
-  });
+
+    // Fallback: If existing rack is full, or SKU is brand new in ABCD (0 pcs), pick from category pool
+    if (!targetBin) {
+      const pool = abcdRacksByPrefix[item.targetPrefix];
+      for (const b of pool) {
+        if (b.remainingSpace >= 3) {
+          targetBin = b;
+          break;
+        }
+      }
+    }
+
+    if (!targetBin) continue;
+
+    // Desired refill: fill up to maxPerSku (default 12 pcs) or what Koli has, bounded by target safe space
+    const desiredRefill = Math.min(
+      item.availableQtyInKoli,
+      Math.max(1, maxPerSku - item.currentAbcdQty),
+      targetBin.remainingSpace
+    );
+    if (desiredRefill <= 0) continue;
+
+    targetBin.remainingSpace -= desiredRefill;
+    targetBin.currentSimulated += desiredRefill;
+
+    // Update SKU total in ABCD so we don't over-refill in subsequent loops
+    skuAbcdQty.set(item.sku, (skuAbcdQty.get(item.sku) || 0) + desiredRefill);
+
+    generatedMoves.push({
+      id: `refill_${Date.now()}_${seq++}`,
+      fromLokasi: item.fromLokasi,
+      toLokasi: targetBin.lokasi,
+      sku: item.sku,
+      nama_produk: item.nama_produk,
+      size: item.size,
+      category: item.categoryLabel,
+      moveType: 'REFILL_KOLI',
+      qty: desiredRefill,
+      createdAt: nowIso,
+    });
+  }
 
   return generatedMoves;
 }
 
+export interface ScatteredSkuSummary {
+  totalScatteredSkus: number;
+  totalMoveablePcs: number;
+  affectedRacksCount: number;
+}
+
+/**
+ * Counts how many SKUs in ABCD Warehouse are scattered across distant racks
+ * (distance > distanceThreshold, default 3 racks).
+ */
+export function getScatteredSkuSummary(
+  allSlots: ComputedRackSlot[],
+  existingMoves: SimulationMove[] = [],
+  distanceThreshold = 3
+): ScatteredSkuSummary {
+  const existingPairKeys = new Set(
+    existingMoves.map((m) => `${m.fromLokasi}__${m.sku}`.toUpperCase())
+  );
+
+  // Group SKU occurrences in ABCD
+  const skuLocations = new Map<
+    string,
+    Array<{ lokasi: string; qty: number; prefix: string; num: number | null }>
+  >();
+
+  for (const s of allSlots) {
+    if (
+      isExcludedFromWarehouseRelocation(s.area, s.lokasi) ||
+      s.area.toUpperCase() !== 'WAREHOUSE' ||
+      !/^[ABCD]\d+$/i.test(s.lokasi)
+    ) {
+      continue;
+    }
+    const parsed = extractNumericSuffix(s.lokasi);
+    for (const it of s.items) {
+      if (it.qty <= 0) continue;
+      const skuUp = it.sku.toUpperCase();
+      const list = skuLocations.get(skuUp) || [];
+      list.push({
+        lokasi: s.lokasi,
+        qty: it.qty,
+        prefix: parsed.prefix,
+        num: parsed.num,
+      });
+      skuLocations.set(skuUp, list);
+    }
+  }
+
+  const scatteredSkus = new Set<string>();
+  const affectedRacks = new Set<string>();
+  let moveablePcs = 0;
+
+  for (const [sku, locs] of skuLocations.entries()) {
+    if (locs.length < 2) continue;
+
+    // Check if any pairs are distant (> distanceThreshold)
+    let isScattered = false;
+    for (let i = 0; i < locs.length; i++) {
+      for (let j = i + 1; j < locs.length; j++) {
+        const a = locs[i];
+        const b = locs[j];
+        if (a.prefix !== b.prefix) {
+          isScattered = true;
+          break;
+        }
+        if (a.num !== null && b.num !== null && Math.abs(a.num - b.num) > distanceThreshold) {
+          isScattered = true;
+          break;
+        }
+      }
+      if (isScattered) break;
+    }
+
+    if (isScattered) {
+      scatteredSkus.add(sku);
+      // Sort by qty ascending (minority is moveable)
+      const sorted = [...locs].sort((a, b) => a.qty - b.qty);
+      for (let i = 0; i < sorted.length - 1; i++) {
+        const key = `${sorted[i].lokasi}__${sku}`.toUpperCase();
+        if (!existingPairKeys.has(key)) {
+          moveablePcs += sorted[i].qty;
+          affectedRacks.add(sorted[i].lokasi);
+        }
+      }
+      affectedRacks.add(sorted[sorted.length - 1].lokasi);
+    }
+  }
+
+  return {
+    totalScatteredSkus: scatteredSkus.size,
+    totalMoveablePcs: moveablePcs,
+    affectedRacksCount: affectedRacks.size,
+  };
+}
+
+/**
+ * Generates Consolidation Recommendations for SKUs scattered across distant ABCD Warehouse racks.
+ *
+ * SKU CONSOLIDATION RULES:
+ * 1. DISTANCE THRESHOLD: If SKU is in A001 (7 pcs) and A002 (2 pcs), leave as is (distance <= 3).
+ *    If SKU is in A001 (7 pcs) and A016 (2 pcs), distance is 15 (> 3) -> consolidate!
+ * 2. DIRECTION: Consolidates the minority quantity (2 pcs) into the majority rack (A001)
+ *    provided A001 does not exceed safe target capacity (75%).
+ * 3. CAPACITY SAFETY: If majority rack is full, checks if minority rack has room for majority,
+ *    or consolidates into a clean/empty nearby rack in the same zone.
+ */
+export function generateConsolidatedSkuScatteredMoves(
+  allSlots: ComputedRackSlot[],
+  catalogMap?: Map<string, EnrichedCatalogEntry>,
+  existingMoves: SimulationMove[] = [],
+  distanceThreshold = 3,
+  safeOccupancyPercent = 75,
+  maxMovesToGenerate = 25
+): SimulationMove[] {
+  const existingPairKeys = new Set(
+    existingMoves.map((m) => `${m.fromLokasi}__${m.sku}`.toUpperCase())
+  );
+
+  // Group ABCD slots by location for fast lookup
+  const slotMap = new Map<string, ComputedRackSlot>();
+  for (const s of allSlots) {
+    if (s.area.toUpperCase() === 'WAREHOUSE' && /^[ABCD]\d+$/i.test(s.lokasi)) {
+      slotMap.set(s.lokasi, s);
+    }
+  }
+
+  // Group SKU occurrences in ABCD
+  interface SkuRackOccurrence {
+    lokasi: string;
+    qty: number;
+    prefix: string;
+    num: number | null;
+    maxCapacity: number;
+    currentSimulated: number;
+    safeCapacity: number;
+    nama_produk: string;
+    size: string;
+    category: string;
+  }
+
+  const skuOccurrences = new Map<string, SkuRackOccurrence[]>();
+
+  for (const s of allSlots) {
+    if (
+      isExcludedFromWarehouseRelocation(s.area, s.lokasi) ||
+      s.area.toUpperCase() !== 'WAREHOUSE' ||
+      !/^[ABCD]\d+$/i.test(s.lokasi)
+    ) {
+      continue;
+    }
+    const parsed = extractNumericSuffix(s.lokasi);
+    const safeCap = getSafeTargetCapacity(s.maxCapacity, safeOccupancyPercent);
+
+    for (const it of s.items) {
+      if (it.qty <= 0) continue;
+      const skuUp = it.sku.toUpperCase();
+      const catInfo = catalogMap?.get(skuUp);
+      const nama =
+        (catInfo?.nama_produk && catInfo.nama_produk !== skuUp ? catInfo.nama_produk : '') ||
+        it.nama_produk ||
+        skuUp;
+      const size =
+        (catInfo?.size && catInfo.size !== '-' ? catInfo.size : '') || it.size || 'ALL';
+
+      const list = skuOccurrences.get(skuUp) || [];
+      list.push({
+        lokasi: s.lokasi,
+        qty: it.qty,
+        prefix: parsed.prefix,
+        num: parsed.num,
+        maxCapacity: s.maxCapacity,
+        currentSimulated: s.simulatedQty,
+        safeCapacity: safeCap,
+        nama_produk: nama,
+        size,
+        category: s.category,
+      });
+      skuOccurrences.set(skuUp, list);
+    }
+  }
+
+  const generated: SimulationMove[] = [];
+  const nowIso = new Date().toISOString();
+  let seq = 1;
+
+  for (const [sku, locs] of skuOccurrences.entries()) {
+    if (locs.length < 2 || generated.length >= maxMovesToGenerate) continue;
+
+    // Check if there is any distant pair (> distanceThreshold)
+    let isDistant = false;
+    for (let i = 0; i < locs.length; i++) {
+      for (let j = i + 1; j < locs.length; j++) {
+        if (locs[i].prefix !== locs[j].prefix) {
+          isDistant = true;
+          break;
+        }
+        if (
+          locs[i].num !== null &&
+          locs[j].num !== null &&
+          Math.abs(locs[i].num! - locs[j].num!) > distanceThreshold
+        ) {
+          isDistant = true;
+          break;
+        }
+      }
+      if (isDistant) break;
+    }
+
+    if (!isDistant) continue;
+
+    // Sort locations by qty descending (highest qty is primary destination)
+    const sorted = [...locs].sort((a, b) => b.qty - a.qty);
+    const majority = sorted[0];
+
+    // Try consolidating each minority rack into majority
+    for (let i = 1; i < sorted.length; i++) {
+      if (generated.length >= maxMovesToGenerate) break;
+      const minority = sorted[i];
+      const pairKey = `${minority.lokasi}__${sku}`.toUpperCase();
+      if (existingPairKeys.has(pairKey)) continue;
+
+      const remInMajority = Math.max(0, majority.safeCapacity - majority.currentSimulated);
+
+      if (remInMajority >= minority.qty) {
+        // Option 1: Move minority completely into majority!
+        generated.push({
+          id: `cns_${Date.now()}_${seq++}`,
+          fromLokasi: minority.lokasi,
+          toLokasi: majority.lokasi,
+          sku,
+          nama_produk: minority.nama_produk,
+          size: minority.size,
+          category: majority.category,
+          moveType: 'KONSOLIDASI_SKU',
+          qty: minority.qty,
+          createdAt: nowIso,
+        });
+        majority.currentSimulated += minority.qty;
+        existingPairKeys.add(pairKey);
+      } else {
+        // Option 2: Check if minority rack has room to take majority
+        const remInMinority = Math.max(0, minority.safeCapacity - minority.currentSimulated);
+        if (remInMinority >= majority.qty) {
+          const revKey = `${majority.lokasi}__${sku}`.toUpperCase();
+          if (!existingPairKeys.has(revKey)) {
+            generated.push({
+              id: `cns_${Date.now()}_${seq++}`,
+              fromLokasi: majority.lokasi,
+              toLokasi: minority.lokasi,
+              sku,
+              nama_produk: majority.nama_produk,
+              size: majority.size,
+              category: minority.category,
+              moveType: 'KONSOLIDASI_SKU',
+              qty: majority.qty,
+              createdAt: nowIso,
+            });
+            minority.currentSimulated += majority.qty;
+            existingPairKeys.add(revKey);
+          }
+        } else if (remInMajority > 0) {
+          // Partial consolidation if at least partial fits
+          generated.push({
+            id: `cns_${Date.now()}_${seq++}`,
+            fromLokasi: minority.lokasi,
+            toLokasi: majority.lokasi,
+            sku,
+            nama_produk: minority.nama_produk,
+            size: minority.size,
+            category: majority.category,
+            moveType: 'KONSOLIDASI_SKU',
+            qty: remInMajority,
+            createdAt: nowIso,
+          });
+          majority.currentSimulated += remInMajority;
+          existingPairKeys.add(pairKey);
+        }
+      }
+    }
+  }
+
+  return generated;
+}
+
 /**
  * Generates Consolidated Overload Relocation Recommendations for ABCD Warehouse Racks (>100% capacity).
- * Packs excess quantities into the nearest available ABCD rack of the same category without scattering.
+ * Packs excess quantities into the nearest available ABCD rack of the same category,
+ * STRICTLY CAPPED at safe target capacity (default 75%) so destination racks NEVER turn red or 100% full!
  */
 export function generateConsolidatedOverloadMoves(
   allSlots: ComputedRackSlot[],
   catalogMap?: Map<string, EnrichedCatalogEntry>,
-  existingMoves: SimulationMove[] = []
+  existingMoves: SimulationMove[] = [],
+  safeOccupancyPercent = 75
 ): SimulationMove[] {
   const overloadedRacks = allSlots.filter(
     (s) =>
@@ -1242,23 +1597,28 @@ export function generateConsolidatedOverloadMoves(
 
   if (overloadedRacks.length === 0) return [];
 
-  // Track available target bins in Warehouse
+  // Track available target bins in Warehouse — STRICTLY capped at safeTargetCapacity (75%)
   const targetBins = allSlots
-    .filter(
-      (s) =>
-        !isExcludedFromWarehouseRelocation(s.area, s.lokasi) &&
-        s.area.toUpperCase() === 'WAREHOUSE' &&
-        s.maxCapacity - s.simulatedQty > 0 &&
-        s.simulatedPercent < 80
-    )
-    .map((s) => ({
-      lokasi: s.lokasi,
-      category: s.category,
-      prefix: extractNumericSuffix(s.lokasi).prefix,
-      num: extractNumericSuffix(s.lokasi).num,
-      remainingSpace: Math.max(0, s.maxCapacity - s.simulatedQty),
-      currentSimulated: s.simulatedQty,
-    }));
+    .filter((s) => {
+      if (isExcludedFromWarehouseRelocation(s.area, s.lokasi)) return false;
+      if (s.area.toUpperCase() !== 'WAREHOUSE') return false;
+      const safeCap = getSafeTargetCapacity(s.maxCapacity, safeOccupancyPercent);
+      const safeRem = safeCap - s.simulatedQty;
+      const pct = (s.simulatedQty / (s.maxCapacity || 80)) * 100;
+      return safeRem >= 5 && pct < safeOccupancyPercent;
+    })
+    .map((s) => {
+      const safeCap = getSafeTargetCapacity(s.maxCapacity, safeOccupancyPercent);
+      return {
+        lokasi: s.lokasi,
+        category: s.category,
+        prefix: extractNumericSuffix(s.lokasi).prefix,
+        num: extractNumericSuffix(s.lokasi).num,
+        remainingSpace: Math.max(0, safeCap - s.simulatedQty),
+        currentSimulated: s.simulatedQty,
+        existingSkus: new Set(s.items.map((it) => it.sku.toUpperCase())),
+      };
+    });
 
   const existingPairKeys = new Set(
     existingMoves.map((m) => `${m.fromLokasi}__${m.sku}`.toUpperCase())
@@ -1274,40 +1634,51 @@ export function generateConsolidatedOverloadMoves(
 
     const srcParsed = extractNumericSuffix(src.lokasi);
 
-    // Find best consolidated target bin in same prefix/category
-    const matchingBins = targetBins
-      .filter(
-        (b) =>
-          b.lokasi !== src.lokasi &&
-          b.remainingSpace > 0 &&
-          (b.prefix === srcParsed.prefix || b.category.toLowerCase() === src.category.toLowerCase())
-      )
-      .sort((a, b) => {
-        if (srcParsed.num !== null && a.num !== null && b.num !== null) {
-          return Math.abs(a.num - srcParsed.num) - Math.abs(b.num - srcParsed.num);
-        }
-        return b.remainingSpace - a.remainingSpace;
-      });
-
-    if (matchingBins.length === 0) continue;
-
-    let binIdx = 0;
-    // Pick items from the overloaded rack (smallest or largest SKU quantities that fit cleanly)
+    // Pick items from the overloaded rack
     for (const item of src.items) {
       if (excessToMove <= 0) break;
       const pairKey = `${src.lokasi}__${item.sku}`.toUpperCase();
       if (existingPairKeys.has(pairKey)) continue;
 
-      while (binIdx < matchingBins.length && matchingBins[binIdx].remainingSpace <= 0) {
-        binIdx++;
-      }
-      if (binIdx >= matchingBins.length) break;
+      const skuUp = item.sku.toUpperCase();
 
-      const targetBin = matchingBins[binIdx];
+      // Find best consolidated target bin in same prefix/category
+      // Prioritize:
+      // 1. Bin that already holds this SKU (unification)
+      // 2. Empty bin (0 pcs)
+      // 3. Closest rack number
+      // 4. Highest remaining safe space
+      const matchingBins = targetBins
+        .filter(
+          (b) =>
+            b.lokasi !== src.lokasi &&
+            b.remainingSpace > 0 &&
+            (b.prefix === srcParsed.prefix || b.category.toLowerCase() === src.category.toLowerCase())
+        )
+        .sort((a, b) => {
+          const aHasSku = a.existingSkus.has(skuUp) ? 0 : 1;
+          const bHasSku = b.existingSkus.has(skuUp) ? 0 : 1;
+          if (aHasSku !== bHasSku) return aHasSku - bHasSku;
+
+          const aEmpty = a.currentSimulated === 0 ? 0 : 1;
+          const bEmpty = b.currentSimulated === 0 ? 0 : 1;
+          if (aEmpty !== bEmpty) return aEmpty - bEmpty;
+
+          if (srcParsed.num !== null && a.num !== null && b.num !== null) {
+            const distA = Math.abs(a.num - srcParsed.num);
+            const distB = Math.abs(b.num - srcParsed.num);
+            if (distA !== distB) return distA - distB;
+          }
+          return b.remainingSpace - a.remainingSpace;
+        });
+
+      if (matchingBins.length === 0) continue;
+
+      const targetBin = matchingBins[0];
       const moveQty = Math.min(item.qty, excessToMove, targetBin.remainingSpace);
       if (moveQty <= 0) continue;
 
-      const catInfo = catalogMap?.get(item.sku.toUpperCase());
+      const catInfo = catalogMap?.get(skuUp);
       const nama =
         (catInfo?.nama_produk && catInfo.nama_produk !== item.sku ? catInfo.nama_produk : '') ||
         item.nama_produk ||
@@ -1316,6 +1687,8 @@ export function generateConsolidatedOverloadMoves(
         (catInfo?.size && catInfo.size !== '-' ? catInfo.size : '') || item.size || 'ALL';
 
       targetBin.remainingSpace -= moveQty;
+      targetBin.currentSimulated += moveQty;
+      targetBin.existingSkus.add(skuUp);
       excessToMove -= moveQty;
       existingPairKeys.add(pairKey);
 
