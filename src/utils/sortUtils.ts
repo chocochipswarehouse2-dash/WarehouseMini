@@ -278,6 +278,62 @@ export function extractCleanSizeToken(str?: string): string {
   return trimmed;
 }
 
+interface CachedMasterEntry {
+  name: string;
+  size: string;
+}
+
+let masterExactMap: Map<string, CachedMasterEntry> | null = null;
+let masterPrefixMap: Map<string, string> | null = null;
+let lastMasterMapBuild = 0;
+
+function getMasterLookupMaps(): { exact: Map<string, CachedMasterEntry>; prefix: Map<string, string> } {
+  const now = Date.now();
+  if (masterExactMap && masterPrefixMap && now - lastMasterMapBuild < 60000) {
+    return { exact: masterExactMap, prefix: masterPrefixMap };
+  }
+  masterExactMap = new Map();
+  masterPrefixMap = new Map();
+  lastMasterMapBuild = now;
+
+  if (typeof window !== 'undefined' && window.localStorage) {
+    const cacheKeys = ['wms_master_produk', 'wms_product_cache', 'wms_catalog_cache', 'wms_dealpos_products'];
+    for (const cKey of cacheKeys) {
+      try {
+        const cacheRaw = localStorage.getItem(cKey);
+        if (!cacheRaw) continue;
+        const cacheList = JSON.parse(cacheRaw);
+        if (Array.isArray(cacheList)) {
+          for (let i = 0; i < cacheList.length; i++) {
+            const p = cacheList[i];
+            if (!p) continue;
+            const k = String(p.k || p.sku || '').trim().toUpperCase();
+            if (!k) continue;
+            const rawName = String(p.p || p.nama_produk || p.n || p.nama || '').trim();
+            const rawSize = String(p.s || p.size || p.ukuran || p.varian || '').trim();
+            if (!masterExactMap.has(k)) {
+              masterExactMap.set(k, {
+                name: rawName,
+                size: rawSize,
+              });
+            }
+            if (k.length >= 6 && rawName && rawName.toUpperCase() !== k) {
+              const pref = k.slice(0, -2);
+              if (!masterPrefixMap.has(pref)) {
+                masterPrefixMap.set(pref, rawName);
+              }
+            }
+          }
+          // Stop after first populated master product cache to avoid redundant JSON parsing
+          if (masterExactMap.size > 0) break;
+        }
+      } catch {}
+    }
+  }
+
+  return { exact: masterExactMap, prefix: masterPrefixMap };
+}
+
 /**
  * Resolves the most accurate product name using Master Product as the single source of truth.
  * Rules:
@@ -291,61 +347,41 @@ export function resolveProductName(
   catalogItem?: { p?: string; nama_produk?: string; n?: string; [key: string]: any }
 ): string {
   const cleanSku = (sku || '').trim().toUpperCase();
-  const cleanRecordName = cleanProductName((recordName || '').trim());
 
-  const catName = cleanProductName(
-    (catalogItem?.p || catalogItem?.nama_produk || catalogItem?.n || (catalogItem as any)?.nama || '').trim()
-  );
-  const isCatNameValid =
-    catName &&
-    catName.toUpperCase() !== cleanSku &&
-    catName.toUpperCase().replace(/\s+/g, '') !== cleanSku.replace(/\s+/g, '');
+  if (catalogItem) {
+    const catName = cleanProductName(
+      (catalogItem.p || catalogItem.nama_produk || catalogItem.n || (catalogItem as any).nama || '').trim()
+    );
+    if (
+      catName &&
+      catName.toUpperCase() !== cleanSku &&
+      catName.toUpperCase().replace(/\s+/g, '') !== cleanSku.replace(/\s+/g, '')
+    ) {
+      return catName;
+    }
+  }
 
-  // 1. Prioritize master catalog name if valid and not equal to SKU
-  if (isCatNameValid) return catName;
-
-  // 2. Lookup SKU in master product cache (single source of truth)
-  if (cleanSku && typeof window !== 'undefined' && window.localStorage) {
-    try {
-      const cacheKeys = ['wms_master_produk', 'wms_product_cache', 'wms_catalog_cache', 'wms_dealpos_products'];
-      for (const cKey of cacheKeys) {
-        const cacheRaw = localStorage.getItem(cKey);
-        if (!cacheRaw) continue;
-        const cacheList = JSON.parse(cacheRaw);
-        if (Array.isArray(cacheList)) {
-          // Exact SKU match in master product
-          const found = cacheList.find(
-            (p: any) =>
-              (p.k && p.k.trim().toUpperCase() === cleanSku) ||
-              (p.sku && String(p.sku).trim().toUpperCase() === cleanSku)
-          );
-          if (found) {
-            const foundName = cleanProductName(
-              (found.p || found.nama_produk || found.n || found.nama || '').trim()
-            );
-            if (foundName && foundName.toUpperCase() !== cleanSku) {
-              return foundName;
-            }
-          }
-
-          // Prefix match (same product model with size variant)
-          if (cleanSku.length >= 6) {
-            const prefix = cleanSku.slice(0, -2);
-            const prefixFound = cacheList.find((p: any) => {
-              const k = String(p.k || p.sku || '').trim().toUpperCase();
-              return k.startsWith(prefix) && p.p && p.p.toUpperCase() !== k;
-            });
-            if (prefixFound) {
-              const pName = cleanProductName((prefixFound.p || prefixFound.nama_produk || prefixFound.n || '').trim());
-              if (pName) return pName;
-            }
-          }
-        }
+  // 2. O(1) Lookup SKU in cached master product Map
+  if (cleanSku) {
+    const { exact, prefix } = getMasterLookupMaps();
+    const found = exact.get(cleanSku);
+    if (found && found.name) {
+      const foundName = cleanProductName(found.name);
+      if (foundName && foundName.toUpperCase() !== cleanSku) {
+        return foundName;
       }
-    } catch {}
+    }
+    if (cleanSku.length >= 6) {
+      const prefName = prefix.get(cleanSku.slice(0, -2));
+      if (prefName) {
+        const cleanedPref = cleanProductName(prefName);
+        if (cleanedPref) return cleanedPref;
+      }
+    }
   }
 
   // 3. Fallback to record name only if SKU not found in master product
+  const cleanRecordName = cleanProductName((recordName || '').trim());
   const isRecordNameValid =
     cleanRecordName &&
     cleanRecordName.toUpperCase() !== cleanSku &&
@@ -370,34 +406,23 @@ export function resolveProductDisplaySize(
   const cleanSku = (sku || '').trim().toUpperCase();
 
   // 1. Master catalog size (authoritative standard from master product)
-  const cleanCatSize = extractCleanSizeToken(catalogSize || '');
-  if (cleanCatSize && cleanCatSize !== '-') {
-    return cleanCatSize;
+  if (catalogSize) {
+    const cleanCatSize = extractCleanSizeToken(catalogSize);
+    if (cleanCatSize && cleanCatSize !== '-') {
+      return cleanCatSize;
+    }
   }
 
-  // 2. Lookup SKU in master product cache
-  if (cleanSku && typeof window !== 'undefined' && window.localStorage) {
-    try {
-      const cacheKeys = ['wms_master_produk', 'wms_product_cache', 'wms_catalog_cache'];
-      for (const cKey of cacheKeys) {
-        const cacheRaw = localStorage.getItem(cKey);
-        if (!cacheRaw) continue;
-        const cacheList = JSON.parse(cacheRaw);
-        if (Array.isArray(cacheList)) {
-          const found = cacheList.find(
-            (p: any) =>
-              (p.k && p.k.trim().toUpperCase() === cleanSku) ||
-              (p.sku && String(p.sku).trim().toUpperCase() === cleanSku)
-          );
-          if (found) {
-            const mSize = extractCleanSizeToken(found.s || found.size || found.ukuran || found.varian || '');
-            if (mSize && mSize !== '-') {
-              return mSize;
-            }
-          }
-        }
+  // 2. O(1) Lookup SKU in cached master product Map
+  if (cleanSku) {
+    const { exact } = getMasterLookupMaps();
+    const found = exact.get(cleanSku);
+    if (found && found.size) {
+      const mSize = extractCleanSizeToken(found.size);
+      if (mSize && mSize !== '-') {
+        return mSize;
       }
-    } catch {}
+    }
   }
 
   // 3. Fallback only if not in master product: record size or extracted suffix
