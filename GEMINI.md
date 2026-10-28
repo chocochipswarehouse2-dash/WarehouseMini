@@ -154,5 +154,10 @@ Whenever designing, modifying, or tidying up any frontend component, table, card
    - **Versi Tabel (`table`)**: Proportional column widths, interactive sortable headers (`ArrowUpDown`), structured metadata boxes, and aligned action columns.
    - **Versi Kartu (`card`)**: Responsive 1–4 column grid (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4`) with equal-height flex cards.
    - **Rendering Performance**: Always use $O(1)$ `Map` lookups instead of nested `.find()` inside render loops, and paginate heavy grouped spreadsheet views.
-4. **Print & Thermal Documents (`.agents/skills/wms-print-receipt-documents/SKILL.md`)**:
-   - High-contrast monochrome layouts for **Label Pengiriman A6 (`100mm x 150mm`)**, **Picking List A4** (sorted by Warehouse Location Priority), **Surat Jalan Struk Kasir 80mm (Rangkap 2)**, and **SPK Penjahit**.
+4. **Operational Print, Thermal & Picking WA Documents (`.agents/skills/wms-print-receipt-documents/SKILL.md`)**:
+   - Unified data-enrichment, live rack priority sorting (`Priority 1 Warehouse/Aksesoris/Transit` $\rightarrow$ `Priority 2 Kolian` $\rightarrow$ `Priority 3 Blok F` or `Store Code`), and high-contrast monochrome layouts across all 5 operational formats:
+     1. **Picking List / SJ Cetak A4 (`210mm x 297mm`)**
+     2. **Picking List WA Grup (Fonnte Tree Broadcast)**
+     3. **Picking List Tugas Picking (`invoice_picking` + `no_sj` + QR)**
+     4. **Label Pengiriman Paket Thermal A6 (`100mm x 150mm`)**
+     5. **Cetak Ukuran Struk Kasir Thermal (`58mm/60mm` & `80mm` Rangkap 2 & SPK)**
