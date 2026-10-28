@@ -509,8 +509,8 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
     id: 'faq-custom-sort-rekap-pesanan',
     category: 'manual_shipment',
     is_pinned: true,
-    question: 'Bagaimana cara mengurutkan (Custom Sort) daftar pesanan di Rekap Manual Shipment, Alter, dan Retur Barang (Terlama-Terbaru / Per Toko / Ekspedisi)?',
-    answer: 'Seluruh tabel dan kartu di Rekap Pesanan Toko (Manual Shipment & Alteration/Repair) serta Rekap Retur Barang (Pusat Resolusi) telah dilengkapi dropdown "Urutkan" (Custom Sort) dan header kolom tabel interaktif untuk mengurutkan berdasarkan Waktu (Terbaru/Terlama FIFO), Nama Toko/Outlet, Customer, Jasa Kirim, Jumlah Qty, hingga Prioritas Belum Cetak.',
+    question: 'Bagaimana cara mengubah opsi tampilan (Panel Rapi, Tabel, Kartu) dan mengurutkan (Custom Sort) daftar pesanan di Rekap Manual Shipment & Alter?',
+    answer: 'Di pojok kanan atas Rekap Pesanan Toko tersedia 3 opsi tampilan: "Panel Rapi" (tampilan split Master-Detail), "Tabel", dan "Kartu". Seluruh mode tampilan dilengkapi dropdown "Urutkan" (Custom Sort) untuk mengurutkan berdasarkan Waktu (Terbaru/Terlama FIFO), Nama Toko/Outlet, Customer, Jasa Kirim, Jumlah Qty, hingga Prioritas Belum Cetak.',
     target_audience: 'all',
 
     // PERSPEKTIF ADMIN GUDANG
