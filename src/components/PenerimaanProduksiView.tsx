@@ -74,7 +74,6 @@ import {
   hapusPenerimaanProduksiSingleRowFromSupabase,
   getSupabaseClient,
   syncOfflinePenerimaanProduksi,
-  cleanMismatchedPenerimaanNotesInSupabase,
 } from '../services/supabase';
 import { compressImage } from '../utils/imageCompressor';
 import { uploadMultipleImagesToGdrive } from '../services/gdriveUpload';
@@ -589,9 +588,6 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
   const loadData = async (forceRefresh?: boolean | unknown) => {
     setIsLoading(true);
     try {
-      // Auto-cleanup any mismatched global notes (e.g. BIS Florence accidentally copied to other codes)
-      await cleanMismatchedPenerimaanNotesInSupabase();
-
       const res = await fetchPenerimaanProduksiFromSupabase({
         kategori: filterKategori !== 'Semua' ? filterKategori : undefined,
         startDate: filterStartDate || undefined,

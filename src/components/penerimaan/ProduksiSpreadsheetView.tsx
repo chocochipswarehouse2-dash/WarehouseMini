@@ -26,6 +26,8 @@ import {
   AlertTriangle,
   Clock,
   ExternalLink,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { PenerimaanProduksiItem, ProductItem } from '../../types';
 import { exportProduksiToModernExcel } from '../../utils/excelProduksiExporter';
@@ -188,6 +190,30 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       .toUpperCase();
   };
 
+  // Fast O(1) Catalog Map lookup for product names
+  const catalogNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!productCatalog || productCatalog.length === 0) return map;
+    for (let i = 0; i < productCatalog.length; i++) {
+      const p = productCatalog[i];
+      const sku = String(p.k || (p as any).sku || '').trim().toUpperCase();
+      const name = String(p.p || p.n || (p as any).nama_produk || '').trim();
+      if (!sku || !name) continue;
+      if (!map.has(sku)) map.set(sku, name);
+      const dash = sku.indexOf('-');
+      if (dash > 0) {
+        const pfx = sku.slice(0, dash).trim();
+        if (!map.has(pfx)) map.set(pfx, name);
+      }
+      const space = sku.indexOf(' ');
+      if (space > 0) {
+        const pfx = sku.slice(0, space).trim();
+        if (!map.has(pfx)) map.set(pfx, name);
+      }
+    }
+    return map;
+  }, [productCatalog]);
+
   // Initialize or re-sync Blocks from dataList when dataList or activeTab changes
   useEffect(() => {
     if (!dataList) return;
@@ -232,18 +258,10 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       } else {
         // Tab CMT: Lookup Nama Produk dari Master Produk
         productName = firstItem?.nama_produk || '';
-        if (productCatalog && productCatalog.length > 0) {
-          const cleanCode = code.trim().toUpperCase();
-          const masterMatch = productCatalog.find((p) => {
-            const pSku = String(p.k || (p as any).sku || '').trim().toUpperCase();
-            return pSku === cleanCode || pSku.startsWith(cleanCode + '-') || pSku.startsWith(cleanCode + ' ');
-          });
-          if (masterMatch) {
-            const officialName = String(masterMatch.p || masterMatch.n || (masterMatch as any).nama_produk || '').trim();
-            if (officialName) {
-              productName = officialName;
-            }
-          }
+        const cleanCode = code.trim().toUpperCase();
+        const officialName = catalogNameMap.get(cleanCode);
+        if (officialName) {
+          productName = officialName;
         }
 
         if (firstItem) {
@@ -543,7 +561,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     });
 
     setBlocks(parsedBlocks);
-  }, [dataList, activeTab]);
+  }, [dataList, activeTab, catalogNameMap]);
 
   // Recalculate block totals
   const recalculateBlock = (block: MatrixProductBlock): MatrixProductBlock => {
@@ -670,6 +688,37 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         (b.catatan && b.catatan.toLowerCase().includes(effectiveQuery))
     );
   }, [blocks, selectedDateFilter, recountFilter, effectiveQuery]);
+
+  // Pagination State for Matrix Spreadsheet Blocks
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10); // 10 blocks default for snappy render
+
+  const totalPages = Math.max(1, Math.ceil(filteredBlocks.length / (pageSize === -1 ? (filteredBlocks.length || 1) : pageSize)));
+
+  // Auto-reset page when filter, search, or pageSize changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, selectedDateFilter, recountFilter, effectiveQuery, pageSize]);
+
+  // Keep editing block visible if user starts editing
+  useEffect(() => {
+    if (editingBlockId && pageSize !== -1) {
+      const idx = filteredBlocks.findIndex((b) => b.id === editingBlockId);
+      if (idx !== -1) {
+        const targetPage = Math.floor(idx / pageSize) + 1;
+        if (targetPage !== currentPage) {
+          setCurrentPage(targetPage);
+        }
+      }
+    }
+  }, [editingBlockId, filteredBlocks, pageSize]);
+
+  // Sliced blocks for current page
+  const paginatedBlocks = useMemo(() => {
+    if (pageSize === -1) return filteredBlocks;
+    const start = (currentPage - 1) * pageSize;
+    return filteredBlocks.slice(start, start + pageSize);
+  }, [filteredBlocks, currentPage, pageSize]);
 
   // Export Modern Excel with selected multi-choice filters
   const handleExportModernExcelWithFilters = async () => {
@@ -1744,8 +1793,70 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         </div>
       ) : (
         /* SPREADSHEET MASTER TABLES */
-        <div className="space-y-6">
-          {filteredBlocks.map((block) => {
+        <div className="space-y-4">
+          {/* Top Pagination & Info Bar */}
+          <div className="flex items-center justify-between px-3 py-2 bg-slate-50 dark:bg-slate-800/80 rounded-2xl text-xs text-slate-500 border border-slate-200 dark:border-slate-700/80 flex-wrap gap-2.5 print:hidden shadow-2xs">
+            <div className="flex items-center gap-2">
+              <span>
+                Menampilkan{' '}
+                <strong className="text-slate-800 dark:text-slate-100 font-bold">
+                  {filteredBlocks.length === 0
+                    ? 0
+                    : pageSize === -1
+                    ? `1 - ${filteredBlocks.length}`
+                    : `${(currentPage - 1) * pageSize + 1} - ${Math.min(currentPage * pageSize, filteredBlocks.length)}`}
+                </strong>{' '}
+                dari <strong className="text-slate-800 dark:text-slate-100 font-bold">{filteredBlocks.length}</strong> Kode Produksi
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2.5">
+              {/* Page Size Selector */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-slate-400 font-semibold">Tampilkan:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => setPageSize(Number(e.target.value))}
+                  className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer"
+                >
+                  <option value={10}>10 Tabel</option>
+                  <option value={20}>20 Tabel</option>
+                  <option value={50}>50 Tabel</option>
+                  <option value={-1}>Semua Tabel</option>
+                </select>
+              </div>
+
+              {/* Pagination Controls */}
+              {pageSize !== -1 && totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={currentPage <= 1}
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    className="p-1 rounded-lg border border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                    title="Halaman Sebelumnya"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 px-1.5">
+                    Hal {currentPage} / {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    className="p-1 rounded-lg border border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                    title="Halaman Berikutnya"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            {paginatedBlocks.map((block) => {
             const isEditingThisBlock = editingBlockId === block.id;
 
             const totalSubRows = block.colorGroups.reduce(
@@ -2443,6 +2554,59 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
               </div>
             );
           })}
+          </div>
+
+          {/* Bottom Pagination Bar */}
+          {pageSize !== -1 && totalPages > 1 && (
+            <div className="px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-xs print:hidden">
+              <span className="text-slate-500 font-medium">
+                Menampilkan {(currentPage - 1) * pageSize + 1} -{' '}
+                {Math.min(currentPage * pageSize, filteredBlocks.length)} dari {filteredBlocks.length} Kode Produksi
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={currentPage <= 1}
+                  onClick={() => setCurrentPage(1)}
+                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer text-xs"
+                  title="Halaman Pertama"
+                >
+                  Pertama
+                </button>
+                <button
+                  type="button"
+                  disabled={currentPage <= 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                  title="Halaman Sebelumnya"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="font-bold text-slate-700 dark:text-slate-300 px-2 text-xs">
+                  Halaman {currentPage} dari {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                  title="Halaman Berikutnya"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setCurrentPage(totalPages)}
+                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer text-xs"
+                  title="Halaman Terakhir"
+                >
+                  Terakhir
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
