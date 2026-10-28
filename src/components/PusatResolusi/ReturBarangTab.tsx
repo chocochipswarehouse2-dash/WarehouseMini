@@ -64,6 +64,8 @@ import {
   fetchPusatResolusiSettings,
   savePusatResolusiSettings,
   sendReturNotificationEmail,
+  sendTestNotificationEmail,
+  DEFAULT_PUSAT_RESOLUSI_EMAIL_GAS_URL,
   DEFAULT_OUTLET_ORDER_OPTIONS,
   DEFAULT_SHIPPING_OPTIONS,
 } from '../../services/returBarangService';
@@ -206,8 +208,12 @@ export default function ReturBarangTab({
   const [fromNameInput, setFromNameInput] = useState('Chocochips - Pusat Resolusi');
   const [autoEmailSubmit, setAutoEmailSubmit] = useState(true);
   const [autoEmailComplete, setAutoEmailComplete] = useState(true);
+  const [gasEmailUrlInput, setGasEmailUrlInput] = useState('');
   const [waGroupPickingInput, setWaGroupPickingInput] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
+  const [testingEmail, setTestingEmail] = useState(false);
+  const [testEmailTarget, setTestEmailTarget] = useState('');
+  const [isResendingEmail, setIsResendingEmail] = useState(false);
 
   // State Form Input / Edit Retur
   const [editingOrder, setEditingOrder] = useState<ReturBarangOrder | null>(null);
@@ -319,6 +325,7 @@ export default function ReturBarangTab({
       setFromNameInput(cfg.from_name || 'Chocochips - Pusat Resolusi');
       setAutoEmailSubmit(cfg.auto_email_on_submit ?? true);
       setAutoEmailComplete(cfg.auto_email_on_complete ?? true);
+      setGasEmailUrlInput(cfg.gas_email_url || DEFAULT_PUSAT_RESOLUSI_EMAIL_GAS_URL);
       setWaGroupPickingInput(cfg.wa_group_picking || '');
     } catch (e) {
       console.warn('Load Retur Barang error:', e);
@@ -681,11 +688,19 @@ export default function ReturBarangTab({
         );
 
         if (!editingOrder) {
-          sendReturNotificationEmail(payload, 'submit').then(emailRes => {
-            if (emailRes.sent) {
-              onNotify(`✉️ Email notifikasi retur terkirim ke tim (${emailRes.message})`, 'success');
-            }
-          });
+          sendReturNotificationEmail(payload, 'submit')
+            .then(emailRes => {
+              if (emailRes.sent) {
+                onNotify(`✉️ Email notifikasi retur terkirim ke tim (${emailRes.message})`, 'success');
+              } else {
+                console.warn('Status kirim email retur:', emailRes.message);
+                onNotify(`⚠️ Status email retur: ${emailRes.message}`, 'warning');
+              }
+            })
+            .catch(err => {
+              console.error('Error sendReturNotificationEmail:', err);
+              onNotify(`⚠️ Gagal mengirim email notifikasi: ${err?.message || err}`, 'warning');
+            });
         }
 
         resetForm();
@@ -1240,11 +1255,18 @@ _Pusat Resolusi WMS Chocochips_`;
         setResiPengirimanModal(null);
         onNotify(`✅ No. Resi ${cleanResi} tersimpan! Pesanan Retur kini berstatus Selesai.`, 'success');
 
-        sendReturNotificationEmail(updated, 'complete').then(emailRes => {
-          if (emailRes.sent) {
-            onNotify('✉️ Email penyelesaian retur terkirim ke tim', 'info');
-          }
-        });
+        sendReturNotificationEmail(updated, 'complete')
+          .then(emailRes => {
+            if (emailRes.sent) {
+              onNotify('✉️ Email penyelesaian retur terkirim ke tim', 'info');
+            } else {
+              console.warn('Status email penyelesaian retur:', emailRes.message);
+              onNotify(`⚠️ Status email penyelesaian: ${emailRes.message}`, 'warning');
+            }
+          })
+          .catch(err => {
+            console.error('Error sendReturNotificationEmail complete:', err);
+          });
       } else {
         onNotify(res.message, 'error');
       }
@@ -1400,6 +1422,7 @@ _Pusat Resolusi WMS Chocochips_`;
       from_name: fromNameInput.trim() || 'Chocochips - Pusat Resolusi',
       auto_email_on_submit: autoEmailSubmit,
       auto_email_on_complete: autoEmailComplete,
+      gas_email_url: gasEmailUrlInput.trim() || DEFAULT_PUSAT_RESOLUSI_EMAIL_GAS_URL,
       wa_group_picking: waGroupPickingInput.trim(),
     };
 
@@ -3292,6 +3315,41 @@ _Pusat Resolusi WMS Chocochips_`;
                 ))}
               </div>
             </div>
+
+            <div className="pt-3 flex items-center justify-between border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                disabled={isResendingEmail}
+                onClick={async () => {
+                  if (!detailModalOrder) return;
+                  setIsResendingEmail(true);
+                  try {
+                    const res = await sendReturNotificationEmail(detailModalOrder, 'resend');
+                    if (res.sent) {
+                      onNotify(`✉️ Email notifikasi retur #${detailModalOrder.no_pesanan_asal} berhasil dikirim ulang!`, 'success');
+                    } else {
+                      onNotify(`⚠️ Status kirim email: ${res.message}`, 'warning');
+                    }
+                  } catch (err: any) {
+                    onNotify(`⚠️ Gagal kirim email: ${err?.message || err}`, 'error');
+                  } finally {
+                    setIsResendingEmail(false);
+                  }
+                }}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-colors"
+                title="Kirim ulang email pemberitahuan resmi retur barang ke tim"
+              >
+                <Mail className={`w-3.5 h-3.5 ${isResendingEmail ? 'animate-bounce text-rose-600' : ''}`} />
+                <span>{isResendingEmail ? 'Mengirim Email...' : 'Kirim Ulang Email Notifikasi'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDetailModalOrder(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 cursor-pointer transition-colors"
+              >
+                Tutup
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -3376,6 +3434,22 @@ _Pusat Resolusi WMS Chocochips_`;
                 />
               </div>
 
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  URL Webhook Email Google Apps Script (GAS)
+                </label>
+                <input
+                  type="text"
+                  value={gasEmailUrlInput}
+                  onChange={e => setGasEmailUrlInput(e.target.value)}
+                  placeholder={DEFAULT_PUSAT_RESOLUSI_EMAIL_GAS_URL}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono text-[11px] text-slate-900 dark:text-white"
+                />
+                <p className="mt-1 text-[10px] text-slate-400">
+                  Endpoint aktif: Main WMS Backend (MailApp). Biarkan default kecuali dipindahkan ke script lain.
+                </p>
+              </div>
+
               <div className="space-y-2 pt-1">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -3399,6 +3473,55 @@ _Pusat Resolusi WMS Chocochips_`;
                     Kirim email otomatis ke tim saat Admin input <strong>No. Resi Pengiriman (Retur Selesai)</strong>
                   </span>
                 </label>
+              </div>
+
+              {/* Box Uji Coba Pengiriman Email */}
+              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 space-y-2">
+                <div className="font-bold text-slate-700 dark:text-slate-200 flex items-center justify-between text-xs">
+                  <span className="flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Uji Coba Pengiriman Email (Live Test)</span>
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    value={testEmailTarget}
+                    onChange={e => setTestEmailTarget(e.target.value)}
+                    placeholder={emailInputText.split(/[,;\n]+/)[0]?.trim() || "Masukkan email tujuan tes..."}
+                    className="flex-1 px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white"
+                  />
+                  <button
+                    type="button"
+                    disabled={testingEmail}
+                    onClick={async () => {
+                      const target = (testEmailTarget || emailInputText.split(/[,;\n]+/)[0] || '').trim();
+                      if (!target || !target.includes('@')) {
+                        onNotify('Masukkan alamat email tujuan tes yang valid', 'warning');
+                        return;
+                      }
+                      setTestingEmail(true);
+                      try {
+                        const res = await sendTestNotificationEmail(target, fromNameInput);
+                        if (res.success) {
+                          onNotify(`✅ ${res.message}`, 'success');
+                        } else {
+                          onNotify(`⚠️ ${res.message}`, 'error');
+                        }
+                      } catch (err: any) {
+                        onNotify(`⚠️ Gagal uji coba email: ${err?.message || err}`, 'error');
+                      } finally {
+                        setTestingEmail(false);
+                      }
+                    }}
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white cursor-pointer disabled:opacity-50 transition-colors shrink-0"
+                  >
+                    {testingEmail ? 'Mengirim...' : 'Tes Kirim Email'}
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  Kirim email uji coba instan untuk memastikan akun Gmail Google Apps Script siap mengirim ke inbox tim.
+                </p>
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">

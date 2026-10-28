@@ -156,8 +156,12 @@ async function deployMainBackend(headers) {
 
   console.log('2. Memperbarui Supabase credentials & Handler di file GAS...');
   const fonnteHandlerCode = fs.readFileSync(path.join(GAS_DIR, 'fonnte_handler.js'), 'utf8');
+  const webhookCode = fs.readFileSync(path.join(GAS_DIR, 'webhook.js'), 'utf8');
 
   for (const file of proj.files) {
+    if (file.name === 'Webhook') {
+      file.source = webhookCode;
+    }
     if (file.name === 'SupabaseBridge') {
       file.source = file.source.replace(/const SUPABASE_URL\s*=\s*["'][^"']+["'];/, `const SUPABASE_URL = "${NEW_URL}";`);
       file.source = file.source.replace(/const SUPABASE_ANON_KEY\s*=\s*["'][^"']+["'];/, `const SUPABASE_ANON_KEY = "${NEW_KEY}";`);

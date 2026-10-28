@@ -162,3 +162,11 @@ function handleSendEmail(payload) {
 function doOptions(e) {
   return jsonResponse({ status: 'ok', message: 'WMS GAS Webhook Active (WhatsApp Only)' });
 }
+
+/**
+ * Output helper response JSON
+ */
+function jsonResponse(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}

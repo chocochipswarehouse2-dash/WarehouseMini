@@ -97,12 +97,16 @@ export interface PusatResolusiSettings {
   from_name: string;
   auto_email_on_submit: boolean;
   auto_email_on_complete: boolean;
+  gas_email_url?: string;
   wa_group_picking: string;
   outlet_options: string[];
   shipping_options: string[];
   updated_at?: string;
   updated_by?: string;
 }
+
+export const DEFAULT_PUSAT_RESOLUSI_EMAIL_GAS_URL =
+  'https://script.google.com/macros/s/AKfycbyFxfqoqJhrPJOioPxnmbGJTjTTAwli6b87lgOQCPFDOoCVt5EJg3NHZT56zI52rM63/exec';
 
 export const DEFAULT_OUTLET_ORDER_OPTIONS = [
   'Shopee',
@@ -143,6 +147,7 @@ export function getDefaultPusatResolusiSettings(): PusatResolusiSettings {
     from_name: 'Chocochips - Pusat Resolusi',
     auto_email_on_submit: true,
     auto_email_on_complete: true,
+    gas_email_url: DEFAULT_PUSAT_RESOLUSI_EMAIL_GAS_URL,
     wa_group_picking: fonnteCfg.groupTarget || '',
     outlet_options: [...DEFAULT_OUTLET_ORDER_OPTIONS],
     shipping_options: [...DEFAULT_SHIPPING_OPTIONS],
@@ -158,6 +163,7 @@ export function getLocalPusatResolusiSettings(): PusatResolusiSettings {
       return {
         ...def,
         ...parsed,
+        gas_email_url: (parsed.gas_email_url && !parsed.gas_email_url.includes('AKfycby4J497I-m4H99KSvBDkkSr6_kn9BoIDwALRa3lE1ZiPyJPIAd0AYE6-r6yqCdFONmpSg')) ? parsed.gas_email_url : def.gas_email_url,
         recipient_emails: Array.isArray(parsed.recipient_emails) ? parsed.recipient_emails : def.recipient_emails,
         cc_emails: Array.isArray(parsed.cc_emails) ? parsed.cc_emails : def.cc_emails,
         outlet_options: Array.isArray(parsed.outlet_options) && parsed.outlet_options.length > 0 ? parsed.outlet_options : def.outlet_options,
@@ -182,6 +188,7 @@ export async function fetchPusatResolusiSettings(): Promise<PusatResolusiSetting
       const merged: PusatResolusiSettings = {
         ...local,
         ...cloudParsed,
+        gas_email_url: (cloudParsed.gas_email_url && !cloudParsed.gas_email_url.includes('AKfycby4J497I-m4H99KSvBDkkSr6_kn9BoIDwALRa3lE1ZiPyJPIAd0AYE6-r6yqCdFONmpSg')) ? cloudParsed.gas_email_url : local.gas_email_url,
         recipient_emails: Array.isArray(cloudParsed.recipient_emails) ? cloudParsed.recipient_emails : local.recipient_emails,
         cc_emails: Array.isArray(cloudParsed.cc_emails) ? cloudParsed.cc_emails : local.cc_emails,
         outlet_options: Array.isArray(cloudParsed.outlet_options) && cloudParsed.outlet_options.length > 0 ? cloudParsed.outlet_options : local.outlet_options,
@@ -729,7 +736,7 @@ export async function deleteReturOrder(
  */
 export async function sendReturNotificationEmail(
   order: ReturBarangOrder,
-  eventType: 'submit' | 'complete' | 'update' = 'submit'
+  eventType: 'submit' | 'complete' | 'update' | 'resend' = 'submit'
 ): Promise<{ sent: boolean; message: string }> {
   try {
     const settings = await fetchPusatResolusiSettings();
@@ -747,8 +754,7 @@ export async function sendReturNotificationEmail(
       return { sent: false, message: 'Belum ada daftar email penerima di Pengaturan Pusat Resolusi' };
     }
 
-    const { gasUrl } = getGdriveConfig();
-    const endpoint = (gasUrl || '').trim();
+    const endpoint = (settings.gas_email_url || DEFAULT_PUSAT_RESOLUSI_EMAIL_GAS_URL).trim();
     if (!endpoint) {
       return { sent: false, message: 'URL Webhook GAS belum dikonfigurasi' };
     }
@@ -809,12 +815,16 @@ export async function sendReturNotificationEmail(
     const subject =
       eventType === 'complete'
         ? `[SELESAI - RETUR BARANG] #${order.no_pesanan_asal} (${order.outlet_order}) - ${order.nama_customer} [Resi: ${order.no_resi}]`
+        : eventType === 'resend'
+        ? `[KIRIM ULANG - RETUR BARANG] #${order.no_pesanan_asal} (${order.outlet_order}) - ${order.nama_customer}`
         : `[PENGAJUAN RETUR BARANG] #${order.no_pesanan_asal} (${order.outlet_order}) - ${order.nama_customer}`;
 
     const headerBg = eventType === 'complete' ? '#065f46' : '#881337';
     const headerTitle =
       eventType === 'complete'
         ? 'PROSES RETUR BARANG SELESAI & DIKIRIM'
+        : eventType === 'resend'
+        ? 'NOTIFIKASI TIKET RETUR BARANG (KIRIM ULANG)'
         : 'REGISTRASI RETUR BARANG BARU — PUSAT RESOLUSI';
 
     const htmlBody = `
@@ -927,3 +937,71 @@ export async function sendReturNotificationEmail(
     return { sent: false, message: err?.message || 'Gagal mengirim email notifikasi' };
   }
 }
+
+/**
+ * Uji coba pengiriman email langsung dari Pengaturan Pusat Resolusi
+ */
+export async function sendTestNotificationEmail(
+  targetEmail: string,
+  fromName = 'Chocochips - Pusat Resolusi'
+): Promise<{ success: boolean; message: string }> {
+  try {
+    const cleanTo = (targetEmail || '').trim();
+    if (!cleanTo || !cleanTo.includes('@')) {
+      return { success: false, message: 'Alamat email penerima tidak valid' };
+    }
+
+    const settings = await fetchPusatResolusiSettings();
+    const endpoint = (settings.gas_email_url || DEFAULT_PUSAT_RESOLUSI_EMAIL_GAS_URL).trim();
+    if (!endpoint) {
+      return { success: false, message: 'Endpoint GAS Email belum dikonfigurasi' };
+    }
+
+    const testSubject = '[TEST WMS] Uji Coba Pengiriman Email Pusat Resolusi';
+    const testHtml = `
+      <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; font-family: sans-serif; color: #1e293b;">
+        <div style="background: #881337; color: #ffffff; padding: 20px; text-align: center;">
+          <h2 style="margin: 0; font-size: 18px; letter-spacing: 1px;">CHOCOCHIPS — PUSAT RESOLUSI</h2>
+          <p style="margin: 6px 0 0 0; font-size: 13px; color: #fecdd3;">TES INTEGRASI EMAIL VIA GOOGLE APPS SCRIPT</p>
+        </div>
+        <div style="padding: 20px;">
+          <p style="font-size: 14px; color: #047857; font-weight: 700; margin-top: 0;">
+            ✅ Koneksi webhook email Google Apps Script berhasil terhubung!
+          </p>
+          <p style="font-size: 13px; color: #475569; line-height: 1.6;">
+            Email ini mengonfirmasi bahwa konfigurasi notifikasi otomatis tiket retur barang pada modul Pusat Resolusi telah aktif dan dapat mengirim email secara otomatis.
+          </p>
+          <div style="margin-top: 16px; padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 12px; color: #64748b;">
+            • Waktu Pengujian: <strong>${new Date().toLocaleString('id-ID')}</strong><br/>
+            • Endpoint Webhook: <code>${endpoint}</code><br/>
+            • Penerima Tes: <strong>${cleanTo}</strong>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'sendEmail',
+        to: cleanTo,
+        subject: testSubject,
+        htmlBody: testHtml,
+        fromName,
+      }),
+    });
+
+    if (!res.ok) {
+      return { success: false, message: `HTTP ${res.status}` };
+    }
+    const json = await res.json().catch(() => null);
+    if (json && json.success === false) {
+      return { success: false, message: json.error || 'GAS menolak pengiriman email' };
+    }
+    return { success: true, message: json?.message || `Email tes berhasil dikirim ke ${cleanTo}` };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Gagal menghubungi server GAS Email' };
+  }
+}
+

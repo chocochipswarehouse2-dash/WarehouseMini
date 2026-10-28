@@ -5,10 +5,10 @@ export const DEFAULT_GDRIVE_FOLDER_URL =
   'https://drive.google.com/drive/folders/1oFx9WFm8Ch_DlOxw66WRy4nH-kIAXwcw';
 
 export const DEFAULT_GDRIVE_GAS_URL =
-  'https://script.google.com/macros/s/AKfycby4J497I-m4H99KSvBDkkSr6_kn9BoIDwALRa3lE1ZiPyJPIAd0AYE6-r6yqCdFONmpSg/exec';
+  'https://script.google.com/macros/s/AKfycbyFxfqoqJhrPJOioPxnmbGJTjTTAwli6b87lgOQCPFDOoCVt5EJg3NHZT56zI52rM63/exec';
 
 export const DEFAULT_MANUAL_SHIPMENT_GAS_URL =
-  'https://script.google.com/macros/s/AKfycby4J497I-m4H99KSvBDkkSr6_kn9BoIDwALRa3lE1ZiPyJPIAd0AYE6-r6yqCdFONmpSg/exec';
+  'https://script.google.com/macros/s/AKfycbyFxfqoqJhrPJOioPxnmbGJTjTTAwli6b87lgOQCPFDOoCVt5EJg3NHZT56zI52rM63/exec';
 
 // In-memory cache for ultra-fast zero-latency access across components
 let cachedSettings: WmsSettings | null = null;
@@ -18,7 +18,7 @@ let isFetchingPromise: Promise<WmsSettings | null> | null = null;
  * Validasi dan bersihkan URL GAS jika merupakan URL script mati/404 lama
  */
 function sanitizeManualShipmentGasUrl(url?: string): string {
-  if (!url || !url.trim() || url.includes('AKfycbwqoG7_rD_kLdO48x4W0-3f4m2A-xK7eH9fQp_6_h3Y') || url.includes('AKfycbyFxfqoqJhrPJOioPxnmbGJTjTTAwli6b87lgOQCPFDOoCVt5EJg3NHZT56zI52rM63')) {
+  if (!url || !url.trim() || url.includes('AKfycbwqoG7_rD_kLdO48x4W0-3f4m2A-xK7eH9fQp_6_h3Y') || url.includes('AKfycby4J497I-m4H99KSvBDkkSr6_kn9BoIDwALRa3lE1ZiPyJPIAd0AYE6-r6yqCdFONmpSg')) {
     return DEFAULT_MANUAL_SHIPMENT_GAS_URL;
   }
   return url.trim();
@@ -152,7 +152,7 @@ export function getStoredGdriveFolderUrl(): string {
 }
 
 function sanitizeGdriveGasUrl(url?: string): string {
-  if (!url || !url.trim() || url.includes('AKfycbyFxfqoqJhrPJOioPxnmbGJTjTTAwli6b87lgOQCPFDOoCVt5EJg3NHZT56zI52rM63')) {
+  if (!url || !url.trim() || url.includes('AKfycby4J497I-m4H99KSvBDkkSr6_kn9BoIDwALRa3lE1ZiPyJPIAd0AYE6-r6yqCdFONmpSg')) {
     return DEFAULT_GDRIVE_GAS_URL;
   }
   return url.trim();
