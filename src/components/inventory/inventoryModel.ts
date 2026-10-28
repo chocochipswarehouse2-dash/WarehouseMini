@@ -320,7 +320,7 @@ export function aggregateSku(rows: StockRealtimeItem[]): SkuStock | null {
     if (bucket === 'MAP') map += qty;
     else if (bucket === 'LIVE') live += qty;
 
-    if (lokasi && lokasi !== '-') locMap.set(lokasi, (locMap.get(lokasi) || 0) + qty);
+    if (l && l !== '-') locMap.set(l, (locMap.get(l) || 0) + qty);
   }
 
   if (!any) {
@@ -340,7 +340,9 @@ export function aggregateSku(rows: StockRealtimeItem[]): SkuStock | null {
   const total = map + live + studio + permak + cuci + defect;
 
   const locs: LocEntry[] = [];
-  locMap.forEach((qty, name) => locs.push({ name, qty, neg: qty < 0 }));
+  locMap.forEach((qty, name) => {
+    if (qty !== 0) locs.push({ name, qty, neg: qty < 0 });
+  });
   if (locs.length > 1) {
     locs.sort((x, y) => (y.qty !== x.qty ? y.qty - x.qty : x.name < y.name ? -1 : x.name > y.name ? 1 : 0));
   }
@@ -936,14 +938,14 @@ export function composeAreaRows(
       commercialDp = base!.dpTotal;
     }
 
-    // Group locations by Area
-    const areaMap = new Map<string, { totalQty: number; locs: AreaLocationEntry[] }>();
+    // Group locations by Area and merge identical locations case-insensitively
+    const areaMap = new Map<string, { totalQty: number; locMap: Map<string, number> }>();
 
     for (let i = 0; i < stockRows.length; i++) {
       const r = stockRows[i];
       const q = Number(r.sisa_stok) || 0;
       if (q === 0) continue;
-      const lokasi = String(r.lokasi || '').trim();
+      const lokasi = String(r.lokasi || '').trim().toUpperCase();
       if (!lokasi || lokasi === '-') continue;
 
       let area = getAreaFromLokasi(lokasi, r.area);
@@ -951,11 +953,11 @@ export function composeAreaRows(
 
       let entry = areaMap.get(area);
       if (!entry) {
-        entry = { totalQty: 0, locs: [] };
+        entry = { totalQty: 0, locMap: new Map<string, number>() };
         areaMap.set(area, entry);
       }
       entry.totalQty += q;
-      entry.locs.push({ lokasi, qty: q, neg: q < 0 });
+      entry.locMap.set(lokasi, (entry.locMap.get(lokasi) || 0) + q);
     }
 
     const sortedAreas = Array.from(areaMap.entries()).sort((a, b) => {
@@ -970,11 +972,17 @@ export function composeAreaRows(
 
     for (let i = 0; i < sortedAreas.length; i++) {
       const [area, data] = sortedAreas[i];
-      data.locs.sort((a, b) => b.qty - a.qty || a.lokasi.localeCompare(b.lokasi));
+      const locs: AreaLocationEntry[] = [];
+      data.locMap.forEach((qty, lokasi) => {
+        if (qty !== 0) {
+          locs.push({ lokasi, qty, neg: qty < 0 });
+        }
+      });
+      locs.sort((a, b) => b.qty - a.qty || a.lokasi.localeCompare(b.lokasi));
       if (isPerbaikanArea(area)) {
-        perbaikanEntries.push({ area, totalQty: data.totalQty, locs: data.locs });
+        perbaikanEntries.push({ area, totalQty: data.totalQty, locs });
       } else {
-        commercialEntries.push({ area, totalQty: data.totalQty, locs: data.locs });
+        commercialEntries.push({ area, totalQty: data.totalQty, locs });
       }
     }
 

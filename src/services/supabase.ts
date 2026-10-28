@@ -3060,15 +3060,18 @@ export async function fetchAllStockRealtime(maxRows = 50000, skipDirectCache = f
           hasData = true;
           for (const item of chunk) {
             const sku = (item.sku || '').trim().toUpperCase();
-            const lokasi = (item.lokasi || 'Warehouse').trim();
+            const rawLokasi = (item.lokasi || 'Warehouse').trim();
+            const cleanLokasi = rawLokasi.toUpperCase();
+            const rawArea = (item.area || '').trim();
             if (!sku) continue;
-            const key = `${sku}__${lokasi.toUpperCase()}`;
-            dedupMap.set(key, {
-              sku: item.sku,
+            // Exact composite key of stok_real_fisik view (sku, lokasi, area) prevents pagination duplicate double-counting
+            const viewKey = `${sku}__${rawLokasi}__${rawArea}`;
+            dedupMap.set(viewKey, {
+              sku,
               nama_produk: item.nama_produk || item.sku,
               size: item.size || '-',
-              lokasi: item.lokasi || lokasi,
-              area: getAreaFromLokasi(lokasi),
+              lokasi: cleanLokasi,
+              area: getAreaFromLokasi(cleanLokasi),
               sisa_stok: Number(item.sisa_stok) || 0,
               updated_at: item.updated_at,
             });
@@ -3082,7 +3085,21 @@ export async function fetchAllStockRealtime(maxRows = 50000, skipDirectCache = f
 
       if (hasData && dedupMap.size > 0) {
         successfulTable = tableName;
-        return Array.from(dedupMap.values());
+        // Merge any rows that share the same canonical (SKU, LOKASI) across split raw area/casing
+        const mergedByLoc = new Map<string, StockRealtimeItem>();
+        dedupMap.forEach((row) => {
+          const locKey = `${row.sku}__${row.lokasi.toUpperCase()}`;
+          const prev = mergedByLoc.get(locKey);
+          if (!prev) {
+            mergedByLoc.set(locKey, { ...row });
+          } else {
+            prev.sisa_stok = (Number(prev.sisa_stok) || 0) + (Number(row.sisa_stok) || 0);
+            if (row.updated_at && (!prev.updated_at || row.updated_at > prev.updated_at)) {
+              prev.updated_at = row.updated_at;
+            }
+          }
+        });
+        return Array.from(mergedByLoc.values()).filter((r) => (Number(r.sisa_stok) || 0) !== 0);
       }
     } catch (err) {
       console.warn(`Error fetching ${tableName} from Supabase:`, err);

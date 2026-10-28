@@ -31,6 +31,42 @@ const stockBySku = new Map<string, StockRealtimeItem[]>();
 let loadedAt = 0;
 
 const skuKey = (s: unknown): string => String(s || '').trim().toUpperCase();
+const locKey = (l: unknown): string => String(l || '').trim().toUpperCase();
+
+function pushNormalizedRow(bucket: StockRealtimeItem[], row: StockRealtimeItem): void {
+  const cleanSku = skuKey(row.sku);
+  const cleanLoc = locKey(row.lokasi);
+  if (!cleanSku || !cleanLoc || cleanLoc === '-') return;
+  const qty = Number(row.sisa_stok) || 0;
+  if (qty === 0) return;
+
+  const canonicalId = `${cleanSku}_${cleanLoc}`;
+  const rawId = String(row.id || '');
+  const isLegacyIndexedId = rawId !== canonicalId && rawId.startsWith(`${canonicalId}_`);
+
+  const existingIdx = bucket.findIndex((b) => locKey(b.lokasi) === cleanLoc);
+  if (existingIdx === -1) {
+    bucket.push({
+      ...row,
+      id: canonicalId,
+      sku: cleanSku,
+      lokasi: cleanLoc,
+      sisa_stok: qty,
+    });
+  } else {
+    const existing = bucket[existingIdx];
+    const existingRawArea = String(existing.area || '').trim().toUpperCase();
+    const rowRawArea = String(row.area || '').trim().toUpperCase();
+    // Only sum if the two rows originate from genuinely different area groups in stok_real_fisik;
+    // otherwise treat as duplicate cache entry and keep the canonical/latest value
+    if (existingRawArea && rowRawArea && existingRawArea !== rowRawArea) {
+      existing.sisa_stok = (Number(existing.sisa_stok) || 0) + qty;
+    } else if (!isLegacyIndexedId && row.updated_at && (!existing.updated_at || row.updated_at >= existing.updated_at)) {
+      existing.sisa_stok = qty;
+      existing.updated_at = row.updated_at;
+    }
+  }
+}
 
 function replaceAll(list: StockRealtimeItem[]): void {
   stockBySku.clear();
@@ -38,9 +74,12 @@ function replaceAll(list: StockRealtimeItem[]): void {
     const row = list[i];
     const key = skuKey(row.sku);
     if (!key) continue;
-    const bucket = stockBySku.get(key);
-    if (bucket) bucket.push(row);
-    else stockBySku.set(key, [row]);
+    let bucket = stockBySku.get(key);
+    if (!bucket) {
+      bucket = [];
+      stockBySku.set(key, bucket);
+    }
+    pushNormalizedRow(bucket, row);
   }
   loadedAt = Date.now();
 }
@@ -51,9 +90,12 @@ function applyDelta(skus: string[], rows: StockRealtimeItem[]): void {
     const row = rows[i];
     const key = skuKey(row.sku);
     if (!key) continue;
-    const bucket = stockBySku.get(key);
-    if (bucket) bucket.push(row);
-    else stockBySku.set(key, [row]);
+    let bucket = stockBySku.get(key);
+    if (!bucket) {
+      bucket = [];
+      stockBySku.set(key, bucket);
+    }
+    pushNormalizedRow(bucket, row);
   }
 }
 

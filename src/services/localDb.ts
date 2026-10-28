@@ -406,6 +406,7 @@ export async function deleteProductFromLocalDb(sku: string): Promise<void> {
 
 /**
  * Save Inventory Stocks into Local Database
+ * Uses deterministic key `${cleanSku}_${cleanLoc}` (without array index) so delta patches never create duplicate records.
  */
 export async function saveInventoryStocksToLocalDb(stocks: StockRealtimeItem[]): Promise<void> {
   if (!Array.isArray(stocks) || stocks.length === 0) return;
@@ -420,18 +421,57 @@ export async function saveInventoryStocksToLocalDb(stocks: StockRealtimeItem[]):
       const store = transaction.objectStore('inventory_stocks');
       store.clear();
 
+      // Deduplicate/merge by canonical (SKU, LOKASI) key before writing
+      const mergedMap = new Map<string, StockRealtimeItem & { _areas?: Set<string> }>();
       for (let i = 0; i < stocks.length; i++) {
         const item = stocks[i];
-        const recordId = item.id || `${item.sku}_${item.lokasi}_${i}`;
-        store.put({ ...item, id: recordId });
+        const cleanSku = String(item.sku || '').trim().toUpperCase();
+        const cleanLoc = String(item.lokasi || '').trim().toUpperCase();
+        if (!cleanSku || !cleanLoc || cleanLoc === '-') continue;
+        const qty = Number(item.sisa_stok) || 0;
+        if (qty === 0) continue;
+
+        const recordId = `${cleanSku}_${cleanLoc}`;
+        const rawArea = String(item.area || '').trim();
+        const existing = mergedMap.get(recordId);
+        if (!existing) {
+          const areas = new Set<string>();
+          if (rawArea) areas.add(rawArea);
+          mergedMap.set(recordId, {
+            ...item,
+            id: recordId,
+            sku: cleanSku,
+            lokasi: cleanLoc,
+            area: getAreaFromLokasi(cleanLoc, item.area),
+            sisa_stok: qty,
+            _areas: areas,
+          });
+        } else {
+          // Only sum if the row comes from a genuinely distinct area group in stok_real_fisik;
+          // if it's a duplicate cache entry (same area / legacy indexed id), take the latest record without double-counting
+          if (rawArea && existing._areas && !existing._areas.has(rawArea)) {
+            existing._areas.add(rawArea);
+            existing.sisa_stok = (Number(existing.sisa_stok) || 0) + qty;
+          } else if (item.updated_at && (!existing.updated_at || item.updated_at >= existing.updated_at)) {
+            existing.sisa_stok = qty;
+            existing.updated_at = item.updated_at;
+          }
+        }
       }
+
+      mergedMap.forEach((val) => {
+        const { _areas, ...cleanRecord } = val;
+        if ((Number(cleanRecord.sisa_stok) || 0) !== 0) {
+          store.put(cleanRecord);
+        }
+      });
 
       if (db.objectStoreNames.contains('meta')) {
         const metaStore = transaction.objectStore('meta');
         metaStore.put({
           key: 'stocks_sync_meta',
           lastSync: Date.now(),
-          count: stocks.length,
+          count: mergedMap.size,
           updatedAt: new Date().toISOString(),
         });
       }
@@ -446,16 +486,70 @@ export async function saveInventoryStocksToLocalDb(stocks: StockRealtimeItem[]):
 
 /**
  * Get All Inventory Stocks from Local Database
+ * Automatically deduplicates any legacy `${sku}_${lokasi}_${index}` keys against canonical `${sku}_${lokasi}` keys.
  */
 export async function getAllInventoryStocksFromLocalDb(): Promise<StockRealtimeItem[]> {
   try {
     const db = await getLocalDb();
     return new Promise<StockRealtimeItem[]>((resolve, reject) => {
-      const transaction = db.transaction('inventory_stocks', 'readonly');
+      const transaction = db.transaction('inventory_stocks', 'readwrite');
       const store = transaction.objectStore('inventory_stocks');
       const request = store.getAll();
 
-      request.onsuccess = () => resolve(request.result || []);
+      request.onsuccess = () => {
+        const rawList: StockRealtimeItem[] = request.result || [];
+        const dedupMap = new Map<string, StockRealtimeItem>();
+        const staleIdsToDelete: string[] = [];
+
+        for (let i = 0; i < rawList.length; i++) {
+          const item = rawList[i];
+          const cleanSku = String(item?.sku || '').trim().toUpperCase();
+          const cleanLoc = String(item?.lokasi || '').trim().toUpperCase();
+          if (!cleanSku || !cleanLoc || cleanLoc === '-') continue;
+
+          const canonicalId = `${cleanSku}_${cleanLoc}`;
+          const itemId = String(item.id || '');
+          const isLegacyIndexedId = itemId !== canonicalId && itemId.startsWith(`${canonicalId}_`);
+
+          if (isLegacyIndexedId) {
+            staleIdsToDelete.push(itemId);
+          }
+
+          const existing = dedupMap.get(canonicalId);
+          const normalizedItem: StockRealtimeItem = {
+            ...item,
+            id: canonicalId,
+            sku: cleanSku,
+            lokasi: cleanLoc,
+            area: getAreaFromLokasi(cleanLoc, item.area),
+            sisa_stok: Number(item.sisa_stok) || 0,
+          };
+
+          if (!existing) {
+            dedupMap.set(canonicalId, normalizedItem);
+          } else {
+            // Prefer canonical (delta-patched) or newer updated_at over legacy indexed record
+            const existingWasCanonical = String(existing.id || '') === canonicalId && !isLegacyIndexedId;
+            if (!isLegacyIndexedId || (item.updated_at && (!existing.updated_at || item.updated_at > existing.updated_at) && !existingWasCanonical)) {
+              dedupMap.set(canonicalId, normalizedItem);
+            }
+          }
+        }
+
+        // Self-clean legacy indexed duplicate records and ensure canonical records are stored
+        if (staleIdsToDelete.length > 0) {
+          for (const staleId of staleIdsToDelete) {
+            try { store.delete(staleId); } catch {}
+          }
+          dedupMap.forEach((rec) => {
+            if ((Number(rec.sisa_stok) || 0) !== 0) {
+              try { store.put(rec); } catch {}
+            }
+          });
+        }
+
+        resolve(Array.from(dedupMap.values()).filter((r) => (Number(r.sisa_stok) || 0) !== 0));
+      };
       request.onerror = () => reject(request.error);
     });
   } catch {
@@ -558,18 +652,42 @@ export async function patchProductStockLocationsInLocalDb(
         };
       });
 
-      // 2. Upsert active stock rows in `inventory_stocks` store using deterministic key `sku_lokasi`
+      // 2. Replace active stock rows in `inventory_stocks` store using deterministic key `sku_lokasi`
       skuSet.forEach((cleanSku) => {
+        try {
+          if (typeof IDBKeyRange !== 'undefined') {
+            stockStore.delete(IDBKeyRange.bound(`${cleanSku}_`, `${cleanSku}_\uffff`));
+          }
+        } catch {}
+
         const rows = stockBySku.get(cleanSku) || [];
-        rows.forEach((r, idx) => {
+        const mergedByLoc = new Map<string, StockRealtimeItem>();
+        rows.forEach((r) => {
           const loc = String(r.lokasi || '').trim().toUpperCase();
-          if (!loc) return;
-          const recordId = r.id || `${cleanSku}_${loc}`;
-          if ((Number(r.sisa_stok) || 0) > 0) {
-            stockStore.put({ ...r, sku: cleanSku, lokasi: loc, id: recordId });
+          if (!loc || loc === '-') return;
+          const qty = Number(r.sisa_stok) || 0;
+          if (qty === 0) return;
+          const recordId = `${cleanSku}_${loc}`;
+          const prev = mergedByLoc.get(recordId);
+          if (prev) {
+            prev.sisa_stok = (Number(prev.sisa_stok) || 0) + qty;
+          } else {
+            mergedByLoc.set(recordId, {
+              ...r,
+              sku: cleanSku,
+              lokasi: loc,
+              area: getAreaFromLokasi(loc, r.area),
+              sisa_stok: qty,
+              id: recordId,
+            });
+          }
+        });
+
+        mergedByLoc.forEach((rec, recordId) => {
+          if ((Number(rec.sisa_stok) || 0) !== 0) {
+            stockStore.put(rec);
           } else {
             try { stockStore.delete(recordId); } catch {}
-            try { stockStore.delete(`${cleanSku}_${loc}_${idx}`); } catch {}
           }
         });
       });
