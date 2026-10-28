@@ -6501,9 +6501,9 @@ _WMS Warehouse System_`;
             <div className="w-full overflow-x-auto">
               <table className="w-full text-left border-collapse table-auto lg:table-fixed">
                 <thead>
-                  <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <tr className="bg-slate-50/90 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     {canAction && (
-                      <th scope="col" className="py-2.5 px-2 w-8 text-center">
+                      <th scope="col" className="py-3 px-2 w-9 text-center">
                         <input
                           type="checkbox"
                           ref={(el) => {
@@ -6519,52 +6519,52 @@ _WMS Warehouse System_`;
                     <th
                       scope="col"
                       onClick={() => setSortBy(prev => prev === 'newest' ? 'oldest' : prev === 'oldest' ? 'store_asc' : prev === 'store_asc' ? 'store_desc' : 'newest')}
-                      className="py-2.5 px-2.5 lg:w-[21%] cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 select-none transition-colors"
+                      className="py-3 px-3 lg:w-[20%] cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 select-none transition-colors"
                       title="Klik untuk mengurutkan berdasarkan Waktu (Terbaru/Terlama) atau Nama Store (A-Z)"
                     >
-                      <div className="inline-flex items-center gap-1">
-                        <span>No. Pesanan & Store</span>
-                        <ArrowUpDown className={`w-3 h-3 ${['newest', 'oldest', 'store_asc', 'store_desc'].includes(sortBy) ? 'text-indigo-600 dark:text-indigo-400' : 'opacity-40'}`} />
+                      <div className="flex items-center gap-1 whitespace-nowrap">
+                        <span>No. Pesanan &amp; Store</span>
+                        <ArrowUpDown className={`w-3 h-3 shrink-0 ${['newest', 'oldest', 'store_asc', 'store_desc'].includes(sortBy) ? 'text-indigo-600 dark:text-indigo-400' : 'opacity-40'}`} />
                       </div>
                     </th>
                     <th
                       scope="col"
                       onClick={() => setSortBy(prev => prev === 'customer_asc' ? 'customer_desc' : prev === 'customer_desc' ? 'courier_asc' : 'customer_asc')}
-                      className="py-2.5 px-2.5 lg:w-[16%] cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 select-none transition-colors"
+                      className="py-3 px-2.5 lg:w-[16%] cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 select-none transition-colors"
                       title="Klik untuk mengurutkan berdasarkan Nama Customer atau Jasa Kirim"
                     >
-                      <div className="inline-flex items-center gap-1">
-                        <span>Customer & Pengiriman</span>
-                        <ArrowUpDown className={`w-3 h-3 ${['customer_asc', 'customer_desc', 'courier_asc'].includes(sortBy) ? 'text-indigo-600 dark:text-indigo-400' : 'opacity-40'}`} />
+                      <div className="flex items-center gap-1 whitespace-nowrap">
+                        <span>Customer &amp; Pengiriman</span>
+                        <ArrowUpDown className={`w-3 h-3 shrink-0 ${['customer_asc', 'customer_desc', 'courier_asc'].includes(sortBy) ? 'text-indigo-600 dark:text-indigo-400' : 'opacity-40'}`} />
                       </div>
                     </th>
                     <th
                       scope="col"
                       onClick={() => setSortBy(prev => prev === 'qty_desc' ? 'qty_asc' : 'qty_desc')}
-                      className="py-2.5 px-2.5 lg:w-[22%] cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 select-none transition-colors"
+                      className="py-3 px-2.5 lg:w-[23%] cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 select-none transition-colors"
                       title="Klik untuk mengurutkan berdasarkan Total Qty Produk"
                     >
-                      <div className="inline-flex items-center gap-1">
-                        <span>Rincian Produk & Alteration</span>
-                        <ArrowUpDown className={`w-3 h-3 ${['qty_desc', 'qty_asc'].includes(sortBy) ? 'text-indigo-600 dark:text-indigo-400' : 'opacity-40'}`} />
+                      <div className="flex items-center gap-1 whitespace-nowrap">
+                        <span>Rincian Produk &amp; Alteration</span>
+                        <ArrowUpDown className={`w-3 h-3 shrink-0 ${['qty_desc', 'qty_asc'].includes(sortBy) ? 'text-indigo-600 dark:text-indigo-400' : 'opacity-40'}`} />
                       </div>
                     </th>
-                    <th scope="col" className="py-2.5 px-2.5 lg:w-[16%]">DealPOS (SJ & Jadwal)</th>
+                    <th scope="col" className="py-3 px-2.5 lg:w-[15%] whitespace-nowrap">DealPOS (SJ &amp; Jadwal)</th>
                     <th
                       scope="col"
                       onClick={() => setSortBy(prev => prev === 'unprinted_first' ? 'newest' : 'unprinted_first')}
-                      className="py-2.5 px-2.5 lg:w-[13%] cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 select-none transition-colors"
+                      className="py-3 px-2.5 lg:w-[14%] cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 select-none transition-colors"
                       title="Klik untuk memprioritaskan pesanan yang Belum Cetak Label/Picking"
                     >
-                      <div className="inline-flex items-center gap-1">
-                        <span>Resi & Cetak</span>
-                        <ArrowUpDown className={`w-3 h-3 ${sortBy === 'unprinted_first' ? 'text-indigo-600 dark:text-indigo-400' : 'opacity-40'}`} />
+                      <div className="flex items-center gap-1 whitespace-nowrap">
+                        <span>Resi &amp; Cetak</span>
+                        <ArrowUpDown className={`w-3 h-3 shrink-0 ${sortBy === 'unprinted_first' ? 'text-indigo-600 dark:text-indigo-400' : 'opacity-40'}`} />
                       </div>
                     </th>
-                    <th scope="col" className="py-2.5 px-2.5 text-right lg:w-[12%]">Aksi</th>
+                    <th scope="col" className="py-3 px-3 text-right lg:w-[12%] whitespace-nowrap">Aksi</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200/70 dark:divide-slate-800 text-xs bg-white dark:bg-slate-900">
+                <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800 text-xs bg-white dark:bg-slate-900">
               {filteredOrders.length === 0 ? (
                 <tr>
                   <td colSpan={canAction ? 7 : 6} className="px-3 py-8 text-center text-[11px] text-slate-500 dark:text-slate-400">
@@ -6590,9 +6590,9 @@ _WMS Warehouse System_`;
                 </tr>
               ) : (
               filteredOrders.map((order) => (
-                <tr key={order.no_pesanan || (order as any).id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                <tr key={order.no_pesanan || (order as any).id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
                   {canAction && (
-                    <td className="py-2.5 px-2 w-8 text-center align-top">
+                    <td className="py-3 px-2 w-9 text-center align-top">
                       <input
                         type="checkbox"
                         className="rounded-sm border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer mt-1"
@@ -6602,87 +6602,88 @@ _WMS Warehouse System_`;
                     </td>
                   )}
                   {/* 1. No. Pesanan & Store */}
-                  <td className="py-2.5 px-2.5 align-top">
-                    <div className="flex flex-col gap-1">
-                      {/* Baris 1: Status & Store Asal (1 baris) */}
+                  <td className="py-3 px-3 align-top">
+                    <div className="flex flex-col gap-1.5">
+                      {/* Baris 1: Status & Store Asal */}
                       <div className="flex items-center gap-1 flex-wrap">
                         {(() => {
                           const badgeInfo = getOrderStatusBadgeInfo(order);
                           return (
-                            <span className={`px-1.5 py-0.5 text-[9.5px] font-bold rounded border ${badgeInfo.badgeClass}`}>
+                            <span className={`px-1.5 py-0.5 text-[9.5px] font-bold rounded-md border ${badgeInfo.badgeClass}`}>
                               {badgeInfo.label}
                             </span>
                           );
                         })()}
-                        <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-bold text-[9.5px] inline-flex items-center gap-1 max-w-[140px] truncate" title={order.nama_pengirim || '-'}>
+                        <span className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-bold text-[9.5px] inline-flex items-center gap-1 max-w-[145px] truncate" title={order.nama_pengirim || '-'}>
                           <Store className="w-2.5 h-2.5 text-indigo-500 shrink-0" />
                           <span className="truncate">{order.nama_pengirim || '-'}</span>
                         </span>
+                        {isOrderIncomingFulfillment(order) && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950/70 border border-orange-300 dark:border-orange-700 text-orange-900 dark:text-orange-200 text-[8.5px] font-bold whitespace-nowrap">
+                            <Truck className="w-2.5 h-2.5 text-orange-600 shrink-0" />
+                            <span>Fulfillment Anda</span>
+                          </span>
+                        )}
                       </div>
 
                       {/* Baris 2: No. Pesanan & Tanggal */}
                       <div className="flex items-center gap-1.5 flex-wrap leading-tight">
                         <div 
-                          className="text-[11px] font-bold text-[#00a8e8] dark:text-sky-400 hover:underline cursor-pointer inline-flex items-center font-mono"
+                          className="text-[11px] font-extrabold text-[#00a8e8] dark:text-sky-400 hover:underline cursor-pointer inline-flex items-center font-mono tracking-tight"
                           onClick={() => setSelectedOrderDetails(order)}
                         >
                           <span>#{order.no_pesanan}</span>
                         </div>
-                        <span className="text-[9.5px] text-slate-400 dark:text-slate-500 inline-flex items-center gap-0.5">
+                        <span className="text-[9.5px] text-slate-400 dark:text-slate-500 inline-flex items-center gap-0.5 whitespace-nowrap">
                           <Calendar className="w-2.5 h-2.5 shrink-0" />
                           <span>{new Date(order.created_at || '').toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'})}</span>
                         </span>
                       </div>
 
-                      {/* Baris 3: PIC, ID Ref & DPOS (Ringkas 1-2 baris) */}
-                      <div className="text-[9.5px] text-slate-500 dark:text-slate-400 leading-snug flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-                        {(() => {
-                          const pic = getValidPersonPicName(
-                            order.pic_store || order.alteration_repair_data?.pic_pemohon || order.alteration_repair_data?.pic_kirim_store,
-                            order.nama_pengirim,
-                            outlets
-                          );
-                          return (
-                            <span className="inline-flex items-center gap-1">
-                              <span className="font-semibold text-slate-600 dark:text-slate-300">PIC:</span>
-                              {pic ? (
-                                <span className="font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1 py-0.2 rounded border border-indigo-200 dark:border-indigo-800/60 truncate max-w-[110px]" title={pic}>{pic}</span>
-                              ) : (
-                                <span className="text-amber-600 dark:text-amber-400 italic" title="PIC Store belum diisi dengan nama orang">Belum diisi</span>
-                              )}
-                            </span>
-                          );
-                        })()}
-                        {order.no_transaksi_customer && (
-                          <span className="truncate max-w-[120px]" title={`ID Ref: ${order.no_transaksi_customer}`}>
-                            <span className="text-slate-300 dark:text-slate-600 mr-1">·</span>
-                            <span className="font-medium text-slate-600 dark:text-slate-300">Ref:</span> {order.no_transaksi_customer}
-                          </span>
-                        )}
-                        {order.no_transaksi_pengirim && order.no_transaksi_pengirim.length > 0 && (
-                          <span className="truncate max-w-[130px]" title={`DPOS: ${order.no_transaksi_pengirim.join(', ')}`}>
-                            <span className="text-slate-300 dark:text-slate-600 mr-1">·</span>
-                            <span className="font-medium text-slate-600 dark:text-slate-300">DPOS:</span> {order.no_transaksi_pengirim.join(', ')}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Baris 4: Badge Notifikasi Penanda dalam 1 Row Baris (Tanpa Duplikasi) */}
-                      <div className="flex flex-wrap items-center gap-1 mt-0.5">
-                        {renderOrderBadges(order, true)}
-                        {isOrderIncomingFulfillment(order) && (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-950/70 border border-orange-300 dark:border-orange-700 text-orange-900 dark:text-orange-200 text-[8.5px] font-bold whitespace-nowrap">
-                            <Truck className="w-2.5 h-2.5 text-orange-600 shrink-0" />
-                            <span>Fulfillment Anda</span>
-                          </span>
+                      {/* Baris 3: PIC, ID Ref & DPOS dalam Kotak Metadata Rapi (Tanpa Titik Menggantung) */}
+                      <div className="bg-slate-50/90 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-700/60 rounded-lg px-2 py-1 space-y-0.5 text-[9.5px] text-slate-500 dark:text-slate-400">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-semibold text-slate-500 dark:text-slate-400">PIC Store:</span>
+                          {(() => {
+                            const pic = getValidPersonPicName(
+                              order.pic_store || order.alteration_repair_data?.pic_pemohon || order.alteration_repair_data?.pic_kirim_store,
+                              order.nama_pengirim,
+                              outlets
+                            );
+                            return pic ? (
+                              <span className="font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.2 rounded border border-indigo-200 dark:border-indigo-800/60 truncate max-w-[125px]" title={pic}>
+                                {pic}
+                              </span>
+                            ) : (
+                              <span className="text-amber-600 dark:text-amber-400 italic font-medium" title="PIC Store belum diisi dengan nama orang">
+                                Belum diisi
+                              </span>
+                            );
+                          })()}
+                        </div>
+                        {(order.no_transaksi_customer || (order.no_transaksi_pengirim && order.no_transaksi_pengirim.length > 0)) && (
+                          <div className="flex flex-col gap-0.5 pt-0.5 border-t border-slate-200/60 dark:border-slate-700/50 text-[9px]">
+                            {order.no_transaksi_customer && (
+                              <div className="flex items-center justify-between gap-1 truncate" title={`ID Ref: ${order.no_transaksi_customer}`}>
+                                <span className="text-slate-400 dark:text-slate-500 shrink-0">ID Ref:</span>
+                                <span className="font-mono font-semibold text-slate-700 dark:text-slate-300 truncate">{order.no_transaksi_customer}</span>
+                              </div>
+                            )}
+                            {order.no_transaksi_pengirim && order.no_transaksi_pengirim.length > 0 && (
+                              <div className="flex items-center justify-between gap-1 truncate" title={`DPOS: ${order.no_transaksi_pengirim.join(', ')}`}>
+                                <span className="text-slate-400 dark:text-slate-500 shrink-0">DPOS:</span>
+                                <span className="font-mono font-semibold text-slate-700 dark:text-slate-300 truncate">{order.no_transaksi_pengirim.join(', ')}</span>
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>
                   </td>
 
                   {/* 2. Customer & Pengiriman */}
-                  <td className="py-2.5 px-2.5 align-top">
-                    <div className="space-y-1">
+                  <td className="py-3 px-2.5 align-top">
+                    <div className="flex flex-col gap-1.5">
                       <div className="leading-tight">
                         <div 
                           className="text-[11px] font-bold text-slate-800 dark:text-slate-100 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer truncate transition-colors"
@@ -6692,7 +6693,7 @@ _WMS Warehouse System_`;
                           {order.nama_tujuan || '-'}
                         </div>
                         {order.no_telp_tujuan && (
-                          <div className="text-[9.5px] text-slate-500 dark:text-slate-400 font-mono">
+                          <div className="text-[9.5px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">
                             {order.no_telp_tujuan}
                           </div>
                         )}
@@ -6704,8 +6705,8 @@ _WMS Warehouse System_`;
                         </div>
                       )}
 
-                      <div>
-                        <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-bold text-[9.5px] inline-flex items-center gap-1 max-w-full truncate">
+                      <div className="pt-0.5">
+                        <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-bold text-[9.5px] inline-flex items-center gap-1 max-w-full truncate">
                           <Truck className="w-2.5 h-2.5 text-indigo-500 shrink-0" />
                           <span className="truncate">{order.jasa_kirim || '-'}</span>
                         </span>
@@ -6714,13 +6715,13 @@ _WMS Warehouse System_`;
                   </td>
 
                   {/* 3. Rincian Produk & Alteration */}
-                  <td className="py-2.5 px-2.5 align-top">
-                    <div className="space-y-1">
+                  <td className="py-3 px-2.5 align-top">
+                    <div className="space-y-1.5">
                       <div className="flex items-center justify-between gap-1 flex-wrap">
                         <button
                           type="button"
                           onClick={() => setSelectedOrderDetails(order)}
-                          className="text-[9.5px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer inline-flex items-center gap-1"
+                          className="text-[9.5px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 px-2 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer inline-flex items-center gap-1"
                         >
                           <Package className="w-2.5 h-2.5 text-indigo-600" />
                           <span>{order.items?.reduce((acc, it) => acc + (Number(it.qty) || 0), 0) || 0} Total Pcs</span>
@@ -6732,12 +6733,12 @@ _WMS Warehouse System_`;
                           if (alterItems.length > 0 || isAr) {
                             return (
                               <div className="flex items-center gap-1">
-                                <span className="text-[8.5px] font-bold text-rose-600 dark:text-rose-400 flex items-center gap-0.5">
+                                <span className="text-[8.5px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/50 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-800 flex items-center gap-0.5">
                                   <Scissors className="w-2.5 h-2.5" />
                                   <span>{alterItems.length} alter</span>
                                 </span>
                                 {alterPhotoCount > 0 && (
-                                  <span className="text-[8.5px] font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-0.5">
+                                  <span className="text-[8.5px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 flex items-center gap-0.5">
                                     <Camera className="w-2.5 h-2.5" />
                                     <span>{alterPhotoCount} foto</span>
                                   </span>
@@ -6749,26 +6750,33 @@ _WMS Warehouse System_`;
                         })()}
                       </div>
 
-                      <div className="space-y-1 bg-slate-50 dark:bg-slate-800/60 p-1.5 rounded-lg border border-slate-200/80 dark:border-slate-700/80">
+                      <div className="divide-y divide-slate-200/70 dark:divide-slate-700/70 bg-slate-50/90 dark:bg-slate-800/60 rounded-lg border border-slate-200/80 dark:border-slate-700/80 overflow-hidden">
                         {(order.items || []).map((it, idx) => {
                           return (
-                            <div key={it.id || idx} className="text-[10.5px] leading-tight flex flex-col gap-0.5 pb-1 border-b border-slate-200/60 dark:border-slate-700/60 last:border-0 last:pb-0">
-                              <div className="flex items-start justify-between gap-1">
-                                <div className="font-semibold text-slate-800 dark:text-slate-100 line-clamp-1" title={it.nama_produk}>
+                            <div key={it.id || idx} className="p-2 text-[10.5px] leading-tight flex flex-col gap-1">
+                              {/* Baris 1: Nama Produk & Qty */}
+                              <div className="flex items-start justify-between gap-1.5">
+                                <div className="font-bold text-slate-800 dark:text-slate-100 line-clamp-1" title={it.nama_produk}>
                                   {it.nama_produk}
                                 </div>
-                                <span className="font-bold text-slate-700 dark:text-slate-300 text-[9.5px] shrink-0 bg-white dark:bg-slate-900 px-1 py-0.2 rounded border border-slate-200 dark:border-slate-700">
+                                <span className="font-extrabold text-slate-700 dark:text-slate-200 text-[9.5px] shrink-0 bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 shadow-2xs">
                                   x{it.qty}
                                 </span>
                               </div>
-                              <div className="flex items-center justify-between gap-1 text-[9.5px] text-slate-500 dark:text-slate-400 flex-wrap">
-                                <div className="flex items-center gap-1 flex-wrap">
-                                  <span className="font-mono text-indigo-600 dark:text-indigo-400 font-semibold">{it.sku}</span>
-                                  {it.size && it.size !== 'ALL' && it.size !== '-' && <span>• {it.size}</span>}
-                                  <span className="text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-1 py-0.2 rounded text-[8.5px] border border-amber-200 dark:border-amber-800">
-                                    {it.fulfillment || (order.no_pesanan?.startsWith('AR-') ? 'Warehouse' : 'Marketplace')}
-                                  </span>
-                                </div>
+
+                              {/* Baris 2: SKU & Size */}
+                              <div className="flex items-center gap-1 text-[9.5px] text-slate-500 dark:text-slate-400">
+                                <span className="font-mono text-indigo-600 dark:text-indigo-400 font-semibold truncate">{it.sku}</span>
+                                {it.size && it.size !== 'ALL' && it.size !== '-' && (
+                                  <span className="text-slate-400 dark:text-slate-500 shrink-0">• {it.size}</span>
+                                )}
+                              </div>
+
+                              {/* Baris 3: Badge Alokasi Lokasi (Kiri) & Tombol Status/Aksi (Kanan) */}
+                              <div className="flex items-center justify-between gap-1 pt-0.5">
+                                <span className="text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.5 rounded text-[8.5px] font-semibold border border-amber-200 dark:border-amber-800 truncate max-w-[130px]" title={it.fulfillment || (order.no_pesanan?.startsWith('AR-') ? 'Warehouse' : 'Marketplace')}>
+                                  {it.fulfillment || (order.no_pesanan?.startsWith('AR-') ? 'Warehouse' : 'Marketplace')}
+                                </span>
 
                                 {it.item_status !== 'sold_out' && order.status !== 'batal' && (
                                   isStoreFulfilledItem(order, it) ? (
@@ -6780,7 +6788,7 @@ _WMS Warehouse System_`;
                                             handleMarkStoreItemReceived(order, it, idx, false);
                                           }
                                         }}
-                                        className={`text-[8.5px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-300 dark:border-emerald-700 inline-flex items-center gap-0.5 shrink-0 ${
+                                        className={`text-[8.5px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-300 dark:border-emerald-700 inline-flex items-center gap-0.5 shrink-0 ${
                                           userIsAdmin && !isOrderSelesai(order) ? 'cursor-pointer hover:bg-emerald-100' : 'cursor-default'
                                         }`}
                                         title={
@@ -6796,7 +6804,7 @@ _WMS Warehouse System_`;
                                       <button
                                         type="button"
                                         onClick={() => handleMarkStoreItemReceived(order, it, idx, true)}
-                                        className="text-[8.5px] font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 px-1.5 py-0.2 rounded border border-blue-300 dark:border-blue-700 cursor-pointer inline-flex items-center gap-0.5 shrink-0 shadow-2xs transition-colors"
+                                        className="text-[8.5px] font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 px-1.5 py-0.5 rounded border border-blue-300 dark:border-blue-700 cursor-pointer inline-flex items-center gap-0.5 shrink-0 shadow-2xs transition-colors"
                                         title={`Tandai fisik produk dari ${it.fulfillment} sudah diterima di Gudang`}
                                       >
                                         <PackageCheck className="w-2.5 h-2.5 text-blue-600" />
@@ -6804,7 +6812,7 @@ _WMS Warehouse System_`;
                                       </button>
                                     ) : (
                                       <span
-                                        className="text-[8.5px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 px-1 py-0.2 rounded border border-amber-200 dark:border-amber-800 inline-flex items-center gap-0.5 shrink-0"
+                                        className="text-[8.5px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800 inline-flex items-center gap-0.5 shrink-0"
                                         title="Menunggu verifikasi penerimaan fisik di Gudang Pusat"
                                       >
                                         <Clock className="w-2.5 h-2.5 text-amber-600" />
@@ -6825,7 +6833,7 @@ _WMS Warehouse System_`;
                                             sendWaToStore: true
                                           });
                                         }}
-                                        className="text-[8.5px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 px-1 py-0.2 rounded border border-red-200 dark:border-red-800/60 cursor-pointer inline-flex items-center gap-0.5 shrink-0"
+                                        className="text-[8.5px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 px-1.5 py-0.5 rounded border border-red-200 dark:border-red-800/60 cursor-pointer inline-flex items-center gap-0.5 shrink-0"
                                         title="Tandai stok Marketplace ini kosong / sold"
                                       >
                                         <AlertOctagon className="w-2.5 h-2.5" />
@@ -6879,7 +6887,7 @@ _WMS Warehouse System_`;
                   </td>
 
                   {/* 4. DealPOS (SJ & Jadwal Store) */}
-                  <td className="py-2.5 px-2.5 align-top">
+                  <td className="py-3 px-2.5 align-top">
                     <div className="space-y-1.5">
                       {(() => {
                       const mktItems = (order.items || []).filter(it => {
@@ -6893,7 +6901,14 @@ _WMS Warehouse System_`;
                         );
                       });
                       if (mktItems.length === 0) {
-                        return <span className="text-[10px] text-slate-400 dark:text-slate-500">-</span>;
+                        return (
+                          <div className="flex items-center justify-between w-full gap-1">
+                            <span className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-2 py-0.5 text-[9.5px] font-semibold text-slate-600 dark:text-slate-300 w-full">
+                              <Store className="w-2.5 h-2.5 text-indigo-500 shrink-0" />
+                              <span className="truncate">Fulfillment Store</span>
+                            </span>
+                          </div>
+                        );
                       }
 
                       const getItemSj = (it: any) => {
@@ -6908,12 +6923,12 @@ _WMS Warehouse System_`;
                           {/* Status Badge & Tombol Input SJ */}
                           <div className="flex items-center justify-between w-full gap-1 flex-wrap">
                             {hasMissingSj ? (
-                              <span className="inline-flex items-center gap-1 bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700/80 rounded px-1.5 py-0.5 text-[9.5px] font-semibold text-amber-800 dark:text-amber-300">
+                              <span className="inline-flex items-center gap-1 bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700/80 rounded-md px-1.5 py-0.5 text-[9.5px] font-semibold text-amber-800 dark:text-amber-300">
                                 <Clock className="w-2.5 h-2.5 text-amber-600 shrink-0" />
                                 <span>{mktItems.filter(i => !getItemSj(i)).length} Butuh SJ</span>
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-700/80 rounded px-1.5 py-0.5 text-[9.5px] font-semibold text-emerald-800 dark:text-emerald-300">
+                              <span className="inline-flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-700/80 rounded-md px-1.5 py-0.5 text-[9.5px] font-semibold text-emerald-800 dark:text-emerald-300">
                                 <FileCheck className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
                                 <span>SJ Lengkap</span>
                               </span>
@@ -6929,7 +6944,7 @@ _WMS Warehouse System_`;
                                     applyToAllMarketplace: true
                                   });
                                 }}
-                                className="text-[9.5px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer"
+                                className="text-[9px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 px-1.5 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer"
                               >
                                 {sjList.length > 0 ? 'Edit SJ' : '+ Input SJ'}
                               </button>
@@ -6939,7 +6954,7 @@ _WMS Warehouse System_`;
                           {sjList.length > 0 ? (
                             <div className="space-y-1 w-full">
                               {sjList.map((sj) => (
-                                <div key={sj} className="flex items-center justify-between gap-1 font-mono text-[9.5px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 w-full">
+                                <div key={sj} className="flex items-center justify-between gap-1 font-mono text-[9.5px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800 w-full">
                                   <div className="flex items-center gap-1 truncate" title={sj}>
                                     <FileCheck className="w-2.5 h-2.5 shrink-0" />
                                     <span className="truncate">{sj}</span>
@@ -6962,7 +6977,7 @@ _WMS Warehouse System_`;
                             </div>
                           ) : (
                             mktItems.length > 0 && (
-                              <div className="text-[9px] text-amber-700 dark:text-amber-400 font-medium">
+                              <div className="text-[9px] text-amber-700 dark:text-amber-400 font-medium px-0.5">
                                 ⏳ Menunggu SJ DealPOS
                               </div>
                             )
@@ -6971,7 +6986,7 @@ _WMS Warehouse System_`;
                       );
                       })()}
 
-                      <div className="bg-slate-50 dark:bg-slate-800/60 px-2 py-1.5 rounded-md border border-slate-200/80 dark:border-slate-700/80">
+                      <div className="bg-slate-50 dark:bg-slate-800/60 px-2 py-1.5 rounded-lg border border-slate-200/80 dark:border-slate-700/80">
                         {isKirimKeStore(order) ? (
                           order.tgl_jadwal_kirim_store ? (
                             <div className="space-y-0.5">
@@ -6995,8 +7010,8 @@ _WMS Warehouse System_`;
                               )}
                             </div>
                           ) : (
-                            <div className="space-y-1">
-                              <div className="inline-flex items-center gap-1 text-[9px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800/50 font-medium">
+                            <div className="flex items-center justify-between gap-1 flex-wrap">
+                              <div className="inline-flex items-center gap-1 text-[9px] text-amber-700 dark:text-amber-400 font-semibold">
                                 <Clock className="w-2.5 h-2.5 shrink-0" />
                                 <span>Belum Ada Jadwal</span>
                               </div>
@@ -7004,16 +7019,16 @@ _WMS Warehouse System_`;
                                 <button
                                   type="button"
                                   onClick={() => handleOpenJadwalModal(order)}
-                                  className="inline-flex items-center gap-1 text-[9px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-1.5 py-0.5 rounded shadow-2xs transition-colors cursor-pointer block"
+                                  className="inline-flex items-center gap-0.5 text-[8.5px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-1.5 py-0.5 rounded shadow-2xs transition-colors cursor-pointer"
                                 >
                                   <Calendar className="w-2.5 h-2.5" />
-                                  <span>+ Atur Jadwal</span>
+                                  <span>+ Jadwal</span>
                                 </button>
                               )}
                             </div>
                           )
                         ) : (
-                          <div className="text-[9.5px] text-slate-500 dark:text-slate-400 flex items-center gap-1 truncate" title="Pengiriman Langsung Ekspedisi">
+                          <div className="text-[9.5px] text-slate-500 dark:text-slate-400 flex items-center gap-1 truncate font-medium" title="Pengiriman Langsung Ekspedisi">
                             <CheckCircle2 className="w-2.5 h-2.5 text-slate-400 shrink-0" />
                             <span className="truncate">Langsung Ekspedisi</span>
                           </div>
@@ -7023,10 +7038,10 @@ _WMS Warehouse System_`;
                   </td>
 
                   {/* 5. Resi & Cetak */}
-                  <td className="py-2.5 px-2.5 align-top">
+                  <td className="py-3 px-2.5 align-top">
                     <div className="space-y-1.5">
                       {order.no_resi ? (
-                        <div className="bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/70 rounded-md p-1.5 space-y-1">
+                        <div className="bg-emerald-50/90 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/70 rounded-lg p-1.5 space-y-1">
                           <div className="flex items-center justify-between gap-1 font-mono text-[10px] font-bold text-emerald-800 dark:text-emerald-300">
                             <span className="truncate" title={order.no_resi}>{order.no_resi}</span>
                             <button
@@ -7049,7 +7064,7 @@ _WMS Warehouse System_`;
                               e.stopPropagation();
                               setWaModalOrder(order);
                             }}
-                            className="w-full inline-flex items-center justify-center gap-1 text-[9px] font-semibold text-emerald-700 dark:text-emerald-400 hover:text-emerald-900 bg-emerald-100/70 dark:bg-emerald-900/40 hover:bg-emerald-200/70 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/60 transition-colors cursor-pointer"
+                            className="w-full inline-flex items-center justify-center gap-1 text-[9px] font-bold text-emerald-700 dark:text-emerald-300 hover:text-emerald-900 bg-white/80 dark:bg-emerald-900/40 hover:bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/60 transition-colors cursor-pointer shadow-2xs"
                             title="Format pesan WhatsApp untuk customer"
                           >
                             <MessageCircle className="w-2.5 h-2.5 shrink-0" />
@@ -7057,124 +7072,129 @@ _WMS Warehouse System_`;
                           </button>
                         </div>
                       ) : (
-                        <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 space-y-0.5">
-                          <div className="flex items-center gap-1 text-[9px] text-amber-700 dark:text-amber-400 font-medium">
+                        <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 flex items-center justify-between gap-1">
+                          <div className="flex items-center gap-1 text-[9px] text-amber-700 dark:text-amber-400 font-semibold truncate">
                             <Clock className="w-2.5 h-2.5 shrink-0" />
-                            <span>Menunggu Resi</span>
+                            <span className="truncate">Menunggu Resi</span>
                           </div>
                           {userIsAdmin && (
                             <button
                               type="button"
                               onClick={() => handleUpdateResi(order.no_pesanan!)}
-                              className="text-[9px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer block"
+                              className="text-[8.5px] font-bold text-indigo-600 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/70 hover:bg-indigo-100 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 cursor-pointer shrink-0 transition-colors"
                             >
-                              + Input Resi
+                              + Resi
                             </button>
                           )}
                         </div>
                       )}
 
-                      {!isStoreUser && (
+                      {!isStoreUser ? (
                         <div className="space-y-1">
-                          <button
-                            type="button"
-                            onClick={() => handlePrintLabel(order)}
-                            className={`w-full px-1.5 py-0.5 rounded text-[9.5px] font-bold border transition-colors cursor-pointer flex items-center justify-between ${
-                              order.is_label_printed
-                                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
-                                : 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100'
-                            }`}
-                            title={order.is_label_printed ? 'Label A6 sudah dicetak (Klik cetak ulang)' : 'Klik untuk cetak Label A6'}
-                          >
-                            <span className="flex items-center gap-1 truncate">
-                              <Printer className="w-2.5 h-2.5 shrink-0" />
-                              <span className="truncate">{order.is_label_printed ? 'Sudah Label' : 'Cetak Label'}</span>
-                            </span>
-                            <span className="text-[8px] opacity-75 font-normal shrink-0 ml-1">A6</span>
-                          </button>
+                          {/* Baris Cetak: 2 Kolom Bersebelahan (Label A6 | Pick A4) */}
+                          <div className="grid grid-cols-2 gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handlePrintLabel(order)}
+                              className={`px-1.5 py-1 rounded-md text-[9px] font-bold border transition-colors cursor-pointer flex items-center justify-center gap-1 ${
+                                order.is_label_printed
+                                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
+                                  : 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100'
+                              }`}
+                              title={order.is_label_printed ? 'Label A6 sudah dicetak (Klik cetak ulang)' : 'Klik untuk cetak Label A6'}
+                            >
+                              {order.is_label_printed ? (
+                                <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                              ) : (
+                                <Printer className="w-2.5 h-2.5 shrink-0" />
+                              )}
+                              <span className="truncate">Label A6</span>
+                            </button>
 
-                          <button
-                            type="button"
-                            onClick={() => handlePrintPickingList(order)}
-                            className={`w-full px-1.5 py-0.5 rounded text-[9.5px] font-bold border transition-colors cursor-pointer flex items-center justify-between ${
-                              order.is_picking_printed
-                                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-indigo-50 hover:text-indigo-700'
-                            }`}
-                            title={order.is_picking_printed ? 'Picking list A4 sudah dicetak (Klik cetak ulang)' : 'Klik untuk cetak Picking List A4'}
-                          >
-                            <span className="flex items-center gap-1 truncate">
-                              <FileText className="w-2.5 h-2.5 shrink-0" />
-                              <span className="truncate">{order.is_picking_printed ? 'Sudah Picking' : 'Picking List'}</span>
-                            </span>
-                            <span className="text-[8px] opacity-75 font-normal shrink-0 ml-1">A4</span>
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => handlePrintPickingList(order)}
+                              className={`px-1.5 py-1 rounded-md text-[9px] font-bold border transition-colors cursor-pointer flex items-center justify-center gap-1 ${
+                                order.is_picking_printed
+                                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-indigo-50 hover:text-indigo-700'
+                              }`}
+                              title={order.is_picking_printed ? 'Picking list A4 sudah dicetak (Klik cetak ulang)' : 'Klik untuk cetak Picking List A4'}
+                            >
+                              {order.is_picking_printed ? (
+                                <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                              ) : (
+                                <FileText className="w-2.5 h-2.5 shrink-0" />
+                              )}
+                              <span className="truncate">Pick A4</span>
+                            </button>
+                          </div>
 
                           {userIsAdmin && (
                             <button
                               type="button"
                               disabled={isSendingPickingWa}
                               onClick={() => handleSendPickingWaGroup(order)}
-                              className="w-full px-1.5 py-0.5 rounded text-[9.5px] font-bold border border-emerald-300 dark:border-emerald-700 bg-emerald-50/80 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors cursor-pointer flex items-center justify-between disabled:opacity-50"
+                              className="w-full px-2 py-1 rounded-md text-[9px] font-bold border border-teal-300 dark:border-teal-700 bg-teal-50/80 dark:bg-teal-950/50 text-teal-800 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900/60 transition-colors cursor-pointer flex items-center justify-between disabled:opacity-50"
                               title="Fitur Pembantu Admin: Kirim Picking List (lengkap Lokasi Rak Gudang) ke Grup WA via Fonnte"
                             >
                               <span className="flex items-center gap-1 truncate">
-                                <Send className="w-2.5 h-2.5 shrink-0 text-emerald-600" />
+                                <Send className="w-2.5 h-2.5 shrink-0 text-teal-600" />
                                 <span className="truncate">Picking WA</span>
                               </span>
-                              <span className="text-[8px] opacity-75 font-normal shrink-0 ml-1">Grup</span>
+                              <span className="text-[8px] opacity-75 font-semibold shrink-0 ml-1">Grup</span>
                             </button>
                           )}
                         </div>
+                      ) : (
+                        order.status !== 'batal' && (
+                          <div className="grid grid-cols-2 gap-1">
+                            <span
+                              className={`px-1.5 py-0.5 rounded-md text-[8.5px] font-bold border flex items-center justify-center gap-0.5 ${
+                                order.is_label_printed
+                                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                              }`}
+                            >
+                              <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />
+                              <span className="truncate">{order.is_label_printed ? 'Label OK' : 'Blm Label'}</span>
+                            </span>
+                            <span
+                              className={`px-1.5 py-0.5 rounded-md text-[8.5px] font-bold border flex items-center justify-center gap-0.5 ${
+                                order.is_picking_printed
+                                  ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                              }`}
+                            >
+                              <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />
+                              <span className="truncate">{order.is_picking_printed ? 'Pick OK' : 'Blm Pick'}</span>
+                            </span>
+                          </div>
+                        )
                       )}
                     </div>
                   </td>
 
                   {/* 6. Aksi */}
-                  <td className="py-2.5 px-2.5 text-right align-top">
-                    <div className="flex flex-col items-end gap-1">
-                      <div className="flex items-center justify-end gap-1 flex-wrap">
+                  <td className="py-3 px-3 text-right align-top">
+                    <div className="w-full max-w-[138px] ml-auto flex flex-col gap-1">
+                      {/* Baris 1: SJ Struk + WA Store + Detail (Selalu 1 Baris Sejajar) */}
+                      <div className="flex items-center justify-end gap-1 w-full">
                         {(isEligibleForSjStruk(order) || isStoreUser) && (
                           <button
                             type="button"
                             onClick={() => setSjAlterModalOrders([order])}
-                            className="px-1.5 py-0.5 text-[9.5px] font-bold text-amber-900 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 border border-amber-300 dark:border-amber-700 rounded transition-colors cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                            className="flex-1 px-1.5 py-1 text-[9px] font-bold text-amber-900 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 border border-amber-300 dark:border-amber-700 rounded-md transition-colors cursor-pointer inline-flex items-center justify-center gap-1 shadow-2xs whitespace-nowrap"
                             title="Cetak Surat Jalan Pengiriman format Struk Kasir Rangkap 2 (80mm)"
                           >
                             <Printer className="w-2.5 h-2.5 text-amber-600 shrink-0" />
                             <span>SJ Struk</span>
                           </button>
                         )}
-                        {isOrderSentToWarehouse(order) ? (
-                          <span className="px-1.5 py-0.5 text-[9.5px] font-bold text-emerald-800 dark:text-emerald-200 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 rounded inline-flex items-center gap-1 shadow-2xs">
-                            <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
-                            <span>Kirim WH</span>
-                          </span>
-                        ) : isOrderEligibleKirimKeGudang(order) ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const storeItems = (order.items || []).filter(it => it.fulfillment && !it.fulfillment.toLowerCase().includes('marketplace') && !it.fulfillment.toLowerCase().includes('gudang'));
-                              const myStoreItems = userAssignedStore
-                                ? storeItems.filter(it => isSameStore(it.fulfillment, userAssignedStore))
-                                : storeItems;
-                              setAlterActionData({
-                                order,
-                                targetItems: myStoreItems.length > 0 ? myStoreItems : (order.items || []),
-                                actionType: 'mark_sent_store'
-                              });
-                            }}
-                            className="px-1.5 py-0.5 text-[9.5px] font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-300 dark:border-blue-800 rounded transition-colors cursor-pointer inline-flex items-center gap-1 shadow-2xs"
-                            title="Tandai pesanan telah dikirim dari store ke warehouse (sekaligus cetak Struk SJ 2 Rangkap)"
-                          >
-                            <Truck className="w-2.5 h-2.5 text-blue-600 shrink-0" />
-                            <span>Kirim</span>
-                          </button>
-                        ) : null}
                         <button
                           type="button"
                           onClick={() => handleSendWaStoreNoticeDirect(order)}
-                          className="p-1 text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-800 rounded transition-colors cursor-pointer inline-flex items-center justify-center shadow-2xs"
+                          className="p-1.5 text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-800 rounded-md transition-colors cursor-pointer inline-flex items-center justify-center shadow-2xs shrink-0"
                           title="Kirim Notifikasi WA Permintaan Kirim ke Store"
                         >
                           <MessageCircle className="w-3 h-3 text-emerald-600" />
@@ -7182,15 +7202,44 @@ _WMS Warehouse System_`;
                         <button
                           type="button"
                           onClick={() => setSelectedOrderDetails(order)}
-                          className="p-1 text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 rounded transition-colors cursor-pointer inline-flex items-center justify-center shadow-2xs"
+                          className="p-1.5 text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 rounded-md transition-colors cursor-pointer inline-flex items-center justify-center shadow-2xs shrink-0"
                           title="Buka Detail & Tracking Pesanan"
                         >
                           <Eye className="w-3 h-3" />
                         </button>
                       </div>
 
+                      {/* Baris 2: Tombol / Status Kirim ke WH (Full Width jika muncul) */}
+                      {isOrderSentToWarehouse(order) ? (
+                        <span className="w-full px-2 py-1 text-[9px] font-bold text-emerald-800 dark:text-emerald-200 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 rounded-md inline-flex items-center justify-center gap-1 shadow-2xs">
+                          <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                          <span>Sudah Kirim WH</span>
+                        </span>
+                      ) : isOrderEligibleKirimKeGudang(order) ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const storeItems = (order.items || []).filter(it => it.fulfillment && !it.fulfillment.toLowerCase().includes('marketplace') && !it.fulfillment.toLowerCase().includes('gudang'));
+                            const myStoreItems = userAssignedStore
+                              ? storeItems.filter(it => isSameStore(it.fulfillment, userAssignedStore))
+                              : storeItems;
+                            setAlterActionData({
+                              order,
+                              targetItems: myStoreItems.length > 0 ? myStoreItems : (order.items || []),
+                              actionType: 'mark_sent_store'
+                            });
+                          }}
+                          className="w-full px-2 py-1 text-[9px] font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-300 dark:border-blue-800 rounded-md transition-colors cursor-pointer inline-flex items-center justify-center gap-1 shadow-2xs"
+                          title="Tandai pesanan telah dikirim dari store ke warehouse (sekaligus cetak Struk SJ 2 Rangkap)"
+                        >
+                          <Truck className="w-2.5 h-2.5 text-blue-600 shrink-0" />
+                          <span>Kirim ke WH</span>
+                        </button>
+                      ) : null}
+
+                      {/* Baris 3: Dropdown Pilih Aksi (Full Width Sejajar) */}
                       <select
-                        className="text-[9.5px] text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-2xs font-semibold cursor-pointer w-full max-w-[115px]"
+                        className="text-[9.5px] text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-2xs font-semibold cursor-pointer w-full"
                         onChange={(e) => {
                           const action = e.target.value;
                           if (action === 'print_picking') handlePrintPickingList(order);
