@@ -139,3 +139,20 @@ For any modifications to `PusatResolusiView`, `ReturBarangTab`, or `returBarangS
 3. **Print & DealPOS Rules**:
    - **Label A6 (`100mm x 150mm`)** and **Picking List (`A4`)** MUST always render `produk_pengganti` (Replacement Items), NEVER `produk_pesanan` (returned items).
    - Admin manages two distinct DealPOS documents: `no_sj_gudang_retur` (SJ DealPOS to Gudang Retur) and `no_invoice_return` (Invoice Return DealPOS when return is completed).
+
+## 10. WMS UI/UX, Responsive (Desktop & HP Seluler) & Multi-View Frontend Standards
+Whenever designing, modifying, or tidying up any frontend component, table, card, modal, or print template, agents MUST activate and adhere to the workspace frontend skills in `.agents/skills/`:
+1. **UI/UX Design System (`.agents/skills/wms-ui-ux-design-system/SKILL.md`)**:
+   - **Semantic Color Theme (Light & Dark Mode)**: Primary `indigo-600`, Success `emerald-600`, Warning `amber-500`, Danger `rose-600`, Alteration `rose`/`purple`, Neutral `slate`.
+   - **Typography & Sizing**: Consistent scale (`text-base sm:text-lg` headers, `text-xs` body, `text-[11px]` subtitles, `text-[10px]` badges, and mandatory `font-mono` for all SKUs, Order IDs, Resi, SJ, and DealPOS numbers).
+   - **Visual Neatness**: Uniform button/input heights in toolbars, maximum 3 visual nesting levels, and **zero dangling separator dots (`·`)** when optional fields are empty.
+2. **Responsive Desktop & Mobile / HP Seluler (`.agents/skills/wms-responsive-desktop-mobile/SKILL.md`)**:
+   - **Desktop (`lg:` / `xl:`)**: Supports multi-pane Master-Detail workspaces (`lg:grid-cols-12` with sticky right detail panel), proportional fixed tables (`lg:table-fixed`), and hover tooltips.
+   - **Mobile / HP Seluler (`< 640px`)**: Touch-friendly tap targets, collapsible secondary filter bars (behind a single `Filter` toggle button), zero unintended horizontal page scroll (`overflow-x-auto` isolated strictly to table wrappers), and modals with scrollable bodies (`max-h-[90vh]`) and sticky action footers.
+3. **Multi-View Presentation — Panel Rapi (Split), Versi Tabel & Versi Kartu (`.agents/skills/wms-table-card-split-views/SKILL.md`)**:
+   - **Panel Rapi (`split`)**: Master-Detail layout with compact order cards + 4-step progress bar on the left, and full detail workspace (4-step interactive stepper, 2-column product/info body, and 2-column `Cetak` / `Aksi lainnya` footer) on the right.
+   - **Versi Tabel (`table`)**: Proportional column widths, interactive sortable headers (`ArrowUpDown`), structured metadata boxes, and aligned action columns.
+   - **Versi Kartu (`card`)**: Responsive 1–4 column grid (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4`) with equal-height flex cards.
+   - **Rendering Performance**: Always use $O(1)$ `Map` lookups instead of nested `.find()` inside render loops, and paginate heavy grouped spreadsheet views.
+4. **Print & Thermal Documents (`.agents/skills/wms-print-receipt-documents/SKILL.md`)**:
+   - High-contrast monochrome layouts for **Label Pengiriman A6 (`100mm x 150mm`)**, **Picking List A4** (sorted by Warehouse Location Priority), **Surat Jalan Struk Kasir 80mm (Rangkap 2)**, and **SPK Penjahit**.
