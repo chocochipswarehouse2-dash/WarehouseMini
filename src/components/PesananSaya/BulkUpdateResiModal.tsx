@@ -22,7 +22,7 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import { ManualShipmentOrder } from '../../types';
-import { bulkUpdateShipmentResi, BulkResiUpdateItem } from '../../services/gasManualShipment';
+import { bulkUpdateShipmentResi, BulkResiUpdateItem, getValidPersonPicName } from '../../services/gasManualShipment';
 import { isRealAlterItem, orderNeedsResi, isKirimKeStoreOrder, isExternalCourier } from '../../utils/alterationUtils';
 
 interface BulkUpdateResiModalProps {
@@ -248,7 +248,7 @@ export const BulkUpdateResiModal: React.FC<BulkUpdateResiModalProps> = ({
         escapeCsv(o.no_transaksi_customer || o.no_pesanan),
         escapeCsv(o.created_at ? new Date(o.created_at).toLocaleDateString('id-ID') : ''),
         escapeCsv(o.nama_pengirim || ''),
-        escapeCsv(o.pic_store || ''),
+        escapeCsv(getValidPersonPicName(o.pic_store || o.alteration_repair_data?.pic_pemohon, o.nama_pengirim)),
         escapeCsv(o.nama_tujuan || ''),
         escapeCsv(o.no_telp_tujuan || ''),
         escapeCsv(o.alamat_tujuan || ''),
@@ -713,9 +713,17 @@ export const BulkUpdateResiModal: React.FC<BulkUpdateResiModalProps> = ({
 
                               <td className="py-2 px-3 font-medium text-slate-700 dark:text-slate-300">
                                 {order.nama_pengirim}
-                                {order.pic_store && (
-                                  <div className="text-[10px] text-slate-400">PIC: {order.pic_store}</div>
-                                )}
+                                {(() => {
+                                  const validPic = getValidPersonPicName(
+                                    order.pic_store || order.alteration_repair_data?.pic_pemohon,
+                                    order.nama_pengirim
+                                  );
+                                  return validPic ? (
+                                    <div className="text-[10px] text-slate-400">PIC: {validPic}</div>
+                                  ) : (
+                                    <div className="text-[10px] text-amber-500 italic">PIC: Belum diisi</div>
+                                  );
+                                })()}
                               </td>
 
                               <td className="py-2 px-3">

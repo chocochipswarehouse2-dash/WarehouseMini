@@ -148,7 +148,7 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
     // PERSPEKTIF TIM STORE / OUTLET
     answer_store: 'Tim Store TIDAK PERLU menginput nomor resi kurir pengiriman ke customer. Saat mendaftarkan pesanan manual, staf toko cukup memilih jenis kurir yang diminta customer (misal: JNE REG, J&T, SiCepat). Nomor resi akan diisi oleh Gudang Pusat setelah barang selesai dipacking.',
     action_steps_store: [
-      { step: 1, title: 'Pilih Jasa Kirim Saat Input', desc: 'Saat membuat pesanan manual, cukup pilih Ekspedisi dan jenis layanan yang diminta customer.' },
+      { step: 1, title: 'Isi PIC Store & Pilih Jasa Kirim', desc: 'Saat membuat pesanan manual, kolom Store Pengirim sudah terkunci sesuai cabang toko Anda. Pada kolom "PIC Store", wajib ketik manual nama PIC yang menginput (bukan nama toko), lalu pilih Jasa Kirim customer.' },
       { step: 2, title: 'Pantau Status di Rekap Toko', desc: 'Buka tab Manual Shipment toko Anda. Pesanan yang sedang disiapkan berstatus "Diproses".' },
       { step: 3, title: 'Dapatkan Resi Otomatis', desc: 'Setelah Gudang Pusat menyerahkan paket ke kurir, status pesanan otomatis berganti menjadi "Dikirim" dan nomor resi kurir akan tampil di layar Anda untuk dibagikan ke customer.' }
     ],

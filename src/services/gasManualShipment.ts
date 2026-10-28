@@ -155,6 +155,89 @@ export function isSameStore(storeA?: string, storeB?: string): boolean {
 }
 
 /**
+ * Helper untuk mengecek apakah suatu string adalah nama Store/Outlet/Cabang atau username akun Store
+ * (bukan nama orang / staf PIC Store).
+ */
+export function isStoreOrOutletName(
+  val?: string | null,
+  currentStoreName?: string | null,
+  customOutlets?: { nama: string; kode?: string }[]
+): boolean {
+  if (!val) return false;
+  const clean = val.trim();
+  if (!clean) return false;
+  const lower = clean.toLowerCase();
+  const compact = lower.replace(/\s+/g, '').replace(/[-_]/g, '');
+
+  // 1. Sama dengan nama store pengirim saat ini
+  if (currentStoreName && isSameStore(clean, currentStoreName)) {
+    return true;
+  }
+
+  // 2. Merupakan username akun toko (chocomkg, chocolvl, chococpj, dll.) atau label generik
+  if (
+    compact.startsWith('choco') ||
+    lower === 'store' ||
+    lower === 'outlet' ||
+    lower === 'petugas' ||
+    lower === 'staff' ||
+    lower === 'pic store' ||
+    lower === 'pic pemohon' ||
+    lower === 'marketplace' ||
+    lower === 'warehouse' ||
+    lower === 'gudang'
+  ) {
+    return true;
+  }
+
+  // 3. Cocok dengan kode atau nama lengkap di STORE_CODE_TO_FULL_NAME
+  const upperCompact = clean.toUpperCase().replace(/\s+/g, '').replace(/[-_]/g, '');
+  if (STORE_CODE_TO_FULL_NAME[upperCompact]) {
+    return true;
+  }
+  const resolvedFull = getFullStoreName(clean);
+  for (const o of DEFAULT_OUTLETS) {
+    if (
+      o.nama.toLowerCase() === lower ||
+      o.nama.toLowerCase() === resolvedFull.toLowerCase() ||
+      o.kode.toLowerCase() === lower
+    ) {
+      return true;
+    }
+  }
+
+  if (Array.isArray(customOutlets)) {
+    for (const o of customOutlets) {
+      if (
+        (o.nama && (o.nama.toLowerCase() === lower || o.nama.toLowerCase() === resolvedFull.toLowerCase())) ||
+        (o.kode && o.kode.toLowerCase() === lower)
+      ) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Mengambil nama PIC Store yang valid (Nama Orang), dan mengembalikan '' jika isinya ternyata nama Store/Toko.
+ */
+export function getValidPersonPicName(
+  picCandidate?: string | null,
+  storeName?: string | null,
+  customOutlets?: { nama: string; kode?: string }[]
+): string {
+  if (!picCandidate) return '';
+  const trimmed = picCandidate.trim();
+  if (!trimmed) return '';
+  if (isStoreOrOutletName(trimmed, storeName, customOutlets)) {
+    return '';
+  }
+  return trimmed;
+}
+
+/**
  * Daftar resmi store / outlet lengkap yang disinkronkan langsung dengan Master Produk & DealPOS.
  * Nama ditulis lengkap (bukan singkatan) untuk modul operasional & loading dock.
  */
@@ -1052,8 +1135,14 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
         }];
       }
 
+      const validPicStore = getValidPersonPicName(
+        item.pic_store || alteration_repair_data?.pic_pemohon || alteration_repair_data?.nama_sa,
+        item.nama_pengirim || alteration_repair_data?.nama_asal
+      );
+
       return {
         ...item,
+        pic_store: validPicStore,
         status: normalizedStatus,
         items: parsedItems,
         order_type,
@@ -1062,7 +1151,7 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
         layanan_type: alteration_repair_data?.layanan_type || (item.layanan_type || 'both'),
         sumber_barang: alteration_repair_data?.sumber_barang || 'store',
         nama_asal: alteration_repair_data?.nama_asal || item.nama_pengirim || '',
-        pic_pemohon: alteration_repair_data?.pic_pemohon || item.pic_store || item.submitted_by || '',
+        pic_pemohon: validPicStore,
         lokasi_rak: alteration_repair_data?.lokasi_rak || '',
         pic_warehouse: alteration_repair_data?.pic_warehouse || '',
         status_flow: alteration_repair_data?.status_flow || 'diajukan',

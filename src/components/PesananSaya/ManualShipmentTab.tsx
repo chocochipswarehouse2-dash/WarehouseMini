@@ -39,6 +39,8 @@ import {
   updateOrderPrintStatus,
   getFullStoreName,
   isSameStore,
+  isStoreOrOutletName,
+  getValidPersonPicName,
   DEFAULT_OUTLETS,
   OutletItem,
   getStoreContact,
@@ -935,13 +937,7 @@ _WMS Warehouse System_`;
         }
       }
 
-      // 3. Resolve PIC Store name from user session if not set
-      if (!picStore && session) {
-        const candidatePic = session.name || getUserPersonName(session.username) || '';
-        if (candidatePic && isMounted) {
-          setPicStore(candidatePic);
-        }
-      }
+      // 3. PENTING: Kolom PIC Store WAJIB KOSONG dari awal agar staf/orang yang menginput wajib mengetik nama pribadinya sendiri (BUKAN nama toko dari session.name!)
     };
 
     resolveAccountData();
@@ -1224,11 +1220,15 @@ _WMS Warehouse System_`;
 
     // Validasi Kelengkapan Data Pengirim & PIC
     if (!pengirim || !pengirim.trim()) {
-      onShowToast('Nama Pengirim (Store) wajib dipilih/diisi', 'warning');
+      onShowToast('Store / Cabang Pengirim wajib dipilih/diisi', 'warning');
       return;
     }
     if (!picStore || !picStore.trim()) {
-      onShowToast('PIC Store wajib diisi secara manual', 'warning');
+      onShowToast('Nama PIC Store (Nama Orang yang menginput pesanan) wajib diisi secara manual!', 'warning');
+      return;
+    }
+    if (isStoreOrOutletName(picStore, pengirim, outlets)) {
+      onShowToast('Kolom PIC Store wajib diisi dengan NAMA ORANG (staf yang menginput pesanan), BUKAN nama toko/cabang!', 'error');
       return;
     }
     if (!telpPengirim || !telpPengirim.trim()) {
@@ -1305,7 +1305,9 @@ _WMS Warehouse System_`;
       status: editingOrder ? editingOrder.status : 'diterima',
       no_resi: editingOrder ? (editingOrder.no_resi || '') : '',
       created_at: editingOrder ? editingOrder.created_at : new Date().toISOString(),
-      submitted_by: editingOrder ? editingOrder.submitted_by : (session?.name || getUserPersonName(session?.username) || 'Petugas')
+      submitted_by: editingOrder
+        ? editingOrder.submitted_by
+        : `${picStore.trim()} (${pengirim.trim()})`
     };
 
     let result = { success: false, message: '' };
@@ -1711,7 +1713,7 @@ _WMS Warehouse System_`;
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
               <div>
                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Nama Pengirim (Store) <span className="text-red-500">*</span>
+                  Store / Cabang Pengirim <span className="text-red-500">*</span>
                 </label>
                 <select
                   value={pengirim}
@@ -1739,8 +1741,8 @@ _WMS Warehouse System_`;
                 </select>
                 <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
                   {!userIsAdmin && !!userAssignedStore
-                    ? 'Terkunci otomatis sesuai akun login Store'
-                    : 'Terisi otomatis sesuai akun login'}
+                    ? 'Nama cabang toko terkunci otomatis sesuai login Store'
+                    : 'Nama cabang toko pengirim'}
                 </p>
               </div>
               <div>
@@ -1751,11 +1753,23 @@ _WMS Warehouse System_`;
                   type="text"
                   value={picStore}
                   onChange={(e) => setPicStore(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-xs sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3 font-semibold"
-                  placeholder="Nama PIC (Wajib Diisi)"
+                  className={`w-full rounded-lg border shadow-xs focus:ring-1 text-xs sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3 font-semibold ${
+                    picStore.trim() && isStoreOrOutletName(picStore, pengirim, outlets)
+                      ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
+                      : 'border-slate-300 dark:border-slate-700 focus:border-indigo-500 focus:ring-indigo-500'
+                  }`}
+                  placeholder="Nama PIC Store yang menginput..."
                   required
                 />
-                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Nama staf yang bertugas / bertanggung jawab</p>
+                {picStore.trim() && isStoreOrOutletName(picStore, pengirim, outlets) ? (
+                  <p className="text-[10px] text-red-600 dark:text-red-400 font-bold mt-1">
+                    ⚠️ Jangan diisi nama toko! Ketik nama PIC yang menginput pesanan.
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
+                    Wajib diisi manual oleh PIC yang menginput pesanan
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
@@ -3587,7 +3601,23 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                   <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider mb-4 border-b border-slate-200 dark:border-slate-800 pb-2">Pengirim / Store Info</h3>
                   <div className="text-sm text-slate-600 dark:text-slate-300 space-y-1">
                     <div className="font-semibold text-slate-800 dark:text-white text-base">{order.nama_pengirim}</div>
-                    {order.pic_store && <div>PIC: <span className="text-slate-800 dark:text-slate-200 font-medium">{order.pic_store}</span></div>}
+                    {(() => {
+                      const validPic = getValidPersonPicName(
+                        order.pic_store || order.alteration_repair_data?.pic_pemohon || order.alteration_repair_data?.pic_kirim_store,
+                        order.nama_pengirim,
+                        outlets
+                      );
+                      return (
+                        <div>
+                          PIC (Nama Orang):{' '}
+                          {validPic ? (
+                            <span className="text-slate-800 dark:text-slate-200 font-bold">{validPic}</span>
+                          ) : (
+                            <span className="text-amber-600 dark:text-amber-400 italic">Belum diisi nama orang</span>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {order.no_telp_store && <div className="font-mono">{order.no_telp_store}</div>}
                     {order.no_transaksi_pengirim && order.no_transaksi_pengirim.length > 0 && (
                       <div className="mt-2">
@@ -4360,7 +4390,13 @@ _WMS Warehouse System_`;
     }
     setEditingOrder(order);
     setPengirim(order.nama_pengirim || '');
-    setPicStore(order.pic_store || '');
+    setPicStore(
+      getValidPersonPicName(
+        order.pic_store || order.alteration_repair_data?.pic_pemohon,
+        order.nama_pengirim,
+        outlets
+      )
+    );
     setTelpPengirim(order.no_telp_store || '');
     setEmailStore(order.email_store || (order.alteration_repair_data?.pic_store_email) || '');
     setTransPengirim((order.no_transaksi_pengirim || []).join(', '));
@@ -6601,14 +6637,18 @@ _WMS Warehouse System_`;
                       {/* Baris 3: PIC, ID Ref & DPOS (Ringkas 1-2 baris) */}
                       <div className="text-[9.5px] text-slate-500 dark:text-slate-400 leading-snug flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                         {(() => {
-                          const pic = order.pic_store || order.alteration_repair_data?.pic_pemohon || order.alteration_repair_data?.pic_kirim_store || order.submitted_by || '';
+                          const pic = getValidPersonPicName(
+                            order.pic_store || order.alteration_repair_data?.pic_pemohon || order.alteration_repair_data?.pic_kirim_store,
+                            order.nama_pengirim,
+                            outlets
+                          );
                           return (
                             <span className="inline-flex items-center gap-1">
                               <span className="font-semibold text-slate-600 dark:text-slate-300">PIC:</span>
                               {pic ? (
                                 <span className="font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1 py-0.2 rounded border border-indigo-200 dark:border-indigo-800/60 truncate max-w-[110px]" title={pic}>{pic}</span>
                               ) : (
-                                <span className="text-amber-600 dark:text-amber-400 italic">Belum diisi</span>
+                                <span className="text-amber-600 dark:text-amber-400 italic" title="PIC Store belum diisi dengan nama orang">Belum diisi</span>
                               )}
                             </span>
                           );
@@ -7397,7 +7437,11 @@ _WMS Warehouse System_`;
                         <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Pengirim</div>
                         <div className="text-xs font-semibold text-slate-800 dark:text-white">{order.nama_pengirim}</div>
                         {(() => {
-                          const effectivePic = order.pic_store || order.alteration_repair_data?.pic_pemohon || order.submitted_by;
+                          const effectivePic = getValidPersonPicName(
+                            order.pic_store || order.alteration_repair_data?.pic_pemohon || order.alteration_repair_data?.pic_kirim_store,
+                            order.nama_pengirim,
+                            outlets
+                          );
                           return effectivePic ? (
                             <div className="text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mt-0.5 flex items-center gap-1">
                               <User className="w-3 h-3 text-indigo-500 shrink-0" />
@@ -7405,7 +7449,7 @@ _WMS Warehouse System_`;
                             </div>
                           ) : (
                             <div className="text-[10px] text-amber-500 dark:text-amber-400 italic mt-0.5">
-                              PIC: Belum diisi
+                              PIC: Belum diisi (Nama Orang)
                             </div>
                           );
                         })()}

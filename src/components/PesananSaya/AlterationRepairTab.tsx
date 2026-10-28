@@ -66,6 +66,7 @@ import {
   fetchOutlets,
   DEFAULT_OUTLETS,
   getFullStoreName,
+  isStoreOrOutletName,
   getStoreContact,
   OutletItem
 } from '../../services/gasManualShipment';
@@ -642,7 +643,12 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
     }
 
     if (!formPicPemohon.trim()) {
-      onShowToast('Nama PIC Store / SA wajib diisi', 'error');
+      onShowToast('Nama PIC Store / SA (Nama Orang yang menginput) wajib diisi secara manual!', 'error');
+      return;
+    }
+
+    if (isStoreOrOutletName(formPicPemohon, formOutlet, outlets)) {
+      onShowToast('Kolom PIC Store / SA wajib diisi dengan NAMA ORANG (staf yang menginput), BUKAN nama toko/cabang!', 'error');
       return;
     }
 
@@ -1109,17 +1115,27 @@ _WMS Warehouse & Alteration System_`;
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                PIC Store / SA *
+              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1 flex items-center justify-between">
+                <span>Nama PIC Store / SA *</span>
+                <span className="text-[10px] font-bold text-rose-500">Wajib Isi Manual</span>
               </label>
               <input
                 type="text"
                 required
                 value={formPicPemohon || ''}
                 onChange={(e) => setFormPicPemohon(e.target.value)}
-                placeholder="Wajib isi nama PIC / SA yang input..."
-                className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-rose-500 text-xs"
+                placeholder="Nama PIC Store / SA yang menginput..."
+                className={`w-full px-3 py-2 bg-white dark:bg-slate-800 border rounded-xl text-slate-900 dark:text-white font-semibold focus:ring-2 text-xs ${
+                  formPicPemohon.trim() && isStoreOrOutletName(formPicPemohon, formOutlet, outlets)
+                    ? 'border-red-500 focus:ring-red-500'
+                    : 'border-slate-200 dark:border-slate-700 focus:ring-rose-500'
+                }`}
               />
+              {formPicPemohon.trim() && isStoreOrOutletName(formPicPemohon, formOutlet, outlets) && (
+                <p className="text-[10px] text-red-600 dark:text-red-400 font-bold mt-1">
+                  ⚠️ Jangan diisi nama toko! Ketik nama PIC / SA yang menginput.
+                </p>
+              )}
             </div>
 
             <div>
