@@ -9130,6 +9130,64 @@ export function invalidatePenerimaanProduksiCache(): void {
   memoryPenerimaanProduksiLastFetch = 0;
 }
 
+function comparePenerimaanProduksiItems(a: PenerimaanProduksiItem, b: PenerimaanProduksiItem): number {
+  const dateA = a.tanggal_penerimaan || '';
+  const dateB = b.tanggal_penerimaan || '';
+  if (dateB !== dateA) return dateB > dateA ? 1 : -1;
+
+  const sjA = (a.no_surat_jalan || '').toLowerCase();
+  const sjB = (b.no_surat_jalan || '').toLowerCase();
+  if (sjA !== sjB) return sjA < sjB ? -1 : 1;
+
+  const kpA = (a.kode_produksi || '').toLowerCase();
+  const kpB = (b.kode_produksi || '').toLowerCase();
+  if (kpA !== kpB) return kpA < kpB ? -1 : 1;
+
+  const ca = a.created_at || '';
+  const cb = b.created_at || '';
+  if (cb !== ca) return cb > ca ? 1 : -1;
+  return 0;
+}
+
+function saveLightweightPenerimaanToLocalStorage(list: PenerimaanProduksiItem[]): void {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    // Strip bloated base64 data URIs from already-synced rows when saving to localStorage so JSON.parse/stringify stays fast
+    const light = list.slice(0, 1000).map((d) => {
+      const sid = String(d.id || '');
+      const isOffline = (typeof d.id === 'number' && d.id > 1000000000) || sid.startsWith('local_');
+      if (!isOffline && d.foto_url && d.foto_url.startsWith('data:') && d.foto_url.length > 4096) {
+        return { ...d, foto_url: '' };
+      }
+      return d;
+    });
+    localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(light));
+  } catch {}
+}
+
+/**
+ * Instant O(1) synchronous getter for Penerimaan Produksi cache (avoids blocking JSON.parse on every mount)
+ */
+export function getCachedPenerimaanProduksiSync(): PenerimaanProduksiItem[] {
+  if (memoryPenerimaanProduksiCache && memoryPenerimaanProduksiCache.length > 0) {
+    return memoryPenerimaanProduksiCache;
+  }
+  try {
+    const cached = localStorage.getItem('wms_local_penerimaan_produksi');
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        memoryPenerimaanProduksiCache = parsed;
+        if (cached.length > 500_000) {
+          saveLightweightPenerimaanToLocalStorage(parsed);
+        }
+        return parsed;
+      }
+    }
+  } catch {}
+  return [];
+}
+
 export async function fetchPenerimaanProduksiFromSupabase(filters?: {
   kategori?: string;
   startDate?: string;
@@ -9144,13 +9202,7 @@ export async function fetchPenerimaanProduksiFromSupabase(filters?: {
     return memoryPenerimaanProduksiCache;
   }
 
-  let localData: PenerimaanProduksiItem[] = [];
-  try {
-    const cached = localStorage.getItem('wms_local_penerimaan_produksi');
-    if (cached) {
-      localData = JSON.parse(cached);
-    }
-  } catch {}
+  let localData: PenerimaanProduksiItem[] = getCachedPenerimaanProduksiSync();
 
   if (!filters?.forceRefresh && !hasSpecificFilters && localData.length > 0 && Date.now() - memoryPenerimaanProduksiLastFetch < 5 * 60 * 1000) {
     memoryPenerimaanProduksiCache = localData;
@@ -9184,38 +9236,14 @@ export async function fetchPenerimaanProduksiFromSupabase(filters?: {
         return (typeof d.id === 'number' && d.id > 1000000000) || (!remoteIds.has(sid) && sid.startsWith('local_'));
       });
 
-      const merged = [...remoteData, ...offlinePending].sort((a, b) => {
-        // 1. Sort by tanggal_penerimaan desc
-        const dateA = new Date(a.tanggal_penerimaan || 0).getTime();
-        const dateB = new Date(b.tanggal_penerimaan || 0).getTime();
-        if (dateB !== dateA) return dateB - dateA;
-        
-        // 2. Sort by no_surat_jalan asc
-        const sjA = (a.no_surat_jalan || '').toLowerCase();
-        const sjB = (b.no_surat_jalan || '').toLowerCase();
-        if (sjA < sjB) return -1;
-        if (sjA > sjB) return 1;
-
-        // 3. Sort by kode_produksi asc
-        const kpA = (a.kode_produksi || '').toLowerCase();
-        const kpB = (b.kode_produksi || '').toLowerCase();
-        if (kpA < kpB) return -1;
-        if (kpA > kpB) return 1;
-        
-        // 4. Sort by created_at desc
-        const ca = new Date(a.created_at || 0).getTime();
-        const cb = new Date(b.created_at || 0).getTime();
-        return cb - ca;
-      });
+      const merged = [...remoteData, ...offlinePending].sort(comparePenerimaanProduksiItems);
 
       localData = merged;
       if (!hasSpecificFilters) {
         memoryPenerimaanProduksiCache = merged;
         memoryPenerimaanProduksiLastFetch = Date.now();
       }
-      try {
-        localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(localData));
-      } catch {}
+      saveLightweightPenerimaanToLocalStorage(localData);
 
       // Apply keyword filter client-side if provided
       if (filters?.keyword && filters.keyword.trim()) {
@@ -9236,29 +9264,7 @@ export async function fetchPenerimaanProduksiFromSupabase(filters?: {
   }
 
   // Ensure sorting is applied (useful if falling back to cache)
-  localData.sort((a, b) => {
-    // 1. Sort by tanggal_penerimaan desc
-    const dateA = new Date(a.tanggal_penerimaan || 0).getTime();
-    const dateB = new Date(b.tanggal_penerimaan || 0).getTime();
-    if (dateB !== dateA) return dateB - dateA;
-    
-    // 2. Sort by no_surat_jalan asc
-    const sjA = (a.no_surat_jalan || '').toLowerCase();
-    const sjB = (b.no_surat_jalan || '').toLowerCase();
-    if (sjA < sjB) return -1;
-    if (sjA > sjB) return 1;
-
-    // 3. Sort by kode_produksi asc
-    const kpA = (a.kode_produksi || '').toLowerCase();
-    const kpB = (b.kode_produksi || '').toLowerCase();
-    if (kpA < kpB) return -1;
-    if (kpA > kpB) return 1;
-    
-    // 4. Sort by created_at desc
-    const ca = new Date(a.created_at || 0).getTime();
-    const cb = new Date(b.created_at || 0).getTime();
-    return cb - ca;
-  });
+  localData = [...localData].sort(comparePenerimaanProduksiItems);
 
   // Filter cached data if keyword provided
   if (filters?.keyword && filters.keyword.trim()) {
@@ -9637,12 +9643,12 @@ export async function simpanBatchPenerimaanProduksiToSupabase(
     }
   }
 
-  // Update local cache
+  // Update local cache & memory cache
   try {
-    const cached = localStorage.getItem('wms_local_penerimaan_produksi');
-    let localList: PenerimaanProduksiItem[] = cached ? JSON.parse(cached) : [];
+    let localList: PenerimaanProduksiItem[] = getCachedPenerimaanProduksiSync();
     localList = [...savedItems, ...localList];
-    localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(localList));
+    memoryPenerimaanProduksiCache = localList;
+    saveLightweightPenerimaanToLocalStorage(localList);
   } catch {}
 
 
@@ -9682,14 +9688,12 @@ export async function updateBatchPenerimaanProduksiInSupabase(
     console.warn('Gagal delete baris lama penerimaan_produksi:', err);
   }
 
-  // 2. Hapus baris lama dari local cache
+  // 2. Hapus baris lama dari local & memory cache
   try {
-    const cached = localStorage.getItem('wms_local_penerimaan_produksi');
-    if (cached) {
-      const list: PenerimaanProduksiItem[] = JSON.parse(cached);
-      const filtered = list.filter((it) => (it.no_surat_jalan || '').trim().toUpperCase() !== cleanOrigSJ);
-      localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(filtered));
-    }
+    const list: PenerimaanProduksiItem[] = getCachedPenerimaanProduksiSync();
+    const filtered = list.filter((it) => (it.no_surat_jalan || '').trim().toUpperCase() !== cleanOrigSJ);
+    memoryPenerimaanProduksiCache = filtered;
+    saveLightweightPenerimaanToLocalStorage(filtered);
   } catch {}
 
   // 3. Simpan baris baru
@@ -9718,14 +9722,12 @@ export async function hapusBatchPenerimaanProduksiFromSupabase(noSuratJalan: str
     console.warn('Gagal hapus batch penerimaan_produksi dari Supabase:', err);
   }
 
-  // 2. Local Storage Clean
+  // 2. Local & Memory Cache Clean
   try {
-    const cached = localStorage.getItem('wms_local_penerimaan_produksi');
-    if (cached) {
-      const list: PenerimaanProduksiItem[] = JSON.parse(cached);
-      const filtered = list.filter((it) => (it.no_surat_jalan || '').trim().toUpperCase() !== cleanSJ);
-      localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(filtered));
-    }
+    const list: PenerimaanProduksiItem[] = getCachedPenerimaanProduksiSync();
+    const filtered = list.filter((it) => (it.no_surat_jalan || '').trim().toUpperCase() !== cleanSJ);
+    memoryPenerimaanProduksiCache = filtered;
+    saveLightweightPenerimaanToLocalStorage(filtered);
   } catch {}
 
 

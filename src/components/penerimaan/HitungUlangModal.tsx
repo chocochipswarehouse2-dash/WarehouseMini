@@ -63,15 +63,16 @@ export const HitungUlangModal: React.FC<HitungUlangModalProps> = ({
   onShowToast,
   onApplyReCountToData,
 }) => {
-  // Available Codes
+  // Available Codes (only compute when modal is open)
   const distinctCodes = useMemo(() => {
+    if (!isOpen) return [];
     const set = new Set<string>();
     dataList.forEach((it) => {
       const c = (it.kode_produksi || '').trim().toUpperCase();
       if (c) set.add(c);
     });
     return Array.from(set).sort();
-  }, [dataList]);
+  }, [isOpen, dataList]);
 
   // Selected State (Mendukung Single Code atau Multi-Choice Kode Terpilih)
   const [selectedCode, setSelectedCode] = useState<string>('');

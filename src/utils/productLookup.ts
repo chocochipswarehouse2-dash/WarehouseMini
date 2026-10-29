@@ -23,23 +23,79 @@ export interface ProductLookupResult {
   hasSizeMismatch?: boolean;
 }
 
+const catalogMapCache = new WeakMap<ProductItem[], Map<string, ProductItem>>();
+let fallbackLocalStorageMap: Map<string, ProductItem> | null = null;
+let fallbackLocalStorageTimestamp = 0;
+
 /**
- * Creates a fast O(1) indexed Map from product catalog
+ * Creates a fast O(1) indexed Map from product catalog (cached by array reference via WeakMap)
  */
 export function buildProductLookupMap(
   catalog: ProductItem[] = []
 ): Map<string, ProductItem> {
+  if (!Array.isArray(catalog) || catalog.length === 0) {
+    return new Map<string, ProductItem>();
+  }
+  const cached = catalogMapCache.get(catalog);
+  if (cached) {
+    return cached;
+  }
+
   const map = new Map<string, ProductItem>();
-  for (const item of catalog) {
+  for (let i = 0; i < catalog.length; i++) {
+    const item = catalog[i];
     if (!item) continue;
     const rawSku = item.k || (item as any).sku || '';
     if (rawSku) {
       const cleanSku = String(rawSku).trim().toUpperCase();
       if (cleanSku) {
         map.set(cleanSku, item);
+        const dash = cleanSku.indexOf('-');
+        if (dash > 0) {
+          const pfx = cleanSku.slice(0, dash).trim();
+          if (pfx && !map.has(pfx)) map.set(pfx, item);
+        }
+      }
+    }
+    const rawCode = (item as any).kode_produksi;
+    if (rawCode) {
+      const cleanCode = String(rawCode).trim().toUpperCase();
+      if (cleanCode && !map.has(cleanCode)) {
+        map.set(cleanCode, item);
       }
     }
   }
+  catalogMapCache.set(catalog, map);
+  return map;
+}
+
+function getFallbackLocalStorageMap(): Map<string, ProductItem> {
+  const now = Date.now();
+  if (fallbackLocalStorageMap && now - fallbackLocalStorageTimestamp < 60_000) {
+    return fallbackLocalStorageMap;
+  }
+  const map = new Map<string, ProductItem>();
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const cacheKeys = ['wms_master_produk', 'wms_product_cache', 'wms_catalog_cache'];
+      for (const key of cacheKeys) {
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+        const list = JSON.parse(raw);
+        if (Array.isArray(list) && list.length > 0) {
+          for (let i = 0; i < list.length; i++) {
+            const it = list[i];
+            if (!it) continue;
+            const k = String(it.k || it.sku || '').trim().toUpperCase();
+            if (k) map.set(k, it);
+          }
+          if (map.size > 0) break;
+        }
+      }
+    } catch {}
+  }
+  fallbackLocalStorageMap = map;
+  fallbackLocalStorageTimestamp = now;
   return map;
 }
 
@@ -73,36 +129,22 @@ export function lookupProductBySku(
   }
 
   let master: ProductItem | undefined;
+  let hasProvidedCatalog = false;
 
   if (catalogOrMap instanceof Map) {
+    hasProvidedCatalog = catalogOrMap.size > 0;
     master = catalogOrMap.get(cleanSku);
   } else if (Array.isArray(catalogOrMap)) {
-    master = catalogOrMap.find((item) => {
-      const s = String(item.k || (item as any).sku || '').trim().toUpperCase();
-      return s === cleanSku;
-    });
+    hasProvidedCatalog = catalogOrMap.length > 0;
+    if (hasProvidedCatalog) {
+      const map = buildProductLookupMap(catalogOrMap);
+      master = map.get(cleanSku);
+    }
   }
 
-  // Fallback to localStorage master product cache if not in memory
-  if (!master && typeof window !== 'undefined' && window.localStorage) {
-    try {
-      const cacheKeys = ['wms_master_produk', 'wms_product_cache', 'wms_catalog_cache'];
-      for (const key of cacheKeys) {
-        const raw = localStorage.getItem(key);
-        if (!raw) continue;
-        const list = JSON.parse(raw);
-        if (Array.isArray(list)) {
-          const found = list.find((it: any) => {
-            const k = String(it.k || it.sku || '').trim().toUpperCase();
-            return k === cleanSku;
-          });
-          if (found) {
-            master = found;
-            break;
-          }
-        }
-      }
-    } catch {}
+  // Fallback to cached localStorage map ONLY when no in-memory catalog was provided
+  if (!master && !hasProvidedCatalog) {
+    master = getFallbackLocalStorageMap().get(cleanSku);
   }
 
   if (!master) {

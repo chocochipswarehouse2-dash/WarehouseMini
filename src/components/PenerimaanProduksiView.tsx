@@ -68,6 +68,7 @@ import { KatalogBarcodeModal } from './katalog/KatalogBarcodeModal';
 import { globalRealtimeStore } from '../services/store';
 import {
   fetchPenerimaanProduksiFromSupabase,
+  getCachedPenerimaanProduksiSync,
   simpanBatchPenerimaanProduksiToSupabase,
   updateBatchPenerimaanProduksiInSupabase,
   hapusBatchPenerimaanProduksiFromSupabase,
@@ -424,15 +425,8 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
   const [printSJData, setPrintSJData] = useState<SuratJalanGroup | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
 
-  // Initial load from local cache to save network roundtrips & egress
-  const [dataList, setDataList] = useState<PenerimaanProduksiItem[]>(() => {
-    try {
-      const cached = localStorage.getItem('wms_local_penerimaan_produksi');
-      return cached ? JSON.parse(cached) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Initial load from in-memory / local cache to save network roundtrips & avoid repeated JSON.parse on mount
+  const [dataList, setDataList] = useState<PenerimaanProduksiItem[]>(() => getCachedPenerimaanProduksiSync());
 
   // Filter & Search State
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -720,15 +714,17 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     };
   }, [filteredData]);
 
-  // Pagination Table
+  // Pagination Table (only slice when Table view is active)
   const totalPages = Math.max(1, Math.ceil(filteredData.length / rowsPerPage));
   const paginatedData = useMemo(() => {
+    if (activeTab !== 'riwayat' || viewMode !== 'table') return [];
     const start = (currentPage - 1) * rowsPerPage;
     return filteredData.slice(start, start + rowsPerPage);
-  }, [filteredData, currentPage, rowsPerPage]);
+  }, [filteredData, currentPage, rowsPerPage, activeTab, viewMode]);
 
-  // Surat Jalan Grouping (1 No. Surat Jalan = 1 Kartu)
+  // Surat Jalan Grouping (1 No. Surat Jalan = 1 Kartu) — only compute when Card view is active
   const suratJalanGroups = useMemo<SuratJalanGroup[]>(() => {
+    if (activeTab !== 'riwayat' || viewMode !== 'card') return [];
     const map = new Map<string, SuratJalanGroup>();
     for (const item of filteredData) {
       const sjKey = (item.no_surat_jalan || 'TANPA-SJ').trim();
@@ -758,7 +754,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     }
 
     return Array.from(map.values());
-  }, [filteredData]);
+  }, [filteredData, activeTab, viewMode]);
 
   // Pagination Cards
   const totalCardPages = Math.max(1, Math.ceil(suratJalanGroups.length / cardsPerPage));
@@ -4232,43 +4228,47 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       )}
 
       {/* MODAL CETAK BARCODE / LABEL THERMAL PRODUK (Sama seperti di Katalog) */}
-      <KatalogBarcodeModal
-        isOpen={Boolean(barcodeModalTarget)}
-        onClose={() => setBarcodeModalTarget(null)}
-        item={barcodeModalTarget}
-        onNotify={(msg, type) => onShowToast(msg, type)}
-      />
+      {barcodeModalTarget && (
+        <KatalogBarcodeModal
+          isOpen={Boolean(barcodeModalTarget)}
+          onClose={() => setBarcodeModalTarget(null)}
+          item={barcodeModalTarget}
+          onNotify={(msg, type) => onShowToast(msg, type)}
+        />
+      )}
 
       {/* MODAL LEMBAR VERIFIKASI & HITUNG ULANG FISIK */}
-      <HitungUlangModal
-        isOpen={isHitungUlangModalOpen}
-        onClose={() => setIsHitungUlangModalOpen(false)}
-        dataList={dataList}
-        initialKodeProduksi={hitungUlangTargetKode}
-        initialTanggal={hitungUlangTargetTanggal}
-        onShowToast={onShowToast}
-        onApplyReCountToData={(updatedItems) => {
-          // Update in local state & trigger refresh
-          setDataList((prev) => {
-            const next = prev.map((item) => {
-              const matched = updatedItems.find(
-                (u) =>
-                  (u.id && item.id && String(u.id) === String(item.id)) ||
-                  (u.kode_produksi === item.kode_produksi &&
-                    u.warna === item.warna &&
-                    u.size === item.size &&
-                    u.tanggal_penerimaan === item.tanggal_penerimaan)
-              );
-              return matched ? { ...item, ...matched } : item;
+      {isHitungUlangModalOpen && (
+        <HitungUlangModal
+          isOpen={isHitungUlangModalOpen}
+          onClose={() => setIsHitungUlangModalOpen(false)}
+          dataList={dataList}
+          initialKodeProduksi={hitungUlangTargetKode}
+          initialTanggal={hitungUlangTargetTanggal}
+          onShowToast={onShowToast}
+          onApplyReCountToData={(updatedItems) => {
+            // Update in local state & trigger refresh
+            setDataList((prev) => {
+              const next = prev.map((item) => {
+                const matched = updatedItems.find(
+                  (u) =>
+                    (u.id && item.id && String(u.id) === String(item.id)) ||
+                    (u.kode_produksi === item.kode_produksi &&
+                      u.warna === item.warna &&
+                      u.size === item.size &&
+                      u.tanggal_penerimaan === item.tanggal_penerimaan)
+                );
+                return matched ? { ...item, ...matched } : item;
+              });
+              try {
+                localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(next));
+              } catch {}
+              return next;
             });
-            try {
-              localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(next));
-            } catch {}
-            return next;
-          });
-          loadData();
-        }}
-      />
+            loadData();
+          }}
+        />
+      )}
 
       {/* ========================================================
           MODAL POPUP: FILTER & PENGATURAN TAMPILAN (UNIFIED)
@@ -4612,15 +4612,17 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       )}
 
       {/* PUSH DATE SHEETS MODAL (1 SHEET PER TANGGAL) */}
-      <PushDateSheetsModal
-        isOpen={isPushDateModalOpen}
-        onClose={() => setIsPushDateModalOpen(false)}
-        dataList={filteredData}
-        activeTab={filterKategori === 'Kargo' ? 'Kargo' : 'CMT'}
-        initialDateFilter={filterStartDate || null}
-        productCatalog={productCatalog}
-        onShowToast={onShowToast}
-      />
+      {isPushDateModalOpen && (
+        <PushDateSheetsModal
+          isOpen={isPushDateModalOpen}
+          onClose={() => setIsPushDateModalOpen(false)}
+          dataList={filteredData}
+          activeTab={filterKategori === 'Kargo' ? 'Kargo' : 'CMT'}
+          initialDateFilter={filterStartDate || null}
+          productCatalog={productCatalog}
+          onShowToast={onShowToast}
+        />
+      )}
     </div>
   );
 };

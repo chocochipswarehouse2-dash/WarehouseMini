@@ -24,25 +24,36 @@ export function generateQcJobId(noSuratJalan: string, kodeProduksi: string): str
   return `QCJOB-${cleanSJ}-${cleanKode}`;
 }
 
+let memoryQcJobsCache: Record<string, QcPengerjaanJob> | null = null;
+
 /**
- * Memuat semua saved QC Pengerjaan jobs dari localStorage & Supabase
+ * Memuat semua saved QC Pengerjaan jobs dari localStorage & Supabase (dengan in-memory cache O(1))
  */
 export function getSavedQcJobsFromLocal(): Record<string, QcPengerjaanJob> {
+  if (memoryQcJobsCache) {
+    return memoryQcJobsCache;
+  }
   try {
     const cached = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (cached) {
-      return JSON.parse(cached);
+      const parsed = JSON.parse(cached);
+      if (parsed && typeof parsed === 'object') {
+        memoryQcJobsCache = parsed;
+        return parsed;
+      }
     }
   } catch (e) {
     console.warn('Gagal membaca saved QC jobs:', e);
   }
-  return {};
+  memoryQcJobsCache = {};
+  return memoryQcJobsCache;
 }
 
 /**
  * Simpan seluruh map QC Pengerjaan jobs ke localStorage
  */
 export function saveQcJobsToLocal(jobsMap: Record<string, QcPengerjaanJob>): void {
+  memoryQcJobsCache = jobsMap;
   try {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(jobsMap));
     if (typeof window !== 'undefined') {

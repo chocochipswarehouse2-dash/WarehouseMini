@@ -50,11 +50,15 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
   // Category state inside modal (allows switching between CMT and Kargo on the fly)
   const [currentTab, setCurrentTab] = useState<'CMT' | 'Kargo'>(initialActiveTab || 'CMT');
 
-  // Pre-build product lookup map to ensure names & sizes match master catalog
-  const catalogMap = useMemo(() => buildProductLookupMap(productCatalog), [productCatalog]);
+  // Pre-build product lookup map to ensure names & sizes match master catalog (only when modal is open)
+  const catalogMap = useMemo(
+    () => (isOpen ? buildProductLookupMap(productCatalog) : new Map()),
+    [isOpen, productCatalog]
+  );
 
-  // Align items with master catalog
+  // Align items with master catalog (only when modal is open)
   const sanitizedItems = useMemo(() => {
+    if (!isOpen) return [];
     return dataList.map((it) => {
       const aligned = alignItemWithMasterProduct(
         {
@@ -70,7 +74,7 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
         size: aligned.size || it.size,
       };
     });
-  }, [dataList, catalogMap]);
+  }, [isOpen, dataList, catalogMap]);
 
   // Filter items by category matching currentTab
   const categoryItems = useMemo(() => {

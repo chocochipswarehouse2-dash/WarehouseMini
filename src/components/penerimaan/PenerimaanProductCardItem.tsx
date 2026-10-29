@@ -14,6 +14,7 @@ import {
   ProductItem,
   PenerimaanProduksiItem,
 } from '../../types';
+import { buildProductLookupMap } from '../../utils/productLookup';
 
 export interface ProductCardGroup {
   kode_produksi: string;
@@ -58,18 +59,12 @@ export const PenerimaanProductCardItem: React.FC<PenerimaanProductCardItemProps>
   onDeleteVariant,
   onOpenQcJob,
 }) => {
-  // Cari produk katalog yang cocok untuk mengambil nama produk asli & harga jual jika ada
+  // Cari produk katalog yang cocok secara O(1) via Map (tanpa .find() 28.000 item per kartu)
   const matchedProduct = useMemo(() => {
     if (!productCatalog || productCatalog.length === 0) return undefined;
     const cleanCode = prod.kode_produksi.trim().toUpperCase();
-    return productCatalog.find((p) => {
-      const pSku = typeof p.k === 'string' ? p.k : typeof p.sku === 'string' ? (p.sku as string) : '';
-      const pCode = typeof p.kode_produksi === 'string' ? (p.kode_produksi as string) : '';
-      return (
-        (pCode && pCode.trim().toUpperCase() === cleanCode) ||
-        (pSku && pSku.trim().toUpperCase() === cleanCode)
-      );
-    });
+    const map = buildProductLookupMap(productCatalog);
+    return map.get(cleanCode);
   }, [productCatalog, prod.kode_produksi]);
 
   const productName: string =

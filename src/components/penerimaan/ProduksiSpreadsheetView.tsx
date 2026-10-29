@@ -105,6 +105,8 @@ const STORAGE_KEY_METRICS = 'wms_produksi_matrix_metrics_cache';
 const STORAGE_KEY_TAB = 'wms_produksi_spreadsheet_tab';
 const FIXED_DATE_COLUMNS_COUNT = 10;
 const FIXED_RETUR_COLUMNS_COUNT = 5;
+const MONTH_SHORT_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+const spreadsheetCatalogNameCache = new WeakMap<ProductItem[], Map<string, string>>();
 
 export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = ({
   dataList,
@@ -166,15 +168,20 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
   const [isCompressingPhoto, setIsCompressingPhoto] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Format date helper: "2026-07-13" -> "13 Jul"
+  // Format date helper: "2026-07-13" -> "13 Jul" (O(1) fast string slice for YYYY-MM-DD)
   const formatDateHeader = (dateStr: string): string => {
     if (!dateStr) return '';
+    if (dateStr.length >= 10 && dateStr[4] === '-' && dateStr[7] === '-') {
+      const m = parseInt(dateStr.slice(5, 7), 10);
+      const d = parseInt(dateStr.slice(8, 10), 10);
+      if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+        return `${d} ${MONTH_SHORT_NAMES[m - 1]}`;
+      }
+    }
     try {
       const d = new Date(dateStr);
       if (isNaN(d.getTime())) return dateStr;
-      const day = d.getDate();
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-      return `${day} ${monthNames[d.getMonth()]}`;
+      return `${d.getDate()} ${MONTH_SHORT_NAMES[d.getMonth()]}`;
     } catch {
       return dateStr;
     }
@@ -190,10 +197,13 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       .toUpperCase();
   };
 
-  // Fast O(1) Catalog Map lookup for product names
+  // Fast O(1) Catalog Map lookup for product names (cached across mounts via WeakMap)
   const catalogNameMap = useMemo(() => {
+    if (!productCatalog || productCatalog.length === 0) return new Map<string, string>();
+    const cached = spreadsheetCatalogNameCache.get(productCatalog);
+    if (cached) return cached;
+
     const map = new Map<string, string>();
-    if (!productCatalog || productCatalog.length === 0) return map;
     for (let i = 0; i < productCatalog.length; i++) {
       const p = productCatalog[i];
       const sku = String(p.k || (p as any).sku || '').trim().toUpperCase();
@@ -211,6 +221,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         if (!map.has(pfx)) map.set(pfx, name);
       }
     }
+    spreadsheetCatalogNameCache.set(productCatalog, map);
     return map;
   }, [productCatalog]);
 
@@ -2310,6 +2321,8 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                                       <img
                                         src={block.photoUrl}
                                         alt={block.code}
+                                        loading="lazy"
+                                        decoding="async"
                                         className="w-full h-full object-contain rounded-lg group-hover:scale-105 transition-transform duration-200 cursor-pointer"
                                         referrerPolicy="no-referrer"
                                         onClick={() =>
@@ -2611,16 +2624,18 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       )}
 
       {/* PUSH DATE SHEETS MODAL (1 SHEET PER TANGGAL) */}
-      <PushDateSheetsModal
-        isOpen={isPushDateModalOpen}
-        onClose={() => setIsPushDateModalOpen(false)}
-        dataList={dataList}
-        blocks={blocks}
-        activeTab={activeTab}
-        initialDateFilter={selectedDateFilter !== 'all' ? selectedDateFilter : null}
-        productCatalog={productCatalog}
-        onShowToast={onShowToast}
-      />
+      {isPushDateModalOpen && (
+        <PushDateSheetsModal
+          isOpen={isPushDateModalOpen}
+          onClose={() => setIsPushDateModalOpen(false)}
+          dataList={dataList}
+          blocks={blocks}
+          activeTab={activeTab}
+          initialDateFilter={selectedDateFilter !== 'all' ? selectedDateFilter : null}
+          productCatalog={productCatalog}
+          onShowToast={onShowToast}
+        />
+      )}
 
       {/* PHOTO UPLOAD / DRAG & DROP / PASTE MODAL */}
       {photoModalBlockId && (
