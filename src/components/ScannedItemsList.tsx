@@ -152,10 +152,10 @@ export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
                       type="button"
                       onClick={() => {
                         if (!onUpdateCategory) return;
-                        const nextCat: CategoryType = cat === 'ANOMALI' ? 'IN' : cat === 'IN' ? 'OUT' : cat === 'OUT' ? 'SO' : 'ANOMALI';
+                        const nextCat: CategoryType = cat === 'IN' ? 'OUT' : cat === 'OUT' ? 'SO' : 'IN';
                         onUpdateCategory(item.id, nextCat);
                       }}
-                      title="Klik untuk ubah mode (#IN / #OUT / #SO / #ANOMALI)"
+                      title="Klik untuk ubah mode (#IN / #OUT / #SO)"
                       className="cursor-pointer transition-transform active:scale-95 text-left select-none inline-flex items-center"
                     >
                       {cat === 'IN' && (

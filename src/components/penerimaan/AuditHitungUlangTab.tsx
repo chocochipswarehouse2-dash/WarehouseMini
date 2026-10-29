@@ -49,6 +49,7 @@ import {
   saveRecountAuditRecord,
   fetchRecountAuditMapFromCloud,
   supabaseFetch,
+  getCachedProduksiQtyNotaMapSync,
 } from '../../services/supabase';
 import { saveWmsSettings } from '../../services/settings';
 import {
@@ -86,6 +87,8 @@ export interface CodeAuditGroup {
   last_round?: number;
   last_notes?: string;
   catatan_petunjuk?: string; // Catatan petunjuk per kode (misal: "petunjuk kurang 23")
+  qty_nota?: number | null;
+  target_pembanding?: number;
   distinct_colors: string[];
   distinct_sizes: string[];
   distinct_dates: string[];
@@ -591,7 +594,22 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         }
       }
 
-      const qMeta = queueMap[code];
+      const qMeta = queueMap[code] as any;
+      const cachedNotaMap = getCachedProduksiQtyNotaMapSync();
+      const rawNota = qMeta?.qty_nota ?? cachedNotaMap[code]?.qty_nota ?? null;
+      const hasNota = rawNota !== null && rawNota !== undefined && !isNaN(Number(rawNota));
+      const targetNota = hasNota ? Number(rawNota) : null;
+      const targetQty = hasNota ? targetNota! : totalAsli;
+
+      // Jika ada target Qty Nota, selisih dan status dihitung terhadap Qty Nota!
+      // Jika Qty Nota belum ada, dihitung terhadap Total Diterima awal (totalAsli).
+      let effectiveSelisih = totalSelisih;
+      if (isCounted && totalFisik !== null && hasNota) {
+        effectiveSelisih = totalFisik - targetNota!;
+        if (effectiveSelisih === 0) statusAudit = 'MATCH';
+        else if (effectiveSelisih < 0) statusAudit = 'KURANG';
+        else statusAudit = 'LEBIH';
+      }
 
       results.push({
         kode_produksi: code,
@@ -601,8 +619,10 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         photo_url: grp.photo_url,
         total_asli: totalAsli,
         total_fisik: totalFisik,
-        total_selisih: totalSelisih,
+        total_selisih: effectiveSelisih,
         status_audit: statusAudit,
+        qty_nota: targetNota,
+        target_pembanding: targetQty,
         has_diff: hasDiff,
         is_counted: isCounted,
         last_auditor: lastAuditor,
@@ -806,7 +826,16 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       }
     });
 
-    const totalSelisih = totalFisik - totalAsli;
+    const code = activeGroup ? activeGroup.kode_produksi : '';
+    const cachedNotaMap = getCachedProduksiQtyNotaMapSync();
+    const rawNota = (queueMap[code] as any)?.qty_nota ?? cachedNotaMap[code]?.qty_nota ?? null;
+    const hasNota = rawNota !== null && rawNota !== undefined && !isNaN(Number(rawNota));
+    const targetNota = hasNota ? Number(rawNota) : null;
+    const targetQty = hasNota ? targetNota! : totalAsli;
+
+    // Matching angka: Jika Qty Nota terisi, bandingkan Qty Hitung Ulang dengan Qty Nota.
+    // Jika tidak ada Qty Nota, bandingkan Qty Hitung Ulang dengan Total SJ Diterima.
+    const totalSelisih = totalFisik - targetQty;
     const status: 'MATCH' | 'KURANG' | 'LEBIH' = totalSelisih === 0 ? 'MATCH' : totalSelisih < 0 ? 'KURANG' : 'LEBIH';
 
     return {
@@ -816,8 +845,11 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       status,
       filledCount,
       totalVariants: activeVariants.length,
+      hasNota,
+      targetNota,
+      targetQty,
     };
-  }, [activeVariants, variantInputs]);
+  }, [activeVariants, variantInputs, activeGroup, queueMap]);
 
   // Quick Action: Fill all variants with original arrival qty
   const handleQuickFillSameAsOriginal = () => {
@@ -965,6 +997,20 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
           ...prev,
           [activeGroup.kode_produksi]: newRecord,
         }));
+
+        // Sinkronkan juga status selisih nota terbaru ke Supabase jika ada Qty Nota
+        if (workspaceSummary.hasNota) {
+          syncQtyNotaAndAutoQueueRecount({
+            penerimaanItems,
+            skipSheetFetch: true,
+            updatedBy: auditorName || 'Auditor Fisik',
+            overrideNotaEntry: {
+              kode_produksi: activeGroup.kode_produksi,
+              qty_nota: workspaceSummary.targetNota,
+              kategori: activeGroup.kategori,
+            },
+          }).catch((errSync) => console.warn('Sync nota post recount:', errSync));
+        }
       } catch (errRec) {
         console.warn('Gagal simpan recount record ke Cloud settings:', errRec);
       }
@@ -2099,17 +2145,27 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
             </div>
 
             {/* Total Metrics Comparison Banner */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-900 text-white p-4 rounded-2xl shadow-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-900 text-white p-4 rounded-2xl shadow-sm">
               <div className="text-center sm:text-left">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Surat Jalan Asli</span>
-                <span className="text-2xl font-black font-mono">{workspaceSummary.totalAsli} pcs</span>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Total SJ Diterima</span>
+                <span className="text-xl font-black font-mono">{workspaceSummary.totalAsli} pcs</span>
               </div>
               <div className="text-center">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Fisik Hasil Audit</span>
-                <span className="text-2xl font-black font-mono text-blue-400">{workspaceSummary.totalFisik} pcs</span>
+                <span className="text-[10px] uppercase font-bold text-amber-300 block">
+                  {workspaceSummary.hasNota ? 'Target Qty Nota' : 'Qty Nota Buyer'}
+                </span>
+                <span className="text-xl font-black font-mono text-amber-300">
+                  {workspaceSummary.hasNota ? `${workspaceSummary.targetNota} pcs` : '-'}
+                </span>
+              </div>
+              <div className="text-center">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Fisik Hitung Ulang</span>
+                <span className="text-xl font-black font-mono text-blue-400">{workspaceSummary.totalFisik} pcs</span>
               </div>
               <div className="text-center sm:text-right">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Selisih</span>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                  Selisih vs {workspaceSummary.hasNota ? 'Nota' : 'SJ'}
+                </span>
                 <span
                   className={`text-2xl font-black font-mono ${
                     workspaceSummary.totalSelisih === 0

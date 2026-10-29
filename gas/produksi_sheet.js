@@ -639,6 +639,8 @@ function buildBlocksFromItemsGAS(items, isCMT, specificDateStr) {
 function scanExistingSheetBlocksData(sheet) {
   var oldNotaMap = {}; // { [CODE]: { qtyNota, totalDiterima, selisihNota, rowNum, colQtyNota } }
   var oldDataMap = {}; // { [CODE_COLOR_SIZE]: { fisik, selisih, status, log } }
+  var codeRecountSum = {}; // { [CODE]: sumFisik }
+  var codeHasRecount = {}; // { [CODE]: boolean }
   var scanError = '';
 
   try {
@@ -744,9 +746,14 @@ function scanExistingSheetBlocksData(sheet) {
           var key = curCode + '_' + curColor + '_' + c6;
           var rFisik = rowObj[colFisik];
           var rLog = colLog !== -1 ? rowObj[colLog] : '';
-          if ((rFisik !== '' && rFisik !== null && rFisik !== undefined) || rLog) {
+          if ((rFisik !== '' && rFisik !== null && rFisik !== undefined && !isNaN(Number(rFisik))) || rLog) {
+            var numF = Number(rFisik);
+            if (!isNaN(numF)) {
+              codeRecountSum[curCode] = (codeRecountSum[curCode] || 0) + numF;
+              codeHasRecount[curCode] = true;
+            }
             oldDataMap[key] = {
-              fisik: rFisik !== '' && rFisik !== null && rFisik !== undefined ? Number(rFisik) : '',
+              fisik: rFisik !== '' && rFisik !== null && rFisik !== undefined ? numF : '',
               selisih: colSelisihFisik !== -1 ? rowObj[colSelisihFisik] : '',
               status: colStatus !== -1 ? rowObj[colStatus] : '',
               log: rLog
@@ -759,6 +766,18 @@ function scanExistingSheetBlocksData(sheet) {
     Logger.log('scanExistingSheetBlocksData error: ' + eScan);
     scanError = String(eScan);
   }
+
+  // Sinkronkan selisihNota di oldNotaMap agar membandingkan Qty Hitung Ulang jika sudah ada
+  Object.keys(oldNotaMap).forEach(function(code) {
+    var rec = oldNotaMap[code];
+    if (rec && rec.qtyNota !== null) {
+      var effective = (codeHasRecount[code] && codeRecountSum[code] !== undefined)
+        ? codeRecountSum[code]
+        : rec.totalDiterima;
+      rec.selisihNota = effective - rec.qtyNota;
+      rec.totalFisikRecount = codeHasRecount[code] ? codeRecountSum[code] : null;
+    }
+  });
 
   return {
     oldNotaMap: oldNotaMap,
@@ -1144,7 +1163,18 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
 
       var totalDatangCellRef = colToLetter(colTotalDatang) + startDataRowIndex;
       var qtyNotaCellRef = colToLetter(colQtyNota) + startDataRowIndex;
-      var selisihFormula = '=IF(ISBLANK(' + qtyNotaCellRef + '), "", ' + totalDatangCellRef + '-' + qtyNotaCellRef + ')';
+      var selisihFormula = '';
+      if (!isSpecificDate) {
+        // Master Sheet: terdapat kolom QTY HITUNG ULANG (colSelisihNota + 1)
+        var colFisikLetter = colToLetter(colSelisihNota + 1);
+        var fisikRange = colFisikLetter + startDataRowIndex + ':' + colFisikLetter + endDataRowIndex;
+        // Jika ada hasil hitung ulang fisik (COUNT > 0), bandingkan SUM(QTY HITUNG ULANG) dengan QTY NOTA.
+        // Jika belum ada hasil hitung ulang fisik, pembandingnya adalah TOTAL DATANG (NET).
+        selisihFormula = '=IF(ISBLANK(' + qtyNotaCellRef + '), "", IF(COUNT(' + fisikRange + ')>0, SUM(' + fisikRange + ')-' + qtyNotaCellRef + ', ' + totalDatangCellRef + '-' + qtyNotaCellRef + '))';
+      } else {
+        // Sheet Tanggal Satuan: pembanding adalah Total Datang kedatangan tanggal tersebut
+        selisihFormula = '=IF(ISBLANK(' + qtyNotaCellRef + '), "", ' + totalDatangCellRef + '-' + qtyNotaCellRef + ')';
+      }
       var selisihCellRange = sheet.getRange(startDataRowIndex, colSelisihNota);
       selisihCellRange.setFormula(selisihFormula).setNumberFormat('0').setFontWeight('bold').setFontSize(11);
 

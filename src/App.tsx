@@ -667,7 +667,7 @@ export default function App() {
     } catch {}
     return [];
   });
-  const [currentCategory, setCurrentCategory] = useState<CategoryType>('ANOMALI');
+  const [currentCategory, setCurrentCategory] = useState<CategoryType>('');
   const [currentLocation, setCurrentLocation] = useState<string>('');
   const [currentInvoice, setCurrentInvoice] = useState<string>('');
   const [keterangan, setKeterangan] = useState<string>('');
@@ -1992,6 +1992,21 @@ export default function App() {
       }
     }
 
+    // 3. Validasi Dini: Tolak scan jika Mode (#IN/#OUT/#SO) belum dipilih atau Lokasi kosong
+    if (!currentCategoryRef.current || currentCategoryRef.current === 'ANOMALI') {
+      playErrorBeep();
+      vibrateDevice([150, 50, 150]);
+      showToast('Wajib pilih mode scan terlebih dahulu (#IN, #OUT, atau #SO) sebelum scan barang!', 'error');
+      return;
+    }
+
+    if (!currentLocationRef.current || currentLocationRef.current === 'DEFAULT' || currentLocationRef.current === 'ANOMALI') {
+      playErrorBeep();
+      vibrateDevice([150, 50, 150]);
+      showToast('Wajib tentukan / pilih lokasi rak terlebih dahulu sebelum scan barang!', 'error');
+      return;
+    }
+
     // 3. Detect SKU Item
     let isInvalidSku = false;
     let productName = '';
@@ -2259,8 +2274,28 @@ export default function App() {
         const line = item.text.trim().toUpperCase();
         if (!line) continue;
 
-        const cType: CategoryType = item.category || currentCategory || 'ANOMALI';
-        const cLokasi = item.location || currentLocation || 'DEFAULT';
+        const cType: CategoryType = item.category || currentCategory;
+        if (!cType || cType === 'ANOMALI') {
+          setIsSaving(false);
+          playErrorBeep();
+          showToast(`Item "${line}" tidak memiliki mode scan valid (#IN/#OUT/#SO)! Mohon pilih mode terlebih dahulu.`, 'error');
+          return;
+        }
+
+        const cLokasi = (item.location || currentLocation || '').trim();
+        if (!cLokasi || cLokasi === 'DEFAULT' || cLokasi === 'ANOMALI') {
+          setIsSaving(false);
+          playErrorBeep();
+          showToast(`Item "${line}" belum memiliki lokasi rak fisik yang valid! Mohon tentukan lokasi rak.`, 'error');
+          return;
+        }
+
+        if (cType === 'ANOMALI') {
+          setIsSaving(false);
+          playErrorBeep();
+          showToast('Mode ANOMALI dilarang pada Web App Scanner. Pilih #IN, #OUT, atau #SO.', 'error');
+          return;
+        }
 
         // Fix invoice base to use extracted explicit invoice if available
         const currentLineInvoice = currentInvoiceRef.current || `WEB-${waktuPesan.getTime()}`;
@@ -2381,7 +2416,8 @@ export default function App() {
 
       setScannedData([]);
       setKeterangan('');
-      setCurrentCategory('ANOMALI');
+      setCurrentCategory('');
+      currentCategoryRef.current = '';
       setCurrentInvoice('');
       setCurrentLocation('');
       setHasScannedSku(false);

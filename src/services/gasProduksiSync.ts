@@ -720,11 +720,14 @@ export async function pushPenerimaanProduksiToGoogleSheet(
   const formattedBlocks = effectiveBlocks.map((b) => {
     const normCode = (b.code || '').trim().toUpperCase();
     const resolvedQtyNota = b.qtyNota !== undefined && b.qtyNota !== null ? b.qtyNota : (cachedNotaMapMaster[normCode]?.qty_nota ?? null);
+    const effectiveFisik = (b.hasRecount && b.totalRecountFisik !== null && b.totalRecountFisik !== undefined)
+      ? b.totalRecountFisik
+      : b.totalNet;
     return {
       ...b,
       photoUrl: formatImageUrlForSheets(b.photoUrl),
       qtyNota: resolvedQtyNota,
-      selisihNota: resolvedQtyNota !== null && resolvedQtyNota !== undefined ? b.totalNet - Number(resolvedQtyNota) : null,
+      selisihNota: resolvedQtyNota !== null && resolvedQtyNota !== undefined ? effectiveFisik - Number(resolvedQtyNota) : null,
     };
   });
 
@@ -1234,11 +1237,14 @@ export async function syncQtyNotaAndAutoQueueRecount(options: {
     }
   });
 
-  // 2. Ambil data backup dari Supabase Cloud & tarik data terbaru dari Google Sheet
-  const [cloudNotaMap, sheetRes] = await Promise.all([
+  // 2. Ambil data backup dari Supabase Cloud, data Audit Hitung Ulang, & tarik data terbaru dari Google Sheet
+  const [cloudNotaMap, cloudAuditMap, sheetRes] = await Promise.all([
     fetchProduksiQtyNotaMapFromSupabase(),
+    fetchRecountAuditMapFromCloud(),
     skipSheetFetch ? Promise.resolve({ success: true, notaMap: {} } as FetchQtyNotaResponse) : fetchQtyNotaFromGoogleSheet(customSpreadsheetId),
   ]);
+  const localAuditMap = getRecountAuditMap();
+  const activeAuditMap: Record<string, any> = { ...cloudAuditMap, ...localAuditMap };
 
   const mergedNotaMap: Record<string, ProduksiQtyNotaRecord> = { ...cloudNotaMap };
   const nowIso = new Date().toISOString();
@@ -1252,13 +1258,17 @@ export async function syncQtyNotaAndAutoQueueRecount(options: {
         const wmsTotal = totalDiterimaByCode.has(code)
           ? Math.max(0, totalDiterimaByCode.get(code)!)
           : Number(sRec.total_diterima) || 0;
+        const auditFisik = activeAuditMap[code]?.total_fisik !== undefined && activeAuditMap[code]?.total_fisik !== null
+          ? Number(activeAuditMap[code].total_fisik)
+          : (sRec.total_fisik_recount !== undefined && sRec.total_fisik_recount !== null ? Number(sRec.total_fisik_recount) : null);
+        const effectiveTotal = auditFisik !== null ? auditFisik : wmsTotal;
         const qNota = Number(sRec.qty_nota);
         mergedNotaMap[code] = {
           kode_produksi: code,
           kategori: sRec.kategori || kategoriByCode.get(code) || 'Kargo',
           qty_nota: qNota,
           total_diterima: wmsTotal,
-          selisih_nota: wmsTotal - qNota,
+          selisih_nota: effectiveTotal - qNota,
           by_date: sRec.by_date || mergedNotaMap[code]?.by_date || {},
           source_sheet: sRec.source_sheet || 'Google Sheet',
           updated_at: sRec.updated_at || nowIso,
@@ -1276,12 +1286,16 @@ export async function syncQtyNotaAndAutoQueueRecount(options: {
       delete mergedNotaMap[oCode];
     } else {
       const qNota = Number(overrideNotaEntry.qty_nota);
+      const auditFisik = activeAuditMap[oCode]?.total_fisik !== undefined && activeAuditMap[oCode]?.total_fisik !== null
+        ? Number(activeAuditMap[oCode].total_fisik)
+        : null;
+      const effectiveTotal = auditFisik !== null ? auditFisik : wmsTotal;
       mergedNotaMap[oCode] = {
         kode_produksi: oCode,
         kategori: overrideNotaEntry.kategori || kategoriByCode.get(oCode) || mergedNotaMap[oCode]?.kategori || 'Kargo',
         qty_nota: qNota,
         total_diterima: wmsTotal,
-        selisih_nota: wmsTotal - qNota,
+        selisih_nota: effectiveTotal - qNota,
         by_date: mergedNotaMap[oCode]?.by_date || {},
         source_sheet: 'Input WMS',
         updated_at: nowIso,
@@ -1297,7 +1311,11 @@ export async function syncQtyNotaAndAutoQueueRecount(options: {
     if (totalDiterimaByCode.has(code)) {
       const latestTotal = Math.max(0, totalDiterimaByCode.get(code)!);
       rec.total_diterima = latestTotal;
-      rec.selisih_nota = latestTotal - Number(rec.qty_nota);
+      const auditFisik = activeAuditMap[code]?.total_fisik !== undefined && activeAuditMap[code]?.total_fisik !== null
+        ? Number(activeAuditMap[code].total_fisik)
+        : null;
+      const effectiveTotal = auditFisik !== null ? auditFisik : latestTotal;
+      rec.selisih_nota = effectiveTotal - Number(rec.qty_nota);
     }
   });
 

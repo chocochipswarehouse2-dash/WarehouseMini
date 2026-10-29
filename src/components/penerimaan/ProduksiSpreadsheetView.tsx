@@ -616,8 +616,14 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
           : itemNotaFallback !== null
           ? Number(itemNotaFallback)
           : null;
+      // Jika sudah ada hasil hitung ulang fisik, pembanding akhir dengan Qty Nota adalah Qty Hitung Ulang!
+      // Jika belum dihitung ulang, pembandingnya adalah Total Diterima awal (totalNet).
+      const effectiveFisik =
+        blockHasRecount && blockRecountFisik !== null && blockRecountFisik !== undefined
+          ? blockRecountFisik
+          : totalNet;
       const resolvedSelisihNota =
-        resolvedQtyNota !== null && !isNaN(resolvedQtyNota) ? totalNet - resolvedQtyNota : null;
+        resolvedQtyNota !== null && !isNaN(resolvedQtyNota) ? effectiveFisik - resolvedQtyNota : null;
 
       parsedBlocks.push({
         id: code,
@@ -722,7 +728,12 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         return {
           ...b,
           qtyNota: finalNota,
-          selisihNota: finalNota !== null ? b.totalNet - finalNota : null,
+          selisihNota:
+            finalNota !== null
+              ? (b.hasRecount && b.totalRecountFisik !== null && b.totalRecountFisik !== undefined
+                  ? b.totalRecountFisik
+                  : b.totalNet) - finalNota
+              : null,
         };
       })
     );
