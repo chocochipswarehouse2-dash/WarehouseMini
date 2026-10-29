@@ -1,12 +1,12 @@
 {
-  "version": "v2.5.3",
-  "versionCode": 253,
+  "version": "v2.5.4",
+  "versionCode": 254,
   "buildDate": "29 Oktober 2026",
-  "buildHash": "wms-261029-v253-1317",
-  "releaseTitle": "WMS v2.5.3 — Skill Otomasi Rilis Multi-User & Anti-Freeze Auditor",
+  "buildHash": "wms-261029-v254-1325",
+  "releaseTitle": "WMS v2.5.4 — Copy-Paste & Drag-Drop Foto Input Produksi",
   "releaseNotes": [
-    "Penambahan Skill & CLI Auditor Anti-Freeze (wms-performance-anti-freeze): Deteksi dan proteksi otomatis terhadap komputasi berat pada modal tertutup (InventoryAnomalyModal, InventoryLokasiExportModal, HitungUlangModal, PushSuratJalanModal).",
-    "Penyempurnaan Skill Rilis & Verifikasi Multi-User (wms-app-release-update): Penambahan sub-perintah CLI 'verify-release' untuk memvalidasi sinkronisasi 3 file versi, proteksi Zero Forced-Reload, dan pengecekan otomatis FAQ Store/Admin."
+    "Fitur Copy-Paste (Ctrl+V & Tombol Paste) Foto Produk: Mendukung tempel gambar langsung dari clipboard pada setiap blok kode produk di form Input Penerimaan Produksi.",
+    "Fitur Drag & Drop Foto Produk: Tarik dan lepaskan file gambar langsung ke baris/blok produk pada form Input Penerimaan Produksi dengan kompresi WebP otomatis."
   ],
   "minSupportedVersion": "v2.0.0"
 }

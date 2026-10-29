@@ -544,6 +544,8 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
   const [isUpdatingBatch, setIsUpdatingBatch] = useState<boolean>(false);
   const [isDraggingPrimaryFoto, setIsDraggingPrimaryFoto] = useState<boolean>(false);
   const [draggingProdKey, setDraggingProdKey] = useState<string | null>(null);
+  const [draggingBlockIdx, setDraggingBlockIdx] = useState<number | null>(null);
+  const [focusedBlockIdx, setFocusedBlockIdx] = useState<number | null>(0);
 
   // Delete Confirm Modal
   const [deletingTarget, setDeletingTarget] = useState<{
@@ -877,12 +879,85 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     try {
       const res = await compressImage(file, 1024, 0.75);
       updateProductBlockPhoto(blockIndex, res.dataUrl);
-      onShowToast(`Foto produk terkompresi (${Math.round(res.compressedSize / 1024)} KB)`, 'success');
+      const codeLabel = productBlocks[blockIndex]?.kode_produksi || `#${blockIndex + 1}`;
+      onShowToast(`Foto produk ${codeLabel} berhasil dipasang (${Math.round(res.compressedSize / 1024)} KB)`, 'success');
     } catch (err: any) {
       console.error('Gagal kompres foto:', err);
       onShowToast('Gagal memproses gambar foto', 'error');
     }
   };
+
+  // Extract image file from ClipboardEvent (Ctrl+V)
+  const extractImageFromClipboardData = (clipboardData: DataTransfer | null): File | null => {
+    if (!clipboardData) return null;
+    if (clipboardData.files && clipboardData.files.length > 0) {
+      const found = Array.from(clipboardData.files).find((f) => f.type.startsWith('image/'));
+      if (found) return found;
+    }
+    if (clipboardData.items && clipboardData.items.length > 0) {
+      for (let i = 0; i < clipboardData.items.length; i++) {
+        const item = clipboardData.items[i];
+        if (item.type.startsWith('image/')) {
+          const f = item.getAsFile();
+          if (f) return f;
+        }
+      }
+    }
+    return null;
+  };
+
+  // Handle Ctrl+V paste directly inside a Product Block
+  const handleBlockPaste = async (e: React.ClipboardEvent, blockIndex: number) => {
+    const imgFile = extractImageFromClipboardData(e.clipboardData);
+    if (imgFile) {
+      e.preventDefault();
+      e.stopPropagation();
+      await handleImageUpload(imgFile, blockIndex);
+    }
+  };
+
+  // Handle 1-Click "Paste Foto" button via Async Clipboard API
+  const handlePastePhotoButton = async (blockIndex: number) => {
+    setFocusedBlockIdx(blockIndex);
+    try {
+      if (navigator.clipboard && 'read' in navigator.clipboard) {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          const imageType = item.types.find((t) => t.startsWith('image/'));
+          if (imageType) {
+            const blob = await item.getType(imageType);
+            const file = new File([blob], `paste_${Date.now()}.png`, { type: imageType });
+            await handleImageUpload(file, blockIndex);
+            return;
+          }
+        }
+        onShowToast('Tidak ada gambar di clipboard. Salin (Copy) gambar terlebih dahulu atau tekan Ctrl+V.', 'warning');
+        return;
+      }
+    } catch {
+      // Fallback if browser blocks navigator.clipboard.read() permission
+    }
+    onShowToast(`Blok Produk #${blockIndex + 1} aktif — silakan tekan Ctrl+V untuk menempel foto.`, 'info');
+  };
+
+  // Global window paste fallback when on Input Tab (applies to focused block or block #0)
+  useEffect(() => {
+    if (activeTab !== 'input' || editingBatch || webcamOpen) return;
+    const onWinPaste = async (e: ClipboardEvent) => {
+      if (e.defaultPrevented) return;
+      const imgFile = extractImageFromClipboardData(e.clipboardData);
+      if (imgFile) {
+        e.preventDefault();
+        const targetIdx =
+          focusedBlockIdx !== null && focusedBlockIdx < productBlocks.length
+            ? focusedBlockIdx
+            : productBlocks.length - 1;
+        await handleImageUpload(imgFile, Math.max(0, targetIdx));
+      }
+    };
+    window.addEventListener('paste', onWinPaste);
+    return () => window.removeEventListener('paste', onWinPaste);
+  }, [activeTab, editingBatch, webcamOpen, focusedBlockIdx, productBlocks.length]);
 
   const updateProductBlockPhoto = (index: number, dataUrl: string) => {
     setProductBlocks((prev) => {
@@ -1950,7 +2025,41 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
               return (
                 <div
                   key={block.id}
-                  className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl overflow-hidden shadow-2xs transition-all"
+                  onFocusCapture={() => setFocusedBlockIdx(blockIdx)}
+                  onClick={() => setFocusedBlockIdx(blockIdx)}
+                  onPaste={(e) => handleBlockPaste(e, blockIdx)}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (draggingBlockIdx !== blockIdx) setDraggingBlockIdx(blockIdx);
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                    if (draggingBlockIdx === blockIdx) setDraggingBlockIdx(null);
+                  }}
+                  onDrop={async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setDraggingBlockIdx(null);
+                    setFocusedBlockIdx(blockIdx);
+                    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                      const imgFile = Array.from(e.dataTransfer.files).find((f) => f.type.startsWith('image/'));
+                      if (imgFile) {
+                        await handleImageUpload(imgFile, blockIdx);
+                      } else {
+                        onShowToast('File yang di-drop bukan gambar.', 'warning');
+                      }
+                    }
+                  }}
+                  className={`bg-white dark:bg-slate-900 border rounded-xl overflow-hidden shadow-2xs transition-all ${
+                    draggingBlockIdx === blockIdx
+                      ? 'border-emerald-500 ring-2 ring-emerald-500/30 bg-emerald-50/20 dark:bg-emerald-950/20'
+                      : focusedBlockIdx === blockIdx
+                      ? 'border-emerald-400/80 dark:border-emerald-700/80'
+                      : 'border-slate-300 dark:border-slate-700'
+                  }`}
                 >
                   {/* BARIS 1: Header Kode Produk (Kompak satu baris, hemat tempat) */}
                   <div className="bg-slate-100 dark:bg-slate-800/90 px-3 py-2 border-b border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-2">
@@ -1979,15 +2088,14 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Quick Foto & Action Baris Header */}
-                    <div className="flex items-center gap-2">
-                      {/* Foto Button / Thumbnail Mini */}
+                    {/* Quick Foto (Kamera + Upload/Drag & Drop + Copy/Paste) & Action Baris Header */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       {block.foto_url ? (
-                        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700">
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700">
                           <img
                             src={block.foto_url}
                             alt="Foto"
-                            className="w-6 h-6 rounded object-cover cursor-pointer hover:opacity-80"
+                            className="w-7 h-7 rounded object-cover cursor-pointer hover:opacity-80 border border-emerald-200 dark:border-emerald-800"
                             onClick={() =>
                               setLightboxImage({
                                 url: block.foto_url!,
@@ -1995,33 +2103,13 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                                 subtitle: `Surat Jalan: ${formNoSuratJalan || '-'}`,
                               })
                             }
-                            title="Klik untuk perbesar"
+                            title="Klik untuk perbesar foto"
                           />
-                          <button
-                            type="button"
-                            onClick={() => updateProductBlockPhoto(blockIdx, '')}
-                            className="text-rose-500 hover:text-rose-700 text-xs font-bold px-0.5"
-                            title="Hapus foto"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => startWebcam(blockIdx, false)}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-300 dark:border-slate-600 cursor-pointer shadow-2xs"
-                            title="Buka Kamera HP"
-                          >
-                            <Camera className="w-3.5 h-3.5 text-emerald-600" />
-                            <span className="hidden sm:inline">Kamera</span>
-                          </button>
                           <label
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-300 dark:border-slate-600 cursor-pointer shadow-2xs"
-                            title="Pilih Foto dari Galeri"
+                            className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 hover:underline cursor-pointer px-1"
+                            title="Klik untuk ganti file, atau langsung Drag & Drop / tekan Ctrl+V pada blok ini"
                           >
-                            <Upload className="w-3.5 h-3.5 text-slate-500" />
+                            Ganti
                             <input
                               type="file"
                               accept="image/*"
@@ -2033,6 +2121,71 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                               }}
                             />
                           </label>
+                          <button
+                            type="button"
+                            onClick={() => handlePastePhotoButton(blockIdx)}
+                            className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer px-0.5"
+                            title="Tempel (Paste) foto baru dari clipboard"
+                          >
+                            Paste
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateProductBlockPhoto(blockIdx, '')}
+                            className="text-rose-500 hover:text-rose-700 text-xs font-black px-1 cursor-pointer"
+                            title="Hapus foto"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => startWebcam(blockIdx, false)}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-300 dark:border-slate-600 cursor-pointer shadow-2xs"
+                            title="Ambil Foto dari Kamera"
+                          >
+                            <Camera className="w-3.5 h-3.5 text-emerald-600" />
+                            <span className="hidden sm:inline">Kamera</span>
+                          </button>
+
+                          {/* Dropzone & Browse File Button */}
+                          <label
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-all shadow-2xs border ${
+                              draggingBlockIdx === blockIdx
+                                ? 'border-emerald-500 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 border-dashed scale-102'
+                                : 'border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 hover:border-emerald-500 hover:text-emerald-600 text-slate-700 dark:text-slate-200'
+                            }`}
+                            title="Klik untuk pilih foto, atau tarik & lepaskan (Drag & Drop) file gambar ke blok ini"
+                          >
+                            <Upload className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span>
+                              {draggingBlockIdx === blockIdx ? 'Lepas Foto!' : 'Upload / Drop Foto'}
+                            </span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                if (e.target.files && e.target.files[0]) {
+                                  handleImageUpload(e.target.files[0], blockIdx);
+                                }
+                              }}
+                            />
+                          </label>
+
+                          {/* 1-Click Copy-Paste (Ctrl+V) Button */}
+                          <button
+                            type="button"
+                            onClick={() => handlePastePhotoButton(blockIdx)}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50/80 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 cursor-pointer shadow-2xs transition"
+                            title="Tempel gambar dari Clipboard (atau tekan Ctrl+V langsung pada blok produk ini)"
+                          >
+                            <Copy className="w-3 h-3 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                            <span>Paste Foto</span>
+                            <span className="hidden lg:inline text-[9px] font-mono opacity-75">(Ctrl+V)</span>
+                          </button>
                         </div>
                       )}
 
