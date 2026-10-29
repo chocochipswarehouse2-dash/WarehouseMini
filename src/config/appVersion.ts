@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.5.7",
-  "versionCode": 257,
+  "version": "v2.5.8",
+  "versionCode": 258,
   "buildDate": "29 Oktober 2026",
-  "buildHash": "wms-261029-v257-1900",
-  "releaseTitle": "WMS v2.5.7 — Pengaman Qty Nota Buyer saat Re-push Sheet",
+  "buildHash": "wms-261029-v258-2105",
+  "releaseTitle": "WMS v2.5.8 — Fisik Hitung Produksi Terbaca dari Hasil Audit",
   "releaseNotes": [
-    "Qty Nota yang diketik Buyer di sheet tidak lagi tertimpa saat push ulang",
-    "Push dibatalkan otomatis jika pembacaan sheet lama gagal"
+    "Kolom Fisik Hitung dan Status di tabel Produksi kini membaca hasil Audit Hitung Ulang",
+    "Data audit dari Cloud ditampilkan walau belum tertulis ke item penerimaan"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.5.7",
+    "versionCode": 257,
+    "buildDate": "29 Oktober 2026",
+    "buildHash": "wms-261029-v257-1900",
+    "releaseTitle": "WMS v2.5.7 — Pengaman Qty Nota Buyer saat Re-push Sheet",
+    "releaseNotes": [
+      "Qty Nota yang diketik Buyer di sheet tidak lagi tertimpa saat push ulang",
+      "Push dibatalkan otomatis jika pembacaan sheet lama gagal"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.5.6",
     "versionCode": 256,

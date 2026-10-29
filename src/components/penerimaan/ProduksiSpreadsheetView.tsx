@@ -45,6 +45,8 @@ import {
   updatePenerimaanPhotoInSupabase,
   getNextPenerimaanProduksiIds,
   getCachedProduksiQtyNotaMapSync,
+  getRecountAuditMap,
+  fetchRecountAuditMapFromCloud,
 } from '../../services/supabase';
 import { PushSuratJalanModal } from './PushSuratJalanModal';
 import { PushDateSheetsModal } from './PushDateSheetsModal';
@@ -169,6 +171,29 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
   );
   const [isSyncingQtyNota, setIsSyncingQtyNota] = useState<boolean>(false);
 
+  // Hasil Audit Hitung Ulang (Cloud + Local) agar kolom Fisik Hitung terisi walau belum tertulis ke item penerimaan
+  const [recountAuditMapRaw, setRecountAuditMapRaw] = useState<Record<string, any>>(() => getRecountAuditMap());
+  useEffect(() => {
+    let alive = true;
+    fetchRecountAuditMapFromCloud()
+      .then((m) => { if (alive && m) setRecountAuditMapRaw(m); })
+      .catch(() => {});
+    const onAudit = (e: any) => {
+      setRecountAuditMapRaw(e?.detail?.auditMap || getRecountAuditMap());
+    };
+    window.addEventListener('wms_recount_audit_updated', onAudit);
+    return () => {
+      alive = false;
+      window.removeEventListener('wms_recount_audit_updated', onAudit);
+    };
+  }, []);
+  const recountAuditNormMap = useMemo(() => {
+    const out: Record<string, any> = {};
+    Object.keys(recountAuditMapRaw || {}).forEach((k) => {
+      out[String(k).replace(/[\u200B-\u200D\uFEFF\u00A0\r\n\t]/g, '').trim().toUpperCase()] = recountAuditMapRaw[k];
+    });
+    return out;
+  }, [recountAuditMapRaw]);
   // Date Filter & Push to Google Sheet state
   const [selectedDateFilter, setSelectedDateFilter] = useState<string>('all');
   const [isPushDateModalOpen, setIsPushDateModalOpen] = useState<boolean>(false);
@@ -377,6 +402,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       );
 
       // Group by Color
+      const auditRecForCode = recountAuditNormMap[code];
       const colorMap = new Map<string, PenerimaanProduksiItem[]>();
       items.forEach((it) => {
         const color = (it.warna || 'DEFAULT').trim().toUpperCase();
@@ -486,6 +512,24 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
               rAuditor = it.recount_auditor;
               rUpdatedAt = it.recount_updated_at;
               break;
+            }
+          }
+
+          // Fallback: hasil audit dari Cloud/Local Audit Map (sumber yang sama dengan tab Audit Hitung Ulang)
+          if (rFisik === null && auditRecForCode && Array.isArray(auditRecForCode.variants)) {
+            const colorKey = String(color || '').trim().toUpperCase();
+            const v = auditRecForCode.variants.find(
+              (x: any) =>
+                String(x.warna || 'DEFAULT').trim().toUpperCase() === colorKey &&
+                String(x.size || 'Default').trim().toUpperCase() === sz
+            );
+            if (v && v.qty_fisik !== undefined && v.qty_fisik !== null) {
+              rFisik = Number(v.qty_fisik) || 0;
+              rSelisih = rFisik - totalSizeQty;
+              rRound = auditRecForCode.round;
+              rNotes = auditRecForCode.catatan || v.note || undefined;
+              rAuditor = auditRecForCode.auditor;
+              rUpdatedAt = auditRecForCode.updated_at || auditRecForCode.tanggal_audit;
             }
           }
 
@@ -606,7 +650,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     });
 
     setBlocks(parsedBlocks);
-  }, [dataList, activeTab, catalogNameMap, qtyNotaMap]);
+  }, [dataList, activeTab, catalogNameMap, qtyNotaMap, recountAuditNormMap]);
 
   // Sinkronisasi Otomatis Qty Nota dari Google Sheet & Backup ke Supabase saat halaman dibuka
   const handleSyncQtyNotaFromSheet = async (isSilent = false) => {
