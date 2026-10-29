@@ -125,7 +125,7 @@ export const HitungUlangModal: React.FC<HitungUlangModalProps> = ({
   }, [distinctCodes, multiSearchQuery]);
 
   const availableDatesForCode = useMemo(() => {
-    if (!selectedCode) return [];
+    if (!isOpen || !selectedCode) return [];
     const dates = new Set<string>();
     dataList.forEach((it) => {
       if ((it.kode_produksi || '').trim().toUpperCase() === selectedCode) {
@@ -133,7 +133,7 @@ export const HitungUlangModal: React.FC<HitungUlangModalProps> = ({
       }
     });
     return Array.from(dates).sort();
-  }, [dataList, selectedCode]);
+  }, [isOpen, dataList, selectedCode]);
 
   // Active selected codes list (Single vs Multi)
   const activeSelectedCodes = useMemo(() => {
@@ -168,7 +168,7 @@ export const HitungUlangModal: React.FC<HitungUlangModalProps> = ({
 
   // Filtered raw items for active selected codes and arrival date, sorted by Warna & Size
   const filteredRawItems = useMemo(() => {
-    if (activeSelectedCodes.length === 0) return [];
+    if (!isOpen || activeSelectedCodes.length === 0) return [];
     const raw = dataList.filter((it) => {
       const itCode = (it.kode_produksi || '').trim().toUpperCase();
       const matchCode = activeSelectedCodes.includes(itCode);

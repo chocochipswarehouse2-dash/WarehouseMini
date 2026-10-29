@@ -1,14 +1,12 @@
 {
-  "version": "v2.5.2",
-  "versionCode": 252,
+  "version": "v2.5.3",
+  "versionCode": 253,
   "buildDate": "29 Oktober 2026",
-  "buildHash": "wms-261029-v252-1046",
-  "releaseTitle": "WMS v2.5.2 — Pembaruan Aman Multi-User & Optimasi Instan Produksi",
+  "buildHash": "wms-261029-v253-1317",
+  "releaseTitle": "WMS v2.5.3 — Skill Otomasi Rilis Multi-User & Anti-Freeze Auditor",
   "releaseNotes": [
-    "Sistem Pembaruan Aman Multi-User (Zero Forced-Reload): Pembaruan sistem tidak lagi me-reload halaman secara paksa saat user sedang mengisi form atau scan barcode, serta otomatis diterapkan secara mulus saat berpindah menu utama.",
-    "Pembaruan 1-Klik Tanpa Gangguan Sesi Login: Menghapus simulasi unduhan dua tahap; pembaruan langsung aktif dalam 1 klik dengan sesi akun (Store, Gudang, Admin) tetap 100% terjaga.",
-    "Optimasi Performa Halaman Produksi: Menghapus bottleneck pembacaan katalog berulang sehingga tab Produksi dan Spreadsheet Matrix terbuka instan tanpa freeze.",
-    "Standarisasi Tampilan Rekap Pesanan & Lokasi Rak Inventori: Penambahan opsi Panel Rapi (Master-Detail), penyempurnaan Versi Tabel, serta penggabungan otomatis lokasi rak identik."
+    "Penambahan Skill & CLI Auditor Anti-Freeze (wms-performance-anti-freeze): Deteksi dan proteksi otomatis terhadap komputasi berat pada modal tertutup (InventoryAnomalyModal, InventoryLokasiExportModal, HitungUlangModal, PushSuratJalanModal).",
+    "Penyempurnaan Skill Rilis & Verifikasi Multi-User (wms-app-release-update): Penambahan sub-perintah CLI 'verify-release' untuk memvalidasi sinkronisasi 3 file versi, proteksi Zero Forced-Reload, dan pengecekan otomatis FAQ Store/Admin."
   ],
   "minSupportedVersion": "v2.0.0"
 }

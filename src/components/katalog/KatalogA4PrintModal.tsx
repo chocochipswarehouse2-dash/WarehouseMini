@@ -52,14 +52,16 @@ export const KatalogA4PrintModal: React.FC<KatalogA4PrintModalProps> = ({
 
   // Daftar batch yang dipilih
   const activeBatches = useMemo(() => {
+    if (!isOpen) return [];
     if (batches.length > 0) {
       return batches.filter((b) => selectedBatchIds.includes(b.id));
     }
     return [];
-  }, [batches, selectedBatchIds]);
+  }, [isOpen, batches, selectedBatchIds]);
 
   // Semua items dari katalog terpilih
   const printableItems: KatalogItem[] = useMemo(() => {
+    if (!isOpen) return [];
     if (batches.length > 0) {
       return activeBatches.flatMap((b) =>
         b.items.map((it) => ({
@@ -69,7 +71,7 @@ export const KatalogA4PrintModal: React.FC<KatalogA4PrintModalProps> = ({
       );
     }
     return fallbackItems || [];
-  }, [batches, activeBatches, fallbackItems]);
+  }, [isOpen, batches, activeBatches, fallbackItems]);
 
   const activeCatalogNames: string[] = useMemo(() => {
     if (batches.length > 0) {

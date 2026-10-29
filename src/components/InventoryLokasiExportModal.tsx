@@ -264,6 +264,7 @@ export const InventoryLokasiExportModal: React.FC<InventoryLokasiExportModalProp
   // Global Physical stock map
   const globalStockBySku = useMemo(() => {
     const map = new Map<string, number>();
+    if (!isOpen) return map;
     stockList.forEach((s) => {
       const sku = String(s.sku || '').trim().toUpperCase();
       if (!sku) return;
@@ -271,12 +272,13 @@ export const InventoryLokasiExportModal: React.FC<InventoryLokasiExportModalProp
       map.set(sku, (map.get(sku) || 0) + qty);
     });
     return map;
-  }, [stockList]);
+  }, [isOpen, stockList]);
 
   // Comprehensive catalog dictionary (including props + local storage caches)
   const masterProductLookup = useMemo(() => {
     const map = new Map<string, { nama: string; size: string; rawItem?: any }>();
     const prefixMap = new Map<string, string>(); // maps prefix (e.g. F26ITN806) to base name
+    if (!isOpen) return { map, prefixMap };
 
     const addEntry = (rawSku?: string, rawName?: string, rawSize?: string, itemObj?: any) => {
       const sku = (rawSku || '').trim().toUpperCase();
@@ -344,11 +346,12 @@ export const InventoryLokasiExportModal: React.FC<InventoryLokasiExportModalProp
     }
 
     return { map, prefixMap };
-  }, [productCatalog]);
+  }, [isOpen, productCatalog]);
 
   // Map of Location Items Grouped By Location with guaranteed resolved Product Names & Sizes
   const itemsByLocation = useMemo(() => {
     const result = new Map<string, LocationStockItem[]>();
+    if (!isOpen) return result;
 
     const resolveBestName = (sku: string, rawName?: string): string => {
       const cleanSku = (sku || '').trim().toUpperCase();
@@ -522,16 +525,17 @@ export const InventoryLokasiExportModal: React.FC<InventoryLokasiExportModalProp
     });
 
     return result;
-  }, [selectedLocations, stockList, productCatalog, globalStockBySku, masterProductLookup]);
+  }, [isOpen, selectedLocations, stockList, productCatalog, globalStockBySku, masterProductLookup]);
 
   // Flat Combined Items Across all selected locations
   const allSelectedLocationItems = useMemo(() => {
+    if (!isOpen) return [];
     const list: LocationStockItem[] = [];
     itemsByLocation.forEach((items) => {
       list.push(...items);
     });
     return list;
-  }, [itemsByLocation]);
+  }, [isOpen, itemsByLocation]);
 
   // Filter items in location by search query (SKU or Name)
   const filteredLocationItems = useMemo(() => {

@@ -52,6 +52,7 @@ export const PushSuratJalanModal: React.FC<PushSuratJalanModalProps> = ({
 
   // Kelompokkan data penerimaan produksi berdasarkan No Surat Jalan
   const groupedSuratJalan = useMemo(() => {
+    if (!isOpen) return [];
     const map = new Map<string, SuratJalanGroup>();
 
     dataList.forEach((it) => {
@@ -85,7 +86,7 @@ export const PushSuratJalanModal: React.FC<PushSuratJalanModalProps> = ({
       if (b.tanggal !== a.tanggal) return b.tanggal.localeCompare(a.tanggal);
       return a.no_surat_jalan.localeCompare(b.no_surat_jalan);
     });
-  }, [dataList]);
+  }, [isOpen, dataList]);
 
   // Filtered berdasarkan live dropsearch
   const filteredSJGroups = useMemo(() => {

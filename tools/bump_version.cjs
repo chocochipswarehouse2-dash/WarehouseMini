@@ -1,23 +1,26 @@
 #!/usr/bin/env node
 /**
- * WMS Auto-Version & Release Notes Synchronizer
- * Atomically bumps version & updates release metadata across:
- *   1. package.json
- *   2. src/config/appVersion.ts (including VERSION_HISTORY)
- *   3. public/version.json
+ * WMS Auto-Version, Release Notes & Multi-User Safety Verifier CLI
  *
- * Usage:
- *   node tools/bump_version.cjs --title "WMS v2.5.2 — ..." --notes "Catatan 1|Catatan 2|Catatan 3"
- *   node tools/bump_version.cjs --sync-only
+ * Subcommands:
+ *   1. bump (or default flags):
+ *      node tools/bump_version.cjs bump --title "WMS v2.5.x — ..." --notes "Note 1|Note 2" [--output report.json]
+ *   2. verify-release:
+ *      node tools/bump_version.cjs verify-release --output release_verify.json
+ *   3. --sync-only:
+ *      node tools/bump_version.cjs --sync-only
  */
 
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const PKG_PATH = path.join(ROOT, 'package.json');
 const APP_VER_PATH = path.join(ROOT, 'src', 'config', 'appVersion.ts');
 const PUB_VER_PATH = path.join(ROOT, 'public', 'version.json');
+const VITE_CFG_PATH = path.join(ROOT, 'vite.config.ts');
+const MAIN_TSX_PATH = path.join(ROOT, 'src', 'main.tsx');
 
 const MONTHS_ID = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
@@ -36,15 +39,35 @@ function formatShortDateStamp(d = new Date()) {
 }
 
 function parseArgs(argv) {
-  const args = { syncOnly: false, bump: 'patch', version: null, title: null, notes: null };
+  const args = {
+    subcommand: 'bump',
+    syncOnly: false,
+    bump: 'patch',
+    version: null,
+    title: null,
+    notes: null,
+    output: null
+  };
+
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--sync-only') args.syncOnly = true;
-    else if (a === '--minor') args.bump = 'minor';
-    else if (a === '--major') args.bump = 'major';
-    else if (a === '--version' && argv[i + 1]) args.version = argv[++i];
-    else if (a === '--title' && argv[i + 1]) args.title = argv[++i];
-    else if (a === '--notes' && argv[i + 1]) args.notes = argv[++i];
+    if (a === 'bump' || a === 'verify-release') {
+      args.subcommand = a;
+    } else if (a === '--sync-only') {
+      args.syncOnly = true;
+    } else if (a === '--minor') {
+      args.bump = 'minor';
+    } else if (a === '--major') {
+      args.bump = 'major';
+    } else if (a === '--version' && argv[i + 1]) {
+      args.version = argv[++i];
+    } else if (a === '--title' && argv[i + 1]) {
+      args.title = argv[++i];
+    } else if (a === '--notes' && argv[i + 1]) {
+      args.notes = argv[++i];
+    } else if (a === '--output' && argv[i + 1]) {
+      args.output = argv[++i];
+    }
   }
   return args;
 }
@@ -82,6 +105,18 @@ function parseExistingHistory() {
   return [];
 }
 
+function parseAppVersionTsInfo() {
+  if (!fs.existsSync(APP_VER_PATH)) return null;
+  try {
+    const raw = fs.readFileSync(APP_VER_PATH, 'utf8');
+    const match = raw.match(/export const CURRENT_APP_VERSION_INFO:\s*VersionInfo\s*=\s*(\{[\s\S]*?\});/);
+    if (match && match[1]) {
+      return JSON.parse(match[1]);
+    }
+  } catch {}
+  return null;
+}
+
 function incrementSemver(ver, bumpType = 'patch') {
   const clean = String(ver || 'v2.5.1').replace(/^v/i, '').split('-')[0];
   const parts = clean.split('.').map(n => parseInt(n, 10) || 0);
@@ -103,8 +138,87 @@ function incrementSemver(ver, bumpType = 'patch') {
   };
 }
 
-function run() {
-  const args = parseArgs(process.argv);
+function runVerifyRelease(args) {
+  const pkg = JSON.parse(fs.readFileSync(PKG_PATH, 'utf8'));
+  const pubVer = JSON.parse(fs.readFileSync(PUB_VER_PATH, 'utf8'));
+  const tsVer = parseAppVersionTsInfo();
+
+  const issues = [];
+
+  const pkgVerNormalized = `v${String(pkg.version || '').replace(/^v/i, '')}`;
+  if (pkgVerNormalized !== pubVer.version) {
+    issues.push(`Version mismatch: package.json (${pkgVerNormalized}) !== public/version.json (${pubVer.version})`);
+  }
+  if (!tsVer || tsVer.version !== pubVer.version || tsVer.buildHash !== pubVer.buildHash) {
+    issues.push(`Version/buildHash mismatch between src/config/appVersion.ts and public/version.json`);
+  }
+
+  // Check Multi-User Safe SW rules
+  if (fs.existsSync(VITE_CFG_PATH)) {
+    const viteRaw = fs.readFileSync(VITE_CFG_PATH, 'utf8');
+    if (viteRaw.includes('skipWaiting: true')) {
+      issues.push('CRITICAL MULTI-USER HAZARD: vite.config.ts contains skipWaiting: true (causes forced reload mid-work).');
+    }
+  }
+
+  if (fs.existsSync(MAIN_TSX_PATH)) {
+    const mainRaw = fs.readFileSync(MAIN_TSX_PATH, 'utf8');
+    if (/onNeedRefresh\s*\(\)\s*\{[\s\S]{0,120}window\.location\.reload/.test(mainRaw)) {
+      issues.push('CRITICAL MULTI-USER HAZARD: src/main.tsx calls window.location.reload() inside onNeedRefresh().');
+    }
+  }
+
+  // Check if Order / Resolusi tabs were modified in git working tree without FAQ check
+  let modifiedOrderFiles = [];
+  let faqModified = false;
+  try {
+    const gitOut = execSync('git status --porcelain', { cwd: ROOT, encoding: 'utf8' });
+    const lines = gitOut.split(/\r?\n/).filter(Boolean);
+    for (const line of lines) {
+      const f = line.slice(3).trim();
+      if (
+        f.includes('ManualShipmentTab.tsx') ||
+        f.includes('AlterationRepairTab.tsx') ||
+        f.includes('ReturBarangTab.tsx')
+      ) {
+        modifiedOrderFiles.push(f);
+      }
+      if (f.includes('initialStoreFaq.ts')) {
+        faqModified = true;
+      }
+    }
+  } catch {}
+
+  const report = {
+    checkedAt: new Date().toISOString(),
+    passed: issues.length === 0,
+    version: pubVer.version,
+    buildHash: pubVer.buildHash,
+    buildDate: pubVer.buildDate,
+    releaseTitle: pubVer.releaseTitle,
+    multiUserSafeSw: !issues.some(i => i.includes('MULTI-USER HAZARD')),
+    faqSyncNotice:
+      modifiedOrderFiles.length > 0 && !faqModified
+        ? `Order workflow files modified (${modifiedOrderFiles.join(', ')}) — verify if src/data/initialStoreFaq.ts needs role-aware FAQ updates.`
+        : 'OK',
+    issues
+  };
+
+  if (args.output) {
+    const outPath = path.resolve(ROOT, args.output);
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    fs.writeFileSync(outPath, JSON.stringify(report, null, 2) + '\n', 'utf8');
+    console.log(`Success! Release verification written to: ${outPath} (passed=${report.passed}, version=${report.version})`);
+  } else {
+    console.log(JSON.stringify(report, null, 2));
+  }
+
+  if (!report.passed) {
+    process.exit(1);
+  }
+}
+
+function runBump(args) {
   const current = parseCurrentVersionInfo();
   let history = parseExistingHistory();
 
@@ -114,7 +228,6 @@ function run() {
     return;
   }
 
-  // Archive current version into VERSION_HISTORY if not already present
   if (current && current.version) {
     history = [current, ...history.filter(h => h.version !== current.version)].slice(0, 8);
   }
@@ -156,7 +269,6 @@ function run() {
     minSupportedVersion: current.minSupportedVersion || 'v2.0.0'
   };
 
-  // Remove nextVersion from history if re-bumping same version
   history = history.filter(h => h.version !== nextInfo.version);
 
   // 1. Update package.json
@@ -229,9 +341,25 @@ export function isNewerVersion(
 `;
 
   fs.writeFileSync(APP_VER_PATH, tsContent, 'utf8');
-  console.log(`[VERSION BUMP] ${current.version} -> ${nextInfo.version} (${nextInfo.buildHash})`);
-  console.log(`[RELEASE TITLE] ${nextInfo.releaseTitle}`);
+
+  if (args.output) {
+    const outPath = path.resolve(ROOT, args.output);
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    fs.writeFileSync(outPath, JSON.stringify({ previousVersion: current.version, ...nextInfo }, null, 2) + '\n', 'utf8');
+    console.log(`Success! Version bumped ${current.version} -> ${nextInfo.version} and written to: ${outPath}`);
+  } else {
+    console.log(`[VERSION BUMP] ${current.version} -> ${nextInfo.version} (${nextInfo.buildHash})`);
+    console.log(`[RELEASE TITLE] ${nextInfo.releaseTitle}`);
+  }
 }
 
-run();
+function main() {
+  const args = parseArgs(process.argv);
+  if (args.subcommand === 'verify-release') {
+    runVerifyRelease(args);
+  } else {
+    runBump(args);
+  }
+}
 
+main();

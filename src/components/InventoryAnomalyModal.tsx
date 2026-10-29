@@ -64,10 +64,11 @@ export const InventoryAnomalyModal: React.FC<InventoryAnomalyModalProps> = ({
   const [editingItem, setEditingItem] = useState<AnomalyItem | null>(null);
   const [newNameInput, setNewNameInput] = useState('');
 
-  // Scan anomalies from catalog & physical stock
+  // Scan anomalies from catalog & physical stock (only when modal is open)
   const allAnomalies = useMemo(() => {
+    if (!isOpen) return [];
     return scanAnomalies(productCatalog, stockList);
-  }, [productCatalog, stockList]);
+  }, [isOpen, productCatalog, stockList]);
 
   // Statistics counters
   const stats = useMemo(() => {
