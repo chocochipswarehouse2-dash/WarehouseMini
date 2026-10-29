@@ -15,20 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.5.9",
-  "versionCode": 259,
+  "version": "v2.6.0",
+  "versionCode": 260,
   "buildDate": "29 Oktober 2026",
-  "buildHash": "wms-261029-v259-2127",
-  "releaseTitle": "WMS v2.5.9 — Pencegahan Anomali Scanner & Matching Selisih Nota vs Qty Hitung Ulang",
+  "buildHash": "wms-261029-v260-2304",
+  "releaseTitle": "WMS v2.6.0 — Rincian Row Total Datang, Total Hitung Ulang & Rumus 4-Kondisi Selisih Nota",
   "releaseNotes": [
-    "Mode ANOMALI dihapus dari Web Scanner & wajibkan pilih Mode (#IN/#OUT/#SO) serta Lokasi sebelum scan",
-    "Selisih Nota dan Status Audit kini menggunakan Qty Hitung Ulang sebagai pembanding akhir bila audit telah selesai",
-    "Formula Spreadsheet reaktif menghitung SUM(QTY HITUNG ULANG) - QTY NOTA otomatis"
+    "Rincian subtotal per baris ukuran ditampilkan langsung pada kolom TOTAL DATANG",
+    "Penambahan kolom TOTAL HITUNG ULANG pada level ringkasan blok model",
+    "Formula reaktif SELISIH NOTA 4-kondisi (Total Hitung - Nota, Total Awal - Nota, atau Total Hitung - Awal jika Nota kosong)",
+    "Pembaruan sinkron antara Frontend dan Google Spreadsheet Backend (v2.6.0)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.5.9",
+    "versionCode": 259,
+    "buildDate": "29 Oktober 2026",
+    "buildHash": "wms-261029-v259-2127",
+    "releaseTitle": "WMS v2.5.9 — Pencegahan Anomali Scanner & Matching Selisih Nota vs Qty Hitung Ulang",
+    "releaseNotes": [
+      "Mode ANOMALI dihapus dari Web Scanner & wajibkan pilih Mode (#IN/#OUT/#SO) serta Lokasi sebelum scan",
+      "Selisih Nota dan Status Audit kini menggunakan Qty Hitung Ulang sebagai pembanding akhir bila audit telah selesai",
+      "Formula Spreadsheet reaktif menghitung SUM(QTY HITUNG ULANG) - QTY NOTA otomatis"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.5.8",
     "versionCode": 258,
@@ -114,20 +128,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Pembaruan 1-Klik Tanpa Gangguan Sesi Login: Menghapus simulasi unduhan dua tahap; pembaruan langsung aktif dalam 1 klik dengan sesi akun (Store, Gudang, Admin) tetap 100% terjaga.",
       "Optimasi Performa Halaman Produksi: Menghapus bottleneck pembacaan katalog berulang sehingga tab Produksi dan Spreadsheet Matrix terbuka instan tanpa freeze.",
       "Standarisasi Tampilan Rekap Pesanan & Lokasi Rak Inventori: Penambahan opsi Panel Rapi (Master-Detail), penyempurnaan Versi Tabel, serta penggabungan otomatis lokasi rak identik."
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.5.1",
-    "versionCode": 251,
-    "buildDate": "25 Oktober 2026",
-    "buildHash": "wms-261025-v251",
-    "releaseTitle": "WMS v2.5.1 — Side-by-Side Inventory & Notifikasi Store",
-    "releaseNotes": [
-      "Penyajian Inventori Berdampingan (Side-by-Side): Tampilan data DealPOS (Marketplace & Perbaikan) berdampingan langsung dengan lokasi fisik rak tanpa distraksi selisih.",
-      "Kartu Inventori Mobile Touch-Optimized: Tata letak kartu per SKU yang ringkas dan responsif untuk audit fisik di lorong gudang via smartphone.",
-      "Notifikasi Otomatis WA Store (Fonnte): Pengiriman otomatis format permintaan kirim barang ke WhatsApp Store ketika pesanan manual shipment disubmit.",
-      "Sinkronisasi Kanal DealPOS Real-time: Integrasi data dealpos_channels dari Supabase dan mekanisme auto-heal cache lokal yang memastikan data kanal selalu akurat."
     ],
     "minSupportedVersion": "v2.0.0"
   }

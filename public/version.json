@@ -1,13 +1,14 @@
 {
-  "version": "v2.5.9",
-  "versionCode": 259,
+  "version": "v2.6.0",
+  "versionCode": 260,
   "buildDate": "29 Oktober 2026",
-  "buildHash": "wms-261029-v259-2127",
-  "releaseTitle": "WMS v2.5.9 — Pencegahan Anomali Scanner & Matching Selisih Nota vs Qty Hitung Ulang",
+  "buildHash": "wms-261029-v260-2304",
+  "releaseTitle": "WMS v2.6.0 — Rincian Row Total Datang, Total Hitung Ulang & Rumus 4-Kondisi Selisih Nota",
   "releaseNotes": [
-    "Mode ANOMALI dihapus dari Web Scanner & wajibkan pilih Mode (#IN/#OUT/#SO) serta Lokasi sebelum scan",
-    "Selisih Nota dan Status Audit kini menggunakan Qty Hitung Ulang sebagai pembanding akhir bila audit telah selesai",
-    "Formula Spreadsheet reaktif menghitung SUM(QTY HITUNG ULANG) - QTY NOTA otomatis"
+    "Rincian subtotal per baris ukuran ditampilkan langsung pada kolom TOTAL DATANG",
+    "Penambahan kolom TOTAL HITUNG ULANG pada level ringkasan blok model",
+    "Formula reaktif SELISIH NOTA 4-kondisi (Total Hitung - Nota, Total Awal - Nota, atau Total Hitung - Awal jika Nota kosong)",
+    "Pembaruan sinkron antara Frontend dan Google Spreadsheet Backend (v2.6.0)"
   ],
   "minSupportedVersion": "v2.0.0"
 }

@@ -2358,12 +2358,17 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                           </th>
                         )}
 
-                        {/* TOTAL DATANG (NET) */}
-                        <th rowSpan={2} className="py-2.5 px-3 min-w-[95px] bg-[#fce8e6] dark:bg-[#3d1e22]">
-                          TOTAL<br />{isCMT ? 'DATANG (NET)' : 'DITERIMA'}
+                        {/* 1. TOTAL DATANG PER ROW (UNMERGED) */}
+                        <th rowSpan={2} className="py-2.5 px-2.5 min-w-[70px] bg-[#fdf2f1] dark:bg-[#341b1e] text-slate-800 dark:text-rose-200">
+                          TOTAL<br />DATANG
                         </th>
 
-                        {/* KOLOM QTY NOTA (DIISI BUYER DI SPREADSHEET / FRONTEND) & SELISIH NOTA */}
+                        {/* 2. TOTAL AWAL (NET BLOK) */}
+                        <th rowSpan={2} className="py-2.5 px-3 min-w-[85px] bg-[#fce8e6] dark:bg-[#3d1e22]">
+                          TOTAL AWAL<br />{isCMT ? '(NET)' : 'DITERIMA'}
+                        </th>
+
+                        {/* 3. QTY NOTA (BLOK) */}
                         <th
                           rowSpan={2}
                           className="py-2.5 px-3 min-w-[95px] bg-amber-100 dark:bg-amber-950/60 text-amber-950 dark:text-amber-200"
@@ -2371,22 +2376,33 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                         >
                           QTY<br />NOTA
                         </th>
+
+                        {/* 4. TOTAL HITUNG ULANG (BLOK) */}
                         <th
                           rowSpan={2}
-                          className="py-2.5 px-3 min-w-[90px] bg-sky-100 dark:bg-sky-950/60 text-sky-950 dark:text-sky-200"
-                          title="Formula Otomatis: Total Diterima - Qty Nota (Jika selisih !== 0 otomatis masuk Antrian Hitung Ulang)"
+                          className="py-2.5 px-3 min-w-[95px] bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200"
+                          title="Total Fisik Hasil Audit Hitung Ulang (Keseluruhan Ukuran Model Ini)"
+                        >
+                          TOTAL<br />HITUNG ULANG
+                        </th>
+
+                        {/* 5. SELISIH NOTA (BLOK) */}
+                        <th
+                          rowSpan={2}
+                          className="py-2.5 px-3 min-w-[95px] bg-sky-100 dark:bg-sky-950/60 text-sky-950 dark:text-sky-200"
+                          title="Formula Selisih: Total Hitung - Nota, atau Total Awal - Nota, atau Total Hitung - Awal jika Nota kosong"
                         >
                           SELISIH<br />NOTA
                         </th>
 
-                        {/* KOLOM AUDIT / HASIL HITUNG ULANG FISIK */}
-                        <th rowSpan={2} className="py-2.5 px-3 min-w-[90px] bg-blue-50 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200">
+                        {/* 6-8. KOLOM RINCIAN AUDIT PER ROW */}
+                        <th rowSpan={2} className="py-2.5 px-2.5 min-w-[75px] bg-blue-50 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200">
                           FISIK<br />HITUNG
                         </th>
-                        <th rowSpan={2} className="py-2.5 px-3 min-w-[80px] bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200">
+                        <th rowSpan={2} className="py-2.5 px-2.5 min-w-[75px] bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200">
                           SELISIH<br />FISIK
                         </th>
-                        <th rowSpan={2} className="py-2.5 px-3 min-w-[105px] bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200">
+                        <th rowSpan={2} className="py-2.5 px-3 min-w-[90px] bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200">
                           STATUS
                         </th>
                       </tr>
@@ -2730,11 +2746,16 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                                   );
                                 })}
 
-                              {/* 10. TOTAL DATANG (NET) */}
+                              {/* 10a. TOTAL DATANG PER ROW (UNMERGED) */}
+                              <td className="py-2 px-2 text-center font-mono font-bold text-xs bg-slate-50/80 dark:bg-slate-800/40 text-slate-800 dark:text-slate-200 border-r border-slate-300 dark:border-slate-700">
+                                {sizeItem.totalSizeQty}
+                              </td>
+
+                              {/* 10b. TOTAL AWAL (NET BLOK) — Merged Per Block */}
                               {isFirstRowOfBlock && (
                                 <td
                                   rowSpan={totalSubRows}
-                                  className="py-3 px-2 text-center align-middle font-mono font-black text-sm text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-800/60"
+                                  className="py-3 px-2 text-center align-middle font-mono font-black text-sm text-slate-900 dark:text-white bg-slate-100/60 dark:bg-slate-800/60 border-r border-slate-300 dark:border-slate-700"
                                 >
                                   <div>{block.totalNet}</div>
                                   {isCMT && block.totalRetur ? (
@@ -2745,11 +2766,11 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                                 </td>
                               )}
 
-                              {/* 10b. QTY NOTA (BUYER) — Merged Per Block, Editable & Auto-Synced with Sheet + Supabase */}
+                              {/* 10c. QTY NOTA (BUYER) — Merged Per Block */}
                               {isFirstRowOfBlock && (
                                 <td
                                   rowSpan={totalSubRows}
-                                  className="py-2 px-2 text-center align-middle font-mono bg-amber-50/40 dark:bg-amber-950/20"
+                                  className="py-2 px-2 text-center align-middle font-mono bg-amber-50/40 dark:bg-amber-950/20 border-r border-slate-300 dark:border-slate-700"
                                 >
                                   <div className="flex flex-col items-center justify-center gap-1">
                                     <input
@@ -2790,62 +2811,94 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                                 </td>
                               )}
 
-                              {/* 10c. SELISIH NOTA (= Total Diterima - Qty Nota) — Merged Per Block */}
+                              {/* 10d. TOTAL HITUNG ULANG (FISIK) — Merged Per Block */}
                               {isFirstRowOfBlock && (
                                 <td
                                   rowSpan={totalSubRows}
-                                  className="py-2 px-2 text-center align-middle font-mono bg-sky-50/20 dark:bg-sky-950/10"
+                                  className="py-2 px-2 text-center align-middle font-mono bg-emerald-50/30 dark:bg-emerald-950/10 border-r border-slate-300 dark:border-slate-700"
+                                  title="Total Fisik Hasil Audit Hitung Ulang untuk seluruh ukuran model ini"
                                 >
-                                  {block.qtyNota !== null && block.qtyNota !== undefined ? (
-                                    (() => {
-                                      const diffNota = block.totalNet - Number(block.qtyNota);
-                                      if (diffNota === 0) {
-                                        return (
-                                          <div className="flex flex-col items-center gap-1">
-                                            <span className="inline-block px-2 py-0.5 rounded-lg text-xs font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                                              0
-                                            </span>
-                                            <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
-                                              ✅ Klop Nota
-                                            </span>
-                                          </div>
-                                        );
-                                      }
-                                      const isKurang = diffNota < 0;
-                                      return (
-                                        <div className="flex flex-col items-center gap-1">
-                                          <span
-                                            className={`inline-block px-2 py-0.5 rounded-lg text-xs font-black border ${
-                                              isKurang
-                                                ? 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800'
-                                                : 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800'
-                                            }`}
-                                          >
-                                            {diffNota > 0 ? `+${diffNota}` : diffNota}
-                                          </span>
-                                          <span
-                                            className={`text-[9px] font-bold ${
-                                              isKurang ? 'text-rose-600 dark:text-rose-400' : 'text-blue-600 dark:text-blue-400'
-                                            }`}
-                                          >
-                                            {isKurang ? `Kurang ${Math.abs(diffNota)}` : `Lebih +${diffNota}`}
-                                          </span>
-                                          {onOpenHitungUlang && (
-                                            <button
-                                              type="button"
-                                              onClick={() => onOpenHitungUlang(block.code)}
-                                              className="mt-0.5 px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-700 text-white text-[9px] font-bold transition cursor-pointer shadow-2xs"
-                                              title="Kode ini otomatis masuk Antrian Audit Hitung Ulang. Klik untuk buka lembar hitung ulang."
-                                            >
-                                              📋 Audit Antrian
-                                            </button>
-                                          )}
-                                        </div>
-                                      );
-                                    })()
+                                  {block.hasRecount && block.totalRecountFisik !== null && block.totalRecountFisik !== undefined ? (
+                                    <div className="flex flex-col items-center">
+                                      <span className="font-mono font-black text-sm text-emerald-800 dark:text-emerald-300">
+                                        {block.totalRecountFisik}
+                                      </span>
+                                      <span className="text-[9px] text-slate-400">pcs fisik</span>
+                                    </div>
                                   ) : (
                                     <span className="text-slate-300 dark:text-slate-700 text-xs">-</span>
                                   )}
+                                </td>
+                              )}
+
+                              {/* 10e. SELISIH NOTA — Merged Per Block (Mengikuti 4 Kondisi Pasti) */}
+                              {isFirstRowOfBlock && (
+                                <td
+                                  rowSpan={totalSubRows}
+                                  className="py-2 px-2 text-center align-middle font-mono bg-sky-50/20 dark:bg-sky-950/10 border-r border-slate-300 dark:border-slate-700"
+                                >
+                                  {(() => {
+                                    const hasNota = block.qtyNota !== null && block.qtyNota !== undefined;
+                                    const hasRecount = block.hasRecount && block.totalRecountFisik !== null && block.totalRecountFisik !== undefined;
+                                    let selisih: number | null = null;
+                                    let label = '';
+
+                                    // Kondisi 1 & 2: Jika Qty Nota terisi
+                                    if (hasNota) {
+                                      const base = hasRecount ? block.totalRecountFisik! : block.totalNet;
+                                      selisih = base - block.qtyNota!;
+                                      label = selisih === 0 ? '✅ Klop Nota' : (selisih < 0 ? `Kurang ${Math.abs(selisih)}` : `Lebih +${selisih}`);
+                                    } 
+                                    // Kondisi 3: Jika Qty Nota KOSONG tapi sudah ada Hitung Ulang
+                                    else if (hasRecount) {
+                                      selisih = block.totalRecountFisik! - block.totalNet;
+                                      label = selisih === 0 ? '✅ Klop SJ' : (selisih < 0 ? `Kurang ${Math.abs(selisih)}` : `Lebih +${selisih}`);
+                                    }
+
+                                    // Kondisi 4: Jika Qty Nota KOSONG dan belum hitung ulang
+                                    if (selisih === null) {
+                                      return <span className="text-slate-300 dark:text-slate-700 text-xs">-</span>;
+                                    }
+
+                                    const isMatch = selisih === 0;
+                                    const isKurang = selisih < 0;
+                                    return (
+                                      <div className="flex flex-col items-center gap-1">
+                                        <span
+                                          className={`inline-block px-2 py-0.5 rounded-lg text-xs font-black border ${
+                                            isMatch
+                                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+                                              : isKurang
+                                              ? 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800'
+                                              : 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800'
+                                          }`}
+                                        >
+                                          {selisih > 0 ? `+${selisih}` : selisih}
+                                        </span>
+                                        <span
+                                          className={`text-[9px] font-bold ${
+                                            isMatch
+                                              ? 'text-emerald-600 dark:text-emerald-400'
+                                              : isKurang
+                                              ? 'text-rose-600 dark:text-rose-400'
+                                              : 'text-blue-600 dark:text-blue-400'
+                                          }`}
+                                        >
+                                          {label}
+                                        </span>
+                                        {!isMatch && onOpenHitungUlang && (
+                                          <button
+                                            type="button"
+                                            onClick={() => onOpenHitungUlang(block.code)}
+                                            className="mt-0.5 px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-700 text-white text-[9px] font-bold transition cursor-pointer shadow-2xs"
+                                            title="Kode ini otomatis masuk Antrian Audit Hitung Ulang. Klik untuk buka lembar hitung ulang."
+                                          >
+                                            📋 Audit Antrian
+                                          </button>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
                                 </td>
                               )}
 
