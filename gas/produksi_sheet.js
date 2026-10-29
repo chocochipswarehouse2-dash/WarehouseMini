@@ -686,10 +686,10 @@ function scanExistingSheetBlocksData(sheet) {
             colQtyNota = c;
           } else if (hText.indexOf('SELISIH NOTA') !== -1 || (hText === 'SELISIH' && colQtyNota !== -1 && colFisik === -1)) {
             colSelisihNota = c;
-          } else if (hText.indexOf('FISIK') !== -1) {
-            colFisik = c;
-          } else if (hText.indexOf('SELISIH FISIK') !== -1 || (hText.indexOf('SELISIH') !== -1 && colFisik !== -1)) {
+          } else if (hText.indexOf('SELISIH') !== -1 && (hText.indexOf('FISIK') !== -1 || hText.indexOf('HITUNG') !== -1 || colFisik !== -1)) {
             colSelisihFisik = c;
+          } else if (hText.indexOf('FISIK') !== -1 || hText.indexOf('QTY HITUNG') !== -1) {
+            colFisik = c;
           } else if (hText.indexOf('STATUS AUDIT') !== -1 || hText === 'STATUS') {
             colStatus = c;
           } else if (hText.indexOf('LOG') !== -1 || hText.indexOf('RIWAYAT') !== -1) {
@@ -865,8 +865,8 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
     row1Vals.push('QTY NOTA');
     row1Vals.push('SELISIH');
     if (!isSpecificDate) {
-      row1Vals.push('FISIK HASIL HITUNG');
-      row1Vals.push('SELISIH FISIK');
+      row1Vals.push('QTY HITUNG ULANG');
+      row1Vals.push('SELISIH HITUNG ULANG');
       row1Vals.push('STATUS AUDIT');
       row1Vals.push('LOG HITUNG ULANG');
     }
@@ -931,6 +931,9 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
     headerRange.setFontSize(9);
     headerRange.setHorizontalAlignment('center');
     headerRange.setVerticalAlignment('middle');
+    headerRange.setWrap(true);
+    sheet.setRowHeight(headerRow1Index, 30);
+    sheet.setRowHeight(headerRow2Index, 30);
     headerRange.setBorder(true, true, true, true, true, true, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID);
 
     // Highlight Header QTY NOTA (Kuning Emas agar Buyer langsung melihat kolom input) & SELISIH
@@ -1066,7 +1069,14 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
         sheet.getRange(currentRow, 1, 1, dataRowVals.length).setValues([dataRowVals]);
         sheet.getRange(currentRow, 1, 1, 7).setNumberFormat('@');
         sheet.getRange(currentRow, 8, 1, totalCols - 7).setNumberFormat('0');
-        sheet.setRowHeight(currentRow, calculatedRowHeight);
+        // Tinggi baris otomatis: sesuaikan dengan panjang teks Log Hitung Ulang (kolom 260px ≈ 40 karakter/baris)
+        var logTextLen = 0;
+        if (!isSpecificDate) {
+          logTextLen = String(dataRowVals[dataRowVals.length - 1] || '').length;
+        }
+        var logLines = Math.max(1, Math.ceil(logTextLen / 38));
+        var rowHeightByText = logLines * 15 + 8;
+        sheet.setRowHeight(currentRow, Math.max(calculatedRowHeight, rowHeightByText));
         currentRow++;
       }
 
@@ -1098,6 +1108,7 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
       var blockDataRange = sheet.getRange(startDataRowIndex, 1, numBlockRows, totalCols);
       blockDataRange.setVerticalAlignment('middle');
       blockDataRange.setHorizontalAlignment('center');
+      blockDataRange.setWrap(true);
       blockDataRange.setFontSize(9.5);
       blockDataRange.setBorder(true, true, true, true, true, true, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID);
 
@@ -1208,14 +1219,14 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
     for (var colIdx = 8; colIdx < fColTotal; colIdx++) {
       sheet.setColumnWidth(colIdx, 65);
     }
-    sheet.setColumnWidth(fColTotal, 110);     // TOTAL DATANG (NET)
-    sheet.setColumnWidth(fColTotal + 1, 100); // QTY NOTA
-    sheet.setColumnWidth(fColTotal + 2, 95);  // SELISIH
+    sheet.setColumnWidth(fColTotal, 120);     // TOTAL DATANG (NET)
+    sheet.setColumnWidth(fColTotal + 1, 105); // QTY NOTA
+    sheet.setColumnWidth(fColTotal + 2, 100); // SELISIH
     if (!isSpecificDate) {
-      sheet.setColumnWidth(fColTotal + 3, 115); // FISIK HASIL HITUNG
-      sheet.setColumnWidth(fColTotal + 4, 95);  // SELISIH FISIK
+      sheet.setColumnWidth(fColTotal + 3, 125); // QTY HITUNG ULANG
+      sheet.setColumnWidth(fColTotal + 4, 130); // SELISIH HITUNG ULANG
       sheet.setColumnWidth(fColTotal + 5, 110); // STATUS AUDIT
-      sheet.setColumnWidth(fColTotal + 6, 220); // LOG HITUNG ULANG
+      sheet.setColumnWidth(fColTotal + 6, 260); // LOG HITUNG ULANG
     }
   }
 
@@ -1735,8 +1746,8 @@ function updateMasterRecountDelta(ss, data) {
 
     for (var c = 0; c < headerRow1.length; c++) {
       var hText = String(headerRow1[c]).trim().toUpperCase();
-      if (hText.indexOf('FISIK') !== -1) colFisik = c + 1;
-      else if (hText.indexOf('SELISIH FISIK') !== -1 || (hText.indexOf('SELISIH') !== -1 && colFisik !== -1 && colSelisih === -1)) colSelisih = c + 1;
+      if (hText.indexOf('SELISIH') !== -1 && (hText.indexOf('FISIK') !== -1 || hText.indexOf('HITUNG') !== -1 || colFisik !== -1) && colSelisih === -1) colSelisih = c + 1;
+      else if (hText.indexOf('FISIK') !== -1 || hText.indexOf('QTY HITUNG') !== -1) colFisik = c + 1;
       else if (hText.indexOf('STATUS AUDIT') !== -1 || hText === 'STATUS') colStatus = c + 1;
       else if (hText.indexOf('LOG') !== -1 || hText.indexOf('RIWAYAT') !== -1) colLog = c + 1;
     }
@@ -1751,7 +1762,7 @@ function updateMasterRecountDelta(ss, data) {
       colStatus = startNewCol + 2;
       colLog = startNewCol + 3;
 
-      var newHeaders = [['FISIK HASIL HITUNG', 'SELISIH FISIK', 'STATUS AUDIT', 'LOG HITUNG ULANG']];
+      var newHeaders = [['QTY HITUNG ULANG', 'SELISIH HITUNG ULANG', 'STATUS AUDIT', 'LOG HITUNG ULANG']];
       sheet.getRange(1, startNewCol, 1, 4).setValues(newHeaders);
       sheet.getRange(2, startNewCol, 1, 4).setValues([['', '', '', '']]);
       

@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.5.5",
-  "versionCode": 255,
+  "version": "v2.5.6",
+  "versionCode": 256,
   "buildDate": "29 Oktober 2026",
-  "buildHash": "wms-261029-v255-1729",
-  "releaseTitle": "WMS v2.5.5 — Integrasi Qty Nota Buyer & Auto-Antrian Audit",
+  "buildHash": "wms-261029-v256-1812",
+  "releaseTitle": "WMS v2.5.6 — Header Sheet Produksi Auto-Wrap & Istilah Qty Hitung Ulang",
   "releaseNotes": [
-    "Kolom QTY NOTA & SELISIH di sheet satuan dan master produksi",
-    "Qty Nota Buyer disinkron ke Supabase",
-    "Selisih nota otomatis masuk antrian Audit Hitung Ulang"
+    "Header kolom sheet produksi otomatis wrap dan tidak terpotong",
+    "Kolom FISIK HASIL HITUNG diganti QTY HITUNG ULANG agar konsisten",
+    "Tinggi baris menyesuaikan panjang Log Hitung Ulang"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.5.5",
+    "versionCode": 255,
+    "buildDate": "29 Oktober 2026",
+    "buildHash": "wms-261029-v255-1729",
+    "releaseTitle": "WMS v2.5.5 — Integrasi Qty Nota Buyer & Auto-Antrian Audit",
+    "releaseNotes": [
+      "Kolom QTY NOTA & SELISIH di sheet satuan dan master produksi",
+      "Qty Nota Buyer disinkron ke Supabase",
+      "Selisih nota otomatis masuk antrian Audit Hitung Ulang"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.5.4",
     "versionCode": 254,
