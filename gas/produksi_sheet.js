@@ -639,6 +639,7 @@ function buildBlocksFromItemsGAS(items, isCMT, specificDateStr) {
 function scanExistingSheetBlocksData(sheet) {
   var oldNotaMap = {}; // { [CODE]: { qtyNota, totalDiterima, selisihNota, rowNum, colQtyNota } }
   var oldDataMap = {}; // { [CODE_COLOR_SIZE]: { fisik, selisih, status, log } }
+  var scanError = '';
 
   try {
     var lastRow = sheet.getLastRow();
@@ -756,11 +757,13 @@ function scanExistingSheetBlocksData(sheet) {
     }
   } catch (eScan) {
     Logger.log('scanExistingSheetBlocksData error: ' + eScan);
+    scanError = String(eScan);
   }
 
   return {
     oldNotaMap: oldNotaMap,
-    oldDataMap: oldDataMap
+    oldDataMap: oldDataMap,
+    scanError: scanError
   };
 }
 
@@ -773,6 +776,11 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
   var existingScan = scanExistingSheetBlocksData(sheet);
   var oldNotaMap = existingScan.oldNotaMap || {};
   var oldDataMap = existingScan.oldDataMap || {};
+
+  // Pengaman: jika pembacaan sheet lama gagal, batalkan render agar Qty Nota Buyer tidak hilang
+  if (existingScan.scanError) {
+    throw new Error('Gagal membaca Qty Nota yang ada di sheet, push dibatalkan agar data Buyer aman: ' + existingScan.scanError);
+  }
 
   sheet.clearContents();
   sheet.clearFormats();
@@ -981,12 +989,14 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
     }
     var finalBlockTotalNet = computedBlockNet > 0 ? computedBlockNet : (Number(block.totalNet) || Number(block.totalDatang) || 0);
 
-    // Tentukan nilai awal QTY NOTA (prioritas: block.qtyNota dari WMS/Supabase -> oldNotaMap yang sudah diisi Buyer di Sheet -> kosong)
+    // Tentukan nilai awal QTY NOTA.
+    // PRIORITAS: nilai yang sudah diketik Buyer di Sheet (sumber kebenaran) -> block.qtyNota dari WMS/Supabase (fallback) -> kosong.
+    // Dengan begitu push/re-push dari aplikasi TIDAK PERNAH menimpa Qty Nota yang diketik manual oleh Buyer.
     var initialQtyNota = '';
-    if (block.qtyNota !== undefined && block.qtyNota !== null && block.qtyNota !== '') {
-      initialQtyNota = Number(block.qtyNota);
-    } else if (oldNotaMap[cleanBlockCode] && oldNotaMap[cleanBlockCode].qtyNota !== null && oldNotaMap[cleanBlockCode].qtyNota !== undefined && oldNotaMap[cleanBlockCode].qtyNota !== '') {
+    if (oldNotaMap[cleanBlockCode] && oldNotaMap[cleanBlockCode].qtyNota !== null && oldNotaMap[cleanBlockCode].qtyNota !== undefined && oldNotaMap[cleanBlockCode].qtyNota !== '') {
       initialQtyNota = Number(oldNotaMap[cleanBlockCode].qtyNota);
+    } else if (block.qtyNota !== undefined && block.qtyNota !== null && block.qtyNota !== '') {
+      initialQtyNota = Number(block.qtyNota);
     }
 
     var isFirstRowWritten = false;
