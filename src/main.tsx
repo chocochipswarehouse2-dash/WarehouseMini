@@ -30,8 +30,9 @@ import App from './App.tsx';
 import './index.css';
 import { setupOrientationAutoLock, isRunningInIframe } from './services/orientationLock';
 import { registerSW } from 'virtual:pwa-register';
+import { appUpdateManager } from './services/appUpdateService';
 
-// Auto-register and update Service Worker safely (only in standalone/top-level window, skipped in iframe preview)
+// Auto-register Service Worker safely (Multi-User Non-Disruptive: NEVER force reload mid-work!)
 try {
   const isIframe = isRunningInIframe();
 
@@ -40,7 +41,7 @@ try {
       immediate: true,
       onNeedRefresh() {
         try {
-          window.location.reload();
+          appUpdateManager.notifySwUpdateReady();
         } catch {}
       },
       onOfflineReady() {

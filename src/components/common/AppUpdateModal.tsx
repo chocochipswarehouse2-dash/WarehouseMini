@@ -5,22 +5,23 @@ import {
   Sparkles,
   CheckCircle2,
   AlertTriangle,
-  Download,
   Smartphone,
   Layers,
-  ArrowRight,
   ShieldCheck,
-  Minimize2,
-  HardDriveDownload,
   Info,
   RotateCw,
   Trash2,
   Database,
-  Lock,
-  UserCheck
+  ChevronDown,
+  ChevronUp,
+  History
 } from 'lucide-react';
 import { useAppUpdate } from '../../hooks/useAppUpdate';
-import { CURRENT_APP_VERSION, CURRENT_APP_VERSION_INFO } from '../../config/appVersion';
+import {
+  CURRENT_APP_VERSION_INFO,
+  VERSION_HISTORY,
+  isNewerVersion
+} from '../../config/appVersion';
 import { UserSession } from '../../types';
 import { isSuperadmin } from '../../services/permissions';
 
@@ -42,32 +43,43 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
     currentVersion,
     latestVersion,
     releaseInfo,
-    progress,
-    downloadStats,
     lastChecked,
     errorMessage,
     checkForUpdates,
-    startDownload,
     applyUpdate,
     clearCacheAndReload,
     setMinimized
   } = useAppUpdate();
 
   const [isClearingCache, setIsClearingCache] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const userIsAdmin = isSuperadmin(session);
 
   if (!isOpen) return null;
 
   const notes = releaseInfo?.releaseNotes || CURRENT_APP_VERSION_INFO.releaseNotes;
-  const isUpToDate = status === 'up-to-date' || (status !== 'available' && status !== 'ready' && currentVersion === latestVersion);
+  const hasUpdate =
+    status === 'available' ||
+    status === 'ready' ||
+    isNewerVersion(
+      latestVersion,
+      currentVersion,
+      releaseInfo?.buildHash,
+      CURRENT_APP_VERSION_INFO.buildHash
+    );
+  const isUpToDate = !hasUpdate && status !== 'downloading';
 
-  const handleMinimize = () => {
+  const handleDeferToNavigation = () => {
     setMinimized(true);
     onClose();
   };
 
   const handleEmergencyReset = async () => {
-    if (window.confirm('Tindakan ini akan membersihkan semua cache browser di perangkat ini, me-reset Service Worker, dan me-reload aplikasi. Data stok di server tetap aman. Lanjutkan?')) {
+    if (
+      window.confirm(
+        'Tindakan ini akan membersihkan cache file browser dan memuat ulang aplikasi. Sesi login Anda dan data stok di server tetap 100% aman. Lanjutkan?'
+      )
+    ) {
       setIsClearingCache(true);
       await clearCacheAndReload();
     }
@@ -75,10 +87,9 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg bg-white dark:bg-[#131d31] rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col my-8">
-        
-        {/* Header ala Android System Update */}
-        <div className="p-5 pb-4 bg-gradient-to-r from-slate-900 via-primary-950 to-slate-900 text-white relative">
+      <div className="relative w-full max-w-lg bg-white dark:bg-[#131d31] rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col my-8 max-h-[90vh]">
+        {/* Header */}
+        <div className="p-5 pb-4 bg-gradient-to-r from-slate-900 via-primary-950 to-slate-900 text-white relative shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-primary-500/20 border border-primary-500/30 flex items-center justify-center text-primary-400 shadow-inner">
@@ -87,210 +98,143 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
               <div>
                 <h3 className="text-base font-black tracking-tight text-white flex items-center gap-2">
                   {userIsAdmin ? 'Pembaruan Sistem WMS' : 'Pembaruan Aplikasi WMS'}
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                    userIsAdmin 
-                      ? 'bg-purple-500/30 text-purple-200 border-purple-400/40' 
-                      : 'bg-primary-500/30 text-primary-300 border-primary-500/40'
-                  }`}>
-                    {userIsAdmin ? 'SUPERADMIN' : 'CLIENT PWA'}
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                      userIsAdmin
+                        ? 'bg-purple-500/30 text-purple-200 border-purple-400/40'
+                        : 'bg-emerald-500/30 text-emerald-200 border-emerald-400/40'
+                    }`}
+                  >
+                    {userIsAdmin ? 'SUPERADMIN' : session?.role || 'AKTIF'}
                   </span>
                 </h3>
                 <p className="text-xs text-slate-300">
-                  {userIsAdmin 
-                    ? 'Pusat manajemen rilis aplikasi & status sistem gudang' 
-                    : 'Pembaruan berkas aplikasi di perangkat Anda'}
+                  Pembaruan aman tanpa memutus sesi login atau pekerjaan aktif
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-1">
-              {status === 'downloading' && (
-                <button
-                  type="button"
-                  onClick={handleMinimize}
-                  title="Minimize ke latar belakang"
-                  className="p-2 text-slate-300 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
-                >
-                  <Minimize2 className="w-4 h-4" />
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={onClose}
-                className="p-2 text-slate-300 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 text-slate-300 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </div>
 
         {/* Content Body */}
-        <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
-          
+        <div className="p-5 space-y-4 overflow-y-auto">
           {/* Card Status Versi Terpasang vs Versi Cloud */}
           <div className="grid grid-cols-2 gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800">
             <div className="space-y-1">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
-                Versi Terpasang
+                Versi Aktif di Perangkat
               </span>
               <div className="flex items-center gap-1.5">
                 <span className="text-sm font-black text-slate-800 dark:text-slate-100 font-mono">
                   {currentVersion}
                 </span>
-                <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" title="Aktif di browser ini" />
+                <span
+                  className="inline-block w-2 h-2 rounded-full bg-emerald-500"
+                  title="Aktif di browser ini"
+                />
               </div>
               <span className="text-[10px] text-slate-500 dark:text-slate-400 block truncate">
-                Build: {CURRENT_APP_VERSION_INFO.buildDate}
+                Rilis: {CURRENT_APP_VERSION_INFO.buildDate}
               </span>
             </div>
 
             <div className="space-y-1 border-l border-slate-200 dark:border-slate-800 pl-3">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
-                Versi Terbaru Cloud
+                Versi Terbaru Server
               </span>
               <div className="flex items-center gap-1.5">
                 <span className="text-sm font-black text-primary-600 dark:text-primary-400 font-mono">
                   {latestVersion}
                 </span>
-                {status === 'available' && (
+                {hasUpdate && (
                   <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 animate-pulse">
                     BARU
                   </span>
                 )}
               </div>
               <span className="text-[10px] text-slate-500 dark:text-slate-400 block truncate">
-                {lastChecked ? `Dicek: ${lastChecked.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Belum dicek'}
+                {lastChecked
+                  ? `Dicek: ${lastChecked.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                  : `Build: ${releaseInfo?.buildDate || CURRENT_APP_VERSION_INFO.buildDate}`}
               </span>
             </div>
           </div>
 
-          {/* STATE 1: DOWNLOADING (ANIMASI 0 - 100%) */}
+          {/* STATE 1: APPLYING UPDATE */}
           {status === 'downloading' && (
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-primary-500/5 via-primary-500/10 to-transparent border border-primary-500/30 space-y-3 animate-in fade-in">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-primary-500 text-white flex items-center justify-center animate-bounce shadow-md shadow-primary-500/30">
-                    <Download className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">
-                      Mengunduh Pembaruan...
-                    </h4>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      {downloadStats.stepMessage}
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <span className="text-lg font-black text-primary-600 dark:text-primary-400 font-mono">
-                    {progress}%
-                  </span>
-                </div>
+            <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-3 animate-in fade-in">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0">
+                <RotateCw className="w-5 h-5 animate-spin" />
               </div>
-
-              {/* Progress Bar Smooth */}
-              <div className="w-full bg-slate-200 dark:bg-slate-800 h-3 rounded-full overflow-hidden p-0.5 shadow-inner">
-                <div
-                  className="bg-gradient-to-r from-primary-600 via-primary-500 to-emerald-400 h-full rounded-full transition-all duration-300 ease-out relative"
-                  style={{ width: `${progress}%` }}
-                >
-                  <div className="absolute inset-0 bg-white/20 animate-pulse" />
-                </div>
-              </div>
-
-              {/* Data metrics */}
-              <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400 pt-1">
-                <span>{downloadStats.currentMB} MB / {downloadStats.totalMB} MB</span>
-                <span className="font-bold text-primary-500">{downloadStats.speed}</span>
-              </div>
-
-              <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-700 dark:text-amber-300 flex items-start gap-2">
-                <Info className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>
-                  <strong>Bebas Bekerja:</strong> Proses pengunduhan berjalan di latar belakang. Anda dapat menutup jendela ini dan tetap memindai / picking seperti biasa.
-                </span>
+              <div>
+                <h4 className="text-xs font-black text-slate-900 dark:text-white">
+                  Menerapkan Pembaruan {latestVersion}...
+                </h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Memuat ulang modul terbaru dengan tetap mempertahankan sesi login Anda.
+                </p>
               </div>
             </div>
           )}
 
-          {/* STATE 2: READY TO APPLY (100% SELESAI) */}
-          {status === 'ready' && (
-            <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 space-y-3 animate-in zoom-in-95">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30 shrink-0">
-                  <CheckCircle2 className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-black text-slate-900 dark:text-white">
-                    Pembaruan Siap Diterapkan!
-                  </h4>
-                  <p className="text-xs text-slate-600 dark:text-slate-300">
-                    Modul baru {latestVersion} telah siap dipasang. Klik tombol di bawah untuk memuat ulang aplikasi.
-                  </p>
-                </div>
-              </div>
-
-              <div className="pt-2 flex flex-col sm:flex-row gap-2">
-                <button
-                  type="button"
-                  onClick={() => applyUpdate()}
-                  className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black shadow-lg shadow-emerald-600/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <RotateCw className="w-4 h-4" />
-                  Mulai Ulang & Pasang Sekarang
-                </button>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition-colors cursor-pointer text-center"
-                >
-                  Nanti Saja
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* STATE 3: UPDATE AVAILABLE (BELUM DIUNDUH) */}
-          {status === 'available' && (
-            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-3 animate-in fade-in">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-lg shadow-amber-500/30 shrink-0">
+          {/* STATE 2: UPDATE READY / AVAILABLE (1-CLICK APPLY OR AUTO ON MENU SWITCH) */}
+          {hasUpdate && status !== 'downloading' && (
+            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-3 animate-in zoom-in-95">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-lg shadow-amber-500/25 shrink-0">
                   <Sparkles className="w-5 h-5" />
                 </div>
                 <div>
                   <h4 className="text-sm font-black text-slate-900 dark:text-white">
-                    Versi Baru Tersedia: {latestVersion}
+                    Pembaruan Tersedia ({latestVersion})
                   </h4>
-                  <p className="text-xs text-slate-600 dark:text-slate-300">
-                    Peningkatan sistem, fitur baru, dan perbaikan stabilitas gudang telah dirilis.
+                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
+                    Jika Anda sedang mengisi form atau melakukan scan, pilih{' '}
+                    <strong>Nanti (Otomatis Saat Pindah Menu)</strong> agar pekerjaan Anda tidak terputus.
                   </p>
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={startDownload}
-                className="w-full py-3 px-4 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-xs font-black shadow-lg shadow-primary-600/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <HardDriveDownload className="w-4 h-4" />
-                Unduh Pembaruan Sekarang (4.8 MB)
-              </button>
+              <div className="pt-1 flex flex-col sm:flex-row gap-2">
+                <button
+                  type="button"
+                  onClick={() => applyUpdate()}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <RotateCw className="w-4 h-4" />
+                  Perbarui Sekarang (1-Klik)
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeferToNavigation}
+                  className="py-2.5 px-3.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold transition-colors cursor-pointer text-center"
+                >
+                  Nanti (Saat Pindah Menu)
+                </button>
+              </div>
             </div>
           )}
 
-          {/* STATE 4: UP TO DATE */}
-          {isUpToDate && status !== 'downloading' && (
+          {/* STATE 3: UP TO DATE */}
+          {isUpToDate && (
             <div className="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                <ShieldCheck className="w-5 h-5" />
+                <CheckCircle2 className="w-5 h-5" />
               </div>
               <div className="min-w-0">
                 <h4 className="text-xs font-black text-slate-800 dark:text-slate-100">
-                  Sistem Sudah Menggunakan Versi Terbaru
+                  Aplikasi Sudah Menggunakan Versi Terbaru ({currentVersion})
                 </h4>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Tidak ada pembaruan tertunda. Semua modul operasional siap digunakan dengan lancar.
+                  Semua modul operasional berjalan pada rilis terbaru dan terproteksi dari reload mendadak.
                 </p>
               </div>
             </div>
@@ -302,25 +246,40 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               <div className="min-w-0 flex-1">
                 <span className="font-bold block">Pemeriksaan Pembaruan Terkendala</span>
-                <span className="text-[11px] text-slate-600 dark:text-slate-300 block">{errorMessage}</span>
+                <span className="text-[11px] text-slate-600 dark:text-slate-300 block">
+                  {errorMessage}
+                </span>
               </div>
             </div>
           )}
+
+          {/* MULTI-USER SAFE UPDATE PROTECTION INFO */}
+          <div className="p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/70 dark:border-indigo-800/50 text-[11px] text-slate-600 dark:text-slate-300 flex items-start gap-2.5">
+            <Info className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <span className="font-extrabold text-slate-800 dark:text-slate-100 block">
+                Proteksi Multi-User & Sesi Login Aktif
+              </span>
+              <span>
+                Sistem tidak akan pernah me-reload layar secara paksa saat Anda sedang mengetik pesanan, mengedit tabel, atau memindai barcode. Sesi login akun Anda tetap tersimpan 100% saat pembaruan diterapkan.
+              </span>
+            </div>
+          </div>
 
           {/* RELEASE HIGHLIGHTS / CHANGELOG BOX */}
           <div className="space-y-2 pt-1">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                 <Layers className="w-3.5 h-3.5 text-primary-500" />
-                Catatan Rilis & Fitur Baru
+                Catatan Rilis Terbaru
               </h4>
               <span className="text-[10px] font-bold text-slate-400 font-mono">
-                {releaseInfo?.version || currentVersion}
+                {releaseInfo?.version || currentVersion} · {releaseInfo?.buildDate || CURRENT_APP_VERSION_INFO.buildDate}
               </span>
             </div>
 
             <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
-              <div className="font-bold text-slate-800 dark:text-slate-200 text-[11px] pb-1 border-b border-slate-200 dark:border-slate-800">
+              <div className="font-bold text-slate-800 dark:text-slate-200 text-[11px] pb-1.5 border-b border-slate-200 dark:border-slate-800">
                 {releaseInfo?.releaseTitle || CURRENT_APP_VERSION_INFO.releaseTitle}
               </div>
               <ul className="space-y-1.5 text-slate-600 dark:text-slate-400 text-[11px]">
@@ -332,6 +291,49 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                 ))}
               </ul>
             </div>
+
+            {/* Collapsible Previous Release History */}
+            {VERSION_HISTORY && VERSION_HISTORY.length > 0 && (
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowHistory((prev) => !prev)}
+                  className="w-full py-2 px-3 rounded-xl bg-slate-100/80 dark:bg-slate-800/60 hover:bg-slate-200/70 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] font-bold flex items-center justify-between transition-colors cursor-pointer"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <History className="w-3.5 h-3.5 text-slate-400" />
+                    Riwayat Pembaruan Sebelumnya ({VERSION_HISTORY.length} versi)
+                  </span>
+                  {showHistory ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                </button>
+
+                {showHistory && (
+                  <div className="mt-2 space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {VERSION_HISTORY.map((hist) => (
+                      <div
+                        key={hist.version}
+                        className="p-3 rounded-xl bg-slate-50/70 dark:bg-slate-900/30 border border-slate-200/80 dark:border-slate-800/80 space-y-1.5 text-[11px]"
+                      >
+                        <div className="flex items-center justify-between font-bold text-slate-700 dark:text-slate-200">
+                          <span>{hist.releaseTitle}</span>
+                          <span className="text-[10px] font-mono text-slate-400 shrink-0 ml-2">
+                            {hist.buildDate}
+                          </span>
+                        </div>
+                        <ul className="space-y-1 text-slate-500 dark:text-slate-400 text-[10px]">
+                          {hist.releaseNotes.map((n, idx) => (
+                            <li key={idx} className="flex items-start gap-1.5">
+                              <span className="w-1 h-1 rounded-full bg-slate-400 mt-1.5 shrink-0" />
+                              <span>{n}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* SUPERADMIN ONLY TOOLS: Database Update & Master Produk */}
@@ -347,7 +349,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                 </span>
               </div>
               <p className="text-[11px] text-slate-600 dark:text-slate-400">
-                Pembaruan ini adalah kode aplikasi web (PWA). Jika ingin mengunggah master produk CSV ke database Supabase, gunakan fitur Update Database di bawah:
+                Pembaruan di atas adalah versi aplikasi web. Untuk mengunggah Master Produk CSV ke database Supabase, gunakan menu di bawah:
               </p>
               {onOpenUpdateDatabase && (
                 <button
@@ -362,16 +364,6 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                   Buka Menu Update Database Master Produk (2 CSV)
                 </button>
               )}
-            </div>
-          )}
-
-          {/* NON-ADMIN EXPLANATION NOTE */}
-          {!userIsAdmin && (
-            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 flex items-start gap-2">
-              <Info className="w-4 h-4 text-primary-500 shrink-0 mt-0.5" />
-              <span>
-                <strong>Aman Digunakan:</strong> Pembaruan ini hanya mengunduh pembaruan tampilan dan sistem pembacaan scanner di perangkat/browser Anda. Data stok server, nomor resi, dan riwayat mutasi tidak akan terpengaruh.
-              </span>
             </div>
           )}
 
@@ -392,21 +384,15 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                 type="button"
                 onClick={handleEmergencyReset}
                 disabled={isClearingCache}
-                title="Bersihkan cache browser jika aplikasi terasa lambat atau stuck di versi lama"
+                title="Bersihkan cache file browser tanpa menghapus sesi login jika aplikasi terasa lambat"
                 className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-950/40 text-slate-600 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer border border-transparent hover:border-rose-200 dark:hover:border-rose-800"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Bersihkan Cache</span>
+                <span className="hidden sm:inline">Reset Cache</span>
               </button>
             </div>
-            
-            <p className="text-[10px] text-center text-slate-400 dark:text-slate-500">
-              Pembaruan berjalan dengan aman tanpa menghapus riwayat scan atau data lokal perangkat Anda.
-            </p>
           </div>
-
         </div>
-
       </div>
     </div>
   );

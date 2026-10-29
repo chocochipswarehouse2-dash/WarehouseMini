@@ -602,16 +602,39 @@ export default function App() {
     };
   }, [session?.username]);
 
-  // Handler navigasi dengan verifikasi izin halaman
+  // Handler navigasi dengan verifikasi izin halaman & Auto-Update Aman saat pindah menu utama
   const handleSelectPage = useCallback((page: ActivePage) => {
     if (!canAccessPage(session, page)) {
       showToast('Akses ditolak: Akun Anda tidak memiliki hak akses untuk modul ini.', 'warning');
       return;
     }
+
+    // Jika ada pembaruan versi yang menunggu dan user sedang berpindah menu utama (tanpa draft scan yang belum disimpan)
+    if (page !== activePage && appUpdateManager.hasPendingUpdate()) {
+      let hasStagingScans = false;
+      try {
+        const rawDraft = localStorage.getItem('wms_active_staging_scans');
+        hasStagingScans = Boolean(rawDraft && JSON.parse(rawDraft)?.length > 0);
+      } catch {}
+
+      if (!hasStagingScans) {
+        try {
+          localStorage.setItem('wms_last_active_page', page);
+          if (!isRunningInIframe()) {
+            const targetPath = PAGE_TO_PATH[page] || page;
+            const expectedUrl = targetPath === 'dashboard' ? '/' : `/${targetPath}`;
+            window.history.pushState({ page }, '', expectedUrl);
+          }
+        } catch {}
+        appUpdateManager.applyUpdate();
+        return;
+      }
+    }
+
     startTransition(() => {
       setActivePage(page);
     });
-  }, [session]);
+  }, [session, activePage]);
 
   // Handler pembukaan pengaturan sistem dengan verifikasi izin
   const handleOpenSettings = useCallback(() => {
@@ -705,7 +728,7 @@ export default function App() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [gmpQuotaExceeded, setGmpQuotaExceeded] = useState<boolean>(false);
 
-  // Periodik & Otomatis Cek Pembaruan Versi WMS (Latar Belakang ala Android)
+  // Periodik & Otomatis Cek Pembaruan Versi WMS (Aman untuk Multi-User Login)
   useEffect(() => {
     const bootTimer = setTimeout(() => {
       appUpdateManager.checkForUpdates(true);
@@ -713,11 +736,19 @@ export default function App() {
 
     const intervalTimer = setInterval(() => {
       appUpdateManager.checkForUpdates(true);
-    }, 30 * 60 * 1000); // Setiap 30 menit
+    }, 10 * 60 * 1000); // Setiap 10 menit
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        appUpdateManager.checkForUpdates(true);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       clearTimeout(bootTimer);
       clearInterval(intervalTimer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 

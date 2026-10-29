@@ -711,7 +711,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     : 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
                 }`}
               >
-                {hasUpdatePending ? 'UPDATE' : CURRENT_APP_VERSION}
+                {hasUpdatePending ? `BARU ${latestVersion}` : CURRENT_APP_VERSION}
               </span>
             </div>
           )}

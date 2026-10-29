@@ -17,7 +17,16 @@ Trigger this workflow automatically at the conclusion of every task that modifie
 
 ## Standard Execution Procedure
 
-### Step 1: Verification & Build
+### Step 1: Bump App Version & Sync Release Notes (If Frontend `src/` Changed)
+Whenever frontend code, UI, or client logic in `src/` was modified, automatically bump the application version and update the release notes before building:
+```bash
+node tools/bump_version.cjs --title "<Concise Release Title>" --notes "<Highlight 1>|<Highlight 2>"
+```
+This atomically updates `package.json`, `src/config/appVersion.ts` (including `VERSION_HISTORY`), and `public/version.json`.
+
+---
+
+### Step 2: Verification & Build
 Always ensure the TypeScript project compiles and bundles with zero errors:
 ```bash
 npm run build

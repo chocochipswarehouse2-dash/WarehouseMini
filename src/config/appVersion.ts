@@ -1,6 +1,7 @@
 /**
  * App Version & Release Configuration
  * Single Source of Truth for WMS Application Version
+ * Auto-managed by tools/bump_version.cjs
  */
 
 export interface VersionInfo {
@@ -14,24 +15,41 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  version: 'v2.5.1',
-  versionCode: 251,
-  buildDate: '25 Oktober 2026',
-  buildHash: 'wms-261025-v251',
-  releaseTitle: 'WMS v2.5.1 — Side-by-Side Inventory & Notifikasi Store',
-  releaseNotes: [
-    'Penyajian Inventori Berdampingan (Side-by-Side): Tampilan data DealPOS (Marketplace & Perbaikan) berdampingan langsung dengan lokasi fisik rak tanpa distraksi selisih.',
-    'Kartu Inventori Mobile Touch-Optimized: Tata letak kartu per SKU yang ringkas dan responsif untuk audit fisik di lorong gudang via smartphone.',
-    'Notifikasi Otomatis WA Store (Fonnte): Pengiriman otomatis format permintaan kirim barang ke WhatsApp Store ketika pesanan manual shipment disubmit.',
-    'Sinkronisasi Kanal DealPOS Real-time: Integrasi data dealpos_channels dari Supabase dan mekanisme auto-heal cache lokal yang memastikan data kanal selalu akurat.'
+  "version": "v2.5.2",
+  "versionCode": 252,
+  "buildDate": "29 Oktober 2026",
+  "buildHash": "wms-261029-v252-1046",
+  "releaseTitle": "WMS v2.5.2 — Pembaruan Aman Multi-User & Optimasi Instan Produksi",
+  "releaseNotes": [
+    "Sistem Pembaruan Aman Multi-User (Zero Forced-Reload): Pembaruan sistem tidak lagi me-reload halaman secara paksa saat user sedang mengisi form atau scan barcode, serta otomatis diterapkan secara mulus saat berpindah menu utama.",
+    "Pembaruan 1-Klik Tanpa Gangguan Sesi Login: Menghapus simulasi unduhan dua tahap; pembaruan langsung aktif dalam 1 klik dengan sesi akun (Store, Gudang, Admin) tetap 100% terjaga.",
+    "Optimasi Performa Halaman Produksi: Menghapus bottleneck pembacaan katalog berulang sehingga tab Produksi dan Spreadsheet Matrix terbuka instan tanpa freeze.",
+    "Standarisasi Tampilan Rekap Pesanan & Lokasi Rak Inventori: Penambahan opsi Panel Rapi (Master-Detail), penyempurnaan Versi Tabel, serta penggabungan otomatis lokasi rak identik."
   ],
-  minSupportedVersion: 'v2.0.0'
+  "minSupportedVersion": "v2.0.0"
 };
+
+export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.5.1",
+    "versionCode": 251,
+    "buildDate": "25 Oktober 2026",
+    "buildHash": "wms-261025-v251",
+    "releaseTitle": "WMS v2.5.1 — Side-by-Side Inventory & Notifikasi Store",
+    "releaseNotes": [
+      "Penyajian Inventori Berdampingan (Side-by-Side): Tampilan data DealPOS (Marketplace & Perbaikan) berdampingan langsung dengan lokasi fisik rak tanpa distraksi selisih.",
+      "Kartu Inventori Mobile Touch-Optimized: Tata letak kartu per SKU yang ringkas dan responsif untuk audit fisik di lorong gudang via smartphone.",
+      "Notifikasi Otomatis WA Store (Fonnte): Pengiriman otomatis format permintaan kirim barang ke WhatsApp Store ketika pesanan manual shipment disubmit.",
+      "Sinkronisasi Kanal DealPOS Real-time: Integrasi data dealpos_channels dari Supabase dan mekanisme auto-heal cache lokal yang memastikan data kanal selalu akurat."
+    ],
+    "minSupportedVersion": "v2.0.0"
+  }
+];
 
 export const CURRENT_APP_VERSION = CURRENT_APP_VERSION_INFO.version;
 
 /**
- * Compare two semver-like strings (e.g. 'v2.5.0' vs 'v2.5.1')
+ * Compare two semver-like strings (e.g. 'v2.5.1' vs 'v2.5.2')
  * Returns:
  *   1 if v1 > v2
  *  -1 if v1 < v2
@@ -52,7 +70,17 @@ export function compareVersions(v1: string, v2: string): number {
   return 0;
 }
 
-export function isNewerVersion(serverVersion: string, clientVersion: string = CURRENT_APP_VERSION): boolean {
+export function isNewerVersion(
+  serverVersion: string,
+  clientVersion: string = CURRENT_APP_VERSION,
+  serverBuildHash?: string,
+  clientBuildHash: string = CURRENT_APP_VERSION_INFO.buildHash
+): boolean {
   if (!serverVersion) return false;
-  return compareVersions(serverVersion, clientVersion) > 0;
+  const cmp = compareVersions(serverVersion, clientVersion);
+  if (cmp > 0) return true;
+  if (cmp === 0 && serverBuildHash && clientBuildHash && serverBuildHash !== clientBuildHash) {
+    return true;
+  }
+  return false;
 }

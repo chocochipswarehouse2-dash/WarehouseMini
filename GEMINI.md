@@ -14,17 +14,19 @@ Whenever database schemas, table structures, or payload models are updated (whet
 
 ## 3. Post-Task: Build, Auto-Deploy & Proactive Status Reporting
 Whenever modifications are completed, execute the full deployment lifecycle without waiting for user prompts:
-1. **Validate Build**: Run `npm run build` to verify that there are no compilation or bundling errors.
-2. **Deploy Google Apps Script (GAS)**: If any file under `gas/` or GAS deployment scripts was touched, run:
+1. **Bump Version & Release Notes (When Frontend `src/` Changes)**: Run `node tools/bump_version.cjs --title "<Judul Rilis>" --notes "<Catatan 1>|<Catatan 2>"` so `package.json`, `src/config/appVersion.ts`, and `public/version.json` are always synchronized with the latest version (`v2.5.x`) and changelog (adhering to `.agents/skills/wms-app-release-update/SKILL.md`).
+2. **Validate Build**: Run `npm run build` to verify that there are no compilation or bundling errors.
+3. **Deploy Google Apps Script (GAS)**: If any file under `gas/` or GAS deployment scripts was touched, run:
    ```bash
    node tools/gas_deploy.cjs
    ```
    Confirm new project version and active deployment update.
-3. **Commit & Push (Vercel)**: Stage changes, commit with a concise conventional commit message, and push to GitHub:
+4. **Commit & Push (Vercel)**: Stage changes (including `package.json`, `src/config/appVersion.ts`, and `public/version.json`), commit with a concise conventional commit message, and push to GitHub:
    ```bash
    git push origin main
    ```
-4. **Mandatory Proactive Deployment Status**: ALWAYS include a dedicated `### 🚀 Deployment Status` table in the response detailing:
+5. **Mandatory Proactive Deployment Status**: ALWAYS include a dedicated `### 🚀 Deployment Status` table in the response detailing:
+   - App Release Version (`v2.5.x`) & Build Hash
    - Git Commit Hash & Message
    - GitHub / Vercel auto-deploy status
    - Google Apps Script version & deployment status

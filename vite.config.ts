@@ -24,17 +24,18 @@ export default defineConfig(({ command }) => {
       react(),
       tailwindcss(),
       VitePWA({
-        registerType: 'autoUpdate',
+        registerType: 'prompt',
         injectRegister: null,
         manifestFilename: 'manifest-portrait.json',
         devOptions: {
           enabled: false,
         },
         workbox: {
-          skipWaiting: true,
-          clientsClaim: true,
+          skipWaiting: false,
+          clientsClaim: false,
           cleanupOutdatedCaches: true,
           globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+          globIgnores: ['**/version.json'],
           importScripts: ['pwa-extras.js'],
           navigateFallback: 'index.html',
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,

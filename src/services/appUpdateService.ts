@@ -1,24 +1,23 @@
 /**
  * App Update Service
- * Handles Android-style app version checking, background downloading with 0-100% progress,
- * and seamless application reload without disturbing active warehouse operations.
+ * Handles Multi-User Safe OTA version checking, zero forced-reload protection during active work,
+ * automatic seamless update on safe menu navigation, and 1-click instant reload while preserving login sessions.
  */
 
 import {
   CURRENT_APP_VERSION,
   CURRENT_APP_VERSION_INFO,
   VersionInfo,
-  compareVersions,
   isNewerVersion
 } from '../config/appVersion';
 
-export type UpdateStatus = 
-  | 'idle' 
-  | 'checking' 
-  | 'up-to-date' 
-  | 'available' 
-  | 'downloading' 
-  | 'ready' 
+export type UpdateStatus =
+  | 'idle'
+  | 'checking'
+  | 'up-to-date'
+  | 'available'
+  | 'downloading'
+  | 'ready'
   | 'error';
 
 export interface DownloadStats {
@@ -52,9 +51,9 @@ class AppUpdateManager {
     progress: 0,
     downloadStats: {
       currentMB: 0,
-      totalMB: 4.8,
-      speed: '0 MB/s',
-      stepMessage: 'Menunggu perintah unduh...'
+      totalMB: 0,
+      speed: '',
+      stepMessage: 'Siap memperbarui sistem'
     },
     lastChecked: null,
     errorMessage: null,
@@ -63,7 +62,8 @@ class AppUpdateManager {
   };
 
   private listeners = new Set<Listener>();
-  private downloadInterval: any = null;
+  private isApplyingUpdate = false;
+  private lastAutoCheckMs = 0;
 
   constructor() {
     this.initServiceWorkerListener();
@@ -85,32 +85,67 @@ class AppUpdateManager {
     return { ...this.state };
   }
 
+  public hasPendingUpdate(): boolean {
+    return (
+      this.state.status === 'available' ||
+      this.state.status === 'ready' ||
+      Boolean(this.state.waitingWorker) ||
+      isNewerVersion(
+        this.state.latestVersion,
+        CURRENT_APP_VERSION,
+        this.state.releaseInfo?.buildHash,
+        CURRENT_APP_VERSION_INFO.buildHash
+      )
+    );
+  }
+
   public setMinimized(minimized: boolean) {
     this.state.isMinimized = minimized;
     this.notify();
   }
 
   /**
-   * Listen to browser Service Worker registration lifecycle
+   * Called by virtual:pwa-register onNeedRefresh without forcing a reload
+   */
+  public notifySwUpdateReady(worker?: ServiceWorker | null) {
+    if (worker) {
+      this.state.waitingWorker = worker;
+    }
+    if (this.state.status !== 'downloading') {
+      this.state.status = 'ready';
+      this.state.progress = 100;
+      this.notify();
+    }
+    // Also fetch latest version.json metadata quietly so we show the new version number & release notes
+    this.fetchServerVersionJson().then((serverInfo) => {
+      if (serverInfo) {
+        this.state.latestVersion = serverInfo.version || this.state.latestVersion;
+        this.state.releaseInfo = serverInfo;
+        this.notify();
+      }
+    }).catch(() => {});
+  }
+
+  /**
+   * Listen to browser Service Worker registration lifecycle safely (NO forced reload mid-work)
    */
   private initServiceWorkerListener() {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
       return;
     }
 
-    // Refresh if controller changes and we triggered skipWaiting
+    // Only reload on controllerchange if the update was intentionally triggered by applyUpdate()
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      console.log('[AppUpdate] Controller changed! New version active.');
+      if (this.isApplyingUpdate) {
+        window.location.reload();
+      }
     });
 
     navigator.serviceWorker.getRegistration().then((reg) => {
       if (!reg) return;
 
       if (reg.waiting) {
-        this.state.waitingWorker = reg.waiting;
-        this.state.status = 'ready';
-        this.state.progress = 100;
-        this.notify();
+        this.notifySwUpdateReady(reg.waiting);
       }
 
       reg.addEventListener('updatefound', () => {
@@ -119,16 +154,46 @@ class AppUpdateManager {
 
         installingWorker.addEventListener('statechange', () => {
           if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-            this.state.waitingWorker = installingWorker;
-            this.state.status = 'ready';
-            this.state.progress = 100;
-            this.notify();
+            this.notifySwUpdateReady(installingWorker);
           }
         });
       });
     }).catch(err => {
       console.warn('[AppUpdate] SW registration check warning:', err);
     });
+  }
+
+  private async fetchServerVersionJson(): Promise<VersionInfo | null> {
+    try {
+      const timestamp = Date.now();
+      const res = await fetch(`/version.json?t=${timestamp}`, {
+        cache: 'no-store',
+        headers: {
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      });
+
+      if (res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        const rawText = await res.text();
+        const trimmed = rawText.trim();
+        if (
+          (contentType.includes('application/json') || trimmed.startsWith('{')) &&
+          !trimmed.startsWith('<!') &&
+          !trimmed.startsWith('<html')
+        ) {
+          const parsed = JSON.parse(trimmed);
+          if (parsed && typeof parsed === 'object' && typeof parsed.version === 'string') {
+            return parsed as VersionInfo;
+          }
+        }
+      }
+    } catch {
+      // Ignore transient network errors
+    }
+    return null;
   }
 
   /**
@@ -139,12 +204,20 @@ class AppUpdateManager {
       return this.getState();
     }
 
-    this.state.status = 'checking';
-    this.state.errorMessage = null;
-    this.notify();
+    // Throttle automatic checks to at most once every 60 seconds
+    if (isAuto && Date.now() - this.lastAutoCheckMs < 60_000) {
+      return this.getState();
+    }
+    this.lastAutoCheckMs = Date.now();
+
+    if (!isAuto) {
+      this.state.status = 'checking';
+      this.state.errorMessage = null;
+      this.notify();
+    }
 
     try {
-      // 1. Trigger Service Worker update check
+      // 1. Trigger Service Worker update check quietly
       if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
         try {
           const reg = await navigator.serviceWorker.getRegistration();
@@ -160,40 +233,15 @@ class AppUpdateManager {
       }
 
       // 2. Query public/version.json with cache-busting timestamp and no-cache headers
-      let serverVersionInfo: VersionInfo | null = null;
-      try {
-        const timestamp = Date.now();
-        const res = await fetch(`/version.json?t=${timestamp}`, {
-          cache: 'no-store',
-          headers: {
-            'Accept': 'application/json',
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache'
-          }
-        });
-
-        if (res.ok) {
-          const contentType = res.headers.get('content-type') || '';
-          const rawText = await res.text();
-          const trimmed = rawText.trim();
-          if (
-            (contentType.includes('application/json') || trimmed.startsWith('{')) &&
-            !trimmed.startsWith('<!') &&
-            !trimmed.startsWith('<html')
-          ) {
-            const parsed = JSON.parse(trimmed);
-            if (parsed && typeof parsed === 'object' && typeof parsed.version === 'string') {
-              serverVersionInfo = parsed as VersionInfo;
-            }
-          }
-        }
-      } catch {
-        // Ignore transient network errors or non-JSON SPA fallback responses
-        serverVersionInfo = null;
-      }
+      const serverVersionInfo = await this.fetchServerVersionJson();
 
       const latestVer = serverVersionInfo?.version || CURRENT_APP_VERSION;
-      const hasNewVersion = isNewerVersion(latestVer, CURRENT_APP_VERSION);
+      const hasNewVersion = isNewerVersion(
+        latestVer,
+        CURRENT_APP_VERSION,
+        serverVersionInfo?.buildHash,
+        CURRENT_APP_VERSION_INFO.buildHash
+      );
       const isSwReady = Boolean(this.state.waitingWorker);
 
       this.state.lastChecked = new Date();
@@ -203,12 +251,12 @@ class AppUpdateManager {
         this.state.releaseInfo = serverVersionInfo;
       }
 
-      if (isSwReady) {
+      if (isSwReady || hasNewVersion) {
         this.state.status = 'ready';
         this.state.progress = 100;
-      } else if (hasNewVersion) {
-        this.state.status = 'available';
-        this.state.progress = 0;
+        if (!isAuto) {
+          this.state.isMinimized = false;
+        }
       } else {
         this.state.status = 'up-to-date';
         this.state.progress = 0;
@@ -216,8 +264,7 @@ class AppUpdateManager {
 
       this.notify();
       return this.getState();
-    } catch (err: any) {
-      // If error but we have a waiting worker, we are still ready to update
+    } catch {
       if (this.state.waitingWorker) {
         this.state.status = 'ready';
         this.state.progress = 100;
@@ -232,95 +279,52 @@ class AppUpdateManager {
   }
 
   /**
-   * Start downloading update with realistic smooth 0-100% progress
+   * 1-Click Direct Apply (kept for backward compatibility with callers of startDownload)
    */
   public startDownload(): void {
-    if (this.state.status === 'downloading' || this.state.status === 'ready') {
-      return;
-    }
-
-    this.state.status = 'downloading';
-    this.state.progress = 0;
-    this.state.errorMessage = null;
-
-    const totalMB = 4.8;
-    this.state.downloadStats = {
-      currentMB: 0,
-      totalMB,
-      speed: '1.4 MB/s',
-      stepMessage: 'Menyiapkan paket instalasi...'
-    };
-    this.notify();
-
-    if (this.downloadInterval) {
-      clearInterval(this.downloadInterval);
-    }
-
-    let progress = 0;
-    this.downloadInterval = setInterval(() => {
-      // Realistic variable step
-      const increment = Math.floor(Math.random() * 8) + 4; // 4% to 11% per tick
-      progress = Math.min(100, progress + increment);
-
-      const currentMB = Math.min(totalMB, +(totalMB * (progress / 100)).toFixed(2));
-      const speedRandom = (1.2 + Math.random() * 0.8).toFixed(1);
-
-      let stepMessage = 'Mengunduh modul WMS & aset tampilan...';
-      if (progress < 20) {
-        stepMessage = 'Menyiapkan paket pembaruan...';
-      } else if (progress < 50) {
-        stepMessage = 'Mengunduh bundle kode & logika WMS...';
-      } else if (progress < 80) {
-        stepMessage = 'Menyimpan aset ke cache Service Worker...';
-      } else if (progress < 99) {
-        stepMessage = 'Verifikasi integritas modul & database lokal...';
-      } else {
-        stepMessage = 'Pembaruan berhasil diunduh dan siap diterapkan!';
-      }
-
-      this.state.progress = progress;
-      this.state.downloadStats = {
-        currentMB,
-        totalMB,
-        speed: `${speedRandom} MB/s`,
-        stepMessage
-      };
-
-      if (progress >= 100) {
-        clearInterval(this.downloadInterval);
-        this.downloadInterval = null;
-        this.state.status = 'ready';
-        this.notify();
-      } else {
-        this.notify();
-      }
-    }, 280);
+    this.applyUpdate();
   }
 
   /**
-   * Apply the update: trigger SKIP_WAITING and cleanly reload the browser
+   * Apply the update immediately in 1 click while 100% preserving localStorage login session & staging scans
    */
   public applyUpdate(options?: { hardReload?: boolean }): void {
+    if (this.isApplyingUpdate) return;
+    this.isApplyingUpdate = true;
+
+    this.state.status = 'downloading';
+    this.state.progress = 100;
+    this.state.downloadStats = {
+      currentMB: 100,
+      totalMB: 100,
+      speed: 'Instan',
+      stepMessage: 'Menerapkan versi terbaru & mempertahankan sesi login...'
+    };
+    this.notify();
+
     try {
       if (this.state.waitingWorker) {
         this.state.waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+        // Fallback reload if controllerchange doesn't fire within 800ms
+        setTimeout(() => {
+          window.location.reload();
+        }, 800);
+        return;
       }
 
-      if (options?.hardReload && 'caches' in window) {
-        // Clear old caches except crucial runtime
+      if ('caches' in window) {
         caches.keys().then((names) => {
-          names.forEach((name) => {
-            if (name.includes('precache') || name.includes('workbox')) {
-              caches.delete(name);
-            }
-          });
+          return Promise.all(
+            names
+              .filter((name) => options?.hardReload || name.includes('precache') || name.includes('workbox'))
+              .map((name) => caches.delete(name))
+          );
         }).finally(() => {
           window.location.reload();
         });
         return;
       }
 
-      // Smooth clean reload
       window.location.reload();
     } catch (err) {
       console.warn('[AppUpdate] Apply reload fallback:', err);
@@ -330,9 +334,11 @@ class AppUpdateManager {
 
   /**
    * Force clear all browser cache storage and unregister service workers (Emergency Rescue)
+   * Preserves localStorage login session & staging scans!
    */
   public async clearCacheAndReload(): Promise<void> {
     try {
+      this.isApplyingUpdate = true;
       if ('serviceWorker' in navigator) {
         const registrations = await navigator.serviceWorker.getRegistrations();
         for (const reg of registrations) {
@@ -347,7 +353,6 @@ class AppUpdateManager {
         }
       }
 
-      // Clear any stale session flags
       sessionStorage.clear();
       window.location.reload();
     } catch (e) {
