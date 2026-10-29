@@ -766,6 +766,21 @@ export interface PenerimaanProduksiItem {
   recount_notes?: string;
   recount_auditor?: string;
   recount_updated_at?: string;
+
+  // Qty Nota Buyer (sinkron dengan Google Sheet & backup Supabase)
+  qty_nota?: number | null;
+}
+
+export interface ProduksiQtyNotaRecord {
+  kode_produksi: string;
+  kategori?: string;
+  qty_nota: number | null;
+  total_diterima: number;
+  selisih_nota: number | null; // total_diterima - qty_nota
+  by_date?: Record<string, number>;
+  source_sheet?: string;
+  updated_at?: string;
+  updated_by?: string;
 }
 
 export interface SimpanPenerimaanPayload {

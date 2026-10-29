@@ -8,7 +8,20 @@
 var TARGET_PRODUKSI_SPREADSHEET_ID = '1fnW49pCI8X8-lYtmXljxB0GsZWKkQtKshV2R5-mlodk';
 
 /**
- * Entry point Web App untuk menerima request push dari WMS
+ * Konversi nomor kolom (1-based) menjadi huruf kolom Excel/Google Sheets (1 -> A, 27 -> AA)
+ */
+function colToLetter(col) {
+  var temp, letter = '';
+  while (col > 0) {
+    temp = (col - 1) % 26;
+    letter = String.fromCharCode(temp + 65) + letter;
+    col = (col - temp - 1) / 26;
+  }
+  return letter;
+}
+
+/**
+ * Entry point Web App untuk menerima request push/pull dari WMS
  */
 function doPost(e) {
   try {
@@ -44,6 +57,19 @@ function doPost(e) {
 }
 
 function doGet(e) {
+  if (e && e.parameter && (e.parameter.action === 'fetch_qty_nota' || e.parameter.action === 'getQtyNota')) {
+    try {
+      var ssId = e.parameter.spreadsheetId || TARGET_PRODUKSI_SPREADSHEET_ID;
+      var ss = SpreadsheetApp.openById(ssId);
+      var resNota = handleFetchQtyNota(ss, e.parameter);
+      return ContentService.createTextOutput(JSON.stringify(resNota))
+        .setMimeType(ContentService.MimeType.JSON);
+    } catch (errNota) {
+      return ContentService.createTextOutput(JSON.stringify({ success: false, error: errNota.toString() }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
   if (e && e.parameter && (e.parameter.action === 'getCCT45' || e.parameter.action === 'searchCode')) {
     try {
       var query = (e.parameter.q || e.parameter.code || '045').trim().toUpperCase();
@@ -79,13 +105,13 @@ function doGet(e) {
 
   return ContentService.createTextOutput(JSON.stringify({
     status: 'online',
-    message: 'WMS Produksi Google Sheet Sync Gateway is Active (Supports 1 SJ = 1 Sheet & Master Matrix)',
+    message: 'WMS Produksi Google Sheet Sync Gateway is Active (Supports Qty Nota, Selisih Formula, 1 Tanggal = 1 Sheet & Master Matrix)',
     spreadsheetId: TARGET_PRODUKSI_SPREADSHEET_ID
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
 /**
- * Handler Utama Push Penerimaan Produksi
+ * Handler Utama Push & Sync Penerimaan Produksi
  */
 function handlePushPenerimaanProduksi(data) {
   try {
@@ -96,6 +122,20 @@ function handlePushPenerimaanProduksi(data) {
     } catch (eOpen) {
       ss = SpreadsheetApp.getActiveSpreadsheet();
       if (!ss) throw new Error('Tidak dapat membuka Spreadsheet dengan ID: ' + ssId + '. Pastikan script memiliki izin akses.');
+    }
+
+    // =========================================================================
+    // JIKA ACTION: TARIK / BACA DATA QTY NOTA DARI SHEET (UNTUK FRONTEND & SUPABASE BACKUP)
+    // =========================================================================
+    if (data.action === 'fetch_qty_nota' || data.action === 'getQtyNota') {
+      return handleFetchQtyNota(ss, data);
+    }
+
+    // =========================================================================
+    // JIKA ACTION: UPDATE DELTA QTY NOTA DARI FRONTEND KE SHEET
+    // =========================================================================
+    if (data.action === 'update_qty_nota_delta') {
+      return updateQtyNotaDelta(ss, data);
     }
 
     // =========================================================================
@@ -513,11 +553,15 @@ function buildBlocksFromItemsGAS(items, isCMT, specificDateStr) {
     var upVendor = first.up_vendor || first.keterangan || (isCMT ? 'CMT' : 'KARGO');
     var photoUrl = first.foto_url || '';
     var catatan = first.catatan || '';
+    var qtyNota = (first.qty_nota !== undefined && first.qty_nota !== null && first.qty_nota !== '') ? Number(first.qty_nota) : undefined;
 
     var dateSet = {};
     for (var d = 0; d < codeItems.length; d++) {
       if (codeItems[d].tanggal_penerimaan) {
         dateSet[codeItems[d].tanggal_penerimaan] = true;
+      }
+      if (qtyNota === undefined && codeItems[d].qty_nota !== undefined && codeItems[d].qty_nota !== null && codeItems[d].qty_nota !== '') {
+        qtyNota = Number(codeItems[d].qty_nota);
       }
     }
     var dateSlots = specificDateStr ? [specificDateStr] : Object.keys(dateSet).sort();
@@ -578,6 +622,7 @@ function buildBlocksFromItemsGAS(items, isCMT, specificDateStr) {
       upVendor: upVendor,
       photoUrl: photoUrl,
       catatan: catatan,
+      qtyNota: qtyNota,
       dateSlots: dateSlots,
       colorGroups: colorGroups,
       totalDatang: blockTotalDatang,
@@ -589,53 +634,151 @@ function buildBlocksFromItemsGAS(items, isCMT, specificDateStr) {
 }
 
 /**
- * Merender tabel Produk Berdasarkan Blok Matriks (Format Resmi Master & Tanggal Produksi)
- * Sesuai format standar: Header Pink, Foto Produk Merged =IMAGE(...), Warna Merged, Size, Kolom Tanggal, Total Datang, Baris Catatan Kuning
+ * Membaca data lama (Qty Nota & Hitung Ulang) dari sebuah Sheet sebelum di-clear / untuk sinkronisasi
  */
-function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
-  var oldDataMap = {};
-  var isSpecificDate = !!specificDateStr;
-  
+function scanExistingSheetBlocksData(sheet) {
+  var oldNotaMap = {}; // { [CODE]: { qtyNota, totalDiterima, selisihNota, rowNum, colQtyNota } }
+  var oldDataMap = {}; // { [CODE_COLOR_SIZE]: { fisik, selisih, status, log } }
+
   try {
     var lastRow = sheet.getLastRow();
     var lastCol = Math.min(50, Math.max(1, sheet.getLastColumn()));
-    if (!isSpecificDate && lastRow > 2 && lastCol > 8) {
-      var header1 = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-      var colFisik = -1, colSelisih = -1, colStatus = -1, colLog = -1;
-      for (var c = 0; c < header1.length; c++) {
-        var hText = String(header1[c]).trim().toUpperCase();
-        if (hText.indexOf('FISIK') !== -1) colFisik = c;
-        else if (hText.indexOf('SELISIH') !== -1) colSelisih = c;
-        else if (hText.indexOf('STATUS AUDIT') !== -1 || hText === 'STATUS') colStatus = c;
-        else if (hText.indexOf('LOG') !== -1 || hText.indexOf('RIWAYAT') !== -1) colLog = c;
+    if (lastRow < 2 || lastCol < 7) {
+      return { oldNotaMap: oldNotaMap, oldDataMap: oldDataMap };
+    }
+
+    var allValues = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+    var colTotalDatang = -1;
+    var colQtyNota = -1;
+    var colSelisihNota = -1;
+    var colFisik = -1;
+    var colSelisihFisik = -1;
+    var colStatus = -1;
+    var colLog = -1;
+
+    var curCode = '';
+    var curColor = '';
+
+    for (var r = 0; r < allValues.length; r++) {
+      var rowObj = allValues[r];
+      var c0 = String(rowObj[0] || '').trim().toUpperCase();
+      var c1 = String(rowObj[1] || '').replace(/^'+/, '').trim().toUpperCase();
+      var c5 = String(rowObj[5] || '').trim().toUpperCase();
+      var c6 = String(rowObj[6] || '').replace(/^'+/, '').trim().toUpperCase();
+
+      // Deteksi Baris Header Blok
+      if (c0 === 'NO' && c1 === 'CODE') {
+        colTotalDatang = -1;
+        colQtyNota = -1;
+        colSelisihNota = -1;
+        colFisik = -1;
+        colSelisihFisik = -1;
+        colStatus = -1;
+        colLog = -1;
+        curCode = '';
+        curColor = '';
+
+        for (var c = 0; c < rowObj.length; c++) {
+          var hText = String(rowObj[c] || '').trim().toUpperCase();
+          if (hText.indexOf('TOTAL DATANG') !== -1 || hText.indexOf('TOTAL DITERIMA') !== -1) {
+            colTotalDatang = c;
+          } else if (hText.indexOf('QTY NOTA') !== -1 || hText === 'NOTA') {
+            colQtyNota = c;
+          } else if (hText.indexOf('SELISIH NOTA') !== -1 || (hText === 'SELISIH' && colQtyNota !== -1 && colFisik === -1)) {
+            colSelisihNota = c;
+          } else if (hText.indexOf('FISIK') !== -1) {
+            colFisik = c;
+          } else if (hText.indexOf('SELISIH FISIK') !== -1 || (hText.indexOf('SELISIH') !== -1 && colFisik !== -1)) {
+            colSelisihFisik = c;
+          } else if (hText.indexOf('STATUS AUDIT') !== -1 || hText === 'STATUS') {
+            colStatus = c;
+          } else if (hText.indexOf('LOG') !== -1 || hText.indexOf('RIWAYAT') !== -1) {
+            colLog = c;
+          }
+        }
+        continue;
       }
-      
-      if (colFisik !== -1) {
-        var oldValues = sheet.getRange(3, 1, lastRow - 2, lastCol).getValues();
-        for (var i = 0; i < oldValues.length; i++) {
-          var rowObj = oldValues[i];
-          var oldCode = String(rowObj[1] || '').trim().toUpperCase();
-          var oldColor = String(rowObj[5] || '').trim().toUpperCase();
-          var oldSize = String(rowObj[6] || '').trim().toUpperCase();
-          
-          if (oldCode && oldColor && oldSize) {
-            var key = oldCode + '_' + oldColor + '_' + oldSize;
+
+      if (c0.indexOf('CATATAN:') === 0 || c1.indexOf('CATATAN:') === 0) {
+        continue;
+      }
+
+      if (c1 && c1 !== 'CODE' && c1 !== '-') {
+        curCode = c1;
+        // Baca Qty Nota pada baris pertama blok kode ini
+        if (colQtyNota !== -1) {
+          var rawNota = rowObj[colQtyNota];
+          var rawTotal = colTotalDatang !== -1 ? (Number(rowObj[colTotalDatang]) || 0) : 0;
+          if (rawNota !== '' && rawNota !== null && rawNota !== undefined && !isNaN(Number(rawNota))) {
+            var numNota = Number(rawNota);
+            oldNotaMap[curCode] = {
+              qtyNota: numNota,
+              totalDiterima: rawTotal,
+              selisihNota: rawTotal - numNota,
+              rowNum: r + 1,
+              colQtyNota: colQtyNota + 1,
+              colTotalDatang: colTotalDatang + 1,
+              colSelisihNota: colSelisihNota + 1
+            };
+          } else if (!oldNotaMap[curCode]) {
+            oldNotaMap[curCode] = {
+              qtyNota: null,
+              totalDiterima: rawTotal,
+              selisihNota: null,
+              rowNum: r + 1,
+              colQtyNota: colQtyNota + 1,
+              colTotalDatang: colTotalDatang + 1,
+              colSelisihNota: colSelisihNota + 1
+            };
+          }
+        }
+      }
+
+      if (c5 && c5 !== 'COLOR' && c5 !== '-') {
+        curColor = c5;
+      }
+
+      if (curCode && curColor && c6 && c6 !== 'SIZE' && c6 !== '-') {
+        if (colFisik !== -1) {
+          var key = curCode + '_' + curColor + '_' + c6;
+          var rFisik = rowObj[colFisik];
+          var rLog = colLog !== -1 ? rowObj[colLog] : '';
+          if ((rFisik !== '' && rFisik !== null && rFisik !== undefined) || rLog) {
             oldDataMap[key] = {
-              fisik: colFisik !== -1 ? rowObj[colFisik] : '',
-              selisih: colSelisih !== -1 ? rowObj[colSelisih] : '',
+              fisik: rFisik !== '' && rFisik !== null && rFisik !== undefined ? Number(rFisik) : '',
+              selisih: colSelisihFisik !== -1 ? rowObj[colSelisihFisik] : '',
               status: colStatus !== -1 ? rowObj[colStatus] : '',
-              log: colLog !== -1 ? rowObj[colLog] : ''
+              log: rLog
             };
           }
         }
       }
     }
-  } catch (eOld) {
-    Logger.log('Gagal membaca data lama hitung ulang: ' + eOld);
+  } catch (eScan) {
+    Logger.log('scanExistingSheetBlocksData error: ' + eScan);
   }
+
+  return {
+    oldNotaMap: oldNotaMap,
+    oldDataMap: oldDataMap
+  };
+}
+
+/**
+ * Merender tabel Produk Berdasarkan Blok Matriks (Format Resmi Master & Tanggal Produksi)
+ * Dilengkapi kolom QTY NOTA (Diisi Buyer) & Formula Otomatis SELISIH (= Total Diterima - Qty Nota)
+ */
+function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
+  var isSpecificDate = !!specificDateStr;
+  var existingScan = scanExistingSheetBlocksData(sheet);
+  var oldNotaMap = existingScan.oldNotaMap || {};
+  var oldDataMap = existingScan.oldDataMap || {};
 
   sheet.clearContents();
   sheet.clearFormats();
+  try {
+    sheet.clearConditionalFormatRules();
+  } catch (eCfClear) {}
   try {
     sheet.getRange(1, 1, Math.max(100, sheet.getMaxRows()), Math.max(25, sheet.getMaxColumns())).setNumberFormat('@');
   } catch (eFmt) {}
@@ -668,7 +811,7 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
       }
 
       var infoText = '📅 Tanggal: ' + specificDateStr + '  |  🏷️ Kategori: ' + (isCMT ? 'Lokal CMT' : 'Kargo') + '  |  📦 Total: ' + blocks.length + ' Model  |  🔢 Datang: ' + totalPcsAll + ' pcs';
-      sheet.getRange(1, 4, 1, 15).merge().setValue(infoText)
+      sheet.getRange(1, 4, 1, 17).merge().setValue(infoText)
         .setBackground('#1E293B').setFontColor('#F8FAFC').setFontWeight('bold').setFontSize(9.5)
         .setHorizontalAlignment('left').setVerticalAlignment('middle');
 
@@ -681,8 +824,12 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
     }
   }
 
+  var selisihRangesForCF = [];
+  var maxTotalColsUsed = 20;
+
   for (var b = 0; b < blocks.length; b++) {
     var block = blocks[b];
+    var cleanBlockCode = String(block.code || block.productCode || '').replace(/^'+/, '').trim().toUpperCase();
     var headerRow1Index = currentRow;
     var headerRow2Index = currentRow + 1;
 
@@ -692,7 +839,17 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
 
     var numDateCols = Math.max(10, dateSlots.length);
     var numReturCols = isCMT ? (isSpecificDate ? Math.max(0, returSlots.length) : Math.max(5, returSlots.length)) : 0;
-    var totalCols = 7 + numDateCols + (numReturCols > 0 ? numReturCols : 0) + 1 + (!isSpecificDate ? 4 : 0);
+
+    // Kolom Indeks (1-based) setelah kolom Tanggal & Retur:
+    // 1. TOTAL DATANG (NET)
+    // 2. QTY NOTA (Diisi Buyer)
+    // 3. SELISIH (= Total Datang - Qty Nota)
+    // + Jika Master Sheet (!isSpecificDate): FISIK HASIL HITUNG, SELISIH FISIK, STATUS AUDIT, LOG HITUNG ULANG
+    var colTotalDatang = 8 + numDateCols + (isCMT && numReturCols > 0 ? numReturCols : 0);
+    var colQtyNota = colTotalDatang + 1;
+    var colSelisihNota = colTotalDatang + 2;
+    var totalCols = colSelisihNota + (!isSpecificDate ? 4 : 0);
+    if (totalCols > maxTotalColsUsed) maxTotalColsUsed = totalCols;
 
     // Header Baris 1
     var row1Vals = ['NO', 'CODE', 'PRODUCT NAME', 'UP', 'PHOTO', 'COLOR', 'SIZE'];
@@ -705,9 +862,11 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
       }
     }
     row1Vals.push('TOTAL DATANG (NET)');
+    row1Vals.push('QTY NOTA');
+    row1Vals.push('SELISIH');
     if (!isSpecificDate) {
       row1Vals.push('FISIK HASIL HITUNG');
-      row1Vals.push('SELISIH');
+      row1Vals.push('SELISIH FISIK');
       row1Vals.push('STATUS AUDIT');
       row1Vals.push('LOG HITUNG ULANG');
     }
@@ -725,6 +884,8 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
       }
     }
     row2Vals.push(''); // TOTAL DATANG (NET)
+    row2Vals.push(''); // QTY NOTA
+    row2Vals.push(''); // SELISIH
     if (!isSpecificDate) {
       row2Vals.push('');
       row2Vals.push('');
@@ -752,14 +913,15 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
       sheet.getRange(headerRow1Index, nextColPointer, 1, numReturCols).merge();
       nextColPointer += numReturCols;
     }
-    sheet.getRange(headerRow1Index, nextColPointer, 2, 1).merge(); // TOTAL DATANG (NET)
-    nextColPointer++;
+    sheet.getRange(headerRow1Index, colTotalDatang, 2, 1).merge(); // TOTAL DATANG (NET)
+    sheet.getRange(headerRow1Index, colQtyNota, 2, 1).merge(); // QTY NOTA
+    sheet.getRange(headerRow1Index, colSelisihNota, 2, 1).merge(); // SELISIH
 
     if (!isSpecificDate) {
-      sheet.getRange(headerRow1Index, nextColPointer, 2, 1).merge(); // FISIK
-      sheet.getRange(headerRow1Index, nextColPointer + 1, 2, 1).merge(); // SELISIH
-      sheet.getRange(headerRow1Index, nextColPointer + 2, 2, 1).merge(); // STATUS
-      sheet.getRange(headerRow1Index, nextColPointer + 3, 2, 1).merge(); // LOG
+      sheet.getRange(headerRow1Index, colSelisihNota + 1, 2, 1).merge(); // FISIK
+      sheet.getRange(headerRow1Index, colSelisihNota + 2, 2, 1).merge(); // SELISIH FISIK
+      sheet.getRange(headerRow1Index, colSelisihNota + 3, 2, 1).merge(); // STATUS
+      sheet.getRange(headerRow1Index, colSelisihNota + 4, 2, 1).merge(); // LOG
     }
 
     var headerRange = sheet.getRange(headerRow1Index, 1, 2, totalCols);
@@ -771,6 +933,10 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
     headerRange.setVerticalAlignment('middle');
     headerRange.setBorder(true, true, true, true, true, true, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID);
 
+    // Highlight Header QTY NOTA (Kuning Emas agar Buyer langsung melihat kolom input) & SELISIH
+    sheet.getRange(headerRow1Index, colQtyNota, 2, 1).setBackground('#FEF3C7').setFontColor('#92400E');
+    sheet.getRange(headerRow1Index, colSelisihNota, 2, 1).setBackground('#E0F2FE').setFontColor('#075985');
+
     currentRow += 2;
 
     var startDataRowIndex = currentRow;
@@ -781,6 +947,46 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
     }
     var targetBlockHeightPx = Math.max(320, totalSubRowsInBlock * 32);
     var calculatedRowHeight = Math.max(32, Math.floor(targetBlockHeightPx / Math.max(1, totalSubRowsInBlock)));
+
+    // Hitung total datang net keseluruhan blok
+    var computedBlockNet = 0;
+    for (var cgSumIdx = 0; cgSumIdx < colorGroups.length; cgSumIdx++) {
+      var cgSizes = colorGroups[cgSumIdx].sizes || [];
+      for (var szSumIdx = 0; szSumIdx < cgSizes.length; szSumIdx++) {
+        var szObj = cgSizes[szSumIdx];
+        var sDatang = 0;
+        for (var dSum = 0; dSum < numDateCols; dSum++) {
+          var dk = dateSlots[dSum];
+          if (dk && szObj.qtyByDate && szObj.qtyByDate[dk] !== undefined && szObj.qtyByDate[dk] !== '') {
+            sDatang += Number(szObj.qtyByDate[dk]) || 0;
+          }
+        }
+        var sRetur = 0;
+        if (isCMT && numReturCols > 0) {
+          for (var rSum = 0; rSum < numReturCols; rSum++) {
+            var rk = returSlots[rSum];
+            if (rk && szObj.qtyReturByDate && szObj.qtyReturByDate[rk] !== undefined && szObj.qtyReturByDate[rk] !== '') {
+              sRetur += Number(szObj.qtyReturByDate[rk]) || 0;
+            }
+          }
+        }
+        var sNet = (isSpecificDate && sDatang > 0)
+          ? sDatang
+          : (isCMT ? Math.max(0, sDatang - sRetur) : (Number(szObj.totalSizeQty) || sDatang));
+        computedBlockNet += sNet;
+      }
+    }
+    var finalBlockTotalNet = computedBlockNet > 0 ? computedBlockNet : (Number(block.totalNet) || Number(block.totalDatang) || 0);
+
+    // Tentukan nilai awal QTY NOTA (prioritas: block.qtyNota dari WMS/Supabase -> oldNotaMap yang sudah diisi Buyer di Sheet -> kosong)
+    var initialQtyNota = '';
+    if (block.qtyNota !== undefined && block.qtyNota !== null && block.qtyNota !== '') {
+      initialQtyNota = Number(block.qtyNota);
+    } else if (oldNotaMap[cleanBlockCode] && oldNotaMap[cleanBlockCode].qtyNota !== null && oldNotaMap[cleanBlockCode].qtyNota !== undefined && oldNotaMap[cleanBlockCode].qtyNota !== '') {
+      initialQtyNota = Number(oldNotaMap[cleanBlockCode].qtyNota);
+    }
+
+    var isFirstRowWritten = false;
 
     for (var c = 0; c < colorGroups.length; c++) {
       var cg = colorGroups[c];
@@ -824,10 +1030,21 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
         var rowNet = (isSpecificDate && rowDatang > 0)
           ? rowDatang
           : (isCMT ? Math.max(0, (rowDatang - rowRetur)) : (Number(sz.totalSizeQty) || rowDatang));
-        dataRowVals.push(rowNet);
+
+        // Pada baris pertama blok, isi Total Datang Blok & Qty Nota Blok (karena sel di-merge per blok)
+        if (!isFirstRowWritten) {
+          dataRowVals.push(finalBlockTotalNet);
+          dataRowVals.push(initialQtyNota);
+          dataRowVals.push(''); // Formula SELISIH akan dipasang di bawah
+          isFirstRowWritten = true;
+        } else {
+          dataRowVals.push('');
+          dataRowVals.push('');
+          dataRowVals.push('');
+        }
 
         if (!isSpecificDate) {
-          var lookupKey = String(block.code || block.productCode || '').trim().toUpperCase() + '_' + 
+          var lookupKey = cleanBlockCode + '_' + 
                           String(cg.color || cg.colorName || '').trim().toUpperCase() + '_' + 
                           String(sz.size || sz.sizeName || '').trim().toUpperCase();
           var oldRecord = oldDataMap[lookupKey];
@@ -863,12 +1080,14 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
     var numBlockRows = endDataRowIndex - startDataRowIndex + 1;
     if (numBlockRows > 0) {
       if (numBlockRows > 1) {
-        sheet.getRange(startDataRowIndex, 1, numBlockRows, 1).merge();
-        sheet.getRange(startDataRowIndex, 2, numBlockRows, 1).merge();
-        sheet.getRange(startDataRowIndex, 3, numBlockRows, 1).merge();
-        sheet.getRange(startDataRowIndex, 4, numBlockRows, 1).merge();
-        sheet.getRange(startDataRowIndex, 5, numBlockRows, 1).merge();
-        sheet.getRange(startDataRowIndex, totalCols, numBlockRows, 1).merge();
+        sheet.getRange(startDataRowIndex, 1, numBlockRows, 1).merge(); // NO
+        sheet.getRange(startDataRowIndex, 2, numBlockRows, 1).merge(); // CODE
+        sheet.getRange(startDataRowIndex, 3, numBlockRows, 1).merge(); // PRODUCT NAME
+        sheet.getRange(startDataRowIndex, 4, numBlockRows, 1).merge(); // UP
+        sheet.getRange(startDataRowIndex, 5, numBlockRows, 1).merge(); // PHOTO
+        sheet.getRange(startDataRowIndex, colTotalDatang, numBlockRows, 1).merge(); // TOTAL DATANG (NET)
+        sheet.getRange(startDataRowIndex, colQtyNota, numBlockRows, 1).merge(); // QTY NOTA
+        sheet.getRange(startDataRowIndex, colSelisihNota, numBlockRows, 1).merge(); // SELISIH
       }
 
       var rawPhotoUrl = String(block.photoUrl || '').trim();
@@ -884,6 +1103,35 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
 
       sheet.getRange(startDataRowIndex, 1, numBlockRows, 7).setNumberFormat('@');
       sheet.getRange(startDataRowIndex, 8, numBlockRows, totalCols - 7).setNumberFormat('0');
+
+      // Pasang Formula Otomatis TOTAL DATANG (NET) & SELISIH (= Total Diterima - Qty Nota)
+      var startDateLetter = colToLetter(8);
+      var endDateLetter = colToLetter(8 + numDateCols - 1);
+      if (computedBlockNet > 0) {
+        if (isCMT && numReturCols > 0) {
+          var startRetLetter = colToLetter(8 + numDateCols);
+          var endRetLetter = colToLetter(8 + numDateCols + numReturCols - 1);
+          sheet.getRange(startDataRowIndex, colTotalDatang).setFormula(
+            '=SUM(' + startDateLetter + startDataRowIndex + ':' + endDateLetter + endDataRowIndex + ')-SUM(' + startRetLetter + startDataRowIndex + ':' + endRetLetter + endDataRowIndex + ')'
+          );
+        } else {
+          sheet.getRange(startDataRowIndex, colTotalDatang).setFormula(
+            '=SUM(' + startDateLetter + startDataRowIndex + ':' + endDateLetter + endDataRowIndex + ')'
+          );
+        }
+      }
+
+      var totalDatangCellRef = colToLetter(colTotalDatang) + startDataRowIndex;
+      var qtyNotaCellRef = colToLetter(colQtyNota) + startDataRowIndex;
+      var selisihFormula = '=IF(ISBLANK(' + qtyNotaCellRef + '), "", ' + totalDatangCellRef + '-' + qtyNotaCellRef + ')';
+      var selisihCellRange = sheet.getRange(startDataRowIndex, colSelisihNota);
+      selisihCellRange.setFormula(selisihFormula).setNumberFormat('0').setFontWeight('bold').setFontSize(11);
+
+      // Styling khusus kolom TOTAL DATANG & QTY NOTA
+      sheet.getRange(startDataRowIndex, colTotalDatang, numBlockRows, 1).setFontWeight('bold').setFontSize(11).setBackground('#F8FAFC');
+      sheet.getRange(startDataRowIndex, colQtyNota, numBlockRows, 1).setFontWeight('bold').setFontSize(11).setBackground('#FFFBEB').setFontColor('#92400E');
+
+      selisihRangesForCF.push(sheet.getRange(startDataRowIndex, colSelisihNota, numBlockRows, 1));
     }
 
     // Baris Catatan Kuning jika ada
@@ -910,6 +1158,39 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
     currentRow += 1;
   }
 
+  // Pasang Conditional Formatting Otomatis pada kolom SELISIH:
+  // - Selisih < 0 (Kurang): Merah (#FEE2E2 / #991B1B)
+  // - Selisih > 0 (Lebih): Biru (#DBEAFE / #1E40AF)
+  // - Selisih = 0 (Klop): Hijau (#DCFCE7 / #166534)
+  if (selisihRangesForCF.length > 0) {
+    try {
+      var ruleLess = SpreadsheetApp.newConditionalFormatRule()
+        .whenNumberLessThan(0)
+        .setBackground('#FEE2E2')
+        .setFontColor('#991B1B')
+        .setBold(true)
+        .setRanges(selisihRangesForCF)
+        .build();
+      var ruleGreater = SpreadsheetApp.newConditionalFormatRule()
+        .whenNumberGreaterThan(0)
+        .setBackground('#DBEAFE')
+        .setFontColor('#1E40AF')
+        .setBold(true)
+        .setRanges(selisihRangesForCF)
+        .build();
+      var ruleEqual = SpreadsheetApp.newConditionalFormatRule()
+        .whenNumberEqualTo(0)
+        .setBackground('#DCFCE7')
+        .setFontColor('#166534')
+        .setBold(true)
+        .setRanges(selisihRangesForCF)
+        .build();
+      sheet.setConditionalFormatRules([ruleLess, ruleGreater, ruleEqual]);
+    } catch (eCf) {
+      Logger.log('Conditional formatting error: ' + eCf);
+    }
+  }
+
   sheet.setColumnWidth(1, 45);
   sheet.setColumnWidth(2, 90);
   sheet.setColumnWidth(3, 160);
@@ -917,15 +1198,243 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
   sheet.setColumnWidth(5, 360);
   sheet.setColumnWidth(6, 110);
   sheet.setColumnWidth(7, 70);
-  for (var colIdx = 8; colIdx <= 8 + numDateCols + (numReturCols > 0 ? numReturCols : 0); colIdx++) {
-    sheet.setColumnWidth(colIdx, 65);
+  if (blocks.length > 0) {
+    var firstBlock = blocks[0];
+    var fDateSlots = isSpecificDate ? [specificDateStr] : (firstBlock.dateSlots || []);
+    var fRetSlots = isCMT ? (isSpecificDate ? [] : (firstBlock.returDateSlots || [])) : [];
+    var fNumDates = Math.max(10, fDateSlots.length);
+    var fNumRet = isCMT ? (isSpecificDate ? 0 : Math.max(5, fRetSlots.length)) : 0;
+    var fColTotal = 8 + fNumDates + fNumRet;
+    for (var colIdx = 8; colIdx < fColTotal; colIdx++) {
+      sheet.setColumnWidth(colIdx, 65);
+    }
+    sheet.setColumnWidth(fColTotal, 110);     // TOTAL DATANG (NET)
+    sheet.setColumnWidth(fColTotal + 1, 100); // QTY NOTA
+    sheet.setColumnWidth(fColTotal + 2, 95);  // SELISIH
+    if (!isSpecificDate) {
+      sheet.setColumnWidth(fColTotal + 3, 115); // FISIK HASIL HITUNG
+      sheet.setColumnWidth(fColTotal + 4, 95);  // SELISIH FISIK
+      sheet.setColumnWidth(fColTotal + 5, 110); // STATUS AUDIT
+      sheet.setColumnWidth(fColTotal + 6, 220); // LOG HITUNG ULANG
+    }
   }
-  sheet.setColumnWidth(totalCols, 120);
 
   return {
     success: true,
     sheetId: sheet.getSheetId()
   };
+}
+
+/**
+ * Menarik seluruh data QTY NOTA yang telah diisi oleh Buyer di Google Sheet
+ * (Baik dari Sheet Satuan Per Tanggal maupun Sheet Master Produksi Kargo/CMT)
+ * sekaligus menyinkronkan silang antara Sheet Tanggal <-> Sheet Master jika salah satu sudah diisi Buyer.
+ */
+function handleFetchQtyNota(ss, data) {
+  try {
+    var allSheets = ss.getSheets();
+    var masterEntriesByCode = {}; // { [code]: { qtyNota, totalDiterima, selisihNota, sheet, rowNum, colQtyNota, kategori, sheetName } }
+    var dateEntriesByCode = {};   // { [code]: [ { tanggal, qtyNota, totalDiterima, selisihNota, sheet, rowNum, colQtyNota, kategori, sheetName } ] }
+
+    for (var i = 0; i < allSheets.length; i++) {
+      var s = allSheets[i];
+      var name = s.getName().trim();
+
+      var isMasterKargo = (name === 'Master Produksi (Kargo)');
+      var isMasterCMT = (name === 'Master Produksi (CMT)');
+      var dateMatch = name.match(/^(\d{2})[-/](\d{2})[-/](\d{4})(?:\s*\((.*?)\))?/);
+
+      if (!isMasterKargo && !isMasterCMT && !dateMatch) {
+        continue;
+      }
+
+      var scan = scanExistingSheetBlocksData(s);
+      var notaMap = scan.oldNotaMap || {};
+
+      if (isMasterKargo || isMasterCMT) {
+        var mKat = isMasterKargo ? 'Kargo' : 'Lokal CMT';
+        for (var codeKey in notaMap) {
+          var rec = notaMap[codeKey];
+          masterEntriesByCode[codeKey] = {
+            kode_produksi: codeKey,
+            kategori: mKat,
+            qtyNota: rec.qtyNota,
+            totalDiterima: rec.totalDiterima,
+            selisihNota: rec.selisihNota,
+            sheet: s,
+            sheetName: name,
+            rowNum: rec.rowNum,
+            colQtyNota: rec.colQtyNota
+          };
+        }
+      } else if (dateMatch) {
+        var dd = dateMatch[1];
+        var mm = dateMatch[2];
+        var yyyy = dateMatch[3];
+        var isoDate = yyyy + '-' + mm + '-' + dd;
+        var tag = (dateMatch[4] || '').trim();
+        var dKat = tag.toLowerCase().indexOf('kargo') !== -1 ? 'Kargo' : 'Lokal CMT';
+
+        for (var dCode in notaMap) {
+          var dRec = notaMap[dCode];
+          if (!dateEntriesByCode[dCode]) dateEntriesByCode[dCode] = [];
+          dateEntriesByCode[dCode].push({
+            kode_produksi: dCode,
+            tanggal: isoDate,
+            kategori: dKat,
+            qtyNota: dRec.qtyNota,
+            totalDiterima: dRec.totalDiterima,
+            selisihNota: dRec.selisihNota,
+            sheet: s,
+            sheetName: name,
+            rowNum: dRec.rowNum,
+            colQtyNota: dRec.colQtyNota
+          });
+        }
+      }
+    }
+
+    var combinedMap = {};
+    var allCodesSet = {};
+    for (var mc in masterEntriesByCode) allCodesSet[mc] = true;
+    for (var dc in dateEntriesByCode) allCodesSet[dc] = true;
+
+    var nowIso = new Date().toISOString();
+
+    for (var code in allCodesSet) {
+      var mEntry = masterEntriesByCode[code];
+      var dList = dateEntriesByCode[code] || [];
+
+      var byDate = {};
+      var sumDateNota = 0;
+      var hasDateNota = false;
+      var sumDateDiterima = 0;
+      var lastDateSheetName = '';
+      var inferredKat = mEntry ? mEntry.kategori : (dList[0] ? dList[0].kategori : 'Kargo');
+
+      for (var j = 0; j < dList.length; j++) {
+        var de = dList[j];
+        sumDateDiterima += Number(de.totalDiterima) || 0;
+        if (de.qtyNota !== null && de.qtyNota !== undefined && !isNaN(Number(de.qtyNota))) {
+          byDate[de.tanggal] = Number(de.qtyNota);
+          sumDateNota += Number(de.qtyNota);
+          hasDateNota = true;
+          lastDateSheetName = de.sheetName;
+        }
+      }
+
+      var finalQtyNota = null;
+      var finalTotalDiterima = mEntry ? (Number(mEntry.totalDiterima) || sumDateDiterima) : sumDateDiterima;
+      var sourceSheet = '';
+
+      if (hasDateNota && (!mEntry || mEntry.qtyNota === null || mEntry.qtyNota === undefined)) {
+        // Buyer mengisi di Sheet Tanggal, sedangkan di Master belum terisi -> pakai nilai Sheet Tanggal & sinkronkan ke Master!
+        finalQtyNota = sumDateNota;
+        sourceSheet = lastDateSheetName;
+        if (mEntry && mEntry.sheet && mEntry.rowNum > 0 && mEntry.colQtyNota > 0) {
+          try {
+            mEntry.sheet.getRange(mEntry.rowNum, mEntry.colQtyNota).setValue(finalQtyNota).setNumberFormat('0');
+          } catch (eSyncMaster) {}
+        }
+      } else if (mEntry && mEntry.qtyNota !== null && mEntry.qtyNota !== undefined) {
+        // Buyer mengisi di Master Sheet (atau keduanya terisi)
+        finalQtyNota = hasDateNota && sumDateNota !== mEntry.qtyNota && dList.length === 1 ? byDate[dList[0].tanggal] : Number(mEntry.qtyNota);
+        sourceSheet = mEntry.sheetName;
+        // Jika kode ini hanya ada di 1 Sheet Tanggal dan di Sheet Tanggal tersebut Qty Nota masih kosong, sinkronkan ke Sheet Tanggal!
+        if (!hasDateNota && dList.length === 1 && dList[0].sheet && dList[0].rowNum > 0 && dList[0].colQtyNota > 0) {
+          try {
+            dList[0].sheet.getRange(dList[0].rowNum, dList[0].colQtyNota).setValue(finalQtyNota).setNumberFormat('0');
+            byDate[dList[0].tanggal] = finalQtyNota;
+          } catch (eSyncDate) {}
+        }
+      }
+
+      if (finalQtyNota !== null && finalQtyNota !== undefined && !isNaN(Number(finalQtyNota))) {
+        var finalSelisih = finalTotalDiterima - Number(finalQtyNota);
+        combinedMap[code] = {
+          kode_produksi: code,
+          kategori: inferredKat,
+          qty_nota: Number(finalQtyNota),
+          total_diterima: finalTotalDiterima,
+          selisih_nota: finalSelisih,
+          by_date: byDate,
+          source_sheet: sourceSheet,
+          updated_at: nowIso
+        };
+      }
+    }
+
+    var recordsList = [];
+    for (var k in combinedMap) {
+      recordsList.push(combinedMap[k]);
+    }
+
+    return {
+      success: true,
+      count: recordsList.length,
+      notaMap: combinedMap,
+      records: recordsList
+    };
+  } catch (err) {
+    Logger.log('handleFetchQtyNota error: ' + err.toString());
+    return {
+      success: false,
+      error: err.toString(),
+      message: 'Gagal menarik data Qty Nota dari Google Sheet: ' + err.toString()
+    };
+  }
+}
+
+/**
+ * Update nilai QTY NOTA untuk kode tertentu secara langsung dari Frontend ke Sheet Master & Sheet Tanggal
+ */
+function updateQtyNotaDelta(ss, data) {
+  try {
+    var targetCode = String(data.kode_produksi || '').replace(/^'+/, '').trim().toUpperCase();
+    if (!targetCode) {
+      return { success: false, error: 'Kode produksi wajib diisi.' };
+    }
+    var qtyNotaVal = (data.qty_nota === '' || data.qty_nota === null || data.qty_nota === undefined)
+      ? ''
+      : Number(data.qty_nota);
+
+    var allSheets = ss.getSheets();
+    var updatedSheets = [];
+
+    for (var i = 0; i < allSheets.length; i++) {
+      var s = allSheets[i];
+      var name = s.getName().trim();
+      var isMaster = (name === 'Master Produksi (Kargo)' || name === 'Master Produksi (CMT)');
+      var dateMatch = name.match(/^(\d{2})[-/](\d{2})[-/](\d{4})(?:\s*\((.*?)\))?/);
+
+      if (!isMaster && !dateMatch) continue;
+      if (data.tanggal && dateMatch) {
+        var isoDate = dateMatch[3] + '-' + dateMatch[2] + '-' + dateMatch[1];
+        if (isoDate !== data.tanggal) continue;
+      }
+
+      var scan = scanExistingSheetBlocksData(s);
+      var rec = scan.oldNotaMap ? scan.oldNotaMap[targetCode] : null;
+      if (rec && rec.rowNum > 0 && rec.colQtyNota > 0) {
+        s.getRange(rec.rowNum, rec.colQtyNota).setValue(qtyNotaVal).setNumberFormat('0');
+        if (rec.colSelisihNota > 0 && rec.colTotalDatang > 0) {
+          var totalRef = colToLetter(rec.colTotalDatang) + rec.rowNum;
+          var notaRef = colToLetter(rec.colQtyNota) + rec.rowNum;
+          s.getRange(rec.rowNum, rec.colSelisihNota).setFormula('=IF(ISBLANK(' + notaRef + '), "", ' + totalRef + '-' + notaRef + ')').setNumberFormat('0');
+        }
+        updatedSheets.push(name);
+      }
+    }
+
+    return {
+      success: true,
+      message: 'Berhasil memperbarui Qty Nota Kode ' + targetCode + ' pada ' + updatedSheets.length + ' tab sheet (' + updatedSheets.join(', ') + ')',
+      updatedSheets: updatedSheets
+    };
+  } catch (err) {
+    Logger.log('updateQtyNotaDelta error: ' + err.toString());
+    return { success: false, error: err.toString() };
+  }
 }
 
 /**
@@ -1002,7 +1511,6 @@ function updateIndexDaftarTanggal(ss) {
       var name = s.getName().trim();
 
       // Deteksi tab tanggal: format DD-MM-YYYY atau memiliki (CMT)/(Kargo)
-      // Contoh: "26-09-2026 (Kargo)", "26-09-2026 (CMT)", "26-09-2026"
       var dateMatch = name.match(/^(\d{2})[-/](\d{2})[-/](\d{4})(?:\s*\((.*?)\))?/);
       if (dateMatch) {
         var dd = dateMatch[1];
@@ -1010,9 +1518,7 @@ function updateIndexDaftarTanggal(ss) {
         var yyyy = dateMatch[3];
         var tag = (dateMatch[4] || '').trim();
 
-        // Sort key numerik yyyymmdd untuk pengurutan tanggal terbaru ke terlama
         var sortKey = yyyy + mm + dd;
-
         var mIdx = Number(mm) - 1;
         var formattedDateIndo = dd + ' ' + (bulanIndo[mIdx] || mm) + ' ' + yyyy;
 
@@ -1031,7 +1537,6 @@ function updateIndexDaftarTanggal(ss) {
 
         if (lastRow >= 3) {
           try {
-            // Cek apakah di baris 1 terdapat metadata ringkasan info (misal: "📦 Total: 12 Model  |  🔢 Datang: 850 pcs")
             var topBannerVal = String(s.getRange(1, 4).getValue() || '');
             var metaCodeMatch = topBannerVal.match(/Total:\s*(\d+)\s*Model/i);
             var metaPcsMatch = topBannerVal.match(/Datang:\s*(\d+)\s*pcs/i);
@@ -1040,45 +1545,12 @@ function updateIndexDaftarTanggal(ss) {
               totalCodes = Number(metaCodeMatch[1]) || 0;
               totalPcs = Number(metaPcsMatch[1]) || 0;
             } else {
-              // Baca data untuk menghitung kode & pcs riil
-              var maxScanRows = Math.min(lastRow, 500);
-              var scanCols = Math.min(lastCol, 25);
-              var dataVals = s.getRange(1, 1, maxScanRows, scanCols).getValues();
-
-              var codeSet = {};
-              // Cari kolom total pcs (bisa 'TOTAL DATANG (NET)' atau col 8)
-              var colTotal = -1;
-              for (var c = 0; c < scanCols; c++) {
-                var h1 = String(dataVals[0] && dataVals[0][c] || '').toUpperCase();
-                var h2 = String(dataVals[1] && dataVals[1][c] || '').toUpperCase();
-                var h3 = String(dataVals[2] && dataVals[2][c] || '').toUpperCase();
-                if (h1.indexOf('TOTAL DATANG') !== -1 || h2.indexOf('TOTAL DATANG') !== -1 || h3.indexOf('TOTAL DATANG') !== -1) {
-                  colTotal = c;
-                  break;
-                }
-              }
-              if (colTotal === -1) {
-                // Kolom H (indeks 7) adalah kolom tanggal pertama
-                colTotal = 7;
-              }
-
-              for (var r = 0; r < maxScanRows; r++) {
-                var rCode = String(dataVals[r][1] || '').trim().toUpperCase();
-                var rSize = String(dataVals[r][6] || '').trim().toUpperCase();
-                
-                if (rCode && rCode !== 'CODE' && rCode !== '-' && rCode.indexOf('CATATAN') === -1) {
-                  codeSet[rCode] = true;
-                }
-
-                if (rSize && rSize !== 'SIZE' && rSize !== '-' && rCode.indexOf('CATATAN') === -1) {
-                  var qVal = Number(dataVals[r][colTotal]) || 0;
-                  totalPcs += qVal;
-                }
-              }
-
-              totalCodes = Object.keys(codeSet).length;
-              if (totalCodes === 0 && metaCodeMatch) {
-                totalCodes = Number(metaCodeMatch[1]) || 0;
+              var scan = scanExistingSheetBlocksData(s);
+              var nMap = scan.oldNotaMap || {};
+              var cKeys = Object.keys(nMap);
+              totalCodes = cKeys.length;
+              for (var ck = 0; ck < cKeys.length; ck++) {
+                totalPcs += Number(nMap[cKeys[ck]].totalDiterima) || 0;
               }
             }
           } catch (eScan) {
@@ -1117,7 +1589,6 @@ function updateIndexDaftarTanggal(ss) {
     sheet.setRowHeight(1, 38);
 
     // 2. Quick Links & Master Stats Bar (Row 2)
-    // Col A-B: Link Master Kargo
     sheet.getRange('A2:B2').merge();
     if (kargoGid !== null) {
       sheet.getRange('A2').setFormula('=HYPERLINK("#gid=' + kargoGid + '", "📦 Buka Master Kargo (Semua Data)")')
@@ -1129,7 +1600,6 @@ function updateIndexDaftarTanggal(ss) {
         .setHorizontalAlignment('center').setVerticalAlignment('middle');
     }
 
-    // Col C-D: Link Master CMT
     sheet.getRange('C2:D2').merge();
     if (cmtGid !== null) {
       sheet.getRange('C2').setFormula('=HYPERLINK("#gid=' + cmtGid + '", "🧵 Buka Master CMT (Semua Data)")')
@@ -1141,7 +1611,6 @@ function updateIndexDaftarTanggal(ss) {
         .setHorizontalAlignment('center').setVerticalAlignment('middle');
     }
 
-    // Col E-G: Timestamp & Total Tabs
     sheet.getRange('E2:G2').merge();
     var nowWib = Utilities.formatDate(new Date(), 'Asia/Jakarta', 'dd-MM-yyyy HH:mm:ss');
     sheet.getRange('E2').setValue('🕒 Terakhir Disinkron: ' + nowWib + ' WIB (' + dateEntries.length + ' Tab Tanggal)')
@@ -1149,7 +1618,6 @@ function updateIndexDaftarTanggal(ss) {
       .setHorizontalAlignment('center').setVerticalAlignment('middle');
     sheet.setRowHeight(2, 28);
 
-    // Spacer (Row 3)
     sheet.setRowHeight(3, 10);
 
     // 3. Table Header (Row 4)
@@ -1181,14 +1649,13 @@ function updateIndexDaftarTanggal(ss) {
       dataRange.setFontSize(9.5).setVerticalAlignment('middle');
       dataRange.setBorder(true, true, true, true, true, true, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID);
 
-      // Alignment & Styling
-      sheet.getRange(5, 1, rows.length, 1).setHorizontalAlignment('center'); // NO
-      sheet.getRange(5, 2, rows.length, 1).setHorizontalAlignment('center').setFontWeight('bold'); // TANGGAL
-      sheet.getRange(5, 3, rows.length, 1).setHorizontalAlignment('center').setFontWeight('bold'); // KATEGORI
-      sheet.getRange(5, 4, rows.length, 1).setHorizontalAlignment('left').setFontWeight('bold'); // NAMA TAB
-      sheet.getRange(5, 5, rows.length, 1).setHorizontalAlignment('center'); // TOTAL KODE
-      sheet.getRange(5, 6, rows.length, 1).setHorizontalAlignment('center').setFontWeight('bold').setFontColor('#047857').setNumberFormat('#,##0'); // TOTAL PCS
-      sheet.getRange(5, 7, rows.length, 1).setHorizontalAlignment('center').setFontWeight('bold').setFontColor('#2563EB'); // NAVIGASI LINK
+      sheet.getRange(5, 1, rows.length, 1).setHorizontalAlignment('center');
+      sheet.getRange(5, 2, rows.length, 1).setHorizontalAlignment('center').setFontWeight('bold');
+      sheet.getRange(5, 3, rows.length, 1).setHorizontalAlignment('center').setFontWeight('bold');
+      sheet.getRange(5, 4, rows.length, 1).setHorizontalAlignment('left').setFontWeight('bold');
+      sheet.getRange(5, 5, rows.length, 1).setHorizontalAlignment('center');
+      sheet.getRange(5, 6, rows.length, 1).setHorizontalAlignment('center').setFontWeight('bold').setFontColor('#047857').setNumberFormat('#,##0');
+      sheet.getRange(5, 7, rows.length, 1).setHorizontalAlignment('center').setFontWeight('bold').setFontColor('#2563EB');
 
       for (var rIdx = 0; rIdx < rows.length; rIdx++) {
         var rowNum = 5 + rIdx;
@@ -1198,26 +1665,25 @@ function updateIndexDaftarTanggal(ss) {
         }
         var cat = dateEntries[rIdx].kategori;
         if (cat === 'Kargo') {
-          sheet.getRange(rowNum, 3).setFontColor('#0284C7'); // Cyan/Blue
+          sheet.getRange(rowNum, 3).setFontColor('#0284C7');
         } else if (cat === 'Lokal CMT') {
-          sheet.getRange(rowNum, 3).setFontColor('#BE123C'); // Rose
+          sheet.getRange(rowNum, 3).setFontColor('#BE123C');
         }
       }
     } else {
-      // Empty state
       sheet.getRange('A5:G5').merge();
       sheet.getRange('A5').setValue('Belum ada tab tanggal yang terdaftar. Silakan lakukan Push Tab Tanggal dari WMS.')
         .setFontSize(10).setFontStyle('italic').setFontColor('#64748B').setHorizontalAlignment('center');
       sheet.setRowHeight(5, 40);
     }
 
-    sheet.setColumnWidth(1, 45);  // NO
-    sheet.setColumnWidth(2, 170); // TANGGAL KEDATANGAN
-    sheet.setColumnWidth(3, 110); // KATEGORI
-    sheet.setColumnWidth(4, 180); // NAMA TAB SHEET
-    sheet.setColumnWidth(5, 140); // TOTAL KODE
-    sheet.setColumnWidth(6, 130); // TOTAL PCS
-    sheet.setColumnWidth(7, 180); // NAVIGASI LINK
+    sheet.setColumnWidth(1, 45);
+    sheet.setColumnWidth(2, 170);
+    sheet.setColumnWidth(3, 110);
+    sheet.setColumnWidth(4, 180);
+    sheet.setColumnWidth(5, 140);
+    sheet.setColumnWidth(6, 130);
+    sheet.setColumnWidth(7, 180);
 
     return {
       success: true,
@@ -1234,7 +1700,6 @@ function updateIndexDaftarTanggal(ss) {
 /**
  * TARGETED DELTA UPDATE UNTUK HITUNG ULANG DI MASTER SHEET
  * Hanya mencari baris yang cocok (CODE + COLOR + SIZE) dan meng-update kolom recount tanpa menyentuh baris lain.
- * Menghindari timeout Google Apps Script ketika data Master Sheet sudah mencapai ribuan baris!
  */
 function updateMasterRecountDelta(ss, data) {
   try {
@@ -1271,7 +1736,7 @@ function updateMasterRecountDelta(ss, data) {
     for (var c = 0; c < headerRow1.length; c++) {
       var hText = String(headerRow1[c]).trim().toUpperCase();
       if (hText.indexOf('FISIK') !== -1) colFisik = c + 1;
-      else if (hText.indexOf('SELISIH') !== -1) colSelisih = c + 1;
+      else if (hText.indexOf('SELISIH FISIK') !== -1 || (hText.indexOf('SELISIH') !== -1 && colFisik !== -1 && colSelisih === -1)) colSelisih = c + 1;
       else if (hText.indexOf('STATUS AUDIT') !== -1 || hText === 'STATUS') colStatus = c + 1;
       else if (hText.indexOf('LOG') !== -1 || hText.indexOf('RIWAYAT') !== -1) colLog = c + 1;
     }
@@ -1286,7 +1751,7 @@ function updateMasterRecountDelta(ss, data) {
       colStatus = startNewCol + 2;
       colLog = startNewCol + 3;
 
-      var newHeaders = [['FISIK HASIL HITUNG', 'SELISIH', 'STATUS AUDIT', 'LOG HITUNG ULANG']];
+      var newHeaders = [['FISIK HASIL HITUNG', 'SELISIH FISIK', 'STATUS AUDIT', 'LOG HITUNG ULANG']];
       sheet.getRange(1, startNewCol, 1, 4).setValues(newHeaders);
       sheet.getRange(2, startNewCol, 1, 4).setValues([['', '', '', '']]);
       
@@ -1318,9 +1783,9 @@ function updateMasterRecountDelta(ss, data) {
     for (var r = 0; r < rawRows.length; r++) {
       var rowNum = r + 3;
       var c1 = String(rawRows[r][0] || '').trim();
-      var cCode = String(rawRows[r][1] || '').trim().toUpperCase();
+      var cCode = String(rawRows[r][1] || '').replace(/^'+/, '').trim().toUpperCase();
       var cColor = String(rawRows[r][5] || '').trim().toUpperCase();
-      var cSize = String(rawRows[r][6] || '').trim().toUpperCase();
+      var cSize = String(rawRows[r][6] || '').replace(/^'+/, '').trim().toUpperCase();
 
       if (cCode === 'CODE' || cCode.indexOf('CATATAN') !== -1 || c1 === 'NO') {
         continue;
@@ -1345,9 +1810,9 @@ function updateMasterRecountDelta(ss, data) {
 
     for (var i = 0; i < items.length; i++) {
       var it = items[i];
-      var targetCode = String(it.kode_produksi || '').trim().toUpperCase();
+      var targetCode = String(it.kode_produksi || '').replace(/^'+/, '').trim().toUpperCase();
       var targetColor = String(it.warna || '').trim().toUpperCase();
-      var targetSize = String(it.size || '').trim().toUpperCase();
+      var targetSize = String(it.size || '').replace(/^'+/, '').trim().toUpperCase();
 
       for (var m = 0; m < mappedRows.length; m++) {
         var mRow = mappedRows[m];
@@ -1407,4 +1872,3 @@ function updateMasterRecountDelta(ss, data) {
     return { success: false, error: err.toString() };
   }
 }
-

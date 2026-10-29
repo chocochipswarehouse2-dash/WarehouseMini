@@ -2,6 +2,7 @@ const fs = require('fs');
 
 const MAIN_SCRIPT_ID = '1kxPONxg5JyJKzrHg2EApt9K8c9nK6hccygtny2jf69JtgKIoVauTgDEU';
 const WEBHOOK_SCRIPT_ID = '1EfZ76Hl-bJhwvfzWpBkMD2zR8YbEkeBRgkgD76NHv95_XeHwtfsruqmE';
+const PRODUKSI_SCRIPT_ID = '1vYGP1u5mCAvjFYbJQHbc7mLruxrtwUmlKh27djBJ6oBlomuOCCKy-scb';
 const IG_LIVE_SCRIPT_ID = '1niTufmejkWtUnCCfStve3mvLMQakZEZ7eCJ27wehHWmC8nPkkSwyDW4A';
 const JNE_SCRIPT_ID = '1Z1cIj3vnYR_CxK_SLuFqeOvlxnT5dUf7brhgW2X1Njj-Qr0qC7F9QmgZ';
 
@@ -62,6 +63,7 @@ async function checkGasStatus() {
     const token = await getAccessToken();
     const webhookStatus = await checkProjectStatus(WEBHOOK_SCRIPT_ID, 'Standalone Fonnte Webhook', token);
     const mainStatus = await checkProjectStatus(MAIN_SCRIPT_ID, 'Main WMS Backend', token);
+    const produksiStatus = await checkProjectStatus(PRODUKSI_SCRIPT_ID, 'Produksi Spreadsheet Backend', token);
     const igLiveStatus = await checkProjectStatus(IG_LIVE_SCRIPT_ID, 'IG Live Spreadsheet Backend', token);
     const jneStatus = await checkProjectStatus(JNE_SCRIPT_ID, 'Rekap Tagihan JNE Backend', token);
 
@@ -69,6 +71,7 @@ async function checkGasStatus() {
       success: true,
       webhook: webhookStatus,
       main: mainStatus,
+      produksi: produksiStatus,
       igLive: igLiveStatus,
       jne: jneStatus
     };

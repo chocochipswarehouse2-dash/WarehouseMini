@@ -53,6 +53,7 @@ import {
 import { saveWmsSettings } from '../../services/settings';
 import {
   pushMasterRecountDeltaToGoogleSheet,
+  syncQtyNotaAndAutoQueueRecount,
   MasterRecountDeltaItem,
   formatDatesSummary,
 } from '../../services/gasProduksiSync';
@@ -294,6 +295,16 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       window.removeEventListener('wms_recount_queue_updated', handleQueueSyncEvent);
       window.removeEventListener('wms_recount_audit_updated', handleAuditUpdateEvent);
     };
+  }, [penerimaanItems]);
+
+  // Sinkron otomatis Qty Nota Buyer (Google Sheet -> Supabase) & auto-antrian selisih nota
+  const qtyNotaSyncedRef = useRef(false);
+  useEffect(() => {
+    if (qtyNotaSyncedRef.current || penerimaanItems.length === 0) return;
+    qtyNotaSyncedRef.current = true;
+    syncQtyNotaAndAutoQueueRecount({ penerimaanItems })
+      .then(() => window.dispatchEvent(new Event('wms_recount_queue_updated')))
+      .catch((e) => console.warn('Sync Qty Nota gagal:', e));
   }, [penerimaanItems]);
 
   const saveQueueMap = async (updated: Record<string, QueueItemMetadata>) => {

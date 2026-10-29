@@ -15,19 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.5.4",
-  "versionCode": 254,
+  "version": "v2.5.5",
+  "versionCode": 255,
   "buildDate": "29 Oktober 2026",
-  "buildHash": "wms-261029-v254-1325",
-  "releaseTitle": "WMS v2.5.4 — Copy-Paste & Drag-Drop Foto Input Produksi",
+  "buildHash": "wms-261029-v255-1729",
+  "releaseTitle": "WMS v2.5.5 — Integrasi Qty Nota Buyer & Auto-Antrian Audit",
   "releaseNotes": [
-    "Fitur Copy-Paste (Ctrl+V & Tombol Paste) Foto Produk: Mendukung tempel gambar langsung dari clipboard pada setiap blok kode produk di form Input Penerimaan Produksi.",
-    "Fitur Drag & Drop Foto Produk: Tarik dan lepaskan file gambar langsung ke baris/blok produk pada form Input Penerimaan Produksi dengan kompresi WebP otomatis."
+    "Kolom QTY NOTA & SELISIH di sheet satuan dan master produksi",
+    "Qty Nota Buyer disinkron ke Supabase",
+    "Selisih nota otomatis masuk antrian Audit Hitung Ulang"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.5.4",
+    "versionCode": 254,
+    "buildDate": "29 Oktober 2026",
+    "buildHash": "wms-261029-v254-1325",
+    "releaseTitle": "WMS v2.5.4 — Copy-Paste & Drag-Drop Foto Input Produksi",
+    "releaseNotes": [
+      "Fitur Copy-Paste (Ctrl+V & Tombol Paste) Foto Produk: Mendukung tempel gambar langsung dari clipboard pada setiap blok kode produk di form Input Penerimaan Produksi.",
+      "Fitur Drag & Drop Foto Produk: Tarik dan lepaskan file gambar langsung ke baris/blok produk pada form Input Penerimaan Produksi dengan kompresi WebP otomatis."
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.5.3",
     "versionCode": 253,

@@ -28,12 +28,24 @@ import {
   ExternalLink,
   ChevronLeft,
   ChevronRight,
+  RefreshCw,
 } from 'lucide-react';
-import { PenerimaanProduksiItem, ProductItem } from '../../types';
+import { PenerimaanProduksiItem, ProductItem, ProduksiQtyNotaRecord } from '../../types';
 import { exportProduksiToModernExcel } from '../../utils/excelProduksiExporter';
-import { pushPenerimaanProduksiToGoogleSheet, PRODUKSI_SPREADSHEET_ID } from '../../services/gasProduksiSync';
+import {
+  pushPenerimaanProduksiToGoogleSheet,
+  PRODUKSI_SPREADSHEET_ID,
+  syncQtyNotaAndAutoQueueRecount,
+  pushQtyNotaDeltaToGoogleSheet,
+} from '../../services/gasProduksiSync';
 import { compressImage } from '../../utils/imageCompressor';
-import { supabaseFetch, simpanBatchPenerimaanProduksiToSupabase, updatePenerimaanPhotoInSupabase, getNextPenerimaanProduksiIds } from '../../services/supabase';
+import {
+  supabaseFetch,
+  simpanBatchPenerimaanProduksiToSupabase,
+  updatePenerimaanPhotoInSupabase,
+  getNextPenerimaanProduksiIds,
+  getCachedProduksiQtyNotaMapSync,
+} from '../../services/supabase';
 import { PushSuratJalanModal } from './PushSuratJalanModal';
 import { PushDateSheetsModal } from './PushDateSheetsModal';
 
@@ -89,6 +101,9 @@ export interface MatrixProductBlock {
   totalDatang: number; // Gross datang
   totalRetur?: number; // Total retur
   totalNet: number; // Datang - Retur
+  // Qty Nota Buyer & Selisih Nota (Total Diterima - Qty Nota)
+  qtyNota?: number | null;
+  selisihNota?: number | null;
   // Recount metrics for the block
   totalRecountFisik?: number | null;
   totalRecountSelisih?: number | null;
@@ -147,6 +162,12 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
 
   // Master local state of product blocks
   const [blocks, setBlocks] = useState<MatrixProductBlock[]>([]);
+
+  // Qty Nota Buyer Map (sinkron dengan Google Sheet & Supabase)
+  const [qtyNotaMap, setQtyNotaMap] = useState<Record<string, ProduksiQtyNotaRecord>>(() =>
+    getCachedProduksiQtyNotaMapSync()
+  );
+  const [isSyncingQtyNota, setIsSyncingQtyNota] = useState<boolean>(false);
 
   // Date Filter & Push to Google Sheet state
   const [selectedDateFilter, setSelectedDateFilter] = useState<string>('all');
@@ -543,6 +564,17 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       const totalOngkir = Math.round(kg * ongkirPerKg);
       const ongkirPerPcs = totalNet > 0 ? Math.round(totalOngkir / totalNet) : 0;
 
+      const notaRec = qtyNotaMap[code];
+      const itemNotaFallback = items.find((i) => i.qty_nota !== undefined && i.qty_nota !== null)?.qty_nota ?? null;
+      const resolvedQtyNota =
+        notaRec && notaRec.qty_nota !== null && notaRec.qty_nota !== undefined
+          ? Number(notaRec.qty_nota)
+          : itemNotaFallback !== null
+          ? Number(itemNotaFallback)
+          : null;
+      const resolvedSelisihNota =
+        resolvedQtyNota !== null && !isNaN(resolvedQtyNota) ? totalNet - resolvedQtyNota : null;
+
       parsedBlocks.push({
         id: code,
         rowNumber: rowNumber++,
@@ -560,6 +592,8 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         totalDatang,
         totalRetur,
         totalNet,
+        qtyNota: resolvedQtyNota,
+        selisihNota: resolvedSelisihNota,
         totalRecountFisik: blockRecountFisik,
         totalRecountSelisih: blockRecountSelisih,
         hasRecount: blockHasRecount,
@@ -572,7 +606,118 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     });
 
     setBlocks(parsedBlocks);
-  }, [dataList, activeTab, catalogNameMap]);
+  }, [dataList, activeTab, catalogNameMap, qtyNotaMap]);
+
+  // Sinkronisasi Otomatis Qty Nota dari Google Sheet & Backup ke Supabase saat halaman dibuka
+  const handleSyncQtyNotaFromSheet = async (isSilent = false) => {
+    try {
+      setIsSyncingQtyNota(true);
+      const res = await syncQtyNotaAndAutoQueueRecount({
+        penerimaanItems: dataList,
+        updatedBy: isSilent ? 'Auto-Sync Sheet Buyer' : 'Manual Sync Sheet Buyer',
+      });
+      if (res.notaMap) {
+        setQtyNotaMap(res.notaMap);
+      }
+      if (!isSilent) {
+        onShowToast(res.message, res.newlyQueuedCodes.length > 0 ? 'warning' : 'success');
+      } else if (res.newlyQueuedCodes.length > 0) {
+        onShowToast(
+          `📋 Buyer telah mengisi Qty Nota: ${res.newlyQueuedCodes.length} kode selisih (${res.newlyQueuedCodes
+            .slice(0, 4)
+            .join(', ')}) otomatis masuk Antrian Audit Hitung Ulang!`,
+          'warning'
+        );
+      }
+    } catch (err) {
+      if (!isSilent) {
+        onShowToast('Gagal menyinkronkan Qty Nota dari Google Sheet.', 'error');
+      }
+    } finally {
+      setIsSyncingQtyNota(false);
+    }
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    const timer = setTimeout(() => {
+      if (mounted && dataList && dataList.length > 0) {
+        handleSyncQtyNotaFromSheet(true);
+      }
+    }, 600);
+
+    const handleNotaEvent = (e: any) => {
+      if (mounted && e?.detail?.notaMap) {
+        setQtyNotaMap(e.detail.notaMap);
+      }
+    };
+    window.addEventListener('wms_produksi_qty_nota_updated', handleNotaEvent);
+
+    return () => {
+      mounted = false;
+      clearTimeout(timer);
+      window.removeEventListener('wms_produksi_qty_nota_updated', handleNotaEvent);
+    };
+  }, [dataList.length]);
+
+  // Handler saat user mengisi / mengubah Qty Nota langsung dari tabel Frontend
+  const handleUpdateBlockQtyNota = async (
+    blockCode: string,
+    rawNotaValue: string,
+    kategori: string
+  ) => {
+    const cleanCode = normalizeProductCode(blockCode);
+    const trimmed = rawNotaValue.trim();
+    const parsedNota = trimmed === '' ? null : parseInt(trimmed.replace(/\D/g, ''), 10);
+    const finalNota = parsedNota !== null && !isNaN(parsedNota) ? parsedNota : null;
+
+    // Optimistic update pada blocks state
+    setBlocks((prev) =>
+      prev.map((b) => {
+        if (b.code !== cleanCode) return b;
+        return {
+          ...b,
+          qtyNota: finalNota,
+          selisihNota: finalNota !== null ? b.totalNet - finalNota : null,
+        };
+      })
+    );
+
+    // Backup ke Supabase & daftarkan ke Antrian Hitung Ulang jika selisih !== 0
+    const syncRes = await syncQtyNotaAndAutoQueueRecount({
+      penerimaanItems: dataList,
+      skipSheetFetch: true,
+      updatedBy: 'Input Tabel WMS',
+      overrideNotaEntry: {
+        kode_produksi: cleanCode,
+        qty_nota: finalNota,
+        kategori,
+      },
+    });
+    if (syncRes.notaMap) {
+      setQtyNotaMap(syncRes.notaMap);
+    }
+
+    // Push perubahan Qty Nota ke Google Sheet (Master & Sheet Tanggal)
+    pushQtyNotaDeltaToGoogleSheet({
+      kode_produksi: cleanCode,
+      qty_nota: finalNota,
+      kategori,
+      tanggal: selectedDateFilter !== 'all' ? selectedDateFilter : undefined,
+    }).catch(() => {});
+
+    const updatedRec = syncRes.notaMap?.[cleanCode];
+    if (updatedRec && updatedRec.selisih_nota !== null && updatedRec.selisih_nota !== 0) {
+      onShowToast(
+        `Qty Nota Kode ${cleanCode} disimpan (${finalNota} pcs). Selisih ${
+          updatedRec.selisih_nota > 0 ? '+' + updatedRec.selisih_nota : updatedRec.selisih_nota
+        } pcs otomatis masuk Antrian Audit Hitung Ulang!`,
+        'warning'
+      );
+    } else if (finalNota !== null) {
+      onShowToast(`Qty Nota Kode ${cleanCode} disimpan (${finalNota} pcs — Sesuai / Klop).`, 'success');
+    }
+  };
 
   // Recalculate block totals
   const recalculateBlock = (block: MatrixProductBlock): MatrixProductBlock => {
@@ -1525,6 +1670,17 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
 
           <button
             type="button"
+            disabled={isSyncingQtyNota}
+            onClick={() => handleSyncQtyNotaFromSheet(false)}
+            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-400 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+            title="Tarik Qty Nota yang diisi Buyer di Google Sheet, backup ke Supabase, dan buat Antrian Hitung Ulang otomatis jika selisih"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncingQtyNota ? 'animate-spin' : ''}`} />
+            <span>{isSyncingQtyNota ? 'Sync Nota...' : 'Tarik Qty Nota'}</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setIsPushDateModalOpen(true)}
             className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
             title={selectedDateFilter !== 'all' ? `Push Sheet Khusus Tanggal ${formatDateHeader(selectedDateFilter)}` : 'Push Sheet Per Tanggal'}
@@ -1916,6 +2072,29 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                         <span>Net: <strong className="text-emerald-600 dark:text-emerald-400">{block.totalNet} pcs</strong></span>
                       </>
                     )}
+                    {block.qtyNota !== null && block.qtyNota !== undefined && (
+                      <>
+                        <span className="text-slate-400">•</span>
+                        <span className="px-2 py-0.5 rounded-md bg-amber-100/80 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800 text-[11px] font-mono">
+                          Qty Nota: <strong>{block.qtyNota} pcs</strong>
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded-md text-[11px] font-mono font-black border ${
+                            (block.totalNet - Number(block.qtyNota)) === 0
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+                              : (block.totalNet - Number(block.qtyNota)) < 0
+                              ? 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800'
+                              : 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800'
+                          }`}
+                        >
+                          Selisih Nota:{' '}
+                          {(block.totalNet - Number(block.qtyNota)) > 0
+                            ? `+${block.totalNet - Number(block.qtyNota)}`
+                            : block.totalNet - Number(block.qtyNota)}{' '}
+                          pcs
+                        </span>
+                      </>
+                    )}
 
                     {/* SURAT JALAN BADGES & QUICK EDIT */}
                     <span className="text-slate-400">•</span>
@@ -2126,7 +2305,23 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
 
                         {/* TOTAL DATANG (NET) */}
                         <th rowSpan={2} className="py-2.5 px-3 min-w-[95px] bg-[#fce8e6] dark:bg-[#3d1e22]">
-                          TOTAL<br />{isCMT ? 'DATANG (NET)' : 'DATANG'}
+                          TOTAL<br />{isCMT ? 'DATANG (NET)' : 'DITERIMA'}
+                        </th>
+
+                        {/* KOLOM QTY NOTA (DIISI BUYER DI SPREADSHEET / FRONTEND) & SELISIH NOTA */}
+                        <th
+                          rowSpan={2}
+                          className="py-2.5 px-3 min-w-[95px] bg-amber-100 dark:bg-amber-950/60 text-amber-950 dark:text-amber-200"
+                          title="Qty Nota diisi oleh Buyer di Google Sheet (atau langsung di tabel ini)"
+                        >
+                          QTY<br />NOTA
+                        </th>
+                        <th
+                          rowSpan={2}
+                          className="py-2.5 px-3 min-w-[90px] bg-sky-100 dark:bg-sky-950/60 text-sky-950 dark:text-sky-200"
+                          title="Formula Otomatis: Total Diterima - Qty Nota (Jika selisih !== 0 otomatis masuk Antrian Hitung Ulang)"
+                        >
+                          SELISIH<br />NOTA
                         </th>
 
                         {/* KOLOM AUDIT / HASIL HITUNG ULANG FISIK */}
@@ -2134,7 +2329,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                           FISIK<br />HITUNG
                         </th>
                         <th rowSpan={2} className="py-2.5 px-3 min-w-[80px] bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200">
-                          SELISIH
+                          SELISIH<br />FISIK
                         </th>
                         <th rowSpan={2} className="py-2.5 px-3 min-w-[105px] bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200">
                           STATUS
@@ -2492,6 +2687,110 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                                       ({block.totalDatang} - {block.totalRetur})
                                     </div>
                                   ) : null}
+                                </td>
+                              )}
+
+                              {/* 10b. QTY NOTA (BUYER) — Merged Per Block, Editable & Auto-Synced with Sheet + Supabase */}
+                              {isFirstRowOfBlock && (
+                                <td
+                                  rowSpan={totalSubRows}
+                                  className="py-2 px-2 text-center align-middle font-mono bg-amber-50/40 dark:bg-amber-950/20"
+                                >
+                                  <div className="flex flex-col items-center justify-center gap-1">
+                                    <input
+                                      type="text"
+                                      inputMode="numeric"
+                                      pattern="[0-9]*"
+                                      defaultValue={
+                                        block.qtyNota !== null && block.qtyNota !== undefined
+                                          ? String(block.qtyNota)
+                                          : ''
+                                      }
+                                      key={`nota-${block.code}-${block.qtyNota ?? 'empty'}`}
+                                      placeholder="Isi Nota..."
+                                      title="Qty Nota Buyer (otomatis tersinkron dengan Google Sheet & dibackup ke Supabase. Tekan Enter atau klik di luar untuk simpan)"
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          (e.target as HTMLInputElement).blur();
+                                        }
+                                      }}
+                                      onBlur={(e) => {
+                                        const val = e.target.value.trim();
+                                        const currentStr =
+                                          block.qtyNota !== null && block.qtyNota !== undefined
+                                            ? String(block.qtyNota)
+                                            : '';
+                                        if (val !== currentStr) {
+                                          handleUpdateBlockQtyNota(block.code, val, block.kategori);
+                                        }
+                                      }}
+                                      className="w-20 px-2 py-1 text-center font-mono font-black text-xs rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-amber-900 dark:text-amber-200 focus:ring-2 focus:ring-amber-500 outline-none shadow-2xs"
+                                    />
+                                    {qtyNotaMap[block.code]?.source_sheet && (
+                                      <span className="text-[9px] text-slate-400 truncate max-w-[85px]" title={`Sumber: ${qtyNotaMap[block.code]?.source_sheet}`}>
+                                        {qtyNotaMap[block.code]?.source_sheet}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              )}
+
+                              {/* 10c. SELISIH NOTA (= Total Diterima - Qty Nota) — Merged Per Block */}
+                              {isFirstRowOfBlock && (
+                                <td
+                                  rowSpan={totalSubRows}
+                                  className="py-2 px-2 text-center align-middle font-mono bg-sky-50/20 dark:bg-sky-950/10"
+                                >
+                                  {block.qtyNota !== null && block.qtyNota !== undefined ? (
+                                    (() => {
+                                      const diffNota = block.totalNet - Number(block.qtyNota);
+                                      if (diffNota === 0) {
+                                        return (
+                                          <div className="flex flex-col items-center gap-1">
+                                            <span className="inline-block px-2 py-0.5 rounded-lg text-xs font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                                              0
+                                            </span>
+                                            <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
+                                              ✅ Klop Nota
+                                            </span>
+                                          </div>
+                                        );
+                                      }
+                                      const isKurang = diffNota < 0;
+                                      return (
+                                        <div className="flex flex-col items-center gap-1">
+                                          <span
+                                            className={`inline-block px-2 py-0.5 rounded-lg text-xs font-black border ${
+                                              isKurang
+                                                ? 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800'
+                                                : 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800'
+                                            }`}
+                                          >
+                                            {diffNota > 0 ? `+${diffNota}` : diffNota}
+                                          </span>
+                                          <span
+                                            className={`text-[9px] font-bold ${
+                                              isKurang ? 'text-rose-600 dark:text-rose-400' : 'text-blue-600 dark:text-blue-400'
+                                            }`}
+                                          >
+                                            {isKurang ? `Kurang ${Math.abs(diffNota)}` : `Lebih +${diffNota}`}
+                                          </span>
+                                          {onOpenHitungUlang && (
+                                            <button
+                                              type="button"
+                                              onClick={() => onOpenHitungUlang(block.code)}
+                                              className="mt-0.5 px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-700 text-white text-[9px] font-bold transition cursor-pointer shadow-2xs"
+                                              title="Kode ini otomatis masuk Antrian Audit Hitung Ulang. Klik untuk buka lembar hitung ulang."
+                                            >
+                                              📋 Audit Antrian
+                                            </button>
+                                          )}
+                                        </div>
+                                      );
+                                    })()
+                                  ) : (
+                                    <span className="text-slate-300 dark:text-slate-700 text-xs">-</span>
+                                  )}
                                 </td>
                               )}
 

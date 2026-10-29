@@ -1,5 +1,12 @@
-import { PenerimaanProduksiItem } from '../types';
+import { PenerimaanProduksiItem, ProduksiQtyNotaRecord } from '../types';
 import { MatrixProductBlock } from '../components/penerimaan/ProduksiSpreadsheetView';
+import {
+  getCachedProduksiQtyNotaMapSync,
+  fetchProduksiQtyNotaMapFromSupabase,
+  saveProduksiQtyNotaMapToSupabase,
+  fetchPenerimaanRecountQueueFromSupabase,
+  savePenerimaanRecountQueueToSupabase,
+} from './supabase';
 
 export const PRODUKSI_SPREADSHEET_ID = '1fnW49pCI8X8-lYtmXljxB0GsZWKkQtKshV2R5-mlodk';
 export const PRODUKSI_SCRIPT_ID = '1vYGP1u5mCAvjFYbJQHbc7mLruxrtwUmlKh27djBJ6oBlomuOCCKy-scb';
@@ -187,8 +194,19 @@ export function buildBlocksFromRawItems(
   let rowNum = 1;
   const resultBlocks: MatrixProductBlock[] = [];
 
+  const cachedNotaMap = getCachedProduksiQtyNotaMapSync();
+
   mapByCode.forEach((items, code) => {
     const firstItem = items[0];
+    const normCode = code.trim().toUpperCase();
+    const notaRec = cachedNotaMap[normCode];
+    const targetSingleDate = customDateSlots && customDateSlots.length === 1 ? customDateSlots[0] : null;
+    const effectiveQtyNota =
+      targetSingleDate && notaRec?.by_date && notaRec.by_date[targetSingleDate] !== undefined
+        ? notaRec.by_date[targetSingleDate]
+        : notaRec?.qty_nota !== undefined && notaRec?.qty_nota !== null
+        ? notaRec.qty_nota
+        : firstItem.qty_nota ?? null;
 
     // Temukan semua tanggal yang ada (Khusus barang datang, abaikan baris retur)
     const dateSet = new Set<string>();
@@ -302,6 +320,8 @@ export function buildBlocksFromRawItems(
       totalDatang: blockTotalDatang,
       totalRetur: 0,
       totalNet: blockTotalDatang,
+      qtyNota: effectiveQtyNota,
+      selisihNota: effectiveQtyNota !== null && effectiveQtyNota !== undefined ? blockTotalDatang - Number(effectiveQtyNota) : null,
       kg: 0,
       ongkirPerKg: 0,
       totalOngkir: 0,
@@ -402,6 +422,15 @@ export async function pushProduksiPerTanggalToGoogleSheet(
             });
           });
 
+          const normCode = (b.code || '').trim().toUpperCase();
+          const cachedNota = getCachedProduksiQtyNotaMapSync()[normCode];
+          const dateSpecificNota =
+            cachedNota?.by_date && cachedNota.by_date[dStr] !== undefined
+              ? cachedNota.by_date[dStr]
+              : b.dateSlots.filter(Boolean).length <= 1
+              ? (b.qtyNota ?? cachedNota?.qty_nota ?? null)
+              : null;
+
           return {
             ...b,
             photoUrl: formatImageUrlForSheets(b.photoUrl),
@@ -409,6 +438,8 @@ export async function pushProduksiPerTanggalToGoogleSheet(
             colorGroups,
             totalDatang: dateDatang,
             totalNet: dateDatang,
+            qtyNota: dateSpecificNota,
+            selisihNota: dateSpecificNota !== null && dateSpecificNota !== undefined ? dateDatang - Number(dateSpecificNota) : null,
           };
         })
         .filter((b) => b.totalDatang > 0);
@@ -685,10 +716,17 @@ export async function pushPenerimaanProduksiToGoogleSheet(
     : buildMatrixBlocksFromItems(items, activeTab === 'CMT');
 
   // Format blocks jika ada
-  const formattedBlocks = effectiveBlocks.map((b) => ({
-    ...b,
-    photoUrl: formatImageUrlForSheets(b.photoUrl),
-  }));
+  const cachedNotaMapMaster = getCachedProduksiQtyNotaMapSync();
+  const formattedBlocks = effectiveBlocks.map((b) => {
+    const normCode = (b.code || '').trim().toUpperCase();
+    const resolvedQtyNota = b.qtyNota !== undefined && b.qtyNota !== null ? b.qtyNota : (cachedNotaMapMaster[normCode]?.qty_nota ?? null);
+    return {
+      ...b,
+      photoUrl: formatImageUrlForSheets(b.photoUrl),
+      qtyNota: resolvedQtyNota,
+      selisihNota: resolvedQtyNota !== null && resolvedQtyNota !== undefined ? b.totalNet - Number(resolvedQtyNota) : null,
+    };
+  });
 
   // Format flat items
   const formattedItems = items && Array.isArray(items) ? items.map((it) => ({
@@ -1032,5 +1070,331 @@ export async function refreshProduksiSpreadsheetIndex(
     };
   }
 }
+
+export interface FetchQtyNotaResponse {
+  success: boolean;
+  count?: number;
+  notaMap?: Record<string, ProduksiQtyNotaRecord>;
+  records?: ProduksiQtyNotaRecord[];
+  message?: string;
+  error?: string;
+}
+
+/**
+ * Menarik data Qty Nota yang diisi oleh Buyer di Google Spreadsheet
+ * (Membaca dari Sheet Master Produksi Kargo/CMT maupun Sheet Satuan Per Tanggal)
+ */
+export async function fetchQtyNotaFromGoogleSheet(
+  customSpreadsheetId?: string
+): Promise<FetchQtyNotaResponse> {
+  const targetSpreadsheetId =
+    customSpreadsheetId || localStorage.getItem('wms_produksi_spreadsheet_id') || PRODUKSI_SPREADSHEET_ID;
+  const gasUrl = getProduksiGasUrl();
+
+  const payload = {
+    action: 'fetch_qty_nota',
+    spreadsheetId: targetSpreadsheetId,
+  };
+
+  try {
+    const res = await fetch(gasUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+      body: JSON.stringify(payload),
+      redirect: 'follow',
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: Gagal membaca Qty Nota dari Google Sheet`);
+    }
+
+    const json = await res.json();
+    return {
+      success: json.success !== false,
+      count: json.count || (json.records ? json.records.length : 0),
+      notaMap: json.notaMap || {},
+      records: json.records || [],
+      message: json.message,
+      error: json.error,
+    };
+  } catch (err: any) {
+    console.warn('Gagal menarik Qty Nota dari Google Sheet:', err);
+    return {
+      success: false,
+      error: err?.message || String(err),
+      message: `Gagal menarik Qty Nota dari Google Sheet: ${err?.message || err}`,
+    };
+  }
+}
+
+/**
+ * Mengirim perubahan Qty Nota per Kode dari Frontend langsung ke Google Sheet (Master & Sheet Tanggal)
+ */
+export async function pushQtyNotaDeltaToGoogleSheet(options: {
+  kode_produksi: string;
+  qty_nota: number | null | '';
+  kategori?: string;
+  tanggal?: string;
+  customSpreadsheetId?: string;
+}): Promise<PushProduksiResponse> {
+  const targetSpreadsheetId =
+    options.customSpreadsheetId || localStorage.getItem('wms_produksi_spreadsheet_id') || PRODUKSI_SPREADSHEET_ID;
+  const gasUrl = getProduksiGasUrl();
+
+  const payload = {
+    action: 'update_qty_nota_delta',
+    spreadsheetId: targetSpreadsheetId,
+    kode_produksi: options.kode_produksi.trim().toUpperCase(),
+    qty_nota: options.qty_nota === null || options.qty_nota === undefined || options.qty_nota === '' ? '' : Number(options.qty_nota),
+    kategori: options.kategori,
+    tanggal: options.tanggal,
+  };
+
+  try {
+    const res = await fetch(gasUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+      body: JSON.stringify(payload),
+      redirect: 'follow',
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const json = await res.json();
+    return {
+      success: json.success !== false,
+      message: json.message || `Berhasil memperbarui Qty Nota Kode ${options.kode_produksi} di Google Sheet!`,
+      error: json.error,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: `Gagal update Qty Nota ke Google Sheet: ${err?.message || err}`,
+      error: err?.message || String(err),
+    };
+  }
+}
+
+export interface SyncQtyNotaResult {
+  success: boolean;
+  notaMap: Record<string, ProduksiQtyNotaRecord>;
+  totalNotaCodes: number;
+  activeDiffCodes: string[];
+  newlyQueuedCodes: string[];
+  message: string;
+}
+
+/**
+ * SINKRONISASI 2 ARAH:
+ * 1. Membaca Qty Nota yang diisi Buyer dari Google Sheet (Master & Sheet Satuan Per Tanggal)
+ * 2. Menggabungkan & mem-backup Qty Nota ke Supabase Cloud (`produksi_qty_nota_map`)
+ * 3. Menghitung Selisih (`Total Diterima - Qty Nota`)
+ * 4. Jika muncul Selisih (!== 0), secara sistematis mendaftarkan Kode Produksi ke Antrian Audit Hitung Ulang!
+ */
+export async function syncQtyNotaAndAutoQueueRecount(options: {
+  penerimaanItems: PenerimaanProduksiItem[];
+  customSpreadsheetId?: string;
+  updatedBy?: string;
+  skipSheetFetch?: boolean;
+  overrideNotaEntry?: { kode_produksi: string; qty_nota: number | null; kategori?: string };
+}): Promise<SyncQtyNotaResult> {
+  const { penerimaanItems, customSpreadsheetId, updatedBy = 'Buyer Sheet Sync', skipSheetFetch = false, overrideNotaEntry } = options;
+
+  // 1. Hitung Total Diterima (Net) per Kode Produksi dari data penerimaan WMS
+  const totalDiterimaByCode = new Map<string, number>();
+  const kategoriByCode = new Map<string, string>();
+
+  (penerimaanItems || []).forEach((it) => {
+    const normCode = String(it.kode_produksi || '')
+      .replace(/[\u200B-\u200D\uFEFF\u00A0\r\n\t]/g, '')
+      .trim()
+      .toUpperCase();
+    if (!normCode) return;
+
+    if (!kategoriByCode.has(normCode) && it.kategori) {
+      kategoriByCode.set(normCode, it.kategori);
+    }
+
+    const isReturOnly =
+      (it.no_surat_jalan && it.no_surat_jalan.toUpperCase().startsWith('RETUR-')) ||
+      (it.keterangan && it.keterangan.includes('RETUR_CMT:')) ||
+      (Number(it.qty_retur) > 0 && (!it.qty || Number(it.qty) === 0));
+
+    const prev = totalDiterimaByCode.get(normCode) || 0;
+    if (isReturOnly) {
+      totalDiterimaByCode.set(normCode, prev - (Number(it.qty_retur) || Number(it.qty) || 0));
+    } else {
+      totalDiterimaByCode.set(normCode, prev + (Number(it.qty) || 0) - (Number(it.qty_retur) || 0));
+    }
+  });
+
+  // 2. Ambil data backup dari Supabase Cloud & tarik data terbaru dari Google Sheet
+  const [cloudNotaMap, sheetRes] = await Promise.all([
+    fetchProduksiQtyNotaMapFromSupabase(),
+    skipSheetFetch ? Promise.resolve({ success: true, notaMap: {} } as FetchQtyNotaResponse) : fetchQtyNotaFromGoogleSheet(customSpreadsheetId),
+  ]);
+
+  const mergedNotaMap: Record<string, ProduksiQtyNotaRecord> = { ...cloudNotaMap };
+  const nowIso = new Date().toISOString();
+
+  // Terapkan data terbaru dari Google Sheet (prioritas utama karena Buyer isi di Sheet)
+  if (sheetRes.success && sheetRes.notaMap) {
+    Object.keys(sheetRes.notaMap).forEach((rawCode) => {
+      const code = rawCode.trim().toUpperCase();
+      const sRec = sheetRes.notaMap![rawCode];
+      if (sRec && sRec.qty_nota !== null && sRec.qty_nota !== undefined && !isNaN(Number(sRec.qty_nota))) {
+        const wmsTotal = totalDiterimaByCode.has(code)
+          ? Math.max(0, totalDiterimaByCode.get(code)!)
+          : Number(sRec.total_diterima) || 0;
+        const qNota = Number(sRec.qty_nota);
+        mergedNotaMap[code] = {
+          kode_produksi: code,
+          kategori: sRec.kategori || kategoriByCode.get(code) || 'Kargo',
+          qty_nota: qNota,
+          total_diterima: wmsTotal,
+          selisih_nota: wmsTotal - qNota,
+          by_date: sRec.by_date || mergedNotaMap[code]?.by_date || {},
+          source_sheet: sRec.source_sheet || 'Google Sheet',
+          updated_at: sRec.updated_at || nowIso,
+          updated_by: updatedBy,
+        };
+      }
+    });
+  }
+
+  // Jika ada input manual/override langsung dari Frontend
+  if (overrideNotaEntry) {
+    const oCode = overrideNotaEntry.kode_produksi.trim().toUpperCase();
+    const wmsTotal = Math.max(0, totalDiterimaByCode.get(oCode) || mergedNotaMap[oCode]?.total_diterima || 0);
+    if (overrideNotaEntry.qty_nota === null || overrideNotaEntry.qty_nota === undefined || isNaN(Number(overrideNotaEntry.qty_nota))) {
+      delete mergedNotaMap[oCode];
+    } else {
+      const qNota = Number(overrideNotaEntry.qty_nota);
+      mergedNotaMap[oCode] = {
+        kode_produksi: oCode,
+        kategori: overrideNotaEntry.kategori || kategoriByCode.get(oCode) || mergedNotaMap[oCode]?.kategori || 'Kargo',
+        qty_nota: qNota,
+        total_diterima: wmsTotal,
+        selisih_nota: wmsTotal - qNota,
+        by_date: mergedNotaMap[oCode]?.by_date || {},
+        source_sheet: 'Input WMS',
+        updated_at: nowIso,
+        updated_by: updatedBy,
+      };
+    }
+  }
+
+  // Rekalkulasi ulang semua entry di mergedNotaMap terhadap totalDiterimaByCode terbaru di WMS
+  Object.keys(mergedNotaMap).forEach((code) => {
+    const rec = mergedNotaMap[code];
+    if (!rec || rec.qty_nota === null || rec.qty_nota === undefined) return;
+    if (totalDiterimaByCode.has(code)) {
+      const latestTotal = Math.max(0, totalDiterimaByCode.get(code)!);
+      rec.total_diterima = latestTotal;
+      rec.selisih_nota = latestTotal - Number(rec.qty_nota);
+    }
+  });
+
+  // 3. Backup data Qty Nota ke Supabase Cloud
+  await saveProduksiQtyNotaMapToSupabase(mergedNotaMap, updatedBy);
+
+  // 4. Sistematis Buat / Perbarui Antrian Hitung Ulang di Fitur Audit Hitung Ulang untuk semua kode yang Selisih (!== 0)
+  const currentQueue = await fetchPenerimaanRecountQueueFromSupabase();
+  let queueChanged = false;
+  const activeDiffCodes: string[] = [];
+  const newlyQueuedCodes: string[] = [];
+
+  Object.keys(mergedNotaMap).forEach((code) => {
+    const rec = mergedNotaMap[code];
+    if (!rec || rec.qty_nota === null || rec.qty_nota === undefined) return;
+
+    const selisih = Number(rec.selisih_nota) || 0;
+    const existingQueueItem = currentQueue[code];
+
+    if (selisih !== 0) {
+      activeDiffCodes.push(code);
+      const statusLabel = selisih < 0 ? `KURANG ${Math.abs(selisih)} pcs` : `LEBIH +${selisih} pcs`;
+      const autoHint = `Selisih Nota Buyer: ${statusLabel} (Diterima: ${rec.total_diterima} pcs, Qty Nota: ${rec.qty_nota} pcs)`;
+
+      // Pertahankan catatan manual auditor jika ada di luar teks otomatis
+      let finalNote = autoHint;
+      if (existingQueueItem?.catatan_petunjuk) {
+        const cleanedOld = existingQueueItem.catatan_petunjuk
+          .replace(/Selisih Nota Buyer:[^|]*(\|\s*)?/gi, '')
+          .trim();
+        if (cleanedOld && cleanedOld !== autoHint) {
+          finalNote = `${autoHint} | ${cleanedOld}`;
+        }
+      }
+
+      if (!existingQueueItem) {
+        newlyQueuedCodes.push(code);
+        currentQueue[code] = {
+          catatan_petunjuk: finalNote,
+          added_at: nowIso,
+          added_by: 'Auto-Queue (Selisih Nota Buyer)',
+          qty_nota: rec.qty_nota,
+          total_diterima: rec.total_diterima,
+          selisih_nota: selisih,
+          auto_queued_from_nota: true,
+        };
+        queueChanged = true;
+      } else if (
+        existingQueueItem.qty_nota !== rec.qty_nota ||
+        existingQueueItem.selisih_nota !== selisih ||
+        !existingQueueItem.catatan_petunjuk?.includes(`Qty Nota: ${rec.qty_nota}`)
+      ) {
+        currentQueue[code] = {
+          ...existingQueueItem,
+          catatan_petunjuk: finalNote,
+          qty_nota: rec.qty_nota,
+          total_diterima: rec.total_diterima,
+          selisih_nota: selisih,
+          auto_queued_from_nota: true,
+        };
+        queueChanged = true;
+      }
+    } else if (existingQueueItem) {
+      // Jika selisih_nota == 0 (Sudah Klop dengan Nota Buyer)
+      if (existingQueueItem.qty_nota !== rec.qty_nota || existingQueueItem.selisih_nota !== 0) {
+        currentQueue[code] = {
+          ...existingQueueItem,
+          qty_nota: rec.qty_nota,
+          total_diterima: rec.total_diterima,
+          selisih_nota: 0,
+        };
+        queueChanged = true;
+      }
+    }
+  });
+
+  if (queueChanged) {
+    await savePenerimaanRecountQueueToSupabase(currentQueue);
+  }
+
+  const totalNotaCodes = Object.keys(mergedNotaMap).length;
+  const msg =
+    newlyQueuedCodes.length > 0
+      ? `Berhasil sinkron ${totalNotaCodes} Qty Nota Buyer (${newlyQueuedCodes.length} kode selisih otomatis masuk Antrian Hitung Ulang: ${newlyQueuedCodes.slice(0, 5).join(', ')})`
+      : activeDiffCodes.length > 0
+      ? `Tersinkron ${totalNotaCodes} Qty Nota Buyer (${activeDiffCodes.length} kode selisih terdaftar di Antrian Hitung Ulang).`
+      : `Tersinkron ${totalNotaCodes} Qty Nota Buyer (Semua sesuai / tidak ada selisih baru).`;
+
+  return {
+    success: true,
+    notaMap: mergedNotaMap,
+    totalNotaCodes,
+    activeDiffCodes,
+    newlyQueuedCodes,
+    message: msg,
+  };
+}
+
 
 

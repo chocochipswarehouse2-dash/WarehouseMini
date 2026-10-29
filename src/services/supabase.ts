@@ -19,6 +19,7 @@ import {
   PenerimaanRecountLogItem,
   PenerimaanRecountLogDetailItem,
   PenerimaanProduksiItem,
+  ProduksiQtyNotaRecord,
   PickingListItem,
   WmsUser,
   ProductItem,
@@ -630,11 +631,13 @@ CREATE TABLE IF NOT EXISTS public.penerimaan_produksi (
   warna TEXT DEFAULT '',
   size TEXT DEFAULT 'Default',
   qty NUMERIC DEFAULT 1,
+  qty_nota NUMERIC DEFAULT NULL,
   foto_url TEXT DEFAULT '',
   keterangan TEXT DEFAULT '',
   operator TEXT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+ALTER TABLE public.penerimaan_produksi ADD COLUMN IF NOT EXISTS qty_nota NUMERIC DEFAULT NULL;
 
 -- 5b. TABEL ANTRIAN HITUNG ULANG PRODUKSI (MULTI-USER CLOUD SYNC)
 CREATE TABLE IF NOT EXISTS public.penerimaan_recount_queue (
@@ -10595,43 +10598,110 @@ export interface RecountQueueCloudRecord {
   updated_at?: string;
 }
 
+export interface RecountQueueItemMeta {
+  catatan_petunjuk?: string;
+  added_at?: string;
+  added_by?: string;
+  qty_nota?: number | null;
+  total_diterima?: number | null;
+  selisih_nota?: number | null;
+  auto_queued_from_nota?: boolean;
+}
+
 const LOCAL_STORAGE_RECOUNT_QUEUE_KEY = 'wms_recount_selected_queue';
+const LOCAL_STORAGE_PRODUKSI_QTY_NOTA_KEY = 'wms_produksi_qty_nota_map';
+
+/**
+ * Mengambil cache sinkron Qty Nota Buyer per Kode Produksi dari LocalStorage
+ */
+export function getCachedProduksiQtyNotaMapSync(): Record<string, ProduksiQtyNotaRecord> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_PRODUKSI_QTY_NOTA_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (typeof parsed === 'object' && parsed !== null) {
+      return parsed;
+    }
+  } catch {}
+  return {};
+}
+
+/**
+ * Mengambil backup data Qty Nota Buyer dari Supabase Cloud (`wms_system_docs` key `produksi_qty_nota_map`)
+ */
+export async function fetchProduksiQtyNotaMapFromSupabase(): Promise<Record<string, ProduksiQtyNotaRecord>> {
+  const localMap = getCachedProduksiQtyNotaMapSync();
+  try {
+    const doc = await supabaseFetch<SystemDoc[]>(
+      'wms_system_docs',
+      'GET',
+      null,
+      'section_id=eq.produksi_qty_nota_map'
+    );
+    if (doc && doc[0] && doc[0].content) {
+      const parsed = JSON.parse(doc[0].content);
+      if (typeof parsed === 'object' && parsed !== null) {
+        const merged: Record<string, ProduksiQtyNotaRecord> = { ...localMap, ...parsed };
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(LOCAL_STORAGE_PRODUKSI_QTY_NOTA_KEY, JSON.stringify(merged));
+        }
+        return merged;
+      }
+    }
+  } catch (err) {
+    console.warn('Fallback fetch produksi_qty_nota_map dari local cache:', err);
+  }
+  return localMap;
+}
+
+/**
+ * Menyimpan / mem-backup data Qty Nota Buyer ke Supabase Cloud (`wms_system_docs` key `produksi_qty_nota_map`)
+ */
+export async function saveProduksiQtyNotaMapToSupabase(
+  notaMap: Record<string, ProduksiQtyNotaRecord>,
+  updatedBy = 'Buyer Sheet Sync'
+): Promise<void> {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_PRODUKSI_QTY_NOTA_KEY, JSON.stringify(notaMap));
+      window.dispatchEvent(
+        new CustomEvent('wms_produksi_qty_nota_updated', {
+          detail: { notaMap },
+        })
+      );
+    } catch {}
+  }
+
+  const nowIso = new Date().toISOString();
+  try {
+    await supabaseFetch(
+      'wms_system_docs',
+      'POST',
+      [
+        {
+          section_id: 'produksi_qty_nota_map',
+          content: JSON.stringify(notaMap),
+          updated_at: nowIso,
+          updated_by: updatedBy,
+        },
+      ],
+      'on_conflict=section_id',
+      true
+    );
+  } catch (err) {
+    console.warn('Gagal mem-backup produksi_qty_nota_map ke Supabase:', err);
+  }
+}
 
 /**
  * Mengambil antrian hitung ulang produksi terpusat dari Supabase.
  * Sinkron untuk seluruh tim/user sehingga siapapun yang memanggil kode langsung terlihat oleh user lain.
  */
-export async function fetchPenerimaanRecountQueueFromSupabase(): Promise<Record<string, { catatan_petunjuk?: string; added_at?: string; added_by?: string }>> {
-  let resultMap: Record<string, { catatan_petunjuk?: string; added_at?: string; added_by?: string }> = {};
+export async function fetchPenerimaanRecountQueueFromSupabase(): Promise<Record<string, RecountQueueItemMeta>> {
+  let resultMap: Record<string, RecountQueueItemMeta> = {};
 
-  // 1. Coba fetch dari tabel khusus `penerimaan_recount_queue`
-  try {
-    const rows = await supabaseFetch<RecountQueueCloudRecord[]>(
-      'penerimaan_recount_queue',
-      'GET',
-      null,
-      'select=*&order=created_at.desc'
-    );
-    if (Array.isArray(rows) && rows.length > 0) {
-      rows.forEach((r) => {
-        if (r.kode_produksi) {
-          resultMap[r.kode_produksi.toUpperCase()] = {
-            catatan_petunjuk: r.catatan_petunjuk || '',
-            added_at: r.created_at || r.updated_at,
-            added_by: r.added_by,
-          };
-        }
-      });
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(LOCAL_STORAGE_RECOUNT_QUEUE_KEY, JSON.stringify(resultMap));
-      }
-      return resultMap;
-    }
-  } catch (err) {
-    // Fallback jika tabel khusus belum dimigrasi
-  }
-
-  // 2. Fallback: coba fetch dari wms_system_docs key 'recount_active_queue'
+  // 1. Coba fetch dari wms_system_docs key 'recount_active_queue' terlebih dahulu (menyimpan metadata lengkap termasuk qty_nota & selisih_nota)
   try {
     const doc = await supabaseFetch<SystemDoc[]>(
       'wms_system_docs',
@@ -10642,15 +10712,43 @@ export async function fetchPenerimaanRecountQueueFromSupabase(): Promise<Record<
     if (doc && doc[0] && doc[0].content) {
       const parsed = JSON.parse(doc[0].content);
       if (typeof parsed === 'object' && parsed !== null) {
-        resultMap = parsed;
-        if (typeof window !== 'undefined') {
-          localStorage.setItem(LOCAL_STORAGE_RECOUNT_QUEUE_KEY, JSON.stringify(resultMap));
-        }
-        return resultMap;
+        resultMap = { ...parsed };
       }
     }
   } catch (err) {
     console.warn('Fallback fetch queue dari wms_system_docs error:', err);
+  }
+
+  // 2. Gabungkan juga dengan tabel khusus `penerimaan_recount_queue`
+  try {
+    const rows = await supabaseFetch<RecountQueueCloudRecord[]>(
+      'penerimaan_recount_queue',
+      'GET',
+      null,
+      'select=*&order=created_at.desc'
+    );
+    if (Array.isArray(rows) && rows.length > 0) {
+      rows.forEach((r) => {
+        if (r.kode_produksi) {
+          const codeKey = r.kode_produksi.toUpperCase();
+          resultMap[codeKey] = {
+            ...resultMap[codeKey],
+            catatan_petunjuk: r.catatan_petunjuk || resultMap[codeKey]?.catatan_petunjuk || '',
+            added_at: r.created_at || r.updated_at || resultMap[codeKey]?.added_at,
+            added_by: r.added_by || resultMap[codeKey]?.added_by,
+          };
+        }
+      });
+    }
+  } catch (err) {
+    // Fallback jika tabel khusus belum dimigrasi
+  }
+
+  if (Object.keys(resultMap).length > 0) {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(LOCAL_STORAGE_RECOUNT_QUEUE_KEY, JSON.stringify(resultMap));
+    }
+    return resultMap;
   }
 
   // 3. Fallback: baca dari local cache jika offline
@@ -10673,7 +10771,7 @@ export async function fetchPenerimaanRecountQueueFromSupabase(): Promise<Record<
  * Menyimpan / memperbarui daftar antrian hitung ulang ke database Supabase agar langsung tersinkronisasi ke semua user.
  */
 export async function savePenerimaanRecountQueueToSupabase(
-  queueMap: Record<string, { catatan_petunjuk?: string; added_at?: string; added_by?: string }>
+  queueMap: Record<string, RecountQueueItemMeta>
 ): Promise<void> {
   // Update local cache & dispatch local event
   if (typeof window !== 'undefined') {
