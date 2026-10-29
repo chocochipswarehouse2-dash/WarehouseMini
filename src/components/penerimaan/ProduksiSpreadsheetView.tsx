@@ -623,7 +623,11 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
           ? blockRecountFisik
           : totalNet;
       const resolvedSelisihNota =
-        resolvedQtyNota !== null && !isNaN(resolvedQtyNota) ? effectiveFisik - resolvedQtyNota : null;
+        resolvedQtyNota !== null && !isNaN(resolvedQtyNota)
+          ? effectiveFisik - resolvedQtyNota
+          : blockHasRecount && blockRecountFisik !== null && blockRecountFisik !== undefined
+          ? blockRecountFisik - totalNet
+          : null;
 
       parsedBlocks.push({
         id: code,
@@ -733,7 +737,9 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
               ? (b.hasRecount && b.totalRecountFisik !== null && b.totalRecountFisik !== undefined
                   ? b.totalRecountFisik
                   : b.totalNet) - finalNota
-              : null,
+              : (b.hasRecount && b.totalRecountFisik !== null && b.totalRecountFisik !== undefined
+                  ? b.totalRecountFisik - b.totalNet
+                  : null),
         };
       })
     );
@@ -2127,29 +2133,52 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                         <span>Net: <strong className="text-emerald-600 dark:text-emerald-400">{block.totalNet} pcs</strong></span>
                       </>
                     )}
+                    {block.hasRecount && block.totalRecountFisik !== null && block.totalRecountFisik !== undefined && (
+                      <>
+                        <span className="text-slate-400">•</span>
+                        <span className="px-2 py-0.5 rounded-md bg-emerald-100/80 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 text-[11px] font-mono">
+                          Hitung Ulang: <strong>{block.totalRecountFisik} pcs</strong>
+                        </span>
+                      </>
+                    )}
                     {block.qtyNota !== null && block.qtyNota !== undefined && (
                       <>
                         <span className="text-slate-400">•</span>
                         <span className="px-2 py-0.5 rounded-md bg-amber-100/80 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800 text-[11px] font-mono">
                           Qty Nota: <strong>{block.qtyNota} pcs</strong>
                         </span>
-                        <span
-                          className={`px-2 py-0.5 rounded-md text-[11px] font-mono font-black border ${
-                            (block.totalNet - Number(block.qtyNota)) === 0
-                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
-                              : (block.totalNet - Number(block.qtyNota)) < 0
-                              ? 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800'
-                              : 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800'
-                          }`}
-                        >
-                          Selisih Nota:{' '}
-                          {(block.totalNet - Number(block.qtyNota)) > 0
-                            ? `+${block.totalNet - Number(block.qtyNota)}`
-                            : block.totalNet - Number(block.qtyNota)}{' '}
-                          pcs
-                        </span>
                       </>
                     )}
+                    {(() => {
+                      const hasNota = block.qtyNota !== null && block.qtyNota !== undefined;
+                      const hasRecount = block.hasRecount && block.totalRecountFisik !== null && block.totalRecountFisik !== undefined;
+                      let selisih: number | null = null;
+                      if (hasNota) {
+                        const base = hasRecount ? block.totalRecountFisik! : block.totalNet;
+                        selisih = base - Number(block.qtyNota);
+                      } else if (hasRecount) {
+                        selisih = block.totalRecountFisik! - block.totalNet;
+                      }
+                      if (selisih === null) return null;
+                      const isMatch = selisih === 0;
+                      const isKurang = selisih < 0;
+                      return (
+                        <>
+                          <span className="text-slate-400">•</span>
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[11px] font-mono font-black border ${
+                              isMatch
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+                                : isKurang
+                                ? 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800'
+                                : 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800'
+                            }`}
+                          >
+                            Selisih {hasNota ? 'Nota' : 'SJ'}: {selisih > 0 ? `+${selisih}` : selisih} pcs
+                          </span>
+                        </>
+                      );
+                    })()}
 
                     {/* SURAT JALAN BADGES & QUICK EDIT */}
                     <span className="text-slate-400">•</span>

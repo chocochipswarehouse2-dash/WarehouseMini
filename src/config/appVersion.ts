@@ -15,21 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.0",
-  "versionCode": 260,
+  "version": "v2.6.1",
+  "versionCode": 261,
   "buildDate": "29 Oktober 2026",
-  "buildHash": "wms-261029-v260-2304",
-  "releaseTitle": "WMS v2.6.0 — Rincian Row Total Datang, Total Hitung Ulang & Rumus 4-Kondisi Selisih Nota",
+  "buildHash": "wms-261029-v261-2315",
+  "releaseTitle": "WMS v2.6.1 — Sinkronisasi Badge Header Selisih Nota dengan Tabel",
   "releaseNotes": [
-    "Rincian subtotal per baris ukuran ditampilkan langsung pada kolom TOTAL DATANG",
-    "Penambahan kolom TOTAL HITUNG ULANG pada level ringkasan blok model",
-    "Formula reaktif SELISIH NOTA 4-kondisi (Total Hitung - Nota, Total Awal - Nota, atau Total Hitung - Awal jika Nota kosong)",
-    "Pembaruan sinkron antara Frontend dan Google Spreadsheet Backend (v2.6.0)"
+    "Sinkronisasi perhitungan selisih nota di header blok dengan tabel sesuai 4 kondisi",
+    "Menampilkan badge Hitung Ulang di header blok jika sudah diaudit"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.0",
+    "versionCode": 260,
+    "buildDate": "29 Oktober 2026",
+    "buildHash": "wms-261029-v260-2304",
+    "releaseTitle": "WMS v2.6.0 — Rincian Row Total Datang, Total Hitung Ulang & Rumus 4-Kondisi Selisih Nota",
+    "releaseNotes": [
+      "Rincian subtotal per baris ukuran ditampilkan langsung pada kolom TOTAL DATANG",
+      "Penambahan kolom TOTAL HITUNG ULANG pada level ringkasan blok model",
+      "Formula reaktif SELISIH NOTA 4-kondisi (Total Hitung - Nota, Total Awal - Nota, atau Total Hitung - Awal jika Nota kosong)",
+      "Pembaruan sinkron antara Frontend dan Google Spreadsheet Backend (v2.6.0)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.5.9",
     "versionCode": 259,
@@ -114,20 +126,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Penambahan Skill & CLI Auditor Anti-Freeze (wms-performance-anti-freeze): Deteksi dan proteksi otomatis terhadap komputasi berat pada modal tertutup (InventoryAnomalyModal, InventoryLokasiExportModal, HitungUlangModal, PushSuratJalanModal).",
       "Penyempurnaan Skill Rilis & Verifikasi Multi-User (wms-app-release-update): Penambahan sub-perintah CLI 'verify-release' untuk memvalidasi sinkronisasi 3 file versi, proteksi Zero Forced-Reload, dan pengecekan otomatis FAQ Store/Admin."
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.5.2",
-    "versionCode": 252,
-    "buildDate": "29 Oktober 2026",
-    "buildHash": "wms-261029-v252-1046",
-    "releaseTitle": "WMS v2.5.2 — Pembaruan Aman Multi-User & Optimasi Instan Produksi",
-    "releaseNotes": [
-      "Sistem Pembaruan Aman Multi-User (Zero Forced-Reload): Pembaruan sistem tidak lagi me-reload halaman secara paksa saat user sedang mengisi form atau scan barcode, serta otomatis diterapkan secara mulus saat berpindah menu utama.",
-      "Pembaruan 1-Klik Tanpa Gangguan Sesi Login: Menghapus simulasi unduhan dua tahap; pembaruan langsung aktif dalam 1 klik dengan sesi akun (Store, Gudang, Admin) tetap 100% terjaga.",
-      "Optimasi Performa Halaman Produksi: Menghapus bottleneck pembacaan katalog berulang sehingga tab Produksi dan Spreadsheet Matrix terbuka instan tanpa freeze.",
-      "Standarisasi Tampilan Rekap Pesanan & Lokasi Rak Inventori: Penambahan opsi Panel Rapi (Master-Detail), penyempurnaan Versi Tabel, serta penggabungan otomatis lokasi rak identik."
     ],
     "minSupportedVersion": "v2.0.0"
   }
