@@ -15,22 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.2",
-  "versionCode": 262,
+  "version": "v2.6.3",
+  "versionCode": 263,
   "buildDate": "30 Oktober 2026",
-  "buildHash": "wms-261030-v262-1233",
-  "releaseTitle": "WMS v2.6.2 — Standarisasi UI/UX Gelombang 1 (Modul Inventory, Kapasitas & Log)",
+  "buildHash": "wms-261030-v263-1415",
+  "releaseTitle": "WMS v2.6.3 — Fix Multi-SJ Produksi Push to GSheet",
   "releaseNotes": [
-    "Standarisasi pembatas container max-w-[1600px] mencegah melar saat zoom out",
-    "Sub-tab mobile swipe horizontal hemat ruang 40%",
-    "Eliminasi pelangi tombol menjadi netral outline berhirarki",
-    "Proporsi tabel fixed di Data Inventory dan Mutasi Log",
-    "Simetri kartu KPI kapasitas dan pencegahan teks terpotong di HP"
+    "Otomatis menggabungkan multi-SJ pada tanggal kedatangan yang sama saat push ke Google Sheets tanpa saling menimpa",
+    "Sinkronisasi utuh tab sheet 30-10-2026 Kargo berisi 16 model dan 116 pcs"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.2",
+    "versionCode": 262,
+    "buildDate": "30 Oktober 2026",
+    "buildHash": "wms-261030-v262-1233",
+    "releaseTitle": "WMS v2.6.2 — Standarisasi UI/UX Gelombang 1 (Modul Inventory, Kapasitas & Log)",
+    "releaseNotes": [
+      "Standarisasi pembatas container max-w-[1600px] mencegah melar saat zoom out",
+      "Sub-tab mobile swipe horizontal hemat ruang 40%",
+      "Eliminasi pelangi tombol menjadi netral outline berhirarki",
+      "Proporsi tabel fixed di Data Inventory dan Mutasi Log",
+      "Simetri kartu KPI kapasitas dan pencegahan teks terpotong di HP"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.1",
     "versionCode": 261,
@@ -117,18 +129,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Kolom QTY NOTA & SELISIH di sheet satuan dan master produksi",
       "Qty Nota Buyer disinkron ke Supabase",
       "Selisih nota otomatis masuk antrian Audit Hitung Ulang"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.5.4",
-    "versionCode": 254,
-    "buildDate": "29 Oktober 2026",
-    "buildHash": "wms-261029-v254-1325",
-    "releaseTitle": "WMS v2.5.4 — Copy-Paste & Drag-Drop Foto Input Produksi",
-    "releaseNotes": [
-      "Fitur Copy-Paste (Ctrl+V & Tombol Paste) Foto Produk: Mendukung tempel gambar langsung dari clipboard pada setiap blok kode produk di form Input Penerimaan Produksi.",
-      "Fitur Drag & Drop Foto Produk: Tarik dan lepaskan file gambar langsung ke baris/blok produk pada form Input Penerimaan Produksi dengan kompresi WebP otomatis."
     ],
     "minSupportedVersion": "v2.0.0"
   }

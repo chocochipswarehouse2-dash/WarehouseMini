@@ -1,15 +1,12 @@
 {
-  "version": "v2.6.2",
-  "versionCode": 262,
+  "version": "v2.6.3",
+  "versionCode": 263,
   "buildDate": "30 Oktober 2026",
-  "buildHash": "wms-261030-v262-1233",
-  "releaseTitle": "WMS v2.6.2 — Standarisasi UI/UX Gelombang 1 (Modul Inventory, Kapasitas & Log)",
+  "buildHash": "wms-261030-v263-1415",
+  "releaseTitle": "WMS v2.6.3 — Fix Multi-SJ Produksi Push to GSheet",
   "releaseNotes": [
-    "Standarisasi pembatas container max-w-[1600px] mencegah melar saat zoom out",
-    "Sub-tab mobile swipe horizontal hemat ruang 40%",
-    "Eliminasi pelangi tombol menjadi netral outline berhirarki",
-    "Proporsi tabel fixed di Data Inventory dan Mutasi Log",
-    "Simetri kartu KPI kapasitas dan pencegahan teks terpotong di HP"
+    "Otomatis menggabungkan multi-SJ pada tanggal kedatangan yang sama saat push ke Google Sheets tanpa saling menimpa",
+    "Sinkronisasi utuh tab sheet 30-10-2026 Kargo berisi 16 model dan 116 pcs"
   ],
   "minSupportedVersion": "v2.0.0"
 }

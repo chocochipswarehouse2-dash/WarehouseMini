@@ -304,6 +304,18 @@ export function buildBlocksFromRawItems(
       });
     });
 
+    const sjMap = new Map<string, { no_surat_jalan: string; qty: number; tanggal: string }>();
+    items.forEach((it) => {
+      const sj = (it.no_surat_jalan || '').trim().toUpperCase();
+      if (sj) {
+        if (!sjMap.has(sj)) {
+          sjMap.set(sj, { no_surat_jalan: sj, qty: 0, tanggal: it.tanggal_penerimaan || '' });
+        }
+        sjMap.get(sj)!.qty += Number(it.qty) || 0;
+      }
+    });
+    const distinctSjs = Array.from(sjMap.values()).sort((a, b) => b.qty - a.qty);
+
     resultBlocks.push({
       id: code,
       rowNumber: rowNum++,
@@ -313,7 +325,7 @@ export function buildBlocksFromRawItems(
       kategori: activeTab === 'Kargo' ? 'Kargo' : 'Lokal CMT',
       photoUrl: formatImageUrlForSheets(firstItem.foto_url),
       catatan: firstItem.keterangan || '',
-      distinctSjs: [],
+      distinctSjs,
       colorGroups,
       dateSlots: finalDateSlots,
       returDateSlots: [],

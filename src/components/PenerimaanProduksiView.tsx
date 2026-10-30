@@ -1332,8 +1332,22 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
 
       // Otomatis push riwayat produksi bergambar ke Google Sheet (1 Tanggal = 1 Tab Sheet)
       if (savedItems && savedItems.length > 0) {
+        // Ambil semua item yang ada pada tanggal & kategori ini agar jika ada multiple SJ di hari yang sama,
+        // seluruh SJ tetap tergabung lengkap di tab sheet tanggal tersebut (tidak saling menimpa).
+        const existingOtherItems = dataList.filter((it) => {
+          const matchDate = it.tanggal_penerimaan === formTanggal;
+          const matchCat =
+            formKategori === 'Kargo' ? it.kategori === 'Kargo' : (!it.kategori || it.kategori === 'Lokal CMT');
+          const isCurrentBatch = editingOriginalSJ
+            ? (it.no_surat_jalan || '').trim().toUpperCase() === editingOriginalSJ.trim().toUpperCase()
+            : (it.no_surat_jalan || '').trim().toUpperCase() === formNoSuratJalan.trim().toUpperCase();
+          return matchDate && matchCat && !isCurrentBatch;
+        });
+
+        const allDateItems = [...existingOtherItems, ...savedItems];
+
         pushProduksiPerTanggalToGoogleSheet({
-          items: savedItems,
+          items: allDateItems,
           activeTab: formKategori === 'Kargo' ? 'Kargo' : 'CMT',
           targetDate: formTanggal,
         })
@@ -4769,7 +4783,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
         <PushDateSheetsModal
           isOpen={isPushDateModalOpen}
           onClose={() => setIsPushDateModalOpen(false)}
-          dataList={filteredData}
+          dataList={dataList}
           activeTab={filterKategori === 'Kargo' ? 'Kargo' : 'CMT'}
           initialDateFilter={filterStartDate || null}
           productCatalog={productCatalog}
