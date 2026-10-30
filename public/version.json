@@ -1,13 +1,12 @@
 {
-  "version": "v2.6.8",
-  "versionCode": 268,
+  "version": "v2.6.9",
+  "versionCode": 269,
   "buildDate": "30 Oktober 2026",
-  "buildHash": "wms-261030-v268-1847",
-  "releaseTitle": "WMS v2.6.8 — Perbaikan Definisi Import fetchRecountAuditMapFromCloud & Ketahanan Sinkronisasi Nota",
+  "buildHash": "wms-261030-v269-1954",
+  "releaseTitle": "WMS v2.6.9 — Restorasi Indikator Mode Aktif Scanner (#IN/#OUT/#SO)",
   "releaseNotes": [
-    "Menambahkan import fetchRecountAuditMapFromCloud dan getRecountAuditMap pada gasProduksiSync",
-    "Pembersihan type check TypeScript di seluruh modul produksi dan appUpdateService",
-    "Sinkronisasi Tarik Qty Nota kini 100% tervalidasi bebas runtime reference error"
+    "Memulihkan kembali tombol pilihan dan indikator mode aktif (#IN Masuk, #OUT Keluar, #SO Opname) pada QuickTagToolbar scanner web app",
+    "Menjawab arsitektur delta update untuk pengeditan data di frontend"
   ],
   "minSupportedVersion": "v2.0.0"
 }

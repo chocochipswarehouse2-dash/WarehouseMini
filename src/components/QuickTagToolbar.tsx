@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, ArrowDownLeft, ArrowUpRight, CheckSquare, MapPin, Tag, X } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, CheckSquare, MapPin, Tag, X } from 'lucide-react';
 import { CategoryType } from '../types';
 
 interface QuickTagToolbarProps {
@@ -32,6 +32,53 @@ export const QuickTagToolbar: React.FC<QuickTagToolbarProps> = ({
             <Tag className="w-3 h-3 text-emerald-500" /> Mode:
           </span>
           <div className="flex gap-1.5 overflow-x-auto flex-1 min-w-0 pb-0.5 no-scrollbar">
+            <button
+              type="button"
+              onClick={() => onSelectCategory('IN')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 flex-shrink-0 cursor-pointer ${
+                currentCategory === 'IN'
+                  ? 'bg-indigo-600 text-white shadow-[0_0_10px_rgba(79,70,229,0.4)] ring-2 ring-indigo-500/30'
+                  : 'bg-slate-100 dark:bg-[#09090B] text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <ArrowDownLeft className="w-3.5 h-3.5" />
+              <span>#IN (Masuk)</span>
+              {currentCategory === 'IN' && (
+                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onSelectCategory('OUT')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 flex-shrink-0 cursor-pointer ${
+                currentCategory === 'OUT'
+                  ? 'bg-purple-600 text-white shadow-[0_0_10px_rgba(147,51,234,0.4)] ring-2 ring-purple-500/30'
+                  : 'bg-slate-100 dark:bg-[#09090B] text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <ArrowUpRight className="w-3.5 h-3.5" />
+              <span>#OUT (Keluar)</span>
+              {currentCategory === 'OUT' && (
+                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onSelectCategory('SO')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 flex-shrink-0 cursor-pointer ${
+                currentCategory === 'SO'
+                  ? 'bg-emerald-500 text-black shadow-[0_0_10px_rgba(16,185,129,0.4)] ring-2 ring-emerald-500/30'
+                  : 'bg-slate-100 dark:bg-[#09090B] text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <CheckSquare className="w-3.5 h-3.5" />
+              <span>#SO (Opname)</span>
+              {currentCategory === 'SO' && (
+                <span className="w-1.5 h-1.5 rounded-full bg-black animate-pulse" />
+              )}
+            </button>
           </div>
         </div>
 
@@ -72,4 +119,3 @@ export const QuickTagToolbar: React.FC<QuickTagToolbarProps> = ({
     </div>
   );
 };
-

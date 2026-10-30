@@ -15,20 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.8",
-  "versionCode": 268,
+  "version": "v2.6.9",
+  "versionCode": 269,
   "buildDate": "30 Oktober 2026",
-  "buildHash": "wms-261030-v268-1847",
-  "releaseTitle": "WMS v2.6.8 — Perbaikan Definisi Import fetchRecountAuditMapFromCloud & Ketahanan Sinkronisasi Nota",
+  "buildHash": "wms-261030-v269-1954",
+  "releaseTitle": "WMS v2.6.9 — Restorasi Indikator Mode Aktif Scanner (#IN/#OUT/#SO)",
   "releaseNotes": [
-    "Menambahkan import fetchRecountAuditMapFromCloud dan getRecountAuditMap pada gasProduksiSync",
-    "Pembersihan type check TypeScript di seluruh modul produksi dan appUpdateService",
-    "Sinkronisasi Tarik Qty Nota kini 100% tervalidasi bebas runtime reference error"
+    "Memulihkan kembali tombol pilihan dan indikator mode aktif (#IN Masuk, #OUT Keluar, #SO Opname) pada QuickTagToolbar scanner web app",
+    "Menjawab arsitektur delta update untuk pengeditan data di frontend"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.8",
+    "versionCode": 268,
+    "buildDate": "30 Oktober 2026",
+    "buildHash": "wms-261030-v268-1847",
+    "releaseTitle": "WMS v2.6.8 — Perbaikan Definisi Import fetchRecountAuditMapFromCloud & Ketahanan Sinkronisasi Nota",
+    "releaseNotes": [
+      "Menambahkan import fetchRecountAuditMapFromCloud dan getRecountAuditMap pada gasProduksiSync",
+      "Pembersihan type check TypeScript di seluruh modul produksi dan appUpdateService",
+      "Sinkronisasi Tarik Qty Nota kini 100% tervalidasi bebas runtime reference error"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.7",
     "versionCode": 267,
@@ -116,20 +128,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Sinkronisasi perhitungan selisih nota di header blok dengan tabel sesuai 4 kondisi",
       "Menampilkan badge Hitung Ulang di header blok jika sudah diaudit"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.0",
-    "versionCode": 260,
-    "buildDate": "29 Oktober 2026",
-    "buildHash": "wms-261029-v260-2304",
-    "releaseTitle": "WMS v2.6.0 — Rincian Row Total Datang, Total Hitung Ulang & Rumus 4-Kondisi Selisih Nota",
-    "releaseNotes": [
-      "Rincian subtotal per baris ukuran ditampilkan langsung pada kolom TOTAL DATANG",
-      "Penambahan kolom TOTAL HITUNG ULANG pada level ringkasan blok model",
-      "Formula reaktif SELISIH NOTA 4-kondisi (Total Hitung - Nota, Total Awal - Nota, atau Total Hitung - Awal jika Nota kosong)",
-      "Pembaruan sinkron antara Frontend dan Google Spreadsheet Backend (v2.6.0)"
     ],
     "minSupportedVersion": "v2.0.0"
   }
