@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.11",
-  "versionCode": 271,
+  "version": "v2.6.12",
+  "versionCode": 272,
   "buildDate": "30 Oktober 2026",
-  "buildHash": "wms-261030-v271-2043",
-  "releaseTitle": "WMS v2.6.11 — Standarisasi Utas Percakapan (Thread Reply) Email Retur Barang",
+  "buildHash": "wms-261030-v272-2109",
+  "releaseTitle": "WMS v2.6.12 — Backward Compatibility Thread Reply Email Retur Lama",
   "releaseNotes": [
-    "Standarisasi subjek email retur barang agar seluruh riwayat update & selesai otomatis menjadi balasan (reply) di thread email yang sama",
-    "Menambahkan opsi auto-email balasan saat edit data retur dan banner visual update di badan email"
+    "Menambahkan auto-deteksi tiket retur legacy agar update berikutnya otomatis me-reply utas email yang sudah ada di inbox tim",
+    "Memastikan 100 persen tiket lama dan baru tersusun rapi dalam 1 thread percakapan"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.11",
+    "versionCode": 271,
+    "buildDate": "30 Oktober 2026",
+    "buildHash": "wms-261030-v271-2043",
+    "releaseTitle": "WMS v2.6.11 — Standarisasi Utas Percakapan (Thread Reply) Email Retur Barang",
+    "releaseNotes": [
+      "Standarisasi subjek email retur barang agar seluruh riwayat update & selesai otomatis menjadi balasan (reply) di thread email yang sama",
+      "Menambahkan opsi auto-email balasan saat edit data retur dan banner visual update di badan email"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.10",
     "versionCode": 270,
@@ -113,18 +125,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Kolom kedatangan pada spreadsheet sekarang otomatis dipisah per Surat Jalan jika datang di tanggal yang sama",
       "Pencarian riwayat dan spreadsheet sekarang dapat mencari berdasarkan No Surat Jalan"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.3",
-    "versionCode": 263,
-    "buildDate": "30 Oktober 2026",
-    "buildHash": "wms-261030-v263-1415",
-    "releaseTitle": "WMS v2.6.3 — Fix Multi-SJ Produksi Push to GSheet",
-    "releaseNotes": [
-      "Otomatis menggabungkan multi-SJ pada tanggal kedatangan yang sama saat push ke Google Sheets tanpa saling menimpa",
-      "Sinkronisasi utuh tab sheet 30-10-2026 Kargo berisi 16 model dan 116 pcs"
     ],
     "minSupportedVersion": "v2.0.0"
   }

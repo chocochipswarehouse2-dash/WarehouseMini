@@ -814,11 +814,23 @@ export async function sendReturNotificationEmail(
             .join(' ')
         : '<span style="color:#64748b;">Belum dilampirkan (menyusul)</span>';
 
-    // STANDARISASI SUBJEK UTAS EMAIL (THREADING GUARANTEE):
-    // Agar Gmail, Google Workspace, Outlook, & Apple Mail mengelompokkan SELURUH email
-    // tiket retur ini ke dalam 1 percakapan (thread) yang sama tanpa membuat email dengan subjek baru,
-    // Subjek Dasar (Base Subject) DIBUAT 100% IDENTIK & KONSISTEN.
-    const baseSubject = `[RETUR BARANG] #${order.no_pesanan_asal} (${order.outlet_order}) - ${order.nama_customer} [${order.no_retur}]`;
+    // STANDARISASI SUBJEK UTAS EMAIL (THREADING GUARANTEE & BACKWARD COMPATIBILITY):
+    // Tiket yang di-submit sebelum standarisasi thread (sebelum 30 Okt 2026 20:45 WIB / 13:45 UTC)
+    // memiliki subjek awal di inbox tim: [PENGAJUAN RETUR BARANG] #<no_pesanan_asal> (<outlet_order>) - <nama_customer>
+    // Agar tiket-tiket lama ini saat di-update/diselesaikan TETAP BISA me-reply email yang sudah ada di inbox Gmail tim,
+    // sistem otomatis mendeteksi tiket legacy dan memakai subjek asal tersebut dengan awalan 'Re: '.
+    const THREAD_STANDARDIZATION_CUTOFF = new Date('2026-10-30T13:45:00.000Z').getTime();
+    const orderCreatedAt = order.created_at ? new Date(order.created_at).getTime() : Date.now();
+    const isLegacyTicket = orderCreatedAt < THREAD_STANDARDIZATION_CUTOFF;
+
+    let baseSubject = '';
+    if (isLegacyTicket) {
+      // Format subjek tiket lama agar Gmail / Outlook langsung me-reply utas email yang sudah ada di inbox tim
+      baseSubject = `[PENGAJUAN RETUR BARANG] #${order.no_pesanan_asal} (${order.outlet_order}) - ${order.nama_customer}`;
+    } else {
+      // Format subjek standar baru (konsisten untuk seluruh siklus tiket baru)
+      baseSubject = `[RETUR BARANG] #${order.no_pesanan_asal} (${order.outlet_order}) - ${order.nama_customer} [${order.no_retur}]`;
+    }
 
     // Saat submit awal (pesanan baru): menggunakan Subjek Dasar asli.
     // Saat ada update / proses selesai / kirim ulang: diberi awalan 'Re: ' persis standar balasan email.
