@@ -476,6 +476,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       distinct_colors: Set<string>;
       distinct_sizes: Set<string>;
       distinct_dates: Set<string>;
+      distinct_sjs: Set<string>;
     }>();
 
     penerimaanItems.forEach((it) => {

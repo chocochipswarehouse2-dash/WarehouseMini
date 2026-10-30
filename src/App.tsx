@@ -2275,7 +2275,7 @@ export default function App() {
         if (!line) continue;
 
         const cType: CategoryType = item.category || currentCategory;
-        if (!cType || cType === 'ANOMALI') {
+        if (!cType || (cType as string) === 'ANOMALI') {
           setIsSaving(false);
           playErrorBeep();
           showToast(`Item "${line}" tidak memiliki mode scan valid (#IN/#OUT/#SO)! Mohon pilih mode terlebih dahulu.`, 'error');
@@ -2290,17 +2290,10 @@ export default function App() {
           return;
         }
 
-        if (cType === 'ANOMALI') {
-          setIsSaving(false);
-          playErrorBeep();
-          showToast('Mode ANOMALI dilarang pada Web App Scanner. Pilih #IN, #OUT, atau #SO.', 'error');
-          return;
-        }
-
         // Fix invoice base to use extracted explicit invoice if available
         const currentLineInvoice = currentInvoiceRef.current || `WEB-${waktuPesan.getTime()}`;
 
-        if (cType === 'IN' || cType === 'OUT' || cType === 'ANOMALI') {
+        if (cType === 'IN' || cType === 'OUT') {
           const pData = productDatabase.find((p) => p.k.toUpperCase() === line);
           logsToInsert.push({
             type: cType,
@@ -2312,7 +2305,7 @@ export default function App() {
             lokasi: cLokasi,
             qty: item.qty || 1,
             operator: operatorName,
-            keterangan: ketText || (cType === 'ANOMALI' ? 'Scan Tanpa Tipe (Anomali)' : `${cType} Staging Scan`),
+            keterangan: ketText || `${cType} Staging Scan`,
             created_at: waktuPesan.toISOString(),
           });
         } else if (cType === 'SO') {

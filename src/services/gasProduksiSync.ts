@@ -6,6 +6,8 @@ import {
   saveProduksiQtyNotaMapToSupabase,
   fetchPenerimaanRecountQueueFromSupabase,
   savePenerimaanRecountQueueToSupabase,
+  getRecountAuditMap,
+  fetchRecountAuditMapFromCloud,
 } from './supabase';
 
 export const PRODUKSI_SPREADSHEET_ID = '1fnW49pCI8X8-lYtmXljxB0GsZWKkQtKshV2R5-mlodk';
@@ -1300,7 +1302,7 @@ export async function syncQtyNotaAndAutoQueueRecount(options: {
           : Number(sRec.total_diterima) || 0;
         const auditFisik = activeAuditMap[code]?.total_fisik !== undefined && activeAuditMap[code]?.total_fisik !== null
           ? Number(activeAuditMap[code].total_fisik)
-          : (sRec.total_fisik_recount !== undefined && sRec.total_fisik_recount !== null ? Number(sRec.total_fisik_recount) : null);
+          : ((sRec as any)?.total_fisik_recount !== undefined && (sRec as any)?.total_fisik_recount !== null ? Number((sRec as any).total_fisik_recount) : null);
         const effectiveTotal = auditFisik !== null ? auditFisik : wmsTotal;
         const qNota = Number(sRec.qty_nota);
         mergedNotaMap[code] = {

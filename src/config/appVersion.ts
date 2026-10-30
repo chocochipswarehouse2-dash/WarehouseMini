@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.7",
-  "versionCode": 267,
+  "version": "v2.6.8",
+  "versionCode": 268,
   "buildDate": "30 Oktober 2026",
-  "buildHash": "wms-261030-v267-1817",
-  "releaseTitle": "WMS v2.6.7 — Sinkronisasi 2 Arah Qty Nota & Formula Status Audit Produksi",
+  "buildHash": "wms-261030-v268-1847",
+  "releaseTitle": "WMS v2.6.8 — Perbaikan Definisi Import fetchRecountAuditMapFromCloud & Ketahanan Sinkronisasi Nota",
   "releaseNotes": [
-    "Perbaikan formula Status Audit dan Selisih Fisik di Google Sheet agar tidak muncul LEBIH palsu",
-    "Implementasi Auto-Mirror Qty Nota dua arah antara Master Produksi dan Tab Sheet Tanggal",
-    "Peningkatan ketahanan fetch Qty Nota dan penanganan error toast informatif"
+    "Menambahkan import fetchRecountAuditMapFromCloud dan getRecountAuditMap pada gasProduksiSync",
+    "Pembersihan type check TypeScript di seluruh modul produksi dan appUpdateService",
+    "Sinkronisasi Tarik Qty Nota kini 100% tervalidasi bebas runtime reference error"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.7",
+    "versionCode": 267,
+    "buildDate": "30 Oktober 2026",
+    "buildHash": "wms-261030-v267-1817",
+    "releaseTitle": "WMS v2.6.7 — Sinkronisasi 2 Arah Qty Nota & Formula Status Audit Produksi",
+    "releaseNotes": [
+      "Perbaikan formula Status Audit dan Selisih Fisik di Google Sheet agar tidak muncul LEBIH palsu",
+      "Implementasi Auto-Mirror Qty Nota dua arah antara Master Produksi dan Tab Sheet Tanggal",
+      "Peningkatan ketahanan fetch Qty Nota dan penanganan error toast informatif"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.6",
     "versionCode": 266,
@@ -117,19 +130,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Penambahan kolom TOTAL HITUNG ULANG pada level ringkasan blok model",
       "Formula reaktif SELISIH NOTA 4-kondisi (Total Hitung - Nota, Total Awal - Nota, atau Total Hitung - Awal jika Nota kosong)",
       "Pembaruan sinkron antara Frontend dan Google Spreadsheet Backend (v2.6.0)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.5.9",
-    "versionCode": 259,
-    "buildDate": "29 Oktober 2026",
-    "buildHash": "wms-261029-v259-2127",
-    "releaseTitle": "WMS v2.5.9 — Pencegahan Anomali Scanner & Matching Selisih Nota vs Qty Hitung Ulang",
-    "releaseNotes": [
-      "Mode ANOMALI dihapus dari Web Scanner & wajibkan pilih Mode (#IN/#OUT/#SO) serta Lokasi sebelum scan",
-      "Selisih Nota dan Status Audit kini menggunakan Qty Hitung Ulang sebagai pembanding akhir bila audit telah selesai",
-      "Formula Spreadsheet reaktif menghitung SUM(QTY HITUNG ULANG) - QTY NOTA otomatis"
     ],
     "minSupportedVersion": "v2.0.0"
   }

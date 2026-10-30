@@ -312,7 +312,7 @@ class AppUpdateManager {
         return;
       }
 
-      if ('caches' in window) {
+      if (typeof caches !== 'undefined' && caches.keys) {
         caches.keys().then((names) => {
           return Promise.all(
             names
@@ -320,12 +320,11 @@ class AppUpdateManager {
               .map((name) => caches.delete(name))
           );
         }).finally(() => {
-          window.location.reload();
+          location.reload();
         });
-        return;
+      } else {
+        location.reload();
       }
-
-      window.location.reload();
     } catch (err) {
       console.warn('[AppUpdate] Apply reload fallback:', err);
       window.location.reload();

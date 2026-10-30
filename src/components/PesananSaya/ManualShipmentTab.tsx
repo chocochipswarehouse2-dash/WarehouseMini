@@ -7491,13 +7491,7 @@ _WMS Warehouse System_`;
                                     {it.foto_urls && it.foto_urls.length > 0 && (
                                       <button
                                         type="button"
-                                        onClick={() =>
-                                          setLightboxData({
-                                            urls: it.foto_urls!,
-                                            initialIndex: 0,
-                                            title: `${it.nama_produk} (${activeOrder.no_pesanan})`,
-                                          })
-                                        }
+                                        onClick={() => setPreviewPhotoUrl(it.foto_urls![0])}
                                         className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 flex items-center gap-1 cursor-pointer"
                                       >
                                         <Camera className="w-3 h-3" />
