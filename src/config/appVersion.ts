@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.9",
-  "versionCode": 269,
+  "version": "v2.6.10",
+  "versionCode": 270,
   "buildDate": "30 Oktober 2026",
-  "buildHash": "wms-261030-v269-1954",
-  "releaseTitle": "WMS v2.6.9 — Restorasi Indikator Mode Aktif Scanner (#IN/#OUT/#SO)",
+  "buildHash": "wms-261030-v270-2010",
+  "releaseTitle": "WMS v2.6.10 — Optimasi Instant Update PWA & FAQ Penjelasan Qty PO",
   "releaseNotes": [
-    "Memulihkan kembali tombol pilihan dan indikator mode aktif (#IN Masuk, #OUT Keluar, #SO Opname) pada QuickTagToolbar scanner web app",
-    "Menjawab arsitektur delta update untuk pengeditan data di frontend"
+    "Optimasi pembersihan precache PWA saat 1-klik Perbarui agar bundle versi terbaru langsung aktif",
+    "Penjelasan lengkap keamanan data Qty PO buyer pada push master produksi"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.9",
+    "versionCode": 269,
+    "buildDate": "30 Oktober 2026",
+    "buildHash": "wms-261030-v269-1954",
+    "releaseTitle": "WMS v2.6.9 — Restorasi Indikator Mode Aktif Scanner (#IN/#OUT/#SO)",
+    "releaseNotes": [
+      "Memulihkan kembali tombol pilihan dan indikator mode aktif (#IN Masuk, #OUT Keluar, #SO Opname) pada QuickTagToolbar scanner web app",
+      "Menjawab arsitektur delta update untuk pengeditan data di frontend"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.8",
     "versionCode": 268,
@@ -116,18 +128,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Eliminasi pelangi tombol menjadi netral outline berhirarki",
       "Proporsi tabel fixed di Data Inventory dan Mutasi Log",
       "Simetri kartu KPI kapasitas dan pencegahan teks terpotong di HP"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.1",
-    "versionCode": 261,
-    "buildDate": "29 Oktober 2026",
-    "buildHash": "wms-261029-v261-2315",
-    "releaseTitle": "WMS v2.6.1 — Sinkronisasi Badge Header Selisih Nota dengan Tabel",
-    "releaseNotes": [
-      "Sinkronisasi perhitungan selisih nota di header blok dengan tabel sesuai 4 kondisi",
-      "Menampilkan badge Hitung Ulang di header blok jika sudah diaudit"
     ],
     "minSupportedVersion": "v2.0.0"
   }

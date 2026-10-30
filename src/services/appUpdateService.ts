@@ -303,28 +303,34 @@ class AppUpdateManager {
     this.notify();
 
     try {
+      // Selalu bersihkan precache/workbox lama agar bundle JS versi terbaru langsung aktif
+      const purgeOldCaches = async () => {
+        if (typeof caches !== 'undefined' && caches.keys) {
+          try {
+            const names = await caches.keys();
+            await Promise.all(
+              names
+                .filter((name) => options?.hardReload || name.includes('precache') || name.includes('workbox'))
+                .map((name) => caches.delete(name))
+            );
+          } catch {}
+        }
+      };
+
       if (this.state.waitingWorker) {
-        this.state.waitingWorker.postMessage({ type: 'SKIP_WAITING' });
-        // Fallback reload if controllerchange doesn't fire within 800ms
-        setTimeout(() => {
-          window.location.reload();
-        }, 800);
+        purgeOldCaches().finally(() => {
+          this.state.waitingWorker?.postMessage({ type: 'SKIP_WAITING' });
+          // Fallback reload if controllerchange doesn't fire within 600ms
+          setTimeout(() => {
+            window.location.reload();
+          }, 600);
+        });
         return;
       }
 
-      if (typeof caches !== 'undefined' && caches.keys) {
-        caches.keys().then((names) => {
-          return Promise.all(
-            names
-              .filter((name) => options?.hardReload || name.includes('precache') || name.includes('workbox'))
-              .map((name) => caches.delete(name))
-          );
-        }).finally(() => {
-          location.reload();
-        });
-      } else {
+      purgeOldCaches().finally(() => {
         location.reload();
-      }
+      });
     } catch (err) {
       console.warn('[AppUpdate] Apply reload fallback:', err);
       window.location.reload();
