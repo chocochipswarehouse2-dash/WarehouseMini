@@ -739,6 +739,7 @@ function scanExistingSheetBlocksData(sheet) {
               rowNum: r + 1,
               colQtyNota: colQtyNota + 1,
               colTotalDatang: colTotalDatang + 1,
+              colTotalAwal: (colTotalAwal !== -1 ? colTotalAwal + 1 : colTotalDatang + 1),
               colSelisihNota: colSelisihNota + 1
             };
           } else if (!oldNotaMap[curCode]) {
@@ -749,6 +750,7 @@ function scanExistingSheetBlocksData(sheet) {
               rowNum: r + 1,
               colQtyNota: colQtyNota + 1,
               colTotalDatang: colTotalDatang + 1,
+              colTotalAwal: (colTotalAwal !== -1 ? colTotalAwal + 1 : colTotalDatang + 1),
               colSelisihNota: colSelisihNota + 1
             };
           }
@@ -1259,14 +1261,14 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
         var selisihCellRange = sheet.getRange(startDataRowIndex, colSelisihNota);
         selisihCellRange.setFormula(selisihFormula).setNumberFormat('0').setFontWeight('bold').setFontSize(11);
 
-        // Pasang Formula SELISIH FISIK & STATUS AUDIT per Row
+        // Pasang Formula SELISIH FISIK & STATUS AUDIT per Row (Hindari ISBLANK karena cell formula bernilai "" bukan blank di Google Sheets)
         var colSelisihFisikLetter = colToLetter(colSelisihFisik);
         for (var rf = startDataRowIndex; rf <= endDataRowIndex; rf++) {
           sheet.getRange(rf, colSelisihFisik).setFormula(
-            '=IF(ISBLANK(' + colFisikLetter + rf + '), "", ' + colFisikLetter + rf + '-' + colRowTotalLetter + rf + ')'
+            '=IF(' + colFisikLetter + rf + '<>"", ' + colFisikLetter + rf + '-' + colRowTotalLetter + rf + ', "")'
           );
           sheet.getRange(rf, colStatus).setFormula(
-            '=IF(ISBLANK(' + colSelisihFisikLetter + rf + '), "", IF(' + colSelisihFisikLetter + rf + '=0, "MATCH", IF(' + colSelisihFisikLetter + rf + '<0, "KURANG", "LEBIH")))'
+            '=IF(' + colSelisihFisikLetter + rf + '<>"", IF(' + colSelisihFisikLetter + rf + '=0, "MATCH", IF(' + colSelisihFisikLetter + rf + '<0, "KURANG", "LEBIH")), "")'
           );
         }
       } else {
@@ -1502,6 +1504,28 @@ function handleFetchQtyNota(ss, data) {
           source_sheet: sourceSheet,
           updated_at: nowIso
         };
+
+        // AUTO-MIRROR 2 ARAH:
+        // 1. Jika Buyer isi di Sheet Tanggal, tapi di Master Sheet sel Qty Nota masih kosong:
+        //    Tuliskan finalQtyNota ke sel Master Sheet!
+        if (mEntry && (mEntry.qtyNota === null || mEntry.qtyNota === undefined || mEntry.qtyNota === '')) {
+          try {
+            mEntry.sheet.getRange(mEntry.rowNum, mEntry.colQtyNota).setValue(Number(finalQtyNota));
+            mEntry.qtyNota = Number(finalQtyNota);
+          } catch (eSyncM) {}
+        }
+
+        // 2. Jika Buyer isi di Master Sheet, dan ada Sheet Tanggal untuk kode ini yang sel Qty Nota-nya masih kosong:
+        //    Tuliskan finalQtyNota ke sel Sheet Tanggal tersebut!
+        for (var k = 0; k < dList.length; k++) {
+          var deSync = dList[k];
+          if (deSync && (deSync.qtyNota === null || deSync.qtyNota === undefined || deSync.qtyNota === '')) {
+            try {
+              deSync.sheet.getRange(deSync.rowNum, deSync.colQtyNota).setValue(Number(finalQtyNota));
+              deSync.qtyNota = Number(finalQtyNota);
+            } catch (eSyncD) {}
+          }
+        }
       }
     }
 
@@ -1558,10 +1582,10 @@ function updateQtyNotaDelta(ss, data) {
       var rec = scan.oldNotaMap ? scan.oldNotaMap[targetCode] : null;
       if (rec && rec.rowNum > 0 && rec.colQtyNota > 0) {
         s.getRange(rec.rowNum, rec.colQtyNota).setValue(qtyNotaVal).setNumberFormat('0');
-        if (rec.colSelisihNota > 0 && rec.colTotalDatang > 0) {
-          var totalRef = colToLetter(rec.colTotalDatang) + rec.rowNum;
+        if (rec.colSelisihNota > 0 && (rec.colTotalAwal > 0 || rec.colTotalDatang > 0)) {
+          var totalRef = colToLetter(rec.colTotalAwal || rec.colTotalDatang) + rec.rowNum;
           var notaRef = colToLetter(rec.colQtyNota) + rec.rowNum;
-          s.getRange(rec.rowNum, rec.colSelisihNota).setFormula('=IF(ISBLANK(' + notaRef + '), "", ' + totalRef + '-' + notaRef + ')').setNumberFormat('0');
+          s.getRange(rec.rowNum, rec.colSelisihNota).setFormula('=IF(' + notaRef + '<>"", ' + totalRef + '-' + notaRef + ', "")').setNumberFormat('0');
         }
         updatedSheets.push(name);
       }

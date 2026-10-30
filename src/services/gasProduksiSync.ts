@@ -18,7 +18,7 @@ export const DEFAULT_PRODUKSI_GAS_URL = 'https://script.google.com/macros/s/AKfy
 export function getProduksiGasUrl(): string {
   try {
     const custom = localStorage.getItem('wms_produksi_gas_url') || '';
-    if (!custom || !custom.trim() || custom.includes('AKfycby4J497I-m4H99KSvBDkkSr6_kn9BoIDwALRa3lE1ZiPyJPIAd0AYE6-r6yqCdFONmpSg')) {
+    if (!custom || !custom.trim() || !custom.includes('script.google.com') || custom !== DEFAULT_PRODUKSI_GAS_URL) {
       localStorage.setItem('wms_produksi_gas_url', DEFAULT_PRODUKSI_GAS_URL);
       return DEFAULT_PRODUKSI_GAS_URL;
     }
@@ -1262,9 +1262,11 @@ export async function syncQtyNotaAndAutoQueueRecount(options: {
       kategoriByCode.set(normCode, it.kategori);
     }
 
+    const noSjStr = String(it.no_surat_jalan || '').trim();
+    const ketStr = String(it.keterangan || '').trim();
     const isReturOnly =
-      (it.no_surat_jalan && it.no_surat_jalan.toUpperCase().startsWith('RETUR-')) ||
-      (it.keterangan && it.keterangan.includes('RETUR_CMT:')) ||
+      noSjStr.toUpperCase().startsWith('RETUR-') ||
+      ketStr.includes('RETUR_CMT:') ||
       (Number(it.qty_retur) > 0 && (!it.qty || Number(it.qty) === 0));
 
     const prev = totalDiterimaByCode.get(normCode) || 0;
@@ -1380,7 +1382,7 @@ export async function syncQtyNotaAndAutoQueueRecount(options: {
 
       // Pertahankan catatan manual auditor jika ada di luar teks otomatis
       let finalNote = autoHint;
-      if (existingQueueItem?.catatan_petunjuk) {
+      if (existingQueueItem?.catatan_petunjuk && typeof existingQueueItem.catatan_petunjuk === 'string') {
         const cleanedOld = existingQueueItem.catatan_petunjuk
           .replace(/Selisih Nota Buyer:[^|]*(\|\s*)?/gi, '')
           .trim();

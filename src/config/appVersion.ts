@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.6",
-  "versionCode": 266,
+  "version": "v2.6.7",
+  "versionCode": 267,
   "buildDate": "30 Oktober 2026",
-  "buildHash": "wms-261030-v266-1758",
-  "releaseTitle": "WMS v2.6.6 — Formula Selisih Nota Akurat & Optimasi Tarik Qty Nota",
+  "buildHash": "wms-261030-v267-1817",
+  "releaseTitle": "WMS v2.6.7 — Sinkronisasi 2 Arah Qty Nota & Formula Status Audit Produksi",
   "releaseNotes": [
-    "Memperbaiki formula Selisih Nota Google Sheets agar tidak salah kalkulasi saat Qty Hitung Ulang kosong",
-    "Memperbaiki pemetaan kolom Total Awal Net agar Selisih Nota akurat (568 - 570 = -2 pcs)",
-    "Optimasi sinkronisasi Tarik Qty Nota menjadi super cepat tanpa timeout"
+    "Perbaikan formula Status Audit dan Selisih Fisik di Google Sheet agar tidak muncul LEBIH palsu",
+    "Implementasi Auto-Mirror Qty Nota dua arah antara Master Produksi dan Tab Sheet Tanggal",
+    "Peningkatan ketahanan fetch Qty Nota dan penanganan error toast informatif"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.6",
+    "versionCode": 266,
+    "buildDate": "30 Oktober 2026",
+    "buildHash": "wms-261030-v266-1758",
+    "releaseTitle": "WMS v2.6.6 — Formula Selisih Nota Akurat & Optimasi Tarik Qty Nota",
+    "releaseNotes": [
+      "Memperbaiki formula Selisih Nota Google Sheets agar tidak salah kalkulasi saat Qty Hitung Ulang kosong",
+      "Memperbaiki pemetaan kolom Total Awal Net agar Selisih Nota akurat (568 - 570 = -2 pcs)",
+      "Optimasi sinkronisasi Tarik Qty Nota menjadi super cepat tanpa timeout"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.5",
     "versionCode": 265,
@@ -117,18 +130,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Mode ANOMALI dihapus dari Web Scanner & wajibkan pilih Mode (#IN/#OUT/#SO) serta Lokasi sebelum scan",
       "Selisih Nota dan Status Audit kini menggunakan Qty Hitung Ulang sebagai pembanding akhir bila audit telah selesai",
       "Formula Spreadsheet reaktif menghitung SUM(QTY HITUNG ULANG) - QTY NOTA otomatis"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.5.8",
-    "versionCode": 258,
-    "buildDate": "29 Oktober 2026",
-    "buildHash": "wms-261029-v258-2105",
-    "releaseTitle": "WMS v2.5.8 — Fisik Hitung Produksi Terbaca dari Hasil Audit",
-    "releaseNotes": [
-      "Kolom Fisik Hitung dan Status di tabel Produksi kini membaca hasil Audit Hitung Ulang",
-      "Data audit dari Cloud ditampilkan walau belum tertulis ke item penerimaan"
     ],
     "minSupportedVersion": "v2.0.0"
   }

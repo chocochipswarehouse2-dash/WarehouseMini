@@ -703,9 +703,10 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
           'warning'
         );
       }
-    } catch (err) {
+    } catch (err: any) {
+      console.error('[ProduksiSpreadsheetView] handleSyncQtyNotaFromSheet error:', err);
       if (!isSilent) {
-        onShowToast('Gagal menyinkronkan Qty Nota dari Google Sheet.', 'error');
+        onShowToast(err?.message ? `Gagal menyinkronkan Qty Nota: ${err.message}` : 'Gagal menyinkronkan Qty Nota dari Google Sheet.', 'error');
       }
     } finally {
       setIsSyncingQtyNota(false);
