@@ -210,16 +210,40 @@ export function buildBlocksFromRawItems(
 
     // Temukan semua tanggal yang ada (Khusus barang datang, abaikan baris retur)
     const dateSet = new Set<string>();
+    const dateToSjMap: Record<string, string[]> = {};
     items.forEach((it) => {
       const isReturItem =
         (it.no_surat_jalan && it.no_surat_jalan.toUpperCase().startsWith('RETUR-')) ||
         (it.keterangan && it.keterangan.includes('RETUR_CMT:'));
       if (!isReturItem && it.tanggal_penerimaan && Number(it.qty) > 0) {
-        dateSet.add(it.tanggal_penerimaan.trim());
+        const t = it.tanggal_penerimaan.trim();
+        dateSet.add(t);
+        const sj = (it.no_surat_jalan || '').trim().toUpperCase();
+        if (sj) {
+          if (!dateToSjMap[t]) dateToSjMap[t] = [];
+          if (!dateToSjMap[t].includes(sj)) dateToSjMap[t].push(sj);
+        }
       }
     });
     const itemDates = Array.from(dateSet).sort().reverse();
-    const finalDateSlots = customDateSlots && customDateSlots.length > 0 ? customDateSlots : itemDates;
+
+    // Pisahkan slot kolom per (Tanggal + No. SJ) jika ada > 1 Surat Jalan di hari yang sama
+    const distinctSlots: string[] = [];
+    const baseDates = customDateSlots && customDateSlots.length > 0 ? customDateSlots : itemDates;
+    baseDates.forEach((d) => {
+      const cleanDate = d.includes('||') ? d.split('||')[0] : d;
+      const sjs = dateToSjMap[cleanDate] || [];
+      if (d.includes('||')) {
+        distinctSlots.push(d);
+      } else if (sjs.length > 1) {
+        sjs.forEach((sj) => distinctSlots.push(`${cleanDate}||${sj}`));
+      } else if (sjs.length === 1) {
+        distinctSlots.push(`${cleanDate}||${sjs[0]}`);
+      } else {
+        distinctSlots.push(cleanDate);
+      }
+    });
+    const finalDateSlots = distinctSlots.length > 0 ? distinctSlots : baseDates;
 
     // Group by color
     const colorMap = new Map<string, PenerimaanProduksiItem[]>();
@@ -267,9 +291,11 @@ export function buildBlocksFromRawItems(
               (it.no_surat_jalan && it.no_surat_jalan.toUpperCase().startsWith('RETUR-')) ||
               (it.keterangan && it.keterangan.includes('RETUR_CMT:'));
             const tgl = it.tanggal_penerimaan?.trim();
+            const sj = (it.no_surat_jalan || '').trim().toUpperCase();
             const q = Number(it.qty) || 0;
             if (!isReturItem && tgl && q > 0) {
-              qtyByDate[tgl] = (qtyByDate[tgl] || 0) + q;
+              const slotKey = sj ? `${tgl}||${sj}` : tgl;
+              qtyByDate[slotKey] = (qtyByDate[slotKey] || 0) + q;
               totalSizeQty += q;
             }
 

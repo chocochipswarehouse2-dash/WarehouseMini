@@ -214,22 +214,23 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
   const [isCompressingPhoto, setIsCompressingPhoto] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Format date helper: "2026-07-13" -> "13 Jul" (O(1) fast string slice for YYYY-MM-DD)
+  // Format date helper: "2026-07-13" -> "13 Jul" (O(1) fast string slice for YYYY-MM-DD, supports slot "YYYY-MM-DD||SJ")
   const formatDateHeader = (dateStr: string): string => {
     if (!dateStr) return '';
-    if (dateStr.length >= 10 && dateStr[4] === '-' && dateStr[7] === '-') {
-      const m = parseInt(dateStr.slice(5, 7), 10);
-      const d = parseInt(dateStr.slice(8, 10), 10);
+    const cleanStr = dateStr.includes('||') ? dateStr.split('||')[0] : dateStr;
+    if (cleanStr.length >= 10 && cleanStr[4] === '-' && cleanStr[7] === '-') {
+      const m = parseInt(cleanStr.slice(5, 7), 10);
+      const d = parseInt(cleanStr.slice(8, 10), 10);
       if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
         return `${d} ${MONTH_SHORT_NAMES[m - 1]}`;
       }
     }
     try {
-      const d = new Date(dateStr);
-      if (isNaN(d.getTime())) return dateStr;
+      const d = new Date(cleanStr);
+      if (isNaN(d.getTime())) return cleanStr;
       return `${d.getDate()} ${MONTH_SHORT_NAMES[d.getMonth()]}`;
     } catch {
-      return dateStr;
+      return cleanStr;
     }
   };
 
@@ -372,9 +373,26 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       });
       const distinctSjs = Array.from(sjMap.values()).sort((a, b) => b.qty - a.qty);
 
+      // BUAT SLOT KOLOM KEDATANGAN:
+      // Jika suatu tanggal memiliki lebih dari 1 Surat Jalan, pisahkan kolom per (Tanggal + No. SJ)
+      // agar setiap SJ memiliki kolom tersendiri di hari yang sama secara transparan!
+      const distinctDatangSlots: string[] = [];
+      distinctDatangDates.forEach((d) => {
+        const sjsForDate = dateToSjMap[d] || [];
+        if (sjsForDate.length > 1) {
+          sjsForDate.forEach((sj) => {
+            distinctDatangSlots.push(`${d}||${sj}`);
+          });
+        } else if (sjsForDate.length === 1) {
+          distinctDatangSlots.push(`${d}||${sjsForDate[0]}`);
+        } else {
+          distinctDatangSlots.push(d);
+        }
+      });
+
       const dateSlots: string[] = Array.from(
-        { length: FIXED_DATE_COLUMNS_COUNT },
-        (_, i) => distinctDatangDates[i] || ''
+        { length: Math.max(FIXED_DATE_COLUMNS_COUNT, distinctDatangSlots.length) },
+        (_, i) => distinctDatangSlots[i] || ''
       );
 
       // Extract unique return dates (Khusus CMT)
@@ -461,11 +479,13 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
               (it.no_surat_jalan && it.no_surat_jalan.toUpperCase().startsWith('RETUR-')) ||
               (it.keterangan && it.keterangan.includes('RETUR_CMT:'));
 
-            const d = it.tanggal_penerimaan;
+            const d = it.tanggal_penerimaan?.trim();
+            const sj = (it.no_surat_jalan || '').trim().toUpperCase();
             const q = Number(it.qty) || 0;
             // Hanya tambahkan ke Barang Datang jika BUKAN baris retur murni
             if (!isReturItem && d && q > 0) {
-              qtyByDate[d] = (qtyByDate[d] || 0) + q;
+              const slotKeyWithSj = sj ? `${d}||${sj}` : d;
+              qtyByDate[slotKeyWithSj] = (qtyByDate[slotKeyWithSj] || 0) + q;
               totalSizeQty += q;
             }
 
@@ -881,8 +901,8 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     if (selectedDateFilter && selectedDateFilter !== 'all') {
       result = result.filter(
         (b) =>
-          b.dateSlots.includes(selectedDateFilter) ||
-          (b.returDateSlots && b.returDateSlots.includes(selectedDateFilter))
+          b.dateSlots.some((slot) => slot.split('||')[0] === selectedDateFilter) ||
+          (b.returDateSlots && b.returDateSlots.some((r) => r.split('||')[0] === selectedDateFilter))
       );
     }
 
@@ -902,7 +922,10 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         b.colorGroups.some((cg) => cg.color.toLowerCase().includes(effectiveQuery)) ||
         (b.productName && b.productName.toLowerCase().includes(effectiveQuery)) ||
         (b.upVendor && b.upVendor.toLowerCase().includes(effectiveQuery)) ||
-        (b.catatan && b.catatan.toLowerCase().includes(effectiveQuery))
+        (b.catatan && b.catatan.toLowerCase().includes(effectiveQuery)) ||
+        (b.distinctSjs && b.distinctSjs.some((s) => s.no_surat_jalan.toLowerCase().includes(effectiveQuery))) ||
+        (b.dateToSjMap && Object.values(b.dateToSjMap).some((sjs) => sjs.some((sj) => sj.toLowerCase().includes(effectiveQuery)))) ||
+        (b.dateSlots && b.dateSlots.some((d) => d && d.toLowerCase().includes(effectiveQuery)))
     );
   }, [blocks, selectedDateFilter, recountFilter, effectiveQuery]);
 
@@ -2439,46 +2462,54 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                       {/* HEADER ROW 2 */}
                       <tr className="bg-[#fce8e6] dark:bg-[#3d1e22] text-slate-800 dark:text-rose-200 font-bold uppercase text-[10px] border-b-2 border-slate-400 dark:border-slate-600 divide-x divide-slate-300 dark:divide-slate-700">
                         {/* 10 Date Columns Header */}
-                        {block.dateSlots.map((dStr, idx) => (
-                          <th
-                            key={`datang-${idx}`}
-                            onClick={() => {
-                              if (isEditingThisBlock) {
-                                handleEditDatePrompt(block.id, idx, 'datang', dStr);
+                        {block.dateSlots.map((dStr, idx) => {
+                          const slotDate = dStr ? dStr.split('||')[0] : '';
+                          const slotSj = dStr && dStr.includes('||') ? dStr.split('||')[1] : '';
+                          const cleanSjSubtitle = slotSj
+                            ? slotSj.replace(/^KARGOCHN\s*/i, '').replace(/^SJ-?/i, '').trim()
+                            : (slotDate && block.dateToSjMap?.[slotDate]?.length === 1
+                                ? block.dateToSjMap[slotDate][0].replace(/^KARGOCHN\s*/i, '').replace(/^SJ-?/i, '')
+                                : '');
+
+                          return (
+                            <th
+                              key={`datang-${idx}`}
+                              onClick={() => {
+                                if (isEditingThisBlock) {
+                                  handleEditDatePrompt(block.id, idx, 'datang', slotDate);
+                                }
+                              }}
+                              className={`py-1 px-1 min-w-[50px] max-w-[72px] font-mono text-[10px] font-bold text-slate-800 dark:text-slate-200 ${
+                                isEditingThisBlock ? 'cursor-pointer hover:bg-rose-300/80 bg-rose-100 dark:bg-rose-900/60' : ''
+                              }`}
+                              title={
+                                slotDate
+                                  ? `Tanggal ${slotDate}${slotSj ? ` - No. SJ: ${slotSj}` : ''}`
+                                  : isEditingThisBlock
+                                  ? 'Klik untuk ubah tanggal datang'
+                                  : undefined
                               }
-                            }}
-                            className={`py-1 px-1.5 min-w-[48px] max-w-[62px] font-mono text-[10px] font-bold text-slate-800 dark:text-slate-200 ${
-                              isEditingThisBlock ? 'cursor-pointer hover:bg-rose-300/80 bg-rose-100 dark:bg-rose-900/60' : ''
-                            }`}
-                            title={
-                              dStr && block.dateToSjMap?.[dStr]
-                                ? `Tanggal ${dStr} - No. SJ: ${block.dateToSjMap[dStr].join(', ')}`
-                                : isEditingThisBlock
-                                ? 'Klik untuk ubah tanggal datang'
-                                : undefined
-                            }
-                          >
-                            {dStr ? (
-                              <div className="flex flex-col items-center">
-                                <span>{formatDateHeader(dStr)}</span>
-                                {block.dateToSjMap?.[dStr] && (
-                                  <span
-                                    className="text-[8px] font-normal text-blue-700 dark:text-blue-300 truncate max-w-[55px] block leading-tight mt-0.5"
-                                    title={`No. SJ: ${block.dateToSjMap[dStr].join(', ')}`}
-                                  >
-                                    {block.dateToSjMap[dStr].length === 1
-                                      ? block.dateToSjMap[dStr][0].replace(/^SJ-?/i, '')
-                                      : `${block.dateToSjMap[dStr].length} SJ`}
-                                  </span>
-                                )}
-                              </div>
-                            ) : isEditingThisBlock ? (
-                              <span className="text-rose-600 dark:text-rose-400 font-normal hover:underline">+ Tgl</span>
-                            ) : (
-                              ''
-                            )}
-                          </th>
-                        ))}
+                            >
+                              {dStr ? (
+                                <div className="flex flex-col items-center justify-center">
+                                  <span>{formatDateHeader(slotDate)}</span>
+                                  {cleanSjSubtitle && (
+                                    <span
+                                      className="text-[8px] font-mono text-blue-700 dark:text-blue-300 truncate max-w-[64px] block leading-tight mt-0.5 px-1 py-0.2 bg-blue-100/70 dark:bg-blue-900/60 rounded"
+                                      title={`No. SJ: ${slotSj || cleanSjSubtitle}`}
+                                    >
+                                      {cleanSjSubtitle}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : isEditingThisBlock ? (
+                                <span className="text-rose-600 dark:text-rose-400 font-normal hover:underline">+ Tgl</span>
+                              ) : (
+                                ''
+                              )}
+                            </th>
+                          );
+                        })}
 
                         {/* Retur Date Headers (CMT) */}
                         {isCMT &&

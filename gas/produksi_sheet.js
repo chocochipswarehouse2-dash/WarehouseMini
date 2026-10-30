@@ -478,11 +478,24 @@ function updateIndexDaftarSuratJalan(ss) {
 
 function formatDateHeader(dateStr) {
   if (!dateStr) return '';
+  var rawDate = String(dateStr).trim();
+  var sjSubtitle = '';
+  if (rawDate.indexOf('||') > -1) {
+    var parts = rawDate.split('||');
+    rawDate = parts[0];
+    sjSubtitle = parts[1] ? parts[1].replace(/^KARGOCHN\s*/i, '').replace(/^SJ-?/i, '').trim() : '';
+  }
   try {
-    var d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-    var monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-    return d.getDate() + ' ' + monthNames[d.getMonth()];
+    var d = new Date(rawDate);
+    var dateLabel = rawDate;
+    if (!isNaN(d.getTime())) {
+      var monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+      dateLabel = d.getDate() + ' ' + monthNames[d.getMonth()];
+    }
+    if (sjSubtitle) {
+      return dateLabel + '\n(' + sjSubtitle + ')';
+    }
+    return dateLabel;
   } catch (e) {
     return dateStr;
   }
@@ -861,7 +874,12 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
     var headerRow2Index = currentRow + 1;
 
     // Jika mode tanggal spesifik (1 Tanggal = 1 Tab)
-    var dateSlots = isSpecificDate ? [specificDateStr] : (block.dateSlots || []);
+    var dateSlots = isSpecificDate
+      ? (block.dateSlots && block.dateSlots.length > 0
+          ? block.dateSlots.filter(function(ds) { return String(ds).split('||')[0] === specificDateStr; })
+          : [specificDateStr])
+      : (block.dateSlots || []);
+    if (dateSlots.length === 0) dateSlots = [specificDateStr];
     var returSlots = isCMT ? (isSpecificDate ? (block.returDateSlots && block.returDateSlots.indexOf(specificDateStr) > -1 ? [specificDateStr] : []) : (block.returDateSlots || [])) : [];
 
     var numDateCols = Math.max(10, dateSlots.length);
@@ -1059,9 +1077,17 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
         var rowDatang = 0;
         for (var d2 = 0; d2 < numDateCols; d2++) {
           var dKey = dateSlots[d2];
-          var qVal = (dKey && sz.qtyByDate && sz.qtyByDate[dKey] !== undefined && sz.qtyByDate[dKey] !== '')
-            ? Number(sz.qtyByDate[dKey])
-            : '';
+          var qVal = '';
+          if (dKey && sz.qtyByDate) {
+            if (sz.qtyByDate[dKey] !== undefined && sz.qtyByDate[dKey] !== '') {
+              qVal = Number(sz.qtyByDate[dKey]);
+            } else if (String(dKey).indexOf('||') > -1) {
+              var dateOnly = String(dKey).split('||')[0];
+              if (sz.qtyByDate[dateOnly] !== undefined && sz.qtyByDate[dateOnly] !== '' && (!dateSlots.some(function(other) { return other !== dKey && String(other).split('||')[0] === dateOnly; }))) {
+                qVal = Number(sz.qtyByDate[dateOnly]);
+              }
+            }
+          }
           if (qVal !== '') rowDatang += Number(qVal);
           dataRowVals.push(qVal);
         }

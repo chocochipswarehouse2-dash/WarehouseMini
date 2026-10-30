@@ -92,6 +92,7 @@ export interface CodeAuditGroup {
   distinct_colors: string[];
   distinct_sizes: string[];
   distinct_dates: string[];
+  distinct_sjs?: string[];
   items: PenerimaanProduksiItem[];
 }
 
@@ -491,6 +492,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
           distinct_colors: new Set(),
           distinct_sizes: new Set(),
           distinct_dates: new Set(),
+          distinct_sjs: new Set(),
         });
       }
 
@@ -501,6 +503,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       if (it.warna) grp.distinct_colors.add(it.warna.trim());
       if (it.size) grp.distinct_sizes.add(it.size.trim());
       if (it.tanggal_penerimaan) grp.distinct_dates.add(it.tanggal_penerimaan);
+      if (it.no_surat_jalan) grp.distinct_sjs.add(it.no_surat_jalan.trim().toUpperCase());
     });
 
     const results: CodeAuditGroup[] = [];

@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.3",
-  "versionCode": 263,
+  "version": "v2.6.4",
+  "versionCode": 264,
   "buildDate": "30 Oktober 2026",
-  "buildHash": "wms-261030-v263-1415",
-  "releaseTitle": "WMS v2.6.3 — Fix Multi-SJ Produksi Push to GSheet",
+  "buildHash": "wms-261030-v264-1448",
+  "releaseTitle": "WMS v2.6.4 — Pemisahan Kolom Kedatangan Multi-SJ & Fix Pencarian SJ",
   "releaseNotes": [
-    "Otomatis menggabungkan multi-SJ pada tanggal kedatangan yang sama saat push ke Google Sheets tanpa saling menimpa",
-    "Sinkronisasi utuh tab sheet 30-10-2026 Kargo berisi 16 model dan 116 pcs"
+    "Kolom kedatangan pada spreadsheet sekarang otomatis dipisah per Surat Jalan jika datang di tanggal yang sama",
+    "Pencarian riwayat dan spreadsheet sekarang dapat mencari berdasarkan No Surat Jalan"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.3",
+    "versionCode": 263,
+    "buildDate": "30 Oktober 2026",
+    "buildHash": "wms-261030-v263-1415",
+    "releaseTitle": "WMS v2.6.3 — Fix Multi-SJ Produksi Push to GSheet",
+    "releaseNotes": [
+      "Otomatis menggabungkan multi-SJ pada tanggal kedatangan yang sama saat push ke Google Sheets tanpa saling menimpa",
+      "Sinkronisasi utuh tab sheet 30-10-2026 Kargo berisi 16 model dan 116 pcs"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.2",
     "versionCode": 262,
@@ -116,19 +128,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Header kolom sheet produksi otomatis wrap dan tidak terpotong",
       "Kolom FISIK HASIL HITUNG diganti QTY HITUNG ULANG agar konsisten",
       "Tinggi baris menyesuaikan panjang Log Hitung Ulang"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.5.5",
-    "versionCode": 255,
-    "buildDate": "29 Oktober 2026",
-    "buildHash": "wms-261029-v255-1729",
-    "releaseTitle": "WMS v2.5.5 — Integrasi Qty Nota Buyer & Auto-Antrian Audit",
-    "releaseNotes": [
-      "Kolom QTY NOTA & SELISIH di sheet satuan dan master produksi",
-      "Qty Nota Buyer disinkron ke Supabase",
-      "Selisih nota otomatis masuk antrian Audit Hitung Ulang"
     ],
     "minSupportedVersion": "v2.0.0"
   }

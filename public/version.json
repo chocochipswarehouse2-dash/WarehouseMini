@@ -1,12 +1,12 @@
 {
-  "version": "v2.6.3",
-  "versionCode": 263,
+  "version": "v2.6.4",
+  "versionCode": 264,
   "buildDate": "30 Oktober 2026",
-  "buildHash": "wms-261030-v263-1415",
-  "releaseTitle": "WMS v2.6.3 — Fix Multi-SJ Produksi Push to GSheet",
+  "buildHash": "wms-261030-v264-1448",
+  "releaseTitle": "WMS v2.6.4 — Pemisahan Kolom Kedatangan Multi-SJ & Fix Pencarian SJ",
   "releaseNotes": [
-    "Otomatis menggabungkan multi-SJ pada tanggal kedatangan yang sama saat push ke Google Sheets tanpa saling menimpa",
-    "Sinkronisasi utuh tab sheet 30-10-2026 Kargo berisi 16 model dan 116 pcs"
+    "Kolom kedatangan pada spreadsheet sekarang otomatis dipisah per Surat Jalan jika datang di tanggal yang sama",
+    "Pencarian riwayat dan spreadsheet sekarang dapat mencari berdasarkan No Surat Jalan"
   ],
   "minSupportedVersion": "v2.0.0"
 }
