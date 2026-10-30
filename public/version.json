@@ -1,12 +1,13 @@
 {
-  "version": "v2.6.4",
-  "versionCode": 264,
+  "version": "v2.6.5",
+  "versionCode": 265,
   "buildDate": "30 Oktober 2026",
-  "buildHash": "wms-261030-v264-1448",
-  "releaseTitle": "WMS v2.6.4 — Pemisahan Kolom Kedatangan Multi-SJ & Fix Pencarian SJ",
+  "buildHash": "wms-261030-v265-1736",
+  "releaseTitle": "WMS v2.6.5 — Auto-Focus Antrian Audit & Fix Indikator Metrik",
   "releaseNotes": [
-    "Kolom kedatangan pada spreadsheet sekarang otomatis dipisah per Surat Jalan jika datang di tanggal yang sama",
-    "Pencarian riwayat dan spreadsheet sekarang dapat mencari berdasarkan No Surat Jalan"
+    "Otomatis mengarahkan ke tab Semua dan mencari kode yang baru dimasukkan ke antrian hitung ulang",
+    "Memperbaiki kontras teks angka kartu KPI antrian saat aktif terpilih",
+    "Memperjelas badge status Di Antrian pada modal pemanggil kode"
   ],
   "minSupportedVersion": "v2.0.0"
 }

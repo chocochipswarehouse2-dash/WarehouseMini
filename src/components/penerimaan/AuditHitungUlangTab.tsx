@@ -1349,6 +1349,13 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
     }));
 
     handleAddMultipleToQueue(payload);
+    // Otomatis arahkan filter ke 'all' dan cari kode yang baru ditambahkan agar langsung terlihat
+    setFilterStatus('all');
+    if (payload.length === 1) {
+      setSearchQuery(payload[0].kode_produksi);
+    } else {
+      setSearchQuery('');
+    }
     onShowToast(`${payload.length} kode berhasil dimasukkan ke antrian hitung ulang!`, 'success');
     setIsPickerModalOpen(false);
     setSelectedPickerCodes(new Set());
@@ -1395,9 +1402,11 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-extrabold uppercase tracking-wider opacity-75">Antrian Belum</span>
-            <Clock className="w-4 h-4 text-amber-500" />
+            <Clock className={`w-4 h-4 ${filterStatus === 'uncounted' && activeMode === 'queue' ? 'text-white' : 'text-amber-500'}`} />
           </div>
-          <div className="text-xl sm:text-2xl font-black mt-1 text-amber-600 dark:text-amber-400">
+          <div className={`text-xl sm:text-2xl font-black mt-1 ${
+            filterStatus === 'uncounted' && activeMode === 'queue' ? 'text-white' : 'text-amber-600 dark:text-amber-400'
+          }`}>
             {metrics.uncounted}
           </div>
           <div className="text-[10px] opacity-70 mt-0.5">Menunggu hitung fisik</div>
@@ -1417,9 +1426,11 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-extrabold uppercase tracking-wider opacity-75">Ada Selisih</span>
-            <AlertTriangle className="w-4 h-4 text-rose-500" />
+            <AlertTriangle className={`w-4 h-4 ${filterStatus === 'diff' && activeMode === 'queue' ? 'text-white' : 'text-rose-500'}`} />
           </div>
-          <div className="text-xl sm:text-2xl font-black mt-1 text-rose-600 dark:text-rose-400">
+          <div className={`text-xl sm:text-2xl font-black mt-1 ${
+            filterStatus === 'diff' && activeMode === 'queue' ? 'text-white' : 'text-rose-600 dark:text-rose-400'
+          }`}>
             {metrics.diff}
           </div>
           <div className="text-[10px] opacity-70 mt-0.5">Fisik ≠ Surat Jalan</div>
@@ -1439,9 +1450,11 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-extrabold uppercase tracking-wider opacity-75">Klop (Match)</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+            <CheckCircle2 className={`w-4 h-4 ${filterStatus === 'match' && activeMode === 'queue' ? 'text-white' : 'text-emerald-500'}`} />
           </div>
-          <div className="text-xl sm:text-2xl font-black mt-1 text-emerald-600 dark:text-emerald-400">
+          <div className={`text-xl sm:text-2xl font-black mt-1 ${
+            filterStatus === 'match' && activeMode === 'queue' ? 'text-white' : 'text-emerald-600 dark:text-emerald-400'
+          }`}>
             {metrics.match}
           </div>
           <div className="text-[10px] opacity-70 mt-0.5">Diaudit &amp; Sesuai 100%</div>
@@ -2381,13 +2394,13 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
 
                         {/* Status Right Badge */}
                         <div className="text-right shrink-0">
-                          {g.is_counted ? (
+                          {isAlreadyInQueue ? (
+                            <span className="text-[10px] font-bold text-amber-700 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-300 dark:border-amber-800 block">
+                              Di Antrian {g.is_counted ? (g.total_selisih === 0 ? '(Klop)' : `(${g.total_selisih > 0 ? '+' : ''}${g.total_selisih})`) : ''}
+                            </span>
+                          ) : g.is_counted ? (
                             <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 block">
                               {g.total_selisih === 0 ? '✅ Match' : `⚠️ Selisih: ${g.total_selisih}`}
-                            </span>
-                          ) : isAlreadyInQueue ? (
-                            <span className="text-[10px] font-bold text-amber-600 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800 block">
-                              Di Antrian
                             </span>
                           ) : (
                             <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded block">

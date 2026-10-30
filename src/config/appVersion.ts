@@ -15,19 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.4",
-  "versionCode": 264,
+  "version": "v2.6.5",
+  "versionCode": 265,
   "buildDate": "30 Oktober 2026",
-  "buildHash": "wms-261030-v264-1448",
-  "releaseTitle": "WMS v2.6.4 — Pemisahan Kolom Kedatangan Multi-SJ & Fix Pencarian SJ",
+  "buildHash": "wms-261030-v265-1736",
+  "releaseTitle": "WMS v2.6.5 — Auto-Focus Antrian Audit & Fix Indikator Metrik",
   "releaseNotes": [
-    "Kolom kedatangan pada spreadsheet sekarang otomatis dipisah per Surat Jalan jika datang di tanggal yang sama",
-    "Pencarian riwayat dan spreadsheet sekarang dapat mencari berdasarkan No Surat Jalan"
+    "Otomatis mengarahkan ke tab Semua dan mencari kode yang baru dimasukkan ke antrian hitung ulang",
+    "Memperbaiki kontras teks angka kartu KPI antrian saat aktif terpilih",
+    "Memperjelas badge status Di Antrian pada modal pemanggil kode"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.4",
+    "versionCode": 264,
+    "buildDate": "30 Oktober 2026",
+    "buildHash": "wms-261030-v264-1448",
+    "releaseTitle": "WMS v2.6.4 — Pemisahan Kolom Kedatangan Multi-SJ & Fix Pencarian SJ",
+    "releaseNotes": [
+      "Kolom kedatangan pada spreadsheet sekarang otomatis dipisah per Surat Jalan jika datang di tanggal yang sama",
+      "Pencarian riwayat dan spreadsheet sekarang dapat mencari berdasarkan No Surat Jalan"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.3",
     "versionCode": 263,
@@ -115,19 +128,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Qty Nota yang diketik Buyer di sheet tidak lagi tertimpa saat push ulang",
       "Push dibatalkan otomatis jika pembacaan sheet lama gagal"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.5.6",
-    "versionCode": 256,
-    "buildDate": "29 Oktober 2026",
-    "buildHash": "wms-261029-v256-1812",
-    "releaseTitle": "WMS v2.5.6 — Header Sheet Produksi Auto-Wrap & Istilah Qty Hitung Ulang",
-    "releaseNotes": [
-      "Header kolom sheet produksi otomatis wrap dan tidak terpotong",
-      "Kolom FISIK HASIL HITUNG diganti QTY HITUNG ULANG agar konsisten",
-      "Tinggi baris menyesuaikan panjang Log Hitung Ulang"
     ],
     "minSupportedVersion": "v2.0.0"
   }
