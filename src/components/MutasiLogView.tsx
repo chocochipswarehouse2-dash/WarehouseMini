@@ -970,7 +970,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
   };
 
   return (
-    <div id="mutasiLogViewContainer" className="space-y-2 max-w-7xl mx-auto pb-12">
+    <div id="mutasiLogViewContainer" className="space-y-2 w-full max-w-[1600px] mx-auto pb-16">
       {/* Compact Top Bar - Responsive & Optimized for Mobile & Desktop */}
       <div className="bg-white dark:bg-[#09090B] border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-2 sm:p-2.5 shadow-xs space-y-2">
         {/* ROW 1: Search Input (Full width on phone, flexible on desktop) */}
@@ -1618,10 +1618,10 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                     Ganti ke Kartu
                   </button>
                 </div>
-                <table className="w-full min-w-[880px] text-left text-xs border-collapse">
+                <table className="w-full min-w-[880px] text-left text-xs border-collapse lg:table-fixed">
                   <thead>
                     <tr className="bg-slate-50 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                      <th className="py-3 px-2 w-10 text-center">
+                      <th className="py-3 px-2 w-[4%] text-center">
                         <input 
                           type="checkbox" 
                           className="rounded text-primary-500 focus:ring-primary-500 bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 cursor-pointer"
@@ -1629,13 +1629,13 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                           onChange={toggleSelectAll}
                         />
                       </th>
-                      <th className="py-3 px-2">Tipe & Waktu</th>
-                      <th className="py-3 px-2">Invoice</th>
-                      <th className="py-3 px-2">SKU & Produk</th>
-                      <th className="py-3 px-2">Lokasi & Area</th>
-                      <th className="py-3 px-2 text-center">Qty</th>
-                      <th className="py-3 px-2">Operator & Catatan</th>
-                      <th className="py-3 px-2 text-right">Aksi</th>
+                      <th className="py-3 px-2 w-[12%]">Tipe & Waktu</th>
+                      <th className="py-3 px-2 w-[15%]">Invoice</th>
+                      <th className="py-3 px-2 w-[25%]">SKU & Produk</th>
+                      <th className="py-3 px-2 w-[13%]">Lokasi & Area</th>
+                      <th className="py-3 px-2 w-[6%] text-center">Qty</th>
+                      <th className="py-3 px-2 w-[19%]">Operator & Catatan</th>
+                      <th className="py-3 px-2 w-[6%] text-right">Aksi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">

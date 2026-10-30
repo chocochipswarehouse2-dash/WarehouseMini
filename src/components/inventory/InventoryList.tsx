@@ -179,29 +179,29 @@ export const InventoryList: React.FC<InventoryListProps> = ({
           Product | Variant | Code | Area | DP (Merged) | Fisik | Lokasi
           ======================================================== */}
       <div className="hidden md:block min-w-[880px]">
-        <table className="w-full border-collapse text-left">
+        <table className="w-full border-collapse text-left lg:table-fixed">
           {/* STICKY TABLE HEADER */}
           <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-[#121824] text-slate-600 dark:text-slate-300 text-[10.5px] border-b border-slate-200 dark:border-slate-800 shadow-xs backdrop-blur-xs">
             <tr>
-              <th className="py-2.5 px-3 min-w-[190px]">
+              <th className="py-2.5 px-3 w-[24%] min-w-[180px]">
                 <SortHead label="Product" asc="NAME_ASC" desc="NAME_DESC" sort={sort} onSort={onSort} />
               </th>
-              <th className="py-2.5 px-2 text-center w-[64px]">
+              <th className="py-2.5 px-2 text-center w-[6%] min-w-[60px]">
                 <SortHead label="Variant" asc="SIZE_ASC" desc="SIZE_DESC" sort={sort} onSort={onSort} className="justify-center" />
               </th>
-              <th className="py-2.5 px-3 min-w-[130px]">
+              <th className="py-2.5 px-3 w-[16%] min-w-[130px]">
                 <SortHead label="Code" asc="SKU_ASC" desc="SKU_DESC" sort={sort} onSort={onSort} />
               </th>
-              <th className="py-2.5 px-2.5 w-[115px]">
+              <th className="py-2.5 px-2.5 w-[12%] min-w-[110px]">
                 <SortHead label="Area" asc="AREA_ASC" desc="AREA_DESC" sort={sort} onSort={onSort} />
               </th>
-              <th className="py-2.5 px-3 text-center w-[90px] bg-blue-50/50 dark:bg-blue-950/20 border-x border-slate-200 dark:border-slate-800">
+              <th className="py-2.5 px-3 text-center w-[8%] min-w-[70px] bg-blue-50/50 dark:bg-blue-950/20 border-x border-slate-200 dark:border-slate-800">
                 <SortHead label="DP" asc="DP_ASC" desc="DP_DESC" sort={sort} onSort={onSort} className="justify-center text-blue-700 dark:text-blue-300" />
               </th>
-              <th className="py-2.5 px-3 text-center w-[90px]">
+              <th className="py-2.5 px-3 text-center w-[8%] min-w-[70px]">
                 <SortHead label="Fisik" asc="FISIK_ASC" desc="FISIK_DESC" sort={sort} onSort={onSort} className="justify-center" />
               </th>
-              <th className="py-2.5 px-3 min-w-[200px]">
+              <th className="py-2.5 px-3 w-[26%] min-w-[180px]">
                 <span className="font-extrabold uppercase text-[10.5px] text-slate-500 dark:text-slate-400">
                   Lokasi Rak
                 </span>

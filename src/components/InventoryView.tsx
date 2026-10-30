@@ -200,16 +200,16 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   }, [isLokasiExportModalOpen, flatStockSnapshot]);
 
   return (
-    <div className="space-y-4 w-full animate-in fade-in duration-150">
+    <div className="w-full max-w-[1600px] mx-auto px-2 sm:px-4 lg:px-6 py-2 sm:py-4 space-y-4 animate-in fade-in duration-150">
       {/* ========================================================
           0. NAVIGATION TABS: DASHBOARD KAPASITAS | DATA INVENTORY | LOG PRODUK
           ======================================================== */}
-      <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl p-2 flex flex-wrap items-center justify-between gap-2 shadow-xs">
-        <div className="flex flex-wrap items-center gap-1.5">
+      <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl p-2 flex flex-col md:flex-row md:items-center justify-between gap-2 shadow-xs">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap py-1 px-1 -mx-1 sm:mx-0 w-full md:w-auto">
           <button
             type="button"
             onClick={() => setActiveTab('capacity')}
-            className={`px-4 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
+            className={`px-4 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === 'capacity'
                 ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -222,7 +222,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           <button
             type="button"
             onClick={() => setActiveTab('inventory')}
-            className={`px-4 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
+            className={`px-4 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === 'inventory'
                 ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -235,7 +235,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           <button
             type="button"
             onClick={() => setActiveTab('logs')}
-            className={`px-4 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
+            className={`px-4 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === 'logs'
                 ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -246,7 +246,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           </button>
         </div>
 
-        <div className="hidden md:flex items-center gap-2 text-[11px] text-slate-400 px-2 font-mono tabular-nums">
+        <div className="hidden md:flex items-center gap-2 text-[11px] text-slate-400 px-2 font-mono tabular-nums shrink-0">
           <span>{stats.skuCount.toLocaleString('id-ID')} SKU</span>
           <span aria-hidden="true">·</span>
           <span>{stats.totalFisik.toLocaleString('id-ID')} pcs fisik</span>
@@ -387,10 +387,10 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
             <button
               type="button"
               onClick={() => setOnlyActive((prev) => !prev)}
-              className={`px-3 py-2 text-xs font-extrabold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-2 text-xs font-extrabold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
                 onlyActive
-                  ? 'bg-amber-500 text-black border-amber-500 shadow-xs'
-                  : 'bg-slate-50 dark:bg-[#0E1420] hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800'
+                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 border-slate-900 dark:border-white'
+                  : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
               }`}
               title="Tampilkan hanya produk yang memiliki stok fisik di rak"
             >
@@ -402,11 +402,11 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
             <button
               type="button"
               onClick={() => handleOpenLokasiExport()}
-              className="px-3 py-2 text-xs font-extrabold bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+              className="px-3 py-2 text-xs font-extrabold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
               title="Ekspor Data & Cetak PDF per Lokasi Rak"
             >
-              <MapPin className="w-3.5 h-3.5" />
-              <Printer className="w-3.5 h-3.5" />
+              <MapPin className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <Printer className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
               <span className="hidden sm:inline">LOKASI &amp; PRINT</span>
             </button>
 
@@ -415,10 +415,10 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
               <button
                 type="button"
                 onClick={handleExportCsv}
-                className="px-3 py-2 text-xs font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                className="px-3 py-2 text-xs font-extrabold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
                 title="Unduh hasil inventori per area sebagai file CSV"
               >
-                <Download className="w-3.5 h-3.5" />
+                <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                 <span className="hidden sm:inline">CSV</span>
               </button>
             )}
@@ -428,10 +428,10 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
               type="button"
               disabled={isRefreshing || phase === 'syncing'}
               onClick={handleManualRefresh}
-              className="px-3 py-2 text-xs font-extrabold bg-amber-500 hover:bg-amber-600 text-black rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              className="px-3 py-2 text-xs font-extrabold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs"
               title="Sinkronkan data terbaru dari database"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing || phase === 'syncing' ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 text-amber-500 ${isRefreshing || phase === 'syncing' ? 'animate-spin' : ''}`} />
               <span className="hidden sm:inline">
                 {isRefreshing || phase === 'syncing' ? 'SYNCING...' : 'REFRESH'}
               </span>

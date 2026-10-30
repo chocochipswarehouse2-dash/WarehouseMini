@@ -1151,13 +1151,13 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   };
 
   return (
-    <div className="space-y-4 w-full">
+    <div className="space-y-4 w-full pb-20 sm:pb-6">
       {/* ============================================================================
           1. TOP KPI STRIP (Ringkasan Kapasitas & Status Rak)
           ============================================================================ */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5">
-        {/* Total Utilisasi Gudang */}
-        <div className="p-3.5 rounded-2xl border bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800">
+        {/* Total Utilisasi Gudang (Full width on mobile, 1 col on desktop) */}
+        <div className="col-span-2 sm:col-span-1 p-3.5 rounded-2xl border bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 shadow-2xs">
           <div className="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400">
             <span>UTILISASI GUDANG</span>
             <Layers className="w-4 h-4 text-blue-600 dark:text-blue-400" />
@@ -1203,7 +1203,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             {summaryStats.overloadCount.toLocaleString('id-ID')}{' '}
             <span className="text-xs font-normal text-slate-400">rak</span>
           </div>
-          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+          <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 leading-tight">
             Klik untuk filter rak melebihi kapasitas
           </div>
         </button>
@@ -1228,7 +1228,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             {summaryStats.warningFullCount.toLocaleString('id-ID')}{' '}
             <span className="text-xs font-normal text-slate-400">rak</span>
           </div>
-          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+          <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 leading-tight">
             Mendekati batas maksimum rak
           </div>
         </button>
@@ -1274,7 +1274,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             {summaryStats.emptyCount.toLocaleString('id-ID')}{' '}
             <span className="text-xs font-normal text-slate-400">rak</span>
           </div>
-          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+          <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 leading-tight">
             Siap ditempati stok baru
           </div>
         </button>
