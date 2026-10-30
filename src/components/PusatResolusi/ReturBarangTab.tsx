@@ -208,6 +208,7 @@ export default function ReturBarangTab({
   const [fromNameInput, setFromNameInput] = useState('Chocochips - Pusat Resolusi');
   const [autoEmailSubmit, setAutoEmailSubmit] = useState(true);
   const [autoEmailComplete, setAutoEmailComplete] = useState(true);
+  const [autoEmailUpdate, setAutoEmailUpdate] = useState(true);
   const [gasEmailUrlInput, setGasEmailUrlInput] = useState('');
   const [waGroupPickingInput, setWaGroupPickingInput] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
@@ -325,6 +326,7 @@ export default function ReturBarangTab({
       setFromNameInput(cfg.from_name || 'Chocochips - Pusat Resolusi');
       setAutoEmailSubmit(cfg.auto_email_on_submit ?? true);
       setAutoEmailComplete(cfg.auto_email_on_complete ?? true);
+      setAutoEmailUpdate(cfg.auto_email_on_update ?? true);
       setGasEmailUrlInput(cfg.gas_email_url || DEFAULT_PUSAT_RESOLUSI_EMAIL_GAS_URL);
       setWaGroupPickingInput(cfg.wa_group_picking || '');
     } catch (e) {
@@ -700,6 +702,16 @@ export default function ReturBarangTab({
             .catch(err => {
               console.error('Error sendReturNotificationEmail:', err);
               onNotify(`⚠️ Gagal mengirim email notifikasi: ${err?.message || err}`, 'warning');
+            });
+        } else if (autoEmailUpdate) {
+          sendReturNotificationEmail(payload, 'update')
+            .then(emailRes => {
+              if (emailRes.sent) {
+                onNotify(`✉️ Email pembaruan retur terkirim sebagai balasan (reply) ke tim (${emailRes.message})`, 'success');
+              }
+            })
+            .catch(err => {
+              console.error('Error sendReturNotificationEmail update:', err);
             });
         }
 
@@ -1422,6 +1434,7 @@ _Pusat Resolusi WMS Chocochips_`;
       from_name: fromNameInput.trim() || 'Chocochips - Pusat Resolusi',
       auto_email_on_submit: autoEmailSubmit,
       auto_email_on_complete: autoEmailComplete,
+      auto_email_on_update: autoEmailUpdate,
       gas_email_url: gasEmailUrlInput.trim() || DEFAULT_PUSAT_RESOLUSI_EMAIL_GAS_URL,
       wa_group_picking: waGroupPickingInput.trim(),
     };
@@ -3470,9 +3483,23 @@ _Pusat Resolusi WMS Chocochips_`;
                     className="rounded text-rose-600"
                   />
                   <span className="font-semibold text-slate-700 dark:text-slate-300">
-                    Kirim email otomatis ke tim saat Admin input <strong>No. Resi Pengiriman (Retur Selesai)</strong>
+                    Kirim email otomatis (Reply Utas) ke tim saat Admin input <strong>No. Resi Pengiriman (Retur Selesai)</strong>
                   </span>
                 </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={autoEmailUpdate}
+                    onChange={e => setAutoEmailUpdate(e.target.checked)}
+                    className="rounded text-rose-600"
+                  />
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">
+                    Kirim email balasan otomatis (Reply Utas) ke tim saat CS mengedit / memperbarui data tiket retur
+                  </span>
+                </label>
+                <div className="p-2.5 rounded-lg bg-rose-50/70 dark:bg-rose-950/20 border border-rose-200/60 dark:border-rose-900/30 text-[11px] text-rose-800 dark:text-rose-300 leading-relaxed">
+                  💡 <strong>Fitur Balasan Utas (Thread Reply):</strong> Subjek email retur kini 100% konsisten. Seluruh email pembaruan dan penyelesaian tiket otomatis dikirim sebagai balasan (<code>Re:</code>) di utas percakapan email sebelumnya tanpa membuat email dengan subjek baru.
+                </div>
               </div>
 
               {/* Box Uji Coba Pengiriman Email */}

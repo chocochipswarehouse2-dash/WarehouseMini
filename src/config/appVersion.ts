@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.10",
-  "versionCode": 270,
+  "version": "v2.6.11",
+  "versionCode": 271,
   "buildDate": "30 Oktober 2026",
-  "buildHash": "wms-261030-v270-2010",
-  "releaseTitle": "WMS v2.6.10 — Optimasi Instant Update PWA & FAQ Penjelasan Qty PO",
+  "buildHash": "wms-261030-v271-2043",
+  "releaseTitle": "WMS v2.6.11 — Standarisasi Utas Percakapan (Thread Reply) Email Retur Barang",
   "releaseNotes": [
-    "Optimasi pembersihan precache PWA saat 1-klik Perbarui agar bundle versi terbaru langsung aktif",
-    "Penjelasan lengkap keamanan data Qty PO buyer pada push master produksi"
+    "Standarisasi subjek email retur barang agar seluruh riwayat update & selesai otomatis menjadi balasan (reply) di thread email yang sama",
+    "Menambahkan opsi auto-email balasan saat edit data retur dan banner visual update di badan email"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.10",
+    "versionCode": 270,
+    "buildDate": "30 Oktober 2026",
+    "buildHash": "wms-261030-v270-2010",
+    "releaseTitle": "WMS v2.6.10 — Optimasi Instant Update PWA & FAQ Penjelasan Qty PO",
+    "releaseNotes": [
+      "Optimasi pembersihan precache PWA saat 1-klik Perbarui agar bundle versi terbaru langsung aktif",
+      "Penjelasan lengkap keamanan data Qty PO buyer pada push master produksi"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.9",
     "versionCode": 269,
@@ -113,21 +125,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Otomatis menggabungkan multi-SJ pada tanggal kedatangan yang sama saat push ke Google Sheets tanpa saling menimpa",
       "Sinkronisasi utuh tab sheet 30-10-2026 Kargo berisi 16 model dan 116 pcs"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.2",
-    "versionCode": 262,
-    "buildDate": "30 Oktober 2026",
-    "buildHash": "wms-261030-v262-1233",
-    "releaseTitle": "WMS v2.6.2 — Standarisasi UI/UX Gelombang 1 (Modul Inventory, Kapasitas & Log)",
-    "releaseNotes": [
-      "Standarisasi pembatas container max-w-[1600px] mencegah melar saat zoom out",
-      "Sub-tab mobile swipe horizontal hemat ruang 40%",
-      "Eliminasi pelangi tombol menjadi netral outline berhirarki",
-      "Proporsi tabel fixed di Data Inventory dan Mutasi Log",
-      "Simetri kartu KPI kapasitas dan pencegahan teks terpotong di HP"
     ],
     "minSupportedVersion": "v2.0.0"
   }

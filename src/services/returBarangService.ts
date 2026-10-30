@@ -97,6 +97,7 @@ export interface PusatResolusiSettings {
   from_name: string;
   auto_email_on_submit: boolean;
   auto_email_on_complete: boolean;
+  auto_email_on_update?: boolean;
   gas_email_url?: string;
   wa_group_picking: string;
   outlet_options: string[];
@@ -147,6 +148,7 @@ export function getDefaultPusatResolusiSettings(): PusatResolusiSettings {
     from_name: 'Chocochips - Pusat Resolusi',
     auto_email_on_submit: true,
     auto_email_on_complete: true,
+    auto_email_on_update: true,
     gas_email_url: DEFAULT_PUSAT_RESOLUSI_EMAIL_GAS_URL,
     wa_group_picking: fonnteCfg.groupTarget || '',
     outlet_options: [...DEFAULT_OUTLET_ORDER_OPTIONS],
@@ -812,20 +814,92 @@ export async function sendReturNotificationEmail(
             .join(' ')
         : '<span style="color:#64748b;">Belum dilampirkan (menyusul)</span>';
 
-    const subject =
-      eventType === 'complete'
-        ? `[SELESAI - RETUR BARANG] #${order.no_pesanan_asal} (${order.outlet_order}) - ${order.nama_customer} [Resi: ${order.no_resi}]`
-        : eventType === 'resend'
-        ? `[KIRIM ULANG - RETUR BARANG] #${order.no_pesanan_asal} (${order.outlet_order}) - ${order.nama_customer}`
-        : `[PENGAJUAN RETUR BARANG] #${order.no_pesanan_asal} (${order.outlet_order}) - ${order.nama_customer}`;
+    // STANDARISASI SUBJEK UTAS EMAIL (THREADING GUARANTEE):
+    // Agar Gmail, Google Workspace, Outlook, & Apple Mail mengelompokkan SELURUH email
+    // tiket retur ini ke dalam 1 percakapan (thread) yang sama tanpa membuat email dengan subjek baru,
+    // Subjek Dasar (Base Subject) DIBUAT 100% IDENTIK & KONSISTEN.
+    const baseSubject = `[RETUR BARANG] #${order.no_pesanan_asal} (${order.outlet_order}) - ${order.nama_customer} [${order.no_retur}]`;
 
-    const headerBg = eventType === 'complete' ? '#065f46' : '#881337';
+    // Saat submit awal (pesanan baru): menggunakan Subjek Dasar asli.
+    // Saat ada update / proses selesai / kirim ulang: diberi awalan 'Re: ' persis standar balasan email.
+    // Dengan begitu, sistem email otomatis mengenalinya sebagai reply resmi pada thread yang sama.
+    const subject = eventType === 'submit' ? baseSubject : `Re: ${baseSubject}`;
+
+    const headerBg =
+      eventType === 'complete'
+        ? '#065f46'
+        : eventType === 'update'
+        ? '#1e3a8a'
+        : eventType === 'resend'
+        ? '#334155'
+        : '#881337';
+
     const headerTitle =
       eventType === 'complete'
-        ? 'PROSES RETUR BARANG SELESAI & DIKIRIM'
+        ? 'PROSES RETUR BARANG SELESAI & SUDAH DIKIRIM'
+        : eventType === 'update'
+        ? 'PEMBARUAN DATA & STATUS RETUR BARANG'
         : eventType === 'resend'
         ? 'NOTIFIKASI TIKET RETUR BARANG (KIRIM ULANG)'
         : 'REGISTRASI RETUR BARANG BARU — PUSAT RESOLUSI';
+
+    let statusAlertBannerHtml = '';
+    if (eventType === 'complete') {
+      statusAlertBannerHtml = `
+        <div style="background: #ecfdf5; border: 2px solid #10b981; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px;">
+          <div style="font-size: 14px; font-weight: 800; color: #065f46; margin-bottom: 6px;">
+            ✅ UPDATE: BARANG PENGGANTI TELAH DIKIRIM (RETUR SELESAI)
+          </div>
+          <table style="width: 100%; font-size: 13px; color: #047857;">
+            <tr>
+              <td style="width: 32%; padding: 3px 0; color: #065f46;"><strong>No. Resi Pengiriman:</strong></td>
+              <td style="padding: 3px 0;"><span style="font-family: monospace; font-size: 14px; font-weight: 800; color: #0f172a; background: #ffffff; padding: 3px 8px; border: 1px solid #a7f3d0; border-radius: 4px;">${order.no_resi || '-'}</span></td>
+            </tr>
+            <tr>
+              <td style="padding: 3px 0; color: #065f46;"><strong>Ekspedisi / Kurir:</strong></td>
+              <td style="padding: 3px 0; font-weight: 700;">${order.opsi_pengiriman || '-'}</td>
+            </tr>
+            <tr>
+              <td style="padding: 3px 0; color: #065f46;"><strong>Status Tiket:</strong></td>
+              <td style="padding: 3px 0;"><span style="background: #059669; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 800;">SELESAI (CLOSED)</span></td>
+            </tr>
+          </table>
+        </div>
+      `;
+    } else if (eventType === 'update') {
+      statusAlertBannerHtml = `
+        <div style="background: #eff6ff; border: 2px solid #3b82f6; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px;">
+          <div style="font-size: 14px; font-weight: 800; color: #1e40af; margin-bottom: 4px;">
+            📝 UPDATE: PEMBARUAN DATA TIKET RETUR
+          </div>
+          <div style="font-size: 12.5px; color: #1d4ed8; line-height: 1.5;">
+            Terdapat pembaruan data rincian tiket retur ini oleh tim. Rincian status dan dokumen terbaru tercantum di bawah.
+          </div>
+        </div>
+      `;
+    } else if (eventType === 'resend') {
+      statusAlertBannerHtml = `
+        <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px;">
+          <div style="font-size: 13px; font-weight: 700; color: #334155;">
+            🔄 Notifikasi Kirim Ulang Tiket Retur Barang
+          </div>
+          <div style="font-size: 12px; color: #64748b; margin-top: 3px;">
+            Email ini dikirim ulang secara manual oleh tim untuk koordinasi tiket retur.
+          </div>
+        </div>
+      `;
+    } else {
+      statusAlertBannerHtml = `
+        <div style="background: #fff1f2; border: 1px solid #fecdd3; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px;">
+          <div style="font-size: 13px; font-weight: 700; color: #9f1239;">
+            📌 Tiket Retur Baru telah diregistrasi oleh Tim CS (${order.submitted_by}).
+          </div>
+          <div style="font-size: 12px; color: #be123c; margin-top: 3px;">
+            Harap tim terkait mempersiapkan pengecekan fisik barang dan proses produk pengganti.
+          </div>
+        </div>
+      `;
+    }
 
     const htmlBody = `
       <div style="max-width: 680px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #1e293b;">
@@ -836,6 +910,7 @@ export async function sendReturNotificationEmail(
         </div>
 
         <div style="padding: 24px;">
+          ${statusAlertBannerHtml}
           <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 18px;">
             <tr>
               <td style="padding: 6px 0; color: #64748b; width: 38%;"><strong>No. Pesanan Asal:</strong></td>
@@ -907,6 +982,10 @@ export async function sendReturNotificationEmail(
               <div>• <strong>Invoice Return DealPOS:</strong> ${order.no_invoice_return || 'Belum diisi Admin'}</div>
               <div>• <strong>No. Resi Pengiriman Pengganti:</strong> ${order.no_resi || 'Belum dikirim'}</div>
             </div>
+          </div>
+
+          <div style="margin-top: 24px; padding-top: 14px; border-top: 1px dashed #cbd5e1; text-align: center; font-size: 11px; color: #64748b;">
+            💬 <em>Email ini dikirim otomatis oleh WMS Pusat Resolusi. Setiap pembaruan status akan dikirimkan sebagai balasan (reply) dalam utas/thread percakapan ini tanpa mengubah subjek.</em>
           </div>
         </div>
       </div>

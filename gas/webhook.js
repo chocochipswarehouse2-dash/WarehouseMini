@@ -143,6 +143,9 @@ function handleSendEmail(payload) {
     if (cc) {
       mailOpts.cc = cc;
     }
+    if (payload.replyTo) {
+      mailOpts.replyTo = payload.replyTo;
+    }
 
     MailApp.sendEmail(mailOpts);
 
