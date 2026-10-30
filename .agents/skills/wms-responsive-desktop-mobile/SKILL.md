@@ -50,3 +50,45 @@ Use Tailwind CSS responsive prefixes consistently across all components:
    - Always provide descriptive `title="..."` attributes on truncated text, icon buttons, and sortable table headers (`ArrowUpDown`) for instant desktop mouse-over clarity.
 3. **Hardware Barcode Scanner Compatibility**:
    - Ensure scan inputs (`PhysicalScanInput`) handle rapid keyboard-wedge barcode input and `Enter` key submission cleanly without triggering unintended form resets.
+
+---
+
+## 4. Mobile Tab & Sub-Navigation Standard (Horizontal Swipe vs Vertical Stacking)
+
+1. **Mandatory Horizontal Scrolling for Mobile Tabs**:
+   - NEVER let top sub-navigation tabs wrap and stack into 3 or 4 vertical blocks on mobile (`flex-wrap`). Stacking tabs vertically robs 30–40% of the mobile viewport before the user can see any data.
+   - **Correct Pattern**:
+     ```tsx
+     <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth py-1 px-1 -mx-1 sm:mx-0 sm:flex-wrap">
+       {/* Tab buttons with shrink-0 whitespace-nowrap */}
+     </div>
+     ```
+   - Each tab button MUST include `shrink-0 whitespace-nowrap text-xs font-bold`.
+2. **Floating Action Button (FAB) Safe Zone**:
+   - When a fixed FAB (such as the mobile hamburger drawer trigger or scan button) is present in the bottom-right corner, the page wrapper MUST include bottom padding: `pb-20 sm:pb-6` so the FAB never covers the last card or table row.
+
+---
+
+## 5. Metric Card Grid & Text Clamping on Mobile
+
+1. **Balanced Grid Columns**:
+   - For 4 or 5 KPI metric cards:
+     - On mobile (`< 640px`): Use `grid grid-cols-2 gap-2` with full-width top summary or `flex overflow-x-auto no-scrollbar gap-2.5 pb-1 snap-x`.
+     - When using `grid-cols-2` with 5 cards, either make the primary card span 2 columns (`col-span-2`) or use a clean horizontal slider so there is never an awkward single orphan card.
+     - On tablet/desktop (`sm:` / `lg:`): `sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3`.
+2. **Zero Incomplete Text Truncation**:
+   - Never use `truncate` on explanatory multi-word labels inside narrow cards (where width is under 180px) to prevent words from becoming `maksimu_` or `rak m...`.
+   - Instead, use:
+     - Extremely concise micro copy: `Over kapasitas`, `Batas maks`, `Tersedia`, OR
+     - Multi-line clamping: `line-clamp-2 leading-tight text-[10px]`.
+
+---
+
+## 6. Browser Zoom In / Out Elasticity Standard (75% to 150%)
+
+1. **Zoom Out Protection (75% – 90% or Widescreen 1920px+)**:
+   - Wrap views inside `<div className="w-full max-w-[1600px] mx-auto space-y-4">`.
+   - This keeps elements aesthetically clustered and prevents vast white dead zones.
+2. **Zoom In Protection (110% – 150%)**:
+   - Toolbars with more than 4 buttons MUST allow wrapping (`flex-wrap`) but controls should maintain `shrink-0` with minimum tap dimensions.
+   - For tables, the table wrapper `<div className="w-full overflow-x-auto">` absorbs the horizontal zoom without breaking the parent card or header.

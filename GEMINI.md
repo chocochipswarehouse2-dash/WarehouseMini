@@ -147,15 +147,19 @@ Whenever designing, modifying, or tidying up any frontend component, table, card
 1. **UI/UX Design System (`.agents/skills/wms-ui-ux-design-system/SKILL.md`)**:
    - **Semantic Color Theme (Light & Dark Mode)**: Primary `indigo-600`, Success `emerald-600`, Warning `amber-500`, Danger `rose-600`, Alteration `rose`/`purple`, Neutral `slate`.
    - **Typography & Sizing**: Consistent scale (`text-base sm:text-lg` headers, `text-xs` body, `text-[11px]` subtitles, `text-[10px]` badges, and mandatory `font-mono` for all SKUs, Order IDs, Resi, SJ, and DealPOS numbers).
-   - **Visual Neatness**: Uniform button/input heights in toolbars, maximum 3 visual nesting levels, and **zero dangling separator dots (`·`)** when optional fields are empty.
+   - **Visual Neatness & Hierarchy**: Uniform button/input heights in toolbars, maximum 3 visual nesting levels, and **zero dangling separator dots (`·`)** when optional fields are empty.
+   - **Toolbar & Button Hierarchy (Anti-Pelangi Tombol)**: Maksimal **1 tombol solid primary** per baris/toolbar (e.g. `bg-indigo-600 text-white`). Semua tombol sekunder (Refresh, CSV, Filter, Buka Sheet) WAJIB berupa netral outline/ghost (`bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200`). DILARANG KERAS menjejalkan 4–5 tombol solid berbeda warna menyala (oranye + biru + hijau + kuning) berdampingan.
 2. **Responsive Desktop & Mobile / HP Seluler (`.agents/skills/wms-responsive-desktop-mobile/SKILL.md`)**:
+   - **Global Container & Zoom Clamping**: Seluruh workspace utama WAJIB dibungkus `w-full max-w-[1600px] mx-auto px-3 sm:px-4 lg:px-6` agar saat browser **Zoom Out (67%–90%)** atau monitor ultra-lebar (`1920px+`), tata letak tidak melar tanpa batas (*infinite stretch void*). Saat **Zoom In (110%–150%)**, tabel terisolasi di dalam `overflow-x-auto` tanpa merusak layout luar.
+   - **Mobile Tab Sub-Navigation (Swipe Horizontal vs Menumpuk Vertikal)**: Tab navigasi modul pada tampilan HP WAJIB swipe horizontal (`flex overflow-x-auto no-scrollbar whitespace-nowrap`). DILARANG menumpuk tab secara vertikal (`flex-wrap`) yang memakan sepertiga layar HP sebelum data terlihat.
+   - **Mobile Metric Card Hygiene**: Kartu statistik pada HP tidak boleh memotong teks dengan `truncate` sembarangan (mencegah teks terpotong seperti `maksimu_` atau `rak m...`). Gunakan teks ringkas atau `line-clamp-2`.
    - **Desktop (`lg:` / `xl:`)**: Supports multi-pane Master-Detail workspaces (`lg:grid-cols-12` with sticky right detail panel), proportional fixed tables (`lg:table-fixed`), and hover tooltips.
-   - **Mobile / HP Seluler (`< 640px`)**: Touch-friendly tap targets, collapsible secondary filter bars (behind a single `Filter` toggle button), zero unintended horizontal page scroll (`overflow-x-auto` isolated strictly to table wrappers), and modals with scrollable bodies (`max-h-[90vh]`) and sticky action footers.
+   - **Mobile / HP Seluler (`< 640px`)**: Touch-friendly tap targets, collapsible secondary filter bars (behind a single `Filter` toggle button), zero unintended horizontal page scroll (`overflow-x-auto` isolated strictly to table wrappers), modals with scrollable bodies (`max-h-[90vh]`) and sticky action footers, serta safe-zone padding bawah `pb-20` jika ada FAB menu.
 3. **Multi-View Presentation — Panel Rapi (Split), Versi Tabel & Versi Kartu (`.agents/skills/wms-table-card-split-views/SKILL.md`)**:
-   - **Panel Rapi (`split`)**: Master-Detail layout with compact order cards + 4-step progress bar on the left, and full detail workspace (4-step interactive stepper, 2-column product/info body, and 2-column `Cetak` / `Aksi lainnya` footer) on the right.
-   - **Versi Tabel (`table`)**: Proportional column widths, interactive sortable headers (`ArrowUpDown`), structured metadata boxes, and aligned action columns.
-   - **Versi Kartu (`card`)**: Responsive 1–4 column grid (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4`) with equal-height flex cards.
-   - **Rendering Performance**: Always use $O(1)$ `Map` lookups instead of nested `.find()` inside render loops, and paginate heavy grouped spreadsheet views.
+   - **Panel Rapi (`split`)**: Master-Detail layout dengan kartu ringkas + progress bar di kiri, dan full detail workspace di kanan.
+   - **Versi Tabel (`table`)**: Gunakan `lg:table-fixed w-full` dengan proporsi lebar pasti (`w-[...]%`) pada header agar tidak ada kolom raksasa kosong melompong (*dead zones*).
+   - **Versi Kartu (`card`)**: Responsive 1–4 column grid (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4`) dengan kartu sama tinggi.
+   - **Rendering Performance**: Selalu gunakan $O(1)$ `Map` lookups dibanding nested `.find()`.
 4. **Operational Print, Thermal & Picking WA Documents (`.agents/skills/wms-print-receipt-documents/SKILL.md`)**:
    - Unified data-enrichment, live rack priority sorting (`Priority 1 Warehouse/Aksesoris/Transit` $\rightarrow$ `Priority 2 Kolian` $\rightarrow$ `Priority 3 Blok F` or `Store Code`), and high-contrast monochrome layouts across all 5 operational formats:
      1. **Picking List / SJ Cetak A4 (`210mm x 297mm`)**
