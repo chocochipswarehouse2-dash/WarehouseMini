@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.5",
-  "versionCode": 265,
+  "version": "v2.6.6",
+  "versionCode": 266,
   "buildDate": "30 Oktober 2026",
-  "buildHash": "wms-261030-v265-1736",
-  "releaseTitle": "WMS v2.6.5 — Auto-Focus Antrian Audit & Fix Indikator Metrik",
+  "buildHash": "wms-261030-v266-1758",
+  "releaseTitle": "WMS v2.6.6 — Formula Selisih Nota Akurat & Optimasi Tarik Qty Nota",
   "releaseNotes": [
-    "Otomatis mengarahkan ke tab Semua dan mencari kode yang baru dimasukkan ke antrian hitung ulang",
-    "Memperbaiki kontras teks angka kartu KPI antrian saat aktif terpilih",
-    "Memperjelas badge status Di Antrian pada modal pemanggil kode"
+    "Memperbaiki formula Selisih Nota Google Sheets agar tidak salah kalkulasi saat Qty Hitung Ulang kosong",
+    "Memperbaiki pemetaan kolom Total Awal Net agar Selisih Nota akurat (568 - 570 = -2 pcs)",
+    "Optimasi sinkronisasi Tarik Qty Nota menjadi super cepat tanpa timeout"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.5",
+    "versionCode": 265,
+    "buildDate": "30 Oktober 2026",
+    "buildHash": "wms-261030-v265-1736",
+    "releaseTitle": "WMS v2.6.5 — Auto-Focus Antrian Audit & Fix Indikator Metrik",
+    "releaseNotes": [
+      "Otomatis mengarahkan ke tab Semua dan mencari kode yang baru dimasukkan ke antrian hitung ulang",
+      "Memperbaiki kontras teks angka kartu KPI antrian saat aktif terpilih",
+      "Memperjelas badge status Di Antrian pada modal pemanggil kode"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.4",
     "versionCode": 264,
@@ -116,18 +129,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Kolom Fisik Hitung dan Status di tabel Produksi kini membaca hasil Audit Hitung Ulang",
       "Data audit dari Cloud ditampilkan walau belum tertulis ke item penerimaan"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.5.7",
-    "versionCode": 257,
-    "buildDate": "29 Oktober 2026",
-    "buildHash": "wms-261029-v257-1900",
-    "releaseTitle": "WMS v2.5.7 — Pengaman Qty Nota Buyer saat Re-push Sheet",
-    "releaseNotes": [
-      "Qty Nota yang diketik Buyer di sheet tidak lagi tertimpa saat push ulang",
-      "Push dibatalkan otomatis jika pembacaan sheet lama gagal"
     ],
     "minSupportedVersion": "v2.0.0"
   }

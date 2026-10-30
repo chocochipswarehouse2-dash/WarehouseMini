@@ -665,6 +665,7 @@ function scanExistingSheetBlocksData(sheet) {
 
     var allValues = sheet.getRange(1, 1, lastRow, lastCol).getValues();
     var colTotalDatang = -1;
+    var colTotalAwal = -1;
     var colQtyNota = -1;
     var colSelisihNota = -1;
     var colFisik = -1;
@@ -685,6 +686,7 @@ function scanExistingSheetBlocksData(sheet) {
       // Deteksi Baris Header Blok
       if (c0 === 'NO' && c1 === 'CODE') {
         colTotalDatang = -1;
+        colTotalAwal = -1;
         colQtyNota = -1;
         colSelisihNota = -1;
         colFisik = -1;
@@ -696,7 +698,9 @@ function scanExistingSheetBlocksData(sheet) {
 
         for (var c = 0; c < rowObj.length; c++) {
           var hText = String(rowObj[c] || '').trim().toUpperCase();
-          if (hText.indexOf('TOTAL DATANG') !== -1 || hText.indexOf('TOTAL DITERIMA') !== -1) {
+          if (hText.indexOf('TOTAL AWAL') !== -1 || hText.indexOf('TOTAL NET') !== -1 || hText === 'NET') {
+            colTotalAwal = c;
+          } else if (hText.indexOf('TOTAL DATANG') !== -1 || hText.indexOf('TOTAL DITERIMA') !== -1) {
             colTotalDatang = c;
           } else if (hText.indexOf('QTY NOTA') !== -1 || hText === 'NOTA') {
             colQtyNota = c;
@@ -724,7 +728,8 @@ function scanExistingSheetBlocksData(sheet) {
         // Baca Qty Nota pada baris pertama blok kode ini
         if (colQtyNota !== -1) {
           var rawNota = rowObj[colQtyNota];
-          var rawTotal = colTotalDatang !== -1 ? (Number(rowObj[colTotalDatang]) || 0) : 0;
+          var colForTotal = colTotalAwal !== -1 ? colTotalAwal : colTotalDatang;
+          var rawTotal = colForTotal !== -1 ? (Number(rowObj[colForTotal]) || 0) : 0;
           if (rawNota !== '' && rawNota !== null && rawNota !== undefined && !isNaN(Number(rawNota))) {
             var numNota = Number(rawNota);
             oldNotaMap[curCode] = {
@@ -1245,14 +1250,12 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
           '=IF(COUNT(' + fisikRange + ')>0, SUM(' + fisikRange + '), "")'
         ).setNumberFormat('0').setFontWeight('bold').setFontSize(11).setBackground('#F0FDF4').setFontColor('#166534');
 
-        // SELISIH NOTA:
-        // Jika Qty Nota terisi:
-        //   - jika sudah hitung: Total Hitung Ulang - Qty Nota
-        //   - jika belum hitung: Total Awal - Qty Nota
-        // Jika Qty Nota kosong:
-        //   - jika sudah hitung: Total Hitung Ulang - Total Awal
-        //   - jika belum hitung: kosong ("")
-        var selisihFormula = '=IF(ISBLANK(' + qtyNotaCellRef + '), IF(ISBLANK(' + totalHitungCellRef + '), "", ' + totalHitungCellRef + '-' + totalAwalCellRef + '), IF(ISBLANK(' + totalHitungCellRef + '), ' + totalAwalCellRef + '-' + qtyNotaCellRef + ', ' + totalHitungCellRef + '-' + qtyNotaCellRef + '))';
+        // SELISIH NOTA (Formula Kebal Empty String Google Sheets):
+        // Jika Qty Hitung Ulang terisi (totalHitungCellRef <> ""):
+        //   - Selisih = Qty Hitung Ulang - (jika ada Qty Nota pakai Qty Nota, jika tidak pakai Total Awal)
+        // Jika belum hitung ulang:
+        //   - Selisih = (jika ada Qty Nota maka Total Awal - Qty Nota, jika tidak maka "")
+        var selisihFormula = '=IF(' + totalHitungCellRef + '<>"", ' + totalHitungCellRef + ' - IF(' + qtyNotaCellRef + '<>"", ' + qtyNotaCellRef + ', ' + totalAwalCellRef + '), IF(' + qtyNotaCellRef + '<>"", ' + totalAwalCellRef + ' - ' + qtyNotaCellRef + ', ""))';
         var selisihCellRange = sheet.getRange(startDataRowIndex, colSelisihNota);
         selisihCellRange.setFormula(selisihFormula).setNumberFormat('0').setFontWeight('bold').setFontSize(11);
 
@@ -1267,7 +1270,7 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
           );
         }
       } else {
-        var selisihFormula = '=IF(ISBLANK(' + qtyNotaCellRef + '), "", ' + totalAwalCellRef + '-' + qtyNotaCellRef + ')';
+        var selisihFormula = '=IF(' + qtyNotaCellRef + '<>"", ' + totalAwalCellRef + ' - ' + qtyNotaCellRef + ', "")';
         var selisihCellRange = sheet.getRange(startDataRowIndex, colSelisihNota);
         selisihCellRange.setFormula(selisihFormula).setNumberFormat('0').setFontWeight('bold').setFontSize(11);
       }
@@ -1478,25 +1481,13 @@ function handleFetchQtyNota(ss, data) {
       var sourceSheet = '';
 
       if (hasDateNota && (!mEntry || mEntry.qtyNota === null || mEntry.qtyNota === undefined)) {
-        // Buyer mengisi di Sheet Tanggal, sedangkan di Master belum terisi -> pakai nilai Sheet Tanggal & sinkronkan ke Master!
+        // Buyer mengisi di Sheet Tanggal, sedangkan di Master belum terisi -> pakai nilai Sheet Tanggal
         finalQtyNota = sumDateNota;
         sourceSheet = lastDateSheetName;
-        if (mEntry && mEntry.sheet && mEntry.rowNum > 0 && mEntry.colQtyNota > 0) {
-          try {
-            mEntry.sheet.getRange(mEntry.rowNum, mEntry.colQtyNota).setValue(finalQtyNota).setNumberFormat('0');
-          } catch (eSyncMaster) {}
-        }
       } else if (mEntry && mEntry.qtyNota !== null && mEntry.qtyNota !== undefined) {
         // Buyer mengisi di Master Sheet (atau keduanya terisi)
         finalQtyNota = hasDateNota && sumDateNota !== mEntry.qtyNota && dList.length === 1 ? byDate[dList[0].tanggal] : Number(mEntry.qtyNota);
         sourceSheet = mEntry.sheetName;
-        // Jika kode ini hanya ada di 1 Sheet Tanggal dan di Sheet Tanggal tersebut Qty Nota masih kosong, sinkronkan ke Sheet Tanggal!
-        if (!hasDateNota && dList.length === 1 && dList[0].sheet && dList[0].rowNum > 0 && dList[0].colQtyNota > 0) {
-          try {
-            dList[0].sheet.getRange(dList[0].rowNum, dList[0].colQtyNota).setValue(finalQtyNota).setNumberFormat('0');
-            byDate[dList[0].tanggal] = finalQtyNota;
-          } catch (eSyncDate) {}
-        }
       }
 
       if (finalQtyNota !== null && finalQtyNota !== undefined && !isNaN(Number(finalQtyNota))) {
