@@ -83,7 +83,7 @@ async function checkNewOrdersInBackground() {
   // 1. Jika Admin/Superadmin: Cek pesanan baru (Manual Shipment & Alter) + Retur Barang
   if (cfg.isAdmin) {
     try {
-      const msUrl = `${cfg.supabaseUrl}/rest/v1/manual_shipment?select=id,no_pesanan,no_transaksi_customer,nama_pengirim,pic_store,nama_tujuan,jasa_kirim,qty,items,notes_paket,created_at&order=created_at.desc&limit=12`;
+      const msUrl = `${cfg.supabaseUrl}/rest/v1/manual_shipment?select=id,no_pesanan,no_transaksi_customer,nama_pengirim,pic_store,nama_tujuan,jasa_kirim,qty,notes_paket,created_at&order=created_at.desc&limit=10`;
       const res = await fetch(msUrl, { method: 'GET', headers });
       if (res.ok) {
         const rows = await res.json();
@@ -282,9 +282,10 @@ async function checkNewOrdersInBackground() {
 let swCheckInterval = null;
 function ensureSwBackgroundTimer() {
   if (swCheckInterval) return;
+  // Hemat kuota Supabase log ingestion: 3 menit (180 detik) di background SW
   swCheckInterval = setInterval(() => {
     checkNewOrdersInBackground().catch(() => {});
-  }, 25000);
+  }, 180000);
 }
 
 self.addEventListener('message', (event) => {

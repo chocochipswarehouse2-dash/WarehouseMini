@@ -15,19 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.12",
-  "versionCode": 272,
-  "buildDate": "30 Oktober 2026",
-  "buildHash": "wms-261030-v272-2109",
-  "releaseTitle": "WMS v2.6.12 — Backward Compatibility Thread Reply Email Retur Lama",
+  "version": "v2.6.13",
+  "versionCode": 273,
+  "buildDate": "31 Oktober 2026",
+  "buildHash": "wms-261031-v273-0843",
+  "releaseTitle": "WMS v2.6.13 — Optimasi Penghematan Kuota Supabase Log Ingestion",
   "releaseNotes": [
-    "Menambahkan auto-deteksi tiket retur legacy agar update berikutnya otomatis me-reply utas email yang sudah ada di inbox tim",
-    "Memastikan 100 persen tiket lama dan baru tersusun rapi dalam 1 thread percakapan"
+    "Menambahkan tab visibility guard agar polling berhenti total saat tab di-minimize",
+    "Mengubah interval polling delta dari 10 detik ke 60 detik (menghemat 83 persen request)",
+    "Menghapus kolom items yang besar dari select query notifikasi",
+    "Menaikkan interval Service Worker background dari 25 detik ke 3 menit (menghemat 86 persen background traffic)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.12",
+    "versionCode": 272,
+    "buildDate": "30 Oktober 2026",
+    "buildHash": "wms-261030-v272-2109",
+    "releaseTitle": "WMS v2.6.12 — Backward Compatibility Thread Reply Email Retur Lama",
+    "releaseNotes": [
+      "Menambahkan auto-deteksi tiket retur legacy agar update berikutnya otomatis me-reply utas email yang sudah ada di inbox tim",
+      "Memastikan 100 persen tiket lama dan baru tersusun rapi dalam 1 thread percakapan"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.11",
     "versionCode": 271,
@@ -113,18 +127,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Otomatis mengarahkan ke tab Semua dan mencari kode yang baru dimasukkan ke antrian hitung ulang",
       "Memperbaiki kontras teks angka kartu KPI antrian saat aktif terpilih",
       "Memperjelas badge status Di Antrian pada modal pemanggil kode"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.4",
-    "versionCode": 264,
-    "buildDate": "30 Oktober 2026",
-    "buildHash": "wms-261030-v264-1448",
-    "releaseTitle": "WMS v2.6.4 — Pemisahan Kolom Kedatangan Multi-SJ & Fix Pencarian SJ",
-    "releaseNotes": [
-      "Kolom kedatangan pada spreadsheet sekarang otomatis dipisah per Surat Jalan jika datang di tanggal yang sama",
-      "Pencarian riwayat dan spreadsheet sekarang dapat mencari berdasarkan No Surat Jalan"
     ],
     "minSupportedVersion": "v2.0.0"
   }

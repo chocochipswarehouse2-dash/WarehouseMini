@@ -1587,9 +1587,13 @@ export default function App() {
       navigator.serviceWorker.addEventListener('message', handleSwMessage);
     }
 
-    // 2. Cek pesanan baru & SPS baru setiap 10 detik, saat layar aktif kembali, & saat aplikasi baru dibuka (catch-up)
+    // 2. Cek pesanan baru & SPS baru secara hemat kuota log ingestion:
+    // Hanya berjalan saat tab terlihat (visible), dicek setiap 60 detik (bukan 10 detik), dan catch-up instan saat tab dibuka kembali.
     const checkNewStoreOrdersDelta = async () => {
       if (!isSeeded) return;
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return; // Nol request saat tab di-minimize / tidak aktif
+      }
       try {
         const nowMs = Date.now();
         const MAX_AGE_MS = 12 * 60 * 60 * 1000; // Hanya yang dibuat dalam 12 jam terakhir
@@ -1599,7 +1603,7 @@ export default function App() {
             'manual_shipment',
             'GET',
             null,
-            'select=*&order=created_at.desc&limit=15'
+            'select=id,no_pesanan,no_transaksi_customer,nama_pengirim,pic_store,nama_tujuan,jasa_kirim,qty,notes_paket,created_at&order=created_at.desc&limit=12'
           );
           if (!isMounted) return;
 
@@ -1791,14 +1795,12 @@ export default function App() {
 
     seedExistingOrders();
 
-    const intervalId = setInterval(checkNewStoreOrdersDelta, 10000);
+    // Polling hemat kuota: 60 detik saat tab aktif (menghemat 83% kuota dibanding 10 detik)
+    const intervalId = setInterval(checkNewStoreOrdersDelta, 60000);
     const handleVisibilityOrOnline = () => {
       if (document.visibilityState === 'visible') {
         setNotificationPermission(getNotificationPermissionStatus());
-        checkNewStoreOrdersDelta();
-      } else if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-        // Saat aplikasi di-minimize atau pindah tab, minta Service Worker siaga penuh
-        navigator.serviceWorker.controller.postMessage({ type: 'WMS_CHECK_ORDERS_NOW' });
+        checkNewStoreOrdersDelta(); // Catch-up instan saat layar dibuka kembali
       }
     };
 
