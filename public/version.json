@@ -1,14 +1,13 @@
 {
-  "version": "v2.6.13",
-  "versionCode": 273,
+  "version": "v2.6.14",
+  "versionCode": 274,
   "buildDate": "31 Oktober 2026",
-  "buildHash": "wms-261031-v273-0843",
-  "releaseTitle": "WMS v2.6.13 — Optimasi Penghematan Kuota Supabase Log Ingestion",
+  "buildHash": "wms-261031-v274-1052",
+  "releaseTitle": "WMS v2.6.14 — Sinkronisasi Otomatis Realtime Data Katalog & Inventori Multi-Perangkat",
   "releaseNotes": [
-    "Menambahkan tab visibility guard agar polling berhenti total saat tab di-minimize",
-    "Mengubah interval polling delta dari 10 detik ke 60 detik (menghemat 83 persen request)",
-    "Menghapus kolom items yang besar dari select query notifikasi",
-    "Menaikkan interval Service Worker background dari 25 detik ke 3 menit (menghemat 86 persen background traffic)"
+    "Sinkronisasi Realtime Katalog: Menambahkan broadcast event 'catalog_updated' via Supabase Realtime WebSocket saat update database produk selesai",
+    "Auto-Reload Inventori: Hook useInventoryStock dan InventoryView kini otomatis merefresh stok fisik seketika saat menerima event pembaruan katalog tanpa perlu klik tombol refresh manual",
+    "Low-Egress Background Sync: Perangkat user lain otomatis mendeteksi pembaruan katalog dan menyinkronkan data tampilan secara live"
   ],
   "minSupportedVersion": "v2.0.0"
 }

@@ -30,6 +30,7 @@ import {
   MasterProdukRecord,
 } from '../services/supabase';
 import { playSuccessBeep, playErrorBeep, vibrateDevice } from '../services/audio';
+import { globalRealtimeStore } from '../services/store';
 
 interface UpdateDatabaseModalProps {
   isOpen: boolean;
@@ -649,6 +650,17 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
 
       // Reload cloud count
       await loadDatabaseCount();
+
+      // Broadcast real-time catalog update event so all connected users/devices sync immediately
+      globalRealtimeStore.broadcastEvent('catalog_updated', {
+        timestamp: Date.now(),
+        updatedBy: session?.username || 'Superadmin',
+        totalUploaded: uploadResult.totalUploaded,
+      }).catch(() => {});
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('wms_catalog_updated'));
+      }
 
       if (onSuccess) {
         onSuccess();

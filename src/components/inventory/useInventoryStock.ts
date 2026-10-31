@@ -199,6 +199,25 @@ export function useInventoryStock(): UseInventoryStock {
     reload(false);
   }, [reload]);
 
+  // Listen for catalog & location refresh events so InventoryView automatically updates without manual refresh
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const handleCatalogOrLocationUpdate = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        reload(true);
+      }, 300);
+    };
+
+    window.addEventListener('wms_full_locations_refreshed', handleCatalogOrLocationUpdate);
+    window.addEventListener('wms_catalog_updated', handleCatalogOrLocationUpdate);
+    return () => {
+      if (timer) clearTimeout(timer);
+      window.removeEventListener('wms_full_locations_refreshed', handleCatalogOrLocationUpdate);
+      window.removeEventListener('wms_catalog_updated', handleCatalogOrLocationUpdate);
+    };
+  }, [reload]);
+
   // Realtime: batched per-SKU delta
   useEffect(() => {
     const pending = new Set<string>();

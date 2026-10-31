@@ -884,6 +884,9 @@ export default function App() {
               localStorage.setItem('wms_master_products_last_sync', String(Date.now()));
               localStorage.setItem('wms_catalog_v3_dealpos_channels', 'true');
             } catch {}
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('wms_catalog_updated'));
+            }
             if (forceRefresh) {
               showToast(`Katalog berhasil disinkronkan (${finalList.length} produk dari Supabase)!`, 'success');
             }
@@ -1254,6 +1257,20 @@ export default function App() {
                 });
               }, 650);
             }
+          }
+        )
+        .on(
+          'broadcast',
+          { event: 'catalog_updated' },
+          ({ payload }) => {
+            console.log('[REALTIME] Catalog updated broadcast received:', payload);
+            syncSmartLowEgressCache().then((res) => {
+              if (res.action === 'NONE') {
+                loadProducts(true);
+              }
+            }).catch(() => {
+              loadProducts(true);
+            });
           }
         )
         .on(
@@ -3011,9 +3028,14 @@ export default function App() {
         isOpen={isUpdateDatabaseOpen}
         onClose={() => setIsUpdateDatabaseOpen(false)}
         session={session}
+        onRefreshCatalog={loadProducts}
         onNotify={showToast}
         onSuccess={() => {
-          loadProducts(true);
+          loadProducts(true).then(() => {
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('wms_catalog_updated'));
+            }
+          });
         }}
       />
 

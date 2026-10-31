@@ -15,21 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.13",
-  "versionCode": 273,
+  "version": "v2.6.14",
+  "versionCode": 274,
   "buildDate": "31 Oktober 2026",
-  "buildHash": "wms-261031-v273-0843",
-  "releaseTitle": "WMS v2.6.13 — Optimasi Penghematan Kuota Supabase Log Ingestion",
+  "buildHash": "wms-261031-v274-1052",
+  "releaseTitle": "WMS v2.6.14 — Sinkronisasi Otomatis Realtime Data Katalog & Inventori Multi-Perangkat",
   "releaseNotes": [
-    "Menambahkan tab visibility guard agar polling berhenti total saat tab di-minimize",
-    "Mengubah interval polling delta dari 10 detik ke 60 detik (menghemat 83 persen request)",
-    "Menghapus kolom items yang besar dari select query notifikasi",
-    "Menaikkan interval Service Worker background dari 25 detik ke 3 menit (menghemat 86 persen background traffic)"
+    "Sinkronisasi Realtime Katalog: Menambahkan broadcast event 'catalog_updated' via Supabase Realtime WebSocket saat update database produk selesai",
+    "Auto-Reload Inventori: Hook useInventoryStock dan InventoryView kini otomatis merefresh stok fisik seketika saat menerima event pembaruan katalog tanpa perlu klik tombol refresh manual",
+    "Low-Egress Background Sync: Perangkat user lain otomatis mendeteksi pembaruan katalog dan menyinkronkan data tampilan secara live"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.13",
+    "versionCode": 273,
+    "buildDate": "31 Oktober 2026",
+    "buildHash": "wms-261031-v273-0843",
+    "releaseTitle": "WMS v2.6.13 — Optimasi Penghematan Kuota Supabase Log Ingestion",
+    "releaseNotes": [
+      "Menambahkan tab visibility guard agar polling berhenti total saat tab di-minimize",
+      "Mengubah interval polling delta dari 10 detik ke 60 detik (menghemat 83 persen request)",
+      "Menghapus kolom items yang besar dari select query notifikasi",
+      "Menaikkan interval Service Worker background dari 25 detik ke 3 menit (menghemat 86 persen background traffic)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.12",
     "versionCode": 272,
@@ -114,19 +127,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Memperbaiki formula Selisih Nota Google Sheets agar tidak salah kalkulasi saat Qty Hitung Ulang kosong",
       "Memperbaiki pemetaan kolom Total Awal Net agar Selisih Nota akurat (568 - 570 = -2 pcs)",
       "Optimasi sinkronisasi Tarik Qty Nota menjadi super cepat tanpa timeout"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.5",
-    "versionCode": 265,
-    "buildDate": "30 Oktober 2026",
-    "buildHash": "wms-261030-v265-1736",
-    "releaseTitle": "WMS v2.6.5 — Auto-Focus Antrian Audit & Fix Indikator Metrik",
-    "releaseNotes": [
-      "Otomatis mengarahkan ke tab Semua dan mencari kode yang baru dimasukkan ke antrian hitung ulang",
-      "Memperbaiki kontras teks angka kartu KPI antrian saat aktif terpilih",
-      "Memperjelas badge status Di Antrian pada modal pemanggil kode"
     ],
     "minSupportedVersion": "v2.0.0"
   }

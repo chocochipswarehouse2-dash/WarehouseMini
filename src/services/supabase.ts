@@ -6533,6 +6533,7 @@ export async function syncSmartLowEgressCache(): Promise<{
         localStorage.setItem('wms_loc_sync_v6_done', 'true');
         if (typeof window !== 'undefined' && freshCatalog.length > 0) {
           window.dispatchEvent(new CustomEvent('wms_full_locations_refreshed', { detail: freshCatalog }));
+          window.dispatchEvent(new CustomEvent('wms_catalog_updated'));
         }
       } catch {}
       return { action: 'FULL_MASTER_REFRESH', updatedSkusCount: freshCatalog.length };
@@ -6555,6 +6556,7 @@ export async function syncSmartLowEgressCache(): Promise<{
           memoryProductLastFetch = Date.now();
           if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('wms_full_locations_refreshed', { detail: updatedProducts }));
+            window.dispatchEvent(new CustomEvent('wms_catalog_updated'));
           }
         }
       }
