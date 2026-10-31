@@ -5759,13 +5759,16 @@ export async function insertPickingListRowsToSupabase(
   }
 }
 
+let lastPickingBatchBaseTime = 0;
+
 export async function createPickingSuratJalanSupabase(
   no_sj: string,
   tujuan: string,
   items: Array<{ sku: string; nama_produk: string; size?: string; lokasi?: string; qty_req: number }>
 ): Promise<{ success: boolean; createdItems: PickingListItem[]; invoice_picking?: string }> {
   const nowIso = new Date().toISOString();
-  const baseTime = Date.now();
+  const baseTime = Math.max(Date.now(), lastPickingBatchBaseTime + 1);
+  lastPickingBatchBaseTime = baseTime;
   const cleanNoSj = no_sj.trim().toUpperCase();
   const cleanTujuan = tujuan.trim() || 'Marketplace';
 

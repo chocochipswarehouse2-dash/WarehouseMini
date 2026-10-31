@@ -860,6 +860,24 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     }
   };
 
+  const handleSendPickingWaBulk = async () => {
+    if (selectedSJs.length === 0) return;
+    const selectedGroups = filteredSJs.filter((g) => selectedSJs.includes(g.no_sj));
+    if (selectedGroups.length === 0) return;
+
+    setIsBulkActionRunning(true);
+    showGlobalLoading(`Mengirim WA Picking (${selectedGroups.length} SJ)...`);
+    try {
+      for (const group of selectedGroups) {
+        await handleSendPickingWa(group, 'send');
+      }
+      onNotify(`✅ Selesai mengirim ${selectedGroups.length} Picking List ke Grup WA Gudang!`, 'success');
+    } finally {
+      setIsBulkActionRunning(false);
+      hideGlobalLoading();
+    }
+  };
+
   const handlePrintSPS = async (group: PickingSuratJalanGroup) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -3149,6 +3167,15 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                 <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
                   {selectedSJs.length} Terpilih
                 </span>
+                <button
+                  type="button"
+                  onClick={handleSendPickingWaBulk}
+                  disabled={isBulkActionRunning}
+                  className="flex-1 sm:flex-none justify-center px-3 py-1.5 bg-[#25D366]/15 hover:bg-[#25D366]/25 text-[#1DA851] dark:text-[#25D366] font-extrabold text-[10px] uppercase rounded-lg transition-colors flex items-center gap-1 cursor-pointer border border-[#25D366]/30"
+                  title="Kirim Picking List WA ke Grup Gudang untuk semua SJ yang dipilih"
+                >
+                  <Send className="w-3.5 h-3.5" /> WA Picking ({selectedSJs.length})
+                </button>
                 <button
                   type="button"
                   onClick={handleMarkCompleteSelected}

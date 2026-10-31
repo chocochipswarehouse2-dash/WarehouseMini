@@ -357,6 +357,9 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'SELESAI' | 'COCOK' | 'SELISIH'>('ALL');
   const [riwayatTypeFilter, setRiwayatTypeFilter] = useState<'ALL' | 'PENERIMAAN' | 'PENGIRIMAN'>('ALL');
   const [pickingModalDraft, setPickingModalDraft] = useState<PengecekanSJDraft | null>(null);
+  const [pickingModalDrafts, setPickingModalDrafts] = useState<PengecekanSJDraft[]>([]);
+  const [pickingModalInitialTab, setPickingModalInitialTab] = useState<'print' | 'whatsapp' | 'app'>('app');
+  const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(new Set());
   const [selisihWaModalParams, setSelisihWaModalParams] = useState<SuratJalanSelisihMessageParams | null>(null);
 
   // Custom confirmation modal (replaces window.confirm which is blocked in mobile/iframe)
@@ -1336,21 +1339,100 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
             {/* ANTREAN PENGECEKAN (DRAFT PEKERJAAN STAY DI TAB PENGECEKAN) */}
             {drafts.length > 0 && (
               <div className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Layers className="w-4 h-4 text-primary-500" />
-                    <h3 className="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider">
-                      Antrean Pengecekan ({drafts.length} Surat Jalan)
-                    </h3>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-slate-100 dark:border-slate-800/80">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-primary-500" />
+                      <h3 className="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider">
+                        Antrean Pengecekan ({drafts.length} Surat Jalan)
+                      </h3>
+                    </div>
+
+                    {drafts.length > 1 && (
+                      <label className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={selectedDraftIds.size > 0 && selectedDraftIds.size === drafts.length}
+                          ref={input => {
+                            if (input) {
+                              input.indeterminate = selectedDraftIds.size > 0 && selectedDraftIds.size < drafts.length;
+                            }
+                          }}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedDraftIds(new Set(drafts.map(d => d.id)));
+                            } else {
+                              setSelectedDraftIds(new Set());
+                            }
+                          }}
+                          className="w-3.5 h-3.5 rounded border-slate-300 text-primary-500 focus:ring-primary-500 cursor-pointer"
+                        />
+                        <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                          {selectedDraftIds.size > 0 ? `${selectedDraftIds.size} Dipilih` : 'Pilih Semua'}
+                        </span>
+                      </label>
+                    )}
                   </div>
-                  <span className="text-[11px] text-slate-400">
-                    Draft tersimpan lokal, pilih SJ yang ingin dicek
-                  </span>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetDrafts = selectedDraftIds.size > 0
+                          ? drafts.filter(d => selectedDraftIds.has(d.id) && d.items && d.items.length > 0)
+                          : drafts.filter(d => d.items && d.items.length > 0);
+                        if (targetDrafts.length === 0) {
+                          onShowToast('Tidak ada Surat Jalan dengan item valid untuk dikirim.', 'warning');
+                          return;
+                        }
+                        setPickingModalInitialTab('app');
+                        setPickingModalDraft(null);
+                        setPickingModalDrafts(targetDrafts);
+                      }}
+                      className="px-3 py-1.5 text-xs font-extrabold rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white flex items-center gap-1.5 transition-all cursor-pointer shadow-sm shadow-emerald-600/20"
+                      title="Kirim banyak atau semua Surat Jalan sekaligus ke Tugas Picking App, Grup WA Gudang, atau Cetak A4 Massal"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>
+                        Kirim Tugas Picking Massal ({selectedDraftIds.size > 0 ? selectedDraftIds.size : drafts.length} SJ)
+                      </span>
+                    </button>
+
+                    {selectedDraftIds.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const targetCount = selectedDraftIds.size;
+                          setConfirmModal({
+                            title: 'Hapus Draft Terpilih',
+                            message: `Hapus ${targetCount} draft Surat Jalan yang dipilih dari antrean pengecekan?`,
+                            confirmLabel: `Hapus ${targetCount} Draft`,
+                            isDanger: true,
+                            onConfirm: () => {
+                              selectedDraftIds.forEach(id => deleteSJDraft(id));
+                              setDrafts(prev => prev.filter(d => !selectedDraftIds.has(d.id)));
+                              if (activeDraftId && selectedDraftIds.has(activeDraftId)) {
+                                setActiveDraftId(null);
+                              }
+                              setSelectedDraftIds(new Set());
+                              onShowToast(`${targetCount} draft SJ dihapus dari antrean.`, 'info');
+                            }
+                          });
+                        }}
+                        className="px-2.5 py-1.5 text-xs font-bold rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 flex items-center gap-1 transition-all cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Hapus ({selectedDraftIds.size})</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {drafts.map(draft => {
                     const isSelected = draft.id === activeDraftId;
+                    const isCheckedForBulk = selectedDraftIds.has(draft.id);
+                    const isAlreadySentToApp = Boolean(draft.catatan?.includes('[Tugas Picking App Terkirim]'));
                     const totalQtySj = draft.items.reduce((s, i) => s + i.qty_sj, 0);
                     const totalScanned = Object.values(draft.scanQty).reduce((s, v) => s + v, 0) +
                                          Object.values(draft.unexpected || {}).reduce((s, v) => s + v.qty, 0);
@@ -1363,19 +1445,45 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                         className={`p-3.5 rounded-xl border transition-all cursor-pointer relative flex flex-col justify-between ${
                           isSelected
                             ? 'border-primary-500 bg-primary-50/30 dark:bg-primary-950/20 ring-2 ring-primary-500/20 shadow-sm'
+                            : isCheckedForBulk
+                            ? 'border-emerald-500/60 bg-emerald-50/20 dark:bg-emerald-950/15 ring-1 ring-emerald-500/20'
                             : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 hover:border-slate-300 dark:hover:border-slate-700'
                         }`}
                       >
                         <div>
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className="font-mono text-xs font-black text-slate-800 dark:text-white">
-                              {draft.no_sj}
-                            </span>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                              isSelected ? 'bg-primary-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                            }`}>
-                              {isSelected ? 'Sedang Dicek' : 'Antrean'}
-                            </span>
+                          <div className="flex items-center justify-between mb-1.5 gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <input
+                                type="checkbox"
+                                checked={isCheckedForBulk}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => {
+                                  setSelectedDraftIds(prev => {
+                                    const next = new Set(prev);
+                                    if (e.target.checked) next.add(draft.id);
+                                    else next.delete(draft.id);
+                                    return next;
+                                  });
+                                }}
+                                className="w-3.5 h-3.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer shrink-0"
+                                title="Pilih SJ ini untuk Kirim Tugas Picking Massal"
+                              />
+                              <span className="font-mono text-xs font-black text-slate-800 dark:text-white truncate">
+                                {draft.no_sj}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {isAlreadySentToApp && (
+                                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                                  ✓ Picking App
+                                </span>
+                              )}
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                isSelected ? 'bg-primary-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                              }`}>
+                                {isSelected ? 'Sedang Dicek' : 'Antrean'}
+                              </span>
+                            </div>
                           </div>
 
                           <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
@@ -1421,6 +1529,8 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
+                                  setPickingModalInitialTab('print');
+                                  setPickingModalDrafts([]);
                                   setPickingModalDraft(draft);
                                 }}
                                 className="px-2 py-1 text-[11px] font-extrabold rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
@@ -1443,6 +1553,11 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                   onConfirm: () => {
                                     deleteSJDraft(draft.id);
                                     setDrafts(prev => prev.filter(d => d.id !== draft.id));
+                                    setSelectedDraftIds(prev => {
+                                      const next = new Set(prev);
+                                      next.delete(draft.id);
+                                      return next;
+                                    });
                                     if (activeDraftId === draft.id) {
                                       setActiveDraftId(null);
                                     }
@@ -2181,6 +2296,46 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                   </span>
                 </label>
                 <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full sm:w-auto justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const targetRecords = selectedRecords.size > 0
+                        ? filteredRecords.filter(r => selectedRecords.has(r.id) && r.items && r.items.length > 0)
+                        : filteredRecords.filter(r => r.items && r.items.length > 0);
+                      if (targetRecords.length === 0) {
+                        onShowToast('Pilih minimal 1 Surat Jalan yang memiliki item untuk Format Picking Massal.', 'warning');
+                        return;
+                      }
+                      const mappedDrafts: PengecekanSJDraft[] = targetRecords.map(rec => ({
+                        id: rec.id || `${rec.no_sj}___${rec.source}___${rec.destination}`,
+                        no_sj: rec.no_sj,
+                        source: rec.source,
+                        destination: rec.destination,
+                        tanggal_sj: rec.tanggal_sj,
+                        tipe_import: rec.tipe_import || (rec.destination?.toLowerCase().includes('warehouse') ? 'Penerimaan' : 'Pengiriman') || 'Pengiriman',
+                        file_name: `SJ-${rec.no_sj}`,
+                        items: rec.items.map(i => ({
+                          sku: i.sku,
+                          nama_produk: i.nama_produk,
+                          category: i.category,
+                          qty_sj: i.qty_sj || i.qty_scan || 1,
+                        })),
+                        scanQty: {},
+                        unexpected: {},
+                        status: 'draft',
+                        created_at: rec.created_at,
+                        updated_at: rec.updated_at || new Date().toISOString(),
+                      }));
+                      setPickingModalInitialTab('app');
+                      setPickingModalDraft(null);
+                      setPickingModalDrafts(mappedDrafts);
+                    }}
+                    className="flex-1 sm:flex-none justify-center px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-extrabold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                    title="Kirim Tugas Picking Massal untuk SJ terpilih (atau semua SJ yang tampil)"
+                  >
+                    <Send className="w-3 h-3" />
+                    Kirim Picking Massal ({selectedRecords.size > 0 ? selectedRecords.size : filteredRecords.length})
+                  </button>
                   <span className="text-[10px] font-bold text-slate-400 uppercase hidden sm:inline-block mr-1">Ubah Status:</span>
                   <button
                     type="button"
@@ -2655,14 +2810,28 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         )}
         {/* MODAL PILIHAN FORMAT DISTRIBUSI PICKING UNTUK TIPE PENGIRIMAN */}
         <DistribusiPickingModal
-          isOpen={Boolean(pickingModalDraft)}
-          onClose={() => setPickingModalDraft(null)}
+          isOpen={Boolean(pickingModalDraft || pickingModalDrafts.length > 0)}
+          onClose={() => {
+            setPickingModalDraft(null);
+            setPickingModalDrafts([]);
+          }}
           draft={pickingModalDraft}
+          drafts={pickingModalDrafts.length > 0 ? pickingModalDrafts : undefined}
+          initialTab={pickingModalInitialTab}
           productCatalog={productCatalog || []}
           session={session}
           onNotify={onShowToast}
-          onSuccessSentToApp={(draftId) => {
-            setDrafts(prev => prev.map(d => d.id === draftId ? { ...d, catatan: `${d.catatan || ''} [Tugas Picking App Terkirim]`.trim() } : d));
+          onSuccessSentToApp={(draftId, invoicePicking) => {
+            setDrafts(prev => {
+              const updated = prev.map(d => {
+                if (d.id !== draftId) return d;
+                const tag = invoicePicking ? `[Tugas Picking App Terkirim: ${invoicePicking}]` : '[Tugas Picking App Terkirim]';
+                const cleanExisting = (d.catatan || '').replace(/\[Tugas Picking App Terkirim[^\]]*\]/g, '').trim();
+                return { ...d, catatan: `${cleanExisting} ${tag}`.trim() };
+              });
+              saveSJDrafts(updated);
+              return updated;
+            });
           }}
         />
 
