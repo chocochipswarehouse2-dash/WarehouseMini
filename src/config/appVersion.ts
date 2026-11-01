@@ -15,20 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.30",
-  "versionCode": 290,
+  "version": "v2.6.31",
+  "versionCode": 291,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v290-2037",
-  "releaseTitle": "WMS v2.6.30 — Fix Live Chat Image Sync & Missing DocKey in Query",
+  "buildHash": "wms-261101-v291-2147",
+  "releaseTitle": "WMS v2.6.31 — Live Chat Mentions, Shopee-Style Order Chat & Group Info",
   "releaseNotes": [
-    "Perbaiki fetchSystemDocJson interpolasi docKey Supabase",
-    "Realtime re-render foto pada desktop & PWA",
-    "Passing initialRoomId ke workspace"
+    "Fitur sebut/tag anggota grup (@username)",
+    "Fitur Tanya Pesanan / Chat ke Gudang langsung dari tab Pesanan",
+    "Modal info grup & daftar anggota lengkap dengan keluarkan/keluar grup",
+    "Tombol segarkan sinkronisasi instan Supabase"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.30",
+    "versionCode": 290,
+    "buildDate": "1 November 2026",
+    "buildHash": "wms-261101-v290-2037",
+    "releaseTitle": "WMS v2.6.30 — Fix Live Chat Image Sync & Missing DocKey in Query",
+    "releaseNotes": [
+      "Perbaiki fetchSystemDocJson interpolasi docKey Supabase",
+      "Realtime re-render foto pada desktop & PWA",
+      "Passing initialRoomId ke workspace"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.29",
     "versionCode": 289,
@@ -112,19 +126,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Aturan baku Pola Reguler Bulanan: Libur Hari Minggu (OFF), Shift 1 (08:00-17:00), Shift 2 (09:00-18:00), serta Shift 3 otomatis memetakan Senin-Jumat ke 3a (12:00-21:00) dan Sabtu ke 3b (11:00-20:00)",
       "Tombol Simpan Data Shift tersedia di 4 posisi: Floating Bar Melayang di bawah layar, Header Utama, Generator Massal (Isi & Langsung Simpan), serta Footer Tabel",
       "Pengaturan, Generator, Template, dan Edit Shift dikunci ketat khusus Admin / Superadmin (Operator hanya Mode Tinjau / Read-Only)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.22",
-    "versionCode": 282,
-    "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v282-0936",
-    "releaseTitle": "WMS v2.6.22 — Matriks Spreadsheet Roster 1 Bulan Penuh (Multi-Karyawan & Kuas Shift Cepat)",
-    "releaseNotes": [
-      "Tampilan baru Matriks Sebulan (Tanggal 1-31 x Seluruh Karyawan) di menu Roster Shift tanpa perlu edit satu-satu atau import CSV",
-      "Generator Massal 1 Bulan dengan fitur Bagi Hari Libur Bergilir Otomatis (Senin-Minggu merata antar staf), Rotasi Mingguan, dan Bagi 2 Tim",
-      "Fitur Set Cepat 1 Bulan per baris karyawan (S1/S2/3A + Hari Off individu) serta Mode Kuas Klik & Geser (Drag Paint) di sel tanggal dengan 1-Klik Simpan Semua"
     ],
     "minSupportedVersion": "v2.0.0"
   }

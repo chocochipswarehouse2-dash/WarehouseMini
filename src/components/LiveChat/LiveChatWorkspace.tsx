@@ -25,6 +25,7 @@ import {
   Sparkles,
   Tag,
   Package,
+  AtSign,
   FileText,
   ExternalLink,
 } from 'lucide-react';
@@ -36,6 +37,7 @@ import {
   ChatMessage,
   ChatContextTag,
   ChatContextTagType,
+  ChatOrderContext,
   ChatReplyQuote,
   ChatParticipantProfile,
   canModifyMessage,
@@ -88,6 +90,21 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
 
   // Group Creation / Member Management Modal (Admin & Superadmin only)
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+  const [isGroupInfoModalOpen, setIsGroupInfoModalOpen] = useState(false);
+  const [groupInfoSearch, setGroupInfoSearch] = useState('');
+  const [isRemovingMember, setIsRemovingMember] = useState<string | null>(null);
+
+  // Mention (@) Autocomplete State
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionIndex, setMentionIndex] = useState<number>(-1);
+
+  // Shopee-style Attached Order Context
+  const [pendingOrderContext, setPendingOrderContext] = useState<ChatOrderContext | null>(
+    liveChatManager.pendingOrderContext
+  );
+
+  // Manual Sync Spinner State
+  const [isSyncingRooms, setIsSyncingRooms] = useState(false);
   const [groupModalMode, setGroupModalMode] = useState<'create' | 'manage'>('create');
   const [groupNameInput, setGroupNameInput] = useState('');
   const [groupTopicInput, setGroupTopicInput] = useState('');
@@ -128,6 +145,22 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
       void liveChatManager.selectRoom(initialRoomId);
     }
   }, [initialRoomId]);
+
+  useEffect(() => {
+    const handleOpenOrder = (e: any) => {
+      if (e.detail?.orderData) {
+        setPendingOrderContext(e.detail.orderData);
+        setInputText((prev) =>
+          prev
+            ? prev
+            : `Halo Tim Gudang, mau konfirmasi mengenai pesanan #${e.detail.orderData.order_id} (${e.detail.orderData.store_name || ''}) ini...`
+        );
+        setTimeout(() => textareaRef.current?.focus(), 100);
+      }
+    };
+    window.addEventListener('wms:open_order_chat', handleOpenOrder);
+    return () => window.removeEventListener('wms:open_order_chat', handleOpenOrder);
+  }, []);
 
   const activeRoom = useMemo(
     () => chatState.rooms.find((r) => r.id === chatState.activeRoomId) || null,
@@ -284,6 +317,90 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
     return results;
   }, [productCatalog, tagType, tagSearchInput]);
 
+  // Mention candidates for active room
+  const mentionCandidates = useMemo(() => {
+    if (mentionQuery === null || !activeRoom) return [];
+    const q = mentionQuery.toLowerCase();
+    const list: Array<{ username: string; name: string; role: string; isAll?: boolean }> = [];
+
+    if (activeRoom.type === 'group') {
+      if ('semua'.includes(q) || 'all'.includes(q) || q === '') {
+        list.push({
+          username: 'semua',
+          name: 'Semua Anggota Grup',
+          role: 'Tag All',
+          isAll: true,
+        });
+      }
+      for (const uname of activeRoom.participants) {
+        const uLower = uname.toLowerCase();
+        if (uLower === myUsername) continue;
+        const prof =
+          activeRoom.participant_profiles?.[uLower] ||
+          chatState.allUsersDirectory.find((u) => u.username.toLowerCase() === uLower);
+        const name = prof?.name || getUserPersonName(uLower) || uLower;
+        if (uLower.includes(q) || name.toLowerCase().includes(q) || q === '') {
+          list.push({
+            username: uLower,
+            name,
+            role: prof?.role || 'Operator',
+          });
+        }
+      }
+    } else {
+      for (const u of chatState.allUsersDirectory) {
+        const uLower = u.username.toLowerCase();
+        if (uLower === myUsername) continue;
+        if (uLower.includes(q) || u.name.toLowerCase().includes(q)) {
+          list.push({
+            username: uLower,
+            name: u.name,
+            role: u.role,
+          });
+        }
+      }
+    }
+    return list.slice(0, 8);
+  }, [mentionQuery, activeRoom, myUsername, chatState.allUsersDirectory]);
+
+  const handleSelectMention = (candidate: { username: string }) => {
+    if (mentionIndex < 0) return;
+    const before = inputText.slice(0, mentionIndex);
+    const after = inputText.slice(mentionIndex + (mentionQuery?.length || 0) + 1);
+    const newText = `${before}@${candidate.username} ${after}`;
+    setInputText(newText);
+    setMentionQuery(null);
+    setMentionIndex(-1);
+    textareaRef.current?.focus();
+  };
+
+  const renderMessageTextWithMentions = (text: string, isMine: boolean) => {
+    if (!text) return null;
+    const tokens = text.split(/(\s+)/);
+    return tokens.map((word, wIdx) => {
+      if (word.startsWith('@') && word.length > 1) {
+        const cleanWord = word.replace(/^[^\w@]+|[^\w]+$/g, '');
+        const targetUname = cleanWord.slice(1).toLowerCase();
+        const isMe = targetUname === myUsername || targetUname === 'semua' || targetUname === 'all';
+        return (
+          <span
+            key={wIdx}
+            className={`inline-flex items-center px-1.5 py-0.5 rounded-md font-semibold text-[11px] mx-0.5 ${
+              isMe
+                ? 'bg-amber-300 dark:bg-amber-900/80 text-amber-950 dark:text-amber-100 font-bold border border-amber-400 dark:border-amber-700'
+                : isMine
+                ? 'bg-indigo-700/90 text-white font-bold border border-indigo-400/40'
+                : 'bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
+            }`}
+          >
+            {word}
+          </span>
+        );
+      }
+      return <span key={wIdx}>{word}</span>;
+    });
+  };
+
   // Handlers
   const handleOpenCreateGroupModal = () => {
     setGroupModalMode('create');
@@ -416,7 +533,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
       return;
     }
 
-    if (!inputText.trim() && !pendingAttachmentUrl && selectedTags.length === 0) {
+    if (!inputText.trim() && !pendingAttachmentUrl && selectedTags.length === 0 && !pendingOrderContext) {
       return;
     }
 
@@ -427,6 +544,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
         text: inputText,
         attachmentUrl: pendingAttachmentUrl || undefined,
         contextTags: selectedTags.length > 0 ? selectedTags : undefined,
+        orderContext: pendingOrderContext || undefined,
         replyTo: replyTo || undefined,
       });
 
@@ -436,7 +554,9 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
         setInputText('');
         setPendingAttachmentUrl('');
         setSelectedTags([]);
+        setPendingOrderContext(null);
         setReplyTo(null);
+        setMentionQuery(null);
       }
     } finally {
       setIsSending(false);
@@ -552,14 +672,21 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
 
               <button
                 type="button"
-                onClick={() => {
-                  void liveChatManager.syncRoomsFromServer();
-                  void liveChatManager.refreshUsersDirectory(true);
+                disabled={isSyncingRooms}
+                onClick={async () => {
+                  setIsSyncingRooms(true);
+                  try {
+                    await liveChatManager.syncRoomsFromServer(true);
+                    await liveChatManager.refreshUsersDirectory(true);
+                    onNotify?.('Daftar percakapan & user berhasil disegarkan.', 'success');
+                  } finally {
+                    setIsSyncingRooms(false);
+                  }
                 }}
                 className="p-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-colors cursor-pointer"
-                title="Segarkan daftar chat & user online"
+                title="Segarkan daftar chat & user online (Sinkronisasi Supabase)"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${chatState.isLoadingRooms ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingRooms || chatState.isLoadingRooms ? 'animate-spin text-indigo-600' : ''}`} />
               </button>
 
               {isFloating && onExpandToFullPage && (
@@ -895,9 +1022,15 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                         <ArrowLeft className="w-4 h-4" />
                       </button>
 
-                      <div className="min-w-0">
+                      <div
+                        onClick={() => {
+                          if (activeRoom.type === 'group') setIsGroupInfoModalOpen(true);
+                        }}
+                        className={`min-w-0 ${activeRoom.type === 'group' ? 'cursor-pointer group/hdr' : ''}`}
+                        title={activeRoom.type === 'group' ? 'Klik untuk melihat Info & Anggota Grup' : undefined}
+                      >
                         <div className="flex items-center gap-2">
-                          <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+                          <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate group-hover/hdr:text-indigo-600 transition-colors">
                             {meta.title}
                           </h3>
                           {meta.isOnline && (
@@ -908,6 +1041,10 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                           {typingUsersInActiveRoom.length > 0 ? (
                             <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
                               {typingUsersInActiveRoom.join(', ')} sedang mengetik...
+                            </span>
+                          ) : activeRoom.type === 'group' ? (
+                            <span>
+                              {meta.subtitle} · <span className="text-indigo-600 dark:text-indigo-400 font-semibold">Klik Info</span>
                             </span>
                           ) : (
                             meta.subtitle
@@ -933,28 +1070,52 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                         <Search className="w-3.5 h-3.5" />
                       </button>
 
-                      {activeRoom.type === 'group' && isAdminGroupManager && (
+                      {activeRoom.type === 'group' && (
                         <button
                           type="button"
-                          onClick={handleOpenManageGroupModal}
+                          onClick={() => setIsGroupInfoModalOpen(true)}
                           className="px-2.5 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-indigo-500 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                          title="Tambah atau atur anggota grup (Admin/Superadmin)"
+                          title="Lihat info grup, daftar anggota & kelola obrolan"
                         >
-                          <UserPlus className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                          <span className="hidden sm:inline">Anggota ({activeRoom.participants.length})</span>
+                          <Users className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                          <span className="hidden sm:inline">Info ({activeRoom.participants.length})</span>
                         </button>
                       )}
 
-                      {(activeRoom.type === 'direct' || isAdminGroupManager) && (
+                      {(activeRoom.type === 'direct' ||
+                        isAdminGroupManager ||
+                        String(activeRoom.created_by || '').trim().toLowerCase() === myUsername) && (
                         <button
                           type="button"
                           onClick={() => setConfirmDeleteRoom(activeRoom)}
                           className="p-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-rose-600 hover:border-rose-300 transition-colors cursor-pointer"
-                          title="Hapus Percakapan Ini"
+                          title={activeRoom.type === 'group' ? 'Hapus Ruang Diskusi Grup' : 'Hapus Percakapan Ini'}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       )}
+
+                      {activeRoom.type === 'group' &&
+                        !isAdminGroupManager &&
+                        String(activeRoom.created_by || '').trim().toLowerCase() !== myUsername && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!confirm(`Yakin ingin keluar dari ruang diskusi "${activeRoom.name}"?`)) return;
+                              const res = await liveChatManager.leaveGroupRoom(activeRoom.id);
+                              if (!res.success) {
+                                onNotify?.(res.error || 'Gagal keluar dari grup', 'error');
+                              } else {
+                                onNotify?.(`Anda telah keluar dari ruang diskusi "${activeRoom.name}".`, 'info');
+                                void liveChatManager.selectRoom(null);
+                              }
+                            }}
+                            className="p-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-rose-600 hover:border-rose-300 transition-colors cursor-pointer"
+                            title="Keluar dari Ruang Diskusi Grup ini"
+                          >
+                            <LogOut className="w-3.5 h-3.5 text-rose-500" />
+                          </button>
+                        )}
 
                       {isFloating && onExpandToFullPage && (
                         <button
@@ -1140,10 +1301,54 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                                   </div>
                                 )}
 
+                                {/* Shopee-Style Attached Order Context Card */}
+                                {msg.order_context && (
+                                  <div
+                                    className={`mb-2 p-2.5 rounded-xl border text-left ${
+                                      isMine
+                                        ? 'bg-indigo-700/80 border-indigo-400/40 text-white'
+                                        : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 shadow-2xs'
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between gap-2 border-b border-white/20 dark:border-slate-800 pb-1.5 mb-1.5">
+                                      <div className="flex items-center gap-1.5 min-w-0">
+                                        <Package className={`w-3.5 h-3.5 shrink-0 ${isMine ? 'text-amber-300' : 'text-indigo-600 dark:text-indigo-400'}`} />
+                                        <span className="text-xs font-mono font-bold truncate">
+                                          #{msg.order_context.order_id}
+                                        </span>
+                                      </div>
+                                      {msg.order_context.status && (
+                                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                                          isMine ? 'bg-indigo-800 text-indigo-100' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                                        }`}>
+                                          {msg.order_context.status}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-[11px] space-y-0.5">
+                                      {msg.order_context.store_name && (
+                                        <div className="truncate">
+                                          <span className="opacity-75">Toko:</span> <span className="font-semibold">{msg.order_context.store_name}</span>
+                                        </div>
+                                      )}
+                                      {msg.order_context.items_summary && (
+                                        <div className="truncate">
+                                          <span className="opacity-75">Item:</span> <span className="font-semibold">{msg.order_context.items_summary}</span>
+                                        </div>
+                                      )}
+                                      {msg.order_context.no_resi && (
+                                        <div className="font-mono text-[10px] truncate">
+                                          <span className="opacity-75">Resi:</span> {msg.order_context.no_resi}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+
                                 {/* Message Text Body */}
                                 {msg.text && (
                                   <div className="text-xs sm:text-sm whitespace-pre-wrap break-words leading-relaxed">
-                                    {msg.text}
+                                    {renderMessageTextWithMentions(msg.text, isMine)}
                                   </div>
                                 )}
                               </>
@@ -1278,6 +1483,38 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                       type="button"
                       onClick={() => setReplyTo(null)}
                       className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                {/* Attached Order Context Card (Shopee-Style "Tanya Pesanan") */}
+                {pendingOrderContext && (
+                  <div className="mb-2 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800/80 flex items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                        <Package className="w-4 h-4 text-amber-300" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-slate-900 dark:text-white truncate flex items-center gap-1.5">
+                          <span>Diskusi Pesanan #{pendingOrderContext.order_id}</span>
+                          {pendingOrderContext.status && (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-semibold">
+                              {pendingOrderContext.status}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                          {pendingOrderContext.store_name || ''}{pendingOrderContext.items_summary ? ` · ${pendingOrderContext.items_summary}` : ''}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPendingOrderContext(null)}
+                      className="p-1 rounded-lg text-slate-400 hover:text-rose-600 cursor-pointer shrink-0"
+                      title="Batal lampirkan pesanan"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -1426,6 +1663,20 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                     <div className="flex items-center gap-1 shrink-0">
                       <button
                         type="button"
+                        onClick={() => {
+                          setInputText((prev) => `${prev}@`);
+                          setMentionQuery('');
+                          setMentionIndex(inputText.length);
+                          textareaRef.current?.focus();
+                        }}
+                        className="p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-colors cursor-pointer"
+                        title="Tag Pengguna / Sebut Anggota (@)"
+                      >
+                        <AtSign className="w-4 h-4" />
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => setIsTagPickerOpen((v) => !v)}
                         className={`p-2 rounded-xl border transition-colors cursor-pointer ${
                           isTagPickerOpen
@@ -1453,32 +1704,85 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                     </div>
                   )}
 
-                  <textarea
-                    ref={textareaRef}
-                    rows={1}
-                    value={inputText}
-                    onPaste={handlePasteClipboard}
-                    onChange={(e) => {
-                      setInputText(e.target.value);
-                      if (activeRoom) {
-                        liveChatManager.sendTypingIndicator(
-                          e.target.value.trim() ? activeRoom.id : null
-                        );
+                  <div className="flex-1 relative min-w-0">
+                    {/* Mention (@) Autocomplete Popover */}
+                    {mentionQuery !== null && mentionCandidates.length > 0 && (
+                      <div className="absolute bottom-full left-0 mb-2 w-64 max-h-52 overflow-y-auto rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl z-30 divide-y divide-slate-100 dark:divide-slate-800">
+                        <div className="p-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                          <span>Sebut Pengguna (@)</span>
+                          <span className="text-[9px] font-normal text-slate-400">Tab / Enter</span>
+                        </div>
+                        {mentionCandidates.map((c) => (
+                          <button
+                            key={c.username}
+                            type="button"
+                            onClick={() => handleSelectMention(c)}
+                            className="w-full px-3 py-2 flex items-center justify-between gap-2 text-left hover:bg-indigo-50 dark:hover:bg-indigo-950/50 cursor-pointer transition-colors"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                                {c.name}
+                              </div>
+                              <div className="text-[10px] text-slate-400 font-mono truncate">
+                                @{c.username}
+                              </div>
+                            </div>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 font-semibold shrink-0">
+                              {c.role}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <textarea
+                      ref={textareaRef}
+                      rows={1}
+                      value={inputText}
+                      onPaste={handlePasteClipboard}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setInputText(val);
+                        if (activeRoom) {
+                          liveChatManager.sendTypingIndicator(val.trim() ? activeRoom.id : null);
+                        }
+                        const cursorPos = e.target.selectionStart || val.length;
+                        const textUpToCursor = val.slice(0, cursorPos);
+                        const match = textUpToCursor.match(/@([a-zA-Z0-9_\-]*)$/);
+                        if (match) {
+                          setMentionQuery(match[1]);
+                          setMentionIndex(cursorPos - match[0].length);
+                        } else {
+                          setMentionQuery(null);
+                          setMentionIndex(-1);
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (mentionQuery !== null && mentionCandidates.length > 0) {
+                          if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+                            e.preventDefault();
+                            handleSelectMention(mentionCandidates[0]);
+                            return;
+                          }
+                          if (e.key === 'Escape') {
+                            e.preventDefault();
+                            setMentionQuery(null);
+                            return;
+                          }
+                        }
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          void handleSendOrSaveEdit();
+                        }
+                      }}
+                      placeholder={
+                        editingMessage
+                          ? 'Ketik perubahan pesan...'
+                          : 'Ketik pesan... (@tag user, #tag dokumen, paste foto)'
                       }
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        void handleSendOrSaveEdit();
-                      }
-                    }}
-                    placeholder={
-                      editingMessage
-                        ? 'Ketik perubahan pesan...'
-                        : 'Ketik pesan... (Enter kirim, Paste foto screenshot otomatis ke GDrive)'
-                    }
-                    className="flex-1 px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 resize-none max-h-28"
-                  />
+                      className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 resize-none max-h-28"
+                    />
+                  </div>
 
                   <button
                     type="submit"
@@ -1845,6 +2149,225 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
           </div>
         </div>
       )}
+
+      {/* MODAL: GROUP INFO & MEMBER MANAGEMENT */}
+      {isGroupInfoModalOpen && activeRoom && activeRoom.type === 'group' && (() => {
+        const isCreator = String(activeRoom.created_by || '').trim().toLowerCase() === myUsername;
+        const canManageMembers = isAdminGroupManager || isCreator;
+        const filteredMembers = activeRoom.participants.filter((uname) => {
+          if (!groupInfoSearch.trim()) return true;
+          const q = groupInfoSearch.trim().toLowerCase();
+          const prof = activeRoom.participant_profiles?.[uname.toLowerCase()];
+          const name = prof?.name || getUserPersonName(uname) || uname;
+          return uname.toLowerCase().includes(q) || name.toLowerCase().includes(q);
+        });
+
+        return (
+          <div
+            className="fixed inset-0 z-[125] flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4"
+            onClick={() => setIsGroupInfoModalOpen(false)}
+          >
+            <div
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0 bg-slate-50/70 dark:bg-slate-800/40">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center text-sm font-bold shadow-xs shrink-0">
+                    <Users className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                      {activeRoom.name}
+                    </h3>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                      {activeRoom.topic || `${activeRoom.participants.length} Anggota`}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsGroupInfoModalOpen(false)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Info Meta */}
+              <div className="px-4 py-2.5 bg-indigo-50/60 dark:bg-indigo-950/30 border-b border-indigo-100 dark:border-indigo-900/50 flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-300 shrink-0">
+                <div className="flex items-center gap-1.5 truncate">
+                  <Crown className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  <span className="truncate">
+                    Pembuat: <strong>{activeRoom.created_by_name || activeRoom.created_by}</strong>
+                    {isCreator && ' (Anda)'}
+                  </span>
+                </div>
+                <span className="font-mono text-[10px] text-slate-400 shrink-0">
+                  {formatDateBadge(activeRoom.created_at)}
+                </span>
+              </div>
+
+              {/* Member Search Bar */}
+              <div className="p-3 border-b border-slate-100 dark:border-slate-800 shrink-0">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={groupInfoSearch}
+                    onChange={(e) => setGroupInfoSearch(e.target.value)}
+                    placeholder="Cari anggota dalam grup..."
+                    className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* Scrollable Members List */}
+              <div className="flex-1 min-h-0 overflow-y-auto p-2 divide-y divide-slate-100 dark:divide-slate-800/60">
+                {filteredMembers.map((uname) => {
+                  const uLower = uname.toLowerCase();
+                  const prof =
+                    activeRoom.participant_profiles?.[uLower] ||
+                    chatState.allUsersDirectory.find((u) => u.username.toLowerCase() === uLower);
+                  const isOnline = Boolean(chatState.onlineUsers[uLower]);
+                  const isTargetCreator = uLower === String(activeRoom.created_by || '').trim().toLowerCase();
+                  const isMe = uLower === myUsername;
+
+                  return (
+                    <div
+                      key={uLower}
+                      className="p-2.5 flex items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-xl transition-colors"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="relative shrink-0">
+                          <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-xs font-bold text-slate-700 dark:text-slate-200 uppercase">
+                            {(prof?.name || uLower).slice(0, 2)}
+                          </div>
+                          <span
+                            className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-white dark:ring-slate-900 ${
+                              isOnline ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'
+                            }`}
+                            title={isOnline ? 'Online' : 'Offline'}
+                          />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 truncate">
+                            <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                              {prof?.name || getUserPersonName(uLower) || uLower}
+                            </span>
+                            {isTargetCreator && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-md bg-amber-100 text-amber-700 dark:bg-amber-950/70 dark:text-amber-300 text-[10px] font-bold shrink-0">
+                                <Crown className="w-2.5 h-2.5" /> Pembuat
+                              </span>
+                            )}
+                            {isMe && (
+                              <span className="text-[10px] font-semibold text-slate-400 shrink-0">
+                                (Anda)
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                            <span>@{uLower}</span>
+                            {prof?.role && <span> · {prof.role}</span>}
+                            {prof?.store_name && <span> ({prof.store_name})</span>}
+                            {isOnline && <span className="text-emerald-600 dark:text-emerald-400"> · Online</span>}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Remove member button (Creator or Admin only, cannot remove creator) */}
+                      {canManageMembers && !isTargetCreator && !isMe && (
+                        <button
+                          type="button"
+                          disabled={isRemovingMember === uLower}
+                          onClick={async () => {
+                            if (!confirm(`Keluarkan ${prof?.name || uLower} dari ruang diskusi ini?`)) return;
+                            setIsRemovingMember(uLower);
+                            try {
+                              const remaining = activeRoom.participants.filter((p) => p.toLowerCase() !== uLower);
+                              const res = await liveChatManager.updateGroupMembers(activeRoom.id, remaining);
+                              if (!res.success) {
+                                onNotify?.(res.error || 'Gagal mengeluarkan anggota', 'error');
+                              } else {
+                                onNotify?.(`${prof?.name || uLower} telah dikeluarkan dari grup.`, 'info');
+                              }
+                            } finally {
+                              setIsRemovingMember(null);
+                            }
+                          }}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors cursor-pointer shrink-0"
+                          title="Keluarkan dari grup"
+                        >
+                          <UserMinus className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Modal Action Footer */}
+              <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 flex flex-wrap items-center justify-between gap-2 shrink-0">
+                <div className="flex items-center gap-1.5">
+                  {canManageMembers ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsGroupInfoModalOpen(false);
+                          handleOpenManageGroupModal();
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" />
+                        <span>Tambah / Edit</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsGroupInfoModalOpen(false);
+                          setConfirmDeleteRoom(activeRoom);
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-rose-600 dark:text-rose-400 hover:bg-rose-50 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Hapus Grup</span>
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!confirm(`Yakin ingin keluar dari ruang diskusi "${activeRoom.name}"?`)) return;
+                        const res = await liveChatManager.leaveGroupRoom(activeRoom.id);
+                        if (!res.success) {
+                          onNotify?.(res.error || 'Gagal keluar dari grup', 'error');
+                        } else {
+                          onNotify?.(`Anda telah keluar dari ruang diskusi "${activeRoom.name}".`, 'info');
+                          setIsGroupInfoModalOpen(false);
+                          void liveChatManager.selectRoom(null);
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-rose-600 dark:text-rose-400 hover:bg-rose-50 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Keluar dari Grup</span>
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsGroupInfoModalOpen(false)}
+                  className="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* LIGHTBOX IMAGE PREVIEW */}
       {previewImageUrl && (

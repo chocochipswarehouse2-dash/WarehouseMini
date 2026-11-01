@@ -59,6 +59,7 @@ import {
 } from '../../utils/transactionGenerator';
 import { getUserPersonName, formatOperatorWithPersonName } from '../../utils/userResolver';
 import { globalRealtimeStore } from '../../services/store';
+import { liveChatManager } from '../../services/liveChatService';
 
 interface ManualShipmentViewProps {
   session: UserSession | null;
@@ -386,6 +387,29 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
     }
     onShowToast('Gagal menyalin teks.', 'error');
     return false;
+  };
+
+  // Shopee-Style "Chat ke Gudang" dari pesanan
+  const handleChatWarehouse = (order: ManualShipmentOrder) => {
+    const itemsSummary = Array.isArray(order.items)
+      ? order.items.map((i) => `${i.nama_produk || i.sku} (${i.qty}x)`).join(', ')
+      : (order as any).rincian_produk || '';
+    const totalPcs =
+      order.total_qty ||
+      (Array.isArray(order.items)
+        ? order.items.reduce((s, x) => s + (Number(x.qty) || 0), 0)
+        : undefined);
+
+    void liveChatManager.openOrderChat({
+      order_id: order.no_pesanan || order.no_sj || String(order.id),
+      store_name: order.nama_toko || (order as any).store_name,
+      customer_name: order.nama_pembeli,
+      items_summary: itemsSummary,
+      total_pcs: totalPcs,
+      status: order.status,
+      no_resi: order.no_resi,
+    });
+    onShowToast?.(`Membuka percakapan dengan Gudang untuk pesanan #${order.no_pesanan || order.no_sj}...`, 'info');
   };
 
   const getCleanCustomerPhone = (phone?: string): string => {
@@ -3775,6 +3799,17 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                       </button>
                     </>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleChatWarehouse(order);
+                    }}
+                    className="px-3.5 py-1.5 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 font-semibold rounded-lg text-xs border border-indigo-200 dark:border-indigo-800 flex items-center transition-colors cursor-pointer"
+                    title="Tanya atau koordinasikan pesanan ini langsung dengan Gudang / Admin via Live Chat WMS (Shopee-Style)"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 mr-1.5 text-indigo-600 dark:text-indigo-400" />
+                    <span>💬 Chat Gudang</span>
+                  </button>
                   <button 
                     type="button"
                     onClick={() => {
@@ -7741,6 +7776,16 @@ _WMS Warehouse System_`;
                             SJ Struk Kasir
                           </button>
 
+                          <button
+                            type="button"
+                            onClick={() => handleChatWarehouse(activeOrder)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 transition-colors cursor-pointer flex items-center gap-1.5"
+                            title="Tanya atau koordinasikan pesanan ini langsung dengan Gudang via Live Chat WMS (Shopee-Style)"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            <span>Chat Gudang</span>
+                          </button>
+
                           {hasRealAlterItems(activeOrder) && (
                             <button
                               type="button"
@@ -8664,6 +8709,7 @@ _WMS Warehouse System_`;
                         className="text-[9.5px] text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-2xs font-semibold cursor-pointer w-full"
                         onChange={(e) => {
                           const action = e.target.value;
+                          if (action === 'chat_warehouse') handleChatWarehouse(order);
                           if (action === 'print_picking') handlePrintPickingList(order);
                           if (action === 'wa_picking_group') handleSendPickingWaGroup(order);
                           if (action === 'print') handlePrintLabel(order);
@@ -8764,6 +8810,7 @@ _WMS Warehouse System_`;
                         defaultValue=""
                       >
                         <option value="" disabled>Pilih Aksi...</option>
+                        <option value="chat_warehouse">💬 Chat Gudang / Tanya Pesanan</option>
                         <option value="notif_wa_store">💬 Kirim WA ke Store</option>
                         <option value="sj_struk">🖨️ Cetak SJ Struk Kasir</option>
                         {userIsAdmin && <option value="edit">✏️ Edit Pesanan</option>}
@@ -9465,6 +9512,7 @@ _WMS Warehouse System_`;
                           className="w-full text-xs text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-2xs font-semibold cursor-pointer"
                           onChange={(e) => {
                             const action = e.target.value;
+                            if (action === 'chat_warehouse') handleChatWarehouse(order);
                             if (action === 'print_picking') handlePrintPickingList(order);
                             if (action === 'wa_picking_group') handleSendPickingWaGroup(order);
                             if (action === 'print') handlePrintLabel(order);
@@ -9540,6 +9588,7 @@ _WMS Warehouse System_`;
                           defaultValue=""
                         >
                           <option value="" disabled>Aksi</option>
+                          <option value="chat_warehouse">💬 Chat Gudang / Tanya Pesanan</option>
                           {(isEligibleForSjStruk(order) || isStoreUser) && (
                             <option value="sj_struk">🧾 Cetak SJ Struk</option>
                           )}

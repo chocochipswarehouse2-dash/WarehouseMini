@@ -16,3 +16,4 @@ if (!j.includes('(?!api/)')) {
   fs.writeFileSync('vercel.json', j);
   console.log('vercel.json patched');
 }
+

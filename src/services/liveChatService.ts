@@ -45,6 +45,16 @@ export interface ChatReplyQuote {
   attachment_url?: string;
 }
 
+export interface ChatOrderContext {
+  order_id: string;
+  store_name?: string;
+  customer_name?: string;
+  items_summary?: string;
+  total_pcs?: number;
+  status?: string;
+  no_resi?: string;
+}
+
 export interface ChatMessage {
   id: string;
   room_id: string;
@@ -55,6 +65,8 @@ export interface ChatMessage {
   text: string;
   attachment_url?: string; // Strict Google Drive CDN link (https://lh3.googleusercontent.com/d/...)
   context_tags?: ChatContextTag[];
+  order_context?: ChatOrderContext;
+  mentions?: string[];
   reply_to?: ChatReplyQuote;
   created_at: string;
   read_by: ChatReadReceipt[];
@@ -587,6 +599,49 @@ class LiveChatManager {
     this.notify();
   }
 
+  public pendingOrderContext: ChatOrderContext | null = null;
+
+  public setPendingOrderContext(ctx: ChatOrderContext | null) {
+    this.pendingOrderContext = ctx;
+    this.notify();
+  }
+
+  /**
+   * Shopee-Style "Tanya Pesanan / Chat ke Gudang":
+   * Opens direct chat with Warehouse (or Store) and attaches order context
+   */
+  public async openOrderChat(orderData: ChatOrderContext): Promise<void> {
+    if (!this.currentSession?.username) {
+      console.warn('[LiveChat] Cannot open order chat: session not found');
+      return;
+    }
+    const me = this.currentSession.username.trim().toLowerCase();
+    let targetUsername = 'warehouse';
+    if (me === 'warehouse') {
+      targetUsername = orderData.store_name?.toLowerCase().replace(/\s+/g, '_') || 'warehouse';
+    }
+
+    let targetProfile = this.state.allUsersDirectory.find(
+      (u) => u.username.toLowerCase() === targetUsername.toLowerCase()
+    );
+    if (!targetProfile) {
+      targetProfile = {
+        username: targetUsername,
+        name: targetUsername === 'warehouse' ? 'Warehouse (Gudang Pusat)' : orderData.store_name || targetUsername,
+        role: targetUsername === 'warehouse' ? 'Superadmin' : 'Store',
+      };
+    }
+
+    this.pendingOrderContext = orderData;
+    this.setFloatingOpen(true);
+    const room = await this.openOrCreateDirectRoom(targetProfile);
+    if (room && typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('wms:open_order_chat', { detail: { roomId: room.id, orderData } })
+      );
+    }
+  }
+
   public dismissIncomingToast() {
     this.state.incomingToastMessage = null;
     this.notify();
@@ -986,10 +1041,14 @@ class LiveChatManager {
               } catch {}
             });
 
-            const notifTitle =
-              r.type === 'group'
-                ? `💬 [${r.name || 'Grup Diskusi'}] ${senderLabel}`
-                : `💬 Pesan dari ${senderLabel}`;
+            const textLower = (r.last_message_text || '').toLowerCase();
+            const isMentioned =
+              textLower.includes(`@${me}`) || textLower.includes('@semua') || textLower.includes('@all');
+            const notifTitle = isMentioned
+              ? `🔔 [${r.name || 'Grup'}] ${senderLabel} menandai Anda!`
+              : r.type === 'group'
+              ? `💬 [${r.name || 'Grup Diskusi'}] ${senderLabel}`
+              : `💬 Pesan dari ${senderLabel}`;
             void showPushNotification(notifTitle, {
               body: r.last_message_text || '📷 Mengirim lampiran foto',
               tag: `wms-chat-${r.id}`,
@@ -1242,7 +1301,7 @@ class LiveChatManager {
   }
 
   /**
-   * Add or remove members in an existing Group Discussion Room (Admin & Superadmin only)
+   * Add or remove members in an existing Group Discussion Room (Admin, Superadmin, or Group Creator)
    */
   public async updateGroupMembers(
     roomId: string,
@@ -1251,26 +1310,33 @@ class LiveChatManager {
     updatedTopic?: string
   ): Promise<{ success: boolean; error?: string }> {
     if (!this.currentSession) return { success: false, error: 'Sesi tidak ditemukan.' };
-    const canManage =
-      isSuperadmin(this.currentSession) ||
-      Boolean(this.currentSession.permissions?.action_manage_chat_groups);
-
-    if (!canManage) {
-      return {
-        success: false,
-        error: 'Hanya Admin dan Superadmin yang dapat menambah atau mengatur anggota grup.',
-      };
-    }
+    const me = this.currentSession.username.trim().toLowerCase();
 
     const room = this.state.rooms.find((r) => r.id === roomId);
     if (!room || room.type !== 'group') {
       return { success: false, error: 'Ruang grup tidak ditemukan.' };
     }
 
-    const me = this.currentSession.username.trim().toLowerCase();
+    const isCreator = String(room.created_by || '').trim().toLowerCase() === me;
+    const canManage =
+      isSuperadmin(this.currentSession) ||
+      Boolean(this.currentSession.permissions?.action_manage_chat_groups) ||
+      isCreator;
+
+    if (!canManage) {
+      return {
+        success: false,
+        error: 'Hanya Pembuat Grup atau Admin yang dapat menambah atau mengatur anggota grup.',
+      };
+    }
+
     const uniqueMembers = Array.from(
-      new Set([me, ...participantUsernames.map((u) => u.trim().toLowerCase()).filter(Boolean)])
+      new Set(participantUsernames.map((u) => u.trim().toLowerCase()).filter(Boolean))
     );
+
+    if (uniqueMembers.length === 0) {
+      return this.deleteChatRoom(roomId);
+    }
 
     const profiles: Record<string, ChatParticipantProfile> = { ...(room.participant_profiles || {}) };
     for (const uname of uniqueMembers) {
@@ -1298,7 +1364,24 @@ class LiveChatManager {
   }
 
   /**
-   * Delete a Chat Room (Direct 1-on-1 chat can be deleted by its participant or Admin; Group room by Admin & Superadmin)
+   * Leave a group discussion room (any member)
+   */
+  public async leaveGroupRoom(roomId: string): Promise<{ success: boolean; error?: string }> {
+    if (!this.currentSession) return { success: false, error: 'Sesi tidak ditemukan.' };
+    const me = this.currentSession.username.trim().toLowerCase();
+    const room = this.state.rooms.find((r) => r.id === roomId);
+    if (!room || room.type !== 'group') {
+      return { success: false, error: 'Ruang grup tidak ditemukan.' };
+    }
+    const remaining = room.participants.filter((p) => p.toLowerCase() !== me);
+    if (remaining.length === 0) {
+      return this.deleteChatRoom(roomId);
+    }
+    return this.updateGroupMembers(roomId, remaining, room.name, room.topic);
+  }
+
+  /**
+   * Delete a Chat Room (Direct 1-on-1 chat by its participant or Admin; Group room by Creator, Admin & Superadmin)
    */
   public async deleteChatRoom(roomId: string): Promise<{ success: boolean; error?: string }> {
     if (!this.currentSession) return { success: false, error: 'Sesi tidak ditemukan.' };
@@ -1308,8 +1391,10 @@ class LiveChatManager {
       Boolean(this.currentSession.permissions?.action_manage_chat_groups);
 
     const room = this.state.rooms.find((r) => r.id === roomId);
-    if (room && room.type === 'group' && !isAdmin) {
-      return { success: false, error: 'Hanya Admin dan Superadmin yang dapat menghapus Ruang Diskusi Grup.' };
+    const isCreator = room && String(room.created_by || '').trim().toLowerCase() === me;
+
+    if (room && room.type === 'group' && !isAdmin && !isCreator) {
+      return { success: false, error: 'Hanya Pembuat Grup, Admin, atau Superadmin yang dapat menghapus Ruang Diskusi Grup.' };
     }
     if (room && room.type === 'direct' && !isAdmin && !this.isUserInRoom(room, me)) {
       return { success: false, error: 'Anda tidak memiliki akses untuk menghapus percakapan ini.' };
@@ -1385,6 +1470,7 @@ class LiveChatManager {
     text: string;
     attachmentUrl?: string;
     contextTags?: ChatContextTag[];
+    orderContext?: ChatOrderContext;
     replyTo?: ChatReplyQuote;
   }): Promise<{ success: boolean; message?: ChatMessage; error?: string }> {
     if (!this.currentSession?.username) {
@@ -1394,8 +1480,10 @@ class LiveChatManager {
     const cleanText = String(params.text || '').trim();
     const hasAttachment = Boolean(params.attachmentUrl);
     const hasTags = Array.isArray(params.contextTags) && params.contextTags.length > 0;
+    const attachedOrder = params.orderContext || this.pendingOrderContext || undefined;
+    const hasOrder = Boolean(attachedOrder);
 
-    if (!cleanText && !hasAttachment && !hasTags) {
+    if (!cleanText && !hasAttachment && !hasTags && !hasOrder) {
       return { success: false, error: 'Pesan tidak boleh kosong.' };
     }
 
@@ -1419,6 +1507,13 @@ class LiveChatManager {
       this.currentSession.store_name ||
       me;
 
+    // Detect @mentions in message body
+    const mentions = Array.from(
+      new Set(
+        (cleanText.match(/@([a-zA-Z0-9_\-]+)/g) || []).map((m) => m.slice(1).toLowerCase())
+      )
+    );
+
     const now = new Date().toISOString();
     const newMsg: ChatMessage = {
       id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
@@ -1430,6 +1525,8 @@ class LiveChatManager {
       text: cleanText,
       attachment_url: params.attachmentUrl || undefined,
       context_tags: params.contextTags && params.contextTags.length > 0 ? params.contextTags : undefined,
+      order_context: attachedOrder,
+      mentions: mentions.length > 0 ? mentions : undefined,
       reply_to: params.replyTo || undefined,
       created_at: now,
       read_by: [
@@ -1441,6 +1538,11 @@ class LiveChatManager {
       ],
     };
 
+    // Reset pending order context if it was used
+    if (this.pendingOrderContext) {
+      this.pendingOrderContext = null;
+    }
+
     // 1. Optimistic Local Update + IndexedDB permanent save
     const existingLocal = this.state.messagesByRoom[room.id] || (await idbGetRoomMessages(room.id));
     const updatedLocal = mergeMessagesIdempotent(existingLocal, [newMsg]);
@@ -1450,6 +1552,8 @@ class LiveChatManager {
       ? cleanText
       : hasAttachment
       ? '📷 Mengirim foto lampiran'
+      : attachedOrder
+      ? `📦 Diskusi Pesanan #${attachedOrder.order_id}`
       : `🏷️ Tag ${params.contextTags?.[0]?.code || ''}`;
 
     const otherParticipants = room.participants.filter((p) => p.toLowerCase() !== me);
@@ -1861,10 +1965,18 @@ class LiveChatManager {
         } catch {}
       });
 
-      const notifTitle =
-        finalRoom.type === 'group'
-          ? `💬 [${finalRoom.name}] ${message.sender_name}`
-          : `💬 Pesan dari ${message.sender_name}`;
+      const textLower = (message.text || '').toLowerCase();
+      const isMentioned =
+        (Array.isArray(message.mentions) && (message.mentions.includes(me) || message.mentions.includes('semua') || message.mentions.includes('all'))) ||
+        textLower.includes(`@${me}`) ||
+        textLower.includes('@semua') ||
+        textLower.includes('@all');
+
+      const notifTitle = isMentioned
+        ? `🔔 [${finalRoom.name || 'Grup'}] ${message.sender_name} menandai Anda!`
+        : finalRoom.type === 'group'
+        ? `💬 [${finalRoom.name}] ${message.sender_name}`
+        : `💬 Pesan dari ${message.sender_name}`;
       void showPushNotification(notifTitle, {
         body: message.text || '📷 Mengirim lampiran foto',
         tag: `wms-chat-${finalRoom.id}`,

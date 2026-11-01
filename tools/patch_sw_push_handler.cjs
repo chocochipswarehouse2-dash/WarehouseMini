@@ -53,3 +53,4 @@ c = c.replace(oldBlock, newBlock);
 if (crlf) c = c.replace(/\n/g, '\r\n');
 fs.writeFileSync(f, c, 'utf8');
 console.log('patched');
+

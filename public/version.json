@@ -1,13 +1,14 @@
 {
-  "version": "v2.6.30",
-  "versionCode": 290,
+  "version": "v2.6.31",
+  "versionCode": 291,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v290-2037",
-  "releaseTitle": "WMS v2.6.30 — Fix Live Chat Image Sync & Missing DocKey in Query",
+  "buildHash": "wms-261101-v291-2147",
+  "releaseTitle": "WMS v2.6.31 — Live Chat Mentions, Shopee-Style Order Chat & Group Info",
   "releaseNotes": [
-    "Perbaiki fetchSystemDocJson interpolasi docKey Supabase",
-    "Realtime re-render foto pada desktop & PWA",
-    "Passing initialRoomId ke workspace"
+    "Fitur sebut/tag anggota grup (@username)",
+    "Fitur Tanya Pesanan / Chat ke Gudang langsung dari tab Pesanan",
+    "Modal info grup & daftar anggota lengkap dengan keluarkan/keluar grup",
+    "Tombol segarkan sinkronisasi instan Supabase"
   ],
   "minSupportedVersion": "v2.0.0"
 }
