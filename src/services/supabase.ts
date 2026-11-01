@@ -6792,18 +6792,42 @@ export async function fetchRosterShiftList(
   endDate?: string
 ): Promise<RosterShiftRecord[]> {
   try {
-    let query = 'select=*&order=tanggal.asc&limit=10000';
-    if (nik) {
-      query += `&nik=eq.${encodeURIComponent(nik)}`;
+    const PAGE_SIZE = 1000;
+    const MAX_PAGES = 10; // Up to 10,000 rows across pages
+    const allRows: RosterShiftRecord[] = [];
+
+    for (let page = 0; page < MAX_PAGES; page++) {
+      let query = `select=*&order=tanggal.desc,id.desc&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`;
+      if (nik) {
+        query += `&nik=eq.${encodeURIComponent(nik)}`;
+      }
+      if (startDate) {
+        query += `&tanggal=gte.${encodeURIComponent(startDate)}`;
+      }
+      if (endDate) {
+        query += `&tanggal=lte.${encodeURIComponent(endDate)}`;
+      }
+      const batch = await supabaseFetch<RosterShiftRecord[]>('roster_shift', 'GET', null, query);
+      if (!batch || batch.length === 0) break;
+      allRows.push(...batch);
+      if (batch.length < PAGE_SIZE) break;
     }
-    if (startDate) {
-      query += `&tanggal=gte.${encodeURIComponent(startDate)}`;
+
+    // Deduplicate by (nik, tanggal) keeping the newest record (since ordered desc), then sort ascending by tanggal
+    const dedupMap = new Map<string, RosterShiftRecord>();
+    for (const row of allRows) {
+      if (!row.nik || !row.tanggal) continue;
+      const key = `${String(row.nik).trim().toUpperCase()}_${String(row.tanggal).trim()}`;
+      if (!dedupMap.has(key)) {
+        dedupMap.set(key, {
+          ...row,
+          nik: String(row.nik).trim().toUpperCase(),
+          tanggal: String(row.tanggal).trim(),
+        });
+      }
     }
-    if (endDate) {
-      query += `&tanggal=lte.${encodeURIComponent(endDate)}`;
-    }
-    const data = await supabaseFetch<RosterShiftRecord[]>('roster_shift', 'GET', null, query);
-    return data || [];
+
+    return Array.from(dedupMap.values()).sort((a, b) => a.tanggal.localeCompare(b.tanggal));
   } catch (err) {
     console.warn('fetchRosterShiftList error:', err);
     return [];
@@ -7081,31 +7105,246 @@ export async function saveRosterShift(record: Partial<RosterShiftRecord>): Promi
  */
 export async function batchSaveRosterShifts(
   records: Partial<RosterShiftRecord>[]
-): Promise<{ success: number; failed: number; errors: string[] }> {
+): Promise<{ success: number; failed: number; errors: string[]; savedRecords?: RosterShiftRecord[] }> {
+  if (!records || records.length === 0) {
+    return { success: 0, failed: 0, errors: [], savedRecords: [] };
+  }
+
+  const sb = getSupabaseClient();
   let successCount = 0;
   let failCount = 0;
   const errorLogs: string[] = [];
+  const savedRecords: RosterShiftRecord[] = [];
 
-  const CHUNK_SIZE = 15;
-  for (let i = 0; i < records.length; i += CHUNK_SIZE) {
-    const chunk = records.slice(i, i + CHUNK_SIZE);
-    await Promise.all(
-      chunk.map(async (record) => {
-        try {
-          await saveRosterShift(record);
-          successCount++;
-        } catch (err: any) {
-          failCount++;
-          errorLogs.push(`${record.nik || 'Unknown'} (${record.tanggal || '-'}): ${err.message || String(err)}`);
+  // 1. Normalize & deduplicate incoming records by (nik, tanggal)
+  const normalizedMap = new Map<string, Record<string, any>>();
+  let minDate = '9999-12-31';
+  let maxDate = '0000-01-01';
+
+  for (const record of records) {
+    const rawNik = (record.nik || '').trim().toUpperCase();
+    const rawTanggal = (record.tanggal || '').trim();
+    if (!rawNik || !rawTanggal) {
+      failCount++;
+      errorLogs.push(`Data tidak lengkap (NIK/Tanggal kosong)`);
+      continue;
+    }
+
+    if (rawTanggal < minDate) minDate = rawTanggal;
+    if (rawTanggal > maxDate) maxDate = rawTanggal;
+
+    let cleanShift = (record.shift || 'Shift 1').trim();
+    const rawLower = cleanShift.toLowerCase();
+    if (rawLower === 'shift 3' || rawLower === 'shift3' || rawLower === '3') {
+      const dt = new Date(rawTanggal);
+      const dow = dt.getDay();
+      if (dow === 6) cleanShift = 'Shift 3b';
+      else if (dow === 0) cleanShift = 'Libur';
+      else cleanShift = 'Shift 3a';
+    }
+
+    const sLower = cleanShift.toLowerCase();
+    let defaultStart = '08:00';
+    let defaultEnd = '17:00';
+    if (sLower.includes('shift 2') || sLower === '2') {
+      defaultStart = '09:00';
+      defaultEnd = '18:00';
+    } else if (sLower.includes('3b')) {
+      defaultStart = '11:00';
+      defaultEnd = '20:00';
+    } else if (sLower.includes('3a') || sLower.includes('shift 3') || sLower === '3') {
+      defaultStart = '12:00';
+      defaultEnd = '21:00';
+    } else if (
+      sLower.includes('libur') ||
+      sLower.includes('off') ||
+      sLower.includes('cuti') ||
+      sLower.includes('izin') ||
+      sLower.includes('sakit')
+    ) {
+      defaultStart = '';
+      defaultEnd = '';
+    }
+
+    let jamMasuk = record.jam_masuk ? String(record.jam_masuk).replace(/\./g, ':').trim() : '';
+    let jamPulang = record.jam_pulang ? String(record.jam_pulang).replace(/\./g, ':').trim() : '';
+    const isNonWork =
+      sLower.includes('libur') ||
+      sLower.includes('off') ||
+      sLower.includes('cuti') ||
+      sLower.includes('izin') ||
+      sLower.includes('sakit');
+
+    if (isNonWork) {
+      jamMasuk = '';
+      jamPulang = '';
+    } else {
+      if (!jamMasuk) jamMasuk = defaultStart;
+      if (!jamPulang) jamPulang = defaultEnd;
+    }
+
+    const key = `${rawNik}_${rawTanggal}`;
+    normalizedMap.set(key, {
+      ...(record.id ? { id: record.id } : {}),
+      nik: rawNik,
+      tanggal: rawTanggal,
+      shift: cleanShift,
+      jam_masuk: jamMasuk || null,
+      jam_pulang: jamPulang || null,
+      keterangan: record.keterangan ? String(record.keterangan).trim() : null,
+    });
+  }
+
+  const normalizedList = Array.from(normalizedMap.values());
+  if (normalizedList.length === 0) {
+    return { success: 0, failed: failCount, errors: errorLogs, savedRecords: [] };
+  }
+
+  try {
+    // 2. Fetch existing IDs in [minDate, maxDate] in 1 query (up to 1000 rows per page)
+    const existingIdMap = new Map<string, number>();
+    const { data: existingRows } = await sb
+      .from('roster_shift')
+      .select('id,nik,tanggal')
+      .gte('tanggal', minDate)
+      .lte('tanggal', maxDate)
+      .order('id', { ascending: false })
+      .limit(1000);
+
+    if (existingRows) {
+      for (const row of existingRows) {
+        const k = `${String(row.nik || '').trim().toUpperCase()}_${String(row.tanggal || '').trim()}`;
+        if (!existingIdMap.has(k) && row.id) {
+          existingIdMap.set(k, row.id);
         }
-      })
-    );
+      }
+    }
+
+    // 3. Query current max(id) ONCE so new inserts get strictly sequential unique IDs (zero collision on roster_shift_pkey)
+    const { data: maxRow } = await sb
+      .from('roster_shift')
+      .select('id')
+      .order('id', { ascending: false })
+      .limit(1);
+    let nextId = (maxRow && maxRow[0]?.id ? Number(maxRow[0].id) : 1000) + 1;
+
+    const upsertPayloads: Record<string, any>[] = normalizedList.map((item) => {
+      const k = `${item.nik}_${item.tanggal}`;
+      const resolvedId = item.id || existingIdMap.get(k) || nextId++;
+      return {
+        ...item,
+        id: resolvedId,
+      };
+    });
+
+    // 4. Bulk upsert in chunks of 150 rows
+    const BULK_CHUNK_SIZE = 150;
+    for (let i = 0; i < upsertPayloads.length; i += BULK_CHUNK_SIZE) {
+      const chunk = upsertPayloads.slice(i, i + BULK_CHUNK_SIZE);
+      const { data: upsertedData, error: upsertErr } = await sb
+        .from('roster_shift')
+        .upsert(chunk, { onConflict: 'id' })
+        .select();
+
+      if (!upsertErr && upsertedData) {
+        successCount += upsertedData.length;
+        savedRecords.push(...(upsertedData as RosterShiftRecord[]));
+      } else {
+        // Sequential fallback if a chunk encounters any constraint error
+        for (const singleItem of chunk) {
+          try {
+            const saved = await saveRosterShift(singleItem);
+            successCount++;
+            if (saved) savedRecords.push(saved);
+          } catch (singleErr: any) {
+            failCount++;
+            errorLogs.push(
+              `${singleItem.nik} (${singleItem.tanggal}): ${singleErr?.message || String(singleErr)}`
+            );
+          }
+        }
+      }
+    }
+
+    // 5. Auto-sync existing presensi records in [minDate, maxDate] in 1 batch query
+    try {
+      const { data: presensiRows } = await sb
+        .from('presensi')
+        .select('*')
+        .gte('tanggal', minDate)
+        .lte('tanggal', maxDate)
+        .limit(1000);
+
+      if (presensiRows && presensiRows.length > 0) {
+        const presensiUpdates = presensiRows
+          .map((pRecord: any) => {
+            const k = `${String(pRecord.nik || '').trim().toUpperCase()}_${String(pRecord.tanggal || '').trim()}`;
+            const sched = normalizedMap.get(k);
+            if (!sched) return null;
+
+            const cleanShift = String(sched.shift || 'Shift 1');
+            const sLower = cleanShift.toLowerCase();
+            const isOff = sLower.includes('libur') || sLower.includes('off');
+            const isCuti = sLower.includes('cuti') || sLower.includes('izin') || sLower.includes('sakit');
+
+            let newStatus = pRecord.status;
+            let newCatatan = pRecord.catatan || '';
+
+            if (isOff) {
+              newStatus = 'Libur';
+            } else if (isCuti) {
+              newStatus = sLower.includes('cuti') ? 'Cuti' : 'Izin';
+            } else if (pRecord.jam_masuk) {
+              const schedStart = sched.jam_masuk || '08:00';
+              const calc = calculateLatenessStatus(pRecord.jam_masuk, schedStart, 15);
+              newStatus = calc.status;
+              const baseNote = (newCatatan || '')
+                .replace(/\s*\|\s*Terlambat \d+ mnt[^\n]*/gi, '')
+                .replace(/Terlambat \d+ mnt[^\n]*/gi, '')
+                .trim();
+              if (calc.status === 'Terlambat') {
+                newCatatan = baseNote
+                  ? `${baseNote} | Terlambat ${calc.minutesLate} mnt (Shift ${cleanShift})`
+                  : `Terlambat ${calc.minutesLate} mnt (Shift ${cleanShift})`;
+              } else {
+                newCatatan = baseNote;
+              }
+            }
+
+            return {
+              id: pRecord.id,
+              shift: cleanShift,
+              status: newStatus,
+              catatan: newCatatan || null,
+            };
+          })
+          .filter(Boolean) as Array<{ id: number; shift: string; status: string; catatan: string | null }>;
+
+        for (let i = 0; i < presensiUpdates.length; i += 20) {
+          const pChunk = presensiUpdates.slice(i, i + 20);
+          await Promise.all(
+            pChunk.map((u) =>
+              sb
+                .from('presensi')
+                .update({ shift: u.shift, status: u.status, catatan: u.catatan })
+                .eq('id', u.id)
+            )
+          );
+        }
+      }
+    } catch (syncErr) {
+      console.warn('Batch auto-sync presensi warn:', syncErr);
+    }
+  } catch (err: any) {
+    console.error('batchSaveRosterShifts fatal error:', err);
+    throw err;
   }
 
   return {
     success: successCount,
     failed: failCount,
     errors: errorLogs,
+    savedRecords,
   };
 }
 

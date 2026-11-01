@@ -521,12 +521,17 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
     });
   }, [rosterList, selectedDate, selectedShift, selectedDepartment, searchQuery, empMap]);
 
-  // O(1) Lookup map for weekly matrix view
+  // O(1) Lookup map for weekly & monthly matrix views (case-normalized NIK)
   const rosterByNikDate = useMemo(() => {
     const map = new Map<string, RosterShiftRecord>();
     for (const r of rosterList) {
       if (r.nik && r.tanggal) {
-        map.set(`${r.nik}_${r.tanggal}`, r);
+        const normNik = String(r.nik).trim().toUpperCase();
+        const normDate = String(r.tanggal).trim();
+        map.set(`${normNik}_${normDate}`, r);
+        if (r.nik !== normNik) {
+          map.set(`${r.nik}_${normDate}`, r);
+        }
       }
     }
     return map;
@@ -889,11 +894,36 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
       });
 
       const res = await batchSaveRosterShifts(payload);
-      onShowToast(
-        `Berhasil menyimpan ${res.success} jadwal shift bulanan ke database! Presensi otomatis disinkronkan.`,
-        'success'
-      );
-      setMatrixDrafts({});
+      if (res.savedRecords && res.savedRecords.length > 0) {
+        // Optimistically merge saved records into rosterList immediately so cells never flicker
+        setRosterList((prev) => {
+          const map = new Map<string, RosterShiftRecord>();
+          for (const item of prev) {
+            if (item.nik && item.tanggal) {
+              map.set(`${String(item.nik).trim().toUpperCase()}_${String(item.tanggal).trim()}`, item);
+            }
+          }
+          for (const saved of res.savedRecords!) {
+            if (saved.nik && saved.tanggal) {
+              map.set(`${String(saved.nik).trim().toUpperCase()}_${String(saved.tanggal).trim()}`, saved);
+            }
+          }
+          return Array.from(map.values()).sort((a, b) => a.tanggal.localeCompare(b.tanggal));
+        });
+      }
+
+      if (res.failed > 0) {
+        onShowToast(
+          `Tersimpan ${res.success} jadwal, gagal ${res.failed} jadwal: ${res.errors[0] || ''}`,
+          'warning'
+        );
+      } else {
+        onShowToast(
+          `Berhasil menyimpan ${res.success} jadwal shift bulanan penuh ke database!`,
+          'success'
+        );
+        setMatrixDrafts({});
+      }
       await loadData();
     } catch (err: any) {
       onShowToast(`Gagal menyimpan perubahan matriks: ${err?.message || 'Error'}`, 'error');

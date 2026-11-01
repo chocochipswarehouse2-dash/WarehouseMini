@@ -15,20 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.23",
-  "versionCode": 283,
+  "version": "v2.6.24",
+  "versionCode": 284,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v283-1037",
-  "releaseTitle": "WMS v2.6.23 — Pola Reguler Shift Bulanan (Shift 1, Shift 2, Shift 3a/3b, Minggu Off) & Sticky Save Bar",
+  "buildHash": "wms-261101-v284-1052",
+  "releaseTitle": "WMS v2.6.24 — Perbaikan Tampilan & Simpan Penuh Roster Shift Bulanan (1-31)",
   "releaseNotes": [
-    "Aturan baku Pola Reguler Bulanan: Libur Hari Minggu (OFF), Shift 1 (08:00-17:00), Shift 2 (09:00-18:00), serta Shift 3 otomatis memetakan Senin-Jumat ke 3a (12:00-21:00) dan Sabtu ke 3b (11:00-20:00)",
-    "Tombol Simpan Data Shift tersedia di 4 posisi: Floating Bar Melayang di bawah layar, Header Utama, Generator Massal (Isi & Langsung Simpan), serta Footer Tabel",
-    "Pengaturan, Generator, Template, dan Edit Shift dikunci ketat khusus Admin / Superadmin (Operator hanya Mode Tinjau / Read-Only)"
+    "Perbaikan batas 1.000 baris Supabase PostgREST pada fetchRosterShiftList dengan auto-paginasi agar jadwal tanggal 06-31 selalu tampil utuh",
+    "Optimasi batchSaveRosterShifts menggunakan bulk upsert atomik anti-bentrok ID untuk penyimpanan jadwal sebulan penuh dalam hitungan milidetik"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.23",
+    "versionCode": 283,
+    "buildDate": "1 November 2026",
+    "buildHash": "wms-261101-v283-1037",
+    "releaseTitle": "WMS v2.6.23 — Pola Reguler Shift Bulanan (Shift 1, Shift 2, Shift 3a/3b, Minggu Off) & Sticky Save Bar",
+    "releaseNotes": [
+      "Aturan baku Pola Reguler Bulanan: Libur Hari Minggu (OFF), Shift 1 (08:00-17:00), Shift 2 (09:00-18:00), serta Shift 3 otomatis memetakan Senin-Jumat ke 3a (12:00-21:00) dan Sabtu ke 3b (11:00-20:00)",
+      "Tombol Simpan Data Shift tersedia di 4 posisi: Floating Bar Melayang di bawah layar, Header Utama, Generator Massal (Isi & Langsung Simpan), serta Footer Tabel",
+      "Pengaturan, Generator, Template, dan Edit Shift dikunci ketat khusus Admin / Superadmin (Operator hanya Mode Tinjau / Read-Only)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.22",
     "versionCode": 282,
@@ -121,19 +133,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Pembaruan Latar Belakang Zero-Reload: Tombol 'Perbarui' pada widget dan modal kini 100% menyiapkan update di background tanpa me-reload layar aktif",
       "Transisi Alami Aman: Pembaruan baru diaplikasikan otomatis saat berpindah menu atau secara eksplisit jika user memilih muat ulang",
       "Proteksi Pekerjaan Aktif: Mencegah gangguan visual atau kehilangan fokus saat sedang bekerja di tab tertentu"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.15",
-    "versionCode": 275,
-    "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v275-1119",
-    "releaseTitle": "WMS v2.6.15 — Integrasi Fitur Kirim Tugas Picking Massal (WA Grup, App & Cetak A4) & Sinkronisasi Ekosistem AI Studio",
-    "releaseNotes": [
-      "Kirim Tugas Picking Massal: Menambahkan fitur seleksi multi-SJ dan broadcast WhatsApp massal ke Grup Gudang serta pengiriman tugas picking massal ke aplikasi dari Distribusi Store Tab",
-      "Pembaruan Picking Tasks: Dukungan aksi massal kirim WA Picking untuk batch Surat Jalan",
-      "Sinkronisasi Antigravity & AI Studio: Menggabungkan commit terbaru dari Google AI Studio dengan rilis live Antigravity v2.6.14 ke v2.6.15"
     ],
     "minSupportedVersion": "v2.0.0"
   }
