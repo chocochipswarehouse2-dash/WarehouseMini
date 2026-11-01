@@ -58,6 +58,7 @@ export default defineConfig(({ command }) => {
           globIgnores: ['**/version.json', '**/dev-sw.js'],
           importScripts: ['pwa-extras.js'],
           navigateFallback: 'index.html',
+          navigateFallbackDenylist: [/^\/api\//],
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           runtimeCaching: [
             {

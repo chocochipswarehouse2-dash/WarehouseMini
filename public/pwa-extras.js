@@ -659,10 +659,31 @@ self.addEventListener('push', (event) => {
       url: data.url || '/',
       page: data.page || '',
       roomId: data.roomId || '',
+      roomName: data.roomName || '',
+      roomType: data.roomType || '',
+      lastMessageId: data.lastMessageId || '',
     },
   };
 
-  event.waitUntil(safeShowNotification(data.title, options));
+  // Notifikasi Live Chat dari Web Push: sediakan Balas Cepat & Tandai Dibaca (seperti WhatsApp)
+  if (data.chat && data.roomId) {
+    options.vibrate = [200, 100, 200];
+    options.actions = [
+      { action: 'chat_reply', type: 'text', title: '💬 Balas Cepat', placeholder: 'Ketik balasan pesan...' },
+      { action: 'chat_mark_read', title: '✓✓ Tandai Dibaca' },
+    ];
+  }
+
+  event.waitUntil(
+    (async () => {
+      // Jika aplikasi sedang terbuka & terlihat, tab utama sudah menampilkan toast + bunyi sendiri → hindari notifikasi ganda
+      try {
+        const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+        if (clientList.some((c) => c.focused && c.visibilityState === 'visible')) return;
+      } catch {}
+      await safeShowNotification(data.title, options);
+    })()
+  );
 });
 
 self.addEventListener('notificationclick', (event) => {

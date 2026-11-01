@@ -1,13 +1,13 @@
 {
-  "version": "v2.6.25",
-  "versionCode": 285,
+  "version": "v2.6.26",
+  "versionCode": 286,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v285-1831",
-  "releaseTitle": "WMS v2.6.25 — Fluid Full-Width Layout & Anti-Dead Zones pada Zoom Out",
+  "buildHash": "wms-261101-v286-1846",
+  "releaseTitle": "WMS v2.6.26 — Web Push: Notifikasi Pesanan & Chat Saat Aplikasi Ditutup",
   "releaseNotes": [
-    "Fluid Workspace Architecture: Eliminasi pembatas sempit max-w-7xl dan max-w-1600px di seluruh modul utama",
-    "Dynamic Grid Scaling: Rak visual otomatis menambah kolom hingga 12-14 kolom saat zoom out atau widescreen",
-    "Matriks Roster & Spreadsheet Lega: Kalender 31 hari dan tabel inventory kini memanfaatkan 100% lebar layar"
+    "Web Push (VAPID) gaya WhatsApp: notifikasi Pesanan Baru, Retur, SPS, dan Live Chat tetap masuk walau aplikasi / browser ditutup",
+    "Pendaftaran perangkat otomatis setelah izin notifikasi diberikan; berhenti otomatis saat logout",
+    "Balas Cepat & Tandai Dibaca langsung dari notifikasi chat; tidak ada notifikasi ganda saat aplikasi sedang terbuka"
   ],
   "minSupportedVersion": "v2.0.0"
 }

@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.25",
-  "versionCode": 285,
+  "version": "v2.6.26",
+  "versionCode": 286,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v285-1831",
-  "releaseTitle": "WMS v2.6.25 — Fluid Full-Width Layout & Anti-Dead Zones pada Zoom Out",
+  "buildHash": "wms-261101-v286-1846",
+  "releaseTitle": "WMS v2.6.26 — Web Push: Notifikasi Pesanan & Chat Saat Aplikasi Ditutup",
   "releaseNotes": [
-    "Fluid Workspace Architecture: Eliminasi pembatas sempit max-w-7xl dan max-w-1600px di seluruh modul utama",
-    "Dynamic Grid Scaling: Rak visual otomatis menambah kolom hingga 12-14 kolom saat zoom out atau widescreen",
-    "Matriks Roster & Spreadsheet Lega: Kalender 31 hari dan tabel inventory kini memanfaatkan 100% lebar layar"
+    "Web Push (VAPID) gaya WhatsApp: notifikasi Pesanan Baru, Retur, SPS, dan Live Chat tetap masuk walau aplikasi / browser ditutup",
+    "Pendaftaran perangkat otomatis setelah izin notifikasi diberikan; berhenti otomatis saat logout",
+    "Balas Cepat & Tandai Dibaca langsung dari notifikasi chat; tidak ada notifikasi ganda saat aplikasi sedang terbuka"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.25",
+    "versionCode": 285,
+    "buildDate": "1 November 2026",
+    "buildHash": "wms-261101-v285-1831",
+    "releaseTitle": "WMS v2.6.25 — Fluid Full-Width Layout & Anti-Dead Zones pada Zoom Out",
+    "releaseNotes": [
+      "Fluid Workspace Architecture: Eliminasi pembatas sempit max-w-7xl dan max-w-1600px di seluruh modul utama",
+      "Dynamic Grid Scaling: Rak visual otomatis menambah kolom hingga 12-14 kolom saat zoom out atau widescreen",
+      "Matriks Roster & Spreadsheet Lega: Kalender 31 hari dan tabel inventory kini memanfaatkan 100% lebar layar"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.24",
     "versionCode": 284,
@@ -119,20 +132,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Integrasi Google Calendar: Sinkronisasi 2-arah agenda WMS dan Google Calendar via GAS backend akun utama",
       "Google Calendar & Keep Style: Tampilan kalender modern (Month & Week view), status sync real-time, dan quick note bar",
       "Perbaikan metode getTotalUnreadCount, getOnlineUsers, dan getVisibleRooms pada LiveChatManager"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.17",
-    "versionCode": 277,
-    "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v277-0557",
-    "releaseTitle": "WMS v2.6.17 — Live Chat & Ruang Diskusi Real-Time + Balas Cepat Notifikasi",
-    "releaseNotes": [
-      "Fitur Live Chat & Ruang Diskusi Grup Real-Time (Floating Drawer & Halaman Penuh)",
-      "Penyimpanan Permanen 3-Tier Hemat Kuota (IndexedDB + wms_system_docs + Google Drive CDN 0 Byte Egress)",
-      "Aturan Akuntabilitas Edit & Hapus Pesan (Maksimal 5 Menit & Belum Dibaca User Lain)",
-      "Notifikasi Background & Balas Cepat Langsung dari Bar Notifikasi (Tanpa Buka Aplikasi), Tersinkron dengan Pesanan Baru & Retur"
     ],
     "minSupportedVersion": "v2.0.0"
   }

@@ -179,6 +179,7 @@ import {
   syncNotifiedOrdersToServiceWorker,
   triggerServiceWorkerCheckNow,
 } from './services/pushNotification';
+import { subscribeToWebPush, unsubscribeFromWebPush } from './services/webPush';
 import { releaseScreenWakeLock, requestScreenWakeLock } from './services/wakeLock';
 import { isRunningInIframe } from './services/orientationLock';
 import { getStoredGasEndpoint, fetchWmsSettings } from './services/settings';
@@ -1575,6 +1576,17 @@ export default function App() {
   const handleIncomingSpsRef = useRef(handleIncomingSpsNotification);
   handleIncomingSpsRef.current = handleIncomingSpsNotification;
 
+  // Web Push (VAPID): daftarkan perangkat agar notifikasi tetap masuk walau aplikasi / browser ditutup
+  useEffect(() => {
+    if (!session?.username || notificationPermission !== 'granted') return;
+    void subscribeToWebPush({
+      username: session.username,
+      isAdmin: Boolean(isSuperadmin(session)),
+      isPicker: Boolean(canAccessPage(session, 'picking_tasks')),
+      storeName: session.store_name || session.store_code || '',
+    });
+  }, [session, notificationPermission]);
+
   // Background, Service Worker & Screen-Wake Delta Poller (Unified: Live Chat untuk Semua User + Pesanan/SPS/Retur untuk Admin & Picker)
   useEffect(() => {
     const userIsAdmin = Boolean(session && isSuperadmin(session));
@@ -2017,6 +2029,7 @@ export default function App() {
 
   // Handle Logout
   const handleLogout = () => {
+    void unsubscribeFromWebPush();
     liveChatManager.teardown();
     localStorage.removeItem('wms_session_token');
     localStorage.removeItem('wms_session_username');
