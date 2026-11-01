@@ -391,6 +391,7 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
 
   // Shopee-Style "Chat ke Gudang" dari pesanan
   const handleChatWarehouse = (order: ManualShipmentOrder) => {
+    setSelectedOrderDetails(null);
     const itemsSummary = Array.isArray(order.items)
       ? order.items.map((i) => `${i.nama_produk || i.sku} (${i.qty}x)`).join(', ')
       : (order as any).rincian_produk || '';

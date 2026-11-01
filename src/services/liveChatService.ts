@@ -635,10 +635,26 @@ class LiveChatManager {
     this.pendingOrderContext = orderData;
     this.setFloatingOpen(true);
     const room = await this.openOrCreateDirectRoom(targetProfile);
-    if (room && typeof window !== 'undefined') {
-      window.dispatchEvent(
-        new CustomEvent('wms:open_order_chat', { detail: { roomId: room.id, orderData } })
-      );
+    if (room) {
+      await this.selectRoom(room.id);
+      if (typeof window !== 'undefined') {
+        // 1. Arahkan halaman langsung ke Live Chat (seperti Shopee Chat ke Penjual)
+        window.dispatchEvent(
+          new CustomEvent('wms_navigate_page', { detail: { page: 'live_chat' } })
+        );
+
+        // 2. Buka room tersebut secara eksplisit
+        window.dispatchEvent(
+          new CustomEvent('wms_open_live_chat_room', {
+            detail: { roomId: room.id, openFullPage: true }
+          })
+        );
+
+        // 3. Pasang order context pada room
+        window.dispatchEvent(
+          new CustomEvent('wms:open_order_chat', { detail: { roomId: room.id, orderData } })
+        );
+      }
     }
   }
 
@@ -1441,11 +1457,16 @@ class LiveChatManager {
 
     await idbSaveRooms([room]);
 
-    // Sync with server index
+    // Sync with server index without losing any existing rooms from server or memory
     const serverRooms = (await fetchSystemDocJson<ChatRoom[]>(ROOMS_INDEX_DOC_KEY)) || [];
     const map = new Map<string, ChatRoom>();
     for (const r of serverRooms) {
       if (r?.id) map.set(r.id, r);
+    }
+    for (const r of this.state.rooms) {
+      if (r?.id && !map.has(r.id)) {
+        map.set(r.id, r);
+      }
     }
     map.set(room.id, room);
     const updatedList = Array.from(map.values()).sort(
@@ -1622,6 +1643,11 @@ class LiveChatManager {
     const map = new Map<string, ChatRoom>();
     for (const r of serverRooms) {
       if (r?.id) map.set(r.id, r);
+    }
+    for (const r of this.state.rooms) {
+      if (r?.id && !map.has(r.id)) {
+        map.set(r.id, r);
+      }
     }
     map.set(updatedRoom.id, updatedRoom);
     const sortedRooms = Array.from(map.values()).sort(

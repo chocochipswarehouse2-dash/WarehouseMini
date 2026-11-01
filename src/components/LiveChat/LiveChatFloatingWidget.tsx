@@ -43,9 +43,15 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
 
   useEffect(() => {
     if (!hasAccess) return;
-    const unsubState = liveChatManager.subscribe(() => {
+    const unsubState = liveChatManager.subscribe((state) => {
       setRooms([...liveChatManager.getVisibleRooms()]);
       setOnlineUsers([...liveChatManager.getOnlineUsers()]);
+      if (typeof state.isFloatingOpen === 'boolean' && state.isFloatingOpen !== isOpen) {
+        setIsOpen(state.isFloatingOpen);
+      }
+      if (state.activeRoomId && state.activeRoomId !== selectedRoomId) {
+        setSelectedRoomId(state.activeRoomId);
+      }
     });
 
     const unsubIncoming = liveChatManager.subscribeIncomingMessage((room, message) => {

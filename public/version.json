@@ -1,12 +1,13 @@
 {
-  "version": "v2.6.34",
-  "versionCode": 294,
+  "version": "v2.6.35",
+  "versionCode": 295,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v294-2218",
-  "releaseTitle": "WMS v2.6.34 — Perbaikan Pesanan Saya (MessageSquare) & Live Chat Order Card",
+  "buildHash": "wms-261101-v295-2242",
+  "releaseTitle": "WMS v2.6.35 — Navigasi Otomatis Chat Gudang & Sinkronisasi Multidevice HP/Laptop",
   "releaseNotes": [
-    "Perbaiki error MessageSquare is not defined pada tab Pesanan Saya",
-    "Rapikan order context card dan autocomplete mention pada Live Chat"
+    "Otomatis mengarahkan ke tab Live Chat dan membuka room dengan draft pesan saat klik Chat Gudang",
+    "Perbaiki sinkronisasi room multidevice (HP dan Laptop) agar percakapan Ria Nur Fiana, Nanang, dan Tim QC tampil konsisten",
+    "Pencegahan race-condition penimpaan daftar ruang obrolan di server"
   ],
   "minSupportedVersion": "v2.0.0"
 }

@@ -15,19 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.34",
-  "versionCode": 294,
+  "version": "v2.6.35",
+  "versionCode": 295,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v294-2218",
-  "releaseTitle": "WMS v2.6.34 — Perbaikan Pesanan Saya (MessageSquare) & Live Chat Order Card",
+  "buildHash": "wms-261101-v295-2242",
+  "releaseTitle": "WMS v2.6.35 — Navigasi Otomatis Chat Gudang & Sinkronisasi Multidevice HP/Laptop",
   "releaseNotes": [
-    "Perbaiki error MessageSquare is not defined pada tab Pesanan Saya",
-    "Rapikan order context card dan autocomplete mention pada Live Chat"
+    "Otomatis mengarahkan ke tab Live Chat dan membuka room dengan draft pesan saat klik Chat Gudang",
+    "Perbaiki sinkronisasi room multidevice (HP dan Laptop) agar percakapan Ria Nur Fiana, Nanang, dan Tim QC tampil konsisten",
+    "Pencegahan race-condition penimpaan daftar ruang obrolan di server"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.34",
+    "versionCode": 294,
+    "buildDate": "1 November 2026",
+    "buildHash": "wms-261101-v294-2218",
+    "releaseTitle": "WMS v2.6.34 — Perbaikan Pesanan Saya (MessageSquare) & Live Chat Order Card",
+    "releaseNotes": [
+      "Perbaiki error MessageSquare is not defined pada tab Pesanan Saya",
+      "Rapikan order context card dan autocomplete mention pada Live Chat"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.33",
     "versionCode": 293,
@@ -112,19 +125,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Kompatibilitas sb_secret_ pada backend push",
       "Headers Authorization Bearer universal"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.26",
-    "versionCode": 286,
-    "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v286-1846",
-    "releaseTitle": "WMS v2.6.26 — Web Push: Notifikasi Pesanan & Chat Saat Aplikasi Ditutup",
-    "releaseNotes": [
-      "Web Push (VAPID) gaya WhatsApp: notifikasi Pesanan Baru, Retur, SPS, dan Live Chat tetap masuk walau aplikasi / browser ditutup",
-      "Pendaftaran perangkat otomatis setelah izin notifikasi diberikan; berhenti otomatis saat logout",
-      "Balas Cepat & Tandai Dibaca langsung dari notifikasi chat; tidak ada notifikasi ganda saat aplikasi sedang terbuka"
     ],
     "minSupportedVersion": "v2.0.0"
   }

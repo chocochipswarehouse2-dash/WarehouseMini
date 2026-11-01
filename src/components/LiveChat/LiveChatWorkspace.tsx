@@ -159,6 +159,18 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
       }
     };
     window.addEventListener('wms:open_order_chat', handleOpenOrder);
+
+    if (liveChatManager.pendingOrderContext) {
+      const oc = liveChatManager.pendingOrderContext;
+      setPendingOrderContext(oc);
+      setInputText((prev) =>
+        prev
+          ? prev
+          : `Halo Tim Gudang, mau konfirmasi mengenai pesanan #${oc.order_id} (${oc.store_name || ''}) ini...`
+      );
+      setTimeout(() => textareaRef.current?.focus(), 250);
+    }
+
     return () => window.removeEventListener('wms:open_order_chat', handleOpenOrder);
   }, []);
 
