@@ -15,31 +15,56 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.31",
-  "versionCode": 291,
+  "version": "v2.6.33",
+  "versionCode": 293,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v291-2147",
-  "releaseTitle": "WMS v2.6.31 — Live Chat Mentions, Shopee-Style Order Chat & Group Info",
+  "buildHash": "wms-261101-v293-1448",
+  "releaseTitle": "WMS v2.6.33 — Tabel Riwayat Peminjaman & Tanggal Kembali + Integrasi 3 Tab Cetak Label & Barcode",
   "releaseNotes": [
-    "Fitur sebut/tag anggota grup (@username)",
-    "Fitur Tanya Pesanan / Chat ke Gudang langsung dari tab Pesanan",
-    "Modal info grup & daftar anggota lengkap dengan keluarkan/keluar grup",
-    "Tombol segarkan sinkronisasi instan Supabase"
+    "Riwayat Peminjaman (SPS) kini dilengkapi tampilan Tabel proporsional (selain Kartu & Panel Rapi), filter KPI interaktif, ekspor CSV, serta pencatatan Rencana & Tanggal Kembali Aktual beserta durasi pinjam dan catatan pengembalian.",
+    "Halaman Cetak kini disatukan menjadi 1 menu 'Cetak Label & Barcode' dengan 3 tab rapi: QR Prefix, Label Paket, dan Cetak Barcode.",
+    "Tampilan tab QR Prefix dirapikan total menjadi layout 2 kolom (Generator & Antrean di kiri, Pratinjau Stiker & Kustomisasi di kanan) tanpa duplikasi header bertumpuk."
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
   {
+    "version": "v2.6.32",
+    "versionCode": 292,
+    "buildDate": "1 November 2026",
+    "buildHash": "wms-261101-v292-1417",
+    "releaseTitle": "WMS v2.6.32 — Konsolidasi 4 Tab Inventory (Termasuk Scanner Barcode) & 4 Tab Loading Dock (Termasuk Tugas Picking)",
+    "releaseNotes": [
+      "Integrasi Scanner Barcode dan Log Produk ke dalam 4 Tab halaman Inventory (menghilangkan duplikasi menu Scanner",
+      "LOG)",
+      "Integrasi Tugas Picking sebagai tab ke-4 di halaman Loading Dock (Penerimaan, Pengiriman, Transfer Order, Tugas Picking)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
+  {
+    "version": "v2.6.31",
+    "versionCode": 291,
+    "buildDate": "1 November 2026",
+    "buildHash": "wms-261101-v291-1347",
+    "releaseTitle": "WMS v2.6.31 — Penambahan Kolom Stok pada Tabel Log Produk di Detail Inventory",
+    "releaseNotes": [
+      "Penambahan kolom Stok (saldo stok rak saat transaksi) pada tabel dan kartu Log Produk di modal Detail Produk Inventory agar identik dengan tabel Log Produk utama"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
+  {
     "version": "v2.6.30",
     "versionCode": 290,
     "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v290-2037",
-    "releaseTitle": "WMS v2.6.30 — Fix Live Chat Image Sync & Missing DocKey in Query",
+    "buildHash": "wms-261101-v290-1336",
+    "releaseTitle": "WMS v2.6.30 — Redesain Scanner | Log Produk & Tampilan Tabel Log Produk di Detail Inventory",
     "releaseNotes": [
-      "Perbaiki fetchSystemDocJson interpolasi docKey Supabase",
-      "Realtime re-render foto pada desktop & PWA",
-      "Passing initialRoomId ke workspace"
+      "Perubahan nama Histori Mutasi & Mutasi menjadi Log Produk di seluruh aplikasi",
+      "Penambahan tampilan Tabel (Table View) pada Log Produk di modal Detail Produk Inventory seperti pada halaman Scanner",
+      "Log Produk",
+      "Redesain tombol tab atas Scanner",
+      "Log Produk menjadi lebih proporsional disertai 3 opsi tata letak (Panel Rapi, Tabel, Ringkas)"
     ],
     "minSupportedVersion": "v2.0.0"
   },
@@ -101,31 +126,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Fluid Workspace Architecture: Eliminasi pembatas sempit max-w-7xl dan max-w-1600px di seluruh modul utama",
       "Dynamic Grid Scaling: Rak visual otomatis menambah kolom hingga 12-14 kolom saat zoom out atau widescreen",
       "Matriks Roster & Spreadsheet Lega: Kalender 31 hari dan tabel inventory kini memanfaatkan 100% lebar layar"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.24",
-    "versionCode": 284,
-    "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v284-1052",
-    "releaseTitle": "WMS v2.6.24 — Perbaikan Tampilan & Simpan Penuh Roster Shift Bulanan (1-31)",
-    "releaseNotes": [
-      "Perbaikan batas 1.000 baris Supabase PostgREST pada fetchRosterShiftList dengan auto-paginasi agar jadwal tanggal 06-31 selalu tampil utuh",
-      "Optimasi batchSaveRosterShifts menggunakan bulk upsert atomik anti-bentrok ID untuk penyimpanan jadwal sebulan penuh dalam hitungan milidetik"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.23",
-    "versionCode": 283,
-    "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v283-1037",
-    "releaseTitle": "WMS v2.6.23 — Pola Reguler Shift Bulanan (Shift 1, Shift 2, Shift 3a/3b, Minggu Off) & Sticky Save Bar",
-    "releaseNotes": [
-      "Aturan baku Pola Reguler Bulanan: Libur Hari Minggu (OFF), Shift 1 (08:00-17:00), Shift 2 (09:00-18:00), serta Shift 3 otomatis memetakan Senin-Jumat ke 3a (12:00-21:00) dan Sabtu ke 3b (11:00-20:00)",
-      "Tombol Simpan Data Shift tersedia di 4 posisi: Floating Bar Melayang di bawah layar, Header Utama, Generator Massal (Isi & Langsung Simpan), serta Footer Tabel",
-      "Pengaturan, Generator, Template, dan Edit Shift dikunci ketat khusus Admin / Superadmin (Operator hanya Mode Tinjau / Read-Only)"
     ],
     "minSupportedVersion": "v2.0.0"
   }

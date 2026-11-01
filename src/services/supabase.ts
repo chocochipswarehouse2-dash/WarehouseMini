@@ -5014,6 +5014,37 @@ export async function deletePeminjamanFromSupabase(noPeminjaman: string): Promis
   }
 }
 
+function encodePeminjamanKeterangan(record: Partial<PeminjamanRecord>): string {
+  const parts: string[] = [];
+  const wa = (record.noWaPeminjam || record.no_wa_peminjam || '').trim();
+  const est = (record.estimasiKembali || '').trim();
+  const note = (record.catatanKembali || '').trim();
+  if (wa) parts.push(`WA:${wa}`);
+  if (est) parts.push(`EST:${est}`);
+  if (note) parts.push(`NOTE:${note.replace(/\|/g, '/')}`);
+  if (parts.length > 0) return parts.join(' | ');
+  return (record.keterangan || '').trim();
+}
+
+function parsePeminjamanKeterangan(raw: string | null | undefined): {
+  wa: string;
+  estimasiKembali: string;
+  catatanKembali: string;
+} {
+  const text = String(raw || '').trim();
+  if (!text) return { wa: '', estimasiKembali: '', catatanKembali: '' };
+  const waMatch = text.match(/WA:([0-9+\s-]+)/i);
+  const estMatch = text.match(/EST:(\d{4}-\d{2}-\d{2})/i);
+  const noteMatch = text.match(/NOTE:([^|]+)/i);
+  const wa = waMatch ? waMatch[1].trim() : '';
+  const estimasiKembali = estMatch ? estMatch[1].trim() : '';
+  let catatanKembali = noteMatch ? noteMatch[1].trim() : '';
+  if (!wa && !estimasiKembali && !catatanKembali && !text.startsWith('WA:')) {
+    catatanKembali = text;
+  }
+  return { wa, estimasiKembali, catatanKembali };
+}
+
 export async function updatePeminjamanInSupabase(record: PeminjamanRecord): Promise<boolean> {
   const no = record.noPeminjaman || record.no_sps || record.id;
   if (!no) return false;
@@ -5023,6 +5054,12 @@ export async function updatePeminjamanInSupabase(record: PeminjamanRecord): Prom
 
     // 2. Re-insert updated items with fresh IDs
     const baseId = Math.floor(Date.now() / 1000) * 1000;
+    const tglKembaliVal =
+      record.status === 'Dikembalikan'
+        ? (record.tglKembali || record.tanggal_kembali || new Date().toISOString().slice(0, 10))
+        : (record.tglKembali || record.tanggal_kembali || null);
+    const encodedKet = encodePeminjamanKeterangan(record);
+
     const payload = (record.items || []).map((it, idx) => {
       const rawSize = (it.size || '').trim();
       const cleanSize = (rawSize && rawSize !== '-') 
@@ -5035,6 +5072,7 @@ export async function updatePeminjamanInSupabase(record: PeminjamanRecord): Prom
         pic: record.namaPeminjam || record.nama_peminjam || '',
         keperluan: record.keperluan || '',
         tanggal_pinjam: record.tglPinjam || record.tanggal_pinjam || '',
+        tanggal_kembali: tglKembaliVal,
         sku: it.sku || `SKU-${Date.now()}`,
         nama_produk: rawNama,
         size: cleanSize,
@@ -5042,7 +5080,7 @@ export async function updatePeminjamanInSupabase(record: PeminjamanRecord): Prom
         lokasi: it.lokasi || 'BLOK F',
         status: record.status || 'Dipinjam',
         operator: record.username || record.operator || 'System',
-        keterangan: (record.noWaPeminjam || record.no_wa_peminjam) ? `WA:${record.noWaPeminjam || record.no_wa_peminjam}` : (record.keterangan || '')
+        keterangan: encodedKet,
       };
     });
 
@@ -5053,7 +5091,7 @@ export async function updatePeminjamanInSupabase(record: PeminjamanRecord): Prom
     // 3. Update local cache
     try {
       const cached: PeminjamanRecord[] = JSON.parse(localStorage.getItem('wms_peminjaman_cache') || '[]');
-      const updated = cached.map(c => (c.noPeminjaman === no || c.id === no) ? record : c);
+      const updated = cached.map(c => (c.noPeminjaman === no || c.id === no) ? { ...record, tglKembali: tglKembaliVal || undefined, tanggal_kembali: tglKembaliVal || undefined } : c);
       localStorage.setItem('wms_peminjaman_cache', JSON.stringify(updated));
       localStorage.setItem('wms_peminjaman_records', JSON.stringify(updated));
     } catch {}
@@ -5075,8 +5113,9 @@ export async function fetchPeminjamanFromSupabase(limit = 100): Promise<Peminjam
       
       for (const row of data) {
         const no = row.no_peminjaman;
-        const waMatch = (row.keterangan || '').match(/WA:([0-9+\s-]+)/);
-        const waFound = waMatch ? waMatch[1].trim() : (row.no_wa || row.no_wa_peminjam || '');
+        const parsedKet = parsePeminjamanKeterangan(row.keterangan);
+        const waFound = parsedKet.wa || row.no_wa || row.no_wa_peminjam || '';
+        const tglKembaliRow = row.tanggal_kembali ? String(row.tanggal_kembali).slice(0, 10) : '';
         if (!groups.has(no)) {
           groups.set(no, {
              id: no,
@@ -5086,11 +5125,29 @@ export async function fetchPeminjamanFromSupabase(limit = 100): Promise<Peminjam
              no_wa_peminjam: waFound,
              keperluan: row.keperluan || '',
              tglPinjam: row.tanggal_pinjam || '',
+             tanggal_pinjam: row.tanggal_pinjam || '',
+             tglKembali: tglKembaliRow || undefined,
+             tanggal_kembali: tglKembaliRow || undefined,
+             estimasiKembali: parsedKet.estimasiKembali || undefined,
+             catatanKembali: parsedKet.catatanKembali || undefined,
+             keterangan: row.keterangan || '',
              timestamp: row.created_at || new Date().toISOString(),
              status: row.status || 'Dipinjam',
              username: row.operator || 'System',
              items: []
           });
+        } else {
+          const existingGroup = groups.get(no);
+          if (!existingGroup.tglKembali && tglKembaliRow) {
+            existingGroup.tglKembali = tglKembaliRow;
+            existingGroup.tanggal_kembali = tglKembaliRow;
+          }
+          if (!existingGroup.estimasiKembali && parsedKet.estimasiKembali) {
+            existingGroup.estimasiKembali = parsedKet.estimasiKembali;
+          }
+          if (!existingGroup.catatanKembali && parsedKet.catatanKembali) {
+            existingGroup.catatanKembali = parsedKet.catatanKembali;
+          }
         }
         groups.get(no).items.push({
            produk: row.nama_produk || row.sku,
@@ -5131,17 +5188,38 @@ export async function fetchPeminjamanFromSupabase(limit = 100): Promise<Peminjam
 export async function savePeminjamanToSupabase(record: PeminjamanRecord): Promise<boolean> {
   try {
     const check = await supabaseFetch<any[]>('peminjaman', 'GET', null, `no_peminjaman=eq.${encodeURIComponent(record.noPeminjaman || '')}&limit=1`);
+    const tglKembaliVal =
+      record.status === 'Dikembalikan'
+        ? (record.tglKembali || record.tanggal_kembali || new Date().toISOString().slice(0, 10))
+        : (record.tglKembali || record.tanggal_kembali || null);
+    const encodedKet = encodePeminjamanKeterangan(record);
+
     if (check && check.length > 0) {
       await supabaseFetch(
         'peminjaman',
         'PATCH',
-        { status: record.status || 'Dipinjam', tanggal_kembali: null },
+        {
+          status: record.status || 'Dipinjam',
+          tanggal_kembali: tglKembaliVal,
+          keterangan: encodedKet,
+        },
         `no_peminjaman=eq.${encodeURIComponent(record.noPeminjaman || '')}`
       );
       // Keep local cache updated
       try {
         const cached: PeminjamanRecord[] = JSON.parse(localStorage.getItem('wms_peminjaman_cache') || '[]');
-        const updated = cached.map(c => c.noPeminjaman === record.noPeminjaman ? { ...c, status: record.status || 'Dipinjam' } : c);
+        const updated = cached.map(c =>
+          c.noPeminjaman === record.noPeminjaman
+            ? {
+                ...c,
+                status: record.status || 'Dipinjam',
+                tglKembali: tglKembaliVal || undefined,
+                tanggal_kembali: tglKembaliVal || undefined,
+                estimasiKembali: record.estimasiKembali,
+                catatanKembali: record.catatanKembali,
+              }
+            : c
+        );
         localStorage.setItem('wms_peminjaman_cache', JSON.stringify(updated));
       } catch {}
       return true;
@@ -5162,6 +5240,7 @@ export async function savePeminjamanToSupabase(record: PeminjamanRecord): Promis
         pic: record.namaPeminjam,
         keperluan: record.keperluan,
         tanggal_pinjam: record.tglPinjam,
+        tanggal_kembali: tglKembaliVal,
         sku: it.sku || `SKU-${Date.now()}`,
         nama_produk: formattedNama,
         size: cleanSize,
@@ -5169,7 +5248,7 @@ export async function savePeminjamanToSupabase(record: PeminjamanRecord): Promis
         lokasi: it.lokasi || 'BLOK F',
         status: record.status || 'Dipinjam',
         operator: record.username || 'System',
-        keterangan: (record.noWaPeminjam || record.no_wa_peminjam) ? `WA:${record.noWaPeminjam || record.no_wa_peminjam}` : (record.keterangan || '')
+        keterangan: encodedKet,
       };
     });
 
@@ -5199,12 +5278,28 @@ export async function savePeminjamanToSupabase(record: PeminjamanRecord): Promis
   }
 }
 
-export async function returnPeminjamanSupabase(noPeminjaman: string): Promise<boolean> {
+export async function returnPeminjamanSupabase(
+  noPeminjaman: string,
+  tanggalKembali?: string,
+  catatanKembali?: string,
+  existingRecord?: PeminjamanRecord
+): Promise<boolean> {
   try {
+    const finalDate = tanggalKembali || new Date().toISOString().slice(0, 10);
+    const patchBody: Record<string, any> = {
+      status: 'Dikembalikan',
+      tanggal_kembali: finalDate,
+    };
+    if (existingRecord || catatanKembali !== undefined) {
+      patchBody.keterangan = encodePeminjamanKeterangan({
+        ...(existingRecord || {}),
+        catatanKembali: catatanKembali !== undefined ? catatanKembali : existingRecord?.catatanKembali,
+      });
+    }
     await supabaseFetch(
       'peminjaman',
       'PATCH',
-      { status: 'Dikembalikan', tanggal_kembali: new Date().toISOString().slice(0, 10) },
+      patchBody,
       `no_peminjaman=ilike.${encodeURIComponent(noPeminjaman)}*`
     );
     return true;

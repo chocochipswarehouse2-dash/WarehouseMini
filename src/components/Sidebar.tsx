@@ -141,11 +141,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     hasPermission(session, 'tab_ops_resolusi_rating');
   const canProduksi = userIsAdmin || hasPermission(session, 'menu_ops_produksi') ||
     hasPermission(session, 'tab_ops_loading_produksi');
+  const canPicking = userIsAdmin || hasPermission(session, 'menu_ops_picking');
   const canLoadingDock = userIsAdmin || hasPermission(session, 'menu_ops_loading_dock') ||
     hasPermission(session, 'tab_ops_loading_penerimaan') ||
     hasPermission(session, 'tab_ops_loading_pengiriman') ||
     hasPermission(session, 'tab_ops_loading_transfer_order') ||
-    hasPermission(session, 'tab_ops_pesanan_transfer_order');
+    hasPermission(session, 'tab_ops_pesanan_transfer_order') ||
+    canPicking;
   const canMutasi = userIsAdmin || hasPermission(session, 'menu_ops_mutasi') ||
     hasPermission(session, 'tab_ops_mutasi_scanner') ||
     hasPermission(session, 'tab_ops_mutasi_log');
@@ -156,7 +158,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     hasPermission(session, 'tab_ops_qc_defect');
   const canInventory = userIsAdmin || hasPermission(session, 'menu_ops_inventory');
   const canKatalogProduk = userIsAdmin || hasPermission(session, 'menu_ops_katalog_produk');
-  const canPicking = userIsAdmin || hasPermission(session, 'menu_ops_picking');
   const canPeminjaman = userIsAdmin || hasPermission(session, 'menu_ops_peminjaman');
   const canCetakLabel = userIsAdmin || hasPermission(session, 'action_cetak_label');
   const canCetakBarcode = userIsAdmin || hasPermission(session, 'menu_ops_cetak_barcode') || hasPermission(session, 'action_cetak_barcode') || canCetakLabel || canInventory;
@@ -231,16 +232,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Loading Dock',
       shortLabel: 'Loading Dock',
       icon: Truck,
-      description: 'Penerimaan & Pengiriman Terpadu',
+      description: 'Penerimaan, Pengiriman, TO & Picking',
       access: canLoadingDock,
     },
     {
-      id: 'operasi_stok' as ActivePage,
-      label: 'Scanner | LOG',
-      shortLabel: 'Scanner | LOG',
-      icon: ScanBarcode,
-      description: 'Scan Rak & Mutasi Log',
-      access: canMutasi,
+      id: 'inventory' as ActivePage,
+      label: 'Inventory',
+      shortLabel: 'Inventory',
+      icon: Layers,
+      description: 'Kapasitas, Stok, Scanner & Log',
+      access: canInventory || canMutasi,
+      badgeText: totalScannedCount > 0 ? `${totalScannedCount} SCAN` : undefined,
     },
     {
       id: 'katalog_produk' as ActivePage,
@@ -259,22 +261,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       access: canQC,
     },
     {
-      id: 'inventory' as ActivePage,
-      label: 'Inventory',
-      shortLabel: 'Inventory',
-      icon: Layers,
-      description: 'Stok fisik rak & per SKU',
-      access: canInventory,
-    },
-    {
-      id: 'picking_tasks' as ActivePage,
-      label: 'Tugas Picking',
-      shortLabel: 'Picking',
-      icon: Package,
-      description: 'Surat Jalan & Ambil Barang',
-      access: canPicking,
-    },
-    {
       id: 'peminjaman' as ActivePage,
       label: 'Peminjaman (SPS)',
       shortLabel: 'Pinjam',
@@ -284,19 +270,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'cetak_label' as ActivePage,
-      label: 'Cetak Label',
-      shortLabel: 'Cetak Label',
+      label: 'Cetak Label & Barcode',
+      shortLabel: 'Cetak',
       icon: Printer,
-      description: 'Label Paket & Label Custom (QR Code Rak)',
-      access: canCetakLabel,
-    },
-    {
-      id: 'cetak_barcode' as ActivePage,
-      label: 'Cetak Barcode Produk',
-      shortLabel: 'Barcode 50x20',
-      icon: QrCode,
-      description: 'Stiker Thermal 50×20 mm & Import Massal',
-      access: canCetakBarcode,
+      description: 'QR Prefix, Label Paket & Barcode',
+      access: canCetakLabel || canCetakBarcode,
     },
   ].filter((item) => item.access);
 
@@ -367,7 +345,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activePage === item.id;
-            const isPicking = item.id === 'picking_tasks';
+            const isPicking = item.id === 'loading_dock';
             const isPesanan = item.id === 'pesanan_saya';
             const showPickingBadge = isPicking && hasNewPickingAlert;
             const showPesananBadge = isPesanan && hasNewPesananAlert;

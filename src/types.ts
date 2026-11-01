@@ -431,6 +431,9 @@ export interface PeminjamanRecord {
   tanggal_pinjam?: string;
   tanggal_kembali?: string;
   tglPinjam?: string;
+  tglKembali?: string;
+  estimasiKembali?: string;
+  catatanKembali?: string;
   timestamp?: string;
   channel?: string;
   nama_peminjam?: string;

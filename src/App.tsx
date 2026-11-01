@@ -226,7 +226,7 @@ const PATH_TO_PAGE: Record<string, ActivePage> = {
   'diskusi': 'live_chat',
   'rekap-tagihan-jne': 'rekap_tagihan_jne',
   'tagihan-jne': 'rekap_tagihan_jne',
-  'operasi-stok': 'operasi_stok',
+  'operasi-stok': 'inventory',
   'katalog-produk': 'katalog_produk',
   'katalog': 'katalog_produk',
   '': 'dashboard',
@@ -244,17 +244,17 @@ const PATH_TO_PAGE: Record<string, ActivePage> = {
   'quality-control': 'perbaikan',
   'qc': 'perbaikan',
   'perbaikan': 'perbaikan',
-  'scanner': 'scanner',
-  'scan': 'scanner',
-  'mutasi-log': 'mutasi_log',
-  'mutasi': 'mutasi_log',
+  'scanner': 'inventory',
+  'scan': 'inventory',
+  'mutasi-log': 'inventory',
+  'mutasi': 'inventory',
   'inventory': 'inventory',
   'stok': 'inventory',
-  'stock-opname': 'stock_opname',
-  'so': 'stock_opname',
-  'tugas-picking': 'picking_tasks',
-  'picking': 'picking_tasks',
-  'picking-tasks': 'picking_tasks',
+  'stock-opname': 'inventory',
+  'so': 'inventory',
+  'tugas-picking': 'loading_dock',
+  'picking': 'loading_dock',
+  'picking-tasks': 'loading_dock',
   'peminjaman': 'peminjaman',
   'sps': 'peminjaman',
   'cetak-label': 'cetak_label',
@@ -282,11 +282,25 @@ const PATH_TO_PAGE: Record<string, ActivePage> = {
   'penerimaan': 'penerimaan',
 };
 
+function normalizeConsolidatedPage(page: ActivePage): ActivePage {
+  if (page === 'operasi_stok' || page === 'scanner' || page === 'mutasi_log' || page === 'stock_opname') {
+    return 'inventory';
+  }
+  if (page === 'picking_tasks') {
+    return 'loading_dock';
+  }
+  if (page === 'cetak_barcode') {
+    return 'cetak_label';
+  }
+  return page;
+}
+
 function getPageFromUrl(session: UserSession | null): ActivePage {
   if (typeof window === 'undefined') return getDefaultPageForSession(session);
   try {
     if (isRunningInIframe()) {
-      const savedPage = localStorage.getItem('wms_last_active_page') as ActivePage | null;
+      const rawSavedPage = localStorage.getItem('wms_last_active_page') as ActivePage | null;
+      const savedPage = rawSavedPage ? normalizeConsolidatedPage(rawSavedPage) : null;
       if (savedPage && PAGE_TO_PATH[savedPage]) {
         if (!session || canAccessPage(session, savedPage)) {
           return savedPage;
@@ -296,8 +310,9 @@ function getPageFromUrl(session: UserSession | null): ActivePage {
     const path = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
     const matchedPage = PATH_TO_PAGE[path];
     if (matchedPage) {
-      if (!session || canAccessPage(session, matchedPage)) {
-        return matchedPage;
+      const normalized = normalizeConsolidatedPage(matchedPage);
+      if (!session || canAccessPage(session, normalized)) {
+        return normalized;
       }
     }
   } catch {}
@@ -388,6 +403,25 @@ export default function App() {
   // Active module page (mendukung deep link & reload F5 dari URL)
   const [activePage, setActivePage] = useState<ActivePage>(() => getPageFromUrl(session));
   const [visitedPages, setVisitedPages] = useState<Set<ActivePage>>(() => new Set<ActivePage>([getPageFromUrl(session)]));
+  const [inventoryInitialTab, setInventoryInitialTab] = useState<'capacity' | 'inventory' | 'scanner' | 'logs' | undefined>(() => {
+    if (typeof window === 'undefined') return undefined;
+    const p = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+    if (p === 'scanner' || p === 'scan' || p === 'operasi-stok') return 'scanner';
+    if (p === 'mutasi-log' || p === 'mutasi') return 'logs';
+    return undefined;
+  });
+  const [loadingDockInitialTab, setLoadingDockInitialTab] = useState<'penerimaan' | 'pengiriman' | 'transfer_order' | 'picking_tasks' | undefined>(() => {
+    if (typeof window === 'undefined') return undefined;
+    const p = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+    if (p === 'tugas-picking' || p === 'picking' || p === 'picking-tasks') return 'picking_tasks';
+    return undefined;
+  });
+  const [cetakLabelInitialTab, setCetakLabelInitialTab] = useState<'qr_prefix' | 'paket' | 'barcode' | undefined>(() => {
+    if (typeof window === 'undefined') return undefined;
+    const p = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+    if (p === 'cetak-barcode' || p === 'barcode' || p === 'barcode-produk') return 'barcode';
+    return undefined;
+  });
 
   // Sinkronisasi activePage ke browser URL address bar secara transparan (hanya di top-level window, dilewati di iframe agar bebas SecurityError)
   useEffect(() => {
@@ -416,7 +450,7 @@ export default function App() {
       const pageFromState = event.state?.page as ActivePage | undefined;
       if (pageFromState && canAccessPage(session, pageFromState)) {
         startTransition(() => {
-          setActivePage(pageFromState);
+          setActivePage(normalizeConsolidatedPage(pageFromState));
         });
       } else {
         const pageFromPath = getPageFromUrl(session);
@@ -427,8 +461,14 @@ export default function App() {
     };
 
     const handleNavigateCustom = (event: Event) => {
-      const targetPage = (event as CustomEvent)?.detail?.page as ActivePage | undefined;
-      if (targetPage && (!session || canAccessPage(session, targetPage))) {
+      const rawTargetPage = (event as CustomEvent)?.detail?.page as ActivePage | undefined;
+      if (!rawTargetPage) return;
+      if (rawTargetPage === 'picking_tasks') setLoadingDockInitialTab('picking_tasks');
+      if (rawTargetPage === 'operasi_stok' || rawTargetPage === 'scanner') setInventoryInitialTab('scanner');
+      if (rawTargetPage === 'mutasi_log') setInventoryInitialTab('logs');
+      if (rawTargetPage === 'cetak_barcode') setCetakLabelInitialTab('barcode');
+      const targetPage = normalizeConsolidatedPage(rawTargetPage);
+      if (!session || canAccessPage(session, targetPage)) {
         startTransition(() => {
           setActivePage(targetPage);
         });
@@ -437,7 +477,10 @@ export default function App() {
 
     const handleSwMessage = (event: MessageEvent) => {
       if (event.data && event.data.type === 'WMS_NOTIFICATION_CLICK') {
-        const targetPage = (event.data.page || 'pesanan_saya') as ActivePage;
+        const rawTargetPage = (event.data.page || 'pesanan_saya') as ActivePage;
+        if (rawTargetPage === 'picking_tasks') setLoadingDockInitialTab('picking_tasks');
+        if (rawTargetPage === 'operasi_stok' || rawTargetPage === 'scanner') setInventoryInitialTab('scanner');
+        const targetPage = normalizeConsolidatedPage(rawTargetPage);
         const targetRoomId = event.data.roomId as string | undefined;
         if (targetRoomId) {
           window.dispatchEvent(
@@ -493,10 +536,6 @@ export default function App() {
     if (session && !canAccessPage(session, activePage)) {
       const allowedPage = getDefaultPageForSession(session);
       setActivePage(allowedPage);
-    }
-    // Dismiss alert tugas picking jika user sedang berada di halaman picking
-    if (activePage === 'picking_tasks') {
-      setNewPickingTaskAlert(null);
     }
   }, [session, activePage]);
 
@@ -639,7 +678,13 @@ export default function App() {
   }, [session?.username]);
 
   // Handler navigasi dengan verifikasi izin halaman & Auto-Update Aman saat pindah menu utama
-  const handleSelectPage = useCallback((page: ActivePage) => {
+  const handleSelectPage = useCallback((rawPage: ActivePage) => {
+    if (rawPage === 'cetak_barcode') setCetakLabelInitialTab('barcode');
+    if (rawPage === 'picking_tasks') setLoadingDockInitialTab('picking_tasks');
+    if (rawPage === 'operasi_stok' || rawPage === 'scanner') setInventoryInitialTab('scanner');
+    if (rawPage === 'mutasi_log') setInventoryInitialTab('logs');
+    const page = normalizeConsolidatedPage(rawPage);
+
     if (!canAccessPage(session, page)) {
       showToast('Akses ditolak: Akun Anda tidak memiliki hak akses untuk modul ini.', 'warning');
       return;
@@ -2672,7 +2717,7 @@ export default function App() {
       )}
 
       {/* Floating Incoming Picking Task Banner */}
-      {newPickingTaskAlert && activePage !== 'picking_tasks' && (
+      {newPickingTaskAlert && (
         <aside
           role="status"
           aria-live="polite"
@@ -2701,7 +2746,8 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
-                  handleSelectPage('picking_tasks');
+                  setLoadingDockInitialTab('picking_tasks');
+                  handleSelectPage('loading_dock');
                   setNewPickingTaskAlert(null);
                 }}
                 className="px-3 py-1.5 bg-white text-primary-500 hover:bg-orange-50 rounded-xl text-xs font-black shadow-sm cursor-pointer transition-all active:scale-95"
@@ -2840,79 +2886,6 @@ export default function App() {
             </div>
           ) : (
             <>
-              {activePage === 'operasi_stok' && (
-                <OperasiStokView
-                  session={session}
-                  onOpenImportModal={() => setIsImportModalOpen(true)}
-                  onOpenLocationPurge={() => setIsLocationPurgeOpen(true)}
-                  scannerComponent={
-                    <div className="w-full max-w-2xl mx-auto space-y-4">
-                      {/* STICKY / FREEZE SCANNER METHOD & INPUT CARD */}
-                      <div className="sticky top-0 z-30 bg-slate-50/95 dark:bg-[#0a0f1c]/95 pt-0 pb-1.5 backdrop-blur-md">
-                        <div className="bg-white dark:bg-[#09090B] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-md">
-                          <div className="flex items-center justify-between gap-3 p-3 bg-white dark:bg-[#0F0F12] border-b border-slate-200 dark:border-slate-800 rounded-t-2xl">
-                            <div className="flex-1 min-w-0">
-                              <ScanMethodSelector currentMode={scanMode} onSelectMode={setScanMode} />
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setShowQuickTags(prev => !prev)}
-                              className="p-2 sm:px-3 sm:py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 whitespace-nowrap shadow-sm cursor-pointer select-none"
-                              title={showQuickTags ? "Sembunyikan Pengaturan Tag" : "Tampilkan Pengaturan Tag"}
-                            >
-                              <Tag className="w-3.5 h-3.5" />
-                              <span className="hidden sm:inline">{showQuickTags ? "Sembunyikan Tag" : "Tampilkan Tag"}</span>
-                            </button>
-                          </div>
-                          {(scanMode === 'fisik' || scanMode === 'manual') && (
-                            <PhysicalScanInput onScan={handleScannedItem} products={productDatabase} />
-                          )}
-                          {scanMode === 'kamera' && (
-                            <CameraScanner
-                              onScan={handleScannedItem}
-                              onRequestWakeLock={requestScreenWakeLock}
-                            />
-                          )}
-                          <QuickTagToolbar
-                            isVisible={showQuickTags}
-                            currentCategory={currentCategory}
-                            currentLocation={currentLocation}
-                            onSelectCategory={handleSelectQuickCategory}
-                            onSelectLocation={handleSelectQuickLocation}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Scanned Items List */}
-                      <ScannedItemsList
-                        items={scannedData}
-                        onRemoveItem={handleRemoveItem}
-                        onClearAll={handleClearAll}
-                        onUpdateCategory={handleUpdateItemCategory}
-                        onUpdateQty={handleUpdateItemQty}
-                      />
-
-                      {/* Bottom Save Action Bar */}
-                      <BottomSaveBar
-                        items={scannedData}
-                        keterangan={keterangan}
-                        onChangeKeterangan={setKeterangan}
-                        onSave={handleSaveData}
-                        isSaving={isSaving}
-                      />
-                    </div>
-                  }
-                  mutasiLogComponent={
-                    <MutasiLogView
-                      session={session}
-                      productCatalog={productDatabase}
-                      onNotify={showToast}
-                      onRefreshCatalog={loadProducts}
-                    />
-                  }
-                />
-              )}
-
           <ErrorBoundary fallbackTitle="Kendala Memuat Halaman" onReset={() => window.location.reload()}>
             <React.Suspense fallback={<div className="flex justify-center p-8"><span className="animate-spin text-3xl">⏳</span></div>}>
               {activePage === 'dashboard' && (
@@ -2934,20 +2907,135 @@ export default function App() {
                     onShowToast={showToast}
                   />
               )}
-              {activePage === 'loading_dock' && (
+              {(activePage === 'loading_dock' || activePage === 'picking_tasks') && (
                   <LoadingDockView
                     session={session}
                     productCatalog={productDatabase}
                     onShowToast={showToast}
+                    initialTab={activePage === 'picking_tasks' ? 'picking_tasks' : loadingDockInitialTab}
+                    hasNewPickingAlert={!!newPickingTaskAlert}
+                    onClearPickingAlert={() => setNewPickingTaskAlert(null)}
                   />
               )}
-              {activePage === 'inventory' && (
+              {(activePage === 'inventory' || activePage === 'operasi_stok' || activePage === 'scanner' || activePage === 'mutasi_log') && (
                   <InventoryView
                     session={session}
                     currentLocations={activeLocations}
                     productCatalog={productDatabase}
                     onNotify={showToast}
                     onRefreshCatalog={loadProducts}
+                    initialTab={
+                      activePage === 'operasi_stok' || activePage === 'scanner'
+                        ? 'scanner'
+                        : activePage === 'mutasi_log'
+                        ? 'logs'
+                        : inventoryInitialTab
+                    }
+                    scannedCount={scannedData.length}
+                    onOpenImportModal={() => setIsImportModalOpen(true)}
+                    scannerComponent={(layoutMode) => {
+                      const inputCard = (
+                        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
+                          <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-50/70 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800 rounded-t-xl">
+                            <div className="flex-1 min-w-0">
+                              <ScanMethodSelector currentMode={scanMode} onSelectMode={setScanMode} />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setShowQuickTags((prev) => !prev)}
+                              className="py-1 px-2.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 whitespace-nowrap shadow-2xs cursor-pointer select-none"
+                              title={showQuickTags ? 'Sembunyikan Pengaturan Tag' : 'Tampilkan Pengaturan Tag'}
+                            >
+                              <Tag className="w-3.5 h-3.5 text-indigo-500" />
+                              <span className="hidden sm:inline">
+                                {showQuickTags ? 'Sembunyikan Tag' : 'Tampilkan Tag'}
+                              </span>
+                            </button>
+                          </div>
+                          {(scanMode === 'fisik' || scanMode === 'manual') && (
+                            <PhysicalScanInput onScan={handleScannedItem} products={productDatabase} />
+                          )}
+                          {scanMode === 'kamera' && (
+                            <CameraScanner
+                              onScan={handleScannedItem}
+                              onRequestWakeLock={requestScreenWakeLock}
+                            />
+                          )}
+                          <QuickTagToolbar
+                            isVisible={showQuickTags}
+                            currentCategory={currentCategory}
+                            currentLocation={currentLocation}
+                            onSelectCategory={handleSelectQuickCategory}
+                            onSelectLocation={handleSelectQuickLocation}
+                          />
+                        </div>
+                      );
+
+                      const saveBar = (
+                        <BottomSaveBar
+                          items={scannedData}
+                          keterangan={keterangan}
+                          onChangeKeterangan={setKeterangan}
+                          onSave={handleSaveData}
+                          isSaving={isSaving}
+                        />
+                      );
+
+                      if (layoutMode === 'split') {
+                        return (
+                          <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+                            <div className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-3 space-y-3">
+                              {inputCard}
+                              {saveBar}
+                            </div>
+                            <div className="lg:col-span-7 xl:col-span-8">
+                              <ScannedItemsList
+                                items={scannedData}
+                                onRemoveItem={handleRemoveItem}
+                                onClearAll={handleClearAll}
+                                onUpdateCategory={handleUpdateItemCategory}
+                                onUpdateQty={handleUpdateItemQty}
+                              />
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      if (layoutMode === 'table') {
+                        return (
+                          <div className="w-full space-y-3">
+                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
+                              <div className="lg:col-span-8">{inputCard}</div>
+                              <div className="lg:col-span-4 flex flex-col justify-end">{saveBar}</div>
+                            </div>
+                            <ScannedItemsList
+                              items={scannedData}
+                              onRemoveItem={handleRemoveItem}
+                              onClearAll={handleClearAll}
+                              onUpdateCategory={handleUpdateItemCategory}
+                              onUpdateQty={handleUpdateItemQty}
+                              forceTableMode={true}
+                            />
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="w-full max-w-3xl mx-auto space-y-3">
+                          <div className="sticky top-0 z-30 bg-slate-50/95 dark:bg-[#0a0f1c]/95 pb-1 backdrop-blur-md">
+                            {inputCard}
+                          </div>
+                          <ScannedItemsList
+                            items={scannedData}
+                            onRemoveItem={handleRemoveItem}
+                            onClearAll={handleClearAll}
+                            onUpdateCategory={handleUpdateItemCategory}
+                            onUpdateQty={handleUpdateItemQty}
+                          />
+                          {saveBar}
+                        </div>
+                      );
+                    }}
                   />
               )}
               {activePage === 'peminjaman' && (
@@ -2958,21 +3046,12 @@ export default function App() {
                     onRefreshCatalog={loadProducts}
                   />
               )}
-              {activePage === 'cetak_label' && (
-                  <CetakLabelView />
-              )}
-              {activePage === 'cetak_barcode' && (
-                  <CetakBarcodeProdukView
+              {(activePage === 'cetak_label' || activePage === 'cetak_barcode') && (
+                  <CetakLabelView
                     session={session}
                     productCatalog={productDatabase}
                     onShowToast={showToast}
-                  />
-              )}
-              {activePage === 'picking_tasks' && (
-                  <PickingTasksView
-                    onNotify={showToast}
-                    currentUser={session?.name || getUserPersonName(session?.username) || 'Operator'}
-                    productCatalog={productDatabase}
+                    initialTab={cetakLabelInitialTab}
                   />
               )}
               {activePage === 'perbaikan' && (

@@ -77,11 +77,22 @@ const DEFAULT_SAMPLE_ITEMS: LocationLabelItem[] = [
   },
 ];
 
-export const CetakLokasiRakTab: React.FC = () => {
+interface CetakLokasiRakTabProps {
+  onShowToast?: (message: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
+}
+
+export const CetakLokasiRakTab: React.FC<CetakLokasiRakTabProps> = ({ onShowToast }) => {
+  const notify = useCallback(
+    (msg: string, type: 'success' | 'error' | 'info' | 'warning' = 'success') => {
+      if (onShowToast) onShowToast(msg, type);
+    },
+    [onShowToast]
+  );
+
   // Main Sub-Tab Switcher inside QR Prefix: 'prefix_lokasi' | 'prefix_action' | 'custom_qr'
   const [subTab, setSubTab] = useState<'prefix_lokasi' | 'prefix_action' | 'custom_qr'>('prefix_lokasi');
 
-  // Input Mode inside Tab Prefix Lokasi: 'preset' | 'range' | 'manual' | 'import'
+  // Input Mode inside Tab Prefix Lokasi: 'preset' | 'range' | 'manual'
   const [lokasiInputMode, setLokasiInputMode] = useState<'preset' | 'range' | 'manual' | 'import'>('preset');
 
   // Print Settings State
@@ -225,9 +236,10 @@ export const CetakLokasiRakTab: React.FC = () => {
   // ==========================================
   // ACTIONS: PRESET MAPPING LOKASI
   // ==========================================
-  const handleAddWarehousePreset = (blockPrefix: string, count: number = 50) => {
+  const handleAddWarehousePreset = (blockPrefix: string, count: number = 50, startNum: number = 1) => {
     const newItems: LocationLabelItem[] = [];
-    for (let i = 1; i <= count; i++) {
+    const endNum = startNum + count - 1;
+    for (let i = startNum; i <= endNum; i++) {
       const numStr = String(i).padStart(3, '0');
       const loc = `${blockPrefix}${numStr}`;
       newItems.push({
@@ -241,21 +253,25 @@ export const CetakLokasiRakTab: React.FC = () => {
       });
     }
     setQueue((prev) => [...newItems, ...prev]);
-    alert(`Berhasil menambahkan ${count} lokasi Warehouse (${blockPrefix}001 s/d ${blockPrefix}${String(count).padStart(3, '0')}) dengan QR #LOK ${blockPrefix}001.`);
+    notify(
+      `+${count} lokasi Warehouse (${blockPrefix}${String(startNum).padStart(3, '0')}–${blockPrefix}${String(endNum).padStart(3, '0')}) ditambahkan ke antrean.`,
+      'success'
+    );
   };
 
-  const handleAddBlokFPreset = (locationName: string) => {
+  const handleAddBlokFPreset = (locationName: string, zoneLabel: string = 'BLOK F') => {
     const cleanLoc = locationName.trim().toUpperCase();
     const newItem: LocationLabelItem = {
       id: `loc_${Date.now()}_${cleanLoc}_${Math.random().toString(36).substring(2, 5)}`,
       locCode: cleanLoc,
       qrPayload: `#LOK ${cleanLoc}`,
-      zoneDesc: 'BLOK F',
+      zoneDesc: zoneLabel,
       tagBadge: 'LOKASI',
       copies: 1,
       selected: true,
     };
     setQueue((prev) => [newItem, ...prev]);
+    notify(`Lokasi ${cleanLoc} (#LOK ${cleanLoc}) ditambahkan ke antrean.`, 'success');
   };
 
   const handleAddAllBlokFPreset = () => {
@@ -270,10 +286,10 @@ export const CetakLokasiRakTab: React.FC = () => {
       selected: true,
     }));
     setQueue((prev) => [...newItems, ...prev]);
-    alert('Berhasil menambahkan semua lokasi Blok F (SHOPEE, TIKTOK, STUDIO) ke antrean.');
+    notify('+3 lokasi Blok F (SHOPEE, TIKTOK, STUDIO) ditambahkan ke antrean.', 'success');
   };
 
-  const handleAddPerbaikanPreset = (prefix: string, count: number = 5) => {
+  const handleAddPerbaikanPreset = (prefix: string, count: number = 5, zoneLabel: string = 'PERBAIKAN') => {
     const cleanPrefix = prefix.trim().toUpperCase();
     const newItems: LocationLabelItem[] = [];
     for (let i = 1; i <= count; i++) {
@@ -283,13 +299,14 @@ export const CetakLokasiRakTab: React.FC = () => {
         id: `loc_${Date.now()}_${cleanPrefix}_${i}`,
         locCode: loc,
         qrPayload: `#LOK ${loc}`,
-        zoneDesc: 'PERBAIKAN',
-        tagBadge: 'PERBAIKAN',
+        zoneDesc: zoneLabel,
+        tagBadge: zoneLabel,
         copies: 1,
         selected: true,
       });
     }
     setQueue((prev) => [...newItems, ...prev]);
+    notify(`+${count} lokasi ${cleanPrefix}001–${cleanPrefix}${String(count).padStart(3, '0')} ditambahkan.`, 'success');
   };
 
   // ==========================================
@@ -297,19 +314,16 @@ export const CetakLokasiRakTab: React.FC = () => {
   // ==========================================
   const handleGenerateRange = () => {
     if (rangeStart > rangeEnd) {
-      alert('Nomor awal tidak boleh lebih besar dari nomor akhir.');
+      notify('Nomor awal tidak boleh lebih besar dari nomor akhir.', 'warning');
       return;
     }
 
-    const count = rangeEnd - rangeStart + 1;
-    if (count > 500) {
-      if (!window.confirm(`Anda akan membuat ${count} barcode lokasi. Lanjutkan?`)) return;
-    }
-
+    const count = Math.min(500, rangeEnd - rangeStart + 1);
+    const actualEnd = rangeStart + count - 1;
     const newItems: LocationLabelItem[] = [];
     const p = rangePrefix.trim().toUpperCase();
 
-    for (let n = rangeStart; n <= rangeEnd; n++) {
+    for (let n = rangeStart; n <= actualEnd; n++) {
       const numStr = String(n).padStart(rangePadDigits, '0');
       const loc = `${p}${numStr}`;
       const payload = `#LOK ${loc}`;
@@ -326,32 +340,47 @@ export const CetakLokasiRakTab: React.FC = () => {
     }
 
     setQueue((prev) => [...newItems, ...prev]);
-    alert(`Berhasil membuat ${newItems.length} label lokasi (${p}${String(rangeStart).padStart(rangePadDigits, '0')} s/d ${p}${String(rangeEnd).padStart(rangePadDigits, '0')}) dengan QR #LOK.`);
+    notify(
+      `Berhasil membuat ${newItems.length} label lokasi (${p}${String(rangeStart).padStart(rangePadDigits, '0')} s/d ${p}${String(actualEnd).padStart(rangePadDigits, '0')}).`,
+      'success'
+    );
   };
 
   // ==========================================
-  // ACTIONS: MANUAL SINGLE LOKASI
+  // ACTIONS: MANUAL / MULTI-INPUT LOKASI
   // ==========================================
   const handleAddManualLokasi = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!manualLocCode.trim()) {
-      alert('Mohon ketik nama / kode lokasi.');
+    const rawInput = (manualLocCode || pasteText).trim();
+    if (!rawInput) {
+      notify('Mohon ketik atau tempelkan kode lokasi terlebih dahulu.', 'warning');
       return;
     }
 
-    const cleanCode = manualLocCode.trim().toUpperCase();
-    const newItem: LocationLabelItem = {
-      id: `loc_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    const tokens = rawInput
+      .split(/[\n,;\t]+/)
+      .map((s) => s.trim().toUpperCase().replace(/^#LOK\s*/i, ''))
+      .filter(Boolean);
+
+    if (tokens.length === 0) {
+      notify('Tidak ada kode lokasi yang valid.', 'warning');
+      return;
+    }
+
+    const newItems: LocationLabelItem[] = tokens.map((cleanCode, idx) => ({
+      id: `loc_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`,
       locCode: cleanCode,
       qrPayload: `#LOK ${cleanCode}`,
       zoneDesc: manualZoneDesc.trim() || 'WAREHOUSE',
       tagBadge: manualTagBadge.trim() || 'LOKASI',
       copies: Math.max(1, manualCopies),
       selected: true,
-    };
+    }));
 
-    setQueue((prev) => [newItem, ...prev]);
+    setQueue((prev) => [...newItems, ...prev]);
     setManualLocCode('');
+    setPasteText('');
+    notify(`+${newItems.length} lokasi ditambahkan ke antrean cetak.`, 'success');
   };
 
   // ==========================================
@@ -359,7 +388,7 @@ export const CetakLokasiRakTab: React.FC = () => {
   // ==========================================
   const handleParsePaste = () => {
     if (!pasteText.trim()) {
-      alert('Mohon tempelkan teks daftar lokasi terlebih dahulu.');
+      notify('Mohon tempelkan teks daftar lokasi terlebih dahulu.', 'warning');
       return;
     }
 
@@ -372,8 +401,8 @@ export const CetakLokasiRakTab: React.FC = () => {
       if (!rawCode) return;
 
       const cleanCode = rawCode.replace(/^#LOK\s*/i, '');
-      const zoneDesc = parts[1] || 'WAREHOUSE';
-      const copies = parseInt(parts[2], 10) || 1;
+      const zoneDesc = parts[1] || manualZoneDesc.trim() || 'WAREHOUSE';
+      const copies = parseInt(parts[2], 10) || Math.max(1, manualCopies);
 
       parsed.push({
         id: `import_${Date.now()}_${idx}`,
@@ -387,19 +416,19 @@ export const CetakLokasiRakTab: React.FC = () => {
     });
 
     if (parsed.length === 0) {
-      alert('Tidak ada data lokasi yang valid ditemukan.');
+      notify('Tidak ada data lokasi yang valid ditemukan.', 'warning');
       return;
     }
 
     setQueue((prev) => [...parsed, ...prev]);
     setPasteText('');
-    alert(`Berhasil mengimpor ${parsed.length} lokasi ke antrean cetak dengan QR #LOK.`);
+    notify(`Berhasil mengimpor ${parsed.length} lokasi ke antrean cetak.`, 'success');
   };
 
   // ==========================================
   // ACTIONS: PREFIX ACTION (#IN, #OUT, #SO)
   // ==========================================
-  const handleAddActionPrefix = (code: string, title: string, subtitle: string) => {
+  const handleAddActionPrefix = (code: string, _title: string, subtitle: string) => {
     const newItem: LocationLabelItem = {
       id: `action_${Date.now()}_${code.replace(/[^A-Z]/g, '')}_${Math.random().toString(36).substring(2, 5)}`,
       locCode: code,
@@ -410,6 +439,7 @@ export const CetakLokasiRakTab: React.FC = () => {
       selected: true,
     };
     setQueue((prev) => [newItem, ...prev]);
+    notify(`QR Action ${code} ditambahkan ke antrean.`, 'success');
   };
 
   const handleAddAllMainActions = () => {
@@ -430,7 +460,7 @@ export const CetakLokasiRakTab: React.FC = () => {
     }));
 
     setQueue((prev) => [...newItems, ...prev]);
-    alert('Berhasil menambahkan QR Action #IN, #OUT, dan #SO ke antrean.');
+    notify('QR Action #IN, #OUT, dan #SO ditambahkan ke antrean.', 'success');
   };
 
   // ==========================================
@@ -439,7 +469,7 @@ export const CetakLokasiRakTab: React.FC = () => {
   const handleAddCustomQr = (e: React.FormEvent) => {
     e.preventDefault();
     if (!customTitle.trim() && !customPayload.trim()) {
-      alert('Mohon isi Judul Label atau Isi QR Code.');
+      notify('Mohon isi Judul Label atau Isi QR Code.', 'warning');
       return;
     }
 
@@ -460,6 +490,7 @@ export const CetakLokasiRakTab: React.FC = () => {
     setCustomTitle('');
     setCustomPayload('');
     setCustomSubtitle('');
+    notify(`QR Custom "${title}" ditambahkan ke antrean.`, 'success');
   };
 
   // ==========================================
@@ -508,7 +539,7 @@ export const CetakLokasiRakTab: React.FC = () => {
         itemsToPrint = queue;
         setQueue((prev) => prev.map((item) => ({ ...item, selected: true })));
       } else {
-        alert('Antrean cetak kosong. Silakan tambahkan label terlebih dahulu.');
+        notify('Antrean cetak kosong. Silakan tambahkan label terlebih dahulu.', 'warning');
         return;
       }
     }
@@ -875,7 +906,7 @@ export const CetakLokasiRakTab: React.FC = () => {
     } catch (err) {
       console.error('Print failed:', err);
       setIsPrinting(false);
-      alert('Gagal menyiapkan cetak printer.');
+      notify('Gagal menyiapkan cetak printer.', 'error');
     }
   };
 
@@ -965,668 +996,437 @@ export const CetakLokasiRakTab: React.FC = () => {
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
       {/* ========================================================= */}
-      {/* 1. TOP BANNER & ACTION HEADER                             */}
+      {/* LEFT COLUMN (7 COLS): COMPACT GENERATOR & QUEUE TABLE     */}
       {/* ========================================================= */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-start sm:items-center gap-3">
-            <div className="p-3 bg-emerald-600/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-2xl border border-emerald-200 dark:border-emerald-800">
-              <QrCode className="w-7 h-7" />
+      <div className="lg:col-span-7 space-y-3">
+        {/* CARD 1: UNIFIED GENERATOR WORKSPACE */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xs overflow-hidden">
+          {/* Compact Top Toolbar: Category Switcher (Left) + Mode Switcher (Right) */}
+          <div className="px-3 py-2.5 bg-slate-50/90 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+            {/* Category Switcher */}
+            <div className="flex items-center border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-slate-900 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => setSubTab('prefix_lokasi')}
+                className={`px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  subTab === 'prefix_lokasi'
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <MapPin className="w-3.5 h-3.5 shrink-0" />
+                <span>Lokasi Rak (#LOK)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubTab('prefix_action')}
+                className={`px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 border-l border-slate-200 dark:border-slate-700 transition-colors cursor-pointer ${
+                  subTab === 'prefix_action'
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <Zap className="w-3.5 h-3.5 shrink-0" />
+                <span>Action (#IN/#OUT/#SO)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubTab('custom_qr')}
+                className={`px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 border-l border-slate-200 dark:border-slate-700 transition-colors cursor-pointer ${
+                  subTab === 'custom_qr'
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                <span>Custom QR</span>
+              </button>
             </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                  QR Prefix (#LOK, #IN, #OUT, #SO)
-                </h2>
-                <span className="px-2.5 py-0.5 text-[11px] font-black uppercase bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-full">
-                  A6 (4 QR) &amp; Custom
-                </span>
+
+            {/* Sub-Mode Pills for Lokasi Rak */}
+            {subTab === 'prefix_lokasi' && (
+              <div className="flex items-center gap-1 bg-slate-200/70 dark:bg-slate-800 p-0.5 rounded-lg">
+                {(
+                  [
+                    { id: 'preset', label: 'Preset Cepat' },
+                    { id: 'range', label: 'Range Nomor' },
+                    { id: 'manual', label: 'Input / Paste' },
+                  ] as const
+                ).map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setLokasiInputMode(m.id)}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                      (lokasiInputMode === m.id || (m.id === 'manual' && lokasiInputMode === 'import'))
+                        ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
               </div>
-              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-                Cetak label QR action lokasi (format <code>#LOK A001</code>), mode scanner (#IN, #OUT, #SO), dan QR custom bebas.
-              </p>
-            </div>
+            )}
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-            <div className="px-3.5 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-center">
-              <div className="text-[11px] font-bold text-slate-500">Antrean Item</div>
-              <div className="text-base font-black text-slate-900 dark:text-white">
-                {queue.length} <span className="text-xs font-semibold text-slate-400">label</span>
-              </div>
-            </div>
-
-            <div className="px-3.5 py-2 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-center">
-              <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-300">Total Stiker</div>
-              <div className="text-base font-black text-emerald-700 dark:text-emerald-300">
-                {totalSelectedCopies}{' '}
-                <span className="text-xs font-semibold text-emerald-500/80">/ {totalAllCopies} lembar</span>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={handlePrint}
-              disabled={queue.length === 0 || isPrinting}
-              className="flex-1 sm:flex-none px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-sm rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
-            >
-              <Printer className="w-4 h-4" />
-              <span>
-                {isPrinting
-                  ? 'Menyiapkan...'
-                  : `Cetak ${totalSelectedCopies > 0 ? totalSelectedCopies : totalAllCopies} Stiker QR`}
-              </span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* ========================================================= */}
-      {/* 2. SUB-TAB SWITCHER (Lokasi, Action, Custom)               */}
-      {/* ========================================================= */}
-      <div className="bg-slate-200/80 dark:bg-slate-800/80 p-1.5 rounded-2xl border border-slate-300 dark:border-slate-700/80 flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
-        <button
-          type="button"
-          onClick={() => setSubTab('prefix_lokasi')}
-          className={`flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all cursor-pointer select-none ${
-            subTab === 'prefix_lokasi'
-              ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-md shadow-emerald-500/10 border border-emerald-500/20'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-white/50'
-          }`}
-        >
-          <MapPin className="w-4 h-4 shrink-0" />
-          <span>Tab Prefix Lokasi</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setSubTab('prefix_action')}
-          className={`flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all cursor-pointer select-none ${
-            subTab === 'prefix_action'
-              ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-md shadow-indigo-500/10 border border-indigo-500/20'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-white/50'
-          }`}
-        >
-          <Zap className="w-4 h-4 shrink-0" />
-          <span>Tab Prefix Action (#IN, #OUT, #SO)</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setSubTab('custom_qr')}
-          className={`flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all cursor-pointer select-none ${
-            subTab === 'custom_qr'
-              ? 'bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-md shadow-purple-500/10 border border-purple-500/20'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-white/50'
-          }`}
-        >
-          <Sparkles className="w-4 h-4 shrink-0" />
-          <span>Tab Custom</span>
-        </button>
-      </div>
-
-      {/* ========================================================= */}
-      {/* 3. DUA KOLOM: FORM INPUT SUB-TAB & PREVIEW / ADVANCE       */}
-      {/* ========================================================= */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6">
-        {/* LEFT COLUMN: SUB-TAB INPUT FORM (7 cols) */}
-        <div className="lg:col-span-7 space-y-4">
-          {/* SUB-TAB 1: TAB PREFIX LOKASI */}
-          {subTab === 'prefix_lokasi' && (
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
-              <div className="p-4 bg-emerald-50/60 dark:bg-emerald-950/30 border-b border-emerald-200/80 dark:border-emerald-800/60 text-xs text-emerald-900 dark:text-emerald-200 flex items-start gap-2.5">
-                <Info className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-black">Format Prefix Lokasi:</span> Setiap QR lokasi otomatis berisi <code>#LOK &lt;LOKASI&gt;</code> (contoh: <code>#LOK A001</code>). PREFIX yang dibutuhkan hanya nama lokasi, tidak memerlukan prefix nama area.
-                </div>
-              </div>
-
-              {/* Mode Sub-nav: Preset Area vs Range vs Ketik Satuan vs Paste */}
-              <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-1.5 gap-1 overflow-x-auto">
-                <button
-                  type="button"
-                  onClick={() => setLokasiInputMode('preset')}
-                  className={`py-2 px-3 rounded-xl text-xs font-black flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-all ${
-                    lokasiInputMode === 'preset'
-                      ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                  }`}
-                >
-                  <Building2 className="w-3.5 h-3.5" />
-                  <span>Preset Area Mapping</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setLokasiInputMode('range')}
-                  className={`py-2 px-3 rounded-xl text-xs font-black flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-all ${
-                    lokasiInputMode === 'range'
-                      ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                  }`}
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Generator Range (A001 - A050)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setLokasiInputMode('manual')}
-                  className={`py-2 px-3 rounded-xl text-xs font-black flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-all ${
-                    lokasiInputMode === 'manual'
-                      ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                  }`}
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Ketik Satuan</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setLokasiInputMode('import')}
-                  className={`py-2 px-3 rounded-xl text-xs font-black flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-all ${
-                    lokasiInputMode === 'import'
-                      ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                  }`}
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>Paste Daftar Lokasi</span>
-                </button>
-              </div>
-
-              <div className="p-4 sm:p-5">
-                {/* 1. PRESET AREA MAPPING */}
+          {/* Generator Body */}
+          <div className="p-3.5">
+            {/* ===================================================== */}
+            {/* SUB-TAB 1: LOKASI RAK (#LOK)                          */}
+            {/* ===================================================== */}
+            {subTab === 'prefix_lokasi' && (
+              <>
+                {/* MODE A: PRESET CEPAT (COMPACT CHIPS) */}
                 {lokasiInputMode === 'preset' && (
-                  <div className="space-y-4">
-                    {/* Warehouse Section */}
-                    <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <Building2 className="w-4 h-4 text-emerald-600" />
-                          <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                            Area Warehouse
-                          </h4>
-                        </div>
-                        <span className="text-[11px] font-bold text-slate-500">
-                          A001–A050, B001–B050
+                  <div className="space-y-3">
+                    {/* Row 1: Warehouse */}
+                    <div className="p-2.5 rounded-xl bg-slate-50/90 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/70 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                          <Building2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                          <span>Area Warehouse (Otomatis Format #LOK)</span>
                         </span>
+                        <span className="text-[10px] font-mono text-slate-400">Klik untuk tambah 50 rak</span>
                       </div>
-                      <p className="text-[11px] text-slate-500 mb-2.5">
-                        Klik untuk membuat 50 stiker barcode QR lokasi sekaligus:
-                      </p>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleAddWarehousePreset('A', 50)}
-                          className="px-3 py-2 bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 transition-all flex items-center justify-between cursor-pointer"
-                        >
-                          <span>Rak A001 s/d A050</span>
-                          <Plus className="w-3.5 h-3.5" />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleAddWarehousePreset('B', 50)}
-                          className="px-3 py-2 bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 transition-all flex items-center justify-between cursor-pointer"
-                        >
-                          <span>Rak B001 s/d B050</span>
-                          <Plus className="w-3.5 h-3.5" />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleAddWarehousePreset('C', 50)}
-                          className="px-3 py-2 bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 transition-all flex items-center justify-between cursor-pointer"
-                        >
-                          <span>Rak C001 s/d C050</span>
-                          <Plus className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Blok F Section */}
-                    <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <PackageCheck className="w-4 h-4 text-indigo-600" />
-                          <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                            Area Blok F
-                          </h4>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleAddAllBlokFPreset}
-                          className="text-[11px] font-black text-indigo-600 hover:text-indigo-700 cursor-pointer"
-                        >
-                          + Tambah Semua Blok F
-                        </button>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                         {[
-                          { name: 'Shopee', payload: '#LOK SHOPEE' },
-                          { name: 'Tiktok', payload: '#LOK TIKTOK' },
-                          { name: 'Studio', payload: '#LOK STUDIO' },
+                          { block: 'A', start: 1, label: 'A001 – A050' },
+                          { block: 'A', start: 51, label: 'A051 – A100' },
+                          { block: 'B', start: 1, label: 'B001 – B050' },
+                          { block: 'B', start: 51, label: 'B051 – B100' },
+                          { block: 'C', start: 1, label: 'C001 – C050' },
+                          { block: 'D', start: 1, label: 'D001 – D050' },
                         ].map((item) => (
                           <button
-                            key={item.name}
+                            key={item.label}
                             type="button"
-                            onClick={() => handleAddBlokFPreset(item.name)}
-                            className="p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 rounded-xl text-left transition-all cursor-pointer group"
+                            onClick={() => handleAddWarehousePreset(item.block, 50, item.start)}
+                            className="px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/30 rounded-lg text-xs font-mono font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between transition-all cursor-pointer"
                           >
-                            <div className="font-mono font-black text-xs text-slate-900 dark:text-white group-hover:text-indigo-600">
-                              {item.name}
-                            </div>
-                            <div className="text-[10px] font-mono text-slate-400 mt-0.5">
-                              {item.payload}
-                            </div>
+                            <span>{item.label}</span>
+                            <Plus className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
                           </button>
                         ))}
                       </div>
                     </div>
 
-                    {/* Perbaikan Section */}
-                    <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <Wrench className="w-4 h-4 text-amber-600" />
-                          <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                            Area Perbaikan
-                          </h4>
+                    {/* Row 2: Blok F & Transit */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div className="p-2.5 rounded-xl bg-slate-50/90 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/70 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                            <PackageCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                            <span>Blok F &amp; Transit</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleAddAllBlokFPreset}
+                            className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                          >
+                            + Semua Blok F
+                          </button>
                         </div>
-                        <span className="text-[11px] font-bold text-slate-500">
-                          DF001, PMK001, CC001
-                        </span>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {[
+                            { name: 'SHOPEE', zone: 'BLOK F' },
+                            { name: 'TIKTOK', zone: 'BLOK F' },
+                            { name: 'STUDIO', zone: 'BLOK F' },
+                            { name: 'TRANSIT', zone: 'TRANSIT' },
+                          ].map((loc) => (
+                            <button
+                              key={loc.name}
+                              type="button"
+                              onClick={() => handleAddBlokFPreset(loc.name, loc.zone)}
+                              className="px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-emerald-400 rounded-lg text-xs font-mono font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between transition-all cursor-pointer"
+                            >
+                              <span>{loc.name}</span>
+                              <Plus className="w-3 h-3 text-emerald-600 shrink-0" />
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleAddPerbaikanPreset('DF', 5)}
-                          className="p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-amber-400 rounded-xl text-left transition-all cursor-pointer"
-                        >
-                          <div className="font-mono font-black text-xs text-slate-900 dark:text-white">
-                            DF001 - DF005
-                          </div>
-                          <div className="text-[10px] text-slate-400">#LOK DF001</div>
-                        </button>
 
-                        <button
-                          type="button"
-                          onClick={() => handleAddPerbaikanPreset('PMK', 5)}
-                          className="p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-amber-400 rounded-xl text-left transition-all cursor-pointer"
-                        >
-                          <div className="font-mono font-black text-xs text-slate-900 dark:text-white">
-                            PMK001 - PMK005
-                          </div>
-                          <div className="text-[10px] text-slate-400">#LOK PMK001</div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleAddPerbaikanPreset('CC', 5)}
-                          className="p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-amber-400 rounded-xl text-left transition-all cursor-pointer"
-                        >
-                          <div className="font-mono font-black text-xs text-slate-900 dark:text-white">
-                            CC001 - CC005
-                          </div>
-                          <div className="text-[10px] text-slate-400">#LOK CC001</div>
-                        </button>
+                      {/* Row 3: Perbaikan & Kolian */}
+                      <div className="p-2.5 rounded-xl bg-slate-50/90 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/70 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                            <Wrench className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                            <span>Perbaikan &amp; Kolian</span>
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {[
+                            { prefix: 'DF', count: 5, label: 'DF001–005', zone: 'PERBAIKAN' },
+                            { prefix: 'PMK', count: 5, label: 'PMK001–005', zone: 'PERBAIKAN' },
+                            { prefix: 'CC', count: 5, label: 'CC001–005', zone: 'PERBAIKAN' },
+                            { prefix: 'R', count: 10, label: 'R001–R010', zone: 'KOLIAN' },
+                          ].map((p) => (
+                            <button
+                              key={p.label}
+                              type="button"
+                              onClick={() => handleAddPerbaikanPreset(p.prefix, p.count, p.zone)}
+                              className="px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-amber-400 rounded-lg text-xs font-mono font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between transition-all cursor-pointer"
+                            >
+                              <span>{p.label}</span>
+                              <Plus className="w-3 h-3 text-amber-600 shrink-0" />
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {/* 2. RANGE GENERATOR FORM */}
+                {/* MODE B: GENERATOR RANGE NOMOR */}
                 {lokasiInputMode === 'range' && (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                          Prefix Nama Lokasi
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5">
+                      <div className="sm:col-span-1">
+                        <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                          Prefix
                         </label>
                         <input
                           type="text"
                           value={rangePrefix}
                           onChange={(e) => setRangePrefix(e.target.value.toUpperCase())}
-                          placeholder="Contoh: A, B, DF, PMK"
-                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono font-bold text-slate-900 dark:text-white"
+                          placeholder="A / DF / R"
+                          className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-slate-900 dark:text-white"
                         />
                       </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                          Nomor Awal
+                      <div className="sm:col-span-1">
+                        <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                          Dari No
                         </label>
                         <input
                           type="number"
                           min="1"
                           value={rangeStart}
                           onChange={(e) => setRangeStart(parseInt(e.target.value, 10) || 1)}
-                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white"
+                          className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-slate-900 dark:text-white"
                         />
                       </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                          Nomor Akhir
+                      <div className="sm:col-span-1">
+                        <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                          Sampai
                         </label>
                         <input
                           type="number"
                           min="1"
                           value={rangeEnd}
                           onChange={(e) => setRangeEnd(parseInt(e.target.value, 10) || 1)}
-                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white"
+                          className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-slate-900 dark:text-white"
                         />
                       </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                          Digit Padding
+                      <div className="sm:col-span-1">
+                        <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                          Digit
                         </label>
-                        <div className="grid grid-cols-4 gap-1.5">
-                          {[
-                            { val: 1, label: '1 (1)' },
-                            { val: 2, label: '2 (01)' },
-                            { val: 3, label: '3 (001)' },
-                            { val: 4, label: '4 (0001)' },
-                          ].map((item) => (
-                            <button
-                              key={item.val}
-                              type="button"
-                              onClick={() => setRangePadDigits(item.val)}
-                              className={`py-1.5 text-center text-[11px] font-bold rounded-lg border transition-all cursor-pointer ${
-                                rangePadDigits === item.val
-                                  ? 'bg-emerald-600 text-white border-emerald-600'
-                                  : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700'
-                              }`}
-                            >
-                              {item.label}
-                            </button>
-                          ))}
-                        </div>
+                        <select
+                          value={rangePadDigits}
+                          onChange={(e) => setRangePadDigits(parseInt(e.target.value, 10) || 3)}
+                          className="w-full px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-slate-900 dark:text-white"
+                        >
+                          <option value={1}>1 (A1)</option>
+                          <option value={2}>2 (A01)</option>
+                          <option value={3}>3 (A001)</option>
+                          <option value={4}>4 (A0001)</option>
+                        </select>
                       </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                          Deskripsi Area Gudang
+                      <div className="sm:col-span-2">
+                        <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                          Deskripsi Area
                         </label>
                         <input
                           type="text"
                           value={rangeZoneDesc}
                           onChange={(e) => setRangeZoneDesc(e.target.value)}
-                          placeholder="Contoh: WAREHOUSE, BLOK F, PERBAIKAN"
-                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold"
+                          placeholder="WAREHOUSE / KOLIAN"
+                          className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-900 dark:text-white"
                         />
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-slate-600 dark:text-slate-400">
-                          Salinan:
-                        </span>
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="text-[11px] font-semibold text-slate-500">Salinan per rak:</span>
                         <input
                           type="number"
                           min="1"
                           value={rangeCopies}
                           onChange={(e) => setRangeCopies(parseInt(e.target.value, 10) || 1)}
-                          className="w-16 px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-center"
+                          className="w-14 px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-center"
                         />
+                        <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">
+                          Contoh: #LOK {rangePrefix.trim().toUpperCase()}{String(rangeStart).padStart(rangePadDigits, '0')}
+                        </span>
                       </div>
 
                       <button
                         type="button"
                         onClick={handleGenerateRange}
-                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-2 cursor-pointer transition-all active:scale-95"
+                        className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-2xs flex items-center gap-1.5 cursor-pointer transition-colors"
                       >
-                        <Sparkles className="w-4 h-4" />
-                        <span>
-                          Generate {Math.max(0, rangeEnd - rangeStart + 1)} Label Lokasi
-                        </span>
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Buat {Math.max(0, rangeEnd - rangeStart + 1)} Label</span>
                       </button>
                     </div>
                   </div>
                 )}
 
-                {/* 3. KETIK SATUAN */}
-                {lokasiInputMode === 'manual' && (
-                  <form onSubmit={handleAddManualLokasi} className="space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                          Nama / Kode Lokasi Custom <span className="text-red-500">*</span>
+                {/* MODE C: INPUT SATUAN ATAU PASTE BANYAK SEKALIGUS */}
+                {(lokasiInputMode === 'manual' || lokasiInputMode === 'import') && (
+                  <form onSubmit={handleAddManualLokasi} className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                      <div className="sm:col-span-7">
+                        <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                          Kode Lokasi (Ketik 1 atau Paste Banyak Pisah Koma/Baris) <span className="text-rose-500">*</span>
                         </label>
-                        <input
-                          type="text"
-                          required
+                        <textarea
+                          rows={2}
                           value={manualLocCode}
                           onChange={(e) => setManualLocCode(e.target.value)}
-                          placeholder="Contoh: A001, SHOPEE, DF001, PMK001"
-                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono font-bold text-slate-900 dark:text-white"
+                          placeholder="Contoh: A001, A002, SHOPEE, DF001 (otomatis menjadi #LOK ...)"
+                          className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-slate-900 dark:text-white resize-none"
                         />
-                        <p className="text-[10px] text-slate-400 mt-1">
-                          QR otomatis diformat sebagai <code>#LOK {manualLocCode.trim().toUpperCase() || 'A001'}</code>
-                        </p>
                       </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                          Deskripsi Zona / Kategori
+                      <div className="sm:col-span-3">
+                        <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                          Deskripsi Area
                         </label>
                         <input
                           type="text"
                           value={manualZoneDesc}
                           onChange={(e) => setManualZoneDesc(e.target.value)}
-                          placeholder="Contoh: WAREHOUSE, BLOK F, PERBAIKAN"
-                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold"
+                          placeholder="WAREHOUSE"
+                          className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-900 dark:text-white"
                         />
                       </div>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-slate-600 dark:text-slate-400">
-                          Jumlah Salinan:
-                        </span>
+                      <div className="sm:col-span-2">
+                        <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                          Salinan
+                        </label>
                         <input
                           type="number"
                           min="1"
                           value={manualCopies}
                           onChange={(e) => setManualCopies(parseInt(e.target.value, 10) || 1)}
-                          className="w-16 px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-center"
+                          className="w-full px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-center text-slate-900 dark:text-white"
                         />
                       </div>
+                    </div>
 
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[11px] text-slate-400 font-mono">
+                        Format otomatis: <code>#LOK &lt;KODE&gt;</code>
+                      </span>
                       <button
                         type="submit"
-                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-2 cursor-pointer transition-all active:scale-95"
+                        className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-2xs flex items-center gap-1.5 cursor-pointer transition-colors"
                       >
-                        <Plus className="w-4 h-4" />
-                        <span>+ Tambah Lokasi ke Antrean</span>
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Tambah ke Antrean</span>
                       </button>
                     </div>
                   </form>
                 )}
+              </>
+            )}
 
-                {/* 4. PASTE DAFTAR LOKASI */}
-                {lokasiInputMode === 'import' && (
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                        Tempelkan / Paste Daftar Nama Lokasi (Pisahkan Baris / Koma)
-                      </label>
-                      <textarea
-                        rows={4}
-                        value={pasteText}
-                        onChange={(e) => setPasteText(e.target.value)}
-                        placeholder={`A001\nA002\nSHOPEE\nTIKTOK\nDF001\nPMK001`}
-                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono font-bold text-slate-900 dark:text-white"
-                      />
-                    </div>
-
-                    <div className="flex justify-end">
-                      <button
-                        type="button"
-                        onClick={handleParsePaste}
-                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-2 cursor-pointer transition-all active:scale-95"
-                      >
-                        <Upload className="w-4 h-4" />
-                        <span>Impor Daftar Lokasi dengan QR #LOK</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* SUB-TAB 2: TAB PREFIX ACTION (#IN, #OUT, #SO) */}
-          {subTab === 'prefix_action' && (
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
-              <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-800/60 rounded-xl text-xs text-indigo-900 dark:text-indigo-200 flex items-start gap-2.5">
-                <Info className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-black">QR Prefix Action WMS:</span> Tempelkan label QR ini di dinding / meja kerja untuk scan instant beralih mode scanner tanpa klik layar.
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                  Pilih Aksi WMS yang Ingin Dicetak:
-                </span>
-                <button
-                  type="button"
-                  onClick={handleAddAllMainActions}
-                  className="text-xs font-black text-indigo-600 hover:text-indigo-700 cursor-pointer"
-                >
-                  + Tambah Semua Action (#IN, #OUT, #SO)
-                </button>
-              </div>
-
-              {/* Tiga Utama: IN, OUT, SO */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 rounded-2xl flex flex-col justify-between gap-3">
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono font-black text-xl text-emerald-700 dark:text-emerald-300">
-                        #IN
-                      </span>
-                      <span className="px-2 py-0.5 bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 rounded text-[10px] font-black">
-                        SCAN MASUK
-                      </span>
-                    </div>
-                    <p className="text-xs text-emerald-900 dark:text-emerald-300 font-medium mt-1">
-                      Mode Penerimaan Barang &amp; Restock Stok
-                    </p>
-                  </div>
+            {/* ===================================================== */}
+            {/* SUB-TAB 2: ACTION WMS (#IN, #OUT, #SO)                */}
+            {/* ===================================================== */}
+            {subTab === 'prefix_action' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Label Mode Scanner Cepat (#IN, #OUT, #SO):
+                  </span>
                   <button
                     type="button"
-                    onClick={() => handleAddActionPrefix('#IN', 'SCAN MASUK (#IN)', 'Mode Penerimaan & Restock')}
-                    className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+                    onClick={handleAddAllMainActions}
+                    className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Pilih #IN</span>
+                    + Tambah Ketiganya (#IN, #OUT, #SO)
                   </button>
                 </div>
 
-                <div className="p-4 bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 rounded-2xl flex flex-col justify-between gap-3">
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono font-black text-xl text-rose-700 dark:text-rose-300">
-                        #OUT
-                      </span>
-                      <span className="px-2 py-0.5 bg-rose-200 dark:bg-rose-900 text-rose-800 dark:text-rose-200 rounded text-[10px] font-black">
-                        SCAN KELUAR
-                      </span>
-                    </div>
-                    <p className="text-xs text-rose-900 dark:text-rose-300 font-medium mt-1">
-                      Mode Pengiriman Paket &amp; Dispatch Pesanan
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleAddActionPrefix('#OUT', 'SCAN KELUAR (#OUT)', 'Mode Pengiriman & Dispatch')}
-                    className="w-full py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Pilih #OUT</span>
-                  </button>
-                </div>
-
-                <div className="p-4 bg-purple-50 dark:bg-purple-950/40 border border-purple-300 dark:border-purple-800 rounded-2xl flex flex-col justify-between gap-3">
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono font-black text-xl text-purple-700 dark:text-purple-300">
-                        #SO
-                      </span>
-                      <span className="px-2 py-0.5 bg-purple-200 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded text-[10px] font-black">
-                        STOCK OPNAME
-                      </span>
-                    </div>
-                    <p className="text-xs text-purple-900 dark:text-purple-300 font-medium mt-1">
-                      Mode Audit Fisik &amp; Cek Selisih Stok
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleAddActionPrefix('#SO', 'STOCK OPNAME (#SO)', 'Mode Audit Fisik Stok')}
-                    className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Pilih #SO</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Extra Action Presets */}
-              <div className="pt-2">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-2">
-                  Action WMS Tambahan:
-                </span>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {WMS_QUICK_PREFIXES.filter((i) => !['#IN', '#OUT', '#SO'].includes(i.code)).map((item) => (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {[
+                    {
+                      code: '#IN',
+                      badge: 'SCAN MASUK',
+                      desc: 'Penerimaan & Restock',
+                      cls: 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300',
+                    },
+                    {
+                      code: '#OUT',
+                      badge: 'SCAN KELUAR',
+                      desc: 'Pengiriman & Dispatch',
+                      cls: 'bg-rose-50/70 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300',
+                    },
+                    {
+                      code: '#SO',
+                      badge: 'STOCK OPNAME',
+                      desc: 'Audit Fisik Rak',
+                      cls: 'bg-purple-50/70 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300',
+                    },
+                  ].map((act) => (
                     <button
-                      key={item.code}
+                      key={act.code}
                       type="button"
-                      onClick={() => handleAddActionPrefix(item.code, item.title, item.subtitle)}
-                      className="p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 rounded-xl text-left transition-all cursor-pointer flex items-center justify-between"
+                      onClick={() => handleAddActionPrefix(act.code, act.badge, act.desc)}
+                      className={`p-3 rounded-xl border text-left transition-all hover:shadow-xs flex flex-col justify-between gap-2 cursor-pointer ${act.cls}`}
                     >
-                      <div>
-                        <div className="font-mono font-black text-xs text-slate-900 dark:text-white">
-                          {item.code}
-                        </div>
-                        <div className="text-[10px] text-slate-400 truncate max-w-[100px]">
-                          {item.title}
-                        </div>
+                      <div className="flex items-center justify-between w-full">
+                        <span className="font-mono font-extrabold text-base">{act.code}</span>
+                        <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-white/80 dark:bg-slate-900/70 border border-current/20">
+                          + Antrean
+                        </span>
                       </div>
-                      <Plus className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                      <div className="text-[11px] opacity-85 font-medium">{act.desc}</div>
                     </button>
                   ))}
                 </div>
-              </div>
-            </div>
-          )}
 
-          {/* SUB-TAB 3: TAB CUSTOM */}
-          {subTab === 'custom_qr' && (
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
-              <div className="p-3 bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-800/60 rounded-xl text-xs text-purple-900 dark:text-purple-200 flex items-start gap-2.5">
-                <Info className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-black">Tab QR Custom:</span> Bebas menuliskan apa saja kebutuhan QR Code (Judul, Subtitle, Isi Teks / Payload, dan Badge Tag).
+                {/* Extra Quick Actions */}
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <div className="text-[10px] font-bold uppercase text-slate-400 mb-1.5">
+                    Action Tambahan:
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                    {WMS_QUICK_PREFIXES.filter((i) => !['#IN', '#OUT', '#SO'].includes(i.code)).map((item) => (
+                      <button
+                        key={item.code}
+                        type="button"
+                        onClick={() => handleAddActionPrefix(item.code, item.title, item.subtitle)}
+                        className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 rounded-lg text-left flex items-center justify-between transition-all cursor-pointer"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-mono font-bold text-xs text-slate-900 dark:text-white truncate">
+                            {item.code}
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate">{item.title}</div>
+                        </div>
+                        <Plus className="w-3 h-3 text-indigo-600 shrink-0 ml-1" />
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
+            )}
 
-              <form onSubmit={handleAddCustomQr} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* ===================================================== */}
+            {/* SUB-TAB 3: CUSTOM QR                                  */}
+            {/* ===================================================== */}
+            {subTab === 'custom_qr' && (
+              <form onSubmit={handleAddCustomQr} className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                      Judul Utama (Teks Besar) <span className="text-red-500">*</span>
+                    <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                      Judul Label (Teks Besar) <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -1636,240 +1436,260 @@ export const CetakLokasiRakTab: React.FC = () => {
                         setCustomTitle(e.target.value);
                         if (!customPayload || customPayload === customTitle) setCustomPayload(e.target.value);
                       }}
-                      placeholder="Contoh: AREA PACKING, USER-01, BOX-5"
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white"
+                      placeholder="Contoh: MEJA PACKING 1"
+                      className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-900 dark:text-white"
                     />
                   </div>
-
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                      Isi QR Code / Payload Bebas <span className="text-red-500">*</span>
+                    <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                      Isi Payload QR Code <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
                       required
                       value={customPayload}
                       onChange={(e) => setCustomPayload(e.target.value)}
-                      placeholder="Contoh: #PACKING, DATA-1234, https://..."
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono font-bold text-slate-900 dark:text-white"
+                      placeholder="Contoh: #PACKING-01"
+                      className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-slate-900 dark:text-white"
                     />
                   </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                      Subtitle / Keterangan di Bawah Label
+                    <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                      Keterangan Bawah (Opsional)
                     </label>
                     <input
                       type="text"
                       value={customSubtitle}
                       onChange={(e) => setCustomSubtitle(e.target.value)}
-                      placeholder="Contoh: AREA DOKUMENTASI PACKING"
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold"
+                      placeholder="Contoh: ZONA PACKING UTAMA"
+                      className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-900 dark:text-white"
                     />
                   </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                      Badge Tag (Opsional)
-                    </label>
-                    <input
-                      type="text"
-                      value={customBadge}
-                      onChange={(e) => setCustomBadge(e.target.value)}
-                      placeholder="Contoh: CUSTOM, AREA, USER"
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold"
-                    />
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="col-span-2">
+                      <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                        Badge Tag
+                      </label>
+                      <input
+                        type="text"
+                        value={customBadge}
+                        onChange={(e) => setCustomBadge(e.target.value)}
+                        placeholder="CUSTOM"
+                        className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-900 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                        Salinan
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={customCopies}
+                        onChange={(e) => setCustomCopies(parseInt(e.target.value, 10) || 1)}
+                        className="w-full px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-center text-slate-900 dark:text-white"
+                      />
+                    </div>
                   </div>
                 </div>
-
-                <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-600 dark:text-slate-400">
-                      Jumlah Salinan:
-                    </span>
-                    <input
-                      type="number"
-                      min="1"
-                      value={customCopies}
-                      onChange={(e) => setCustomCopies(parseInt(e.target.value, 10) || 1)}
-                      className="w-16 px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-center"
-                    />
-                  </div>
-
+                <div className="flex justify-end pt-1">
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-2 cursor-pointer transition-all active:scale-95"
+                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-2xs flex items-center gap-1.5 cursor-pointer transition-colors"
                   >
-                    <Plus className="w-4 h-4" />
-                    <span>+ Tambah QR Custom ke Antrean</span>
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Tambah QR Custom</span>
                   </button>
                 </div>
               </form>
-            </div>
-          )}
+            )}
+          </div>
+        </div>
 
-          {/* TABLE ANTREAN CETAK LOKASI / PREFIX */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/60 dark:bg-slate-800/40">
-              <div className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-emerald-600" />
-                <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                  Daftar Antrean Cetak ({queue.length})
-                </h3>
-              </div>
-
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => handleSelectAll(true)}
-                  className="text-[11px] font-bold text-emerald-600 hover:underline"
-                >
-                  Pilih Semua
-                </button>
-                <span className="text-slate-300">|</span>
-                <button
-                  type="button"
-                  onClick={() => handleSelectAll(false)}
-                  className="text-[11px] font-bold text-slate-500 hover:underline"
-                >
-                  Batal Semua
-                </button>
-                <span className="text-slate-300">|</span>
-                <button
-                  type="button"
-                  onClick={handleClearQueue}
-                  className="text-[11px] font-bold text-rose-500 hover:underline"
-                >
-                  Kosongkan
-                </button>
-              </div>
+        {/* CARD 2: COMPACT ANTREAN CETAK TABLE */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xs overflow-hidden">
+          <div className="px-3.5 py-2.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              <h3 className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white">
+                Daftar Antrean Cetak
+              </h3>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                {queue.length} item &middot; {totalSelectedCopies} stiker
+              </span>
             </div>
 
-            {/* Search Queue */}
-            <div className="p-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-              <div className="relative">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <div className="flex items-center gap-2">
+              <div className="relative w-40 sm:w-48">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Cari item di antrean..."
-                  className="w-full pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium"
+                  placeholder="Cari kode / QR..."
+                  className="w-full pl-8 pr-6 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
                 />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
               </div>
-            </div>
 
-            {/* List Table */}
-            <div className="max-h-[320px] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
-              {filteredQueue.length === 0 ? (
-                <div className="p-8 text-center text-slate-400 text-xs font-medium">
-                  Antrean cetak kosong. Pilih preset atau buat label baru di atas.
-                </div>
-              ) : (
-                filteredQueue.map((item, idx) => {
-                  const isSelected = item.selected !== false;
-                  return (
-                    <div
-                      key={item.id}
-                      className={`p-3 flex items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all ${
-                        isSelected ? 'bg-white dark:bg-slate-900' : 'bg-slate-50/80 opacity-60'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => handleToggleSelect(item.id)}
-                          className="w-4 h-4 text-emerald-600 rounded cursor-pointer"
-                        />
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono font-black text-sm text-slate-900 dark:text-white">
-                              {item.locCode}
-                            </span>
-                            {item.tagBadge && (
-                              <span className="px-1.5 py-0.2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded text-[9px] font-bold">
-                                {item.tagBadge}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[11px] font-mono text-slate-500 truncate mt-0.5">
-                            QR: <code>{item.qrPayload}</code> {item.zoneDesc ? `• ${item.zoneDesc}` : ''}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <div className="flex items-center border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-slate-50 dark:bg-slate-800">
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateCopies(item.id, -1)}
-                            className="px-2 py-1 text-slate-600 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-xs"
-                          >
-                            -
-                          </button>
-                          <span className="px-2 font-mono font-black text-xs text-slate-900 dark:text-white">
-                            {item.copies || 1}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateCopies(item.id, 1)}
-                            className="px-2 py-1 text-slate-600 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-xs"
-                          >
-                            +
-                          </button>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteItem(item.id)}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-all"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
+              <button
+                type="button"
+                onClick={() => handleSelectAll(true)}
+                className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+              >
+                Pilih Semua
+              </button>
+              <span className="text-slate-300 dark:text-slate-700">|</span>
+              <button
+                type="button"
+                onClick={() => handleSelectAll(false)}
+                className="text-[11px] font-bold text-slate-500 hover:underline cursor-pointer"
+              >
+                Batal
+              </button>
+              <span className="text-slate-300 dark:text-slate-700">|</span>
+              <button
+                type="button"
+                onClick={handleClearQueue}
+                className="text-[11px] font-bold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
+              >
+                Kosongkan
+              </button>
             </div>
           </div>
-        </div>
 
-        {/* RIGHT COLUMN: PRATINJAU & SETTING ADVANCE (5 cols) */}
-        <div className="lg:col-span-5 space-y-4">
-          {/* LIVE PREVIEW CARD */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/60 dark:bg-slate-800/50">
-              <div className="flex items-center gap-2">
-                <Eye className="w-4 h-4 text-emerald-600" />
-                <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                  Pratinjau Label Stiker
-                </h3>
+          <div className="max-h-[340px] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+            {filteredQueue.length === 0 ? (
+              <div className="p-6 text-center text-slate-400 text-xs">
+                Antrean cetak kosong. Klik salah satu tombol preset atau tambahkan lokasi di atas.
               </div>
+            ) : (
+              filteredQueue.map((item) => {
+                const isSelected = item.selected !== false;
+                const isBeingPreviewed = currentPreviewItem?.id === item.id;
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => {
+                      const idxInSelected = selectedItems.findIndex((s) => s.id === item.id);
+                      if (idxInSelected >= 0) setPreviewIndex(idxInSelected);
+                    }}
+                    className={`px-3.5 py-2 flex items-center justify-between gap-3 transition-colors cursor-pointer ${
+                      isBeingPreviewed
+                        ? 'bg-indigo-50/40 dark:bg-indigo-950/25 border-l-4 border-l-indigo-600'
+                        : isSelected
+                        ? 'bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                        : 'bg-slate-50/60 dark:bg-slate-900/40 opacity-55'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={() => handleToggleSelect(item.id)}
+                        className="w-3.5 h-3.5 text-indigo-600 rounded cursor-pointer shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-mono font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white">
+                            {item.locCode}
+                          </span>
+                          {item.tagBadge && (
+                            <span className="px-1.5 py-0.2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded text-[9.5px] font-bold">
+                              {item.tagBadge}
+                            </span>
+                          )}
+                          {item.zoneDesc && (
+                            <span className="text-[10px] font-semibold text-slate-400">
+                              &middot; {item.zoneDesc}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400 truncate">
+                          Payload: <code>{item.qrPayload}</code>
+                        </div>
+                      </div>
+                    </div>
 
+                    <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-slate-50 dark:bg-slate-800">
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateCopies(item.id, -1)}
+                          className="px-2 py-0.5 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-xs cursor-pointer"
+                        >
+                          -
+                        </button>
+                        <span className="px-2 font-mono font-extrabold text-xs text-slate-900 dark:text-white">
+                          {item.copies || 1}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateCopies(item.id, 1)}
+                          className="px-2 py-0.5 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-xs cursor-pointer"
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteItem(item.id)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors cursor-pointer"
+                        title="Hapus dari antrean"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ========================================================= */}
+      {/* RIGHT COLUMN (5 COLS): UNIFIED PREVIEW & PRINT SETTINGS   */}
+      {/* ========================================================= */}
+      <div className="lg:col-span-5 lg:sticky lg:top-3 space-y-3">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xs overflow-hidden">
+          {/* Header with Preview Pager & Primary Print Button */}
+          <div className="px-3.5 py-2.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/50 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Eye className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              <span className="text-xs font-extrabold text-slate-900 dark:text-white">
+                Pratinjau Stiker
+              </span>
               {selectedItems.length > 1 && (
-                <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                <div className="flex items-center gap-1 text-[11px] font-mono text-slate-500 ml-1">
                   <button
                     type="button"
                     onClick={() =>
                       setPreviewIndex((prev) => (prev > 0 ? prev - 1 : selectedItems.length - 1))
                     }
-                    className="px-2 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded font-bold hover:bg-slate-100"
+                    className="px-1.5 py-0.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold hover:bg-slate-100 cursor-pointer"
                   >
                     &lt;
                   </button>
                   <span>
-                    {previewIndex + 1} / {selectedItems.length}
+                    {previewIndex + 1}/{selectedItems.length}
                   </span>
                   <button
                     type="button"
                     onClick={() =>
                       setPreviewIndex((prev) => (prev < selectedItems.length - 1 ? prev + 1 : 0))
                     }
-                    className="px-2 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded font-bold hover:bg-slate-100"
+                    className="px-1.5 py-0.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold hover:bg-slate-100 cursor-pointer"
                   >
                     &gt;
                   </button>
@@ -1877,298 +1697,272 @@ export const CetakLokasiRakTab: React.FC = () => {
               )}
             </div>
 
-            <div className="p-5 bg-slate-100 dark:bg-slate-950 flex flex-col items-center justify-center min-h-[220px]">
-              {currentPreviewItem ? (
-                settings.media === 'thermal_50x20' ? (
-                  /* Preview Khusus Thermal Roll 50x20 mm (Ukuran Barcode) */
-                  <div className="w-[280px] h-[112px] bg-white text-black p-2.5 rounded-xl shadow-md border border-slate-300 flex items-center justify-between gap-3 transition-all">
-                    {/* Left: QR Code Box */}
-                    <div className="w-[84px] h-[84px] flex items-center justify-center shrink-0">
-                      {qrCache[currentPreviewItem.qrPayload] ? (
-                        <img
-                          src={qrCache[currentPreviewItem.qrPayload]}
-                          alt={currentPreviewItem.qrPayload}
-                          className="w-full h-full object-contain"
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-slate-100 flex items-center justify-center text-[10px] text-slate-400 font-mono">
-                          QR...
-                        </div>
-                      )}
-                    </div>
+            <button
+              type="button"
+              onClick={handlePrint}
+              disabled={queue.length === 0 || isPrinting}
+              className="py-1.5 px-3.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>
+                {isPrinting
+                  ? 'Menyiapkan...'
+                  : `Cetak ${totalSelectedCopies > 0 ? totalSelectedCopies : totalAllCopies} Stiker QR`}
+              </span>
+            </button>
+          </div>
 
-                    {/* Right: Info Code & Details */}
-                    <div className="flex-1 min-w-0 flex flex-col justify-center">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {settings.showTagBadge && currentPreviewItem.tagBadge && (
-                          <span className="px-1.5 py-0.5 bg-black text-white rounded text-[8px] font-black uppercase tracking-wider">
-                            {currentPreviewItem.tagBadge}
-                          </span>
-                        )}
-                        <span className="font-mono font-black text-black leading-tight text-base sm:text-lg truncate">
-                          {currentPreviewItem.locCode}
-                        </span>
+          {/* Live Sticker Stage */}
+          <div className="p-4 bg-slate-100 dark:bg-slate-950 flex flex-col items-center justify-center min-h-[195px]">
+            {currentPreviewItem ? (
+              settings.media === 'thermal_50x20' ? (
+                <div className="w-[270px] h-[108px] bg-white text-black p-2.5 rounded-xl shadow-sm border border-slate-300 flex items-center justify-between gap-3">
+                  <div className="w-[80px] h-[80px] flex items-center justify-center shrink-0">
+                    {qrCache[currentPreviewItem.qrPayload] ? (
+                      <img
+                        src={qrCache[currentPreviewItem.qrPayload]}
+                        alt={currentPreviewItem.qrPayload}
+                        className="w-full h-full object-contain"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-slate-100 flex items-center justify-center text-[10px] text-slate-400 font-mono">
+                        QR...
                       </div>
-
-                      {settings.showQrPayloadText && (
-                        <div className="font-mono font-bold text-[9px] text-slate-700 truncate mt-0.5">
-                          {currentPreviewItem.qrPayload}
-                        </div>
-                      )}
-
-                      {settings.showZoneDesc && currentPreviewItem.zoneDesc && (
-                        <div className="bg-slate-100 text-slate-900 font-extrabold text-[8.5px] uppercase tracking-wider py-0.5 px-1 rounded truncate mt-1">
-                          {currentPreviewItem.zoneDesc}
-                        </div>
-                      )}
-                    </div>
+                    )}
                   </div>
-                ) : (
-                  <div
-                    className={`bg-white text-black p-3.5 rounded-xl shadow-md border border-slate-300 transition-all ${
-                      settings.media === 'a6_4' || settings.media === 'a6_6'
-                        ? 'w-[290px] min-h-[160px]'
-                        : 'w-[320px] min-h-[170px]'
-                    }`}
-                  >
-                    {/* Top Bar: Code & Badge */}
-                    <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-1.5 mb-2">
-                      <span
-                        className="font-mono font-black text-black leading-tight"
-                        style={{
-                          fontSize:
-                            settings.codeFontSize === 'normal'
-                              ? '1.2rem'
-                              : settings.codeFontSize === 'large'
-                              ? '1.5rem'
-                              : settings.codeFontSize === 'jumbo'
-                              ? '2.2rem'
-                              : '1.8rem',
-                        }}
-                      >
-                        {currentPreviewItem.locCode}
-                      </span>
+                  <div className="flex-1 min-w-0 flex flex-col justify-center">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       {settings.showTagBadge && currentPreviewItem.tagBadge && (
-                        <span className="px-2 py-0.5 bg-black text-white rounded text-[10px] font-black uppercase tracking-wider">
+                        <span className="px-1.5 py-0.5 bg-black text-white rounded text-[8px] font-black uppercase tracking-wider">
                           {currentPreviewItem.tagBadge}
                         </span>
                       )}
+                      <span className="font-mono font-black text-black leading-tight text-base truncate">
+                        {currentPreviewItem.locCode}
+                      </span>
                     </div>
-
-                    {/* QR Image Box */}
-                    <div className="flex items-center justify-center my-2">
-                      {qrCache[currentPreviewItem.qrPayload] ? (
-                        <img
-                          src={qrCache[currentPreviewItem.qrPayload]}
-                          alt={currentPreviewItem.qrPayload}
-                          className="object-contain"
-                          style={{
-                            width:
-                              settings.qrSize === 'small'
-                                ? '70px'
-                                : settings.qrSize === 'normal'
-                                ? '85px'
-                                : settings.qrSize === 'xlarge'
-                                ? '130px'
-                                : settings.qrSize === 'jumbo'
-                                ? '150px'
-                                : '110px',
-                            height:
-                              settings.qrSize === 'small'
-                                ? '70px'
-                                : settings.qrSize === 'normal'
-                                ? '85px'
-                                : settings.qrSize === 'xlarge'
-                                ? '130px'
-                                : settings.qrSize === 'jumbo'
-                                ? '150px'
-                                : '110px',
-                          }}
-                        />
-                      ) : (
-                        <div className="w-24 h-24 bg-slate-100 flex items-center justify-center text-xs text-slate-400 font-mono">
-                          Loading QR...
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Payload Text */}
                     {settings.showQrPayloadText && (
-                      <div className="text-center font-mono font-bold text-[11px] text-slate-700 mt-1">
+                      <div className="font-mono font-bold text-[9px] text-slate-700 truncate mt-0.5">
                         {currentPreviewItem.qrPayload}
                       </div>
                     )}
-
-                    {/* Subtitle / Zone Desc */}
                     {settings.showZoneDesc && currentPreviewItem.zoneDesc && (
-                      <div className="text-center bg-slate-100 text-slate-900 font-extrabold text-[11px] uppercase tracking-wider py-1 px-2 rounded-lg mt-1.5">
+                      <div className="bg-slate-100 text-slate-900 font-extrabold text-[8.5px] uppercase tracking-wider py-0.5 px-1 rounded truncate mt-1">
                         {currentPreviewItem.zoneDesc}
                       </div>
                     )}
                   </div>
-                )
+                </div>
               ) : (
-                <div className="text-slate-400 text-xs">Pilih item untuk pratinjau</div>
-              )}
-            </div>
+                <div className="bg-white text-black p-3 rounded-xl shadow-sm border border-slate-300 w-[260px]">
+                  <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-1 mb-1.5">
+                    <span
+                      className="font-mono font-black text-black leading-tight truncate"
+                      style={{
+                        fontSize:
+                          settings.codeFontSize === 'normal'
+                            ? '1.1rem'
+                            : settings.codeFontSize === 'large'
+                            ? '1.35rem'
+                            : settings.codeFontSize === 'jumbo'
+                            ? '1.85rem'
+                            : '1.55rem',
+                      }}
+                    >
+                      {currentPreviewItem.locCode}
+                    </span>
+                    {settings.showTagBadge && currentPreviewItem.tagBadge && (
+                      <span className="px-1.5 py-0.5 bg-black text-white rounded text-[9px] font-black uppercase tracking-wider shrink-0">
+                        {currentPreviewItem.tagBadge}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-center my-1.5">
+                    {qrCache[currentPreviewItem.qrPayload] ? (
+                      <img
+                        src={qrCache[currentPreviewItem.qrPayload]}
+                        alt={currentPreviewItem.qrPayload}
+                        className="object-contain"
+                        style={{
+                          width:
+                            settings.qrSize === 'small'
+                              ? '64px'
+                              : settings.qrSize === 'normal'
+                              ? '78px'
+                              : settings.qrSize === 'xlarge'
+                              ? '112px'
+                              : settings.qrSize === 'jumbo'
+                              ? '128px'
+                              : '96px',
+                          height:
+                            settings.qrSize === 'small'
+                              ? '64px'
+                              : settings.qrSize === 'normal'
+                              ? '78px'
+                              : settings.qrSize === 'xlarge'
+                              ? '112px'
+                              : settings.qrSize === 'jumbo'
+                              ? '128px'
+                              : '96px',
+                        }}
+                      />
+                    ) : (
+                      <div className="w-20 h-20 bg-slate-100 flex items-center justify-center text-xs text-slate-400 font-mono">
+                        QR...
+                      </div>
+                    )}
+                  </div>
+
+                  {settings.showQrPayloadText && (
+                    <div className="text-center font-mono font-bold text-[10px] text-slate-700">
+                      {currentPreviewItem.qrPayload}
+                    </div>
+                  )}
+
+                  {settings.showZoneDesc && currentPreviewItem.zoneDesc && (
+                    <div className="text-center bg-slate-100 text-slate-900 font-extrabold text-[10px] uppercase tracking-wider py-0.5 px-2 rounded mt-1">
+                      {currentPreviewItem.zoneDesc}
+                    </div>
+                  )}
+                </div>
+              )
+            ) : (
+              <div className="text-slate-400 text-xs">Pilih item di antrean untuk pratinjau</div>
+            )}
           </div>
 
-          {/* ADVANCE SETTINGS PANEL */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setShowAdvanceSettings((prev) => !prev)}
-              className="w-full p-4 flex items-center justify-between bg-slate-50/60 dark:bg-slate-800/40 hover:bg-slate-100 transition-all cursor-pointer"
-            >
-              <div className="flex items-center gap-2">
-                <Sliders className="w-4 h-4 text-emerald-600" />
-                <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                  Setting Advance Label (A6 &amp; Ukuran)
-                </h3>
+          {/* Always-Visible Compact Paper & Layout Settings */}
+          <div className="p-3.5 border-t border-slate-200 dark:border-slate-800 space-y-3 text-xs">
+            {/* Ukuran Kertas */}
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                Ukuran Kertas &amp; Format Stiker
+              </label>
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  { key: 'a6_4', label: 'A6 · 4 QR (Standar)' },
+                  { key: 'a6_6', label: 'A6 · 6 QR (Kompak)' },
+                  { key: 'a6_1', label: 'A6 · 1 QR (Jumbo)' },
+                  { key: 'thermal_50x20', label: 'Roll 50×20mm (Barcode)' },
+                  { key: 'thermal_50x30', label: 'Roll 50×30mm' },
+                  { key: 'thermal_70x40', label: 'Roll 70×40mm' },
+                  { key: 'thermal_80x50', label: 'Roll 80×50mm' },
+                  { key: 'thermal_100x50', label: 'Roll 100×50mm' },
+                ].map((m) => (
+                  <button
+                    key={m.key}
+                    type="button"
+                    onClick={() => updateSettings({ media: m.key as LocationPrintMedia })}
+                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-left border transition-all cursor-pointer truncate ${
+                      settings.media === m.key
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                        : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-400'
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
               </div>
-              <span className="text-xs font-bold text-emerald-600">
-                {showAdvanceSettings ? 'Sembunyikan ▲' : 'Buka Pengaturan ▼'}
-              </span>
-            </button>
+            </div>
 
-            {showAdvanceSettings && (
-              <div className="p-4 sm:p-5 space-y-4 border-t border-slate-200 dark:border-slate-800">
-                {/* 1. Ukuran Label / Format Kertas */}
-                <div>
-                  <label className="block text-xs font-black text-slate-900 dark:text-white mb-1.5 flex items-center gap-1.5">
-                    <Grid className="w-3.5 h-3.5 text-emerald-600" />
-                    Ukuran Label &amp; Kertas:
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {[
-                      { key: 'a6_4', label: '1 A6 = 4 QR (Default Standards)' },
-                      { key: 'a6_1', label: '1 A6 = 1 QR Jumbo' },
-                      { key: 'a6_6', label: '1 A6 = 6 QR Kompak' },
-                      { key: 'thermal_100x50', label: 'Thermal Roll 100x50 mm' },
-                      { key: 'thermal_80x50', label: 'Thermal Roll 80x50 mm' },
-                      { key: 'thermal_70x40', label: 'Thermal Roll 70x40 mm' },
-                      { key: 'thermal_50x30', label: 'Thermal Roll 50x30 mm' },
-                      { key: 'thermal_50x20', label: 'Thermal Roll 50x20 mm (Ukuran Barcode)' },
-                    ].map((m) => (
-                      <button
-                        key={m.key}
-                        type="button"
-                        onClick={() => updateSettings({ media: m.key as LocationPrintMedia })}
-                        className={`p-2 rounded-xl text-xs font-bold text-left border transition-all cursor-pointer ${
-                          settings.media === m.key
-                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
-                            : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-emerald-400'
-                        }`}
-                      >
-                        {m.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 2. Ukuran Font */}
-                <div>
-                  <label className="block text-xs font-black text-slate-900 dark:text-white mb-1.5 flex items-center gap-1.5">
-                    <Type className="w-3.5 h-3.5 text-emerald-600" />
-                    Ukuran Font Kode / Judul:
-                  </label>
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {[
-                      { key: 'normal', label: 'Normal' },
-                      { key: 'large', label: 'Large' },
-                      { key: 'xlarge', label: 'X-Large' },
-                      { key: 'jumbo', label: 'Jumbo' },
-                    ].map((f) => (
-                      <button
-                        key={f.key}
-                        type="button"
-                        onClick={() => updateSettings({ codeFontSize: f.key as any })}
-                        className={`py-1.5 text-center text-xs font-bold rounded-lg border transition-all cursor-pointer ${
-                          settings.codeFontSize === f.key
-                            ? 'bg-emerald-600 text-white border-emerald-600'
-                            : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-                        }`}
-                      >
-                        {f.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 3. Ukuran QR Code */}
-                <div>
-                  <label className="block text-xs font-black text-slate-900 dark:text-white mb-1.5 flex items-center gap-1.5">
-                    <Maximize2 className="w-3.5 h-3.5 text-emerald-600" />
-                    Ukuran Gambar QR Code:
-                  </label>
-                  <div className="grid grid-cols-5 gap-1.5">
-                    {[
-                      { key: 'small', label: 'Kecil' },
-                      { key: 'normal', label: 'Sedang' },
-                      { key: 'large', label: 'Besar' },
-                      { key: 'xlarge', label: 'X-Large' },
-                      { key: 'jumbo', label: 'Jumbo' },
-                    ].map((q) => (
-                      <button
-                        key={q.key}
-                        type="button"
-                        onClick={() => updateSettings({ qrSize: q.key as any })}
-                        className={`py-1.5 text-center text-[11px] font-bold rounded-lg border transition-all cursor-pointer ${
-                          settings.qrSize === q.key
-                            ? 'bg-emerald-600 text-white border-emerald-600'
-                            : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-                        }`}
-                      >
-                        {q.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 4. Opsi Tampilan Elements */}
-                <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
-                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300">
-                    <input
-                      type="checkbox"
-                      checked={settings.showCutLines}
-                      onChange={(e) => updateSettings({ showCutLines: e.target.checked })}
-                      className="w-4 h-4 text-emerald-600 rounded"
-                    />
-                    <span>Tampilkan Garis Potong Putus-putus (Sangat membantu cetak A6)</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300">
-                    <input
-                      type="checkbox"
-                      checked={settings.showZoneDesc}
-                      onChange={(e) => updateSettings({ showZoneDesc: e.target.checked })}
-                      className="w-4 h-4 text-emerald-600 rounded"
-                    />
-                    <span>Tampilkan Subtitle Keterangan / Deskripsi Area</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300">
-                    <input
-                      type="checkbox"
-                      checked={settings.showTagBadge}
-                      onChange={(e) => updateSettings({ showTagBadge: e.target.checked })}
-                      className="w-4 h-4 text-emerald-600 rounded"
-                    />
-                    <span>Tampilkan Badge Tag Hitam di Atas</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300">
-                    <input
-                      type="checkbox"
-                      checked={settings.showQrPayloadText}
-                      onChange={(e) => updateSettings({ showQrPayloadText: e.target.checked })}
-                      className="w-4 h-4 text-emerald-600 rounded"
-                    />
-                    <span>Tampilkan Teks Isi QR Code di Bawah Gambar QR</span>
-                  </label>
+            {/* Ukuran Font & QR */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                  Ukuran Teks Kode
+                </label>
+                <div className="grid grid-cols-4 gap-1">
+                  {[
+                    { key: 'normal', label: 'S' },
+                    { key: 'large', label: 'M' },
+                    { key: 'xlarge', label: 'L' },
+                    { key: 'jumbo', label: 'XL' },
+                  ].map((f) => (
+                    <button
+                      key={f.key}
+                      type="button"
+                      onClick={() => updateSettings({ codeFontSize: f.key as any })}
+                      className={`py-1 text-center text-[10px] font-bold rounded border transition-all cursor-pointer ${
+                        settings.codeFontSize === f.key
+                          ? 'bg-indigo-600 text-white border-indigo-600'
+                          : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
                 </div>
               </div>
-            )}
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                  Ukuran Gambar QR
+                </label>
+                <div className="grid grid-cols-5 gap-1">
+                  {[
+                    { key: 'small', label: 'XS' },
+                    { key: 'normal', label: 'S' },
+                    { key: 'large', label: 'M' },
+                    { key: 'xlarge', label: 'L' },
+                    { key: 'jumbo', label: 'XL' },
+                  ].map((q) => (
+                    <button
+                      key={q.key}
+                      type="button"
+                      onClick={() => updateSettings({ qrSize: q.key as any })}
+                      className={`py-1 text-center text-[10px] font-bold rounded border transition-all cursor-pointer ${
+                        settings.qrSize === q.key
+                          ? 'bg-indigo-600 text-white border-indigo-600'
+                          : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                      }`}
+                    >
+                      {q.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Opsi Elemen Checkboxes (2x2 Grid) */}
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 gap-2">
+              <label className="flex items-center gap-1.5 cursor-pointer text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={settings.showCutLines}
+                  onChange={(e) => updateSettings({ showCutLines: e.target.checked })}
+                  className="w-3.5 h-3.5 text-indigo-600 rounded"
+                />
+                <span>Garis Potong</span>
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={settings.showQrPayloadText}
+                  onChange={(e) => updateSettings({ showQrPayloadText: e.target.checked })}
+                  className="w-3.5 h-3.5 text-indigo-600 rounded"
+                />
+                <span>Teks Payload QR</span>
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={settings.showTagBadge}
+                  onChange={(e) => updateSettings({ showTagBadge: e.target.checked })}
+                  className="w-3.5 h-3.5 text-indigo-600 rounded"
+                />
+                <span>Badge Tag Atas</span>
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={settings.showZoneDesc}
+                  onChange={(e) => updateSettings({ showZoneDesc: e.target.checked })}
+                  className="w-3.5 h-3.5 text-indigo-600 rounded"
+                />
+                <span>Deskripsi Area</span>
+              </label>
+            </div>
           </div>
         </div>
       </div>

@@ -33,12 +33,14 @@ interface CetakBarcodeProdukViewProps {
   session?: UserSession | null;
   productCatalog?: ProductItem[];
   onShowToast?: (msg: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
+  embedded?: boolean;
 }
 
 export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
   session,
   productCatalog = [],
   onShowToast,
+  embedded = false,
 }) => {
   // Navigation Tabs: 'catalog_multi' | 'manual' | 'import'
   const [activeTab, setActiveTab] = useState<'catalog_multi' | 'manual' | 'import'>('catalog_multi');
@@ -677,26 +679,26 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
   }
 
   return (
-    <div className="p-3 sm:p-5 w-full max-w-full space-y-4 sm:space-y-6">
+    <div className={embedded ? 'w-full max-w-full space-y-4' : 'p-3 sm:p-5 w-full max-w-full space-y-4 sm:space-y-6'}>
       {/* ========================================================= */}
       {/* 1. HEADER SECTION & QUICK ACTIONS                         */}
       {/* ========================================================= */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs transition-colors">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-xs transition-colors">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-start sm:items-center gap-3">
-            <div className="p-3 bg-purple-600/10 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 rounded-2xl border border-purple-200 dark:border-purple-800">
-              <QrCode className="w-7 h-7" />
+            <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 rounded-xl border border-indigo-200 dark:border-indigo-800/60">
+              <QrCode className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight">
                   Cetak Barcode Produk (50×20 mm)
-                </h1>
-                <span className="px-2.5 py-0.5 text-[11px] font-black uppercase bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 rounded-full">
+                </h2>
+                <span className="px-2 py-0.5 text-[10px] font-black uppercase bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-md">
                   Thermal Direct Label
                 </span>
               </div>
-              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 Cetak barcode satuan, multi-choice master katalog produk, atau import massal Excel/CSV.
               </p>
             </div>
@@ -704,18 +706,18 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
 
           {/* Quick Stat Badges & Print Action */}
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-            <div className="px-3.5 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-center">
-              <div className="text-[11px] font-bold text-slate-500">Antrean SKU</div>
-              <div className="text-base font-black text-slate-900 dark:text-white">
-                {queue.length} <span className="text-xs font-semibold text-slate-400">item</span>
+            <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-center">
+              <div className="text-[10px] font-bold text-slate-500">Antrean SKU</div>
+              <div className="text-sm font-black text-slate-900 dark:text-white font-mono">
+                {queue.length} <span className="text-[11px] font-semibold text-slate-400">item</span>
               </div>
             </div>
 
-            <div className="px-3.5 py-2 bg-purple-50 dark:bg-purple-950/50 border border-purple-200 dark:border-purple-800/60 rounded-xl text-center">
-              <div className="text-[11px] font-bold text-purple-600 dark:text-purple-300">Total Stiker</div>
-              <div className="text-base font-black text-purple-700 dark:text-purple-300">
+            <div className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800/60 rounded-xl text-center">
+              <div className="text-[10px] font-bold text-indigo-600 dark:text-indigo-300">Total Stiker</div>
+              <div className="text-sm font-black text-indigo-700 dark:text-indigo-300 font-mono">
                 {totalSelectedCopies}{' '}
-                <span className="text-xs font-semibold text-purple-500/80">/ {totalAllCopies} pcs</span>
+                <span className="text-[11px] font-semibold text-indigo-500/80">/ {totalAllCopies} pcs</span>
               </div>
             </div>
 
@@ -723,7 +725,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
               type="button"
               onClick={handlePrintBarcodes}
               disabled={queue.length === 0 || isPrinting}
-              className="flex-1 sm:flex-none px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-black text-sm rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
+              className="flex-1 sm:flex-none px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
             >
               <Printer className="w-4 h-4" />
               <span>

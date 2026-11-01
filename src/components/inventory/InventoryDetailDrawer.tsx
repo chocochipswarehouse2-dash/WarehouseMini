@@ -22,6 +22,14 @@ import {
   Trash2,
   Save,
   Check,
+  Copy,
+  Table2,
+  LayoutGrid,
+  Smartphone,
+  Monitor,
+  Globe,
+  ClipboardList,
+  ArrowDownLeft,
 } from 'lucide-react';
 import {
   KOMPARASI_5,
@@ -34,7 +42,8 @@ import {
   type InventoryRow,
 } from './inventoryModel';
 import { SelisihCell } from './InventoryList';
-import { fetchLogsBySku, deleteLogProdukItem, updateLogProdukItem } from '../../services/supabase';
+import { fetchLogsBySku, deleteLogProdukItem, updateLogProdukItem, getAreaFromLokasi } from '../../services/supabase';
+import { formatOperatorWithPersonName } from '../../utils/userResolver';
 import type { LogProdukItem } from '../../types';
 
 interface DrawerProps {
@@ -137,6 +146,30 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClo
   const [loadingLogs, setLoadingLogs] = useState<boolean>(false);
   const [logFilter, setLogFilter] = useState<LogFilterType>('ALL');
   const [logSearch, setLogSearch] = useState<string>('');
+  const [logViewMode, setLogViewMode] = useState<'TABLE' | 'CARD'>(() => {
+    try {
+      const saved = localStorage.getItem('wms_drawer_log_view_mode');
+      if (saved === 'TABLE' || saved === 'CARD') return saved;
+    } catch {}
+    return 'TABLE';
+  });
+  const [copiedInv, setCopiedInv] = useState<string | null>(null);
+
+  const handleSetLogViewMode = (mode: 'TABLE' | 'CARD') => {
+    setLogViewMode(mode);
+    try {
+      localStorage.setItem('wms_drawer_log_view_mode', mode);
+    } catch {}
+  };
+
+  const handleCopyInv = (inv?: string) => {
+    if (!inv || inv === '-') return;
+    try {
+      navigator.clipboard.writeText(inv);
+      setCopiedInv(inv);
+      setTimeout(() => setCopiedInv(null), 1800);
+    } catch {}
+  };
 
   // Edit & Delete Log states
   const [editingLog, setEditingLog] = useState<LogProdukItem | null>(null);
@@ -282,6 +315,46 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClo
     return { inQty, outQty, soCount, adjCount };
   }, [logs]);
 
+  // Pre-calculate running balance (saldo stok saat itu) per lokasi rak from row.locs (matching Log Produk in Scanner | LOG)
+  const logStockMap = useMemo(() => {
+    const stockAtMoment = new Map<string | number, number>();
+    const locLiveMap = new Map<string, number>();
+    (row?.locs || []).forEach((l) => {
+      locLiveMap.set((l.name || 'Warehouse').toUpperCase().trim(), Number(l.qty) || 0);
+    });
+
+    const logsByLoc = new Map<string, LogProdukItem[]>();
+    for (let i = 0; i < logs.length; i++) {
+      const item = logs[i];
+      const locKey = (item.lokasi || 'Warehouse').toUpperCase().trim();
+      let list = logsByLoc.get(locKey);
+      if (!list) {
+        list = [];
+        logsByLoc.set(locKey, list);
+      }
+      list.push(item);
+    }
+
+    logsByLoc.forEach((list, locKey) => {
+      let running = locLiveMap.get(locKey) ?? 0;
+      for (let i = 0; i < list.length; i++) {
+        const log = list[i];
+        const logKey = log.id || `${log.invoice}_${log.sku}_${log.created_at}`;
+        stockAtMoment.set(logKey, running);
+
+        const delta =
+          log.type === 'IN' || log.type === 'ADJ_IN'
+            ? Number(log.qty) || 0
+            : log.type === 'OUT' || log.type === 'ADJ_OUT'
+            ? -(Number(log.qty) || 0)
+            : 0;
+        running = running - delta;
+      }
+    });
+
+    return stockAtMoment;
+  }, [logs, row?.locs]);
+
   // Filtered logs
   const filteredLogs = useMemo(() => {
     let result = logs;
@@ -383,7 +456,7 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClo
             }`}
           >
             <History className="w-4 h-4" />
-            <span>Histori Mutasi</span>
+            <span>Log Produk</span>
             {logs.length > 0 && (
               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-extrabold bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300">
                 {logs.length}
@@ -416,14 +489,14 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClo
                     </div>
                     <div className="text-left">
                       <div className="text-xs font-black text-slate-900 dark:text-white">
-                        Histori Rekam Mutasi &amp; Opname
+                        Log Produk (Rekam IN / OUT / SO)
                       </div>
                       <div className="text-[11px] text-slate-500 dark:text-slate-400">
                         {loadingLogs
                           ? 'Memuat riwayat...'
                           : logs.length > 0
-                          ? `${logs.length} mutasi fisik tercatat di log gudang`
-                          : 'Klik untuk memeriksa riwayat pergerakan fisik barang'}
+                          ? `${logs.length} log produk tercatat di gudang`
+                          : 'Klik untuk memeriksa log pergerakan fisik barang'}
                       </div>
                     </div>
                   </div>
@@ -594,7 +667,7 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClo
               {/* Summary KPIs */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase">Total Mutasi</div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase">Total Log Produk</div>
                   <div className="mt-0.5 text-lg font-black font-mono text-slate-800 dark:text-slate-200">
                     {logs.length}
                   </div>
@@ -625,7 +698,7 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClo
                 </div>
               </div>
 
-              {/* Filters & Search */}
+              {/* Filters, Search & View Mode Switcher (Tabel vs Kartu) */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {(
@@ -643,7 +716,7 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClo
                       onClick={() => setLogFilter(f.key)}
                       className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
                         logFilter === f.key
-                          ? 'bg-amber-500 text-white shadow-xs'
+                          ? 'bg-indigo-600 text-white shadow-2xs'
                           : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                       }`}
                     >
@@ -652,15 +725,15 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClo
                   ))}
                 </div>
 
-                <div className="flex items-center gap-2 w-full sm:w-80">
-                  <div className="relative flex-1">
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <div className="relative flex-1 sm:w-64">
                     <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
                       type="text"
                       value={logSearch}
                       onChange={(e) => setLogSearch(e.target.value)}
-                      placeholder="Cari invoice, lokasi rak, atau operator..."
-                      className="w-full pl-8 pr-7 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0E1420] text-xs font-medium text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-amber-500"
+                      placeholder="Cari invoice, lokasi rak, operator..."
+                      className="w-full pl-8 pr-7 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0E1420] text-xs font-medium text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500"
                     />
                     {logSearch && (
                       <button
@@ -672,35 +745,278 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClo
                       </button>
                     )}
                   </div>
+
+                  {/* View Mode Switcher: Tabel vs Kartu */}
+                  <div className="inline-flex items-center bg-slate-100 dark:bg-slate-800/90 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700/80 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleSetLogViewMode('TABLE')}
+                      className={`py-1 px-2.5 text-[11px] font-bold rounded-md flex items-center gap-1 transition-all cursor-pointer ${
+                        logViewMode === 'TABLE'
+                          ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs border border-slate-200/80 dark:border-slate-700'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                      }`}
+                      title="Tampilan Tabel seperti di Log Produk"
+                    >
+                      <Table2 className="w-3.5 h-3.5 shrink-0" />
+                      <span>Tabel</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSetLogViewMode('CARD')}
+                      className={`py-1 px-2.5 text-[11px] font-bold rounded-md flex items-center gap-1 transition-all cursor-pointer ${
+                        logViewMode === 'CARD'
+                          ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs border border-slate-200/80 dark:border-slate-700'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                      }`}
+                      title="Tampilan Kartu"
+                    >
+                      <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
+                      <span>Kartu</span>
+                    </button>
+                  </div>
+
                   <button
                     type="button"
                     onClick={() => row.sku && loadProductLogs(row.sku)}
                     disabled={loadingLogs}
-                    className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
-                    title="Segarkan data log"
+                    className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 transition-colors cursor-pointer shrink-0"
+                    title="Segarkan data log produk"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${loadingLogs ? 'animate-spin text-amber-500' : ''}`} />
+                    <RefreshCw className={`w-3.5 h-3.5 ${loadingLogs ? 'animate-spin text-indigo-500' : ''}`} />
                   </button>
                 </div>
               </div>
 
-              {/* Logs List */}
+              {/* Logs Content (Table or Card) */}
               {loadingLogs ? (
                 <div className="py-12 text-center text-slate-400 space-y-2">
-                  <RefreshCw className="w-6 h-6 animate-spin mx-auto text-amber-500" />
-                  <div className="text-xs font-bold">Memuat histori mutasi dari Supabase...</div>
+                  <RefreshCw className="w-6 h-6 animate-spin mx-auto text-indigo-500" />
+                  <div className="text-xs font-bold">Memuat log produk dari Supabase...</div>
                 </div>
               ) : filteredLogs.length === 0 ? (
                 <div className="py-12 text-center rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 p-6 space-y-2">
                   <History className="w-8 h-8 text-slate-300 dark:text-slate-700 mx-auto" />
                   <div className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                    Tidak Ditemukan Histori Mutasi
+                    Tidak Ditemukan Log Produk
                   </div>
                   <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
                     {logs.length === 0
                       ? `Belum ada log pergerakan (IN, OUT, SO) yang tercatat untuk SKU ${row.sku}.`
                       : 'Tidak ada log yang cocok dengan filter yang Anda pilih.'}
                   </p>
+                </div>
+              ) : logViewMode === 'TABLE' ? (
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0E1420] overflow-hidden shadow-2xs">
+                  <div className="overflow-x-auto scrollbar-thin">
+                    <table className="w-full min-w-[760px] text-left text-xs border-collapse lg:table-fixed">
+                      <thead>
+                        <tr className="bg-slate-50 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                          <th className="py-2.5 px-3 w-[16%]">Tipe &amp; Waktu</th>
+                          <th className="py-2.5 px-3 w-[20%]">Invoice &amp; Sumber</th>
+                          <th className="py-2.5 px-3 w-[15%]">Lokasi &amp; Area</th>
+                          <th className="py-2.5 px-3 w-[8%] text-center">Qty</th>
+                          <th className="py-2.5 px-3 w-[9%] text-center">Stok</th>
+                          <th className="py-2.5 px-3 w-[23%]">Operator &amp; Catatan</th>
+                          <th className="py-2.5 px-3 w-[9%] text-right">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                        {filteredLogs.map((log, idx) => {
+                          const isPlus = log.type === 'IN' || log.type === 'ADJ_IN';
+                          const isMinus = log.type === 'OUT' || log.type === 'ADJ_OUT';
+                          const isSo = log.type === 'SO';
+                          const resolvedArea = getAreaFromLokasi(log.lokasi || '', log.area);
+                          const isLocAnomaly = resolvedArea === 'Anomali';
+                          const invUpper = (log.invoice || '').toUpperCase();
+                          const opLower = (log.operator || '').toLowerCase();
+                          const isWa =
+                            invUpper.startsWith('WA') ||
+                            opLower.includes('@g.us') ||
+                            opLower.includes('628');
+                          const isWeb =
+                            invUpper.startsWith('WEB') ||
+                            opLower.includes('web') ||
+                            opLower.includes('staging');
+                          const logKey = log.id || `${log.invoice}_${log.sku}_${log.created_at}`;
+                          const stokSaatItu = logStockMap.get(logKey) ?? 0;
+
+                          return (
+                            <tr
+                              key={log.id || `${log.invoice}_${idx}`}
+                              className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
+                            >
+                              {/* 1. Tipe & Waktu */}
+                              <td className="py-2.5 px-3 whitespace-nowrap">
+                                <div className="flex items-center gap-1.5">
+                                  <span
+                                    className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1 border font-mono ${
+                                      log.type === 'IN'
+                                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                                        : log.type === 'OUT'
+                                        ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
+                                        : log.type === 'ADJ_IN'
+                                        ? 'bg-teal-500/10 text-teal-600 dark:text-teal-400 border-teal-500/20'
+                                        : log.type === 'ADJ_OUT'
+                                        ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                                        : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20'
+                                    }`}
+                                  >
+                                    {isSo ? (
+                                      <ClipboardList className="w-3 h-3" />
+                                    ) : isPlus ? (
+                                      <ArrowDownLeft className="w-3 h-3" />
+                                    ) : (
+                                      <ArrowUpRight className="w-3 h-3" />
+                                    )}
+                                    {log.type}
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 font-mono">
+                                  {formatDateTime(log.created_at)}
+                                </div>
+                              </td>
+
+                              {/* 2. Invoice & Sumber */}
+                              <td className="py-2.5 px-3">
+                                <div className="flex flex-col gap-1 items-start">
+                                  <div className="flex items-center gap-1.5 max-w-full">
+                                    <span className="font-mono font-bold text-slate-800 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md text-[11px] truncate select-all">
+                                      {log.invoice || '-'}
+                                    </span>
+                                    {log.invoice && log.invoice !== '-' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCopyInv(log.invoice)}
+                                        title="Salin invoice"
+                                        className="p-0.5 text-slate-400 hover:text-indigo-500 transition-colors rounded cursor-pointer shrink-0"
+                                      >
+                                        {copiedInv === log.invoice ? (
+                                          <Check className="w-3 h-3 text-emerald-500" />
+                                        ) : (
+                                          <Copy className="w-3 h-3" />
+                                        )}
+                                      </button>
+                                    )}
+                                  </div>
+                                  <div>
+                                    {isWa ? (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/80">
+                                        <Smartphone className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" /> WA
+                                      </span>
+                                    ) : isWeb ? (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200 dark:border-sky-800/80">
+                                        <Monitor className="w-2.5 h-2.5 text-sky-600 dark:text-sky-400" /> Web App
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                        <Globe className="w-2.5 h-2.5 text-slate-500" /> System
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* 3. Lokasi & Area */}
+                              <td className="py-2.5 px-3 whitespace-nowrap">
+                                <div
+                                  className={`font-bold flex items-center gap-1 font-mono ${
+                                    isLocAnomaly
+                                      ? 'text-rose-600 dark:text-rose-400'
+                                      : 'text-indigo-600 dark:text-indigo-400'
+                                  }`}
+                                >
+                                  <MapPin className="w-3 h-3 shrink-0" />
+                                  <span>{log.lokasi || '-'}</span>
+                                </div>
+                                <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                                  {isLocAnomaly ? '⚠️ Anomali' : resolvedArea}
+                                </div>
+                              </td>
+
+                              {/* 4. Qty */}
+                              <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                                <span
+                                  className={`inline-block px-2.5 py-1 rounded-lg font-black text-xs font-mono ${
+                                    isPlus
+                                      ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                                      : isMinus
+                                      ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
+                                      : 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
+                                  }`}
+                                >
+                                  {isPlus ? '+' : isMinus ? '-' : ''}
+                                  {Math.abs(Number(log.qty) || 0)}
+                                </span>
+                              </td>
+
+                              {/* 5. Stok (Saldo Saat Mutasi) */}
+                              <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                                <span
+                                  className={`inline-block px-2.5 py-1 rounded-lg font-black text-xs font-mono border ${
+                                    stokSaatItu > 0
+                                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 border-slate-200 dark:border-slate-700'
+                                      : stokSaatItu === 0
+                                      ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800/60'
+                                      : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800/60'
+                                  }`}
+                                  title={`Sisa stok di ${log.lokasi || 'rak'} pada detik transaksi ini: ${stokSaatItu} pcs`}
+                                >
+                                  {stokSaatItu}
+                                </span>
+                              </td>
+
+                              {/* 6. Operator & Catatan */}
+                              <td className="py-2.5 px-3">
+                                {log.operator && (
+                                  <div className="flex items-center gap-1 text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                                    <User className="w-3 h-3 text-slate-400 shrink-0" />
+                                    <span className="truncate">{formatOperatorWithPersonName(log.operator)}</span>
+                                  </div>
+                                )}
+                                {log.keterangan && (
+                                  <div
+                                    className="text-[11px] italic text-slate-500 dark:text-slate-400 truncate mt-0.5"
+                                    title={log.keterangan}
+                                  >
+                                    &ldquo;{log.keterangan}&rdquo;
+                                  </div>
+                                )}
+                              </td>
+
+                              {/* 7. Aksi */}
+                              <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                                <div className="inline-flex items-center justify-end gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleStartEdit(log);
+                                    }}
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors cursor-pointer"
+                                    title="Edit log produk ini"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setDeletingLog(log);
+                                    }}
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                                    title="Hapus log produk ini"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -718,6 +1034,8 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClo
                       : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
 
                     const qtyPrefix = isPlus ? '+' : isMinus ? '-' : '';
+                    const logKey = log.id || `${log.invoice}_${log.sku}_${log.created_at}`;
+                    const stokSaatItu = logStockMap.get(logKey) ?? 0;
 
                     return (
                       <div
@@ -725,7 +1043,7 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClo
                         className="p-3.5 rounded-2xl bg-slate-50/70 dark:bg-[#0E1420] border border-slate-200/80 dark:border-slate-800 space-y-2 hover:border-slate-300 dark:hover:border-slate-700 transition-colors flex flex-col justify-between"
                       >
                         <div className="space-y-2">
-                          {/* Top Row: Type Badge + Qty + Date + Actions */}
+                          {/* Top Row: Type Badge + Qty + Stok + Date + Actions */}
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-1.5">
                               <span
@@ -745,6 +1063,18 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClo
                                 {qtyPrefix}
                                 {Math.abs(Number(log.qty) || 0)} pcs
                               </span>
+                              <span
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold border ${
+                                  stokSaatItu > 0
+                                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+                                    : stokSaatItu === 0
+                                    ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800/60'
+                                    : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800/60'
+                                }`}
+                                title={`Sisa stok di ${log.lokasi || 'rak'} saat itu`}
+                              >
+                                Stok: {stokSaatItu}
+                              </span>
                             </div>
 
                             <div className="flex items-center gap-2">
@@ -762,7 +1092,7 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClo
                                     handleStartEdit(log);
                                   }}
                                   className="p-1 rounded-md text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors cursor-pointer"
-                                  title="Edit mutasi ini"
+                                  title="Edit log produk ini"
                                 >
                                   <Pencil className="w-3.5 h-3.5" />
                                 </button>
@@ -773,7 +1103,7 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClo
                                     setDeletingLog(log);
                                   }}
                                   className="p-1 rounded-md text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
-                                  title="Hapus mutasi ini"
+                                  title="Hapus log produk ini"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
@@ -805,7 +1135,7 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClo
                               <div className="flex items-center gap-1 truncate">
                                 <User className="w-3 h-3 text-slate-400 shrink-0" />
                                 <span className="font-medium text-slate-600 dark:text-slate-300 truncate">
-                                  {log.operator}
+                                  {formatOperatorWithPersonName(log.operator)}
                                 </span>
                               </div>
                             )}

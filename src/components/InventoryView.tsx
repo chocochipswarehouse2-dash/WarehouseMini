@@ -16,9 +16,15 @@ import {
   Boxes,
   LayoutGrid,
   ClipboardList,
+  ScanBarcode,
+  FileSpreadsheet,
+  Columns2,
+  Table2,
+  LayoutList,
 } from 'lucide-react';
 import type { ProductItem, UserSession } from '../types';
-import { hasPermission } from '../services/permissions';
+import type { ScannerLayoutMode } from './OperasiStokView';
+import { hasPermission, isSuperadmin } from '../services/permissions';
 import { InventoryLokasiExportModal } from './InventoryLokasiExportModal';
 import {
   buildCatalogBases,
@@ -43,7 +49,7 @@ import { InventoryDetailDrawer } from './inventory/InventoryDetailDrawer';
 import { RackCapacityDashboard } from './inventory/RackCapacityDashboard';
 import { MutasiLogView } from './MutasiLogView';
 
-export type InventoryPageTab = 'capacity' | 'inventory' | 'logs';
+export type InventoryPageTab = 'capacity' | 'inventory' | 'scanner' | 'logs';
 
 export interface InventoryViewProps {
   session?: UserSession | null;
@@ -51,6 +57,10 @@ export interface InventoryViewProps {
   productCatalog?: ProductItem[];
   onNotify?: (msg: string, type: 'success' | 'error' | 'info' | 'warning') => void;
   onRefreshCatalog?: (forceRefresh?: boolean) => Promise<void> | void;
+  scannerComponent?: React.ReactNode | ((layoutMode: ScannerLayoutMode) => React.ReactNode);
+  scannedCount?: number;
+  onOpenImportModal?: () => void;
+  initialTab?: InventoryPageTab;
 }
 
 const AVAILABLE_AREAS = [
@@ -69,9 +79,52 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   productCatalog = [],
   onNotify,
   onRefreshCatalog,
+  scannerComponent,
+  scannedCount = 0,
+  onOpenImportModal,
+  initialTab,
 }) => {
-  // 0. Top-level Inventory Sub-Tab (Dashboard Interaktif Kapasitas | Data Inventory Produk | Log Produk)
-  const [activeTab, setActiveTab] = useState<InventoryPageTab>('capacity');
+  const userIsAdmin = isSuperadmin(session ?? null);
+  const canViewInventory = userIsAdmin || hasPermission(session ?? null, 'menu_ops_inventory');
+  const canUseScanner =
+    userIsAdmin ||
+    hasPermission(session ?? null, 'tab_ops_mutasi_scanner') ||
+    hasPermission(session ?? null, 'menu_ops_mutasi') ||
+    hasPermission(session ?? null, 'menu_ops_inventory');
+  const canViewLogs =
+    userIsAdmin ||
+    hasPermission(session ?? null, 'tab_ops_mutasi_log') ||
+    hasPermission(session ?? null, 'menu_ops_mutasi') ||
+    hasPermission(session ?? null, 'menu_ops_inventory');
+
+  // 0. Top-level Inventory Sub-Tab (4 Tabs: Dashboard Interaktif Kapasitas | Data Inventory Produk | Scanner Barcode | Log Produk)
+  const [activeTab, setActiveTab] = useState<InventoryPageTab>(() => {
+    if (initialTab) return initialTab;
+    if (!canViewInventory && canUseScanner) return 'scanner';
+    if (!canViewInventory && canViewLogs) return 'logs';
+    return 'capacity';
+  });
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
+
+  // Scanner Layout Mode ('split' | 'table' | 'compact')
+  const [scannerLayoutMode, setScannerLayoutMode] = useState<ScannerLayoutMode>(() => {
+    try {
+      const saved = localStorage.getItem('wms_scanner_layout_mode') as ScannerLayoutMode | null;
+      if (saved === 'split' || saved === 'table' || saved === 'compact') return saved;
+    } catch {}
+    return 'split';
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('wms_scanner_layout_mode', scannerLayoutMode);
+    } catch {}
+  }, [scannerLayoutMode]);
 
   // 1. Stock store & realtime sync
   const { version: stockVersion, phase, error: stockError, isEmpty, reload } = useInventoryStock();
@@ -169,7 +222,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   };
 
   // 7. CSV Export (Product per Area format)
-  const canExportData = hasPermission(session, 'action_export_data');
+  const canExportData = hasPermission(session ?? null, 'action_export_data');
   const handleExportCsv = () => {
     if (!sortedAreaRows.length) {
       if (onNotify) onNotify('Tidak ada data yang bisa diekspor.', 'warning');
@@ -202,57 +255,160 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   return (
     <div className="w-full max-w-full px-1 sm:px-3 lg:px-4 py-2 sm:py-4 space-y-4 animate-in fade-in duration-150">
       {/* ========================================================
-          0. NAVIGATION TABS: DASHBOARD KAPASITAS | DATA INVENTORY | LOG PRODUK
+          0. NAVIGATION TABS (4 TABS):
+          1. Dashboard Interaktif Kapasitas
+          2. Data Inventory Produk
+          3. Scanner Barcode
+          4. Log Produk
           ======================================================== */}
-      <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl p-2 flex flex-col md:flex-row md:items-center justify-between gap-2 shadow-xs">
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap py-1 px-1 -mx-1 sm:mx-0 w-full md:w-auto">
-          <button
-            type="button"
-            onClick={() => setActiveTab('capacity')}
-            className={`px-4 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
-              activeTab === 'capacity'
-                ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <LayoutGrid className="w-4 h-4" />
-            <span>Dashboard Interaktif Kapasitas</span>
-          </button>
+      <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl p-2 flex flex-col lg:flex-row lg:items-center justify-between gap-2 shadow-xs">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap py-1 px-1 -mx-1 sm:mx-0 w-full lg:w-auto">
+          {canViewInventory && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('capacity')}
+              className={`px-3.5 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
+                activeTab === 'capacity'
+                  ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <LayoutGrid className="w-4 h-4 shrink-0" />
+              <span>Dashboard Interaktif Kapasitas</span>
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('inventory')}
-            className={`px-4 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
-              activeTab === 'inventory'
-                ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <Boxes className="w-4 h-4" />
-            <span>Data Inventory Produk</span>
-          </button>
+          {canViewInventory && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('inventory')}
+              className={`px-3.5 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
+                activeTab === 'inventory'
+                  ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Boxes className="w-4 h-4 shrink-0" />
+              <span>Data Inventory Produk</span>
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('logs')}
-            className={`px-4 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
-              activeTab === 'logs'
-                ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <ClipboardList className="w-4 h-4" />
-            <span>Log Produk (Mutasi Scan)</span>
-          </button>
+          {canUseScanner && scannerComponent && (
+            <button
+              type="button"
+              id="tab-inventory-scanner"
+              onClick={() => setActiveTab('scanner')}
+              className={`px-3.5 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
+                activeTab === 'scanner'
+                  ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <ScanBarcode className="w-4 h-4 shrink-0" />
+              <span>Scanner Barcode</span>
+              {scannedCount > 0 && (
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-black font-mono ${
+                    activeTab === 'scanner'
+                      ? 'bg-white/20 text-white dark:bg-black/20 dark:text-black'
+                      : 'bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300'
+                  }`}
+                >
+                  {scannedCount}
+                </span>
+              )}
+            </button>
+          )}
+
+          {canViewLogs && (
+            <button
+              type="button"
+              id="tab-inventory-logs"
+              onClick={() => setActiveTab('logs')}
+              className={`px-3.5 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
+                activeTab === 'logs'
+                  ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <ClipboardList className="w-4 h-4 shrink-0" />
+              <span>Log Produk</span>
+            </button>
+          )}
         </div>
 
-        <div className="hidden md:flex items-center gap-2 text-[11px] text-slate-400 px-2 font-mono tabular-nums shrink-0">
-          <span>{stats.skuCount.toLocaleString('id-ID')} SKU</span>
-          <span aria-hidden="true">·</span>
-          <span>{stats.totalFisik.toLocaleString('id-ID')} pcs fisik</span>
-          <span aria-hidden="true">·</span>
-          <span>{stats.activeLocationsCount.toLocaleString('id-ID')} titik rak aktif</span>
-        </div>
+        {/* Right Side: Scanner Layout Switcher + Import Button (when on Scanner tab) OR Inventory Summary */}
+        {activeTab === 'scanner' ? (
+          <div className="flex items-center gap-2 ml-auto shrink-0">
+            <div
+              className="inline-flex items-center bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700/80"
+              title="Pilih tampilan halaman Scanner"
+            >
+              <button
+                type="button"
+                onClick={() => setScannerLayoutMode('split')}
+                className={`py-1 px-2.5 text-[11px] font-bold rounded-md flex items-center gap-1.5 transition-all cursor-pointer ${
+                  scannerLayoutMode === 'split'
+                    ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs border border-slate-200/80 dark:border-slate-700'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+                title="Tampilan Panel Rapi 2 Kolom (Input di Kiri, Antrean di Kanan)"
+              >
+                <Columns2 className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">Panel Rapi</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setScannerLayoutMode('table')}
+                className={`py-1 px-2.5 text-[11px] font-bold rounded-md flex items-center gap-1.5 transition-all cursor-pointer ${
+                  scannerLayoutMode === 'table'
+                    ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs border border-slate-200/80 dark:border-slate-700'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+                title="Tampilan Spreadsheet Tabel Lebar Penuh"
+              >
+                <Table2 className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">Tabel</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setScannerLayoutMode('compact')}
+                className={`py-1 px-2.5 text-[11px] font-bold rounded-md flex items-center gap-1.5 transition-all cursor-pointer ${
+                  scannerLayoutMode === 'compact'
+                    ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs border border-slate-200/80 dark:border-slate-700'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+                title="Tampilan Fokus 1 Kolom Ringkas"
+              >
+                <LayoutList className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">Ringkas</span>
+              </button>
+            </div>
+
+            {onOpenImportModal && (
+              <button
+                type="button"
+                onClick={onOpenImportModal}
+                className="py-1.5 px-3 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 rounded-lg transition-all cursor-pointer shadow-2xs shrink-0"
+                title="Impor Data Excel / CSV (IN / OUT / SO)"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span className="hidden sm:inline">Impor Excel</span>
+                <span className="sm:hidden">Impor</span>
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="hidden lg:flex items-center gap-2 text-[11px] text-slate-400 px-2 font-mono tabular-nums shrink-0">
+            <span>{stats.skuCount.toLocaleString('id-ID')} SKU</span>
+            <span aria-hidden="true">·</span>
+            <span>{stats.totalFisik.toLocaleString('id-ID')} pcs fisik</span>
+            <span aria-hidden="true">·</span>
+            <span>{stats.activeLocationsCount.toLocaleString('id-ID')} titik rak aktif</span>
+          </div>
+        )}
       </div>
 
       {activeTab === 'capacity' && (
@@ -265,6 +421,14 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           onRefreshStock={handleManualRefresh}
           isRefreshingStock={isRefreshing || phase === 'syncing'}
         />
+      )}
+
+      {scannerComponent && (
+        <div className={activeTab === 'scanner' ? 'block pb-20' : 'hidden'}>
+          {typeof scannerComponent === 'function'
+            ? scannerComponent(scannerLayoutMode)
+            : scannerComponent}
+        </div>
       )}
 
       {activeTab === 'logs' && (

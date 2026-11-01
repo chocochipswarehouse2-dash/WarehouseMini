@@ -492,18 +492,18 @@ export const canAccessPage = (session: UserSession | null, page: ActivePage): bo
   switch (page) {
     case 'dashboard': return hasPermission(session, 'menu_ops_dashboard');
     case 'produksi': return hasPermission(session, 'menu_ops_produksi') || hasPermission(session, 'tab_ops_loading_produksi');
-    case 'loading_dock': return hasPermission(session, 'menu_ops_loading_dock') || hasPermission(session, 'tab_ops_loading_penerimaan') || hasPermission(session, 'tab_ops_loading_pengiriman') || hasPermission(session, 'tab_ops_loading_transfer_order') || hasPermission(session, 'tab_ops_pesanan_transfer_order');
+    case 'loading_dock': return hasPermission(session, 'menu_ops_loading_dock') || hasPermission(session, 'tab_ops_loading_penerimaan') || hasPermission(session, 'tab_ops_loading_pengiriman') || hasPermission(session, 'tab_ops_loading_transfer_order') || hasPermission(session, 'tab_ops_pesanan_transfer_order') || hasPermission(session, 'menu_ops_picking');
     case 'penerimaan_barang': return hasPermission(session, 'tab_ops_loading_penerimaan');
     case 'packing': return hasPermission(session, 'tab_ops_loading_pengiriman');
     case 'pengiriman': return hasPermission(session, 'tab_ops_loading_pengiriman');
     case 'agenda': return hasPermission(session, 'menu_ops_agenda') || hasPermission(session, 'tab_ops_agenda_kalendar') || hasPermission(session, 'tab_ops_agenda_project');
     case 'scanner': return hasPermission(session, 'tab_ops_mutasi_scanner');
     case 'penerimaan': return hasPermission(session, 'tab_ops_loading_produksi');
-    case 'inventory': return hasPermission(session, 'menu_ops_inventory');
+    case 'inventory': return hasPermission(session, 'menu_ops_inventory') || hasPermission(session, 'menu_ops_mutasi') || hasPermission(session, 'tab_ops_mutasi_scanner') || hasPermission(session, 'tab_ops_mutasi_log') || hasPermission(session, 'tab_ops_mutasi_so');
     case 'stock_opname': return hasPermission(session, 'tab_ops_mutasi_so');
     case 'mutasi_log': return hasPermission(session, 'tab_ops_mutasi_log');
     case 'operasi_stok': return hasPermission(session, 'menu_ops_mutasi') || hasPermission(session, 'tab_ops_mutasi_scanner') || hasPermission(session, 'tab_ops_mutasi_log') || hasPermission(session, 'tab_ops_mutasi_so');
-    case 'picking_tasks': return hasPermission(session, 'menu_ops_picking');
+    case 'picking_tasks': return hasPermission(session, 'menu_ops_picking') || hasPermission(session, 'menu_ops_loading_dock');
     case 'peminjaman': return hasPermission(session, 'menu_ops_peminjaman');
     case 'perbaikan': return hasPermission(session, 'menu_ops_qc') || hasPermission(session, 'tab_ops_qc_reject') || hasPermission(session, 'tab_ops_qc_cuci') || hasPermission(session, 'tab_ops_qc_permak') || hasPermission(session, 'tab_ops_qc_defect');
     case 'karyawan': return hasPermission(session, 'menu_hr_karyawan');
@@ -512,8 +512,9 @@ export const canAccessPage = (session: UserSession | null, page: ActivePage): bo
     case 'lembur_cuti': return hasPermission(session, 'menu_hr_lembur_cuti');
     case 'hr_approval':
     case 'hr_rekap': return hasPermission(session, 'menu_hr_approval');
-    case 'cetak_label': return hasPermission(session, 'action_cetak_label');
-    case 'cetak_barcode': return hasPermission(session, 'menu_ops_cetak_barcode') || hasPermission(session, 'action_cetak_barcode') || hasPermission(session, 'action_cetak_label') || hasPermission(session, 'menu_ops_inventory');
+    case 'cetak_label':
+    case 'cetak_barcode':
+      return hasPermission(session, 'action_cetak_label') || hasPermission(session, 'menu_ops_cetak_barcode') || hasPermission(session, 'action_cetak_barcode') || hasPermission(session, 'menu_ops_inventory');
     case 'pesanan_saya': return hasPermission(session, 'menu_ops_pesanan_saya') || hasPermission(session, 'tab_ops_pesanan_dashboard') || hasPermission(session, 'tab_ops_pesanan_manual_shipment') || hasPermission(session, 'tab_ops_pesanan_transfer_order') || hasPermission(session, 'tab_ops_pesanan_shopee') || hasPermission(session, 'tab_ops_pesanan_tiktok') || hasPermission(session, 'tab_ops_pesanan_website') || hasPermission(session, 'tab_ops_pesanan_woocommerce') || hasPermission(session, 'tab_ops_pesanan_lazada');
     case 'manual_shipment': return hasPermission(session, 'tab_ops_pesanan_manual_shipment');
     case 'katalog_produk': return hasPermission(session, 'menu_ops_katalog_produk');
@@ -557,17 +558,15 @@ export const getDefaultPageForSession = (session: UserSession | null): ActivePag
   
   if (hasPermission(session, 'menu_ops_pesanan_saya') || hasPermission(session, 'tab_ops_pesanan_dashboard') || hasPermission(session, 'tab_ops_pesanan_manual_shipment') || hasPermission(session, 'tab_ops_pesanan_transfer_order') || hasPermission(session, 'tab_ops_pesanan_shopee') || hasPermission(session, 'tab_ops_pesanan_tiktok') || hasPermission(session, 'tab_ops_pesanan_website') || hasPermission(session, 'tab_ops_pesanan_woocommerce') || hasPermission(session, 'tab_ops_pesanan_lazada')) return 'pesanan_saya';
   
-  if (hasPermission(session, 'menu_ops_loading_dock') || hasPermission(session, 'tab_ops_loading_produksi') || hasPermission(session, 'tab_ops_loading_penerimaan') || hasPermission(session, 'tab_ops_loading_pengiriman') || hasPermission(session, 'tab_ops_loading_transfer_order') || hasPermission(session, 'tab_ops_pesanan_transfer_order')) return 'loading_dock';
+  if (hasPermission(session, 'menu_ops_loading_dock') || hasPermission(session, 'tab_ops_loading_produksi') || hasPermission(session, 'tab_ops_loading_penerimaan') || hasPermission(session, 'tab_ops_loading_pengiriman') || hasPermission(session, 'tab_ops_loading_transfer_order') || hasPermission(session, 'tab_ops_pesanan_transfer_order') || hasPermission(session, 'menu_ops_picking')) return 'loading_dock';
   
-  if (hasPermission(session, 'menu_ops_mutasi') || hasPermission(session, 'tab_ops_mutasi_scanner') || hasPermission(session, 'tab_ops_mutasi_log') || hasPermission(session, 'tab_ops_mutasi_so')) return 'operasi_stok';
+  if (hasPermission(session, 'menu_ops_inventory') || hasPermission(session, 'menu_ops_mutasi') || hasPermission(session, 'tab_ops_mutasi_scanner') || hasPermission(session, 'tab_ops_mutasi_log') || hasPermission(session, 'tab_ops_mutasi_so')) return 'inventory';
   
-  if (hasPermission(session, 'menu_ops_picking')) return 'picking_tasks';
   if (hasPermission(session, 'menu_ops_peminjaman')) return 'peminjaman';
   
   if (hasPermission(session, 'menu_ops_qc') || hasPermission(session, 'tab_ops_qc_reject') || hasPermission(session, 'tab_ops_qc_cuci') || hasPermission(session, 'tab_ops_qc_permak') || hasPermission(session, 'tab_ops_qc_defect')) return 'perbaikan';
   
   if (hasPermission(session, 'menu_ops_katalog_produk')) return 'katalog_produk';
-  if (hasPermission(session, 'menu_ops_inventory')) return 'inventory';
   if (hasPermission(session, 'menu_hr_presensi')) return 'presensi';
   if (hasPermission(session, 'menu_hr_approval')) return 'hr_approval';
   

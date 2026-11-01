@@ -1,14 +1,13 @@
 {
-  "version": "v2.6.31",
-  "versionCode": 291,
+  "version": "v2.6.33",
+  "versionCode": 293,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v291-2147",
-  "releaseTitle": "WMS v2.6.31 — Live Chat Mentions, Shopee-Style Order Chat & Group Info",
+  "buildHash": "wms-261101-v293-1448",
+  "releaseTitle": "WMS v2.6.33 — Tabel Riwayat Peminjaman & Tanggal Kembali + Integrasi 3 Tab Cetak Label & Barcode",
   "releaseNotes": [
-    "Fitur sebut/tag anggota grup (@username)",
-    "Fitur Tanya Pesanan / Chat ke Gudang langsung dari tab Pesanan",
-    "Modal info grup & daftar anggota lengkap dengan keluarkan/keluar grup",
-    "Tombol segarkan sinkronisasi instan Supabase"
+    "Riwayat Peminjaman (SPS) kini dilengkapi tampilan Tabel proporsional (selain Kartu & Panel Rapi), filter KPI interaktif, ekspor CSV, serta pencatatan Rencana & Tanggal Kembali Aktual beserta durasi pinjam dan catatan pengembalian.",
+    "Halaman Cetak kini disatukan menjadi 1 menu 'Cetak Label & Barcode' dengan 3 tab rapi: QR Prefix, Label Paket, dan Cetak Barcode.",
+    "Tampilan tab QR Prefix dirapikan total menjadi layout 2 kolom (Generator & Antrean di kiri, Pratinjau Stiker & Kustomisasi di kanan) tanpa duplikasi header bertumpuk."
   ],
   "minSupportedVersion": "v2.0.0"
 }

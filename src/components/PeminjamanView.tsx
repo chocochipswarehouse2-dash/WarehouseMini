@@ -32,6 +32,13 @@ import {
   Loader2,
   MapPin,
   Edit2,
+  Table,
+  LayoutGrid,
+  RotateCcw,
+  CalendarCheck,
+  CalendarClock,
+  ArrowUpDown,
+  Eye,
 } from 'lucide-react';
 import {
   sendPeminjamanAutoWhatsApp,
@@ -131,6 +138,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   const [noWaPeminjam, setNoWaPeminjam] = useState<string>(() => initialFormDraft?.noWaPeminjam || '');
   const [keperluan, setKeperluan] = useState<string>(() => initialFormDraft?.keperluan || '');
   const [tglPinjam, setTglPinjam] = useState<string>(() => initialFormDraft?.tglPinjam || new Date().toISOString().slice(0, 10));
+  const [estimasiKembali, setEstimasiKembali] = useState<string>(() => initialFormDraft?.estimasiKembali || '');
   const [autoSendWa, setAutoSendWa] = useState<boolean>(() => getFonnteConfig().autoSendEnabled);
   const [items, setItems] = useState<PeminjamanItemForm[]>(() => {
     if (initialFormDraft?.items && Array.isArray(initialFormDraft.items) && initialFormDraft.items.length > 0) {
@@ -165,6 +173,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             noWaPeminjam,
             keperluan,
             tglPinjam,
+            estimasiKembali,
             items,
             updatedAt: Date.now(),
           }));
@@ -172,7 +181,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [namaPeminjam, noWaPeminjam, keperluan, tglPinjam, items]);
+  }, [namaPeminjam, noWaPeminjam, keperluan, tglPinjam, estimasiKembali, items]);
 
   // BeforeUnload guard to prevent accidental tab closing or reload
   useEffect(() => {
@@ -1169,6 +1178,8 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         no_wa_peminjam: noWaPeminjam.trim(),
         keperluan: keperluan.trim(),
         tglPinjam,
+        tanggal_pinjam: tglPinjam,
+        estimasiKembali: estimasiKembali.trim() || undefined,
         timestamp: nowIso,
         status: 'Dipinjam',
         items: validItems.map((it) => {
@@ -1270,6 +1281,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       setNamaPeminjam('');
       setNoWaPeminjam('');
       setKeperluan('');
+      setEstimasiKembali('');
       setItems([
         {
           id: 'item-1',
@@ -1413,16 +1425,121 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     });
   }, [channelStocks, selectedChannel, deferredSearchStock]);
 
-  // Filter history records
+  // Riwayat View Mode, Status Filter, Sort, and Quick Return Modal State
+  const [historyViewMode, setHistoryViewMode] = useState<'table' | 'card' | 'split'>(() => {
+    try {
+      const saved = sessionStorage.getItem('wms_peminjaman_riwayat_view_mode');
+      if (saved === 'table' || saved === 'card' || saved === 'split') return saved;
+    } catch {}
+    return 'table';
+  });
+  const handleSetHistoryViewMode = (mode: 'table' | 'card' | 'split') => {
+    setHistoryViewMode(mode);
+    try {
+      sessionStorage.setItem('wms_peminjaman_riwayat_view_mode', mode);
+    } catch {}
+  };
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<'ALL' | 'Dipinjam' | 'Dikembalikan' | 'OVERDUE'>('ALL');
+  const [historySortBy, setHistorySortBy] = useState<'newest' | 'oldest' | 'status_active' | 'qty_desc'>('newest');
+  const [selectedSplitRecordId, setSelectedSplitRecordId] = useState<string | null>(null);
+
+  // Quick Return / Catat Tanggal Kembali Modal State
+  const [returnModalRecord, setReturnModalRecord] = useState<PeminjamanRecord | null>(null);
+  const [returnDateInput, setReturnDateInput] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [returnEstDateInput, setReturnEstDateInput] = useState<string>('');
+  const [returnNoteInput, setReturnNoteInput] = useState<string>('');
+  const [returnStatusInput, setReturnStatusInput] = useState<'Dikembalikan' | 'Dipinjam'>('Dikembalikan');
+  const [isSavingReturn, setIsSavingReturn] = useState<boolean>(false);
+
+  // Helper to compute loan duration & overdue status
+  const getLoanDurationInfo = (rec: PeminjamanRecord) => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const pinjamStr = (rec.tglPinjam || rec.tanggal_pinjam || '').slice(0, 10);
+    const kembaliStr = (rec.tglKembali || rec.tanggal_kembali || '').slice(0, 10);
+    const estStr = (rec.estimasiKembali || '').slice(0, 10);
+    const isReturned = rec.status === 'Dikembalikan';
+
+    let daysElapsed = 0;
+    if (pinjamStr) {
+      const startMs = new Date(`${pinjamStr}T00:00:00`).getTime();
+      const endRef = isReturned && kembaliStr ? kembaliStr : todayStr;
+      const endMs = new Date(`${endRef}T00:00:00`).getTime();
+      if (!isNaN(startMs) && !isNaN(endMs)) {
+        daysElapsed = Math.max(0, Math.round((endMs - startMs) / 86400000));
+      }
+    }
+
+    let isOverdue = false;
+    if (!isReturned) {
+      if (estStr && todayStr > estStr) {
+        isOverdue = true;
+      } else if (!estStr && daysElapsed > 3) {
+        isOverdue = true;
+      }
+    }
+
+    const durationLabel = isReturned
+      ? kembaliStr
+        ? daysElapsed === 0
+          ? 'Kembali di hari yang sama'
+          : `Durasi pinjam ${daysElapsed} hari`
+        : 'Sudah dikembalikan'
+      : daysElapsed === 0
+      ? 'Dipinjam hari ini'
+      : `Sudah ${daysElapsed} hari dipinjam`;
+
+    return {
+      pinjamStr,
+      kembaliStr,
+      estStr,
+      isReturned,
+      daysElapsed,
+      isOverdue,
+      durationLabel,
+    };
+  };
+
+  // Summary metrics across all records
+  const historySummaryMetrics = useMemo(() => {
+    let totalDocs = records.length;
+    let totalPcs = 0;
+    let activeDocs = 0;
+    let activePcs = 0;
+    let returnedDocs = 0;
+    let returnedPcs = 0;
+    let overdueDocs = 0;
+
+    records.forEach((rec) => {
+      const pcs = (rec.items || []).reduce((acc, it) => acc + (Number(it.qty) || 0), 0);
+      totalPcs += pcs;
+      const info = getLoanDurationInfo(rec);
+      if (info.isReturned) {
+        returnedDocs++;
+        returnedPcs += pcs;
+      } else {
+        activeDocs++;
+        activePcs += pcs;
+        if (info.isOverdue) overdueDocs++;
+      }
+    });
+
+    return { totalDocs, totalPcs, activeDocs, activePcs, returnedDocs, returnedPcs, overdueDocs };
+  }, [records]);
+
+  // Filter & Sort history records
   const deferredSearchHistory = useDeferredValue(searchHistory);
   const filteredHistory = useMemo(() => {
     const q = deferredSearchHistory.trim().toLowerCase();
-    if (!q) return records;
-    const keywords = q.split(/\s+/).filter(Boolean);
-    if (!keywords.length) return records;
+    const keywords = q ? q.split(/\s+/).filter(Boolean) : [];
 
-    return records.filter((rec) => {
-      let combined = `${rec.noPeminjaman || ''} ${rec.namaPeminjam || ''} ${rec.keperluan || ''} ${rec.tglPinjam || ''} ${rec.status || ''}`;
+    const filtered = records.filter((rec) => {
+      const info = getLoanDurationInfo(rec);
+      if (historyStatusFilter === 'Dipinjam' && info.isReturned) return false;
+      if (historyStatusFilter === 'Dikembalikan' && !info.isReturned) return false;
+      if (historyStatusFilter === 'OVERDUE' && !info.isOverdue) return false;
+
+      if (!keywords.length) return true;
+      let combined = `${rec.noPeminjaman || ''} ${rec.namaPeminjam || ''} ${rec.keperluan || ''} ${rec.tglPinjam || ''} ${rec.tglKembali || ''} ${rec.tanggal_kembali || ''} ${rec.estimasiKembali || ''} ${rec.catatanKembali || ''} ${rec.status || ''} ${rec.username || ''}`;
       if (Array.isArray(rec.items)) {
         for (let i = 0; i < rec.items.length; i++) {
           const it = rec.items[i];
@@ -1432,7 +1549,85 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       const combinedLower = combined.toLowerCase();
       return keywords.every((kw) => combinedLower.includes(kw));
     });
-  }, [records, deferredSearchHistory]);
+
+    return [...filtered].sort((a, b) => {
+      if (historySortBy === 'status_active') {
+        const aRet = a.status === 'Dikembalikan' ? 1 : 0;
+        const bRet = b.status === 'Dikembalikan' ? 1 : 0;
+        if (aRet !== bRet) return aRet - bRet;
+      } else if (historySortBy === 'qty_desc') {
+        const aQty = (a.items || []).reduce((s, i) => s + (Number(i.qty) || 0), 0);
+        const bQty = (b.items || []).reduce((s, i) => s + (Number(i.qty) || 0), 0);
+        if (bQty !== aQty) return bQty - aQty;
+      }
+      const tA = new Date(a.timestamp || a.tglPinjam || 0).getTime() || 0;
+      const tB = new Date(b.timestamp || b.tglPinjam || 0).getTime() || 0;
+      return historySortBy === 'oldest' ? tA - tB : tB - tA;
+    });
+  }, [records, deferredSearchHistory, historyStatusFilter, historySortBy]);
+
+  // Export History to CSV
+  const handleExportHistoryCSV = () => {
+    if (filteredHistory.length === 0) {
+      onShowToast('Tidak ada data riwayat peminjaman untuk diexport', 'warning');
+      return;
+    }
+    const headers = [
+      'NO SPS',
+      'WAKTU PENGAJUAN',
+      'PIC PEMINJAM',
+      'NO WA',
+      'KEPERLUAN',
+      'TGL PINJAM',
+      'TARGET KEMBALI',
+      'TGL KEMBALI AKTUAL',
+      'DURASI (HARI)',
+      'STATUS',
+      'CATATAN KEMBALI',
+      'SKU',
+      'NAMA PRODUK',
+      'SIZE',
+      'QTY',
+      'LOKASI',
+      'PETUGAS',
+    ];
+    const rows: (string | number)[][] = [];
+    filteredHistory.forEach((rec) => {
+      const info = getLoanDurationInfo(rec);
+      const itemsList = Array.isArray(rec.items) && rec.items.length > 0 ? rec.items : [{ produk: '-', sku: '-', size: '-', qty: 0, lokasi: '-' }];
+      itemsList.forEach((it) => {
+        rows.push([
+          `"${(rec.noPeminjaman || '').replace(/"/g, '""')}"`,
+          `"${rec.timestamp ? new Date(rec.timestamp).toLocaleString('id-ID') : '-'}"`,
+          `"${(rec.namaPeminjam || '').replace(/"/g, '""')}"`,
+          `"${(rec.noWaPeminjam || rec.no_wa_peminjam || '').replace(/"/g, '""')}"`,
+          `"${(rec.keperluan || '').replace(/"/g, '""')}"`,
+          `"${info.pinjamStr || '-'}"`,
+          `"${info.estStr || '-'}"`,
+          `"${info.kembaliStr || '-'}"`,
+          info.daysElapsed,
+          `"${rec.status || 'Dipinjam'}"`,
+          `"${(rec.catatanKembali || '').replace(/"/g, '""')}"`,
+          `"${(it.sku || '').replace(/"/g, '""')}"`,
+          `"${String(it.produk || '').replace(/"/g, '""')}"`,
+          `"${String(it.size || '-')}"`,
+          Number(it.qty) || 0,
+          `"${String(it.lokasi || '-').replace(/"/g, '""')}"`,
+          `"${(rec.username || 'System').replace(/"/g, '""')}"`,
+        ]);
+      });
+    });
+
+    const csvContent = '\uFEFF' + headers.join(',') + '\n' + rows.map((r) => r.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `riwayat_peminjaman_sps_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    onShowToast('Data riwayat peminjaman berhasil diexport ke CSV!', 'success');
+  };
 
   // Calculate totals
   const totalStockItems = filteredStocks.length;
@@ -1689,7 +1884,10 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
           <tr><td class="label">Tanggal Pengajuan</td><td>${new Date(record.timestamp).toLocaleString('id-ID')}</td></tr>
           <tr><td class="label">Nama / PIC Peminjam</td><td><b>${record.namaPeminjam}</b></td></tr>
           <tr><td class="label">Keperluan</td><td>${record.keperluan}</td></tr>
-          <tr><td class="label">Tanggal Peminjaman</td><td>${record.tglPinjam}</td></tr>
+          <tr><td class="label">Tanggal Peminjaman</td><td>${record.tglPinjam || '-'}</td></tr>
+          ${record.estimasiKembali ? `<tr><td class="label">Target Kembali</td><td>${record.estimasiKembali}</td></tr>` : ''}
+          ${(record.tglKembali || record.tanggal_kembali) ? `<tr><td class="label">Tanggal Dikembalikan</td><td><b>${record.tglKembali || record.tanggal_kembali}</b></td></tr>` : ''}
+          ${record.catatanKembali ? `<tr><td class="label">Catatan Pengembalian</td><td>${record.catatanKembali}</td></tr>` : ''}
           <tr><td class="label">Status Dokumen</td><td><b style="color:#059669;">${record.status}</b></td></tr>
         </table>
 
@@ -1738,35 +1936,91 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     printWindow.document.close();
   };
 
-  // Toggle return status
+  // Open Quick Return Date & Notes Modal
+  const handleOpenReturnModal = (rec: PeminjamanRecord, defaultStatus?: 'Dikembalikan' | 'Dipinjam') => {
+    if (!canEditData) {
+      onShowToast('Akses ditolak: Anda tidak memiliki izin untuk mengubah status & tanggal kembali.', 'warning');
+      return;
+    }
+    const targetStatus = defaultStatus || (rec.status === 'Dipinjam' ? 'Dikembalikan' : 'Dikembalikan');
+    setReturnModalRecord(rec);
+    setReturnStatusInput(targetStatus);
+    setReturnDateInput(rec.tglKembali || rec.tanggal_kembali || new Date().toISOString().slice(0, 10));
+    setReturnEstDateInput(rec.estimasiKembali || '');
+    setReturnNoteInput(rec.catatanKembali || '');
+  };
+
+  // Save Return Date & Notes from Quick Modal
+  const handleSaveReturnModal = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!returnModalRecord) return;
+    if (!canEditData) {
+      onShowToast('Akses ditolak: Anda tidak memiliki izin untuk menyimpan status pengembalian.', 'warning');
+      return;
+    }
+
+    const no = returnModalRecord.noPeminjaman || returnModalRecord.id || '';
+    const isReturning = returnStatusInput === 'Dikembalikan';
+    const finalReturnDate = isReturning
+      ? (returnDateInput.trim() || new Date().toISOString().slice(0, 10))
+      : undefined;
+    const finalEstDate = returnEstDateInput.trim() || undefined;
+    const finalNote = returnNoteInput.trim() || undefined;
+
+    setIsSavingReturn(true);
+    try {
+      const updatedRecord: PeminjamanRecord = {
+        ...returnModalRecord,
+        status: returnStatusInput,
+        tglKembali: finalReturnDate,
+        tanggal_kembali: finalReturnDate,
+        estimasiKembali: finalEstDate,
+        catatanKembali: finalNote,
+      };
+
+      const updatedList = records.map((r) =>
+        (r.noPeminjaman === no || r.id === no) ? updatedRecord : r
+      );
+      setRecords(updatedList);
+      saveLocalPeminjamanRecords(updatedList);
+      try {
+        localStorage.setItem('wms_peminjaman_cache', JSON.stringify(updatedList));
+      } catch {}
+
+      if (selectedRecordForModal && (selectedRecordForModal.noPeminjaman === no || selectedRecordForModal.id === no)) {
+        setSelectedRecordForModal(updatedRecord);
+      }
+
+      if (isReturning && no) {
+        await returnPeminjamanSupabase(no, finalReturnDate, finalNote || '', updatedRecord);
+      } else {
+        await savePeminjamanToSupabase(updatedRecord);
+      }
+
+      onShowToast(
+        isReturning
+          ? `✅ Peminjaman ${no} ditandai Dikembalikan pada tanggal ${finalReturnDate}!`
+          : `Status peminjaman ${no} diperbarui menjadi Dipinjam.`,
+        'success'
+      );
+      setReturnModalRecord(null);
+    } catch (err: any) {
+      console.error('Error saving return date:', err);
+      onShowToast('Gagal menyimpan tanggal pengembalian', 'error');
+    } finally {
+      setIsSavingReturn(false);
+    }
+  };
+
+  // Toggle return status (Opens Return Date Modal when marking as Dikembalikan, or opens modal to edit/revert)
   const handleToggleReturn = async (recordId: string) => {
     if (!canEditData) {
       onShowToast('Akses ditolak: Anda tidak memiliki izin untuk mengubah status peminjaman.', 'warning');
       return;
     }
     const target = records.find((r) => r.id === recordId || r.noPeminjaman === recordId);
-    const nextStatus = target?.status === 'Dipinjam' ? 'Dikembalikan' : 'Dipinjam';
-
-    const updated = records.map((r) => {
-      if (r.id === recordId || r.noPeminjaman === recordId) {
-        return { ...r, status: nextStatus as 'Dipinjam' | 'Dikembalikan' };
-      }
-      return r;
-    });
-    setRecords(updated);
-    saveLocalPeminjamanRecords(updated);
-    try {
-      localStorage.setItem('wms_peminjaman_cache', JSON.stringify(updated));
-    } catch {}
-
-    if (target) {
-      if (nextStatus === 'Dikembalikan') {
-        await returnPeminjamanSupabase(target.noPeminjaman);
-      } else {
-        await savePeminjamanToSupabase({ ...target, status: 'Dipinjam' });
-      }
-    }
-    onShowToast(`Status ${target?.noPeminjaman || 'peminjaman'} diubah menjadi ${nextStatus}!`, 'success');
+    if (!target) return;
+    handleOpenReturnModal(target, target.status === 'Dipinjam' ? 'Dikembalikan' : 'Dikembalikan');
   };
 
   // Open Edit Modal
@@ -2118,20 +2372,70 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
               </div>
             </div>
 
-            {/* Tanggal Pinjam */}
-            <div>
-              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1 uppercase tracking-wider">
-                TANGGAL PINJAM <span className="text-primary-500">*</span>
-              </label>
-              <div className="relative max-w-xs">
-                <Calendar className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
-                <input
-                  type="date"
-                  required
-                  value={tglPinjam}
-                  onChange={(e) => setTglPinjam(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-700/80 rounded-xl text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
-                />
+            {/* Tanggal Pinjam & Rencana Tanggal Kembali */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1 uppercase tracking-wider">
+                  TANGGAL PINJAM <span className="text-primary-500">*</span>
+                </label>
+                <div className="relative">
+                  <Calendar className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
+                  <input
+                    type="date"
+                    required
+                    value={tglPinjam}
+                    onChange={(e) => setTglPinjam(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-700/80 rounded-xl text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                    RENCANA TANGGAL KEMBALI <span className="text-[10px] font-normal text-slate-400 lowercase">(opsional)</span>
+                  </label>
+                  <div className="flex items-center gap-1">
+                    {[
+                      { label: 'Hari Ini', days: 0 },
+                      { label: 'Besok', days: 1 },
+                      { label: '+3 Hr', days: 3 },
+                    ].map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => {
+                          const base = tglPinjam ? new Date(`${tglPinjam}T00:00:00`) : new Date();
+                          base.setDate(base.getDate() + preset.days);
+                          setEstimasiKembali(base.toISOString().slice(0, 10));
+                        }}
+                        className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-indigo-950/60 transition-colors cursor-pointer"
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="relative">
+                  <CalendarClock className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
+                  <input
+                    type="date"
+                    value={estimasiKembali}
+                    min={tglPinjam || undefined}
+                    onChange={(e) => setEstimasiKembali(e.target.value)}
+                    className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-700/80 rounded-xl text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                  />
+                  {estimasiKembali && (
+                    <button
+                      type="button"
+                      onClick={() => setEstimasiKembali('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                      title="Kosongkan rencana tanggal kembali"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -2657,167 +2961,952 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
         {/* FULL WIDTH: RIWAYAT PENGAJUAN (Visible in 'riwayat' tab) */}
         {activeTab === 'riwayat' && (
-          <div className="col-span-12 bg-white dark:bg-[#09090b] rounded-2xl border border-slate-200 dark:border-slate-800/80 p-2 sm:p-3 shadow-xs space-y-2">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 gap-3">
+          <div className="col-span-12 bg-white dark:bg-[#09090b] rounded-2xl border border-slate-200 dark:border-slate-800/80 p-3 sm:p-4 shadow-xs space-y-3">
+            {/* Top Header & KPI Cards */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
               <div>
-                <span className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider font-mono">
-                  RIWAYAT PENGAJUAN PEMINJAMAN SEMENTARA ({filteredHistory.length})
-                </span>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Daftar transaksi peminjaman barang, cetak surat jalan, dan kirim notifikasi WhatsApp.
+                <h3 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                  <span>Riwayat Peminjaman &amp; Pengembalian Barang (SPS)</span>
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  Pantau status barang dipinjam, catat tanggal kembali aktual, cetak Surat Jalan, dan kirim WA Fonnte.
                 </p>
               </div>
 
-              {/* Partial multi-keyword Search for Riwayat */}
-              <div className="relative w-full sm:w-72">
-                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  value={searchHistory}
-                  onChange={(e) => setSearchHistory(e.target.value)}
-                  placeholder="Cari invoice / PIC / produk / SKU..."
-                  className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-700/80 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
-                />
-                {searchHistory && (
+              {/* View Mode Switcher + Actions */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleFullRefresh}
+                  className="py-1.5 px-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                  title="Segarkan Data Riwayat SPS"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 ${loadingStock ? 'animate-spin' : ''}`} />
+                  <span>Refresh</span>
+                </button>
+
+                {canExportData && (
                   <button
                     type="button"
-                    onClick={() => setSearchHistory('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                    onClick={handleExportHistoryCSV}
+                    className="py-1.5 px-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                    title="Export Riwayat Peminjaman ke CSV/Excel"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>Export CSV</span>
                   </button>
                 )}
+
+                {/* Unified 3-Mode View Switcher */}
+                <div className="flex border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-slate-800 shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => handleSetHistoryViewMode('table')}
+                    className={`px-2.5 py-1.5 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                      historyViewMode === 'table'
+                        ? 'bg-indigo-600 text-white'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60'
+                    }`}
+                  >
+                    <Table className="w-3.5 h-3.5" />
+                    <span>Tabel</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetHistoryViewMode('card')}
+                    className={`px-2.5 py-1.5 text-xs font-bold flex items-center gap-1.5 border-l border-slate-200 dark:border-slate-700 transition-colors cursor-pointer ${
+                      historyViewMode === 'card'
+                        ? 'bg-indigo-600 text-white'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60'
+                    }`}
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                    <span>Kartu</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetHistoryViewMode('split')}
+                    className={`px-2.5 py-1.5 text-xs font-bold flex items-center gap-1.5 border-l border-slate-200 dark:border-slate-700 transition-colors cursor-pointer ${
+                      historyViewMode === 'split'
+                        ? 'bg-indigo-600 text-white'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60'
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>Panel Rapi</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* 4 Interactive KPI Summary Cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+              <button
+                type="button"
+                onClick={() => setHistoryStatusFilter('ALL')}
+                className={`text-left p-3 rounded-xl border transition-all cursor-pointer ${
+                  historyStatusFilter === 'ALL'
+                    ? 'bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-400 dark:border-indigo-700 ring-1 ring-indigo-500/30'
+                    : 'bg-slate-50/80 dark:bg-[#0b1324] border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                }`}
+              >
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Total Dokumen SPS
+                </div>
+                <div className="mt-1 flex items-baseline justify-between gap-2">
+                  <span className="text-lg sm:text-xl font-extrabold font-mono text-slate-900 dark:text-white">
+                    {historySummaryMetrics.totalDocs}
+                  </span>
+                  <span className="text-[11px] font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                    {historySummaryMetrics.totalPcs} pcs
+                  </span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setHistoryStatusFilter('Dipinjam')}
+                className={`text-left p-3 rounded-xl border transition-all cursor-pointer ${
+                  historyStatusFilter === 'Dipinjam'
+                    ? 'bg-amber-50/80 dark:bg-amber-950/40 border-amber-400 dark:border-amber-700 ring-1 ring-amber-500/30'
+                    : 'bg-slate-50/80 dark:bg-[#0b1324] border-slate-200 dark:border-slate-800 hover:border-amber-300'
+                }`}
+              >
+                <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 flex items-center gap-1">
+                  <Clock className="w-3 h-3 shrink-0" />
+                  <span>Masih Dipinjam</span>
+                </div>
+                <div className="mt-1 flex items-baseline justify-between gap-2">
+                  <span className="text-lg sm:text-xl font-extrabold font-mono text-amber-700 dark:text-amber-300">
+                    {historySummaryMetrics.activeDocs}
+                  </span>
+                  <span className="text-[11px] font-mono font-bold text-amber-600 dark:text-amber-400">
+                    {historySummaryMetrics.activePcs} pcs aktif
+                  </span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setHistoryStatusFilter('Dikembalikan')}
+                className={`text-left p-3 rounded-xl border transition-all cursor-pointer ${
+                  historyStatusFilter === 'Dikembalikan'
+                    ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-400 dark:border-emerald-700 ring-1 ring-emerald-500/30'
+                    : 'bg-slate-50/80 dark:bg-[#0b1324] border-slate-200 dark:border-slate-800 hover:border-emerald-300'
+                }`}
+              >
+                <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3 shrink-0" />
+                  <span>Sudah Dikembalikan</span>
+                </div>
+                <div className="mt-1 flex items-baseline justify-between gap-2">
+                  <span className="text-lg sm:text-xl font-extrabold font-mono text-emerald-700 dark:text-emerald-300">
+                    {historySummaryMetrics.returnedDocs}
+                  </span>
+                  <span className="text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                    {historySummaryMetrics.returnedPcs} pcs selesai
+                  </span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setHistoryStatusFilter('OVERDUE')}
+                className={`text-left p-3 rounded-xl border transition-all cursor-pointer ${
+                  historyStatusFilter === 'OVERDUE'
+                    ? 'bg-rose-50/80 dark:bg-rose-950/40 border-rose-400 dark:border-rose-700 ring-1 ring-rose-500/30'
+                    : 'bg-slate-50/80 dark:bg-[#0b1324] border-slate-200 dark:border-slate-800 hover:border-rose-300'
+                }`}
+              >
+                <div className="text-[10px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3 shrink-0" />
+                  <span>Lewat Target / &gt;3 Hari</span>
+                </div>
+                <div className="mt-1 flex items-baseline justify-between gap-2">
+                  <span className="text-lg sm:text-xl font-extrabold font-mono text-rose-600 dark:text-rose-400">
+                    {historySummaryMetrics.overdueDocs}
+                  </span>
+                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                    perlu follow-up
+                  </span>
+                </div>
+              </button>
+            </div>
+
+            {/* Filter & Search Toolbar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-slate-50/90 dark:bg-[#0b1324] p-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800">
+              {/* Status Filter Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap">
+                {(
+                  [
+                    { id: 'ALL', label: `Semua (${historySummaryMetrics.totalDocs})` },
+                    { id: 'Dipinjam', label: `Dipinjam (${historySummaryMetrics.activeDocs})` },
+                    { id: 'Dikembalikan', label: `Dikembalikan (${historySummaryMetrics.returnedDocs})` },
+                    { id: 'OVERDUE', label: `Lewat Waktu (${historySummaryMetrics.overdueDocs})` },
+                  ] as const
+                ).map((pill) => (
+                  <button
+                    key={pill.id}
+                    type="button"
+                    onClick={() => setHistoryStatusFilter(pill.id)}
+                    className={`px-2.5 py-1 rounded-full text-xs font-bold border transition-all cursor-pointer ${
+                      historyStatusFilter === pill.id
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    {pill.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Sort & Search */}
+              <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+                <div className="flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs">
+                  <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <select
+                    value={historySortBy}
+                    onChange={(e) => setHistorySortBy(e.target.value as any)}
+                    className="bg-transparent font-semibold text-slate-700 dark:text-slate-200 outline-none cursor-pointer text-xs"
+                  >
+                    <option value="newest">Terbaru</option>
+                    <option value="oldest">Terlama</option>
+                    <option value="status_active">Status Dipinjam Dulu</option>
+                    <option value="qty_desc">Jumlah Barang Terbanyak</option>
+                  </select>
+                </div>
+
+                <div className="relative flex-1 sm:w-72">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={searchHistory}
+                    onChange={(e) => setSearchHistory(e.target.value)}
+                    placeholder="Cari No SPS, PIC, SKU, produk, catatan..."
+                    className="w-full pl-8 pr-7 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all"
+                  />
+                  {searchHistory && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchHistory('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
             {filteredHistory.length === 0 ? (
               <div className="p-8 text-center text-slate-500 dark:text-slate-400 text-xs italic bg-slate-50 dark:bg-[#0b1324] rounded-xl border border-slate-200 dark:border-slate-800">
-                Tidak ada data riwayat peminjaman yang cocok dengan pencarian &quot;{searchHistory}&quot;
+                Tidak ada data riwayat peminjaman yang cocok dengan filter / pencarian saat ini.
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {filteredHistory.map((rec) => (
-                  <div
-                    key={rec.id}
-                    className="bg-slate-50/70 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 space-y-2.5 shadow-xs"
-                  >
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400">
-                      {rec.noPeminjaman}
-                    </span>
-                    {canEditData ? (
-                      <button
-                        type="button"
-                        onClick={() => handleToggleReturn(rec.id)}
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded cursor-pointer transition-all border ${
-                          rec.status === 'Dipinjam'
-                            ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900/50 hover:opacity-80'
-                            : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900/50 hover:opacity-80'
-                        }`}
-                        title="Klik untuk mengubah status peminjaman"
-                      >
-                        {rec.status}
-                      </button>
-                    ) : (
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded border select-none ${
-                          rec.status === 'Dipinjam'
-                            ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900/50'
-                            : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900/50'
-                        }`}
-                      >
-                        {rec.status}
-                      </span>
+            ) : historyViewMode === 'table' ? (
+              /* ============================================================
+               * MODE 1: VERSI TABEL (SPREADSHEET PROPORTIONAL TABLE VIEW)
+               * ============================================================ */
+              <div className="w-full overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 shadow-2xs">
+                <table className="w-full text-left border-collapse table-auto lg:table-fixed">
+                  <thead>
+                    <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      <th className="p-3 lg:w-[15%]">No. SPS &amp; Waktu</th>
+                      <th className="p-3 lg:w-[18%]">Peminjam &amp; Keperluan</th>
+                      <th className="p-3 lg:w-[29%]">Rincian Barang ({filteredHistory.reduce((acc, r) => acc + (r.items?.length || 0), 0)} SKU)</th>
+                      <th className="p-3 lg:w-[23%]">Status &amp; Tanggal Kembali</th>
+                      <th className="p-3 lg:w-[15%] text-right">Aksi &amp; Dokumen</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200/70 dark:divide-slate-800 text-xs">
+                    {filteredHistory.map((rec) => {
+                      const info = getLoanDurationInfo(rec);
+                      const totalPcs = (rec.items || []).reduce((s, it) => s + (Number(it.qty) || 0), 0);
+                      const waPhone = rec.noWaPeminjam || rec.no_wa_peminjam || '';
+
+                      return (
+                        <tr
+                          key={rec.id || rec.noPeminjaman}
+                          className={`align-top transition-colors ${
+                            info.isOverdue
+                              ? 'bg-rose-50/20 dark:bg-rose-950/10 hover:bg-rose-50/40 dark:hover:bg-rose-950/20'
+                              : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'
+                          }`}
+                        >
+                          {/* COL 1: NO SPS & WAKTU */}
+                          <td className="p-3 space-y-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedRecordForModal(rec)}
+                                className="font-mono text-xs font-extrabold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                                title="Klik untuk lihat Surat Jalan & WA"
+                              >
+                                {rec.noPeminjaman}
+                              </button>
+                            </div>
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                              <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
+                              <span>Pinjam: <b className="text-slate-700 dark:text-slate-200 font-mono">{info.pinjamStr || '-'}</b></span>
+                            </div>
+                            {rec.timestamp && (
+                              <div className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
+                                Input: {new Date(rec.timestamp).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                              </div>
+                            )}
+                            {rec.username && (
+                              <div className="text-[10px] text-slate-400 dark:text-slate-500">
+                                Petugas: <span className="font-semibold text-slate-600 dark:text-slate-300">{rec.username}</span>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* COL 2: PEMINJAM & KEPERLUAN */}
+                          <td className="p-3 space-y-1.5">
+                            <div className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
+                              <User className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                              <span className="truncate" title={rec.namaPeminjam}>{rec.namaPeminjam || '-'}</span>
+                            </div>
+                            <div className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700 max-w-full truncate">
+                              {rec.keperluan || 'Peminjaman'}
+                            </div>
+                            {waPhone && (
+                              <div className="pt-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSendWa(rec, 'personal', waPhone)}
+                                  className="inline-flex items-center gap-1 text-[10px] font-mono font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 border border-emerald-200 dark:border-emerald-800/60 px-2 py-0.5 rounded-md transition-colors cursor-pointer"
+                                  title="Kirim WA ke PIC Peminjam"
+                                >
+                                  <Phone className="w-2.5 h-2.5 shrink-0" />
+                                  <span>{waPhone}</span>
+                                </button>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* COL 3: RINCIAN BARANG */}
+                          <td className="p-3 space-y-1.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold font-mono bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/70">
+                                {rec.items?.length || 0} SKU &middot; {totalPcs} Pcs
+                              </span>
+                            </div>
+                            <div className="divide-y divide-slate-100 dark:divide-slate-800/70 border border-slate-200/80 dark:border-slate-800 rounded-lg bg-slate-50/60 dark:bg-slate-800/30 max-h-40 overflow-y-auto">
+                              {(rec.items || []).map((it, idx) => (
+                                <div key={idx} className="px-2.5 py-1.5 flex items-start justify-between gap-2 text-[11px]">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="font-semibold text-slate-800 dark:text-slate-100 leading-snug line-clamp-1" title={it.produk}>
+                                      {it.produk}
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                                      <span className="font-bold text-slate-700 dark:text-slate-300">{it.sku}</span>
+                                      <span className="px-1.5 py-0.2 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[9.5px] font-bold text-indigo-600 dark:text-indigo-400">
+                                        {it.size || 'ALL'}
+                                      </span>
+                                      {canViewWarehousePickingInfo && it.lokasi && it.lokasi !== '-' && (
+                                        <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate max-w-[140px]" title={it.lokasi}>
+                                          📍 {it.lokasi}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <span className="font-mono font-extrabold text-xs text-indigo-600 dark:text-indigo-400 shrink-0 bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                                    x{it.qty}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+
+                          {/* COL 4: STATUS & TANGGAL KEMBALI */}
+                          <td className="p-3 space-y-2">
+                            <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                              <span
+                                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                                  info.isReturned
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700'
+                                    : info.isOverdue
+                                    ? 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-700'
+                                    : 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700'
+                                }`}
+                              >
+                                {info.isReturned ? (
+                                  <CheckCircle2 className="w-3 h-3 shrink-0" />
+                                ) : info.isOverdue ? (
+                                  <AlertTriangle className="w-3 h-3 shrink-0" />
+                                ) : (
+                                  <Clock className="w-3 h-3 shrink-0" />
+                                )}
+                                <span>{rec.status || 'Dipinjam'}</span>
+                              </span>
+
+                              <span className={`text-[10px] font-semibold ${info.isOverdue ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-slate-500 dark:text-slate-400'}`}>
+                                {info.durationLabel}
+                              </span>
+                            </div>
+
+                            {/* Detail Tanggal Kembali / Target Kembali */}
+                            {info.isReturned ? (
+                              <div className="p-2 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 space-y-1">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1">
+                                    <CalendarCheck className="w-3 h-3 shrink-0" />
+                                    <span>Tgl Kembali:</span>
+                                  </span>
+                                  <span className="font-mono text-[11px] font-extrabold text-emerald-700 dark:text-emerald-300">
+                                    {info.kembaliStr || 'Tercatat'}
+                                  </span>
+                                </div>
+                                {rec.catatanKembali && (
+                                  <div className="text-[10px] text-slate-600 dark:text-slate-300 bg-white/80 dark:bg-slate-900/60 px-2 py-1 rounded border border-emerald-200/60 dark:border-emerald-900/50 leading-snug">
+                                    📝 {rec.catatanKembali}
+                                  </div>
+                                )}
+                                {canEditData && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenReturnModal(rec, 'Dikembalikan')}
+                                    className="w-full mt-1 py-1 px-2 bg-white dark:bg-slate-800 hover:bg-emerald-100/60 border border-emerald-200 dark:border-slate-700 rounded text-[10px] font-bold text-emerald-700 dark:text-emerald-300 flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                                  >
+                                    <Edit2 className="w-2.5 h-2.5" />
+                                    <span>Ubah Tgl Kembali / Catatan</span>
+                                  </button>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="space-y-1.5">
+                                {info.estStr && (
+                                  <div className={`px-2 py-1 rounded-lg border text-[10px] flex items-center justify-between ${
+                                    info.isOverdue
+                                      ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 font-bold'
+                                      : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                                  }`}>
+                                    <span className="flex items-center gap-1">
+                                      <CalendarClock className="w-3 h-3 shrink-0" />
+                                      <span>Target Kembali:</span>
+                                    </span>
+                                    <span className="font-mono font-bold">{info.estStr}</span>
+                                  </div>
+                                )}
+                                {rec.catatanKembali && (
+                                  <div className="text-[10px] text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 leading-snug">
+                                    📝 {rec.catatanKembali}
+                                  </div>
+                                )}
+                                {canEditData && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenReturnModal(rec, 'Dikembalikan')}
+                                    className="w-full py-1.5 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                                  >
+                                    <CalendarCheck className="w-3.5 h-3.5" />
+                                    <span>Catat Tanggal Kembali</span>
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </td>
+
+                          {/* COL 5: AKSI & DOKUMEN */}
+                          <td className="p-3 text-right">
+                            <div className="flex flex-col gap-1.5 max-w-[145px] ml-auto">
+                              <div className="grid grid-cols-2 gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedRecordForModal(rec)}
+                                  className="py-1.5 px-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                                  title="Lihat Detail & WhatsApp"
+                                >
+                                  <Eye className="w-3 h-3 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                                  <span>Detail</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handlePrintSJ(rec)}
+                                  className="py-1.5 px-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                                  title="Cetak Surat Jalan A4"
+                                >
+                                  <Printer className="w-3 h-3 text-blue-600 dark:text-blue-400 shrink-0" />
+                                  <span>Cetak SJ</span>
+                                </button>
+                              </div>
+
+                              {canViewWarehousePickingInfo && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSendWa(rec, 'grup')}
+                                  className="w-full py-1.5 px-2 bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/70 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                                >
+                                  <Share2 className="w-3 h-3 shrink-0" />
+                                  <span>WA Picking Grup</span>
+                                </button>
+                              )}
+
+                              {(canEditData || canDeleteData) && (
+                                <div className={`grid ${canEditData && canDeleteData ? 'grid-cols-2' : 'grid-cols-1'} gap-1`}>
+                                  {canEditData && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleStartEdit(rec)}
+                                      className="py-1 px-2 bg-white dark:bg-slate-800 hover:bg-amber-50 text-slate-600 hover:text-amber-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                                    >
+                                      <Edit2 className="w-2.5 h-2.5 shrink-0" />
+                                      <span>Edit</span>
+                                    </button>
+                                  )}
+                                  {canDeleteData && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setDeleteConfirmRecord(rec)}
+                                      className="py-1 px-2 bg-white dark:bg-slate-800 hover:bg-rose-50 text-rose-600 dark:text-rose-400 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                                    >
+                                      <Trash2 className="w-2.5 h-2.5 shrink-0" />
+                                      <span>Hapus</span>
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : historyViewMode === 'split' ? (
+              /* ============================================================
+               * MODE 3: VERSI PANEL RAPI (MASTER-DETAIL SPLIT VIEW)
+               * ============================================================ */
+              (() => {
+                const activeSplitRec =
+                  filteredHistory.find((r) => (r.id || r.noPeminjaman) === selectedSplitRecordId) ||
+                  filteredHistory[0];
+                const activeInfo = activeSplitRec ? getLoanDurationInfo(activeSplitRec) : null;
+                const activeTotalPcs = activeSplitRec
+                  ? (activeSplitRec.items || []).reduce((s, it) => s + (Number(it.qty) || 0), 0)
+                  : 0;
+
+                return (
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+                    {/* Left Master List */}
+                    <div className="lg:col-span-5 xl:col-span-4 border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 overflow-hidden">
+                      <div className="px-3 py-2.5 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                        <span className="text-xs font-extrabold text-slate-800 dark:text-slate-100">
+                          Daftar Dokumen SPS
+                        </span>
+                        <span className="text-[11px] font-mono text-slate-500">
+                          {filteredHistory.length} ditampilkan
+                        </span>
+                      </div>
+                      <div className="max-h-[calc(100vh-290px)] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                        {filteredHistory.map((rec) => {
+                          const key = rec.id || rec.noPeminjaman || '';
+                          const isSelected = activeSplitRec && (activeSplitRec.id || activeSplitRec.noPeminjaman) === key;
+                          const info = getLoanDurationInfo(rec);
+                          const pcs = (rec.items || []).reduce((s, it) => s + (Number(it.qty) || 0), 0);
+
+                          return (
+                            <div
+                              key={key}
+                              onClick={() => setSelectedSplitRecordId(key)}
+                              className={`p-3 cursor-pointer transition-colors ${
+                                isSelected
+                                  ? 'border-l-4 border-l-indigo-600 bg-indigo-50/40 dark:bg-indigo-950/30'
+                                  : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white truncate">
+                                  {rec.namaPeminjam || '-'}
+                                </span>
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0 ${
+                                    info.isReturned
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700'
+                                      : info.isOverdue
+                                      ? 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-700'
+                                      : 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700'
+                                  }`}
+                                >
+                                  {rec.status || 'Dipinjam'}
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                                <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">{rec.noPeminjaman}</span>
+                                {' · '}
+                                <span>{rec.keperluan}</span>
+                              </div>
+                              <div className="text-xs font-semibold text-slate-700 dark:text-slate-200 mt-1 truncate">
+                                {rec.items?.[0]?.produk || '-'}
+                                {(rec.items?.length || 0) > 1 ? ` +${(rec.items?.length || 1) - 1} SKU lainnya` : ''}
+                                <span className="font-mono text-[11px] text-indigo-600 dark:text-indigo-400 ml-1">({pcs} pcs)</span>
+                              </div>
+                              <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                                <span>Pinjam: {info.pinjamStr || '-'}</span>
+                                {info.isReturned ? (
+                                  <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                                    ✓ Kembali: {info.kembaliStr || 'Selesai'}
+                                  </span>
+                                ) : (
+                                  <span className={info.isOverdue ? 'text-rose-600 font-bold' : 'text-amber-600'}>
+                                    {info.durationLabel}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Right Detail Workspace */}
+                    {activeSplitRec && activeInfo && (
+                      <div className="lg:col-span-7 xl:col-span-8 lg:sticky lg:top-3 border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 p-4 space-y-4 shadow-2xs">
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white">
+                                {activeSplitRec.namaPeminjam}
+                              </h4>
+                              <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                {activeSplitRec.noPeminjaman}
+                              </span>
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+                                  activeInfo.isReturned
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700'
+                                    : 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700'
+                                }`}
+                              >
+                                {activeSplitRec.status || 'Dipinjam'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                              {[
+                                activeSplitRec.keperluan,
+                                `Pinjam: ${activeInfo.pinjamStr || '-'}`,
+                                activeInfo.kembaliStr ? `Kembali: ${activeInfo.kembaliStr}` : activeInfo.durationLabel,
+                              ]
+                                .filter(Boolean)
+                                .join(' · ')}
+                            </p>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {canEditData && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenReturnModal(activeSplitRec, 'Dikembalikan')}
+                                className="py-1.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                              >
+                                <CalendarCheck className="w-3.5 h-3.5" />
+                                <span>{activeInfo.isReturned ? 'Ubah Tgl Kembali' : 'Catat Tanggal Kembali'}</span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handlePrintSJ(activeSplitRec)}
+                              className="py-1.5 px-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                            >
+                              <Printer className="w-3.5 h-3.5 text-blue-600" />
+                              <span>Cetak SJ</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedRecordForModal(activeSplitRec)}
+                              className="py-1.5 px-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                            >
+                              <Share2 className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>WA &amp; Detail</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Timeline Tanggal Pinjam & Kembali Card */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 bg-slate-50/90 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200/80 dark:border-slate-700/70 text-xs">
+                          <div>
+                            <div className="text-[10px] font-bold uppercase text-slate-400">Tanggal Pinjam</div>
+                            <div className="font-mono font-bold text-slate-800 dark:text-slate-100 mt-0.5">
+                              📅 {activeInfo.pinjamStr || '-'}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] font-bold uppercase text-slate-400">Target / Estimasi Kembali</div>
+                            <div className="font-mono font-bold text-slate-800 dark:text-slate-100 mt-0.5">
+                              ⏳ {activeInfo.estStr || 'Tidak ditentukan'}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] font-bold uppercase text-slate-400">Tanggal Kembali Aktual</div>
+                            <div className={`font-mono font-extrabold mt-0.5 ${activeInfo.isReturned ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                              {activeInfo.isReturned ? `✅ ${activeInfo.kembaliStr || 'Sudah Kembali'}` : 'Belum Dikembalikan'}
+                            </div>
+                          </div>
+                          {activeSplitRec.catatanKembali && (
+                            <div className="sm:col-span-3 pt-2 border-t border-slate-200 dark:border-slate-700 text-[11px] text-slate-700 dark:text-slate-200">
+                              <span className="font-bold text-slate-500">Catatan Pengembalian: </span>
+                              {activeSplitRec.catatanKembali}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Items Table */}
+                        <div className="space-y-1.5">
+                          <div className="text-xs font-extrabold text-slate-800 dark:text-slate-100">
+                            Rincian Barang Dipinjam ({activeSplitRec.items?.length || 0} SKU &middot; {activeTotalPcs} pcs)
+                          </div>
+                          <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+                            <table className="w-full text-left text-xs">
+                              <thead className="bg-slate-50 dark:bg-slate-800/80 text-[10px] font-bold uppercase text-slate-500">
+                                <tr>
+                                  <th className="p-2.5">Produk &amp; SKU</th>
+                                  <th className="p-2.5 text-center w-20">Size</th>
+                                  <th className="p-2.5 text-center w-20">Qty</th>
+                                  {canViewWarehousePickingInfo && <th className="p-2.5">Lokasi Rak</th>}
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                {(activeSplitRec.items || []).map((it, idx) => (
+                                  <tr key={idx}>
+                                    <td className="p-2.5">
+                                      <div className="font-semibold text-slate-900 dark:text-white">{it.produk}</div>
+                                      <div className="text-[10px] font-mono text-slate-500">{it.sku}</div>
+                                    </td>
+                                    <td className="p-2.5 text-center font-mono font-bold">{it.size || 'ALL'}</td>
+                                    <td className="p-2.5 text-center font-mono font-extrabold text-indigo-600 dark:text-indigo-400">
+                                      {it.qty} pcs
+                                    </td>
+                                    {canViewWarehousePickingInfo && (
+                                      <td className="p-2.5 font-mono text-[11px] text-emerald-700 dark:text-emerald-400 font-bold">
+                                        {it.lokasi || '-'}
+                                      </td>
+                                    )}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        {/* Bottom Action Footer */}
+                        <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5">
+                            {canViewWarehousePickingInfo && (
+                              <button
+                                type="button"
+                                onClick={() => handleSendWa(activeSplitRec, 'grup')}
+                                className="py-1.5 px-3 bg-white dark:bg-slate-800 hover:bg-emerald-50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                              >
+                                <Share2 className="w-3.5 h-3.5" />
+                                <span>Kirim WA Grup Gudang</span>
+                              </button>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {canEditData && (
+                              <button
+                                type="button"
+                                onClick={() => handleStartEdit(activeSplitRec)}
+                                className="py-1.5 px-3 bg-white dark:bg-slate-800 hover:bg-amber-50 text-amber-700 dark:text-amber-300 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                                <span>Edit Data</span>
+                              </button>
+                            )}
+                            {canDeleteData && (
+                              <button
+                                type="button"
+                                onClick={() => setDeleteConfirmRecord(activeSplitRec)}
+                                className="py-1.5 px-3 bg-white dark:bg-slate-800 hover:bg-rose-50 text-rose-600 dark:text-rose-400 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Hapus</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     )}
                   </div>
+                );
+              })()
+            ) : (
+              /* ============================================================
+               * MODE 2: VERSI KARTU (RESPONSIVE CARD GRID VIEW)
+               * ============================================================ */
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {filteredHistory.map((rec) => {
+                  const info = getLoanDurationInfo(rec);
+                  const totalPcs = (rec.items || []).reduce((s, it) => s + (Number(it.qty) || 0), 0);
 
-                  <div>
-                    <div className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                      <User className="w-3.5 h-3.5 text-slate-400" />
-                      <span>{rec.namaPeminjam}</span>
-                    </div>
-                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
-                      {rec.keperluan} &bull; {rec.tglPinjam}
-                    </div>
-                  </div>
+                  return (
+                    <div
+                      key={rec.id || rec.noPeminjaman}
+                      className="flex flex-col justify-between bg-slate-50/70 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 space-y-2.5 shadow-xs hover:shadow-md transition-shadow"
+                    >
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedRecordForModal(rec)}
+                            className="font-mono text-xs font-extrabold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                          >
+                            {rec.noPeminjaman}
+                          </button>
+                          <span
+                            className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                              info.isReturned
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700'
+                                : info.isOverdue
+                                ? 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-700'
+                                : 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700'
+                            }`}
+                          >
+                            {rec.status || 'Dipinjam'}
+                          </span>
+                        </div>
 
-                  <div className="p-2.5 bg-white dark:bg-[#131d31] border border-slate-200/80 dark:border-slate-800 rounded-lg space-y-1 text-xs">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase">
-                      Barang Dipinjam ({rec.items.length} SKU):
-                    </div>
-                    {rec.items.map((it, i) => (
-                      <div key={i} className="flex items-center justify-between text-slate-700 dark:text-slate-300 text-[11px]">
-                        <span className="line-clamp-1">
-                          &bull; {it.produk} ({it.size})
-                        </span>
-                        <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{it.qty} Pcs</span>
+                        <div>
+                          <div className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                            <User className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                            <span className="truncate">{rec.namaPeminjam}</span>
+                          </div>
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
+                            {rec.keperluan}
+                          </div>
+                        </div>
+
+                        {/* Tanggal Pinjam & Kembali Box */}
+                        <div className="p-2 rounded-lg bg-white dark:bg-[#131d31] border border-slate-200/80 dark:border-slate-800 text-[11px] space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500">📅 Tgl Pinjam:</span>
+                            <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{info.pinjamStr || '-'}</span>
+                          </div>
+                          {info.estStr && !info.isReturned && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500">⏳ Target Kembali:</span>
+                              <span className={`font-mono font-bold ${info.isOverdue ? 'text-rose-600' : 'text-slate-700 dark:text-slate-300'}`}>
+                                {info.estStr}
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500">✅ Tgl Kembali:</span>
+                            {info.isReturned ? (
+                              <span className="font-mono font-extrabold text-emerald-600 dark:text-emerald-400">
+                                {info.kembaliStr || 'Sudah Kembali'}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                                Belum ({info.durationLabel})
+                              </span>
+                            )}
+                          </div>
+                          {rec.catatanKembali && (
+                            <div className="pt-1 border-t border-slate-100 dark:border-slate-800 text-[10px] text-slate-600 dark:text-slate-300">
+                              📝 {rec.catatanKembali}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Barang Dipinjam */}
+                        <div className="p-2.5 bg-white dark:bg-[#131d31] border border-slate-200/80 dark:border-slate-800 rounded-lg space-y-1 text-xs">
+                          <div className="text-[10px] font-bold text-slate-400 uppercase flex items-center justify-between">
+                            <span>Barang Dipinjam ({rec.items.length} SKU)</span>
+                            <span className="font-mono text-indigo-600 dark:text-indigo-400">{totalPcs} Pcs</span>
+                          </div>
+                          {rec.items.map((it, i) => (
+                            <div key={i} className="flex items-center justify-between text-slate-700 dark:text-slate-300 text-[11px] gap-2">
+                              <span className="line-clamp-1">
+                                &bull; {it.produk} ({it.size})
+                              </span>
+                              <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400 shrink-0">{it.qty} Pcs</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    ))}
-                  </div>
 
-                  {/* Actions */}
-                  <div className="space-y-1.5 pt-1">
-                    <div className={`grid ${canViewWarehousePickingInfo ? 'grid-cols-3' : 'grid-cols-2'} gap-1.5`}>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedRecordForModal(rec)}
-                        className="py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
-                      >
-                        <FileText className="w-3 h-3 text-blue-600 dark:text-blue-400" />
-                        <span>Detail</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handlePrintSJ(rec)}
-                        className="py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border border-blue-200 dark:border-blue-900/50 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
-                      >
-                        <Printer className="w-3 h-3" />
-                        <span>Cetak SJ</span>
-                      </button>
-                      {canViewWarehousePickingInfo && (
-                        <button
-                          type="button"
-                          onClick={() => handleSendWa(rec, 'grup')}
-                          className="py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-[10px] flex items-center justify-center gap-1 transition-colors cursor-pointer shadow-xs"
-                        >
-                          <Share2 className="w-3 h-3" />
-                          <span>Kirim WA</span>
-                        </button>
-                      )}
-                    </div>
-
-                    {(canEditData || canDeleteData) && (
-                      <div className={`grid ${canEditData && canDeleteData ? 'grid-cols-2' : 'grid-cols-1'} gap-1.5`}>
+                      {/* Card Actions */}
+                      <div className="space-y-1.5 pt-2">
                         {canEditData && (
                           <button
                             type="button"
-                            onClick={() => handleStartEdit(rec)}
-                            className="py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                            onClick={() => handleOpenReturnModal(rec, 'Dikembalikan')}
+                            className={`w-full py-1.5 px-2.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                              info.isReturned
+                                ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                                : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-2xs'
+                            }`}
                           >
-                            <Edit2 className="w-3 h-3" />
-                            <span>Edit</span>
+                            <CalendarCheck className="w-3.5 h-3.5" />
+                            <span>{info.isReturned ? 'Ubah Tgl Kembali / Catatan' : 'Catat Tanggal Kembali'}</span>
                           </button>
                         )}
-                        {canDeleteData && (
+
+                        <div className={`grid ${canViewWarehousePickingInfo ? 'grid-cols-3' : 'grid-cols-2'} gap-1.5`}>
                           <button
                             type="button"
-                            onClick={() => setDeleteConfirmRecord(rec)}
-                            className="py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                            onClick={() => setSelectedRecordForModal(rec)}
+                            className="py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
                           >
-                            <Trash2 className="w-3 h-3" />
-                            <span>Hapus</span>
+                            <FileText className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                            <span>Detail</span>
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => handlePrintSJ(rec)}
+                            className="py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                          >
+                            <Printer className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                            <span>Cetak SJ</span>
+                          </button>
+                          {canViewWarehousePickingInfo && (
+                            <button
+                              type="button"
+                              onClick={() => handleSendWa(rec, 'grup')}
+                              className="py-1.5 bg-white dark:bg-slate-800 hover:bg-emerald-50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                            >
+                              <Share2 className="w-3 h-3" />
+                              <span>Kirim WA</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {(canEditData || canDeleteData) && (
+                          <div className={`grid ${canEditData && canDeleteData ? 'grid-cols-2' : 'grid-cols-1'} gap-1.5`}>
+                            {canEditData && (
+                              <button
+                                type="button"
+                                onClick={() => handleStartEdit(rec)}
+                                className="py-1.5 bg-white dark:bg-slate-800 hover:bg-amber-50 text-slate-600 hover:text-amber-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                                <span>Edit</span>
+                              </button>
+                            )}
+                            {canDeleteData && (
+                              <button
+                                type="button"
+                                onClick={() => setDeleteConfirmRecord(rec)}
+                                className="py-1.5 bg-white dark:bg-slate-800 hover:bg-rose-50 text-rose-600 dark:text-rose-400 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>Hapus</span>
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* MODAL PREVIEW SURAT JALAN & WHATSAPP FONNTE */}
       {selectedRecordForModal && (
@@ -2884,9 +3973,47 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                   <span className="text-slate-800 dark:text-slate-200 font-sans">{selectedRecordForModal.keperluan}</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-slate-500 dark:text-slate-400 font-sans">Tanggal:</span>
-                  <span className="text-slate-800 dark:text-slate-200">{selectedRecordForModal.tglPinjam}</span>
+                  <span className="text-slate-500 dark:text-slate-400 font-sans">Tanggal Pinjam:</span>
+                  <span className="text-slate-800 dark:text-slate-200">{selectedRecordForModal.tglPinjam || '-'}</span>
                 </div>
+                {selectedRecordForModal.estimasiKembali && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500 dark:text-slate-400 font-sans">Target Kembali:</span>
+                    <span className="text-slate-800 dark:text-slate-200">{selectedRecordForModal.estimasiKembali}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 dark:text-slate-400 font-sans">Status &amp; Tgl Kembali:</span>
+                  <div className="flex items-center gap-2 font-sans">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                      selectedRecordForModal.status === 'Dikembalikan'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300'
+                        : 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300'
+                    }`}>
+                      {selectedRecordForModal.status || 'Dipinjam'}
+                    </span>
+                    {(selectedRecordForModal.tglKembali || selectedRecordForModal.tanggal_kembali) && (
+                      <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                        ({selectedRecordForModal.tglKembali || selectedRecordForModal.tanggal_kembali})
+                      </span>
+                    )}
+                    {canEditData && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenReturnModal(selectedRecordForModal, 'Dikembalikan')}
+                        className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                      >
+                        {selectedRecordForModal.status === 'Dikembalikan' ? 'Ubah Tgl Kembali' : '+ Catat Kembali'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {selectedRecordForModal.catatanKembali && (
+                  <div className="flex justify-between items-start gap-3 pt-1 border-t border-slate-200 dark:border-slate-800 font-sans">
+                    <span className="text-slate-500 dark:text-slate-400 shrink-0">Catatan Kembali:</span>
+                    <span className="text-slate-800 dark:text-slate-200 text-right">{selectedRecordForModal.catatanKembali}</span>
+                  </div>
+                )}
               </div>
 
               {/* Items Table */}
@@ -3231,13 +4358,71 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                     </label>
                     <select
                       value={editingRecord.status || 'Dipinjam'}
-                      onChange={(e) => setEditingRecord({ ...editingRecord, status: e.target.value })}
+                      onChange={(e) => {
+                        const nextSt = e.target.value;
+                        const defaultRetDate =
+                          nextSt === 'Dikembalikan' && !editingRecord.tglKembali && !editingRecord.tanggal_kembali
+                            ? new Date().toISOString().slice(0, 10)
+                            : editingRecord.tglKembali || editingRecord.tanggal_kembali;
+                        setEditingRecord({
+                          ...editingRecord,
+                          status: nextSt,
+                          tglKembali: defaultRetDate,
+                          tanggal_kembali: defaultRetDate,
+                        });
+                      }}
                       className="w-full px-2 py-2 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-700/80 rounded-xl text-xs font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
                     >
                       <option value="Dipinjam">Dipinjam</option>
                       <option value="Dikembalikan">Dikembalikan</option>
                     </select>
                   </div>
+                </div>
+
+                {/* Target Kembali & Tanggal Kembali Aktual */}
+                <div className="grid grid-cols-2 gap-2 sm:col-span-2">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      Target / Rencana Kembali
+                    </label>
+                    <input
+                      type="date"
+                      value={editingRecord.estimasiKembali || ''}
+                      onChange={(e) => setEditingRecord({ ...editingRecord, estimasiKembali: e.target.value })}
+                      className="w-full px-2.5 py-2 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-700/80 rounded-xl text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-emerald-700 dark:text-emerald-400 mb-1">
+                      Tanggal Kembali Aktual
+                    </label>
+                    <input
+                      type="date"
+                      value={editingRecord.tglKembali || editingRecord.tanggal_kembali || ''}
+                      onChange={(e) =>
+                        setEditingRecord({
+                          ...editingRecord,
+                          tglKembali: e.target.value,
+                          tanggal_kembali: e.target.value,
+                        })
+                      }
+                      className="w-full px-2.5 py-2 bg-slate-50 dark:bg-[#0b1324] border border-emerald-300 dark:border-emerald-800/80 rounded-xl text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
+                    />
+                  </div>
+                </div>
+
+                {/* Catatan Pengembalian */}
+                <div className="sm:col-span-2">
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Catatan Pengembalian / Keterangan Barang
+                  </label>
+                  <input
+                    type="text"
+                    value={editingRecord.catatanKembali || ''}
+                    onChange={(e) => setEditingRecord({ ...editingRecord, catatanKembali: e.target.value })}
+                    placeholder="Contoh: Dikembalikan lengkap ke Studio / diterima oleh Admin..."
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-700/80 rounded-xl text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                  />
                 </div>
               </div>
 
@@ -3485,6 +4670,167 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* MODAL CATAT TANGGAL KEMBALI & CATATAN PENGEMBALIAN */}
+      {returnModalRecord && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <form
+            onSubmit={handleSaveReturnModal}
+            className="bg-white dark:bg-[#09090b] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden my-auto"
+          >
+            <div className="p-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-[#0b1324]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                  <CalendarCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                    Catat Pengembalian &amp; Tanggal Kembali
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                    {returnModalRecord.noPeminjaman} &bull; {returnModalRecord.namaPeminjam}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReturnModalRecord(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3 text-xs">
+              {/* Summary Info */}
+              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] text-slate-400 uppercase font-bold">Tanggal Pinjam</div>
+                  <div className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                    {returnModalRecord.tglPinjam || '-'}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] text-slate-400 uppercase font-bold">Total Barang</div>
+                  <div className="font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                    {returnModalRecord.items?.length || 0} SKU ({(returnModalRecord.items || []).reduce((s, it) => s + (Number(it.qty) || 0), 0)} Pcs)
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Selector */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Status Peminjaman
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setReturnStatusInput('Dikembalikan')}
+                    className={`py-2 px-3 rounded-xl font-bold text-xs border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      returnStatusInput === 'Dikembalikan'
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                        : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Sudah Dikembalikan</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReturnStatusInput('Dipinjam')}
+                    className={`py-2 px-3 rounded-xl font-bold text-xs border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      returnStatusInput === 'Dipinjam'
+                        ? 'bg-amber-500 text-white border-amber-500 shadow-xs'
+                        : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>Masih Dipinjam</span>
+                  </button>
+                </div>
+              </div>
+
+              {returnStatusInput === 'Dikembalikan' ? (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+                      Tanggal Kembali Aktual <span className="text-rose-500">*</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setReturnDateInput(new Date().toISOString().slice(0, 10))}
+                      className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                    >
+                      Set Hari Ini
+                    </button>
+                  </div>
+                  <input
+                    type="date"
+                    required
+                    value={returnDateInput}
+                    onChange={(e) => setReturnDateInput(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#0b1324] border border-emerald-300 dark:border-emerald-800 rounded-xl text-xs font-mono font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Target / Rencana Tanggal Kembali
+                  </label>
+                  <input
+                    type="date"
+                    value={returnEstDateInput}
+                    onChange={(e) => setReturnEstDateInput(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Catatan Pengembalian / Kondisi Barang (Opsional)
+                </label>
+                <textarea
+                  rows={2}
+                  value={returnNoteInput}
+                  onChange={(e) => setReturnNoteInput(e.target.value)}
+                  placeholder="Contoh: Semua barang kembali lengkap ke rak Studio / diterima oleh Admin..."
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-slate-50/80 dark:bg-[#0b1324] border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={isSavingReturn}
+                onClick={() => setReturnModalRecord(null)}
+                className="px-3 py-2 bg-white dark:bg-slate-800 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingReturn}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-xs text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {isSavingReturn ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Menyimpan...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Simpan Tanggal &amp; Status</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>
