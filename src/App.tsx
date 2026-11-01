@@ -104,7 +104,6 @@ const AgendaView = lazyWithRetry(() => import('./components/AgendaView').then(m 
 const PeminjamanView = lazyWithRetry(() => import('./components/PeminjamanView').then(m => ({ default: m.PeminjamanView })));
 const QualityControlView = lazyWithRetry(() => import('./components/QualityControlView').then(m => ({ default: m.QualityControlView })));
 const PickingTasksView = lazyWithRetry(() => import('./components/PickingTasksView').then(m => ({ default: m.PickingTasksView })));
-const StockOpnameView = lazyWithRetry(() => import('./components/StockOpnameView').then(m => ({ default: m.StockOpnameView })));
 const MutasiLogView = lazyWithRetry(() => import('./components/MutasiLogView').then(m => ({ default: m.MutasiLogView })));
 const InventoryView = lazyWithRetry(() => import('./components/InventoryView').then(m => ({ default: m.InventoryView })));
 const PresensiView = lazyWithRetry(() => import('./components/hr/PresensiView').then(m => ({ default: m.PresensiView })));
@@ -2802,14 +2801,6 @@ export default function App() {
                   }
                   mutasiLogComponent={
                     <MutasiLogView
-                      session={session}
-                      productCatalog={productDatabase}
-                      onNotify={showToast}
-                      onRefreshCatalog={loadProducts}
-                    />
-                  }
-                  stockOpnameComponent={
-                    <StockOpnameView
                       session={session}
                       productCatalog={productDatabase}
                       onNotify={showToast}

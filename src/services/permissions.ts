@@ -115,14 +115,14 @@ export const PERMISSION_GROUPS = [
   },
   {
     id: 'g_ops_mutasi',
-    title: 'Mutasi & Stock Opname',
+    title: 'Scanner & Mutasi Log',
     badge: '🔄',
-    description: 'Scanner dan log mutasi',
+    description: 'Scanner dan log mutasi stok',
     permissions: [
-      { key: 'menu_ops_mutasi', label: 'Menu Scanner & SO', description: 'Akses halaman scanner', isSuperadminOnly: false },
+      { key: 'menu_ops_mutasi', label: 'Menu Scanner & Log', description: 'Akses halaman scanner & log', isSuperadminOnly: false },
       { key: 'tab_ops_mutasi_scanner', label: 'Tab Scanner', description: 'Gunakan kamera/scanner', isSuperadminOnly: false },
       { key: 'tab_ops_mutasi_log', label: 'Tab Mutasi Log', description: 'Melihat histori in/out', isSuperadminOnly: false },
-      { key: 'tab_ops_mutasi_so', label: 'Tab Stock Opname', description: 'Persetujuan dan input SO', isSuperadminOnly: false },
+      { key: 'tab_ops_mutasi_so', label: 'Stock Opname (Pengaturan Sistem)', description: 'Lihat & adjust Stock Opname di Pengaturan Sistem (Khusus Superadmin)', isSuperadminOnly: true },
     ]
   },
   {

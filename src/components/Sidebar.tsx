@@ -148,8 +148,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     hasPermission(session, 'tab_ops_pesanan_transfer_order');
   const canMutasi = userIsAdmin || hasPermission(session, 'menu_ops_mutasi') ||
     hasPermission(session, 'tab_ops_mutasi_scanner') ||
-    hasPermission(session, 'tab_ops_mutasi_log') ||
-    hasPermission(session, 'tab_ops_mutasi_so');
+    hasPermission(session, 'tab_ops_mutasi_log');
   const canQC = userIsAdmin || hasPermission(session, 'menu_ops_qc') ||
     hasPermission(session, 'tab_ops_qc_reject') ||
     hasPermission(session, 'tab_ops_qc_cuci') ||
@@ -240,7 +239,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Scanner | LOG',
       shortLabel: 'Scanner | LOG',
       icon: ScanBarcode,
-      description: 'Scan Rak, Mutasi Log & SO',
+      description: 'Scan Rak & Mutasi Log',
       access: canMutasi,
     },
     {

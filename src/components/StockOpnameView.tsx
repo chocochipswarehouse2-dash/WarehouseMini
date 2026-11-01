@@ -647,6 +647,22 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
     return soQueue.filter((it) => (it.status || 'PENDING') === 'PENDING').length;
   }, [soQueue]);
 
+  if (!userIsSuperadmin) {
+    return (
+      <div className="p-8 text-center bg-white dark:bg-[#09090B] rounded-2xl border border-slate-200 dark:border-slate-800 max-w-lg mx-auto my-6 space-y-3">
+        <div className="w-14 h-14 rounded-2xl bg-rose-500/10 text-rose-500 border border-rose-500/20 flex items-center justify-center mx-auto">
+          <Lock className="w-7 h-7" />
+        </div>
+        <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+          Akses Khusus Superadmin
+        </h3>
+        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+          Menu Stock Opname (SO) dan penyesuaian stok fisik berada di dalam Pengaturan Sistem dan hanya dapat dilihat serta dieksekusi oleh Superadmin.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div id="stockOpnameViewContainer" className="space-y-2 max-w-7xl mx-auto pb-12">
       {/* Top Header Card */}

@@ -1035,7 +1035,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       <div
         id="settingsModalContent"
         onClick={(e) => e.stopPropagation()}
-        className="bg-white dark:bg-[#131d31] rounded-2xl shadow-2xl w-full max-w-4xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-200"
+        className={`bg-white dark:bg-[#131d31] rounded-2xl shadow-2xl w-full ${
+          activeTab === 'opname' ? 'max-w-[96vw] xl:max-w-7xl' : 'max-w-4xl'
+        } border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh] transition-all duration-200 animate-in fade-in zoom-in-95`}
       >
         {/* Header */}
         <div className="px-5 py-4 shrink-0 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/70 dark:bg-[#0f172a]/70">
@@ -1060,7 +1062,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {userIsSuperadmin
-                  ? 'Tema Tampilan, Mode Gelap, Preferensi Audio, Cloud Database & Pengguna'
+                  ? 'Stock Opname (SO), Cloud Database, Pengguna, Role & Tema Tampilan'
                   : 'Kustomisasi Warna Aksen, Font, Ukuran Huruf, Gaya Ikon & Mode Gelap/Terang'}
               </p>
             </div>
@@ -1094,7 +1096,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Tab Navigation */}
-        <div className="shrink-0 flex border-b border-slate-200 dark:border-slate-800 px-4 gap-1 bg-slate-100/50 dark:bg-[#0b1324] overflow-x-auto">
+        <div className="shrink-0 flex border-b border-slate-200 dark:border-slate-800 px-4 gap-1 bg-slate-100/50 dark:bg-[#0b1324] overflow-x-auto no-scrollbar">
+          {/* Tab Stock Opname (SO) - KHUSUS SUPERADMIN */}
+          {userIsSuperadmin && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('opname')}
+              className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'opname'
+                  ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-white dark:bg-[#131d31]'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <ClipboardList className="w-4 h-4 text-emerald-500" />
+              <span>Stock Opname & Adjust</span>
+              <span className="text-[9px] px-1.5 py-0.2 bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 rounded font-black border border-emerald-200 dark:border-emerald-800">
+                SUPERADMIN
+              </span>
+            </button>
+          )}
+
           {/* Tab 1: Tema & Tampilan - SEMUA USER BOLEH AKSES */}
           <button
             type="button"
@@ -1220,7 +1241,56 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Tab Content Body */}
-        <div className="p-5 overflow-y-auto flex-1 space-y-6">
+        <div className="p-3 sm:p-5 overflow-y-auto flex-1 space-y-6">
+          {/* ========================================================================= */}
+          {/* TAB: STOCK OPNAME & PENYESUAIAN STOK (KHUSUS SUPERADMIN) */}
+          {/* ========================================================================= */}
+          {activeTab === 'opname' && userIsSuperadmin && (
+            <div className="space-y-4 animate-in fade-in duration-200">
+              <div className="bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-900/40 rounded-2xl p-3.5 sm:p-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white">
+                        Otorisasi Stock Opname (SO) &amp; Penyesuaian Stok
+                      </h4>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-black uppercase">
+                        Khusus Superadmin
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                      Hanya Superadmin yang dapat melihat antrean SO serta mengeksekusi persetujuan penyesuaian stok fisik (`ADJ_IN` / `ADJ_OUT`).
+                    </p>
+                  </div>
+                </div>
+
+                {onOpenLocationPurge && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenLocationPurge();
+                    }}
+                    className="py-2 px-3 text-xs font-bold bg-white dark:bg-[#131d31] border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-600 dark:text-rose-400 flex items-center gap-1.5 rounded-xl transition-all cursor-pointer shadow-2xs shrink-0"
+                    title="Pusat Pembersihan & Reset Log Lokasi ke 0"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                    <span>Reset Lokasi (0)</span>
+                  </button>
+                )}
+              </div>
+
+              <StockOpnameView
+                session={session}
+                productCatalog={productCatalog}
+                onNotify={onNotify}
+                onRefreshCatalog={() => onRefreshCatalog()}
+              />
+            </div>
+          )}
           {/* ========================================================================= */}
           {/* TAB: TEMA & TAMPILAN (AKSES SEMUA USER) */}
           {/* ========================================================================= */}

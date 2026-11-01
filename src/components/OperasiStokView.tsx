@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { ScanBarcode, ArrowRightLeft, ClipboardList, FileSpreadsheet, Trash2 } from 'lucide-react';
+import { ScanBarcode, ArrowRightLeft, FileSpreadsheet } from 'lucide-react';
 
 import { hasPermission, isSuperadmin } from '../services/permissions';
 
 interface OperasiStokViewProps {
   scannerComponent: React.ReactNode;
   mutasiLogComponent: React.ReactNode;
-  stockOpnameComponent: React.ReactNode;
+  stockOpnameComponent?: React.ReactNode;
   session?: any;
   onOpenImportModal?: () => void;
   onOpenLocationPurge?: () => void;
@@ -15,21 +15,18 @@ interface OperasiStokViewProps {
 export function OperasiStokView({
   scannerComponent,
   mutasiLogComponent,
-  stockOpnameComponent,
   session,
   onOpenImportModal,
-  onOpenLocationPurge
 }: OperasiStokViewProps) {
   const userIsAdmin = isSuperadmin(session);
   
   const tabs = [
     { id: 'scanner', permissionKey: 'tab_ops_mutasi_scanner' },
     { id: 'mutasi', permissionKey: 'tab_ops_mutasi_log' },
-    { id: 'opname', permissionKey: 'tab_ops_mutasi_so' }
   ].filter(t => userIsAdmin || hasPermission(session, t.permissionKey));
 
-  const [activeTab, setActiveTab] = useState<'scanner' | 'mutasi' | 'opname'>(
-    (tabs.length > 0 ? tabs[0].id : 'scanner') as 'scanner' | 'mutasi' | 'opname'
+  const [activeTab, setActiveTab] = useState<'scanner' | 'mutasi'>(
+    (tabs.length > 0 ? tabs[0].id : 'scanner') as 'scanner' | 'mutasi'
   );
 
   return (
@@ -69,22 +66,6 @@ export function OperasiStokView({
               <span>Mutasi</span>
             </button>
             )}
-            
-            {tabs.some(t => t.id === 'opname') && (
-            <button
-              type="button"
-              id="tab-operasi-opname"
-              onClick={() => setActiveTab('opname')}
-              className={`flex-1 py-1.5 sm:py-2.5 px-2 text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 rounded-lg sm:rounded-xl transition-all duration-200 cursor-pointer select-none ${
-                activeTab === 'opname'
-                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25 ring-1 ring-emerald-500/50'
-                  : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <ClipboardList className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-              <span>Opname</span>
-            </button>
-            )}
           </div>
           
           {onOpenImportModal && (
@@ -97,18 +78,6 @@ export function OperasiStokView({
               <FileSpreadsheet className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span className="hidden sm:inline">Impor Data Excel</span>
               <span className="sm:hidden">Impor</span>
-            </button>
-          )}
-
-          {onOpenLocationPurge && userIsAdmin && (
-            <button
-              type="button"
-              onClick={onOpenLocationPurge}
-              className="py-1.5 px-2.5 sm:py-2.5 sm:px-3 text-xs sm:text-sm font-bold bg-white dark:bg-[#131d31] border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-600 dark:text-rose-400 flex items-center justify-center gap-1.5 rounded-lg sm:rounded-xl transition-all duration-200 cursor-pointer shadow-xs shrink-0"
-              title="Pusat Pembersihan & Reset Log Lokasi ke 0"
-            >
-              <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-500" />
-              <span className="hidden sm:inline">Reset Lokasi (0)</span>
             </button>
           )}
         </div>
@@ -139,12 +108,6 @@ export function OperasiStokView({
         <div className={`${tabs.length > 0 && activeTab === 'mutasi' ? 'block' : 'hidden'}`}>
           <div className="pb-20">
             {mutasiLogComponent}
-          </div>
-        </div>
-        
-        <div className={`${tabs.length > 0 && activeTab === 'opname' ? 'block' : 'hidden'}`}>
-          <div className="pb-20 mx-auto">
-            {stockOpnameComponent}
           </div>
         </div>
       </div>
