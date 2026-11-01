@@ -101,6 +101,15 @@ const PROJECT_STATUS_CONFIG: Record<ProjectStatus, { label: string; badge: strin
   on_hold: { label: 'Ditunda', badge: 'bg-purple-100 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300' }
 };
 
+const PROJECT_STATUS_TABS = [
+  { id: 'all', label: 'Semua Status', dot: 'bg-primary-500', activeText: 'text-primary-600 dark:text-primary-400' },
+  { id: 'planned', label: 'Mulai', subLabel: 'Planned', dot: 'bg-slate-400', activeText: 'text-slate-700 dark:text-slate-200' },
+  { id: 'in_progress', label: 'Berjalan', subLabel: 'In Progress', dot: 'bg-blue-500', activeText: 'text-blue-600 dark:text-blue-400' },
+  { id: 'review', label: 'Evaluasi', subLabel: 'Review', dot: 'bg-amber-500', activeText: 'text-amber-600 dark:text-amber-400' },
+  { id: 'completed', label: 'Selesai', subLabel: 'Completed', dot: 'bg-emerald-500', activeText: 'text-emerald-600 dark:text-emerald-400' },
+  { id: 'on_hold', label: 'Ditunda', subLabel: 'On Hold', dot: 'bg-purple-500', activeText: 'text-purple-600 dark:text-purple-400' },
+] as const;
+
 const PROJECT_PRIORITY_CONFIG: Record<ProjectPriority, { label: string; color: string }> = {
   low: { label: 'Rendah', color: 'text-slate-500 bg-slate-100 dark:bg-slate-800' },
   medium: { label: 'Sedang', color: 'text-blue-600 bg-blue-50 dark:bg-blue-900/30' },
@@ -671,6 +680,25 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
       return true;
     });
   }, [events, selectedCategories, searchQuery]);
+
+
+  // Status counts for Project & Task 6-Tab Navigation
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = {
+      all: projects.length,
+      planned: 0,
+      in_progress: 0,
+      review: 0,
+      completed: 0,
+      on_hold: 0
+    };
+    projects.forEach(p => {
+      if (counts[p.status] !== undefined) {
+        counts[p.status]++;
+      }
+    });
+    return counts;
+  }, [projects]);
 
   // Filtered Projects
     const filteredProjects = useMemo(() => {
@@ -2235,73 +2263,119 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
       )}
       {/* PROJECT & INITIATIVE TAB */}
       {activeTab === 'project' && (
-        <div className="space-y-5">
+        <div className="space-y-4">
           
-          {/* Controls Bar for Projects */}
-          <div className="bg-white dark:bg-[#1a2332] p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between items-stretch gap-3">
-            <div className="flex flex-col md:flex-row gap-3 justify-between items-stretch md:items-center">
-              {/* Filters */}
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  value={projectStatusFilter}
-                  onChange={(e) => setProjectStatusFilter(e.target.value)}
-                  className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-primary-500 outline-none bg-slate-50 dark:bg-[#0f172a] text-slate-700 dark:text-slate-300 min-w-[130px]"
-                >
-                  <option value="all">Semua Status</option>
-                  <option value="planned">Mulai (Planned)</option>
-                  <option value="in_progress">Berjalan (In Progress)</option>
-                  <option value="review">Evaluasi (Review)</option>
-                  <option value="completed">Selesai (Completed)</option>
-                  <option value="on_hold">Ditunda (On Hold)</option>
-                </select>
-                <select
-                  value={projectPriorityFilter}
-                  onChange={(e) => setProjectPriorityFilter(e.target.value)}
-                  className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-primary-500 outline-none bg-slate-50 dark:bg-[#0f172a] text-slate-700 dark:text-slate-300 min-w-[130px]"
-                >
-                  <option value="all">Semua Urgensi</option>
-                  <option value="low">Rendah (Low)</option>
-                  <option value="medium">Sedang (Medium)</option>
-                  <option value="high">Tinggi (High)</option>
-                  <option value="urgent">Mendesak (Urgent)</option>
-                </select>
-                <select
-                  value={creatorFilter}
-                  onChange={(e) => setCreatorFilter(e.target.value)}
-                  className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-primary-500 outline-none bg-slate-50 dark:bg-[#0f172a] text-slate-700 dark:text-slate-300 min-w-[130px]"
-                >
-                  <option value="all">Semua Pembuat</option>
-                  {[...new Set(projects.map(p => p.created_by).filter(Boolean))].map(c => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
-              
-              {/* Actions: Search & Add */}
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1 md:w-56">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Cari project / PIC..."
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    className="w-full pl-8 pr-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-primary-500"
-                  />
-                </div>
-                <button
-                  onClick={() => handleOpenAddProject()}
-                  className="bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white px-3 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-md shadow-primary-500/20 shrink-0"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Buat Project</span>
-                </button>
-              </div>
+          {/* 6 Tabs Sub-Navigation for Project Statuses */}
+          <div className="bg-white dark:bg-[#1a2332] p-1.5 sm:p-2 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap">
+              {PROJECT_STATUS_TABS.map(tab => {
+                const isActive = projectStatusFilter === tab.id;
+                const count = statusCounts[tab.id] || 0;
+                
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setProjectStatusFilter(tab.id)}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 select-none ${
+                      isActive
+                        ? `bg-slate-100 dark:bg-slate-800 ${tab.activeText} shadow-xs ring-1 ring-slate-200 dark:ring-slate-700`
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${tab.dot} shrink-0`}></span>
+                    <span>{tab.label}</span>
+                    {tab.subLabel && (
+                      <span className="hidden md:inline text-[10px] opacity-60 font-normal">
+                        ({tab.subLabel})
+                      </span>
+                    )}
+                    <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full shrink-0 ${
+                      isActive
+                        ? 'bg-primary-100 dark:bg-primary-950/60 text-primary-700 dark:text-primary-300'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                    }`}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          {/* Project Cards Grid (Responsive 1-col on mobile, 2-col tablet, 3-col desktop) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {/* Controls Bar for Projects (Secondary Filters & Actions) */}
+          <div className="bg-white dark:bg-[#1a2332] p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3">
+            {/* Secondary Filters */}
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={projectPriorityFilter}
+                onChange={(e) => setProjectPriorityFilter(e.target.value)}
+                className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-primary-500 outline-none bg-slate-50 dark:bg-[#0f172a] text-slate-700 dark:text-slate-300 min-w-[130px]"
+              >
+                <option value="all">Semua Urgensi</option>
+                <option value="low">Rendah (Low)</option>
+                <option value="medium">Sedang (Medium)</option>
+                <option value="high">Tinggi (High)</option>
+                <option value="urgent">Mendesak (Urgent)</option>
+              </select>
+              <select
+                value={creatorFilter}
+                onChange={(e) => setCreatorFilter(e.target.value)}
+                className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-primary-500 outline-none bg-slate-50 dark:bg-[#0f172a] text-slate-700 dark:text-slate-300 min-w-[130px]"
+              >
+                <option value="all">Semua Pembuat</option>
+                {[...new Set(projects.map(p => p.created_by).filter(Boolean))].map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Actions: Search & Add */}
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 md:w-56">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Cari project / PIC..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => handleOpenAddProject()}
+                className="bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-md shadow-primary-500/20 shrink-0 cursor-pointer transition-all active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Buat Project</span>
+              </button>
+            </div>
+          </div>
+
+          {filteredProjects.length === 0 ? (
+            <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center shadow-xs">
+              <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 mx-auto flex items-center justify-center mb-3">
+                <Briefcase className="w-6 h-6" />
+              </div>
+              <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                Tidak ada project pada status ini
+              </h3>
+              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                {searchQuery
+                  ? `Tidak ada project yang cocok dengan pencarian "${searchQuery}"`
+                  : 'Belum ada project yang terdaftar dalam status ini.'}
+              </p>
+              <button
+                type="button"
+                onClick={() => handleOpenAddProject()}
+                className="mt-4 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm cursor-pointer"
+              >
+                + Buat Project Baru
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {filteredProjects.map(proj => {
               const stCfg = PROJECT_STATUS_CONFIG[proj.status] || PROJECT_STATUS_CONFIG.in_progress;
               const priCfg = PROJECT_PRIORITY_CONFIG[proj.priority] || PROJECT_PRIORITY_CONFIG.medium;
@@ -2429,6 +2503,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
               );
             })}
           </div>
+          )}
         </div>
       )}
 

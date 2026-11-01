@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.36",
-  "versionCode": 296,
+  "version": "v2.6.37",
+  "versionCode": 297,
   "buildDate": "2 November 2026",
-  "buildHash": "wms-261102-v296-0535",
-  "releaseTitle": "WMS v2.6.36 — Google Calendar Month View & Multi-Day Spanning Event Bars",
+  "buildHash": "wms-261102-v297-0615",
+  "releaseTitle": "WMS v2.6.37 — Project & Task 6-Tab Horizontal Status Navigation",
   "releaseNotes": [
-    "Tampilan Kalender Mode Bulan diperbarui mengikuti Google Calendar dengan event multi-hari horizontal continuous spanning banner",
-    "Navigasi header Google Calendar: badge tanggal hari ini, tombol Hari Ini, panah navigasi, dan dropdown view (Bulan, Minggu, Hari, Jadwal)",
-    "Sidebar kiri Google Calendar: tombol + Buat multi-warna dengan dropdown (Acara, Project, Catatan), mini-kalender Senin-start, dan filter kategori checkbox berwarna"
+    "Mengganti filter dropdown status project dengan 6 tab horizontal interaktif (Semua, Mulai, Berjalan, Evaluasi, Selesai, Ditunda) dengan live count badge",
+    "Navigasi tab responsif mobile dengan horizontal swipe scroll dan status dot berwarna",
+    "Menambahkan kartu empty state yang informatif saat tab status project kosong"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.36",
+    "versionCode": 296,
+    "buildDate": "2 November 2026",
+    "buildHash": "wms-261102-v296-0535",
+    "releaseTitle": "WMS v2.6.36 — Google Calendar Month View & Multi-Day Spanning Event Bars",
+    "releaseNotes": [
+      "Tampilan Kalender Mode Bulan diperbarui mengikuti Google Calendar dengan event multi-hari horizontal continuous spanning banner",
+      "Navigasi header Google Calendar: badge tanggal hari ini, tombol Hari Ini, panah navigasi, dan dropdown view (Bulan, Minggu, Hari, Jadwal)",
+      "Sidebar kiri Google Calendar: tombol + Buat multi-warna dengan dropdown (Acara, Project, Catatan), mini-kalender Senin-start, dan filter kategori checkbox berwarna"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.35",
     "versionCode": 295,
@@ -114,18 +127,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseTitle": "WMS v2.6.29 — Clean Env Vars in Push Serverless",
     "releaseNotes": [
       "Trim whitespace dan kutip dari env vars push backend"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.28",
-    "versionCode": 288,
-    "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v288-1949",
-    "releaseTitle": "WMS v2.6.28 — Web Push CJS/ESM Interop & Exception Guard",
-    "releaseNotes": [
-      "Fix webpush module import di Vercel Node runtime",
-      "Try-catch internal error guard"
     ],
     "minSupportedVersion": "v2.0.0"
   }

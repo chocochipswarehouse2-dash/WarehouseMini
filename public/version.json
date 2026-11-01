@@ -1,13 +1,13 @@
 {
-  "version": "v2.6.36",
-  "versionCode": 296,
+  "version": "v2.6.37",
+  "versionCode": 297,
   "buildDate": "2 November 2026",
-  "buildHash": "wms-261102-v296-0535",
-  "releaseTitle": "WMS v2.6.36 — Google Calendar Month View & Multi-Day Spanning Event Bars",
+  "buildHash": "wms-261102-v297-0615",
+  "releaseTitle": "WMS v2.6.37 — Project & Task 6-Tab Horizontal Status Navigation",
   "releaseNotes": [
-    "Tampilan Kalender Mode Bulan diperbarui mengikuti Google Calendar dengan event multi-hari horizontal continuous spanning banner",
-    "Navigasi header Google Calendar: badge tanggal hari ini, tombol Hari Ini, panah navigasi, dan dropdown view (Bulan, Minggu, Hari, Jadwal)",
-    "Sidebar kiri Google Calendar: tombol + Buat multi-warna dengan dropdown (Acara, Project, Catatan), mini-kalender Senin-start, dan filter kategori checkbox berwarna"
+    "Mengganti filter dropdown status project dengan 6 tab horizontal interaktif (Semua, Mulai, Berjalan, Evaluasi, Selesai, Ditunda) dengan live count badge",
+    "Navigasi tab responsif mobile dengan horizontal swipe scroll dan status dot berwarna",
+    "Menambahkan kartu empty state yang informatif saat tab status project kosong"
   ],
   "minSupportedVersion": "v2.0.0"
 }
