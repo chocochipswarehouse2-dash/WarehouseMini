@@ -18,7 +18,14 @@ let isFetchingPromise: Promise<WmsSettings | null> | null = null;
  * Validasi dan bersihkan URL GAS jika merupakan URL script mati/404 lama
  */
 function sanitizeManualShipmentGasUrl(url?: string): string {
-  if (!url || !url.trim() || url.includes('AKfycbwqoG7_rD_kLdO48x4W0-3f4m2A-xK7eH9fQp_6_h3Y') || url.includes('AKfycby4J497I-m4H99KSvBDkkSr6_kn9BoIDwALRa3lE1ZiPyJPIAd0AYE6-r6yqCdFONmpSg')) {
+  if (
+    !url ||
+    !url.trim() ||
+    url.includes('AKfycbwqoG7_rD_kLdO48x4W0-3f4m2A-xK7eH9fQp_6_h3Y') ||
+    url.includes('AKfycby4J497I-m4H99KSvBDkkSr6_kn9BoIDwALRa3lE1ZiPyJPIAd0AYE6-r6yqCdFONmpSg') ||
+    url.includes('AKfycbwnGgT-ekW7L-HIE2RGxuBZQl5gATB4fUFYO-SxwGS16p8_Kc28q91gnd5N-Y30bA8Q9w') ||
+    url.includes('AKfycbyO4tMN0j4p9xzWGigWKe8HXdbo8BcwSM0TNELiEHVGbrCgQlyAJWY9LuOcrQUl-oOU')
+  ) {
     return DEFAULT_MANUAL_SHIPMENT_GAS_URL;
   }
   return url.trim();
@@ -152,7 +159,13 @@ export function getStoredGdriveFolderUrl(): string {
 }
 
 function sanitizeGdriveGasUrl(url?: string): string {
-  if (!url || !url.trim() || url.includes('AKfycby4J497I-m4H99KSvBDkkSr6_kn9BoIDwALRa3lE1ZiPyJPIAd0AYE6-r6yqCdFONmpSg')) {
+  if (
+    !url ||
+    !url.trim() ||
+    url.includes('AKfycby4J497I-m4H99KSvBDkkSr6_kn9BoIDwALRa3lE1ZiPyJPIAd0AYE6-r6yqCdFONmpSg') ||
+    url.includes('AKfycbyO4tMN0j4p9xzWGigWKe8HXdbo8BcwSM0TNELiEHVGbrCgQlyAJWY9LuOcrQUl-oOU') ||
+    url.includes('AKfycbwnGgT-ekW7L-HIE2RGxuBZQl5gATB4fUFYO-SxwGS16p8_Kc28q91gnd5N-Y30bA8Q9w')
+  ) {
     return DEFAULT_GDRIVE_GAS_URL;
   }
   return url.trim();

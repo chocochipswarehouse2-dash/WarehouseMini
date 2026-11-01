@@ -15,21 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.18",
-  "versionCode": 278,
+  "version": "v2.6.19",
+  "versionCode": 279,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v278-0652",
-  "releaseTitle": "WMS v2.6.18 — Live Chat Real-Time & Sinkronisasi 2-Arah Google Calendar",
+  "buildHash": "wms-261101-v279-1459",
+  "releaseTitle": "WMS v2.6.19 — Auto-Healing Endpoint GAS & Sinkronisasi Google Calendar",
   "releaseNotes": [
-      "Live Chat & Ruang Diskusi: Komunikasi real-time antar tim WMS terintegrasi di floating drawer dan halaman penuh",
-      "Integrasi Google Calendar: Sinkronisasi 2-arah agenda WMS dan Google Calendar via GAS backend akun utama",
-      "Google Calendar & Keep Style: Tampilan kalender modern (Month & Week view), status sync real-time, dan quick note bar",
-      "Perbaikan metode getTotalUnreadCount, getOnlineUsers, dan getVisibleRooms pada LiveChatManager"
+    "Auto-Healing Endpoint GAS: Menghubungkan Google Calendar WMS ke deployment aktif dan auto-sanitasi URL kadaluarsa",
+    "Resolusi Sinkronisasi 2-Arah: Penarikan event Google Calendar sukses tanpa kendala Unauthorized",
+    "Harmonisasi Multi-Branch AI Studio: Konsolidasi versi dan catatan rilis tanpa merge conflict"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.18",
+    "versionCode": 278,
+    "buildDate": "1 November 2026",
+    "buildHash": "wms-261101-v278-0652",
+    "releaseTitle": "WMS v2.6.18 — Live Chat Real-Time & Sinkronisasi 2-Arah Google Calendar",
+    "releaseNotes": [
+      "Live Chat & Ruang Diskusi: Komunikasi real-time antar tim WMS terintegrasi di floating drawer dan halaman penuh",
+      "Integrasi Google Calendar: Sinkronisasi 2-arah agenda WMS dan Google Calendar via GAS backend akun utama",
+      "Google Calendar & Keep Style: Tampilan kalender modern (Month & Week view), status sync real-time, dan quick note bar",
+      "Perbaikan metode getTotalUnreadCount, getOnlineUsers, dan getVisibleRooms pada LiveChatManager"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.17",
     "versionCode": 277,
@@ -118,18 +131,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Standarisasi subjek email retur barang agar seluruh riwayat update & selesai otomatis menjadi balasan (reply) di thread email yang sama",
       "Menambahkan opsi auto-email balasan saat edit data retur dan banner visual update di badan email"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.10",
-    "versionCode": 270,
-    "buildDate": "30 Oktober 2026",
-    "buildHash": "wms-261030-v270-2010",
-    "releaseTitle": "WMS v2.6.10 — Optimasi Instant Update PWA & FAQ Penjelasan Qty PO",
-    "releaseNotes": [
-      "Optimasi pembersihan precache PWA saat 1-klik Perbarui agar bundle versi terbaru langsung aktif",
-      "Penjelasan lengkap keamanan data Qty PO buyer pada push master produksi"
     ],
     "minSupportedVersion": "v2.0.0"
   }

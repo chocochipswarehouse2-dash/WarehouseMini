@@ -2,6 +2,8 @@ import { AgendaEvent } from '../types';
 import { getGdriveConfig } from './gdriveUpload';
 import { getAgendaEvents, saveAgendaEvent } from './supabase';
 
+import { DEFAULT_GDRIVE_GAS_URL, getStoredGasEndpoint } from './settings';
+
 export interface GCalSyncResponse {
   success: boolean;
   google_event_id?: string | null;
@@ -30,9 +32,17 @@ export const LAST_GCAL_SYNC_KEY = 'wms_last_gcal_sync_timestamp';
 function getGasEndpoint(): string {
   try {
     const { gasUrl } = getGdriveConfig();
-    return (gasUrl || '').trim();
+    const candidate = (gasUrl || '').trim();
+    if (candidate && !candidate.includes('AKfycbwnGgT') && !candidate.includes('AKfycbyO4tMN')) {
+      return candidate;
+    }
+    const mainGas = getStoredGasEndpoint();
+    if (mainGas && !mainGas.includes('AKfycbwnGgT') && !mainGas.includes('AKfycbyO4tMN')) {
+      return mainGas.trim();
+    }
+    return DEFAULT_GDRIVE_GAS_URL;
   } catch {
-    return '';
+    return DEFAULT_GDRIVE_GAS_URL;
   }
 }
 
