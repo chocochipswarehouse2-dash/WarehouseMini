@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.14",
-  "versionCode": 274,
-  "buildDate": "31 Oktober 2026",
-  "buildHash": "wms-261031-v274-1052",
-  "releaseTitle": "WMS v2.6.14 — Sinkronisasi Otomatis Realtime Data Katalog & Inventori Multi-Perangkat",
+  "version": "v2.6.15",
+  "versionCode": 275,
+  "buildDate": "1 November 2026",
+  "buildHash": "wms-261101-v275-1119",
+  "releaseTitle": "WMS v2.6.15 — Integrasi Fitur Kirim Tugas Picking Massal (WA Grup, App & Cetak A4) & Sinkronisasi Ekosistem AI Studio",
   "releaseNotes": [
-    "Sinkronisasi Realtime Katalog: Menambahkan broadcast event 'catalog_updated' via Supabase Realtime WebSocket saat update database produk selesai",
-    "Auto-Reload Inventori: Hook useInventoryStock dan InventoryView kini otomatis merefresh stok fisik seketika saat menerima event pembaruan katalog tanpa perlu klik tombol refresh manual",
-    "Low-Egress Background Sync: Perangkat user lain otomatis mendeteksi pembaruan katalog dan menyinkronkan data tampilan secara live"
+    "Kirim Tugas Picking Massal: Menambahkan fitur seleksi multi-SJ dan broadcast WhatsApp massal ke Grup Gudang serta pengiriman tugas picking massal ke aplikasi dari Distribusi Store Tab",
+    "Pembaruan Picking Tasks: Dukungan aksi massal kirim WA Picking untuk batch Surat Jalan",
+    "Sinkronisasi Antigravity & AI Studio: Menggabungkan commit terbaru dari Google AI Studio dengan rilis live Antigravity v2.6.14 ke v2.6.15"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.14",
+    "versionCode": 274,
+    "buildDate": "31 Oktober 2026",
+    "buildHash": "wms-261031-v274-1052",
+    "releaseTitle": "WMS v2.6.14 — Sinkronisasi Otomatis Realtime Data Katalog & Inventori Multi-Perangkat",
+    "releaseNotes": [
+      "Sinkronisasi Realtime Katalog: Menambahkan broadcast event 'catalog_updated' via Supabase Realtime WebSocket saat update database produk selesai",
+      "Auto-Reload Inventori: Hook useInventoryStock dan InventoryView kini otomatis merefresh stok fisik seketika saat menerima event pembaruan katalog tanpa perlu klik tombol refresh manual",
+      "Low-Egress Background Sync: Perangkat user lain otomatis mendeteksi pembaruan katalog dan menyinkronkan data tampilan secara live"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.13",
     "versionCode": 273,
@@ -114,19 +127,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Perbaikan formula Status Audit dan Selisih Fisik di Google Sheet agar tidak muncul LEBIH palsu",
       "Implementasi Auto-Mirror Qty Nota dua arah antara Master Produksi dan Tab Sheet Tanggal",
       "Peningkatan ketahanan fetch Qty Nota dan penanganan error toast informatif"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.6",
-    "versionCode": 266,
-    "buildDate": "30 Oktober 2026",
-    "buildHash": "wms-261030-v266-1758",
-    "releaseTitle": "WMS v2.6.6 — Formula Selisih Nota Akurat & Optimasi Tarik Qty Nota",
-    "releaseNotes": [
-      "Memperbaiki formula Selisih Nota Google Sheets agar tidak salah kalkulasi saat Qty Hitung Ulang kosong",
-      "Memperbaiki pemetaan kolom Total Awal Net agar Selisih Nota akurat (568 - 570 = -2 pcs)",
-      "Optimasi sinkronisasi Tarik Qty Nota menjadi super cepat tanpa timeout"
     ],
     "minSupportedVersion": "v2.0.0"
   }
