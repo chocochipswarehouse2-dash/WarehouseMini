@@ -294,7 +294,7 @@ async function checkNewOrdersInBackground() {
   if (cfg.username) {
     try {
       const me = String(cfg.username || '').trim().toLowerCase();
-      const chatIdxUrl = `${cfg.supabaseUrl}/rest/v1/wms_system_docs?select=content&doc_key=eq.wms_chat_rooms_index_v1&limit=1`;
+      const chatIdxUrl = `${cfg.supabaseUrl}/rest/v1/wms_system_docs?select=content&or=(section_id.eq.wms_chat_rooms_index_v1,doc_key.eq.wms_chat_rooms_index_v1)&limit=1`;
       const resChat = await fetch(chatIdxUrl, { method: 'GET', headers });
       if (resChat.ok) {
         const rowsChat = await resChat.json();
@@ -425,7 +425,7 @@ async function handleBackgroundChatAction(actionType, roomId, replyText) {
     // 1. Ambil daftar pesan ruang chat terkait
     const msgsDocKey = `wms_chat_room_msgs_${roomId}`;
     const msgsRes = await fetch(
-      `${cfg.supabaseUrl}/rest/v1/wms_system_docs?select=content&doc_key=eq.${encodeURIComponent(msgsDocKey)}&limit=1`,
+      `${cfg.supabaseUrl}/rest/v1/wms_system_docs?select=content&or=(section_id.eq.,doc_key.eq.)&limit=1`,
       { method: 'GET', headers }
     );
     let messages = [];
@@ -471,11 +471,11 @@ async function handleBackgroundChatAction(actionType, roomId, replyText) {
     }
 
     // Simpan kembali daftar pesan ke wms_system_docs
-    await fetch(`${cfg.supabaseUrl}/rest/v1/wms_system_docs?on_conflict=doc_key`, {
+    await fetch(`${cfg.supabaseUrl}/rest/v1/wms_system_docs?on_conflict=section_id`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        doc_key: msgsDocKey,
+        section_id: msgsDocKey, doc_key: msgsDocKey,
         content: messages,
         updated_at: nowIso,
       }),
@@ -483,7 +483,7 @@ async function handleBackgroundChatAction(actionType, roomId, replyText) {
 
     // 2. Perbarui indeks ruang chat (wms_chat_rooms_index_v1)
     const idxRes = await fetch(
-      `${cfg.supabaseUrl}/rest/v1/wms_system_docs?select=content&doc_key=eq.wms_chat_rooms_index_v1&limit=1`,
+      `${cfg.supabaseUrl}/rest/v1/wms_system_docs?select=content&or=(section_id.eq.wms_chat_rooms_index_v1,doc_key.eq.wms_chat_rooms_index_v1)&limit=1`,
       { method: 'GET', headers }
     );
     if (idxRes.ok) {
@@ -530,11 +530,11 @@ async function handleBackgroundChatAction(actionType, roomId, replyText) {
           };
         });
 
-        await fetch(`${cfg.supabaseUrl}/rest/v1/wms_system_docs?on_conflict=doc_key`, {
+        await fetch(`${cfg.supabaseUrl}/rest/v1/wms_system_docs?on_conflict=section_id`, {
           method: 'POST',
           headers,
           body: JSON.stringify({
-            doc_key: 'wms_chat_rooms_index_v1',
+            section_id: 'wms_chat_rooms_index_v1', doc_key: 'wms_chat_rooms_index_v1',
             content: rooms,
             updated_at: nowIso,
           }),

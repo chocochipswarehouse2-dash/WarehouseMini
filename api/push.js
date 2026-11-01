@@ -117,7 +117,8 @@ function buildMessages(body) {
     }
   } else if (table === 'wms_system_docs') {
     const rec = body.record || {};
-    if (clean(rec.doc_key) !== CHAT_INDEX_KEY) return messages;
+    const docId = clean(rec.section_id || rec.doc_key);
+    if (docId !== CHAT_INDEX_KEY) return messages;
     const newRooms = parseJsonish(rec.content, []);
     const oldRooms = parseJsonish((body.old_record || {}).content, []);
     const oldLast = new Map();
@@ -227,3 +228,4 @@ export default async function handler(req, res) {
   }
   return res.status(200).json({ sent, removed: dead.size });
 }
+

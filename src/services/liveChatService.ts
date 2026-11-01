@@ -256,7 +256,7 @@ async function fetchSystemDocJson<T>(docKey: string): Promise<T | null> {
       'wms_system_docs',
       'GET',
       null,
-      `select=content&doc_key=eq.${encodeURIComponent(docKey)}&limit=1`
+      `select=content&or=(section_id.eq.,doc_key.eq.)&limit=1`
     );
     if (Array.isArray(rows) && rows.length > 0 && rows[0].content !== undefined) {
       const raw = rows[0].content;
@@ -278,6 +278,7 @@ async function fetchSystemDocJson<T>(docKey: string): Promise<T | null> {
 async function saveSystemDocJson(docKey: string, content: any): Promise<boolean> {
   try {
     const payload = {
+      section_id: docKey,
       doc_key: docKey,
       content,
       updated_at: new Date().toISOString(),
@@ -286,7 +287,7 @@ async function saveSystemDocJson(docKey: string, content: any): Promise<boolean>
       'wms_system_docs',
       'POST',
       payload,
-      'on_conflict=doc_key',
+      'on_conflict=section_id',
       { Prefer: 'resolution=merge-duplicates,return=minimal' }
     );
     return true;

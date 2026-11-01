@@ -102,3 +102,4 @@ DROP TRIGGER IF EXISTS wms_push_chat_index ON public.wms_system_docs;
 CREATE TRIGGER wms_push_chat_index AFTER INSERT OR UPDATE ON public.wms_system_docs
   FOR EACH ROW WHEN (NEW.doc_key = 'wms_chat_rooms_index_v1')
   EXECUTE FUNCTION public.wms_push_on_chat_index();
+
