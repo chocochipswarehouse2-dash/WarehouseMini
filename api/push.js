@@ -24,7 +24,7 @@ function supaConfig() {
 
 function supaHeaders(key) {
   const h = { apikey: key, 'Content-Type': 'application/json' };
-  if (key.startsWith('eyJ')) h.Authorization = `Bearer ${key}`;
+  if (key) h.Authorization = `Bearer ${key}`;
   return h;
 }
 

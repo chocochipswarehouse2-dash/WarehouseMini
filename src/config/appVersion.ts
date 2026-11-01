@@ -15,20 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.26",
-  "versionCode": 286,
+  "version": "v2.6.27",
+  "versionCode": 287,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v286-1846",
-  "releaseTitle": "WMS v2.6.26 — Web Push: Notifikasi Pesanan & Chat Saat Aplikasi Ditutup",
+  "buildHash": "wms-261101-v287-1927",
+  "releaseTitle": "WMS v2.6.27 — Support Supabase Secret Keys in Web Push",
   "releaseNotes": [
-    "Web Push (VAPID) gaya WhatsApp: notifikasi Pesanan Baru, Retur, SPS, dan Live Chat tetap masuk walau aplikasi / browser ditutup",
-    "Pendaftaran perangkat otomatis setelah izin notifikasi diberikan; berhenti otomatis saat logout",
-    "Balas Cepat & Tandai Dibaca langsung dari notifikasi chat; tidak ada notifikasi ganda saat aplikasi sedang terbuka"
+    "Kompatibilitas sb_secret_ pada backend push",
+    "Headers Authorization Bearer universal"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.26",
+    "versionCode": 286,
+    "buildDate": "1 November 2026",
+    "buildHash": "wms-261101-v286-1846",
+    "releaseTitle": "WMS v2.6.26 — Web Push: Notifikasi Pesanan & Chat Saat Aplikasi Ditutup",
+    "releaseNotes": [
+      "Web Push (VAPID) gaya WhatsApp: notifikasi Pesanan Baru, Retur, SPS, dan Live Chat tetap masuk walau aplikasi / browser ditutup",
+      "Pendaftaran perangkat otomatis setelah izin notifikasi diberikan; berhenti otomatis saat logout",
+      "Balas Cepat & Tandai Dibaca langsung dari notifikasi chat; tidak ada notifikasi ganda saat aplikasi sedang terbuka"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.25",
     "versionCode": 285,
@@ -118,20 +130,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Auto-Healing Endpoint GAS: Menghubungkan Google Calendar WMS ke deployment aktif dan auto-sanitasi URL kadaluarsa",
       "Resolusi Sinkronisasi 2-Arah: Penarikan event Google Calendar sukses tanpa kendala Unauthorized",
       "Harmonisasi Multi-Branch AI Studio: Konsolidasi versi dan catatan rilis tanpa merge conflict"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.18",
-    "versionCode": 278,
-    "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v278-0652",
-    "releaseTitle": "WMS v2.6.18 — Live Chat Real-Time & Sinkronisasi 2-Arah Google Calendar",
-    "releaseNotes": [
-      "Live Chat & Ruang Diskusi: Komunikasi real-time antar tim WMS terintegrasi di floating drawer dan halaman penuh",
-      "Integrasi Google Calendar: Sinkronisasi 2-arah agenda WMS dan Google Calendar via GAS backend akun utama",
-      "Google Calendar & Keep Style: Tampilan kalender modern (Month & Week view), status sync real-time, dan quick note bar",
-      "Perbaikan metode getTotalUnreadCount, getOnlineUsers, dan getVisibleRooms pada LiveChatManager"
     ],
     "minSupportedVersion": "v2.0.0"
   }

@@ -125,3 +125,4 @@ export async function unsubscribeFromWebPush(): Promise<void> {
     localStorage.removeItem(SUBSCRIBED_ENDPOINT_KEY);
   } catch {}
 }
+

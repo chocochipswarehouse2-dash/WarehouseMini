@@ -1,13 +1,12 @@
 {
-  "version": "v2.6.26",
-  "versionCode": 286,
+  "version": "v2.6.27",
+  "versionCode": 287,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v286-1846",
-  "releaseTitle": "WMS v2.6.26 — Web Push: Notifikasi Pesanan & Chat Saat Aplikasi Ditutup",
+  "buildHash": "wms-261101-v287-1927",
+  "releaseTitle": "WMS v2.6.27 — Support Supabase Secret Keys in Web Push",
   "releaseNotes": [
-    "Web Push (VAPID) gaya WhatsApp: notifikasi Pesanan Baru, Retur, SPS, dan Live Chat tetap masuk walau aplikasi / browser ditutup",
-    "Pendaftaran perangkat otomatis setelah izin notifikasi diberikan; berhenti otomatis saat logout",
-    "Balas Cepat & Tandai Dibaca langsung dari notifikasi chat; tidak ada notifikasi ganda saat aplikasi sedang terbuka"
+    "Kompatibilitas sb_secret_ pada backend push",
+    "Headers Authorization Bearer universal"
   ],
   "minSupportedVersion": "v2.0.0"
 }
