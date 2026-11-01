@@ -36,6 +36,7 @@ import {
 import { ProductItem, UserSession, LogProdukItem } from '../types';
 import {
   fetchRecentLogs,
+  fetchSupabaseStokFisikDirect,
   fetchAllLogs, fetchLogsBySearch,
   getSupabaseClient,
   fetchLogsByInvoice,
@@ -108,6 +109,7 @@ export interface ConsolidatedLogItem extends LogProdukItem {
   raw_count?: number;
   total_qty?: number;
   is_merged?: boolean;
+  stok_saat_itu?: number;
 }
 
 export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
@@ -180,23 +182,31 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
   const [isEditLoading, setIsEditLoading] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
 
-  // Consolidation Mode: Group & sum identical Type + Invoice + SKU + Size + Location
-  const [isConsolidatedMode, setIsConsolidatedMode] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem('wms_mutasi_consolidate_mode');
-      if (saved !== null) return saved === 'true';
-    } catch {}
-    return true; // Default ON (Ringkas & Jumlahkan)
-  });
+  // Mode Ringkas Baku (Always Enabled as Standard WMS View)
+  const isConsolidatedMode = true;
 
-  const handleToggleConsolidatedMode = () => {
-    setIsConsolidatedMode((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem('wms_mutasi_consolidate_mode', String(next));
-      } catch {}
-      return next;
-    });
+  // Live Physical Stock Map (SKU + Lokasi -> sisa_stok)
+  const [physicalStockMap, setPhysicalStockMap] = useState<Map<string, number>>(new Map());
+
+  const loadPhysicalStocks = async () => {
+    try {
+      const stocks = await fetchSupabaseStokFisikDirect();
+      const map = new Map<string, number>();
+      if (stocks && Array.isArray(stocks)) {
+        for (let i = 0; i < stocks.length; i++) {
+          const s = stocks[i];
+          const skuKey = (s.sku || '').toUpperCase().trim();
+          const locKey = (s.lokasi || 'Warehouse').toUpperCase().trim();
+          const key = `${skuKey}__${locKey}`;
+          map.set(key, (map.get(key) || 0) + (Number(s.sisa_stok) || 0));
+        }
+      }
+      setPhysicalStockMap(map);
+      return map;
+    } catch (err) {
+      console.warn('Gagal memuat physicalStockMap:', err);
+      return new Map<string, number>();
+    }
   };
 
   // Active filter counter (excluding default settings)
@@ -205,10 +215,9 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     if (sourceFilter !== 'ALL') count++;
     if (!typeFilters.includes('ALL') && typeFilters.length > 0) count++;
     if (areaFilter !== 'ALL') count++;
-    if (isConsolidatedMode) count++;
     if (viewDateFilter.start || viewDateFilter.end) count++;
     return count;
-  }, [sourceFilter, typeFilters, areaFilter, isConsolidatedMode, viewDateFilter]);
+  }, [sourceFilter, typeFilters, areaFilter, viewDateFilter]);
 
   const handleResetAllFilters = () => {
     setSearchQuery('');
@@ -243,12 +252,15 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     return map;
   }, [productCatalog]);
 
-  // Load all logs from Database
+  // Load all logs and physical stock concurrently from Database
   const loadLogs = async () => {
     setIsLoading(true);
     setFetchError(null);
     try {
-      const data = await fetchRecentLogs(5000);
+      const [data] = await Promise.all([
+        fetchRecentLogs(5000),
+        loadPhysicalStocks().catch(() => new Map())
+      ]);
       const filtered = (data || []).filter(
         (item) => item && String(item.type) !== 'QC_INSPEKSI' && !String(item.type || '').startsWith('QC_')
       );
@@ -273,7 +285,10 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     setIsLoading(true);
     setFetchError(null);
     try {
-      const data = await fetchRecentLogs(5000);
+      const [data] = await Promise.all([
+        fetchRecentLogs(5000),
+        loadPhysicalStocks().catch(() => new Map())
+      ]);
       const filtered = (data || []).filter(
         (item) => item && String(item.type) !== 'QC_INSPEKSI' && !String(item.type || '').startsWith('QC_')
       );
@@ -462,18 +477,53 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     return result;
   }, [logs, catalogMap, sourceFilter, typeFilters, areaFilter, debouncedSearch, viewDateFilter]);
 
-  // Display logs: Consolidated (Grouped & Summed by Invoice + Type + SKU + Size + Lokasi) or Raw stream
-  const displayLogs = useMemo<ConsolidatedLogItem[]>(() => {
-    if (!isConsolidatedMode) {
-      return filteredLogs.map((l) => ({
-        ...l,
-        merged_ids: l.id ? [l.id] : [],
-        raw_count: 1,
-        total_qty: Number(l.qty) || 1,
-        is_merged: false,
-      }));
+  // Pre-calculate running balance (saldo stok saat itu) across historical ledger
+  const logStockMap = useMemo(() => {
+    const stockAtMoment = new Map<string | number, number>();
+
+    // 1. Group all raw logs by SKU + Lokasi (ordered newest to oldest)
+    const logsBySkuLoc = new Map<string, LogProdukItem[]>();
+    for (let i = 0; i < logs.length; i++) {
+      const item = logs[i];
+      const skuKey = (item.sku || '').toUpperCase().trim();
+      const locKey = (item.lokasi || 'Warehouse').toUpperCase().trim();
+      const groupKey = `${skuKey}__${locKey}`;
+
+      let list = logsBySkuLoc.get(groupKey);
+      if (!list) {
+        list = [];
+        logsBySkuLoc.set(groupKey, list);
+      }
+      list.push(item);
     }
 
+    // 2. For each SKU + Lokasi, reverse-calculate running balance from live physical stock
+    logsBySkuLoc.forEach((list, groupKey) => {
+      let running = physicalStockMap.get(groupKey) ?? 0;
+
+      for (let i = 0; i < list.length; i++) {
+        const log = list[i];
+        const logId = log.id || `${log.invoice}_${log.sku}_${log.created_at}`;
+
+        // The stock at that moment right after this transaction
+        stockAtMoment.set(logId, running);
+
+        // Before this mutation occurred, what was the balance?
+        const delta = (log.type === 'IN' || log.type === 'ADJ_IN')
+          ? (Number(log.qty) || 0)
+          : (log.type === 'OUT' || log.type === 'ADJ_OUT')
+          ? -(Number(log.qty) || 0)
+          : 0;
+
+        running = running - delta;
+      }
+    });
+
+    return stockAtMoment;
+  }, [logs, physicalStockMap]);
+
+  // Display logs: Consolidated (Grouped & Summed by Invoice + Type + SKU + Size + Lokasi) with Stok Saat Itu
+  const displayLogs = useMemo<ConsolidatedLogItem[]>(() => {
     // Group by Invoice + Type + SKU + Size + Lokasi
     const map = new Map<string, ConsolidatedLogItem>();
 
@@ -488,6 +538,8 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
 
       const itemQty = Number(item.qty) || 1;
       const itemId = item.id || '';
+      const rawLogId = item.id || `${item.invoice}_${item.sku}_${item.created_at}`;
+      const stokSaatItu = logStockMap.get(rawLogId) ?? (physicalStockMap.get(`${skuKey}__${locKey}`) ?? 0);
 
       const existing = map.get(groupKey);
       if (!existing) {
@@ -498,6 +550,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
           total_qty: itemQty,
           qty: itemQty,
           is_merged: false,
+          stok_saat_itu: stokSaatItu,
         });
       } else {
         existing.total_qty = (Number(existing.total_qty) || 0) + itemQty;
@@ -514,7 +567,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     }
 
     return Array.from(map.values());
-  }, [filteredLogs, isConsolidatedMode]);
+  }, [filteredLogs, logStockMap, physicalStockMap]);
 
   // Set of all underlying database IDs currently displayed
   const allCurrentIds = useMemo(() => {
@@ -941,8 +994,8 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
       return;
     }
 
-    const headers = ['ID', 'Waktu', 'Tipe', 'Invoice', 'SKU', 'Nama Produk', 'Size', 'Lokasi', 'Area', 'Qty', 'Operator', 'Keterangan'];
-    const rows = filteredLogs.map((l) => [
+    const headers = ['ID', 'Waktu', 'Tipe', 'Invoice', 'SKU', 'Nama Produk', 'Size', 'Lokasi', 'Area', 'Qty', 'Stok Saat Itu', 'Operator', 'Keterangan'];
+    const rows = displayLogs.map((l) => [
       l.id || '',
       l.created_at || '',
       l.type || '',
@@ -953,6 +1006,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
       `"${(l.lokasi || '').replace(/"/g, '""')}"`,
       `"${(l.area || '').replace(/"/g, '""')}"`,
       l.qty || 1,
+      l.stok_saat_itu ?? 0,
       `"${(l.operator || '').replace(/"/g, '""')}"`,
       `"${(l.keterangan || '').replace(/"/g, '""')}"`,
     ]);
@@ -1215,12 +1269,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
         {(activeFilterCount > 0 || isConsolidatedMode || searchQuery) && (
           <div className="flex items-center gap-1.5 flex-wrap pt-1.5 border-t border-slate-100 dark:border-slate-800/80 text-[11px]">
             <span className="text-slate-400 font-semibold text-[10px]">Filter Aktif:</span>
-            {isConsolidatedMode && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800/60">
-                ⚡ Ringkas ({displayLogs.length})
-                <button type="button" onClick={handleToggleConsolidatedMode} className="hover:text-red-500 cursor-pointer">×</button>
-              </span>
-            )}
+
             {sourceFilter !== 'ALL' && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 font-bold border border-sky-200 dark:border-sky-800/60">
                 {sourceFilter === 'WA' ? 'WhatsApp' : 'Web App'}
@@ -1348,7 +1397,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                     <span>Pilih Semua {selectedIds.size > 0 && `(${selectedIds.size}/${allCurrentIds.size})`}</span>
                   </label>
                   <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                    Menampilkan {Math.min(displayLimit, displayLogs.length)} dari {displayLogs.length} {isConsolidatedMode ? `ringkas (${filteredLogs.length} scan)` : 'baris'}
+                    Menampilkan {Math.min(displayLimit, displayLogs.length)} dari {displayLogs.length} `ringkas (${filteredLogs.length} total scan)`
                   </span>
                 </div>
 
@@ -1525,61 +1574,85 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                           );
                         })()}
 
-                        {/* 4. Two-Column Metric Grid: Location & Qty */}
-                        <div className="grid grid-cols-2 gap-2 pt-0.5">
-                          {/* Lokasi & Area */}
+                        {/* 4. Metric Grid: Lokasi Rak + Qty & Sisa Stok Side-by-Side */}
+                        <div className="space-y-1.5 pt-0.5">
+                          {/* Lokasi Rak & Area */}
                           {(() => {
                             const resolvedArea = getAreaFromLokasi(item.lokasi || '', item.area);
                             const isLocAnomaly = resolvedArea === 'Anomali';
                             return (
                               <div
-                                className={`rounded-xl p-2 flex flex-col justify-center border ${
+                                className={`rounded-xl p-2 px-2.5 flex items-center justify-between border ${
                                   isLocAnomaly
                                     ? 'bg-rose-50/80 dark:bg-rose-950/30 border-rose-300 dark:border-rose-800/80'
                                     : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200/70 dark:border-slate-800'
                                 }`}
                               >
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 flex items-center gap-1">
-                                  <MapPin className={`w-3 h-3 shrink-0 ${isLocAnomaly ? 'text-rose-500' : 'text-indigo-500'}`} />
-                                  Lokasi Rak
-                                </span>
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <MapPin className={`w-3.5 h-3.5 shrink-0 ${isLocAnomaly ? 'text-rose-500' : 'text-indigo-500'}`} />
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                    Lokasi:
+                                  </span>
+                                  <span
+                                    className={`font-mono font-black text-xs truncate ${
+                                      isLocAnomaly ? 'text-rose-600 dark:text-rose-400' : 'text-indigo-600 dark:text-indigo-400'
+                                    }`}
+                                  >
+                                    {item.lokasi || '-'}
+                                  </span>
+                                </div>
                                 <span
-                                  className={`font-mono font-black text-xs truncate mt-0.5 ${
+                                  className={`text-[10px] shrink-0 font-bold px-2 py-0.5 rounded-md ${
                                     isLocAnomaly
-                                      ? 'text-rose-600 dark:text-rose-400'
-                                      : 'text-indigo-600 dark:text-indigo-400'
+                                      ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'
+                                      : 'bg-slate-200/70 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                                   }`}
                                 >
-                                  {item.lokasi || '-'}
-                                </span>
-                                <span
-                                  className={`text-[10px] truncate mt-0.5 font-bold ${
-                                    isLocAnomaly
-                                      ? 'text-rose-600 dark:text-rose-400 flex items-center gap-1'
-                                      : 'text-slate-500 dark:text-slate-400'
-                                  }`}
-                                >
-                                  {isLocAnomaly ? '⚠️ Anomali (Bukan Kode Rak)' : resolvedArea}
+                                  {isLocAnomaly ? '⚠️ Anomali' : resolvedArea}
                                 </span>
                               </div>
                             );
                           })()}
 
-                          {/* Perubahan Qty */}
-                          <div className="bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800 rounded-xl p-2 flex flex-col justify-center items-end">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                              Perubahan Qty
-                            </span>
-                            <div className="mt-0.5">
-                              <span
-                                className={`inline-block px-2.5 py-0.5 rounded-lg font-mono font-black text-sm ${
-                                  isTypeIn
-                                    ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20'
-                                    : 'bg-primary-100 dark:bg-primary-950/60 text-primary-700 dark:text-primary-300 border border-primary-500/20'
-                                }`}
-                              >
-                                {isTypeIn ? `+${item.qty}` : `-${item.qty}`}
+                          {/* Dual Tiles: Qty Mutasi & Stok Saat Itu */}
+                          <div className="grid grid-cols-2 gap-2">
+                            {/* Qty Mutasi */}
+                            <div className="bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800 rounded-xl p-2 flex flex-col justify-center items-center">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                QTY MUTASI
                               </span>
+                              <div className="mt-0.5">
+                                <span
+                                  className={`inline-block px-2.5 py-0.5 rounded-lg font-mono font-black text-sm ${
+                                    isTypeIn
+                                      ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20'
+                                      : 'bg-primary-100 dark:bg-primary-950/60 text-primary-700 dark:text-primary-300 border border-primary-500/20'
+                                  }`}
+                                >
+                                  {isTypeIn ? `+${item.qty}` : `-${item.qty}`}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Stok Saat Itu */}
+                            <div className="bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800 rounded-xl p-2 flex flex-col justify-center items-center">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                STOK SAAT ITU
+                              </span>
+                              <div className="mt-0.5">
+                                <span
+                                  className={`inline-block px-2.5 py-0.5 rounded-lg font-mono font-black text-sm border ${
+                                    (item.stok_saat_itu ?? 0) > 0
+                                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 border-slate-200 dark:border-slate-700'
+                                      : (item.stok_saat_itu ?? 0) === 0
+                                      ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                                      : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+                                  }`}
+                                  title={`Sisa stok di ${item.lokasi || 'rak'} pada detik transaksi ini: ${item.stok_saat_itu ?? 0} pcs`}
+                                >
+                                  {item.stok_saat_itu ?? 0}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1618,7 +1691,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                     Ganti ke Kartu
                   </button>
                 </div>
-                <table className="w-full min-w-[880px] text-left text-xs border-collapse lg:table-fixed">
+                <table className="w-full min-w-[960px] text-left text-xs border-collapse lg:table-fixed">
                   <thead>
                     <tr className="bg-slate-50 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                       <th className="py-3 px-2 w-[4%] text-center">
@@ -1630,11 +1703,12 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                         />
                       </th>
                       <th className="py-3 px-2 w-[12%]">Tipe & Waktu</th>
-                      <th className="py-3 px-2 w-[15%]">Invoice</th>
-                      <th className="py-3 px-2 w-[25%]">SKU & Produk</th>
+                      <th className="py-3 px-2 w-[14%]">Invoice</th>
+                      <th className="py-3 px-2 w-[23%]">SKU & Produk</th>
                       <th className="py-3 px-2 w-[13%]">Lokasi & Area</th>
                       <th className="py-3 px-2 w-[6%] text-center">Qty</th>
-                      <th className="py-3 px-2 w-[19%]">Operator & Catatan</th>
+                      <th className="py-3 px-2 w-[7%] text-center">Stok</th>
+                      <th className="py-3 px-2 w-[15%]">Operator & Catatan</th>
                       <th className="py-3 px-2 w-[6%] text-right">Aksi</th>
                     </tr>
                   </thead>
@@ -1809,7 +1883,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                             })()}
                           </td>
 
-                          {/* Qty */}
+                          {/* Qty Mutasi */}
                           <td className="py-3 px-2 text-center whitespace-nowrap">
                             <span
                               className={`inline-block px-2.5 py-1 rounded-lg font-black text-xs font-mono ${
@@ -1820,6 +1894,22 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                               title={item.raw_count && item.raw_count > 1 ? `Akumulasi dari ${item.raw_count} baris scan` : undefined}
                             >
                               {item.qty}
+                            </span>
+                          </td>
+
+                          {/* Stok (Saldo Saat Mutasi) */}
+                          <td className="py-3 px-2 text-center whitespace-nowrap">
+                            <span
+                              className={`inline-block px-2.5 py-1 rounded-lg font-black text-xs font-mono border ${
+                                (item.stok_saat_itu ?? 0) > 0
+                                  ? 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 border-slate-200 dark:border-slate-700'
+                                  : (item.stok_saat_itu ?? 0) === 0
+                                  ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800/60'
+                                  : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800/60'
+                              }`}
+                              title={`Sisa stok di ${item.lokasi || 'rak'} pada detik transaksi ini: ${item.stok_saat_itu ?? 0} pcs`}
+                            >
+                              {item.stok_saat_itu ?? 0}
                             </span>
                           </td>
 
@@ -2317,30 +2407,20 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
 
             {/* Content Body */}
             <div className="p-5 overflow-y-auto space-y-4 text-xs">
-              {/* 1. Mode Ringkasan Item Sama (Consolidated Mode) */}
-              <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between gap-3">
+              {/* 1. Standar Tampilan Ringkas WMS */}
+              <div className="p-3 rounded-xl border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/50 dark:bg-indigo-950/20 flex items-center justify-between gap-3">
                 <div>
-                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <div className="text-xs font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
                     <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                    <span>Ringkas Item Sama (Dijumlahkan)</span>
+                    <span>Mode Ringkas Baku (Standar WMS)</span>
                   </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                    Gabungkan transaksi dengan Invoice, SKU, dan Lokasi sama ({displayLogs.length} baris).
+                    Transaksi dengan Invoice, SKU, dan Lokasi sama otomatis diringkas &amp; dijumlahkan ({displayLogs.length} baris).
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleToggleConsolidatedMode}
-                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                    isConsolidatedMode ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-700'
-                  }`}
-                >
-                  <span
-                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                      isConsolidatedMode ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
+                <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
+                  Aktif Permanen
+                </span>
               </div>
 
               {/* 2. Mode Tampilan (Kartu vs Tabel) */}

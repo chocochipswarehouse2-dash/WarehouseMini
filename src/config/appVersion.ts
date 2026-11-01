@@ -15,20 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.19",
-  "versionCode": 279,
+  "version": "v2.6.20",
+  "versionCode": 280,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v279-1459",
-  "releaseTitle": "WMS v2.6.19 — Auto-Healing Endpoint GAS & Sinkronisasi Google Calendar",
+  "buildHash": "wms-261101-v280-1544",
+  "releaseTitle": "WMS v2.6.20 — Mode Ringkas Baku & Kolom Saldo Stok Saat Mutasi (Log Produk)",
   "releaseNotes": [
-    "Auto-Healing Endpoint GAS: Menghubungkan Google Calendar WMS ke deployment aktif dan auto-sanitasi URL kadaluarsa",
-    "Resolusi Sinkronisasi 2-Arah: Penarikan event Google Calendar sukses tanpa kendala Unauthorized",
-    "Harmonisasi Multi-Branch AI Studio: Konsolidasi versi dan catatan rilis tanpa merge conflict"
+    "Log Produk Mode Ringkas Baku: Transaksi dengan Invoice, SKU, dan Lokasi sama kini otomatis menjadi tampilan standar WMS (tanpa saklar on/off manual)",
+    "Kolom Saldo Stok Real-Time: Menampilkan sisa stok fisik di rak pada detik mutasi terjadi (Running Balance) untuk verifikasi audit lapangan yang presisi",
+    "Desain Responsif Desktop & Seluler: Tampilan tabel spreadsheet dengan proporsi fixed dan kartu mobile dengan dual tiles (Qty Mutasi & Stok Saat Itu)",
+    "Harmonisasi Fitur Live Chat AI Studio: Posisi tombol floating seluler dan penyesuaian kontainer ruang obrolan terintegrasi"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.19",
+    "versionCode": 279,
+    "buildDate": "1 November 2026",
+    "buildHash": "wms-261101-v279-1459",
+    "releaseTitle": "WMS v2.6.19 — Auto-Healing Endpoint GAS & Sinkronisasi Google Calendar",
+    "releaseNotes": [
+      "Auto-Healing Endpoint GAS: Menghubungkan Google Calendar WMS ke deployment aktif dan auto-sanitasi URL kadaluarsa",
+      "Resolusi Sinkronisasi 2-Arah: Penarikan event Google Calendar sukses tanpa kendala Unauthorized",
+      "Harmonisasi Multi-Branch AI Studio: Konsolidasi versi dan catatan rilis tanpa merge conflict"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.18",
     "versionCode": 278,
@@ -119,18 +133,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Menambahkan auto-deteksi tiket retur legacy agar update berikutnya otomatis me-reply utas email yang sudah ada di inbox tim",
       "Memastikan 100 persen tiket lama dan baru tersusun rapi dalam 1 thread percakapan"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.11",
-    "versionCode": 271,
-    "buildDate": "30 Oktober 2026",
-    "buildHash": "wms-261030-v271-2043",
-    "releaseTitle": "WMS v2.6.11 — Standarisasi Utas Percakapan (Thread Reply) Email Retur Barang",
-    "releaseNotes": [
-      "Standarisasi subjek email retur barang agar seluruh riwayat update & selesai otomatis menjadi balasan (reply) di thread email yang sama",
-      "Menambahkan opsi auto-email balasan saat edit data retur dan banner visual update di badan email"
     ],
     "minSupportedVersion": "v2.0.0"
   }

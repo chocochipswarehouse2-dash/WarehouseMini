@@ -1,13 +1,14 @@
 {
-  "version": "v2.6.19",
-  "versionCode": 279,
+  "version": "v2.6.20",
+  "versionCode": 280,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v279-1459",
-  "releaseTitle": "WMS v2.6.19 — Auto-Healing Endpoint GAS & Sinkronisasi Google Calendar",
+  "buildHash": "wms-261101-v280-1544",
+  "releaseTitle": "WMS v2.6.20 — Mode Ringkas Baku & Kolom Saldo Stok Saat Mutasi (Log Produk)",
   "releaseNotes": [
-    "Auto-Healing Endpoint GAS: Menghubungkan Google Calendar WMS ke deployment aktif dan auto-sanitasi URL kadaluarsa",
-    "Resolusi Sinkronisasi 2-Arah: Penarikan event Google Calendar sukses tanpa kendala Unauthorized",
-    "Harmonisasi Multi-Branch AI Studio: Konsolidasi versi dan catatan rilis tanpa merge conflict"
+    "Log Produk Mode Ringkas Baku: Transaksi dengan Invoice, SKU, dan Lokasi sama kini otomatis menjadi tampilan standar WMS (tanpa saklar on/off manual)",
+    "Kolom Saldo Stok Real-Time: Menampilkan sisa stok fisik di rak pada detik mutasi terjadi (Running Balance) untuk verifikasi audit lapangan yang presisi",
+    "Desain Responsif Desktop & Seluler: Tampilan tabel spreadsheet dengan proporsi fixed dan kartu mobile dengan dual tiles (Qty Mutasi & Stok Saat Itu)",
+    "Harmonisasi Fitur Live Chat AI Studio: Posisi tombol floating seluler dan penyesuaian kontainer ruang obrolan terintegrasi"
   ],
   "minSupportedVersion": "v2.0.0"
 }
