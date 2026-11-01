@@ -162,28 +162,33 @@ function matches(sub, audience) {
   return false;
 }
 
+function cleanEnv(v) {
+  if (!v) return '';
+  return String(v).trim().replace(/^["']|["']$/g, '');
+}
+
 export default async function handler(req, res) {
   try {
+    const pubKey = cleanEnv(process.env.VAPID_PUBLIC_KEY);
+    const privKey = cleanEnv(process.env.VAPID_PRIVATE_KEY);
+    const subject = cleanEnv(process.env.VAPID_SUBJECT) || 'mailto:admin@example.com';
+    const secret = cleanEnv(process.env.PUSH_WEBHOOK_SECRET);
+
     if (req.method === 'GET') {
       res.setHeader('Cache-Control', 'public, max-age=3600');
-      return res.status(200).json({ publicKey: process.env.VAPID_PUBLIC_KEY || '' });
+      return res.status(200).json({ publicKey: pubKey });
     }
     if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
 
-    const secret = process.env.PUSH_WEBHOOK_SECRET || '';
     if (!secret || req.headers['x-push-secret'] !== secret) {
       return res.status(401).json({ error: 'unauthorized' });
     }
 
     const { url, key } = supaConfig();
-    if (!url || !key || !process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
+    if (!url || !key || !pubKey || !privKey) {
       return res.status(500).json({ error: 'server_not_configured' });
     }
-    webpush.setVapidDetails(
-      process.env.VAPID_SUBJECT || 'mailto:admin@example.com',
-      process.env.VAPID_PUBLIC_KEY,
-      process.env.VAPID_PRIVATE_KEY
-    );
+    webpush.setVapidDetails(subject, pubKey, privKey);
 
     const body = typeof req.body === 'string' ? parseJsonish(req.body, {}) : req.body || {};
     const messages = buildMessages(body);

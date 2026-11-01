@@ -15,19 +15,30 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.28",
-  "versionCode": 288,
+  "version": "v2.6.29",
+  "versionCode": 289,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v288-1949",
-  "releaseTitle": "WMS v2.6.28 — Web Push CJS/ESM Interop & Exception Guard",
+  "buildHash": "wms-261101-v289-1953",
+  "releaseTitle": "WMS v2.6.29 — Clean Env Vars in Push Serverless",
   "releaseNotes": [
-    "Fix webpush module import di Vercel Node runtime",
-    "Try-catch internal error guard"
+    "Trim whitespace dan kutip dari env vars push backend"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.28",
+    "versionCode": 288,
+    "buildDate": "1 November 2026",
+    "buildHash": "wms-261101-v288-1949",
+    "releaseTitle": "WMS v2.6.28 — Web Push CJS/ESM Interop & Exception Guard",
+    "releaseNotes": [
+      "Fix webpush module import di Vercel Node runtime",
+      "Try-catch internal error guard"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.27",
     "versionCode": 287,
@@ -115,20 +126,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Registrasi otomatis Service Worker (/pwa-extras.js) di seluruh domain seluler dan pratinjau agar pop-up bar notifikasi sistem Android Chrome berjalan 100%",
       "Pemindahan modul Stock Opname dari menu Scanner",
       "LOG ke dalam Pengaturan Sistem khusus Superadmin serta perbaikan ikon ClipboardList"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.20",
-    "versionCode": 280,
-    "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v280-1544",
-    "releaseTitle": "WMS v2.6.20 — Mode Ringkas Baku & Kolom Saldo Stok Saat Mutasi (Log Produk)",
-    "releaseNotes": [
-      "Log Produk Mode Ringkas Baku: Transaksi dengan Invoice, SKU, dan Lokasi sama kini otomatis menjadi tampilan standar WMS (tanpa saklar on/off manual)",
-      "Kolom Saldo Stok Real-Time: Menampilkan sisa stok fisik di rak pada detik mutasi terjadi (Running Balance) untuk verifikasi audit lapangan yang presisi",
-      "Desain Responsif Desktop & Seluler: Tampilan tabel spreadsheet dengan proporsi fixed dan kartu mobile dengan dual tiles (Qty Mutasi & Stok Saat Itu)",
-      "Harmonisasi Fitur Live Chat AI Studio: Posisi tombol floating seluler dan penyesuaian kontainer ruang obrolan terintegrasi"
     ],
     "minSupportedVersion": "v2.0.0"
   }

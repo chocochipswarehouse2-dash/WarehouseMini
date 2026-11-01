@@ -1,12 +1,11 @@
 {
-  "version": "v2.6.28",
-  "versionCode": 288,
+  "version": "v2.6.29",
+  "versionCode": 289,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v288-1949",
-  "releaseTitle": "WMS v2.6.28 — Web Push CJS/ESM Interop & Exception Guard",
+  "buildHash": "wms-261101-v289-1953",
+  "releaseTitle": "WMS v2.6.29 — Clean Env Vars in Push Serverless",
   "releaseNotes": [
-    "Fix webpush module import di Vercel Node runtime",
-    "Try-catch internal error guard"
+    "Trim whitespace dan kutip dari env vars push backend"
   ],
   "minSupportedVersion": "v2.0.0"
 }
