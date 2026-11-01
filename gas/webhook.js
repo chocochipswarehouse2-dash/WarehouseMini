@@ -38,6 +38,14 @@ function doPost(e) {
       return handleSendEmail(payload);
     }
 
+    // Intercept Google Calendar Operations
+    if (payload.action === 'syncCalendarEvent') {
+      return handleGoogleCalendarSync(payload);
+    }
+    if (payload.action === 'fetchGoogleCalendar') {
+      return handleGoogleCalendarFetch(payload);
+    }
+
     // Intercept WhatsApp / Fonnte payload (SATU-SATUNYA TUJUAN GAS)
     if ((payload.message || payload.text || payload.pesan) && (payload.sender || payload.from || payload.phone)) {
       return handleWhatsAppScan(payload);
@@ -173,3 +181,190 @@ function jsonResponse(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
 }
+
+function handleGoogleCalendarSync(payload) {
+  try {
+    var cal = CalendarApp.getDefaultCalendar();
+    if (!cal) {
+      return jsonResponse({ success: false, error: 'Google Calendar default tidak ditemukan.' });
+    }
+
+    var data = payload.eventData || payload;
+    var googleEventId = data.google_event_id;
+
+    // Aksi hapus event
+    if (data.is_delete) {
+      if (googleEventId) {
+        try {
+          var evToDelete = cal.getEventById(googleEventId);
+          if (evToDelete) {
+            evToDelete.deleteEvent();
+          }
+        } catch (delErr) {
+          Logger.log('Gagal hapus event di Google Calendar: ' + delErr.toString());
+        }
+      }
+      return jsonResponse({ success: true, action: 'deleted', google_event_id: null });
+    }
+
+    if (!data.start_date) {
+      return jsonResponse({ success: false, error: 'Tanggal mulai (start_date) harus diisi.' });
+    }
+
+    var title = (data.title || 'Agenda WMS').trim();
+    var descParts = [];
+    if (data.description) descParts.push(data.description.trim());
+    if (data.pic) descParts.push('PIC: ' + data.pic.trim());
+    if (data.category) descParts.push('Kategori: ' + data.category);
+    descParts.push('[WMS-ID: ' + (data.id || '') + ']');
+
+    var options = {
+      description: descParts.join('\n'),
+      location: (data.location || '').trim()
+    };
+
+    var startParts = data.start_date.split('-');
+    var sYear = parseInt(startParts[0], 10);
+    var sMonth = parseInt(startParts[1], 10) - 1;
+    var sDay = parseInt(startParts[2], 10);
+
+    var endParts = (data.end_date || data.start_date).split('-');
+    var eYear = parseInt(endParts[0], 10);
+    var eMonth = parseInt(endParts[1], 10) - 1;
+    var eDay = parseInt(endParts[2], 10);
+
+    var targetEvent = null;
+    if (googleEventId) {
+      try {
+        targetEvent = cal.getEventById(googleEventId);
+      } catch (findErr) {
+        Logger.log('Event id tidak ditemukan di Google Calendar: ' + findErr.toString());
+      }
+    }
+
+    var isAllDay = Boolean(data.is_all_day || !data.start_time);
+
+    if (isAllDay) {
+      var dStart = new Date(sYear, sMonth, sDay);
+      var dEnd = new Date(eYear, eMonth, eDay);
+      // Di Google Calendar, end date untuk all-day event bersifat exclusive (tambah 1 hari)
+      dEnd.setDate(dEnd.getDate() + 1);
+
+      if (targetEvent) {
+        targetEvent.setTitle(title);
+        targetEvent.setAllDayDates(dStart, dEnd);
+        targetEvent.setDescription(options.description);
+        targetEvent.setLocation(options.location);
+      } else {
+        targetEvent = cal.createAllDayEvent(title, dStart, dEnd, options);
+      }
+    } else {
+      var sTimeParts = (data.start_time || '09:00').split(':');
+      var sHour = parseInt(sTimeParts[0], 10) || 9;
+      var sMin = parseInt(sTimeParts[1], 10) || 0;
+
+      var eTimeParts = (data.end_time || (sHour + 1) + ':' + sMin).split(':');
+      var eHour = parseInt(eTimeParts[0], 10) || (sHour + 1);
+      var eMin = parseInt(eTimeParts[1], 10) || 0;
+
+      var dtStart = new Date(sYear, sMonth, sDay, sHour, sMin, 0);
+      var dtEnd = new Date(eYear, eMonth, eDay, eHour, eMin, 0);
+
+      // Pastikan dtEnd >= dtStart
+      if (dtEnd <= dtStart) {
+        dtEnd = new Date(dtStart.getTime() + (60 * 60 * 1000));
+      }
+
+      if (targetEvent) {
+        targetEvent.setTitle(title);
+        targetEvent.setTime(dtStart, dtEnd);
+        targetEvent.setDescription(options.description);
+        targetEvent.setLocation(options.location);
+      } else {
+        targetEvent = cal.createEvent(title, dtStart, dtEnd, options);
+      }
+    }
+
+    return jsonResponse({
+      success: true,
+      google_event_id: targetEvent ? targetEvent.getId() : null,
+      message: 'Berhasil disinkronkan dengan Google Calendar'
+    });
+  } catch (err) {
+    Logger.log('handleGoogleCalendarSync error: ' + err.toString());
+    return jsonResponse({ success: false, error: err.toString() });
+  }
+}
+
+/**
+ * Menarik daftar event dari Google Calendar ke WMS
+ */
+function handleGoogleCalendarFetch(payload) {
+  try {
+    var cal = CalendarApp.getDefaultCalendar();
+    if (!cal) {
+      return jsonResponse({ success: false, error: 'Google Calendar default tidak ditemukan.' });
+    }
+
+    var now = new Date();
+    // Default rentang: 30 hari ke belakang s/d 90 hari ke depan
+    var startTime = payload.startDate ? new Date(payload.startDate) : new Date(now.getTime() - (30 * 24 * 3600 * 1000));
+    var endTime = payload.endDate ? new Date(payload.endDate) : new Date(now.getTime() + (90 * 24 * 3600 * 1000));
+
+    var events = cal.getEvents(startTime, endTime);
+    var list = [];
+
+    var pad = function(n) { return (n < 10 ? '0' : '') + n; };
+
+    for (var i = 0; i < events.length; i++) {
+      var ev = events[i];
+      var isAllDay = ev.isAllDayEvent();
+      var sDate = ev.getStartTime();
+      var eDate = ev.getEndTime();
+
+      var desc = ev.getDescription() || '';
+      var wmsIdMatch = desc.match(/\[WMS-ID:\s*([^\]]+)\]/);
+      var wmsId = wmsIdMatch ? wmsIdMatch[1].trim() : null;
+
+      var sDateStr = sDate.getFullYear() + '-' + pad(sDate.getMonth() + 1) + '-' + pad(sDate.getDate());
+      var eDateStr = eDate.getFullYear() + '-' + pad(eDate.getMonth() + 1) + '-' + pad(eDate.getDate());
+
+      var sTimeStr = isAllDay ? '' : (pad(sDate.getHours()) + ':' + pad(sDate.getMinutes()));
+      var eTimeStr = isAllDay ? '' : (pad(eDate.getHours()) + ':' + pad(eDate.getMinutes()));
+
+      list.push({
+        google_event_id: ev.getId(),
+        wms_id: wmsId,
+        title: ev.getTitle() || 'Tanpa Judul',
+        description: desc,
+        location: ev.getLocation() || '',
+        start_date: sDateStr,
+        end_date: eDateStr,
+        start_time: sTimeStr,
+        end_time: eTimeStr,
+        is_all_day: isAllDay
+      });
+    }
+
+    return jsonResponse({
+      success: true,
+      events: list,
+      count: list.length
+    });
+  } catch (err) {
+    Logger.log('handleGoogleCalendarFetch error: ' + err.toString());
+    return jsonResponse({ success: false, error: err.toString() });
+  }
+}
+
+
+
+/**
+ * Fungsi sekali jalan untuk memicu dialog otorisasi izin Calendar di Apps Script Editor
+ */
+function authorizeGoogleCalendar() {
+  var cal = CalendarApp.getDefaultCalendar();
+  Logger.log('Google Calendar berhasil diotorisasi: ' + cal.getName());
+  return cal.getName();
+}
+
