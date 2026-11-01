@@ -2944,12 +2944,15 @@ export default function App() {
         isOpen={isUpdateModalOpen}
         onClose={() => setIsUpdateModalOpen(false)}
         session={session}
+        activePage={activePage}
+        onNotify={showToast}
         onOpenUpdateDatabase={() => setIsUpdateDatabaseOpen(true)}
       />
 
       {/* Non-blocking Floating Download Progress Widget */}
       <AppUpdateFloatingWidget
         onOpenModal={() => setIsUpdateModalOpen(true)}
+        onNotify={showToast}
       />
 
       {/* Settings Modal (Supabase, GAS, Users, Device) */}

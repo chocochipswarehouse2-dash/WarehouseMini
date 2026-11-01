@@ -286,6 +286,30 @@ class AppUpdateManager {
   }
 
   /**
+   * Prepares the update in the background (activates waiting worker and purges outdated cache)
+   * WITHOUT triggering any page reload! The update will take effect seamlessly on the next safe navigation.
+   */
+  public prepareUpdateInBackground(): void {
+    if (this.state.waitingWorker) {
+      try {
+        this.state.waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+      } catch {}
+    }
+    // Purge old precache so new assets are fetched cleanly on next navigation
+    if (typeof caches !== 'undefined' && caches.keys) {
+      caches.keys().then((names) => {
+        return Promise.all(
+          names
+            .filter((name) => name.includes('precache') || name.includes('workbox'))
+            .map((name) => caches.delete(name))
+        );
+      }).catch(() => {});
+    }
+    this.state.isMinimized = true;
+    this.notify();
+  }
+
+  /**
    * Apply the update immediately in 1 click while 100% preserving localStorage login session & staging scans
    */
   public applyUpdate(options?: { hardReload?: boolean }): void {

@@ -15,6 +15,7 @@ export function useAppUpdate() {
     ...updateState,
     checkForUpdates: (isAuto?: boolean) => appUpdateManager.checkForUpdates(isAuto),
     startDownload: () => appUpdateManager.startDownload(),
+    prepareUpdateInBackground: () => appUpdateManager.prepareUpdateInBackground(),
     applyUpdate: (options?: { hardReload?: boolean }) => appUpdateManager.applyUpdate(options),
     clearCacheAndReload: () => appUpdateManager.clearCacheAndReload(),
     setMinimized: (minimized: boolean) => appUpdateManager.setMinimized(minimized)
