@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.15",
-  "versionCode": 275,
+  "version": "v2.6.16",
+  "versionCode": 276,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v275-1119",
-  "releaseTitle": "WMS v2.6.15 — Integrasi Fitur Kirim Tugas Picking Massal (WA Grup, App & Cetak A4) & Sinkronisasi Ekosistem AI Studio",
+  "buildHash": "wms-261101-v276-1146",
+  "releaseTitle": "WMS v2.6.16 — Pembaruan Latar Belakang Zero-Reload (Update Tanpa Memutus Layar Kerja Aktif)",
   "releaseNotes": [
-    "Kirim Tugas Picking Massal: Menambahkan fitur seleksi multi-SJ dan broadcast WhatsApp massal ke Grup Gudang serta pengiriman tugas picking massal ke aplikasi dari Distribusi Store Tab",
-    "Pembaruan Picking Tasks: Dukungan aksi massal kirim WA Picking untuk batch Surat Jalan",
-    "Sinkronisasi Antigravity & AI Studio: Menggabungkan commit terbaru dari Google AI Studio dengan rilis live Antigravity v2.6.14 ke v2.6.15"
+    "Pembaruan Latar Belakang Zero-Reload: Tombol 'Perbarui' pada widget dan modal kini 100% menyiapkan update di background tanpa me-reload layar aktif",
+    "Transisi Alami Aman: Pembaruan baru diaplikasikan otomatis saat berpindah menu atau secara eksplisit jika user memilih muat ulang",
+    "Proteksi Pekerjaan Aktif: Mencegah gangguan visual atau kehilangan fokus saat sedang bekerja di tab tertentu"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.15",
+    "versionCode": 275,
+    "buildDate": "1 November 2026",
+    "buildHash": "wms-261101-v275-1119",
+    "releaseTitle": "WMS v2.6.15 — Integrasi Fitur Kirim Tugas Picking Massal (WA Grup, App & Cetak A4) & Sinkronisasi Ekosistem AI Studio",
+    "releaseNotes": [
+      "Kirim Tugas Picking Massal: Menambahkan fitur seleksi multi-SJ dan broadcast WhatsApp massal ke Grup Gudang serta pengiriman tugas picking massal ke aplikasi dari Distribusi Store Tab",
+      "Pembaruan Picking Tasks: Dukungan aksi massal kirim WA Picking untuk batch Surat Jalan",
+      "Sinkronisasi Antigravity & AI Studio: Menggabungkan commit terbaru dari Google AI Studio dengan rilis live Antigravity v2.6.14 ke v2.6.15"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.14",
     "versionCode": 274,
@@ -114,19 +127,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Menambahkan import fetchRecountAuditMapFromCloud dan getRecountAuditMap pada gasProduksiSync",
       "Pembersihan type check TypeScript di seluruh modul produksi dan appUpdateService",
       "Sinkronisasi Tarik Qty Nota kini 100% tervalidasi bebas runtime reference error"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.7",
-    "versionCode": 267,
-    "buildDate": "30 Oktober 2026",
-    "buildHash": "wms-261030-v267-1817",
-    "releaseTitle": "WMS v2.6.7 — Sinkronisasi 2 Arah Qty Nota & Formula Status Audit Produksi",
-    "releaseNotes": [
-      "Perbaikan formula Status Audit dan Selisih Fisik di Google Sheet agar tidak muncul LEBIH palsu",
-      "Implementasi Auto-Mirror Qty Nota dua arah antara Master Produksi dan Tab Sheet Tanggal",
-      "Peningkatan ketahanan fetch Qty Nota dan penanganan error toast informatif"
     ],
     "minSupportedVersion": "v2.0.0"
   }
