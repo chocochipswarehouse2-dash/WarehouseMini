@@ -1,13 +1,12 @@
 {
-  "version": "v2.6.33",
-  "versionCode": 293,
+  "version": "v2.6.34",
+  "versionCode": 294,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v293-1448",
-  "releaseTitle": "WMS v2.6.33 — Tabel Riwayat Peminjaman & Tanggal Kembali + Integrasi 3 Tab Cetak Label & Barcode",
+  "buildHash": "wms-261101-v294-2218",
+  "releaseTitle": "WMS v2.6.34 — Perbaikan Pesanan Saya (MessageSquare) & Live Chat Order Card",
   "releaseNotes": [
-    "Riwayat Peminjaman (SPS) kini dilengkapi tampilan Tabel proporsional (selain Kartu & Panel Rapi), filter KPI interaktif, ekspor CSV, serta pencatatan Rencana & Tanggal Kembali Aktual beserta durasi pinjam dan catatan pengembalian.",
-    "Halaman Cetak kini disatukan menjadi 1 menu 'Cetak Label & Barcode' dengan 3 tab rapi: QR Prefix, Label Paket, dan Cetak Barcode.",
-    "Tampilan tab QR Prefix dirapikan total menjadi layout 2 kolom (Generator & Antrean di kiri, Pratinjau Stiker & Kustomisasi di kanan) tanpa duplikasi header bertumpuk."
+    "Perbaiki error MessageSquare is not defined pada tab Pesanan Saya",
+    "Rapikan order context card dan autocomplete mention pada Live Chat"
   ],
   "minSupportedVersion": "v2.0.0"
 }

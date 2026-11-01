@@ -1278,7 +1278,8 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                                             ({tag.label})
                                           </span>
                                         )}
-                                      </div>
+
+                                 </div>
                                     ))}
                                   </div>
                                 )}
@@ -1415,7 +1416,8 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                                     </>
                                   )}
 
-                                  {/* Read Receipt Checkmarks (✓ Sent vs ✓✓ Read) */}
+                                 
+{/* Read Receipt Checkmarks (✓ Sent vs ✓✓ Read) */}
                                   {isMine && (
                                     <button
                                       type="button"
@@ -1937,6 +1939,50 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                                   {u.isOnline && (
                                     <span className="w-2 h-2 rounded-full bg-emerald-500" title="Online" />
                                   )}
+
+                                 {/* Shopee-Style Attached Order Context Card */}
+                                 {msg.order_context && (
+                                   <div
+                                     className={`mb-2 p-2.5 rounded-xl border text-left ${
+                                       isMine
+                                         ? 'bg-indigo-700/80 border-indigo-400/40 text-white'
+                                         : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 shadow-2xs'
+                                     }`}
+                                   >
+                                     <div className="flex items-center justify-between gap-2 border-b border-white/20 dark:border-slate-800 pb-1.5 mb-1.5">
+                                       <div className="flex items-center gap-1.5 min-w-0">
+                                         <Package className={`w-3.5 h-3.5 shrink-0 ${isMine ? 'text-amber-300' : 'text-indigo-600 dark:text-indigo-400'}`} />
+                                         <span className="text-xs font-mono font-bold truncate">
+                                           #{msg.order_context.order_id}
+                                         </span>
+                                       </div>
+                                       {msg.order_context.status && (
+                                         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                                           isMine ? 'bg-indigo-800 text-indigo-100' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                                         }`}>
+                                           {msg.order_context.status}
+                                         </span>
+                                       )}
+                                     </div>
+                                     <div className="text-[11px] space-y-0.5">
+                                       {msg.order_context.store_name && (
+                                         <div className="truncate">
+                                           <span className="opacity-75">Toko:</span> <span className="font-semibold">{msg.order_context.store_name}</span>
+                                         </div>
+                                       )}
+                                       {msg.order_context.items_summary && (
+                                         <div className="truncate">
+                                           <span className="opacity-75">Item:</span> <span className="font-semibold">{msg.order_context.items_summary}</span>
+                                         </div>
+                                       )}
+                                       {msg.order_context.no_resi && (
+                                         <div className="font-mono text-[10px] truncate">
+                                           <span className="opacity-75">Resi:</span> {msg.order_context.no_resi}
+                                         </div>
+                                       )}
+                                     </div>
+                                   </div>
+                                 )}
                                 </div>
                                 <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                                   {u.role}
