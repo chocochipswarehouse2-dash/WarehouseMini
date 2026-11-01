@@ -3304,11 +3304,6 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                                       <span className="px-1.5 py-0.2 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[9.5px] font-bold text-indigo-600 dark:text-indigo-400">
                                         {it.size || 'ALL'}
                                       </span>
-                                      {canViewWarehousePickingInfo && it.lokasi && it.lokasi !== '-' && (
-                                        <span className="text-[9.5px] text-emerald-700 dark:text-emerald-400 font-bold truncate max-w-[140px]" title={it.lokasi}>
-                                          📍 {it.lokasi}
-                                        </span>
-                                      )}
                                     </div>
                                   </div>
                                   <span className="font-mono font-extrabold text-xs text-indigo-600 dark:text-indigo-400 shrink-0 bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
@@ -3664,7 +3659,6 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                                   <th className="p-2.5">Produk &amp; SKU</th>
                                   <th className="p-2.5 text-center w-20">Size</th>
                                   <th className="p-2.5 text-center w-20">Qty</th>
-                                  {canViewWarehousePickingInfo && <th className="p-2.5">Lokasi Rak</th>}
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -3678,11 +3672,6 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                                     <td className="p-2.5 text-center font-mono font-extrabold text-indigo-600 dark:text-indigo-400">
                                       {it.qty} pcs
                                     </td>
-                                    {canViewWarehousePickingInfo && (
-                                      <td className="p-2.5 font-mono text-[11px] text-emerald-700 dark:text-emerald-400 font-bold">
-                                        {it.lokasi || '-'}
-                                      </td>
-                                    )}
                                   </tr>
                                 ))}
                               </tbody>
@@ -4513,7 +4502,6 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                         <th className="p-2.5">Produk / SKU</th>
                         <th className="p-2.5 w-20 text-center">Size</th>
                         <th className="p-2.5 w-20 text-center">Qty</th>
-                        <th className="p-2.5 w-28">Lokasi</th>
                         <th className="p-2.5 w-10 text-center"></th>
                       </tr>
                     </thead>
@@ -4551,15 +4539,6 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                               value={it.qty || 1}
                               onChange={(e) => handleUpdateItemInEdit(idx, 'qty', Math.max(1, parseInt(e.target.value, 10) || 1))}
                               className="w-full px-1.5 py-1 text-center bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-800 rounded font-mono font-bold text-blue-600 dark:text-blue-400 outline-none focus:border-blue-500"
-                            />
-                          </td>
-                          <td className="p-2">
-                            <input
-                              type="text"
-                              value={it.lokasi || ''}
-                              onChange={(e) => handleUpdateItemInEdit(idx, 'lokasi', e.target.value)}
-                              placeholder="Lokasi"
-                              className="w-full px-2 py-1 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-800 rounded font-mono text-xs text-slate-700 dark:text-slate-300 outline-none focus:border-blue-500"
                             />
                           </td>
                           <td className="p-2 text-center">
