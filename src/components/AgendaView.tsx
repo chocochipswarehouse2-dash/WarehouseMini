@@ -4,7 +4,7 @@ import {
   CheckCircle2, ChevronLeft, ChevronRight, Clock, MapPin, User, Tag, 
   Trash2, Edit3, Search, Filter, Sun, Check, Sparkles, RefreshCw, 
   AlertTriangle, ArrowRight, Layers, Eye, CheckSquare, Square, MoreHorizontal, StickyNote,
-  FolderPlus, CalendarDays, ListFilter, RotateCcw
+  FolderPlus, CalendarDays, ListFilter, RotateCcw, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { compressImage } from '../utils/imageCompressor';
 import { 
@@ -116,12 +116,220 @@ const MONTHS_ID = [
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
 ];
 
+export const GOOGLE_CALENDAR_COLORS: Record<string, {
+  barBg: string;
+  dot: string;
+  text: string;
+  hex: string;
+  label: string;
+}> = {
+  meeting: {
+    barBg: 'bg-[#8430ce] hover:bg-[#7226b5] text-white',
+    dot: 'bg-[#8430ce]',
+    text: 'text-[#8430ce]',
+    hex: '#8430ce',
+    label: 'Meeting & Diskusi'
+  },
+  operasional: {
+    barBg: 'bg-[#0b8043] hover:bg-[#096e39] text-white',
+    dot: 'bg-[#0b8043]',
+    text: 'text-[#0b8043]',
+    hex: '#0b8043',
+    label: 'Operasional Gudang'
+  },
+  project: {
+    barBg: 'bg-[#039be5] hover:bg-[#0288d1] text-white',
+    dot: 'bg-[#039be5]',
+    text: 'text-[#039be5]',
+    hex: '#039be5',
+    label: 'Project Milestone'
+  },
+  supplier: {
+    barBg: 'bg-[#f4511e] hover:bg-[#e04716] text-white',
+    dot: 'bg-[#f4511e]',
+    text: 'text-[#f4511e]',
+    hex: '#f4511e',
+    label: 'Supplier & Ekspedisi'
+  },
+  urgent: {
+    barBg: 'bg-[#d50000] hover:bg-[#b70000] text-white',
+    dot: 'bg-[#d50000]',
+    text: 'text-[#d50000]',
+    hex: '#d50000',
+    label: 'Urgent & K3'
+  },
+  umum: {
+    barBg: 'bg-[#3f51b5] hover:bg-[#303f9f] text-white',
+    dot: 'bg-[#3f51b5]',
+    text: 'text-[#3f51b5]',
+    hex: '#3f51b5',
+    label: 'Umum & Lainnya'
+  }
+};
+
+export const DAYS_HEADER_MONDAY_START = ['SEN', 'SEL', 'RAB', 'KAM', 'JUM', 'SAB', 'MIN'];
+export const DAYS_INITIALS_MONDAY_START = ['S', 'S', 'R', 'K', 'J', 'S', 'M'];
+
+export interface WeekEventSegment {
+  event: AgendaEvent;
+  startCol: number; // 1..7 (1-based for CSS Grid)
+  endCol: number; // 1..7
+  span: number;
+  continuesFromPrev: boolean;
+  continuesToNext: boolean;
+  isAllDayOrMultiDay: boolean;
+  slot: number; // 0, 1, 2...
+}
+
+export const computeWeekEventSegments = (
+  allEvents: AgendaEvent[],
+  weekDays: { date: Date; currentMonth: boolean; dateStr: string }[],
+  weekStartStr: string,
+  weekEndStr: string
+): {
+  segments: WeekEventSegment[];
+  maxSlot: number;
+  overflowByDay: number[];
+} => {
+  // 1. Filter events intersecting this week
+  const intersectingEvents = allEvents.filter(evt => {
+    const start = evt.start_date;
+    const end = evt.end_date && evt.end_date >= evt.start_date ? evt.end_date : evt.start_date;
+    return start <= weekEndStr && end >= weekStartStr;
+  });
+
+  // 2. Map each event to a preliminary segment
+  const rawSegments = intersectingEvents.map(evt => {
+    const effectiveEnd = evt.end_date && evt.end_date >= evt.start_date ? evt.end_date : evt.start_date;
+
+    let startCol = 1;
+    let continuesFromPrev = false;
+    if (evt.start_date < weekStartStr) {
+      startCol = 1;
+      continuesFromPrev = true;
+    } else {
+      const idx = weekDays.findIndex(d => d.dateStr === evt.start_date);
+      startCol = idx !== -1 ? idx + 1 : 1;
+      continuesFromPrev = false;
+    }
+
+    let endCol = 7;
+    let continuesToNext = false;
+    if (effectiveEnd > weekEndStr) {
+      endCol = 7;
+      continuesToNext = true;
+    } else {
+      const idx = weekDays.findIndex(d => d.dateStr === effectiveEnd);
+      endCol = idx !== -1 ? idx + 1 : 7;
+      continuesToNext = false;
+    }
+
+    if (startCol > endCol) startCol = endCol;
+    const span = Math.max(1, endCol - startCol + 1);
+    const isAllDayOrMultiDay = evt.is_all_day || Boolean(evt.end_date && evt.end_date !== evt.start_date);
+
+    return {
+      event: evt,
+      startCol,
+      endCol,
+      span,
+      continuesFromPrev,
+      continuesToNext,
+      isAllDayOrMultiDay,
+      slot: 0
+    };
+  });
+
+  // 3. Sort segments:
+  // - Multi-day / all-day events first
+  // - Longer span first
+  // - Earlier startCol first
+  // - Alphabetical fallback
+  rawSegments.sort((a, b) => {
+    if (a.isAllDayOrMultiDay !== b.isAllDayOrMultiDay) {
+      return a.isAllDayOrMultiDay ? -1 : 1;
+    }
+    if (b.span !== a.span) {
+      return b.span - a.span;
+    }
+    if (a.startCol !== b.startCol) {
+      return a.startCol - b.startCol;
+    }
+    return (a.event.title || '').localeCompare(b.event.title || '');
+  });
+
+  // 4. Assign non-overlapping slots
+  const slotOccupied: boolean[][] = [];
+  const segments: WeekEventSegment[] = [];
+  let maxSlot = 0;
+
+  for (const seg of rawSegments) {
+    let slot = 0;
+    while (true) {
+      if (!slotOccupied[slot]) {
+        slotOccupied[slot] = [false, false, false, false, false, false, false];
+      }
+      let collision = false;
+      for (let c = seg.startCol - 1; c <= seg.endCol - 1; c++) {
+        if (slotOccupied[slot][c]) {
+          collision = true;
+          break;
+        }
+      }
+      if (!collision) break;
+      slot++;
+    }
+
+    for (let c = seg.startCol - 1; c <= seg.endCol - 1; c++) {
+      slotOccupied[slot][c] = true;
+    }
+
+    if (slot > maxSlot) maxSlot = slot;
+    segments.push({ ...seg, slot });
+  }
+
+  // 5. Overflow count per day for slots >= 3
+  const MAX_VISIBLE_SLOTS = 3;
+  const overflowByDay: number[] = [0, 0, 0, 0, 0, 0, 0];
+  for (let c = 0; c < 7; c++) {
+    const hiddenCount = segments.filter(
+      s => s.slot >= MAX_VISIBLE_SLOTS && s.startCol <= c + 1 && s.endCol >= c + 1
+    ).length;
+    overflowByDay[c] = hiddenCount;
+  }
+
+  return { segments, maxSlot, overflowByDay };
+};
+
+export const getCategoryBarColor = (category: string, config?: Record<string, any>): string => {
+  if (GOOGLE_CALENDAR_COLORS[category]) {
+    return GOOGLE_CALENDAR_COLORS[category].barBg;
+  }
+  const cfg = config?.[category];
+  if (cfg?.gradient) {
+    if (cfg.gradient.includes('purple') || cfg.gradient.includes('indigo')) return 'bg-[#8430ce] hover:bg-[#7226b5] text-white';
+    if (cfg.gradient.includes('emerald') || cfg.gradient.includes('teal')) return 'bg-[#0b8043] hover:bg-[#096e39] text-white';
+    if (cfg.gradient.includes('sky') || cfg.gradient.includes('blue')) return 'bg-[#039be5] hover:bg-[#0288d1] text-white';
+    if (cfg.gradient.includes('amber') || cfg.gradient.includes('orange')) return 'bg-[#f4511e] hover:bg-[#e04716] text-white';
+    if (cfg.gradient.includes('rose') || cfg.gradient.includes('pink') || cfg.gradient.includes('red')) return 'bg-[#d50000] hover:bg-[#b70000] text-white';
+  }
+  return 'bg-[#039be5] hover:bg-[#0288d1] text-white';
+};
+
+export const getCategoryDotColor = (category: string, config?: Record<string, any>): string => {
+  if (GOOGLE_CALENDAR_COLORS[category]) {
+    return GOOGLE_CALENDAR_COLORS[category].dot;
+  }
+  return config?.[category]?.dot || 'bg-[#039be5]';
+};
+
+
 export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) => {
   // Main Tab
   const [activeTab, setActiveTab] = useState<'calendar' | 'project' | 'notes'>('calendar');
 
   // Calendar View Mode: week (default desktop), month, day, agenda (default mobile)
-  const [calendarView, setCalendarView] = useState<'week' | 'month' | 'day' | 'agenda'>('week');
+  const [calendarView, setCalendarView] = useState<'week' | 'month' | 'day' | 'agenda'>('month');
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
@@ -186,6 +394,25 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
   const [isNoteModalOpen, setNoteModalOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<Partial<NoteItem> | null>(null);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+
+  const [viewDropdownOpen, setViewDropdownOpen] = useState(false);
+  const [createDropdownOpen, setCreateDropdownOpen] = useState(false);
+  const viewDropdownRef = useRef<HTMLDivElement>(null);
+  const createDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (viewDropdownRef.current && !viewDropdownRef.current.contains(e.target as Node)) {
+        setViewDropdownOpen(false);
+      }
+      if (createDropdownRef.current && !createDropdownRef.current.contains(e.target as Node)) {
+        setCreateDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
 
   // Modals
   const [isAgendaModalOpen, setAgendaModalOpen] = useState(false);
@@ -322,12 +549,13 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
       d1.getFullYear() === d2.getFullYear();
   };
 
-  // Get start of the week (Monday or Sunday - let's do Sunday as index 0)
+  // Get start of the week (Monday as index 0, Sunday as index 6)
   const weekDates = useMemo(() => {
     const curr = new Date(currentDate);
-    const day = curr.getDay(); // 0 is Sun
-    const diff = curr.getDate() - day; // day of the month for Sunday
-    const startOfWeek = new Date(curr.setDate(diff));
+    const dayCol = (curr.getDay() + 6) % 7; // 0 for Mon, ..., 6 for Sun
+    const startOfWeek = new Date(curr);
+    startOfWeek.setDate(curr.getDate() - dayCol);
+    startOfWeek.setHours(0, 0, 0, 0);
 
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(startOfWeek);
@@ -336,43 +564,60 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
     });
   }, [currentDate]);
 
-  // Mini calendar month matrix
+  // Mini calendar month matrix (Monday-start)
   const miniCalendarDays = useMemo(() => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
-    const firstDayIndex = new Date(year, month, 1).getDay();
+    const firstDay = new Date(year, month, 1);
+    const firstDayCol = (firstDay.getDay() + 6) % 7; // 0 = Mon, ..., 6 = Sun
     const totalDays = new Date(year, month + 1, 0).getDate();
 
-    const days: { date: Date; currentMonth: boolean }[] = [];
+    const days: { date: Date; currentMonth: boolean; dateStr: string }[] = [];
 
     // Preceding month trailing days
     const prevTotalDays = new Date(year, month, 0).getDate();
-    for (let i = firstDayIndex - 1; i >= 0; i--) {
+    for (let i = firstDayCol - 1; i >= 0; i--) {
+      const d = new Date(year, month - 1, prevTotalDays - i);
       days.push({
-        date: new Date(year, month - 1, prevTotalDays - i),
-        currentMonth: false
+        date: d,
+        currentMonth: false,
+        dateStr: formatIsoDate(d)
       });
     }
 
     // Current month days
     for (let i = 1; i <= totalDays; i++) {
+      const d = new Date(year, month, i);
       days.push({
-        date: new Date(year, month, i),
-        currentMonth: true
+        date: d,
+        currentMonth: true,
+        dateStr: formatIsoDate(d)
       });
     }
 
     // Trailing days to fill 35 or 42 slots
-    const remaining = 35 - days.length > 0 ? 35 - days.length : (42 - days.length > 0 ? 42 - days.length : 0);
+    const targetSlots = days.length <= 35 ? 35 : 42;
+    const remaining = targetSlots - days.length;
     for (let i = 1; i <= remaining; i++) {
+      const d = new Date(year, month + 1, i);
       days.push({
-        date: new Date(year, month + 1, i),
-        currentMonth: false
+        date: d,
+        currentMonth: false,
+        dateStr: formatIsoDate(d)
       });
     }
 
     return days;
   }, [currentDate]);
+
+  // Group into 7-day week rows for Google Calendar layout
+  const monthWeeks = useMemo(() => {
+    const weeks: { date: Date; currentMonth: boolean; dateStr: string }[][] = [];
+    for (let i = 0; i < miniCalendarDays.length; i += 7) {
+      weeks.push(miniCalendarDays.slice(i, i + 7));
+    }
+    return weeks;
+  }, [miniCalendarDays]);
 
   // Navigation handlers
   const handlePrev = () => {
@@ -461,9 +706,30 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
   const eventsByDate = useMemo(() => {
     const map = new Map<string, AgendaEvent[]>();
     filteredEvents.forEach(e => {
-      const key = e.start_date;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(e);
+      const start = e.start_date;
+      const end = e.end_date && e.end_date >= e.start_date ? e.end_date : e.start_date;
+      if (start === end || !e.end_date) {
+        if (!map.has(start)) map.set(start, []);
+        map.get(start)!.push(e);
+      } else {
+        try {
+          const [sy, sm, sd] = start.split('-').map(Number);
+          const [ey, em, ed] = end.split('-').map(Number);
+          const curr = new Date(sy, sm - 1, sd);
+          const last = new Date(ey, em - 1, ed);
+          let count = 0;
+          while (curr <= last && count < 180) {
+            const dStr = formatIsoDate(curr);
+            if (!map.has(dStr)) map.set(dStr, []);
+            map.get(dStr)!.push(e);
+            curr.setDate(curr.getDate() + 1);
+            count++;
+          }
+        } catch {
+          if (!map.has(start)) map.set(start, []);
+          map.get(start)!.push(e);
+        }
+      }
     });
     return map;
   }, [filteredEvents]);
@@ -904,14 +1170,81 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
           {/* Left Sidebar Panel (Desktop: permanent 3 cols; Mobile: expandable drawer or toggle) */}
           <div className={`lg:col-span-3 space-y-2 ${mobileFilterOpen ? 'block' : 'hidden lg:block'}`}>
             
-            {/* Primary Add Button (Desktop) */}
-            <button
-              onClick={() => handleOpenAddEvent()}
-              className="w-full bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white p-3.5 rounded-2xl font-black text-sm flex items-center justify-center gap-2 shadow-lg shadow-primary-500/25 transition-all transform active:scale-95"
-            >
-              <Plus className="w-5 h-5 stroke-[2.5]" />
-              Tambah Agenda Baru
-            </button>
+            {/* Google Calendar Style Create FAB Button */}
+            <div className="relative mb-2" ref={createDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setCreateDropdownOpen(!createDropdownOpen)}
+                className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-full px-5 py-3 font-semibold text-sm flex items-center gap-3 shadow-md hover:shadow-lg active:scale-95 transition-all cursor-pointer"
+              >
+                <svg className="w-6 h-6 shrink-0" viewBox="0 0 36 36">
+                  <path fill="#4285F4" d="M16 16v14h4V20z" />
+                  <path fill="#34A853" d="M30 16H20l-4 4h14z" />
+                  <path fill="#FBBC05" d="M6 16h10l4-4H6z" />
+                  <path fill="#EA4335" d="M20 16V6h-4v14z" />
+                  <path fill="none" d="M0 0h36v36H0z" />
+                </svg>
+                <span className="font-semibold text-slate-800 dark:text-slate-100">Buat</span>
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              </button>
+
+              {createDropdownOpen && (
+                <div className="absolute left-0 top-full mt-2 w-52 bg-white dark:bg-[#1a2332] rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 py-2 z-50 animate-in fade-in zoom-in-95 duration-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreateDropdownOpen(false);
+                      handleOpenAddEvent();
+                    }}
+                    className="w-full px-4 py-2.5 text-left text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2.5 cursor-pointer"
+                  >
+                    <Calendar className="w-4 h-4 text-primary-500 shrink-0" />
+                    <span>Acara / Agenda Baru</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreateDropdownOpen(false);
+                      setActiveTab('project');
+                      setEditingProject({
+                        title: '',
+                        description: '',
+                        status: 'planned',
+                        priority: 'medium',
+                        progress: 0,
+                        start_date: formatIsoDate(new Date()),
+                        due_date: formatIsoDate(new Date(Date.now() + 7 * 86400000)),
+                        tasks: [],
+                        pic: session?.name || session?.username || ''
+                      });
+                      setProjectModalOpen(true);
+                    }}
+                    className="w-full px-4 py-2.5 text-left text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2.5 cursor-pointer"
+                  >
+                    <Briefcase className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span>Project & Task Baru</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreateDropdownOpen(false);
+                      setActiveTab('notes');
+                      setEditingNote({
+                        title: '',
+                        content: '',
+                        color: 'yellow',
+                        is_pinned: false
+                      });
+                      setNoteModalOpen(true);
+                    }}
+                    className="w-full px-4 py-2.5 text-left text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2.5 cursor-pointer"
+                  >
+                    <StickyNote className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <span>Catatan Sticky Baru</span>
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* Mini Interactive Month Calendar (Desktop & Tablet) */}
             <div className="bg-white dark:bg-[#1a2332] p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
@@ -945,9 +1278,9 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
 
               {/* Days Header */}
               <div className="grid grid-cols-7 text-center mb-1">
-                {DAYS_NAME.map(day => (
-                  <span key={day} className="text-[10px] font-bold text-slate-400 py-1">
-                    {day[0]}
+                {DAYS_INITIALS_MONDAY_START.map((init, i) => (
+                  <span key={i} className="text-[10px] font-bold text-slate-400 py-1">
+                    {init}
                   </span>
                 ))}
               </div>
@@ -974,7 +1307,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                         isSel
                           ? 'bg-primary-500 text-white shadow-sm'
                           : isTod
-                          ? 'bg-primary-100 text-primary-700 dark:bg-primary-950/60 dark:text-primary-300'
+                          ? 'bg-[#1a73e8] text-white shadow-xs'
                           : item.currentMonth
                           ? 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                           : 'text-slate-300 dark:text-slate-600'
@@ -1032,10 +1365,10 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                       className="w-full flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer transition-colors text-left"
                     >
                       <div className="flex items-center gap-2.5">
-                        <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-colors ${
+                        <div className={`w-4 h-4 rounded-sm border flex items-center justify-center transition-colors ${
                           isChecked 
-                            ? 'bg-primary-500 border-primary-500 text-white' 
-                            : 'border-slate-300 dark:border-slate-600'
+                            ? `${getCategoryDotColor(catKey, categoryConfig)} border-transparent text-white` 
+                            : 'border-slate-400 dark:border-slate-500 bg-transparent'
                         }`}>
                           {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
                         </div>
@@ -1070,36 +1403,51 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
           {/* Right Main Calendar Area (9 cols on Desktop) */}
           <div className="lg:col-span-9 space-y-2">
             
-            {/* Calendar Controls Toolbar (Like Reference Image) */}
+            {/* Calendar Controls Toolbar (Google Calendar Layout) */}
             <div className="bg-white dark:bg-[#1a2332] p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-row flex-wrap justify-between items-center gap-3">
               
-              {/* Left Navigation: Today, < >, and Title */}
+              {/* Left Navigation: Logo, Today, < >, and Title */}
               <div className="flex flex-wrap items-center justify-between sm:justify-start gap-2 sm:gap-3">
+                {/* Google Calendar Logo / Date Badge */}
+                <div className="flex items-center gap-2 mr-1">
+                  <div className="w-9 h-9 rounded-xl bg-[#1a73e8] text-white flex flex-col items-center justify-center font-bold shadow-xs select-none">
+                    <span className="text-[8px] font-black uppercase tracking-tighter opacity-90 leading-none">
+                      {new Date().toLocaleString('id-ID', { month: 'short' })}
+                    </span>
+                    <span className="text-sm font-black leading-none mt-0.5">
+                      {new Date().getDate()}
+                    </span>
+                  </div>
+                  <span className="text-lg font-bold text-slate-800 dark:text-slate-100 hidden md:inline">
+                    Kalender
+                  </span>
+                </div>
+
                 <button
                   onClick={handleToday}
-                  className="px-3 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-colors"
+                  className="px-4 py-1.5 text-xs font-semibold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-full transition-colors cursor-pointer"
                 >
-                  Hari Ini
+                  Hari ini
                 </button>
 
-                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                <div className="flex items-center gap-1">
                   <button
                     onClick={handlePrev}
                     aria-label="Previous"
-                    className="p-1 rounded-lg hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
+                    className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
                   >
-                    <ChevronLeft className="w-4 h-4" />
+                    <ChevronLeft className="w-5 h-5" />
                   </button>
                   <button
                     onClick={handleNext}
                     aria-label="Next"
-                    className="p-1 rounded-lg hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
+                    className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
                   >
-                    <ChevronRight className="w-4 h-4" />
+                    <ChevronRight className="w-5 h-5" />
                   </button>
                 </div>
 
-                <h2 className="text-sm sm:text-base font-black truncate text-slate-900 dark:text-white">
+                <h2 className="text-base sm:text-xl font-medium truncate text-slate-900 dark:text-white">
                   {headerTitle}
                 </h2>
               </div>
@@ -1112,7 +1460,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                   <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
-                    placeholder="Cari agenda..."
+                    placeholder="Telusuri agenda..."
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
                     className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-primary-500 outline-none"
@@ -1167,49 +1515,62 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                   )}
                 </button>
 
-                {/* View Switcher: Minggu, Bulan, Hari, Jadwal */}
-                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                {/* Google Calendar View Dropdown */}
+                <div className="relative" ref={viewDropdownRef}>
                   <button
-                    onClick={() => setCalendarView('week')}
-                    className={`hidden sm:inline-flex px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                      calendarView === 'week'
-                        ? 'bg-white dark:bg-[#101726] text-primary-600 dark:text-primary-400 shadow-sm'
-                        : 'text-slate-500 hover:text-slate-700'
-                    }`}
+                    type="button"
+                    onClick={() => setViewDropdownOpen(!viewDropdownOpen)}
+                    className="px-3.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2 shadow-2xs transition-all cursor-pointer"
                   >
-                    Minggu
+                    <span>
+                      {calendarView === 'month' && 'Bulan'}
+                      {calendarView === 'week' && 'Minggu'}
+                      {calendarView === 'day' && 'Hari'}
+                      {calendarView === 'agenda' && 'Jadwal'}
+                    </span>
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
                   </button>
-                  <button
-                    onClick={() => setCalendarView('month')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                      calendarView === 'month'
-                        ? 'bg-white dark:bg-[#101726] text-primary-600 dark:text-primary-400 shadow-sm'
-                        : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    Bulan
-                  </button>
-                  <button
-                    onClick={() => setCalendarView('day')}
-                    className={`hidden md:inline-flex px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                      calendarView === 'day'
-                        ? 'bg-white dark:bg-[#101726] text-primary-600 dark:text-primary-400 shadow-sm'
-                        : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    Hari
-                  </button>
-                  <button
-                    onClick={() => setCalendarView('agenda')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                      calendarView === 'agenda'
-                        ? 'bg-white dark:bg-[#101726] text-primary-600 dark:text-primary-400 shadow-sm'
-                        : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    <span className="hidden sm:inline">Jadwal List</span>
-                    <span className="sm:hidden">Jadwal</span>
-                  </button>
+
+                  {viewDropdownOpen && (
+                    <div className="absolute right-0 top-full mt-1.5 w-36 bg-white dark:bg-[#1a2332] rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100">
+                      <button
+                        onClick={() => { setCalendarView('day'); setViewDropdownOpen(false); }}
+                        className={`w-full px-3 py-1.5 text-left text-xs font-semibold flex items-center justify-between cursor-pointer ${
+                          calendarView === 'day' ? 'bg-primary-50 dark:bg-primary-950/40 text-primary-600 dark:text-primary-400 font-bold' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        <span>Hari</span>
+                        <span className="text-[10px] text-slate-400 font-mono">D</span>
+                      </button>
+                      <button
+                        onClick={() => { setCalendarView('week'); setViewDropdownOpen(false); }}
+                        className={`w-full px-3 py-1.5 text-left text-xs font-semibold flex items-center justify-between cursor-pointer ${
+                          calendarView === 'week' ? 'bg-primary-50 dark:bg-primary-950/40 text-primary-600 dark:text-primary-400 font-bold' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        <span>Minggu</span>
+                        <span className="text-[10px] text-slate-400 font-mono">W</span>
+                      </button>
+                      <button
+                        onClick={() => { setCalendarView('month'); setViewDropdownOpen(false); }}
+                        className={`w-full px-3 py-1.5 text-left text-xs font-semibold flex items-center justify-between cursor-pointer ${
+                          calendarView === 'month' ? 'bg-primary-50 dark:bg-primary-950/40 text-primary-600 dark:text-primary-400 font-bold' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        <span>Bulan</span>
+                        <span className="text-[10px] text-slate-400 font-mono">M</span>
+                      </button>
+                      <button
+                        onClick={() => { setCalendarView('agenda'); setViewDropdownOpen(false); }}
+                        className={`w-full px-3 py-1.5 text-left text-xs font-semibold flex items-center justify-between cursor-pointer ${
+                          calendarView === 'agenda' ? 'bg-primary-50 dark:bg-primary-950/40 text-primary-600 dark:text-primary-400 font-bold' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        <span>Jadwal</span>
+                        <span className="text-[10px] text-slate-400 font-mono">A</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1389,99 +1750,197 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
               </div>
             )}
 
-            {/* 2. MONTH VIEW */}
+            {/* 2. MONTH VIEW (Google Calendar Continuous Spanning Multi-Day Layout) */}
             {calendarView === 'month' && (
               <div className="space-y-4">
-                <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                  <div className="grid grid-cols-7 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-center text-xs font-black text-slate-500 py-2.5 sm:py-3">
-                    {DAYS_NAME.map(d => <div key={d}>{d}</div>)}
-                  </div>
-                  <div className="grid grid-cols-7 auto-rows-[64px] sm:auto-rows-[120px] divide-x divide-y divide-slate-100 dark:divide-slate-800/60">
-                    {miniCalendarDays.map((item, i) => {
-                      const dStr = formatIsoDate(item.date);
-                      const dayEvents = eventsByDate.get(dStr) || [];
-                      const isTod = isToday(item.date);
-                      const isSel = isSameDay(item.date, selectedDate);
+                <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-x-auto scrollbar-thin">
+                  <div className="min-w-[700px] sm:min-w-full">
+                    {/* Header Columns: SEN, SEL, RAB, KAM, JUM, SAB, MIN */}
+                    <div className="grid grid-cols-7 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/50 text-center text-[11px] font-bold text-slate-500 dark:text-slate-400 py-2.5 select-none tracking-wider">
+                      {DAYS_HEADER_MONDAY_START.map(d => (
+                        <div key={d}>{d}</div>
+                      ))}
+                    </div>
 
-                      return (
-                        <div
-                          key={i}
-                          onClick={() => {
-                            setSelectedDate(item.date);
-                            setCurrentDate(item.date);
-                          }}
-                          className={`p-1 sm:p-2 relative flex flex-col justify-between hover:bg-slate-50 dark:hover:bg-slate-800/30 cursor-pointer transition-colors ${
-                            !item.currentMonth ? 'opacity-40 bg-slate-50/50 dark:bg-slate-900/20' : ''
-                          } ${isSel ? 'ring-2 ring-primary-500 ring-inset bg-primary-50/30 dark:bg-primary-950/20' : ''}`}
-                        >
-                          {/* Header Tanggal & Badge Acara (Rapi, Tidak Tumpang Tindih) */}
-                          <div className="flex justify-between items-start gap-0.5">
-                            <span className={`text-[11px] sm:text-xs font-black w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center shrink-0 transition-colors ${
-                              isTod
-                                ? 'bg-primary-500 text-white shadow-xs'
-                                : isSel
-                                ? 'bg-primary-600 text-white font-bold'
-                                : 'text-slate-600 dark:text-slate-300'
-                            }`}>
-                              {item.date.getDate()}
-                            </span>
-                            {dayEvents.length > 0 && (
-                              <div className="shrink-0">
-                                <span className="hidden sm:inline-block text-[10px] font-bold text-slate-400">
-                                  {dayEvents.length} acara
-                                </span>
-                                <span className="sm:hidden text-[9px] font-black px-1.5 py-0.2 rounded-full bg-primary-100 dark:bg-primary-950/80 text-primary-700 dark:text-primary-300">
-                                  {dayEvents.length}
-                                </span>
-                              </div>
-                            )}
-                          </div>
+                    {/* Week Rows */}
+                    <div className="divide-y divide-slate-200 dark:divide-slate-800">
+                      {monthWeeks.map((weekDays, weekIdx) => {
+                        const weekStartStr = weekDays[0].dateStr;
+                        const weekEndStr = weekDays[6].dateStr;
+                        const { segments, maxSlot, overflowByDay } = computeWeekEventSegments(
+                          filteredEvents,
+                          weekDays,
+                          weekStartStr,
+                          weekEndStr
+                        );
 
-                          {/* Tampilan Event di Desktop (Chip Teks Lengkap) */}
-                          <div className="hidden sm:block space-y-1 mt-1 overflow-hidden">
-                            {dayEvents.slice(0, 2).map(evt => {
-                              const cfg = categoryConfig[evt.category] || Object.values(categoryConfig)[0] || { label: evt.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', border: 'border-slate-300', cardBg: 'bg-white', dot: 'bg-slate-500' };
-                              return (
-                                <div
-                                  key={evt.id}
-                                  onClick={(e) => { e.stopPropagation(); setDetailEvent(evt); }}
-                                  className={`text-[10px] font-bold p-1 rounded-md truncate border shadow-2xs flex items-center justify-between gap-1 ${cfg.badgeBg} ${cfg.badgeText} ${cfg.border}`}
-                                >
-                                  <span className="truncate">
-                                    {evt.is_all_day ? '☀️ ' : `${evt.start_time || ''} `}{evt.title}
-                                  </span>
-                                  {evt.google_event_id && (
-                                    <span className="shrink-0 text-[9px] opacity-70" title="Tersinkron Google Calendar">📅</span>
-                                  )}
-                                </div>
-                              );
-                            })}
-                            {dayEvents.length > 2 && (
-                              <div className="text-[9px] font-bold text-slate-400 text-right">
-                                +{dayEvents.length - 2} lagi
-                              </div>
-                            )}
-                          </div>
+                        const visibleSlotsCount = Math.min(maxSlot + 1, 3);
+                        const minHeightClass = visibleSlotsCount > 2 ? 'min-h-[140px]' : 'min-h-[115px]';
 
-                          {/* Tampilan Event di Mobile (Dot Indikator Rapi Berwarna) */}
-                          <div className="sm:hidden flex flex-wrap gap-1 mt-1 justify-center items-center">
-                            {dayEvents.slice(0, 3).map((evt, eIdx) => {
-                              const cfg = categoryConfig[evt.category] || Object.values(categoryConfig)[0] || { dot: 'bg-primary-500' };
-                              return (
-                                <span
-                                  key={eIdx}
-                                  className={`w-1.5 h-1.5 rounded-full ${cfg.dot || 'bg-primary-500'}`}
-                                  title={evt.title}
-                                />
-                              );
-                            })}
-                            {dayEvents.length > 3 && (
-                              <span className="text-[8px] font-black text-slate-400">+{dayEvents.length - 3}</span>
-                            )}
+                        return (
+                          <div
+                            key={weekIdx}
+                            className={`relative ${minHeightClass} flex flex-col justify-start select-none`}
+                          >
+                            {/* Layer 1: Background Day Cells (Grid 7 Cols with Borders) */}
+                            <div className="grid grid-cols-7 divide-x divide-slate-100 dark:divide-slate-800/60 absolute inset-0 pointer-events-none">
+                              {weekDays.map((item, dIdx) => {
+                                const isTod = isToday(item.date);
+                                const isSel = isSameDay(item.date, selectedDate);
+                                return (
+                                  <div
+                                    key={dIdx}
+                                    className={`h-full transition-colors ${
+                                      !item.currentMonth 
+                                        ? 'bg-slate-50/50 dark:bg-slate-900/30' 
+                                        : isTod 
+                                        ? 'bg-blue-50/20 dark:bg-blue-950/10' 
+                                        : 'bg-white dark:bg-[#1a2332]'
+                                    } ${isSel ? 'bg-primary-50/25 dark:bg-primary-950/20 ring-1 ring-primary-500/30 ring-inset' : ''}`}
+                                  />
+                                );
+                              })}
+                            </div>
+
+                            {/* Layer 2: Clickable Day Headers */}
+                            <div className="grid grid-cols-7 relative z-10 pt-1.5 pb-1">
+                              {weekDays.map((item, dIdx) => {
+                                const isTod = isToday(item.date);
+                                const isSel = isSameDay(item.date, selectedDate);
+                                const isFirstOfMonth = item.date.getDate() === 1;
+
+                                const displayLabel = isFirstOfMonth
+                                  ? `1 ${MONTHS_ID[item.date.getMonth()].slice(0, 3)}`
+                                  : `${item.date.getDate()}`;
+
+                                return (
+                                  <div
+                                    key={dIdx}
+                                    onClick={() => {
+                                      setSelectedDate(item.date);
+                                      setCurrentDate(item.date);
+                                    }}
+                                    onDoubleClick={() => handleOpenAddEvent(item.dateStr)}
+                                    className="flex flex-col items-center justify-start cursor-pointer group"
+                                    title={`Klik untuk pilih tanggal, klik dua kali untuk buat agenda pada ${item.dateStr}`}
+                                  >
+                                    <span
+                                      className={`text-xs font-semibold px-1.5 py-0.5 rounded-full flex items-center justify-center transition-transform group-hover:scale-105 ${
+                                        isTod
+                                          ? 'bg-[#1a73e8] text-white font-bold w-6 h-6 shadow-xs'
+                                          : isSel
+                                          ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white font-bold'
+                                          : !item.currentMonth
+                                          ? 'text-slate-400 dark:text-slate-500'
+                                          : isFirstOfMonth
+                                          ? 'text-slate-800 dark:text-slate-100 font-bold'
+                                          : 'text-slate-700 dark:text-slate-200'
+                                      }`}
+                                    >
+                                      {displayLabel}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Layer 3: Continuous Event Bars (CSS Grid) */}
+                            <div
+                              className="grid grid-cols-7 gap-y-1 relative z-10 px-0.5 pb-2 flex-1"
+                              style={{
+                                gridAutoRows: '24px',
+                                alignContent: 'start'
+                              }}
+                            >
+                              {segments
+                                .filter(seg => seg.slot < 3)
+                                .map((seg, sIdx) => {
+                                  const barColor = getCategoryBarColor(seg.event.category, categoryConfig);
+                                  
+                                  const borderRounding = 
+                                    seg.continuesFromPrev && seg.continuesToNext
+                                      ? 'rounded-none mx-0'
+                                      : seg.continuesFromPrev
+                                      ? 'rounded-r-md rounded-l-none ml-0 mr-1'
+                                      : seg.continuesToNext
+                                      ? 'rounded-l-md rounded-r-none mr-0 ml-1'
+                                      : 'rounded-md mx-1';
+
+                                  return (
+                                    <div
+                                      key={`${seg.event.id}-${weekIdx}-${sIdx}`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setDetailEvent(seg.event);
+                                      }}
+                                      style={{
+                                        gridColumnStart: seg.startCol,
+                                        gridColumnEnd: seg.endCol + 1,
+                                        gridRowStart: seg.slot + 1,
+                                      }}
+                                      className={`h-6 text-[11px] font-bold text-white flex items-center px-2 shadow-2xs cursor-pointer truncate transition-all hover:brightness-110 active:scale-[0.99] select-none ${barColor} ${borderRounding}`}
+                                      title={`${seg.event.title} (${seg.event.start_date}${seg.event.end_date ? ' s/d ' + seg.event.end_date : ''})`}
+                                    >
+                                      {seg.continuesFromPrev && (
+                                        <span className="text-[9px] mr-1 opacity-85 shrink-0 font-mono">◀</span>
+                                      )}
+
+                                      {!seg.isAllDayOrMultiDay && seg.event.start_time && (
+                                        <span className="font-mono text-[10px] mr-1 font-semibold opacity-95 shrink-0">
+                                          {seg.event.start_time}
+                                        </span>
+                                      )}
+
+                                      <span className="truncate">
+                                        {seg.event.title}
+                                      </span>
+
+                                      {seg.event.google_event_id && (
+                                        <span className="ml-1 shrink-0 text-[10px] opacity-80" title="Tersinkron Google Calendar">📅</span>
+                                      )}
+
+                                      {seg.continuesToNext && (
+                                        <span className="text-[9px] ml-auto pl-1 opacity-85 shrink-0 font-mono">▶</span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+
+                              {/* Layer 4: "+X lagi" overflow indicator per day */}
+                              {weekDays.map((item, dIdx) => {
+                                const overflow = overflowByDay[dIdx] || 0;
+                                if (overflow <= 0) return null;
+
+                                return (
+                                  <div
+                                    key={`ovf-${dIdx}`}
+                                    style={{
+                                      gridColumnStart: dIdx + 1,
+                                      gridColumnEnd: dIdx + 2,
+                                      gridRowStart: 4,
+                                    }}
+                                    className="px-1 text-left"
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedDate(item.date);
+                                        setCurrentDate(item.date);
+                                        setCalendarView('day');
+                                      }}
+                                      className="text-[10px] font-bold text-slate-500 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-slate-100 dark:hover:bg-slate-800 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+                                    >
+                                      +{overflow} lagi
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
 
@@ -1774,8 +2233,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
           </div>
         </div>
       )}
+      {/* PROJECT & INITIATIVE TAB */}
       {activeTab === 'project' && (
-        /* PROJECT & INITIATIVE TAB */
         <div className="space-y-5">
           
           {/* Controls Bar for Projects */}

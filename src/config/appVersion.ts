@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.35",
-  "versionCode": 295,
-  "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v295-2242",
-  "releaseTitle": "WMS v2.6.35 — Navigasi Otomatis Chat Gudang & Sinkronisasi Multidevice HP/Laptop",
+  "version": "v2.6.36",
+  "versionCode": 296,
+  "buildDate": "2 November 2026",
+  "buildHash": "wms-261102-v296-0535",
+  "releaseTitle": "WMS v2.6.36 — Google Calendar Month View & Multi-Day Spanning Event Bars",
   "releaseNotes": [
-    "Otomatis mengarahkan ke tab Live Chat dan membuka room dengan draft pesan saat klik Chat Gudang",
-    "Perbaiki sinkronisasi room multidevice (HP dan Laptop) agar percakapan Ria Nur Fiana, Nanang, dan Tim QC tampil konsisten",
-    "Pencegahan race-condition penimpaan daftar ruang obrolan di server"
+    "Tampilan Kalender Mode Bulan diperbarui mengikuti Google Calendar dengan event multi-hari horizontal continuous spanning banner",
+    "Navigasi header Google Calendar: badge tanggal hari ini, tombol Hari Ini, panah navigasi, dan dropdown view (Bulan, Minggu, Hari, Jadwal)",
+    "Sidebar kiri Google Calendar: tombol + Buat multi-warna dengan dropdown (Acara, Project, Catatan), mini-kalender Senin-start, dan filter kategori checkbox berwarna"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.35",
+    "versionCode": 295,
+    "buildDate": "1 November 2026",
+    "buildHash": "wms-261101-v295-2242",
+    "releaseTitle": "WMS v2.6.35 — Navigasi Otomatis Chat Gudang & Sinkronisasi Multidevice HP/Laptop",
+    "releaseNotes": [
+      "Otomatis mengarahkan ke tab Live Chat dan membuka room dengan draft pesan saat klik Chat Gudang",
+      "Perbaiki sinkronisasi room multidevice (HP dan Laptop) agar percakapan Ria Nur Fiana, Nanang, dan Tim QC tampil konsisten",
+      "Pencegahan race-condition penimpaan daftar ruang obrolan di server"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.34",
     "versionCode": 294,
@@ -113,18 +126,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Fix webpush module import di Vercel Node runtime",
       "Try-catch internal error guard"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.27",
-    "versionCode": 287,
-    "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v287-1927",
-    "releaseTitle": "WMS v2.6.27 — Support Supabase Secret Keys in Web Push",
-    "releaseNotes": [
-      "Kompatibilitas sb_secret_ pada backend push",
-      "Headers Authorization Bearer universal"
     ],
     "minSupportedVersion": "v2.0.0"
   }
