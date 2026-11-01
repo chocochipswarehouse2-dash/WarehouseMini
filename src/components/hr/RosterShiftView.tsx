@@ -50,7 +50,7 @@ interface RosterShiftViewProps {
   onShowToast: (msg: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
-type ViewMode = 'table' | 'cards' | 'weekly';
+type ViewMode = 'monthly' | 'weekly' | 'table' | 'cards';
 
 interface ShiftPreset {
   masuk: string;
@@ -135,20 +135,23 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
   const [masterShifts, setMasterShifts] = useState<MasterShiftRecord[]>([]);
   const [cutiList, setCutiList] = useState<PerijinanCutiRecord[]>([]);
 
-  // Access check: Edit & Hapus restricted to Admin & Superadmin only
+  // Access check: Pengaturan/Edit/Hapus Shift HANYA terbuka untuk Admin, Superadmin & HR Approval
   const userIsAdmin = useMemo(() => {
+    if (!session) return false;
+    const roleLower = String(session.role || '').trim().toLowerCase();
     return (
       isSuperadmin(session) ||
-      hasPermission(session, 'action_edit_master') ||
-      hasPermission(session, 'menu_hr_karyawan') ||
-      hasPermission(session, 'menu_hr_approval') ||
-      session?.role === 'admin' ||
-      session?.role === 'superadmin'
+      roleLower === 'admin' ||
+      roleLower === 'superadmin' ||
+      roleLower === 'manager' ||
+      roleLower === 'hr' ||
+      roleLower === 'hr & admin' ||
+      hasPermission(session, 'menu_hr_approval')
     );
   }, [session]);
 
-  // View & Filter States
-  const [viewMode, setViewMode] = useState<ViewMode>('table');
+  // View & Filter States (Default to 'monthly' matrix so Admin can immediately manage a full month for all employees)
+  const [viewMode, setViewMode] = useState<ViewMode>('monthly');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedShift, setSelectedShift] = useState<string>('all');
   const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
@@ -159,6 +162,22 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
     const d = String(now.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
   });
+
+  // Monthly Matrix View State (YYYY-MM)
+  const [selectedMonthYear, setSelectedMonthYear] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
+
+  // Interactive Matrix Brush & Staging Drafts (Zero-Modal Fast Editing for 1 Month x Many Employees)
+  const [activeBrushShift, setActiveBrushShift] = useState<string>('Shift 1'); // 'Shift 1' | 'Shift 2' | 'Shift 3' | 'Shift 3a' | 'Shift 3b' | 'Libur' | 'Cuti' | 'Izin' | 'MODAL'
+  const [isMousePainting, setIsMousePainting] = useState<boolean>(false);
+  const [matrixDrafts, setMatrixDrafts] = useState<Record<string, { nik: string; tanggal: string; shift: string; keterangan?: string }>>({});
+  const [selectedMatrixNiks, setSelectedMatrixNiks] = useState<string[]>([]);
+  const [bulkMonthShiftPattern, setBulkMonthShiftPattern] = useState<string>('Shift 1'); // 'Shift 1' | 'Shift 2' | 'Shift 3' | 'Shift 3a' | 'Shift 3b' | 'ROTASI_MINGGUAN' | 'SPLIT_TIM_1_2'
+  const [bulkMonthOffRule, setBulkMonthOffRule] = useState<string>('OFF_0'); // Default Pola Reguler: Libur Hari Minggu ('OFF_0')
+  const [employeeOffDayPref, setEmployeeOffDayPref] = useState<Record<string, string>>({});
+  const [isSavingMatrixDrafts, setIsSavingMatrixDrafts] = useState<boolean>(false);
 
   // Weekly View Date Anchor (start of current week)
   const [weeklyAnchorDate, setWeeklyAnchorDate] = useState<Date>(() => {
@@ -562,6 +581,332 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
     }
     return days;
   }, [weeklyAnchorDate]);
+
+  // Days in selected month for Monthly Matrix View (1 s/d 28/29/30/31)
+  const monthlyDays = useMemo(() => {
+    const [rawY, rawM] = (selectedMonthYear || '').split('-').map(Number);
+    const now = new Date();
+    const y = Number.isFinite(rawY) && rawY > 2000 ? rawY : now.getFullYear();
+    const m = Number.isFinite(rawM) && rawM >= 1 && rawM <= 12 ? rawM : now.getMonth() + 1;
+    const totalDays = new Date(y, m, 0).getDate();
+    const shortDayNames = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+    const result: Array<{
+      dateStr: string;
+      dayNum: number;
+      dayOfWeek: number;
+      shortDay: string;
+      isWeekend: boolean;
+      weekIndex: number;
+    }> = [];
+
+    for (let d = 1; d <= totalDays; d++) {
+      const dateObj = new Date(y, m - 1, d);
+      const dow = dateObj.getDay();
+      const dtStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      result.push({
+        dateStr: dtStr,
+        dayNum: d,
+        dayOfWeek: dow,
+        shortDay: shortDayNames[dow],
+        isWeekend: dow === 0 || dow === 6,
+        weekIndex: Math.floor((d - 1) / 7),
+      });
+    }
+    return result;
+  }, [selectedMonthYear]);
+
+  // Filtered employees for Weekly & Monthly Matrix
+  const matrixEmployees = useMemo(() => {
+    return karyawanList
+      .filter((k) => selectedDepartment === 'all' || k.divisi === selectedDepartment)
+      .filter((k) => {
+        if (!searchQuery.trim()) return true;
+        const q = searchQuery.toLowerCase();
+        return (
+          (k.nik || '').toLowerCase().includes(q) ||
+          (k.nama || '').toLowerCase().includes(q) ||
+          (k.divisi && k.divisi.toLowerCase().includes(q)) ||
+          (k.jabatan && k.jabatan.toLowerCase().includes(q))
+        );
+      });
+  }, [karyawanList, selectedDepartment, searchQuery]);
+
+  // Initialize selectedMatrixNiks when karyawanList loads
+  useEffect(() => {
+    if (karyawanList.length > 0 && selectedMatrixNiks.length === 0) {
+      setSelectedMatrixNiks(karyawanList.map((k) => k.nik));
+    }
+  }, [karyawanList]);
+
+  // Stop mouse drag painting on global mouseup
+  useEffect(() => {
+    const handleUp = () => setIsMousePainting(false);
+    window.addEventListener('mouseup', handleUp);
+    return () => window.removeEventListener('mouseup', handleUp);
+  }, []);
+
+  // Short code label for compact monthly cell display
+  const getShortShiftCode = (shiftName?: string | null): string => {
+    const s = String(shiftName || '').trim();
+    if (!s || s === '-') return '+';
+    const lower = s.toLowerCase();
+    if (lower.includes('3b')) return 'S3b';
+    if (lower.includes('3a') || lower.includes('shift 3') || lower === '3') return 'S3a';
+    if (lower.includes('shift 2') || lower === '2') return 'S2';
+    if (lower.includes('shift 1') || lower === '1') return 'S1';
+    if (lower.includes('libur') || lower.includes('off')) return 'OFF';
+    if (lower.includes('cuti')) return 'CT';
+    if (lower.includes('sakit')) return 'SKT';
+    if (lower.includes('izin') || lower.includes('ijin')) return 'IZN';
+    return s.slice(0, 3).toUpperCase();
+  };
+
+  // Helper: Resolve Pola Reguler Shift (termasuk Shift 3 otomatis: Senin-Jumat = Shift 3a, Sabtu = Shift 3b)
+  const resolveRegulerShiftByDay = (pattern: string, dayOfWeek: number, weekIndex = 0, empIdx = 0): string => {
+    if (pattern === 'Shift 3' || pattern === 'S3_REGULER') {
+      // Aturan Shift 3 Reguler: Senin-Jumat = Shift 3a (12:00-21:00), Sabtu = Shift 3b (11:00-20:00)
+      return dayOfWeek === 6 ? 'Shift 3b' : 'Shift 3a';
+    }
+    if (pattern === 'ROTASI_MINGGUAN') {
+      return (weekIndex + empIdx) % 2 === 0 ? 'Shift 1' : 'Shift 2';
+    }
+    if (pattern === 'SPLIT_TIM_1_2') {
+      return empIdx % 2 === 0 ? 'Shift 1' : 'Shift 2';
+    }
+    return pattern;
+  };
+
+  // Paint a single cell in Monthly/Weekly matrix
+  const paintMatrixCell = (nik: string, dateStr: string, explicitShift?: string) => {
+    if (!userIsAdmin) return;
+    const rawBrush = explicitShift || activeBrushShift;
+    if (rawBrush === 'MODAL') {
+      const existing = rosterByNikDate.get(`${nik}_${dateStr}`);
+      if (existing) {
+        handleOpenEdit(existing);
+      } else {
+        const hrs = resolveShiftHours('Shift 1');
+        setEditingShift({
+          nik,
+          tanggal: dateStr,
+          shift: 'Shift 1',
+          jam_masuk: hrs.jamMasuk,
+          jam_pulang: hrs.jamPulang,
+          keterangan: 'Jadwal Reguler',
+        });
+        setIsEditModalOpen(true);
+      }
+      return;
+    }
+
+    const dow = new Date(dateStr).getDay();
+    const shiftToUse =
+      rawBrush === 'Shift 3'
+        ? dow === 0
+          ? 'Libur'
+          : dow === 6
+          ? 'Shift 3b'
+          : 'Shift 3a'
+        : rawBrush;
+
+    const key = `${nik}_${dateStr}`;
+    setMatrixDrafts((prev) => ({
+      ...prev,
+      [key]: {
+        nik,
+        tanggal: dateStr,
+        shift: shiftToUse,
+        keterangan: shiftToUse === 'Libur' ? 'Libur Rutin' : 'Jadwal Bulanan',
+      },
+    }));
+  };
+
+  // Fill 1 Full Month for a Single Employee Row in 1 Click (Default Pola Reguler: Libur Hari Minggu / OFF_0)
+  const fillSingleEmployeeMonth = (nik: string, empIdx: number, pattern: string, customOffRule?: string) => {
+    if (!userIsAdmin) return;
+    const offRule = customOffRule ?? employeeOffDayPref[nik] ?? 'OFF_0';
+    setMatrixDrafts((prev) => {
+      const next = { ...prev };
+      monthlyDays.forEach((day) => {
+        // Respect approved Cuti/Izin/Sakit
+        const activeLeave = cutiList.find(
+          (c) =>
+            c.status === 'Disetujui' &&
+            c.nik === nik &&
+            c.tgl_mulai <= day.dateStr &&
+            c.tgl_selesai >= day.dateStr
+        );
+        if (activeLeave) return;
+
+        let isOff = false;
+        if (offRule === 'OFF_WEEKEND') {
+          isOff = day.dayOfWeek === 0 || day.dayOfWeek === 6;
+        } else if (offRule === 'ROTATING_OFF') {
+          isOff = day.dayOfWeek === empIdx % 7;
+        } else if (offRule.startsWith('OFF_')) {
+          const targetDow = Number(offRule.replace('OFF_', ''));
+          isOff = day.dayOfWeek === targetDow;
+        }
+
+        const shiftVal = isOff
+          ? 'Libur'
+          : resolveRegulerShiftByDay(pattern, day.dayOfWeek, day.weekIndex, empIdx);
+
+        next[`${nik}_${day.dateStr}`] = {
+          nik,
+          tanggal: day.dateStr,
+          shift: shiftVal,
+          keterangan: isOff ? 'Libur Hari Minggu' : 'Jadwal Reguler Bulanan',
+        };
+      });
+      return next;
+    });
+  };
+
+  // Fill 1 Full Month for All Checked Employees at Once (with optional immediate DB save)
+  const handleBulkFillMonthlyMatrix = async (explicitPattern?: string, autoSave = false) => {
+    if (!userIsAdmin) return;
+    const targetEmps = matrixEmployees.filter((k) => selectedMatrixNiks.includes(k.nik));
+    if (targetEmps.length === 0) {
+      onShowToast('Centang minimal 1 karyawan pada tabel untuk diisi jadwal sebulan penuh', 'warning');
+      return;
+    }
+
+    const patternToApply = explicitPattern || bulkMonthShiftPattern;
+    if (explicitPattern) {
+      setBulkMonthShiftPattern(explicitPattern);
+    }
+
+    const newDraftEntries: Record<string, { nik: string; tanggal: string; shift: string; keterangan?: string }> = {
+      ...matrixDrafts,
+    };
+
+    targetEmps.forEach((emp, empIdx) => {
+      const personalOff = employeeOffDayPref[emp.nik];
+      const effectiveOffRule = personalOff || bulkMonthOffRule;
+
+      monthlyDays.forEach((day) => {
+        const activeLeave = cutiList.find(
+          (c) =>
+            c.status === 'Disetujui' &&
+            c.nik === emp.nik &&
+            c.tgl_mulai <= day.dateStr &&
+            c.tgl_selesai >= day.dateStr
+        );
+        if (activeLeave) return;
+
+        let isOff = false;
+        if (effectiveOffRule === 'OFF_WEEKEND') {
+          isOff = day.dayOfWeek === 0 || day.dayOfWeek === 6;
+        } else if (effectiveOffRule === 'ROTATING_OFF') {
+          isOff = day.dayOfWeek === empIdx % 7;
+        } else if (effectiveOffRule.startsWith('OFF_')) {
+          const targetDow = Number(effectiveOffRule.replace('OFF_', ''));
+          isOff = day.dayOfWeek === targetDow;
+        }
+
+        const shiftVal = isOff
+          ? 'Libur'
+          : resolveRegulerShiftByDay(patternToApply, day.dayOfWeek, day.weekIndex, empIdx);
+
+        newDraftEntries[`${emp.nik}_${day.dateStr}`] = {
+          nik: emp.nik,
+          tanggal: day.dateStr,
+          shift: shiftVal,
+          keterangan: isOff ? 'Libur Hari Minggu' : 'Jadwal Reguler Bulanan',
+        };
+      });
+    });
+
+    setMatrixDrafts(newDraftEntries);
+
+    if (autoSave) {
+      await handleSaveAllMatrixDrafts(newDraftEntries);
+    } else {
+      onShowToast(
+        `Berhasil mengisi tabel 1 bulan penuh (${targetEmps.length} karyawan × ${monthlyDays.length} hari). Klik tombol hijau "SIMPAN DATA SHIFT KE DATABASE" untuk menyimpan!`,
+        'info'
+      );
+    }
+  };
+
+  // Fill an entire Day Column (e.g. Tanggal Merah / Piket) for checked employees
+  const handleFillDayColumn = (dateStr: string) => {
+    if (!userIsAdmin || activeBrushShift === 'MODAL') return;
+    const dow = new Date(dateStr).getDay();
+    const shiftToUse =
+      activeBrushShift === 'Shift 3'
+        ? dow === 0
+          ? 'Libur'
+          : dow === 6
+          ? 'Shift 3b'
+          : 'Shift 3a'
+        : activeBrushShift;
+
+    const targetEmps =
+      selectedMatrixNiks.length > 0
+        ? matrixEmployees.filter((k) => selectedMatrixNiks.includes(k.nik))
+        : matrixEmployees;
+    setMatrixDrafts((prev) => {
+      const next = { ...prev };
+      targetEmps.forEach((emp) => {
+        next[`${emp.nik}_${dateStr}`] = {
+          nik: emp.nik,
+          tanggal: dateStr,
+          shift: shiftToUse,
+          keterangan: shiftToUse === 'Libur' ? 'Libur Bersama' : 'Jadwal Harian',
+        };
+      });
+      return next;
+    });
+  };
+
+  // Save all staged matrixDrafts to Supabase in 1 batch
+  const handleSaveAllMatrixDrafts = async (
+    overrideDrafts?: Record<string, { nik: string; tanggal: string; shift: string; keterangan?: string }>
+  ) => {
+    const sourceMap = overrideDrafts || matrixDrafts;
+    const draftValues = Object.values(sourceMap) as Array<{
+      nik: string;
+      tanggal: string;
+      shift: string;
+      keterangan?: string;
+    }>;
+    if (draftValues.length === 0) return;
+
+    setIsSavingMatrixDrafts(true);
+    try {
+      const payload: Partial<RosterShiftRecord>[] = draftValues.map((d) => {
+        const hrs = resolveShiftHours(d.shift);
+        return {
+          nik: d.nik,
+          tanggal: d.tanggal,
+          shift: d.shift,
+          jam_masuk: hrs.jamMasuk || '',
+          jam_pulang: hrs.jamPulang || '',
+          keterangan: d.keterangan || 'Jadwal Reguler Bulanan',
+        };
+      });
+
+      const res = await batchSaveRosterShifts(payload);
+      onShowToast(
+        `Berhasil menyimpan ${res.success} jadwal shift bulanan ke database! Presensi otomatis disinkronkan.`,
+        'success'
+      );
+      setMatrixDrafts({});
+      await loadData();
+    } catch (err: any) {
+      onShowToast(`Gagal menyimpan perubahan matriks: ${err?.message || 'Error'}`, 'error');
+    } finally {
+      setIsSavingMatrixDrafts(false);
+    }
+  };
+
+  const handleChangeMonth = (offset: number) => {
+    const [y, m] = selectedMonthYear.split('-').map(Number);
+    const d = new Date(y, m - 1 + offset, 1);
+    setSelectedMonthYear(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  };
 
   // Open Edit Modal for existing or new shift
   const handleOpenEdit = (shift?: RosterShiftRecord) => {
@@ -1295,16 +1640,35 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
 
           {/* Action Buttons */}
           <div className="flex flex-wrap items-center gap-2">
-            {/* Generator & Download Template CSV (Range Tanggal & Pilih Karyawan) */}
-            <button
-              type="button"
-              onClick={handleOpenTemplateModal}
-              className="px-3 sm:px-3.5 py-2 rounded-xl text-xs font-bold border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
-              title="Buat template jadwal shift dengan pilihan range tanggal & daftar karyawan"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-500" />
-              <span>Template Jadwal Shift</span>
-            </button>
+            {/* Quick Top Save Button when Monthly Matrix has unsaved drafts (Admin Only) */}
+            {userIsAdmin && Object.keys(matrixDrafts).length > 0 && (
+              <button
+                type="button"
+                onClick={() => handleSaveAllMatrixDrafts()}
+                disabled={isSavingMatrixDrafts}
+                className="px-4 py-2 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/25 flex items-center gap-1.5 cursor-pointer animate-pulse"
+              >
+                <Check className="w-4 h-4" />
+                <span>
+                  {isSavingMatrixDrafts
+                    ? 'Menyimpan...'
+                    : `💾 Simpan Data Shift (${Object.keys(matrixDrafts).length})`}
+                </span>
+              </button>
+            )}
+
+            {/* Generator & Download Template CSV (Admin Only) */}
+            {userIsAdmin && (
+              <button
+                type="button"
+                onClick={handleOpenTemplateModal}
+                className="px-3 sm:px-3.5 py-2 rounded-xl text-xs font-bold border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                title="Buat template jadwal shift dengan pilihan range tanggal & daftar karyawan"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-500" />
+                <span>Template Jadwal Shift</span>
+              </button>
+            )}
 
             {/* Export Roster CSV */}
             <button
@@ -1520,7 +1884,31 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
         </div>
 
         {/* Right: View Mode Toggle */}
-        <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 self-start md:self-auto">
+        <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 self-start md:self-auto">
+          <button
+            type="button"
+            onClick={() => setViewMode('monthly')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer ${
+              viewMode === 'monthly'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <CalendarDays className="w-3.5 h-3.5" />
+            <span>Matriks Sebulan (1–31)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('weekly')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+              viewMode === 'weekly'
+                ? 'bg-white dark:bg-[#131d31] text-primary-600 dark:text-primary-400 shadow-xs'
+                : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>Mingguan</span>
+          </button>
           <button
             type="button"
             onClick={() => setViewMode('table')}
@@ -1531,7 +1919,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
             }`}
           >
             <TableIcon className="w-3.5 h-3.5" />
-            <span>Tabel</span>
+            <span>Tabel Harian</span>
           </button>
           <button
             type="button"
@@ -1544,18 +1932,6 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
           >
             <LayoutGrid className="w-3.5 h-3.5" />
             <span>Kartu</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('weekly')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-              viewMode === 'weekly'
-                ? 'bg-white dark:bg-[#131d31] text-primary-600 dark:text-primary-400 shadow-xs'
-                : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <CalendarDays className="w-3.5 h-3.5" />
-            <span>Mingguan</span>
           </button>
         </div>
       </div>
@@ -1879,11 +2255,515 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
           </div>
         )}
         </div>
+      ) : viewMode === 'monthly' ? (
+        /* INTERACTIVE MONTHLY SPREADSHEET MATRIX (1 BULAN PENUH x BANYAK KARYAWAN) */
+        <div className="bg-white dark:bg-[#131d31] rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm p-3 sm:p-5 space-y-4 overflow-hidden select-none relative">
+          {/* Pola Reguler Information Banner */}
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/70 dark:border-indigo-800/60 text-xs">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-700 dark:text-slate-200">
+              <span className="font-black text-indigo-700 dark:text-indigo-300">📋 Aturan Pola Reguler Bulanan:</span>
+              <span className="font-bold">• Libur Rutin: <strong className="text-rose-600 dark:text-rose-400">Hari Minggu (OFF)</strong></span>
+              <span className="font-mono font-bold text-blue-700 dark:text-blue-300">• Shift 1: 08:00 - 17:00</span>
+              <span className="font-mono font-bold text-indigo-700 dark:text-indigo-300">• Shift 2: 09:00 - 18:00</span>
+              <span className="font-mono font-bold text-purple-700 dark:text-purple-300">
+                • Shift 3: <span className="underline">3a</span> 12:00 - 21:00 (Senin–Jumat) &amp; <span className="underline text-teal-700 dark:text-teal-300">3b</span> 11:00 - 20:00 (Sabtu)
+              </span>
+            </div>
+            {!userIsAdmin && (
+              <span className="text-[11px] font-bold text-slate-500 italic">
+                🔒 Pengaturan jadwal dikunci khusus Admin / Superadmin
+              </span>
+            )}
+          </div>
+
+          {/* Row 1: Month Selector & Unsaved Drafts Action Bar */}
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleChangeMonth(-1)}
+                className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer"
+                title="Bulan Sebelumnya"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <input
+                type="month"
+                value={selectedMonthYear}
+                onChange={(e) => e.target.value && setSelectedMonthYear(e.target.value)}
+                className="px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-black bg-indigo-50/70 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 font-mono cursor-pointer"
+              />
+              <button
+                type="button"
+                onClick={() => handleChangeMonth(1)}
+                className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer"
+                title="Bulan Berikutnya"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const now = new Date();
+                  setSelectedMonthYear(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+                }}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 cursor-pointer"
+              >
+                Bulan Ini
+              </button>
+              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 ml-1">
+                ({monthlyDays.length} Hari × {matrixEmployees.length} Karyawan)
+              </span>
+            </div>
+
+            {/* Save / Reset Drafts Buttons */}
+            {userIsAdmin && (
+              <div className="flex flex-wrap items-center gap-2">
+                {Object.keys(matrixDrafts).length > 0 && (
+                  <>
+                    <span className="px-2.5 py-1.5 rounded-xl bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 text-xs font-extrabold">
+                      ⚡ {Object.keys(matrixDrafts).length} Jadwal Belum Disimpan
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setMatrixDrafts({})}
+                      disabled={isSavingMatrixDrafts}
+                      className="px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
+                    >
+                      Batal / Reset Draft
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleSaveAllMatrixDrafts()}
+                  disabled={isSavingMatrixDrafts || Object.keys(matrixDrafts).length === 0}
+                  className={`px-4 py-2 rounded-xl text-xs font-black text-white shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-40 transition-all ${
+                    Object.keys(matrixDrafts).length > 0
+                      ? 'bg-emerald-600 hover:bg-emerald-500 ring-2 ring-emerald-400/50'
+                      : 'bg-indigo-600 hover:bg-indigo-500'
+                  }`}
+                >
+                  {isSavingMatrixDrafts ? (
+                    <>
+                      <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Menyimpan {Object.keys(matrixDrafts).length} Jadwal...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>
+                        💾 Simpan Data Shift ({Object.keys(matrixDrafts).length})
+                      </span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Row 2: SMART BULK GENERATOR SEBULAN PENUH + KUAS SHIFT INTERAKTIF (ADMIN ONLY) */}
+          {userIsAdmin && (
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-3 bg-slate-50/90 dark:bg-slate-900/70 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800">
+              {/* Left 7 Cols: Generator Massal 1 Bulan untuk Semua Karyawan yang Dicentang */}
+              <div className="xl:col-span-7 space-y-2.5 pr-0 xl:pr-3 xl:border-r border-slate-200/80 dark:border-slate-800">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-xs font-black text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <span>1. Atur Shift Bulanan Massal ({selectedMatrixNiks.length} Staf Tercentang)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedMatrixNiks(matrixEmployees.map((k) => k.nik))}
+                      className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-indigo-400 cursor-pointer"
+                    >
+                      Centang Semua ({matrixEmployees.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedMatrixNiks([])}
+                      className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-rose-500 cursor-pointer"
+                    >
+                      Kosongkan
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={bulkMonthShiftPattern}
+                    onChange={(e) => setBulkMonthShiftPattern(e.target.value)}
+                    className="px-3 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100"
+                    title="Pilih Pola Shift Bulanan"
+                  >
+                    <option value="Shift 1">Pola Reguler: Shift 1 (08:00 - 17:00)</option>
+                    <option value="Shift 2">Pola Reguler: Shift 2 (09:00 - 18:00)</option>
+                    <option value="Shift 3">Pola Reguler: Shift 3 (Sen-Jum 3a 12-21 | Sabtu 3b 11-20)</option>
+                    <option value="Shift 3a">Khusus: Full Shift 3a (12:00 - 21:00)</option>
+                    <option value="Shift 3b">Khusus: Full Shift 3b (11:00 - 20:00)</option>
+                    <option value="ROTASI_MINGGUAN">Pola: Rotasi Mingguan (Minggu 1 S1, Minggu 2 S2)</option>
+                    <option value="SPLIT_TIM_1_2">Pola: Bagi 2 Tim Otomatis (50% Shift 1, 50% Shift 2)</option>
+                  </select>
+
+                  <select
+                    value={bulkMonthOffRule}
+                    onChange={(e) => setBulkMonthOffRule(e.target.value)}
+                    className="px-3 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100"
+                    title="Pilih Aturan Hari Libur Rutin"
+                  >
+                    <option value="OFF_0">Libur Setiap Hari Minggu (Pola Reguler)</option>
+                    <option value="OFF_WEEKEND">Libur Sabtu &amp; Minggu (5 Hari Kerja)</option>
+                    <option value="ROTATING_OFF">⚡ Libur Bergilir Otomatis (Sen–Min Merata)</option>
+                    <option value="OFF_1">Libur Setiap Senin</option>
+                    <option value="OFF_2">Libur Setiap Selasa</option>
+                    <option value="OFF_3">Libur Setiap Rabu</option>
+                    <option value="OFF_4">Libur Setiap Kamis</option>
+                    <option value="OFF_5">Libur Setiap Jumat</option>
+                    <option value="OFF_6">Libur Setiap Sabtu</option>
+                    <option value="NO_OFF">Tanpa Libur (Full Sebulan)</option>
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={() => handleBulkFillMonthlyMatrix(undefined, false)}
+                    className="px-3.5 py-2 rounded-xl text-xs font-black bg-indigo-600 hover:bg-indigo-500 text-white shadow-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                    title="Isi ke tabel matriks untuk ditinjau/diedit sebelum disimpan"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Isi ke Tabel Sebulan</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleBulkFillMonthlyMatrix(undefined, true)}
+                    disabled={isSavingMatrixDrafts}
+                    className="px-3.5 py-2 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 disabled:opacity-50"
+                    title="Isi jadwal sebulan penuh dan langsung simpan ke database"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Isi &amp; Langsung Simpan</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Right 5 Cols: Mode Kuas Cepat (Klik / Tahan-Geser pada Sel Tanggal) */}
+              <div className="xl:col-span-5 space-y-2">
+                <div className="text-xs font-black text-slate-800 dark:text-slate-100 flex items-center justify-between">
+                  <span>2. Kuas Klik / Geser Cepat di Sel Tanggal:</span>
+                  <span className="text-[10px] font-normal text-slate-500">
+                    Klik atau tahan-geser mouse di kotak tanggal 1–31
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {[
+                    { key: 'Shift 1', code: 'S1 (08-17)' },
+                    { key: 'Shift 2', code: 'S2 (09-18)' },
+                    { key: 'Shift 3', code: 'S3 Auto (3a/3b)' },
+                    { key: 'Shift 3a', code: 'S3a (12-21)' },
+                    { key: 'Shift 3b', code: 'S3b (11-20)' },
+                    { key: 'Libur', code: 'OFF (Libur)' },
+                    { key: 'Cuti', code: 'CT (Cuti)' },
+                    { key: 'Izin', code: 'IZN (Izin)' },
+                    { key: 'MODAL', code: '🔍 Edit Detail' },
+                  ].map((b) => {
+                    const isActive = activeBrushShift === b.key;
+                    const bStyle = getShiftBadgeStyle(b.key === 'Shift 3' ? 'Shift 3a' : b.key);
+                    return (
+                      <button
+                        key={b.key}
+                        type="button"
+                        onClick={() => setActiveBrushShift(b.key)}
+                        className={`px-2.5 py-1 rounded-xl text-[11px] font-extrabold border transition-all cursor-pointer ${
+                          isActive
+                            ? 'ring-2 ring-indigo-500 border-indigo-600 bg-indigo-600 text-white shadow-xs'
+                            : b.key === 'MODAL'
+                            ? 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                            : `${bStyle.bg} ${bStyle.text} opacity-80 hover:opacity-100`
+                        }`}
+                      >
+                        {b.code}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Row 3: Spreadsheet Table 1..31 */}
+          <div className="overflow-x-auto border border-slate-200/80 dark:border-slate-800 rounded-2xl">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
+                  {/* Sticky Left Column: Employee + Quick 1-Month Row Controls */}
+                  <th className="sticky left-0 z-20 bg-slate-50 dark:bg-slate-900 py-2.5 px-3 font-black text-slate-600 dark:text-slate-300 uppercase text-[10px] min-w-[265px] sm:min-w-[310px] border-r border-slate-200 dark:border-slate-800 shadow-2xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span>Karyawan &amp; Shift Bulanan</span>
+                      <span className="text-[9px] text-slate-400 font-normal">Klik S1 / S2 / S3 (Minggu Off)</span>
+                    </div>
+                  </th>
+
+                  {/* Columns 1..31 */}
+                  {monthlyDays.map((d) => {
+                    const isToday = d.dateStr === new Date().toISOString().slice(0, 10);
+                    return (
+                      <th
+                        key={d.dateStr}
+                        onClick={() => userIsAdmin && handleFillDayColumn(d.dateStr)}
+                        title={
+                          userIsAdmin
+                            ? `Klik tanggal ${d.dayNum} untuk mengisi "${activeBrushShift}" ke seluruh staf terpilih pada hari ini`
+                            : d.dateStr
+                        }
+                        className={`py-2 px-1 text-center min-w-[38px] border-r border-slate-100 dark:border-slate-800/70 transition-colors ${
+                          userIsAdmin ? 'cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/40' : ''
+                        } ${
+                          isToday
+                            ? 'bg-indigo-600/15 text-indigo-700 dark:text-indigo-300 font-black'
+                            : d.isWeekend
+                            ? 'bg-rose-50/70 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 font-extrabold'
+                            : 'text-slate-600 dark:text-slate-400 font-bold'
+                        }`}
+                      >
+                        <div className="text-[9px] uppercase opacity-75">{d.shortDay}</div>
+                        <div className="text-[11px] font-mono">{String(d.dayNum).padStart(2, '0')}</div>
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-sans">
+                {matrixEmployees.map((k, empIdx) => {
+                  const isSelected = selectedMatrixNiks.includes(k.nik);
+                  // Default Pola Reguler: Libur Hari Minggu ('OFF_0')
+                  const currentOffPref = employeeOffDayPref[k.nik] || 'OFF_0';
+
+                  return (
+                    <tr
+                      key={k.nik}
+                      className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors"
+                    >
+                      {/* Sticky Left Employee & Row Quick-Fill Controls */}
+                      <td className="sticky left-0 z-10 bg-white dark:bg-[#131d31] py-2 px-2.5 border-r border-slate-200 dark:border-slate-800 shadow-2xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="flex items-center gap-2 min-w-0 cursor-pointer">
+                            {userIsAdmin && (
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedMatrixNiks((prev) => [...prev, k.nik]);
+                                  } else {
+                                    setSelectedMatrixNiks((prev) => prev.filter((id) => id !== k.nik));
+                                  }
+                                }}
+                                className="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 dark:border-slate-700 cursor-pointer shrink-0"
+                              />
+                            )}
+                            <div className="min-w-0">
+                              <div className="font-extrabold text-xs text-slate-900 dark:text-white truncate max-w-[125px] sm:max-w-[150px]">
+                                {k.nama}
+                              </div>
+                              <div className="text-[10px] font-mono text-slate-400 truncate">
+                                {k.nik} • {k.divisi || 'Warehouse'}
+                              </div>
+                            </div>
+                          </label>
+
+                          {/* Per-Employee 1-Click Full Month Fill Buttons (S1, S2, S3 Auto 3a/3b) */}
+                          {userIsAdmin && (
+                            <div className="flex items-center gap-1 shrink-0">
+                              {[
+                                { label: 'S1', pattern: 'Shift 1', desc: 'Set 1 bulan penuh Shift 1 (08:00-17:00, Minggu Libur)' },
+                                { label: 'S2', pattern: 'Shift 2', desc: 'Set 1 bulan penuh Shift 2 (09:00-18:00, Minggu Libur)' },
+                                { label: 'S3', pattern: 'Shift 3', desc: 'Set 1 bulan penuh Shift 3 (Sen-Jum 3a 12:00-21:00, Sabtu 3b 11:00-20:00, Minggu Libur)' },
+                              ].map((sOpt) => (
+                                <button
+                                  key={sOpt.pattern}
+                                  type="button"
+                                  onClick={() => fillSingleEmployeeMonth(k.nik, empIdx, sOpt.pattern)}
+                                  title={`${k.nama}: ${sOpt.desc}`}
+                                  className="px-1.5 py-0.5 rounded-md text-[10px] font-black bg-slate-100 dark:bg-slate-800 hover:bg-indigo-600 hover:text-white text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+                                >
+                                  {sOpt.label}
+                                </button>
+                              ))}
+                              <select
+                                value={currentOffPref}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setEmployeeOffDayPref((prev) => ({ ...prev, [k.nik]: val }));
+                                  fillSingleEmployeeMonth(k.nik, empIdx, bulkMonthShiftPattern, val);
+                                }}
+                                title={`Pilih hari libur rutin untuk ${k.nama} (Default: Hari Minggu)`}
+                                className="px-1 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 cursor-pointer"
+                              >
+                                <option value="OFF_0">Off Min</option>
+                                <option value="OFF_1">Off Sen</option>
+                                <option value="OFF_2">Off Sel</option>
+                                <option value="OFF_3">Off Rab</option>
+                                <option value="OFF_4">Off Kam</option>
+                                <option value="OFF_5">Off Jum</option>
+                                <option value="OFF_6">Off Sab</option>
+                                <option value="OFF_WEEKEND">Sab-Min</option>
+                                <option value="NO_OFF">Full</option>
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* 30/31 Day Cells */}
+                      {monthlyDays.map((day) => {
+                        const cellKey = `${k.nik}_${day.dateStr}`;
+                        const draft = matrixDrafts[cellKey];
+                        const savedRec = rosterByNikDate.get(cellKey);
+                        const effectiveShift = draft ? draft.shift : savedRec?.shift || '';
+                        const shortCode = getShortShiftCode(effectiveShift);
+                        const badgeStyle = getShiftBadgeStyle(effectiveShift);
+                        const isDraft = Boolean(draft);
+
+                        return (
+                          <td
+                            key={day.dateStr}
+                            onMouseDown={() => {
+                              if (!userIsAdmin) return;
+                              setIsMousePainting(true);
+                              paintMatrixCell(k.nik, day.dateStr);
+                            }}
+                            onMouseEnter={() => {
+                              if (isMousePainting && userIsAdmin && activeBrushShift !== 'MODAL') {
+                                paintMatrixCell(k.nik, day.dateStr);
+                              }
+                            }}
+                            className={`p-1 text-center border-r border-slate-100 dark:border-slate-800/50 ${
+                              day.isWeekend ? 'bg-rose-50/20 dark:bg-rose-950/10' : ''
+                            }`}
+                          >
+                            <div
+                              title={`${k.nama} (${day.dateStr}): ${effectiveShift || 'Belum diatur'}${
+                                isDraft ? ' [Draft Belum Disimpan]' : ''
+                              }`}
+                              className={`w-full py-1.5 px-0.5 rounded-lg text-[10px] font-black border transition-all relative ${
+                                effectiveShift
+                                  ? `${badgeStyle.bg} ${badgeStyle.text}`
+                                  : 'border-dashed border-slate-200 dark:border-slate-800 text-slate-300 dark:text-slate-600 hover:border-indigo-400'
+                              } ${userIsAdmin ? 'cursor-pointer hover:scale-105' : ''} ${
+                                isDraft ? 'ring-2 ring-amber-400 dark:ring-amber-500' : ''
+                              }`}
+                            >
+                              {shortCode}
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Bottom Save Footer inside Card */}
+          {userIsAdmin && (
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                {Object.keys(matrixDrafts).length > 0 ? (
+                  <span className="font-extrabold text-amber-600 dark:text-amber-400">
+                    ⚡ Terdapat {Object.keys(matrixDrafts).length} jadwal yang sudah diatur di tabel dan siap disimpan ke database.
+                  </span>
+                ) : (
+                  <span>
+                    Pilih tombol <strong>S1 / S2 / S3</strong> pada baris karyawan atau klik <strong>Isi ke Tabel Sebulan</strong>, lalu klik tombol <strong>Simpan Data Shift</strong>.
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                {Object.keys(matrixDrafts).length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setMatrixDrafts({})}
+                    disabled={isSavingMatrixDrafts}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
+                  >
+                    Batal / Reset Draft
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleSaveAllMatrixDrafts()}
+                  disabled={isSavingMatrixDrafts || Object.keys(matrixDrafts).length === 0}
+                  className="px-5 py-2.5 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/20 flex items-center gap-2 cursor-pointer disabled:opacity-40 transition-all"
+                >
+                  {isSavingMatrixDrafts ? (
+                    <>
+                      <RotateCcw className="w-4 h-4 animate-spin" />
+                      <span>Menyimpan {Object.keys(matrixDrafts).length} Jadwal ke Database...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>💾 Simpan Data Shift ke Database ({Object.keys(matrixDrafts).length})</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STICKY FLOATING SAVE BAR AT BOTTOM OF SCREEN WHEN DRAFTS EXIST */}
+          {userIsAdmin && Object.keys(matrixDrafts).length > 0 && (
+            <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-2xl bg-slate-900/95 dark:bg-slate-950/95 text-white px-4 py-3 rounded-2xl shadow-2xl border border-emerald-500/50 flex flex-wrap items-center justify-between gap-3 backdrop-blur-md">
+              <div className="flex items-center gap-2.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping shrink-0" />
+                <div className="text-xs">
+                  <div className="font-black text-emerald-300">
+                    {Object.keys(matrixDrafts).length} Jadwal Shift Bulanan Siap Disimpan
+                  </div>
+                  <div className="text-[11px] text-slate-300">
+                    Klik tombol Simpan di samping untuk menyimpan permanen ke database
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 ml-auto">
+                <button
+                  type="button"
+                  onClick={() => setMatrixDrafts({})}
+                  disabled={isSavingMatrixDrafts}
+                  className="px-3 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-rose-950 text-slate-300 hover:text-rose-300 border border-slate-700 cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaveAllMatrixDrafts()}
+                  disabled={isSavingMatrixDrafts}
+                  className="px-4 py-2 rounded-xl text-xs font-black bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-lg flex items-center gap-1.5 cursor-pointer"
+                >
+                  {isSavingMatrixDrafts ? (
+                    <>
+                      <RotateCcw className="w-4 h-4 animate-spin" />
+                      <span>Menyimpan...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4 stroke-[3]" />
+                      <span>💾 SIMPAN DATA SHIFT ({Object.keys(matrixDrafts).length})</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       ) : (
         /* WEEKLY MATRIX VIEW */
         <div className="bg-white dark:bg-[#131d31] rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm p-4 sm:p-5 overflow-hidden">
           {/* Weekly Header Navigator */}
-          <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -1939,75 +2819,64 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-sans">
-                {karyawanList
-                  .filter((k) => selectedDepartment === 'all' || k.divisi === selectedDepartment)
-                  .filter((k) => {
-                    if (!searchQuery.trim()) return true;
-                    const q = searchQuery.toLowerCase();
-                    return (
-                      (k.nik || '').toLowerCase().includes(q) ||
-                      (k.nama || '').toLowerCase().includes(q) ||
-                      (k.divisi && k.divisi.toLowerCase().includes(q))
-                    );
-                  })
-                  .map((k) => (
-                    <tr key={k.nik} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20">
-                      <td className="py-2.5 px-3">
-                        <div className="font-extrabold text-slate-900 dark:text-white truncate max-w-[130px]">
-                          {k.nama}
-                        </div>
-                        <div className="text-[10px] font-mono text-slate-400">{k.nik}</div>
-                      </td>
+                {matrixEmployees.map((k) => (
+                  <tr key={k.nik} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20">
+                    <td className="py-2.5 px-3">
+                      <div className="font-extrabold text-slate-900 dark:text-white truncate max-w-[130px]">
+                        {k.nama}
+                      </div>
+                      <div className="text-[10px] font-mono text-slate-400">{k.nik}</div>
+                    </td>
 
-                      {weeklyDays.map((day) => {
-                        const shiftRec = rosterByNikDate.get(`${k.nik}_${day.dateStr}`);
-                        const sName = shiftRec?.shift || '-';
-                        const badgeStyle = getShiftBadgeStyle(sName);
+                    {weeklyDays.map((day) => {
+                      const shiftRec = rosterByNikDate.get(`${k.nik}_${day.dateStr}`);
+                      const sName = shiftRec?.shift || '-';
+                      const badgeStyle = getShiftBadgeStyle(sName);
 
-                        return (
-                          <td key={day.dateStr} className="py-2.5 px-1.5 text-center">
-                            {shiftRec ? (
-                              <button
-                                type="button"
-                                onClick={() => userIsAdmin && handleOpenEdit(shiftRec)}
-                                className={`w-full py-1.5 px-1 rounded-xl text-[11px] font-extrabold border transition-all truncate block ${badgeStyle.bg} ${badgeStyle.text} ${
-                                  userIsAdmin ? 'cursor-pointer hover:opacity-80' : 'cursor-default'
-                                }`}
-                                title={
-                                  userIsAdmin
-                                    ? `Klik untuk edit shift ${k.nama} pada ${day.dateStr}`
-                                    : undefined
-                                }
-                              >
-                                {sName}
-                              </button>
-                            ) : userIsAdmin ? (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingShift({
-                                    nik: k.nik,
-                                    tanggal: day.dateStr,
-                                    shift: 'Shift 1',
-                                    jam_masuk: '08:00',
-                                    jam_pulang: '17:00',
-                                    keterangan: '',
-                                  });
-                                  setIsEditModalOpen(true);
-                                }}
-                                className="w-full py-1 px-1 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-slate-300 dark:text-slate-600 hover:border-primary-400 hover:text-primary-500 text-[10px] font-bold cursor-pointer"
-                                title={`Atur shift untuk ${k.nama} (${day.dateStr})`}
-                              >
-                                + Shift
-                              </button>
-                            ) : (
-                              <span className="text-slate-300 dark:text-slate-700">-</span>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
+                      return (
+                        <td key={day.dateStr} className="py-2.5 px-1.5 text-center">
+                          {shiftRec ? (
+                            <button
+                              type="button"
+                              onClick={() => userIsAdmin && handleOpenEdit(shiftRec)}
+                              className={`w-full py-1.5 px-1 rounded-xl text-[11px] font-extrabold border transition-all truncate block ${badgeStyle.bg} ${badgeStyle.text} ${
+                                userIsAdmin ? 'cursor-pointer hover:opacity-80' : 'cursor-default'
+                              }`}
+                              title={
+                                userIsAdmin
+                                  ? `Klik untuk edit shift ${k.nama} pada ${day.dateStr}`
+                                  : undefined
+                              }
+                            >
+                              {sName}
+                            </button>
+                          ) : userIsAdmin ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingShift({
+                                  nik: k.nik,
+                                  tanggal: day.dateStr,
+                                  shift: 'Shift 1',
+                                  jam_masuk: '08:00',
+                                  jam_pulang: '17:00',
+                                  keterangan: '',
+                                });
+                                setIsEditModalOpen(true);
+                              }}
+                              className="w-full py-1 px-1 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-slate-300 dark:text-slate-600 hover:border-primary-400 hover:text-primary-500 text-[10px] font-bold cursor-pointer"
+                              title={`Atur shift untuk ${k.nama} (${day.dateStr})`}
+                            >
+                              + Shift
+                            </button>
+                          ) : (
+                            <span className="text-slate-300 dark:text-slate-700">-</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.22",
-  "versionCode": 282,
+  "version": "v2.6.23",
+  "versionCode": 283,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v282-1640",
-  "releaseTitle": "WMS v2.6.22 — Optimalisasi Egress & Log Ingestion 30%",
+  "buildHash": "wms-261101-v283-1037",
+  "releaseTitle": "WMS v2.6.23 — Pola Reguler Shift Bulanan (Shift 1, Shift 2, Shift 3a/3b, Minggu Off) & Sticky Save Bar",
   "releaseNotes": [
-    "Tekan Egress Log Produk: Eliminasi raw_payload JSONB pada query mutasi menghemat bandwidth hingga 80%",
-    "Cerdas Delta Polling Notifikasi: Filter timestamp created_at mencegah re-download pesanan berulang",
-    "Throttle Background Chat Sync: Interval sinkronisasi diperpanjang ke 60s hemat 75% request wms_system_docs"
+    "Aturan baku Pola Reguler Bulanan: Libur Hari Minggu (OFF), Shift 1 (08:00-17:00), Shift 2 (09:00-18:00), serta Shift 3 otomatis memetakan Senin-Jumat ke 3a (12:00-21:00) dan Sabtu ke 3b (11:00-20:00)",
+    "Tombol Simpan Data Shift tersedia di 4 posisi: Floating Bar Melayang di bawah layar, Header Utama, Generator Massal (Isi & Langsung Simpan), serta Footer Tabel",
+    "Pengaturan, Generator, Template, dan Edit Shift dikunci ketat khusus Admin / Superadmin (Operator hanya Mode Tinjau / Read-Only)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.22",
+    "versionCode": 282,
+    "buildDate": "1 November 2026",
+    "buildHash": "wms-261101-v282-0936",
+    "releaseTitle": "WMS v2.6.22 — Matriks Spreadsheet Roster 1 Bulan Penuh (Multi-Karyawan & Kuas Shift Cepat)",
+    "releaseNotes": [
+      "Tampilan baru Matriks Sebulan (Tanggal 1-31 x Seluruh Karyawan) di menu Roster Shift tanpa perlu edit satu-satu atau import CSV",
+      "Generator Massal 1 Bulan dengan fitur Bagi Hari Libur Bergilir Otomatis (Senin-Minggu merata antar staf), Rotasi Mingguan, dan Bagi 2 Tim",
+      "Fitur Set Cepat 1 Bulan per baris karyawan (S1/S2/3A + Hari Off individu) serta Mode Kuas Klik & Geser (Drag Paint) di sel tanggal dengan 1-Klik Simpan Semua"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.21",
     "versionCode": 281,
@@ -121,19 +134,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Kirim Tugas Picking Massal: Menambahkan fitur seleksi multi-SJ dan broadcast WhatsApp massal ke Grup Gudang serta pengiriman tugas picking massal ke aplikasi dari Distribusi Store Tab",
       "Pembaruan Picking Tasks: Dukungan aksi massal kirim WA Picking untuk batch Surat Jalan",
       "Sinkronisasi Antigravity & AI Studio: Menggabungkan commit terbaru dari Google AI Studio dengan rilis live Antigravity v2.6.14 ke v2.6.15"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.14",
-    "versionCode": 274,
-    "buildDate": "31 Oktober 2026",
-    "buildHash": "wms-261031-v274-1052",
-    "releaseTitle": "WMS v2.6.14 — Sinkronisasi Otomatis Realtime Data Katalog & Inventori Multi-Perangkat",
-    "releaseNotes": [
-      "Sinkronisasi Realtime Katalog: Menambahkan broadcast event 'catalog_updated' via Supabase Realtime WebSocket saat update database produk selesai",
-      "Auto-Reload Inventori: Hook useInventoryStock dan InventoryView kini otomatis merefresh stok fisik seketika saat menerima event pembaruan katalog tanpa perlu klik tombol refresh manual",
-      "Low-Egress Background Sync: Perangkat user lain otomatis mendeteksi pembaruan katalog dan menyinkronkan data tampilan secara live"
     ],
     "minSupportedVersion": "v2.0.0"
   }

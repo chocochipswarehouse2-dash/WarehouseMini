@@ -6905,10 +6905,24 @@ export async function saveRosterShift(record: Partial<RosterShiftRecord>): Promi
   const sb = getSupabaseClient();
   const rawNik = (record.nik || '').trim().toUpperCase();
   const rawTanggal = (record.tanggal || '').trim();
-  const cleanShift = (record.shift || 'Shift 1').trim();
+  let cleanShift = (record.shift || 'Shift 1').trim();
 
   if (!rawNik) throw new Error('NIK karyawan wajib diisi');
   if (!rawTanggal) throw new Error('Tanggal shift wajib diisi');
+
+  // Jika input adalah "Shift 3" atau "3" secara umum, otomatis petakan Senin-Jumat -> Shift 3a (12:00-21:00) dan Sabtu -> Shift 3b (11:00-20:00)
+  const rawLower = cleanShift.toLowerCase();
+  if (rawLower === 'shift 3' || rawLower === 'shift3' || rawLower === '3') {
+    const dt = new Date(rawTanggal);
+    const dow = dt.getDay(); // 0 = Minggu, 6 = Sabtu
+    if (dow === 6) {
+      cleanShift = 'Shift 3b';
+    } else if (dow === 0) {
+      cleanShift = 'Libur';
+    } else {
+      cleanShift = 'Shift 3a';
+    }
+  }
 
   const sLower = cleanShift.toLowerCase();
   let defaultStart = '08:00';
@@ -6916,10 +6930,13 @@ export async function saveRosterShift(record: Partial<RosterShiftRecord>): Promi
   if (sLower.includes('shift 2') || sLower === '2') {
     defaultStart = '09:00';
     defaultEnd = '18:00';
-  } else if (sLower.includes('shift 3') || sLower === '3') {
+  } else if (sLower.includes('3b')) {
+    defaultStart = '11:00';
+    defaultEnd = '20:00';
+  } else if (sLower.includes('3a') || sLower.includes('shift 3') || sLower === '3') {
     defaultStart = '12:00';
     defaultEnd = '21:00';
-  } else if (sLower.includes('libur') || sLower.includes('off') || sLower.includes('cuti') || sLower.includes('izin')) {
+  } else if (sLower.includes('libur') || sLower.includes('off') || sLower.includes('cuti') || sLower.includes('izin') || sLower.includes('sakit')) {
     defaultStart = '';
     defaultEnd = '';
   }
@@ -6928,10 +6945,10 @@ export async function saveRosterShift(record: Partial<RosterShiftRecord>): Promi
   let jamMasuk = record.jam_masuk ? String(record.jam_masuk).replace(/\./g, ':').trim() : '';
   let jamPulang = record.jam_pulang ? String(record.jam_pulang).replace(/\./g, ':').trim() : '';
 
-  if (!jamMasuk && !sLower.includes('libur') && !sLower.includes('cuti') && !sLower.includes('izin')) {
+  if (!jamMasuk && !sLower.includes('libur') && !sLower.includes('off') && !sLower.includes('cuti') && !sLower.includes('izin') && !sLower.includes('sakit')) {
     jamMasuk = defaultStart;
   }
-  if (!jamPulang && !sLower.includes('libur') && !sLower.includes('cuti') && !sLower.includes('izin')) {
+  if (!jamPulang && !sLower.includes('libur') && !sLower.includes('off') && !sLower.includes('cuti') && !sLower.includes('izin') && !sLower.includes('sakit')) {
     jamPulang = defaultEnd;
   }
 
@@ -7059,24 +7076,30 @@ export async function saveRosterShift(record: Partial<RosterShiftRecord>): Promi
 }
 
 /**
- * Batch save/import roster shift schedules (CSV Import or multi-staff assignment)
+ * Batch save/import roster shift schedules (CSV Import or multi-staff monthly matrix assignment)
+ * Processes in parallel chunks of 15 for fast full-month saving.
  */
 export async function batchSaveRosterShifts(
   records: Partial<RosterShiftRecord>[]
 ): Promise<{ success: number; failed: number; errors: string[] }> {
-  const sb = getSupabaseClient();
   let successCount = 0;
   let failCount = 0;
   const errorLogs: string[] = [];
 
-  for (const record of records) {
-    try {
-      await saveRosterShift(record);
-      successCount++;
-    } catch (err: any) {
-      failCount++;
-      errorLogs.push(`${record.nik || 'Unknown'} (${record.tanggal || '-'}): ${err.message || String(err)}`);
-    }
+  const CHUNK_SIZE = 15;
+  for (let i = 0; i < records.length; i += CHUNK_SIZE) {
+    const chunk = records.slice(i, i + CHUNK_SIZE);
+    await Promise.all(
+      chunk.map(async (record) => {
+        try {
+          await saveRosterShift(record);
+          successCount++;
+        } catch (err: any) {
+          failCount++;
+          errorLogs.push(`${record.nik || 'Unknown'} (${record.tanggal || '-'}): ${err.message || String(err)}`);
+        }
+      })
+    );
   }
 
   return {

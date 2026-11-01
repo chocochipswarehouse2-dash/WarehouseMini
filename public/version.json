@@ -1,13 +1,13 @@
 {
-  "version": "v2.6.22",
-  "versionCode": 282,
+  "version": "v2.6.23",
+  "versionCode": 283,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v282-1640",
-  "releaseTitle": "WMS v2.6.22 — Optimalisasi Egress & Log Ingestion 30%",
+  "buildHash": "wms-261101-v283-1037",
+  "releaseTitle": "WMS v2.6.23 — Pola Reguler Shift Bulanan (Shift 1, Shift 2, Shift 3a/3b, Minggu Off) & Sticky Save Bar",
   "releaseNotes": [
-    "Tekan Egress Log Produk: Eliminasi raw_payload JSONB pada query mutasi menghemat bandwidth hingga 80%",
-    "Cerdas Delta Polling Notifikasi: Filter timestamp created_at mencegah re-download pesanan berulang",
-    "Throttle Background Chat Sync: Interval sinkronisasi diperpanjang ke 60s hemat 75% request wms_system_docs"
+    "Aturan baku Pola Reguler Bulanan: Libur Hari Minggu (OFF), Shift 1 (08:00-17:00), Shift 2 (09:00-18:00), serta Shift 3 otomatis memetakan Senin-Jumat ke 3a (12:00-21:00) dan Sabtu ke 3b (11:00-20:00)",
+    "Tombol Simpan Data Shift tersedia di 4 posisi: Floating Bar Melayang di bawah layar, Header Utama, Generator Massal (Isi & Langsung Simpan), serta Footer Tabel",
+    "Pengaturan, Generator, Template, dan Edit Shift dikunci ketat khusus Admin / Superadmin (Operator hanya Mode Tinjau / Read-Only)"
   ],
   "minSupportedVersion": "v2.0.0"
 }
