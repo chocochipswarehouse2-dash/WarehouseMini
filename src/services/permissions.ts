@@ -30,11 +30,13 @@ export const isSuperadmin = (session: UserSession | null): boolean => {
 export const PERMISSION_GROUPS = [
   {
     id: 'g_ops_dashboard',
-    title: 'Dashboard Operasional',
+    title: 'Dashboard & Komunikasi',
     badge: '📊',
-    description: 'Akses halaman Dashboard utama',
+    description: 'Akses halaman Dashboard utama & Live Chat Tim',
     permissions: [
       { key: 'menu_ops_dashboard', label: 'Akses Dashboard', description: 'Lihat ringkasan operasional', isSuperadminOnly: false },
+      { key: 'menu_ops_live_chat', label: 'Akses Live Chat & Diskusi', description: 'Chat real-time antar user online & ruang diskusi (Otomatis aktif default)', isSuperadminOnly: false },
+      { key: 'action_manage_chat_groups', label: 'Buat & Kelola Grup Diskusi', description: 'Membuat ruang diskusi baru dan menambah/mengeluarkan anggota grup', isSuperadminOnly: true },
     ]
   },
   {
@@ -202,6 +204,7 @@ export const INITIAL_ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<UserPermis
   All: { ...ALL_PERMISSIONS },
   Manager: {
     menu_ops_dashboard: true,
+    menu_ops_live_chat: true,
     menu_ops_agenda: true,
     tab_ops_agenda_kalendar: true,
     tab_ops_agenda_project: true,
@@ -258,6 +261,7 @@ export const INITIAL_ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<UserPermis
   },
   Operator: {
     menu_ops_dashboard: true,
+    menu_ops_live_chat: true,
     menu_ops_agenda: true,
     tab_ops_agenda_kalendar: true,
     tab_ops_agenda_project: true,
@@ -304,6 +308,7 @@ export const INITIAL_ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<UserPermis
     action_sync_dealpos: true,
   },
   Store: {
+    menu_ops_live_chat: true,
     menu_ops_pesanan_saya: true,
     tab_ops_pesanan_dashboard: true,
     tab_ops_pesanan_manual_shipment: true,
@@ -320,6 +325,7 @@ export const INITIAL_ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<UserPermis
     action_export_data: true,
   },
   Peminjaman: {
+    menu_ops_live_chat: true,
     menu_ops_peminjaman: true,
     menu_ops_inventory: true,
     menu_ops_katalog_produk: true,
@@ -327,17 +333,20 @@ export const INITIAL_ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<UserPermis
     action_export_data: true,
   },
   'Tugas Picking': {
+    menu_ops_live_chat: true,
     menu_ops_picking: true,
     menu_ops_inventory: true,
     action_cetak_label: true,
   },
   Produk: {
+    menu_ops_live_chat: true,
     menu_ops_katalog_produk: true,
     action_upload_katalog: true,
     menu_ops_inventory: true,
     action_sync_dealpos: true,
   },
   Fulfillment: {
+    menu_ops_live_chat: true,
     menu_ops_pesanan_saya: true,
     tab_ops_pesanan_dashboard: true,
     tab_ops_pesanan_manual_shipment: true,
@@ -348,6 +357,7 @@ export const INITIAL_ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<UserPermis
     action_sync_dealpos: true,
   },
   HR: {
+    menu_ops_live_chat: true,
     menu_hr_karyawan: true,
     menu_hr_presensi: true,
     menu_hr_roster: true,
@@ -355,6 +365,7 @@ export const INITIAL_ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<UserPermis
     menu_hr_approval: true,
   },
   'HR & Admin': {
+    menu_ops_live_chat: true,
     menu_hr_karyawan: true,
     menu_hr_presensi: true,
     menu_hr_roster: true,
@@ -362,6 +373,7 @@ export const INITIAL_ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<UserPermis
     menu_hr_approval: true,
   },
   'QC/Repair': {
+    menu_ops_live_chat: true,
     menu_ops_qc: true,
     tab_ops_qc_reject: true,
     tab_ops_qc_cuci: true,
@@ -369,6 +381,7 @@ export const INITIAL_ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<UserPermis
     tab_ops_qc_defect: true,
   },
   Perbaikan: {
+    menu_ops_live_chat: true,
     menu_ops_qc: true,
     tab_ops_qc_reject: true,
     tab_ops_qc_cuci: true,
@@ -376,23 +389,27 @@ export const INITIAL_ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<UserPermis
     tab_ops_qc_defect: true,
   },
   'Scanner Barcode': {
+    menu_ops_live_chat: true,
     menu_ops_mutasi: true,
     tab_ops_mutasi_scanner: true,
     menu_ops_cetak_barcode: true,
     action_cetak_barcode: true,
   },
   Inventory: {
+    menu_ops_live_chat: true,
     menu_ops_inventory: true,
     action_sync_dealpos: true,
     action_export_data: true,
   },
   'Stock Opname': {
+    menu_ops_live_chat: true,
     menu_ops_mutasi: true,
     tab_ops_mutasi_so: true,
     tab_ops_mutasi_scanner: true,
     tab_ops_mutasi_log: true,
   },
   Mutasi: {
+    menu_ops_live_chat: true,
     menu_ops_mutasi: true,
     tab_ops_mutasi_scanner: true,
     tab_ops_mutasi_log: true,
@@ -502,6 +519,8 @@ export const canAccessPage = (session: UserSession | null, page: ActivePage): bo
     case 'katalog_produk': return hasPermission(session, 'menu_ops_katalog_produk');
     case 'roadmap': return hasPermission(session, 'menu_ops_roadmap');
     case 'pusat_resolusi': return hasPermission(session, 'menu_ops_resolusi') || hasPermission(session, 'tab_ops_resolusi_retur') || hasPermission(session, 'tab_ops_resolusi_refund') || hasPermission(session, 'tab_ops_resolusi_gagal') || hasPermission(session, 'tab_ops_resolusi_komplain') || hasPermission(session, 'tab_ops_resolusi_rating');
+    case 'rekap_tagihan_jne': return canAccessJneRekap(session);
+    case 'live_chat': return canAccessLiveChat(session);
     case 'supabase_migration': return false;
     default:
       return false;
@@ -510,6 +529,21 @@ export const canAccessPage = (session: UserSession | null, page: ActivePage): bo
 
 export const canAccessSettings = (session: UserSession | null): boolean => {
   return !!session;
+};
+
+export const canAccessLiveChat = (session: UserSession | null): boolean => {
+  if (!session) return false;
+  if (isSuperadmin(session)) return true;
+  if (session.permissions && session.permissions.menu_ops_live_chat === false) {
+    return false;
+  }
+  return true;
+};
+
+export const canManageChatGroups = (session: UserSession | null): boolean => {
+  if (!session) return false;
+  if (isSuperadmin(session)) return true;
+  return Boolean(session.permissions?.action_manage_chat_groups);
 };
 
 export const getDefaultPageForSession = (session: UserSession | null): ActivePage => {

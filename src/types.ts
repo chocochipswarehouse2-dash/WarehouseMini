@@ -33,7 +33,8 @@ export type ActivePage =
   | 'katalog_produk'
   | 'pusat_resolusi'
   | 'supabase_migration'
-  | 'rekap_tagihan_jne';
+  | 'rekap_tagihan_jne'
+  | 'live_chat';
 
 export interface KatalogVariant {
   warna: string;
@@ -86,6 +87,7 @@ export type UserRole =
 export type UserPermissionKey =
   // OPERASIONAL WAREHOUSE
   | 'menu_ops_dashboard'
+  | 'menu_ops_live_chat'
   | 'menu_ops_agenda'
   | 'tab_ops_agenda_kalendar'
   | 'tab_ops_agenda_project'
@@ -127,6 +129,7 @@ export type UserPermissionKey =
   | 'menu_ops_roadmap'
   | 'menu_ops_cetak_barcode'
   | 'menu_ops_bbk'
+  | 'menu_rekap_tagihan_jne'
   // KARYAWAN & PRESENSI
   | 'menu_hr_karyawan'
   | 'menu_hr_presensi'
@@ -141,7 +144,8 @@ export type UserPermissionKey =
   | 'action_upload_katalog'
   | 'action_sync_dealpos'
   | 'action_edit_master'
-  | 'action_delete_master';
+  | 'action_delete_master'
+  | 'action_manage_chat_groups';
 
 export type UserPermissions = {
   [K in UserPermissionKey]?: boolean;

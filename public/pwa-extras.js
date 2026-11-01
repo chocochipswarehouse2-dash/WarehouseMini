@@ -251,6 +251,88 @@ async function checkNewOrdersInBackground() {
     } catch {}
   }
 
+  // 3. Cek Pesan Live Chat & Ruang Diskusi Baru untuk User yang sedang login
+  if (cfg.username) {
+    try {
+      const me = String(cfg.username || '').trim().toLowerCase();
+      const chatIdxUrl = `${cfg.supabaseUrl}/rest/v1/wms_system_docs?select=content&doc_key=eq.wms_chat_rooms_index_v1&limit=1`;
+      const resChat = await fetch(chatIdxUrl, { method: 'GET', headers });
+      if (resChat.ok) {
+        const rowsChat = await resChat.json();
+        if (Array.isArray(rowsChat) && rowsChat.length > 0 && rowsChat[0].content) {
+          let rooms = rowsChat[0].content;
+          if (typeof rooms === 'string') {
+            try {
+              rooms = JSON.parse(rooms);
+            } catch {
+              rooms = [];
+            }
+          }
+          if (Array.isArray(rooms)) {
+            for (const room of rooms) {
+              if (!room || !room.id || !Array.isArray(room.participants)) continue;
+              const isParticipant = room.participants.some(
+                (p) => String(p || '').trim().toLowerCase() === me
+              );
+              if (!isParticipant) continue;
+
+              const lastMsgId = String(room.last_message_id || '').trim();
+              const lastSender = String(room.last_message_sender || '').trim().toLowerCase();
+              const isUnread =
+                Array.isArray(room.unread_by) &&
+                room.unread_by.some((u) => String(u || '').trim().toLowerCase() === me);
+
+              if (!lastMsgId || !isUnread || lastSender === me || notifiedSet.has(lastMsgId)) {
+                continue;
+              }
+
+              notifiedSet.add(lastMsgId);
+              newlyNotifiedIds.push(lastMsgId);
+              updated = true;
+
+              const senderLabel = String(room.last_message_sender_name || room.last_message_sender || 'Rekan Tim').trim();
+              const notifTitle =
+                room.type === 'group'
+                  ? `💬 [${room.name || 'Grup Diskusi'}] ${senderLabel}`
+                  : `💬 Pesan dari ${senderLabel}`;
+              const notifBody = String(room.last_message_text || 'Mengirim pesan baru').trim();
+
+              await self.registration.showNotification(notifTitle, {
+                body: notifBody,
+                icon: '/pwa-192x192.png',
+                badge: '/pwa-192x192.png',
+                vibrate: [200, 100, 200],
+                tag: `wms-chat-${room.id}`,
+                renotify: true,
+                requireInteraction: true,
+                actions: [
+                  {
+                    action: 'chat_reply',
+                    type: 'text',
+                    title: '💬 Balas Cepat',
+                    placeholder: 'Ketik balasan pesan...',
+                  },
+                  {
+                    action: 'chat_mark_read',
+                    title: '✓✓ Tandai Dibaca',
+                  },
+                ],
+                data: {
+                  url: '/live-chat',
+                  page: 'live_chat',
+                  roomId: room.id,
+                  roomName: room.name || senderLabel,
+                  roomType: room.type || 'direct',
+                  lastMessageId: lastMsgId,
+                },
+              });
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
   if (updated) {
     const trimmedIds = Array.from(notifiedSet).slice(-300);
     await saveSwConfig({
@@ -278,14 +360,176 @@ async function checkNewOrdersInBackground() {
   }
 }
 
+/**
+ * Menangani aksi Balas Cepat (Inline Direct Reply) atau Tandai Dibaca (✓✓)
+ * langsung dari Notification Bar HP/Desktop tanpa perlu membuka aplikasi WMS
+ */
+async function handleBackgroundChatAction(actionType, roomId, replyText) {
+  const cfg = await getSwConfig();
+  if (!cfg || !cfg.supabaseUrl || !cfg.supabaseAnonKey || !cfg.username || !roomId) {
+    return false;
+  }
+
+  const me = String(cfg.username).trim().toLowerCase();
+  const myName = String(cfg.displayName || cfg.storeName || cfg.username).trim();
+  const myRole = String(cfg.userRole || (cfg.isAdmin ? 'Superadmin' : 'Operator')).trim();
+  const nowIso = new Date().toISOString();
+
+  const headers = {
+    apikey: cfg.supabaseAnonKey,
+    Authorization: `Bearer ${cfg.supabaseAnonKey}`,
+    'Content-Type': 'application/json',
+    Prefer: 'resolution=merge-duplicates,return=minimal',
+  };
+
+  try {
+    // 1. Ambil daftar pesan ruang chat terkait
+    const msgsDocKey = `wms_chat_room_msgs_${roomId}`;
+    const msgsRes = await fetch(
+      `${cfg.supabaseUrl}/rest/v1/wms_system_docs?select=content&doc_key=eq.${encodeURIComponent(msgsDocKey)}&limit=1`,
+      { method: 'GET', headers }
+    );
+    let messages = [];
+    if (msgsRes.ok) {
+      const rows = await msgsRes.json();
+      if (Array.isArray(rows) && rows.length > 0 && rows[0].content) {
+        messages = typeof rows[0].content === 'string' ? JSON.parse(rows[0].content) : rows[0].content;
+      }
+    }
+    if (!Array.isArray(messages)) messages = [];
+
+    // Tandai seluruh pesan sebelumnya sebagai sudah dibaca (✓✓) oleh user ini
+    const receipt = { username: me, name: myName, read_at: nowIso };
+    messages = messages.map((m) => {
+      if (!m || typeof m !== 'object') return m;
+      const readList = Array.isArray(m.read_by) ? m.read_by : [];
+      const already = readList.some((r) => String(r && r.username || '').toLowerCase() === me);
+      if (already) return m;
+      return {
+        ...m,
+        read_by: [...readList, receipt],
+      };
+    });
+
+    let newReplyMsg = null;
+    if (actionType === 'chat_reply' && replyText && String(replyText).trim()) {
+      const cleanReply = String(replyText).trim();
+      newReplyMsg = {
+        id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+        room_id: roomId,
+        sender_username: me,
+        sender_name: myName,
+        sender_role: myRole,
+        sender_store: cfg.storeName || undefined,
+        text: cleanReply,
+        created_at: nowIso,
+        read_by: [receipt],
+      };
+      messages.push(newReplyMsg);
+      if (messages.length > 150) {
+        messages = messages.slice(-150);
+      }
+    }
+
+    // Simpan kembali daftar pesan ke wms_system_docs
+    await fetch(`${cfg.supabaseUrl}/rest/v1/wms_system_docs?on_conflict=doc_key`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        doc_key: msgsDocKey,
+        content: messages,
+        updated_at: nowIso,
+      }),
+    });
+
+    // 2. Perbarui indeks ruang chat (wms_chat_rooms_index_v1)
+    const idxRes = await fetch(
+      `${cfg.supabaseUrl}/rest/v1/wms_system_docs?select=content&doc_key=eq.wms_chat_rooms_index_v1&limit=1`,
+      { method: 'GET', headers }
+    );
+    if (idxRes.ok) {
+      const idxRows = await idxRes.json();
+      let rooms =
+        Array.isArray(idxRows) && idxRows.length > 0 && idxRows[0].content
+          ? typeof idxRows[0].content === 'string'
+            ? JSON.parse(idxRows[0].content)
+            : idxRows[0].content
+          : [];
+      if (Array.isArray(rooms)) {
+        rooms = rooms.map((r) => {
+          if (!r || r.id !== roomId) return r;
+          const otherMembers = (Array.isArray(r.participants) ? r.participants : []).filter(
+            (p) => String(p || '').toLowerCase() !== me
+          );
+          const nextCounts = { ...(r.unread_counts || {}), [me]: 0 };
+          let nextUnreadBy = (Array.isArray(r.unread_by) ? r.unread_by : []).filter(
+            (u) => String(u || '').toLowerCase() !== me
+          );
+
+          if (newReplyMsg) {
+            for (const om of otherMembers) {
+              nextCounts[om] = (Number(nextCounts[om]) || 0) + 1;
+            }
+            nextUnreadBy = Array.from(new Set([...nextUnreadBy, ...otherMembers]));
+            return {
+              ...r,
+              updated_at: nowIso,
+              last_message_id: newReplyMsg.id,
+              last_message_text: newReplyMsg.text,
+              last_message_sender: me,
+              last_message_sender_name: myName,
+              last_message_at: nowIso,
+              unread_by: nextUnreadBy,
+              unread_counts: nextCounts,
+            };
+          }
+
+          return {
+            ...r,
+            unread_by: nextUnreadBy,
+            unread_counts: nextCounts,
+          };
+        });
+
+        await fetch(`${cfg.supabaseUrl}/rest/v1/wms_system_docs?on_conflict=doc_key`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            doc_key: 'wms_chat_rooms_index_v1',
+            content: rooms,
+            updated_at: nowIso,
+          }),
+        });
+      }
+    }
+
+    // Beritahu tab client jika ada yang terbuka di background
+    try {
+      const allClients = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const client of allClients) {
+        client.postMessage({
+          type: 'WMS_SW_CHAT_REPLIED',
+          roomId,
+          actionType,
+          timestamp: Date.now(),
+        });
+      }
+    } catch {}
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Keep a gentle background interval while the Service Worker thread is alive
 let swCheckInterval = null;
 function ensureSwBackgroundTimer() {
   if (swCheckInterval) return;
-  // Hemat kuota Supabase log ingestion: 3 menit (180 detik) di background SW
+  // Cek berkala di background Service Worker saat tab tidak sedang fokus
   swCheckInterval = setInterval(() => {
     checkNewOrdersInBackground().catch(() => {});
-  }, 180000);
+  }, 90000);
 }
 
 self.addEventListener('message', (event) => {
@@ -314,6 +558,8 @@ self.addEventListener('message', (event) => {
           isPicker: Boolean(data.isPicker),
           storeName: data.storeName || '',
           username: data.username || '',
+          displayName: data.displayName || existing.displayName || '',
+          userRole: data.userRole || existing.userRole || '',
           notifiedIds: mergedIds,
           lastCheckedAt: data.lastCheckedAt || existing.lastCheckedAt || Date.now(),
         });
@@ -373,6 +619,7 @@ self.addEventListener('push', (event) => {
     data: {
       url: data.url || '/',
       page: data.page || '',
+      roomId: data.roomId || '',
     },
   };
 
@@ -380,10 +627,41 @@ self.addEventListener('push', (event) => {
 });
 
 self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  const targetUrl = (event.notification.data && event.notification.data.url) || '/';
-  const targetPage = (event.notification.data && event.notification.data.page) || '';
+  const notifData = (event.notification && event.notification.data) || {};
+  const targetUrl = notifData.url || '/';
+  const targetPage = notifData.page || '';
+  const targetRoomId = notifData.roomId || '';
+  const action = event.action || '';
+  const inlineReplyText = typeof event.reply === 'string' ? event.reply.trim() : '';
 
+  event.notification.close();
+
+  // 1. Jika user mengetik balasan langsung dari Notification Bar (Inline Direct Reply)
+  if (action === 'chat_reply' && inlineReplyText && targetRoomId) {
+    event.waitUntil(
+      handleBackgroundChatAction('chat_reply', targetRoomId, inlineReplyText).then(async (ok) => {
+        if (ok) {
+          await self.registration.showNotification('✓ Balasan Terkirim', {
+            body: `"${inlineReplyText}" → ${notifData.roomName || 'Ruang Chat'}`,
+            icon: '/pwa-192x192.png',
+            badge: '/pwa-192x192.png',
+            tag: `wms-chat-sent-${targetRoomId}`,
+            silent: true,
+            requireInteraction: false,
+          });
+        }
+      })
+    );
+    return;
+  }
+
+  // 2. Jika user menekan tombol "✓✓ Tandai Dibaca" di Notification Bar tanpa buka aplikasi
+  if (action === 'chat_mark_read' && targetRoomId) {
+    event.waitUntil(handleBackgroundChatAction('chat_mark_read', targetRoomId, ''));
+    return;
+  }
+
+  // 3. Default: Fokuskan atau buka jendela aplikasi dan arahkan langsung ke halaman / ruang chat terkait
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
       for (let i = 0; i < windowClients.length; i++) {
@@ -391,13 +669,20 @@ self.addEventListener('notificationclick', (event) => {
         if ('focus' in client) {
           client.focus();
           if (targetPage) {
-            client.postMessage({ type: 'WMS_NOTIFICATION_CLICK', page: targetPage });
+            client.postMessage({
+              type: 'WMS_NOTIFICATION_CLICK',
+              page: targetPage,
+              roomId: targetRoomId,
+            });
           }
           return;
         }
       }
       if (clients.openWindow) {
-        const openUrl = targetPage ? `${targetUrl}?page=${encodeURIComponent(targetPage)}` : targetUrl;
+        const params = [];
+        if (targetPage) params.push(`page=${encodeURIComponent(targetPage)}`);
+        if (targetRoomId) params.push(`room=${encodeURIComponent(targetRoomId)}`);
+        const openUrl = params.length > 0 ? `${targetUrl}?${params.join('&')}` : targetUrl;
         return clients.openWindow(openUrl);
       }
     })

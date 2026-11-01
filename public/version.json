@@ -1,14 +1,12 @@
 {
-  "version": "v2.6.17",
-  "versionCode": 277,
+  "version": "v2.6.18",
+  "versionCode": 278,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v277-1247",
-  "releaseTitle": "WMS v2.6.17 — Sinkronisasi Google Calendar 2-Arah & Google Keep Style Notes",
+  "buildHash": "wms-261101-v278-0652",
+  "releaseTitle": "WMS v2.6.18 — Perbaikan Sinkronisasi State Live Chat & Sidebar",
   "releaseNotes": [
-    "Integrasi Google Calendar: Sinkronisasi 2-arah agenda WMS dan Google Calendar via GAS backend akun utama",
-    "Google Calendar Style: Tampilan kalender modern dengan view bulan dan minggu, time-slot indikator, dan status sync real-time",
-    "Google Keep Style Notes: Quick note bar dan layout catatan warna pastel interaktif",
-    "Proteksi Zero-Reload: Pembaruan aman tanpa reload layar aktif"
+    "Perbaikan metode getTotalUnreadCount, getOnlineUsers, dan getVisibleRooms pada LiveChatManager",
+    "Sinkronisasi penuh state floating drawer dan halaman penuh Live Chat"
   ],
   "minSupportedVersion": "v2.0.0"
 }

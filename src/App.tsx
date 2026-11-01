@@ -118,6 +118,9 @@ const CetakBarcodeProdukView = lazyWithRetry(() => import('./components/CetakBar
 import { PesananSayaView } from './components/PesananSaya/PesananSayaView';
 import PusatResolusiView from './components/PusatResolusi/PusatResolusiView';
 const JneRekapView = lazyWithRetry(() => import('./components/JneRekapView').then(m => ({ default: m.JneRekapView })));
+const LiveChatWorkspace = lazyWithRetry(() => import('./components/LiveChat/LiveChatWorkspace').then(m => ({ default: m.LiveChatWorkspace })));
+import { LiveChatFloatingWidget } from './components/LiveChat/LiveChatFloatingWidget';
+import { liveChatManager } from './services/liveChatService';
 
 const SupabaseMigrationView = lazyWithRetry(() => import('./components/SupabaseMigrationView').then(m => ({ default: m.SupabaseMigrationView })));
 
@@ -213,9 +216,13 @@ const PAGE_TO_PATH: Record<ActivePage, string> = {
   manual_shipment: 'manual-shipment',
   pusat_resolusi: 'pusat-resolusi',
   rekap_tagihan_jne: 'rekap-tagihan-jne',
+  live_chat: 'live-chat',
 };
 
 const PATH_TO_PAGE: Record<string, ActivePage> = {
+  'live-chat': 'live_chat',
+  'chat': 'live_chat',
+  'diskusi': 'live_chat',
   'rekap-tagihan-jne': 'rekap_tagihan_jne',
   'tagihan-jne': 'rekap_tagihan_jne',
   'operasi-stok': 'operasi_stok',
@@ -430,11 +437,21 @@ export default function App() {
     const handleSwMessage = (event: MessageEvent) => {
       if (event.data && event.data.type === 'WMS_NOTIFICATION_CLICK') {
         const targetPage = (event.data.page || 'pesanan_saya') as ActivePage;
+        const targetRoomId = event.data.roomId as string | undefined;
+        if (targetRoomId) {
+          window.dispatchEvent(
+            new CustomEvent('wms_open_live_chat_room', {
+              detail: { roomId: targetRoomId, openFullPage: targetPage === 'live_chat' },
+            })
+          );
+        }
         if (!session || canAccessPage(session, targetPage)) {
           startTransition(() => {
             setActivePage(targetPage);
           });
         }
+      } else if (event.data && event.data.type === 'WMS_SW_CHAT_REPLIED') {
+        liveChatManager.syncRoomsIndexFromCloud().catch(() => {});
       }
     };
 
@@ -451,6 +468,21 @@ export default function App() {
       }
     };
   }, [session]);
+
+  // Initialize & sync Live Chat presence + room index for any active user session
+  useEffect(() => {
+    if (!session) {
+      liveChatManager.teardown();
+      return;
+    }
+    liveChatManager.initForSession(session, activePage).catch(() => {});
+  }, [session?.username, session?.role]);
+
+  useEffect(() => {
+    if (session) {
+      liveChatManager.setActivePage(activePage);
+    }
+  }, [session, activePage]);
 
   // Auto-redirect jika halaman aktif tidak diizinkan untuk sesi user
   useEffect(() => {
@@ -1543,13 +1575,12 @@ export default function App() {
   const handleIncomingSpsRef = useRef(handleIncomingSpsNotification);
   handleIncomingSpsRef.current = handleIncomingSpsNotification;
 
-  // Background, Service Worker & Screen-Wake Delta Poller KHUSUS ADMIN & PICKER
-  // Termasuk Catch-Up Notification untuk pesanan toko & pengajuan SPS yang masuk saat aplikasi/browser ditutup
+  // Background, Service Worker & Screen-Wake Delta Poller (Unified: Live Chat untuk Semua User + Pesanan/SPS/Retur untuk Admin & Picker)
   useEffect(() => {
     const userIsAdmin = Boolean(session && isSuperadmin(session));
     const userIsPicker = Boolean(session && canAccessPage(session, 'picking_tasks'));
 
-    if (!session || (!userIsAdmin && !userIsPicker)) {
+    if (!session) {
       configureServiceWorkerOrderWatcher({
         enabled: false,
         supabaseUrl: DEFAULT_SUPABASE_URL,
@@ -1557,6 +1588,28 @@ export default function App() {
         isAdmin: false,
         isPicker: false,
       });
+      return;
+    }
+
+    // Sinkronkan konfigurasi ke Service Worker untuk SEMUA user yang login (agar Live Chat Background & Balas Cepat bekerja untuk semua user,
+    // sedangkan pengecekan pesanan/SPS/retur tetap difilter berdasarkan isAdmin & isPicker di Service Worker)
+    const customUrl = localStorage.getItem('wms_supabase_url') || DEFAULT_SUPABASE_URL;
+    const customKey = localStorage.getItem('wms_supabase_key') || DEFAULT_SUPABASE_ANON_KEY;
+    configureServiceWorkerOrderWatcher({
+      enabled: true,
+      supabaseUrl: customUrl,
+      supabaseAnonKey: customKey,
+      isAdmin: userIsAdmin,
+      isPicker: userIsPicker,
+      username: session.username,
+      displayName: session.name || getUserPersonName(session.username) || session.username,
+      userRole: session.role,
+      storeName: session.store_name || session.store_code || '',
+      notifiedIds: Array.from(notifiedOrderIdsRef.current),
+      lastCheckedAt: getLastOrderCheckTimestamp() || Date.now(),
+    });
+
+    if (!userIsAdmin && !userIsPicker) {
       return;
     }
 
@@ -1571,20 +1624,6 @@ export default function App() {
       if (k2) notifiedOrderIdsRef.current.add(k2);
       if (k3) notifiedOrderIdsRef.current.add(k3);
     };
-
-    // Sinkronkan konfigurasi ke Service Worker agar bisa mengecek pesanan & SPS di background (periodicsync / sync / push)
-    const customUrl = localStorage.getItem('wms_supabase_url') || DEFAULT_SUPABASE_URL;
-    const customKey = localStorage.getItem('wms_supabase_key') || DEFAULT_SUPABASE_ANON_KEY;
-    configureServiceWorkerOrderWatcher({
-      enabled: true,
-      supabaseUrl: customUrl,
-      supabaseAnonKey: customKey,
-      isAdmin: userIsAdmin,
-      isPicker: userIsPicker,
-      username: session.username,
-      notifiedIds: Array.from(notifiedOrderIdsRef.current),
-      lastCheckedAt: getLastOrderCheckTimestamp() || Date.now(),
-    });
 
     // Dengarkan pesan dari Service Worker (jika SW sudah menotifikasi pesanan saat tab di background, atau user klik notifikasi)
     const handleSwMessage = (event: MessageEvent) => {
@@ -1904,6 +1943,7 @@ export default function App() {
 
   // Handle Logout
   const handleLogout = () => {
+    liveChatManager.teardown();
     localStorage.removeItem('wms_session_token');
     localStorage.removeItem('wms_session_username');
     localStorage.removeItem('wms_session_name');
@@ -2913,6 +2953,18 @@ export default function App() {
               {activePage === 'roadmap' && (
                   <RoadmapView session={session} onShowToast={showToast} />
               )}
+              {activePage === 'live_chat' && session && (
+                  <LiveChatWorkspace
+                    session={session}
+                    productCatalog={productDatabase}
+                    onNotify={showToast}
+                    mode="full"
+                    allSkus={productDatabase.map(p => p.k).filter(Boolean)}
+                    onQuickSearchContext={(tagLabel) => {
+                      showToast(`Tag Referensi: ${tagLabel}`, 'info');
+                    }}
+                  />
+              )}
               {activePage === 'supabase_migration' && (
                   <SupabaseMigrationView
                     session={session}
@@ -2954,6 +3006,21 @@ export default function App() {
         onOpenModal={() => setIsUpdateModalOpen(true)}
         onNotify={showToast}
       />
+
+      {/* Floating Quick Live Chat & Group Discussion Drawer + Toast */}
+      {session && (
+        <LiveChatFloatingWidget
+          session={session}
+          activePage={activePage}
+          onSelectPage={handleSelectPage}
+          productCatalog={productDatabase}
+          onNotify={showToast}
+          allSkus={productDatabase.slice(0, 600).map(p => p.k).filter(Boolean)}
+          onQuickSearchContext={(tagLabel) => {
+            showToast(`Tag Referensi: ${tagLabel}`, 'info');
+          }}
+        />
+      )}
 
       {/* Settings Modal (Supabase, GAS, Users, Device) */}
       <ThemePickerModal

@@ -40,12 +40,14 @@ import {
   Factory,
   Receipt,
   Download,
+  MessageSquare,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
-import { hasPermission, isSuperadmin, canAccessSettings, canAccessJneRekap, ROLE_DETAILS } from '../services/permissions';
+import { hasPermission, isSuperadmin, canAccessSettings, canAccessJneRekap, canAccessLiveChat, ROLE_DETAILS } from '../services/permissions';
 import { getUserPersonName } from '../utils/userResolver';
 import { CURRENT_APP_VERSION } from '../config/appVersion';
 import { useAppUpdate } from '../hooks/useAppUpdate';
+import { liveChatManager } from '../services/liveChatService';
 
 interface SidebarProps {
   session: UserSession | null;
@@ -96,11 +98,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const hasUpdatePending = updateStatus === 'available' || updateStatus === 'ready';
   const isUpdateDownloading = updateStatus === 'downloading';
 
+  const [chatUnreadCount, setChatUnreadCount] = React.useState<number>(() => liveChatManager.getTotalUnreadCount());
+  const [chatOnlineCount, setChatOnlineCount] = React.useState<number>(() =>
+    liveChatManager.getOnlineUsers().filter(u => u.username.toLowerCase() !== (session?.username || '').toLowerCase()).length
+  );
+
+  React.useEffect(() => {
+    const unsub = liveChatManager.subscribe(() => {
+      setChatUnreadCount(liveChatManager.getTotalUnreadCount());
+      setChatOnlineCount(
+        liveChatManager.getOnlineUsers().filter(
+          u => u.username.toLowerCase() !== (session?.username || '').toLowerCase()
+        ).length
+      );
+    });
+    return unsub;
+  }, [session?.username]);
+
   const userIsAdmin = isSuperadmin(session);
   const userCanAccessSettings = canAccessSettings(session);
 
   // Operasional
   const canViewDashboard = userIsAdmin || hasPermission(session, 'menu_ops_dashboard');
+  const canLiveChat = canAccessLiveChat(session);
   const canAgenda = userIsAdmin || hasPermission(session, 'menu_ops_agenda') || 
     hasPermission(session, 'tab_ops_agenda_kalendar') || 
     hasPermission(session, 'tab_ops_agenda_project');
@@ -157,6 +177,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: BarChart3,
       description: 'Ringkasan & Aktivitas',
       access: canViewDashboard,
+    },
+    {
+      id: 'live_chat' as ActivePage,
+      label: 'Live Chat & Diskusi',
+      shortLabel: 'Live Chat',
+      icon: MessageSquare,
+      description: chatOnlineCount > 0 ? `${chatOnlineCount} rekan online • Grup & Japri` : 'Ruang Diskusi & Chat Tim',
+      access: canLiveChat,
+      badgeText: chatUnreadCount > 0 ? `${chatUnreadCount} BARU` : (chatOnlineCount > 0 ? `${chatOnlineCount} ONLINE` : undefined),
     },
     {
       id: 'agenda' as ActivePage,

@@ -15,21 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.17",
-  "versionCode": 277,
+  "version": "v2.6.18",
+  "versionCode": 278,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v277-1247",
-  "releaseTitle": "WMS v2.6.17 — Sinkronisasi Google Calendar 2-Arah & Google Keep Style Notes",
+  "buildHash": "wms-261101-v278-0652",
+  "releaseTitle": "WMS v2.6.18 — Perbaikan Sinkronisasi State Live Chat & Sidebar",
   "releaseNotes": [
-    "Integrasi Google Calendar: Sinkronisasi 2-arah agenda WMS dan Google Calendar via GAS backend akun utama",
-    "Google Calendar Style: Tampilan kalender modern dengan view bulan dan minggu, time-slot indikator, dan status sync real-time",
-    "Google Keep Style Notes: Quick note bar dan layout catatan warna pastel interaktif",
-    "Proteksi Zero-Reload: Pembaruan aman tanpa reload layar aktif"
+    "Perbaikan metode getTotalUnreadCount, getOnlineUsers, dan getVisibleRooms pada LiveChatManager",
+    "Sinkronisasi penuh state floating drawer dan halaman penuh Live Chat"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.17",
+    "versionCode": 277,
+    "buildDate": "1 November 2026",
+    "buildHash": "wms-261101-v277-0557",
+    "releaseTitle": "WMS v2.6.17 — Live Chat & Ruang Diskusi Real-Time + Balas Cepat Notifikasi",
+    "releaseNotes": [
+      "Fitur Live Chat & Ruang Diskusi Grup Real-Time (Floating Drawer & Halaman Penuh)",
+      "Penyimpanan Permanen 3-Tier Hemat Kuota (IndexedDB + wms_system_docs + Google Drive CDN 0 Byte Egress)",
+      "Aturan Akuntabilitas Edit & Hapus Pesan (Maksimal 5 Menit & Belum Dibaca User Lain)",
+      "Notifikasi Background & Balas Cepat Langsung dari Bar Notifikasi (Tanpa Buka Aplikasi), Tersinkron dengan Pesanan Baru & Retur"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.16",
     "versionCode": 276,
@@ -116,18 +128,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Optimasi pembersihan precache PWA saat 1-klik Perbarui agar bundle versi terbaru langsung aktif",
       "Penjelasan lengkap keamanan data Qty PO buyer pada push master produksi"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.9",
-    "versionCode": 269,
-    "buildDate": "30 Oktober 2026",
-    "buildHash": "wms-261030-v269-1954",
-    "releaseTitle": "WMS v2.6.9 — Restorasi Indikator Mode Aktif Scanner (#IN/#OUT/#SO)",
-    "releaseNotes": [
-      "Memulihkan kembali tombol pilihan dan indikator mode aktif (#IN Masuk, #OUT Keluar, #SO Opname) pada QuickTagToolbar scanner web app",
-      "Menjawab arsitektur delta update untuk pengeditan data di frontend"
     ],
     "minSupportedVersion": "v2.0.0"
   }

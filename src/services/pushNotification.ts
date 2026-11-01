@@ -118,6 +118,8 @@ export async function configureServiceWorkerOrderWatcher(params: {
   isPicker?: boolean;
   storeName?: string;
   username?: string;
+  displayName?: string;
+  userRole?: string;
   notifiedIds?: string[];
   lastCheckedAt?: number;
 }): Promise<void> {

@@ -34,6 +34,7 @@ import {
   ShieldAlert,
   BookOpen,
   Receipt,
+  MessageSquare,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { canAccessSettings } from '../services/permissions';
@@ -130,9 +131,10 @@ export const Navbar: React.FC<NavbarProps> = ({
         return { title: 'Cetak Label', subtitle: 'Label Paket & Label Custom (QR Code Rak)', icon: Printer };
       case 'cetak_barcode':
         return { title: 'Cetak Barcode Produk', subtitle: 'Stiker Thermal 50×20 mm & Import Massal', icon: QrCode };
-      
       case 'pusat_resolusi':
         return { title: 'Pusat Resolusi', subtitle: 'Layanan Retur, Refund, Komplain & Rating', icon: ShieldAlert };
+      case 'live_chat':
+        return { title: 'Live Chat & Diskusi', subtitle: 'Komunikasi Real-Time Antar Divisi & Grup Diskusi', icon: MessageSquare };
       default:
         return { title: 'WMS', subtitle: 'Warehouse System', icon: ScanBarcode };
     }
