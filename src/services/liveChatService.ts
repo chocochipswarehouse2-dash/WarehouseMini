@@ -16,7 +16,12 @@ import { uploadImageToGdrive } from './gdriveUpload';
 import { isSuperadmin } from './permissions';
 import { getUserPersonName } from '../utils/userResolver';
 import { playNewTaskChime, vibrateDevice } from './audio';
-import { showPushNotification } from './pushNotification';
+import {
+  showPushNotification,
+  loadPersistedNotifiedOrderIds,
+  savePersistedNotifiedOrderIds,
+  syncNotifiedOrdersToServiceWorker,
+} from './pushNotification';
 
 export type ChatContextTagType = 'SKU' | 'SJ' | 'ORDER' | 'RETUR';
 
@@ -486,6 +491,10 @@ class LiveChatManager {
   private initializedForUser: string | null = null;
   private typingTimeout: any = null;
   private directoryLoadedAt = 0;
+  private notifiedMessageIds = new Set<string>(loadPersistedNotifiedOrderIds());
+  private hasSeededUnread = false;
+  private syncTimer: any = null;
+  private swListenerBound = false;
 
   public subscribe(listener: ChatStateListener): () => void {
     this.listeners.add(listener);
@@ -605,6 +614,8 @@ class LiveChatManager {
     }
 
     this.initializedForUser = username;
+    this.hasSeededUnread = false;
+    this.notifiedMessageIds = new Set<string>(loadPersistedNotifiedOrderIds());
 
     // 1. Load cached rooms from IndexedDB immediately (0 ms, 0 egress)
     const cachedRooms = await idbGetRooms();
@@ -617,12 +628,51 @@ class LiveChatManager {
       this.notify();
     }
 
-    // 2. Connect to Supabase Realtime Channel (Presence + Broadcast)
+    // 2. Connect to Supabase Realtime Channel (Presence + Broadcast + wms_system_docs changes)
     this.setupRealtimeChannel(session, activePage);
+    this.setupBackgroundSyncLoop();
 
     // 3. Load user directory and sync rooms index from wms_system_docs
     void this.refreshUsersDirectory();
-    await this.syncRoomsFromServer();
+    await this.syncRoomsFromServer(false);
+    this.hasSeededUnread = true;
+  }
+
+  private setupBackgroundSyncLoop() {
+    if (this.syncTimer) {
+      clearInterval(this.syncTimer);
+      this.syncTimer = null;
+    }
+    this.syncTimer = setInterval(() => {
+      if (this.currentSession?.username) {
+        void this.syncRoomsFromServer(true);
+      }
+    }, 15000);
+
+    if (!this.swListenerBound && typeof window !== 'undefined') {
+      this.swListenerBound = true;
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.addEventListener('message', (event: MessageEvent) => {
+          const data = event.data;
+          if (!data || typeof data !== 'object') return;
+          if (data.type === 'WMS_SW_ORDERS_NOTIFIED' && Array.isArray(data.notifiedIds)) {
+            data.notifiedIds.forEach((id: string) => {
+              if (id) this.notifiedMessageIds.add(String(id));
+            });
+          } else if (data.type === 'WMS_SW_CHAT_REPLIED') {
+            void this.syncRoomsFromServer(false);
+            if (data.roomId && this.state.activeRoomId === data.roomId) {
+              void this.selectRoom(data.roomId);
+            }
+          }
+        });
+      }
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && this.currentSession?.username) {
+          void this.syncRoomsFromServer(true);
+        }
+      });
+    }
   }
 
   private getRoomSortTime(room: ChatRoom): number {
@@ -632,6 +682,10 @@ class LiveChatManager {
   }
 
   private cleanupChannel() {
+    if (this.syncTimer) {
+      clearInterval(this.syncTimer);
+      this.syncTimer = null;
+    }
     if (this.channel) {
       try {
         const client = getSupabaseClient();
@@ -711,6 +765,23 @@ class LiveChatManager {
           void this.handleIncomingRoomUpsert(data.room as ChatRoom);
         }
       });
+
+      // Postgres Changes Event 5: Listen to wms_system_docs updates (e.g. inline replies from Notification Bar or background sync)
+      ch.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'wms_system_docs' },
+        (payload: any) => {
+          const docKey = String(payload?.new?.doc_key || '');
+          if (docKey === ROOMS_INDEX_DOC_KEY) {
+            void this.syncRoomsFromServer(true);
+          } else if (
+            this.state.activeRoomId &&
+            docKey === `${ROOM_MSGS_DOC_PREFIX}${this.state.activeRoomId}`
+          ) {
+            void this.selectRoom(this.state.activeRoomId);
+          }
+        }
+      );
 
       ch.subscribe((status: string) => {
         if (status === 'SUBSCRIBED') {
@@ -827,7 +898,7 @@ class LiveChatManager {
   /**
    * Syncs the lightweight rooms index from wms_system_docs
    */
-  public async syncRoomsFromServer(): Promise<ChatRoom[]> {
+  public async syncRoomsFromServer(triggerNotification = false): Promise<ChatRoom[]> {
     if (!this.currentSession?.username) return [];
     const me = this.currentSession.username.trim().toLowerCase();
     this.state.isLoadingRooms = true;
@@ -852,6 +923,92 @@ class LiveChatManager {
       const myRooms = allMerged
         .filter((r) => this.isUserInRoom(r, me))
         .sort((a, b) => this.getRoomSortTime(b) - this.getRoomSortTime(a));
+
+      const isOnLiveChatPage =
+        typeof window !== 'undefined' && window.location.pathname.includes('live-chat');
+
+      for (const r of myRooms) {
+        const lastMsgId = String(r.last_message_id || '').trim();
+        if (!lastMsgId) continue;
+        const lastSender = String(r.last_message_sender || '').trim().toLowerCase();
+        const isUnread =
+          Array.isArray(r.unread_by) && r.unread_by.some((u) => String(u || '').toLowerCase() === me);
+
+        if (!this.hasSeededUnread && !triggerNotification) {
+          // On initial boot: if the message arrived very recently (< 10 mins ago) and wasn't notified yet, notify once; otherwise seed it
+          const msgTs = r.last_message_at ? new Date(r.last_message_at).getTime() : 0;
+          const isRecentMissed =
+            isUnread &&
+            lastSender !== me &&
+            msgTs > 0 &&
+            Date.now() - msgTs <= 10 * 60 * 1000 &&
+            !this.notifiedMessageIds.has(lastMsgId);
+
+          if (!isRecentMissed) {
+            this.notifiedMessageIds.add(lastMsgId);
+            continue;
+          }
+        }
+
+        if (isUnread && lastSender !== me && !this.notifiedMessageIds.has(lastMsgId)) {
+          this.notifiedMessageIds.add(lastMsgId);
+          savePersistedNotifiedOrderIds(this.notifiedMessageIds);
+          void syncNotifiedOrdersToServiceWorker(Array.from(this.notifiedMessageIds));
+
+          const isViewingThisRoom =
+            this.state.activeRoomId === r.id && (this.state.isFloatingOpen || isOnLiveChatPage);
+
+          if (!isViewingThisRoom) {
+            const senderLabel = String(
+              r.last_message_sender_name || r.last_message_sender || 'Rekan Tim'
+            ).trim();
+            const synthMessage: ChatMessage = {
+              id: lastMsgId,
+              room_id: r.id,
+              sender_username: lastSender,
+              sender_name: senderLabel,
+              sender_role: 'Operator',
+              text: r.last_message_text || 'Mengirim pesan baru',
+              created_at: r.last_message_at || new Date().toISOString(),
+              read_by: [],
+            };
+
+            playNewTaskChime();
+            vibrateDevice([200, 100, 200]);
+            this.state.incomingToastMessage = { message: synthMessage, room: r };
+            this.incomingListeners.forEach((fn) => {
+              try {
+                fn(r, synthMessage);
+              } catch {}
+            });
+
+            const notifTitle =
+              r.type === 'group'
+                ? `💬 [${r.name || 'Grup Diskusi'}] ${senderLabel}`
+                : `💬 Pesan dari ${senderLabel}`;
+            void showPushNotification(notifTitle, {
+              body: r.last_message_text || '📷 Mengirim lampiran foto',
+              tag: `wms-chat-${r.id}`,
+              url: '/live-chat',
+              page: 'live_chat',
+              roomId: r.id,
+              roomName: r.name || senderLabel,
+              actions: [
+                {
+                  action: 'chat_reply',
+                  type: 'text',
+                  title: '💬 Balas Cepat',
+                  placeholder: 'Ketik balasan pesan...',
+                },
+                {
+                  action: 'chat_mark_read',
+                  title: '✓✓ Tandai Dibaca',
+                },
+              ],
+            });
+          }
+        }
+      }
 
       this.state.rooms = myRooms;
       this.state.isLoadingRooms = false;
@@ -1675,9 +1832,18 @@ class LiveChatManager {
     }
 
     // Trigger audio, toast & system notification if sent by someone else and not actively viewing
-    if (!alreadyExists && message.sender_username.toLowerCase() !== me && !isCurrentlyViewingRoom) {
+    if (
+      !alreadyExists &&
+      message.sender_username.toLowerCase() !== me &&
+      !isCurrentlyViewingRoom &&
+      !this.notifiedMessageIds.has(message.id)
+    ) {
+      this.notifiedMessageIds.add(message.id);
+      savePersistedNotifiedOrderIds(this.notifiedMessageIds);
+      void syncNotifiedOrdersToServiceWorker(Array.from(this.notifiedMessageIds));
+
       playNewTaskChime();
-      vibrateDevice([150, 80, 150]);
+      vibrateDevice([200, 100, 200]);
       this.state.incomingToastMessage = { message, room: finalRoom };
       this.incomingListeners.forEach((fn) => {
         try {
@@ -1685,18 +1851,30 @@ class LiveChatManager {
         } catch {}
       });
 
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
-        const notifTitle =
-          finalRoom.type === 'group'
-            ? `💬 [${finalRoom.name}] ${message.sender_name}`
-            : `💬 Pesan dari ${message.sender_name}`;
-        void showPushNotification(notifTitle, {
-          body: message.text || '📷 Mengirim lampiran foto',
-          tag: `wms-chat-${finalRoom.id}`,
-          url: '/live-chat',
-          page: 'live_chat',
-        });
-      }
+      const notifTitle =
+        finalRoom.type === 'group'
+          ? `💬 [${finalRoom.name}] ${message.sender_name}`
+          : `💬 Pesan dari ${message.sender_name}`;
+      void showPushNotification(notifTitle, {
+        body: message.text || '📷 Mengirim lampiran foto',
+        tag: `wms-chat-${finalRoom.id}`,
+        url: '/live-chat',
+        page: 'live_chat',
+        roomId: finalRoom.id,
+        roomName: finalRoom.name || message.sender_name,
+        actions: [
+          {
+            action: 'chat_reply',
+            type: 'text',
+            title: '💬 Balas Cepat',
+            placeholder: 'Ketik balasan pesan...',
+          },
+          {
+            action: 'chat_mark_read',
+            title: '✓✓ Tandai Dibaca',
+          },
+        ],
+      });
     }
 
     this.notify();

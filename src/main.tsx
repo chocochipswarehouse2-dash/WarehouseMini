@@ -56,17 +56,21 @@ try {
         console.warn('PWA registration skipped or error:', error);
       },
     });
-  } else if (typeof window !== 'undefined' && 'serviceWorker' in navigator && typeof navigator.serviceWorker?.getRegistrations === 'function') {
+  } else if (!isIframe && typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+    // On preview/dev domains opened directly on mobile/desktop browser (outside iframe):
+    // Unregister any caching workbox SW, and register /pwa-extras.js directly so Android/Desktop
+    // OS Notification Bar (showNotification + Inline Reply + Background Watcher) works 100%!
     navigator.serviceWorker
       .getRegistrations()
-      .then((regs) => {
+      .then(async (regs) => {
         for (const reg of regs) {
           const scriptUrl =
             reg.active?.scriptURL || reg.installing?.scriptURL || reg.waiting?.scriptURL || '';
-          if (isDevPreview || scriptUrl.includes('dev-sw.js')) {
-            void reg.unregister().catch(() => {});
+          if (scriptUrl && !scriptUrl.includes('pwa-extras.js')) {
+            await reg.unregister().catch(() => {});
           }
         }
+        await navigator.serviceWorker.register('/pwa-extras.js', { scope: '/' }).catch(() => {});
       })
       .catch(() => {});
   }

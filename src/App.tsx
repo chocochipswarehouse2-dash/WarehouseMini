@@ -177,6 +177,7 @@ import {
   setLastOrderCheckTimestamp,
   showPushNotification,
   syncNotifiedOrdersToServiceWorker,
+  triggerServiceWorkerCheckNow,
 } from './services/pushNotification';
 import { releaseScreenWakeLock, requestScreenWakeLock } from './services/wakeLock';
 import { isRunningInIframe } from './services/orientationLock';
@@ -1608,8 +1609,81 @@ export default function App() {
       lastCheckedAt: getLastOrderCheckTimestamp() || Date.now(),
     });
 
+    // Dengarkan pesan dari Service Worker & in-app notification click untuk SEMUA user (termasuk klik notif Live Chat / Balas Cepat)
+    const handleSwMessage = (event: MessageEvent) => {
+      const data = event.data;
+      if (!data || typeof data !== 'object') return;
+      if (data.type === 'WMS_SW_ORDERS_NOTIFIED' && Array.isArray(data.notifiedIds)) {
+        data.notifiedIds.forEach((id: string) => {
+          if (id) notifiedOrderIdsRef.current.add(String(id).toUpperCase());
+        });
+        savePersistedNotifiedOrderIds(notifiedOrderIdsRef.current);
+        if (data.timestamp) setLastOrderCheckTimestamp(Number(data.timestamp));
+      } else if (data.type === 'WMS_NOTIFICATION_CLICK') {
+        if (data.page) {
+          setActivePage(data.page as ActivePage);
+        }
+        if (data.roomId) {
+          void liveChatManager.selectRoom(String(data.roomId));
+        }
+      }
+    };
+
+    const handleInAppNotifClick = (ev: Event) => {
+      const detail = (ev as CustomEvent)?.detail;
+      if (!detail) return;
+      if (detail.page) {
+        setActivePage(detail.page as ActivePage);
+      }
+      if (detail.roomId) {
+        void liveChatManager.selectRoom(String(detail.roomId));
+      }
+    };
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleSwMessage);
+    }
+    window.addEventListener('wms_inapp_notification_click', handleInAppNotifClick);
+
+    // Cek parameter ?room=... jika dibuka dari klik notifikasi saat aplikasi sebelumnya tertutup
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const roomParam = urlParams.get('room');
+      if (roomParam) {
+        setActivePage('live_chat');
+        setTimeout(() => {
+          void liveChatManager.selectRoom(roomParam);
+        }, 400);
+      }
+    } catch {}
+
+    // Auto-minta izin notifikasi pada ketukan pertama user di layar HP/Browser jika status masih 'default'
+    const handleFirstGesturePermission = () => {
+      if (isNotificationSupported() && getNotificationPermissionStatus() === 'default') {
+        requestNotificationPermission()
+          .then((perm) => setNotificationPermission(perm))
+          .catch(() => {});
+      }
+      window.removeEventListener('pointerdown', handleFirstGesturePermission);
+    };
+    if (isNotificationSupported() && getNotificationPermissionStatus() === 'default') {
+      window.addEventListener('pointerdown', handleFirstGesturePermission, { once: true });
+    }
+
     if (!userIsAdmin && !userIsPicker) {
-      return;
+      const swChatKeepAlive = setInterval(() => {
+        if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+          void triggerServiceWorkerCheckNow();
+        }
+      }, 20000);
+      return () => {
+        clearInterval(swChatKeepAlive);
+        window.removeEventListener('pointerdown', handleFirstGesturePermission);
+        window.removeEventListener('wms_inapp_notification_click', handleInAppNotifClick);
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+        }
+      };
     }
 
     let isMounted = true;
@@ -1624,30 +1698,11 @@ export default function App() {
       if (k3) notifiedOrderIdsRef.current.add(k3);
     };
 
-    // Dengarkan pesan dari Service Worker (jika SW sudah menotifikasi pesanan saat tab di background, atau user klik notifikasi)
-    const handleSwMessage = (event: MessageEvent) => {
-      const data = event.data;
-      if (!data || typeof data !== 'object') return;
-      if (data.type === 'WMS_SW_ORDERS_NOTIFIED' && Array.isArray(data.notifiedIds)) {
-        data.notifiedIds.forEach((id: string) => {
-          if (id) notifiedOrderIdsRef.current.add(String(id).toUpperCase());
-        });
-        savePersistedNotifiedOrderIds(notifiedOrderIdsRef.current);
-        if (data.timestamp) setLastOrderCheckTimestamp(Number(data.timestamp));
-      } else if (data.type === 'WMS_NOTIFICATION_CLICK' && data.page) {
-        setActivePage(data.page as ActivePage);
-      }
-    };
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.addEventListener('message', handleSwMessage);
-    }
-
-    // 2. Cek pesanan baru & SPS baru secara hemat kuota log ingestion:
-    // Hanya berjalan saat tab terlihat (visible), dicek setiap 60 detik (bukan 10 detik), dan catch-up instan saat tab dibuka kembali.
+    // 2. Cek pesanan baru, Retur baru & SPS baru secara responsif (20 detik, tetap jalan walau layar di-minimize agar notif HP berbunyi seperti WhatsApp)
     const checkNewStoreOrdersDelta = async () => {
       if (!isSeeded) return;
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
-        return; // Nol request saat tab di-minimize / tidak aktif
+        void triggerServiceWorkerCheckNow();
       }
       try {
         const nowMs = Date.now();
@@ -1850,12 +1905,14 @@ export default function App() {
 
     seedExistingOrders();
 
-    // Polling hemat kuota: 60 detik saat tab aktif (menghemat 83% kuota dibanding 10 detik)
-    const intervalId = setInterval(checkNewStoreOrdersDelta, 60000);
+    // Polling responsif setiap 20 detik agar Pesanan Store, Retur, SPS, dan Live Chat muncul instan di Notification Bar HP
+    const intervalId = setInterval(checkNewStoreOrdersDelta, 20000);
     const handleVisibilityOrOnline = () => {
       if (document.visibilityState === 'visible') {
         setNotificationPermission(getNotificationPermissionStatus());
         checkNewStoreOrdersDelta(); // Catch-up instan saat layar dibuka kembali
+      } else {
+        void triggerServiceWorkerCheckNow();
       }
     };
 
@@ -1866,6 +1923,8 @@ export default function App() {
     return () => {
       isMounted = false;
       clearInterval(intervalId);
+      window.removeEventListener('pointerdown', handleFirstGesturePermission);
+      window.removeEventListener('wms_inapp_notification_click', handleInAppNotifClick);
       document.removeEventListener('visibilitychange', handleVisibilityOrOnline);
       window.removeEventListener('focus', handleVisibilityOrOnline);
       window.removeEventListener('online', handleVisibilityOrOnline);
@@ -1975,15 +2034,23 @@ export default function App() {
     if (perm === 'granted') {
       playNewTaskChime();
       vibrateDevice([200, 100, 200]);
-      showToast('Notifikasi Admin (Laptop & HP) aktif! Mengirim tes notifikasi...', 'success');
-      await showPushNotification('🔔 Notifikasi Admin WMS Aktif!', {
-        body: 'Laptop / HP Admin Anda siap menerima bunyi & pop-up otomatis saat Store (Toko A, dll.) menginput Pesanan Baru.',
+      showToast('Notifikasi HP / Browser aktif! Mengirim tes notifikasi...', 'success');
+      await showPushNotification('🔔 Notifikasi WMS Aktif (Gaya WhatsApp)!', {
+        body: isSuperadmin(session)
+          ? 'HP / Laptop Anda siap menerima bunyi & pop-up otomatis saat Pesanan Baru, Retur, atau Live Chat masuk.'
+          : 'HP / Laptop Anda siap menerima bunyi & pop-up otomatis saat Pesan Live Chat atau Update Resi masuk.',
         tag: `wms-test-notif-${Date.now()}`,
-        page: 'pesanan_saya',
+        page: isSuperadmin(session) ? 'pesanan_saya' : 'live_chat',
+        actions: [
+          {
+            action: 'chat_mark_read',
+            title: '✓✓ Mengerti',
+          },
+        ],
       });
     } else {
       showToast(
-        'Izin notifikasi belum diizinkan di browser Laptop/HP Anda. Silakan klik ikon gembok di sebelah kiri URL lalu izinkan Notifications (Allow).',
+        'Izin notifikasi belum diizinkan di browser Laptop/HP Anda. Silakan klik ikon gembok/pengaturan di sebelah URL lalu izinkan Notifications (Allow).',
         'warning'
       );
     }
@@ -2660,9 +2727,8 @@ export default function App() {
           {/* Offline Connection & Work Protection Banner */}
           <OfflineProtectionBar onNotify={(msg, type) => showToast(msg, type)} />
 
-          {/* Admin Only (Laptop & HP Admin) Push Notification Activation Prompt Bar */}
+          {/* Push Notification Activation Prompt Bar (Semua User untuk Live Chat & Pesanan) */}
           {session &&
-            isSuperadmin(session) &&
             isNotificationSupported() &&
             notificationPermission !== 'granted' &&
             !dismissedNotifPrompt && (
@@ -2672,8 +2738,13 @@ export default function App() {
                     <BellRing className="w-3.5 h-3.5" />
                   </div>
                   <span>
-                    <strong>Notifikasi Admin (Laptop / HP) Belum Aktif:</strong> Aktifkan di perangkat Admin ini agar otomatis berbunyi &amp; muncul pop-up saat{' '}
-                    <strong>Store (Toko A, dll.) submit input pesanan baru</strong>.
+                    <strong>Notifikasi HP / Browser Belum Aktif:</strong> Aktifkan agar muncul pop-up &amp; nada dering layaknya WhatsApp saat ada{' '}
+                    <strong>
+                      {isSuperadmin(session)
+                        ? 'Pesanan Baru Store, Tiket Retur, atau Pesan Live Chat masuk'
+                        : 'Pesan Live Chat / Ruang Diskusi atau Update Resi masuk'}
+                    </strong>
+                    .
                   </span>
                 </div>
                 <div className="flex items-center gap-2 ml-auto">
@@ -2682,7 +2753,7 @@ export default function App() {
                     onClick={handleRequestNotification}
                     className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-amber-500 hover:bg-amber-600 text-black shadow-xs cursor-pointer transition-all active:scale-95"
                   >
-                    Aktifkan Notifikasi Admin
+                    Aktifkan Notifikasi HP
                   </button>
                   <button
                     type="button"

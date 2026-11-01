@@ -15,21 +15,35 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.20",
-  "versionCode": 280,
+  "version": "v2.6.21",
+  "versionCode": 281,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v280-1544",
-  "releaseTitle": "WMS v2.6.20 — Mode Ringkas Baku & Kolom Saldo Stok Saat Mutasi (Log Produk)",
+  "buildHash": "wms-261101-v281-0903",
+  "releaseTitle": "WMS v2.6.21 — Notifikasi OS HP Gaya WhatsApp (Pesanan & Live Chat) & Stock Opname Eksklusif di Pengaturan Sistem",
   "releaseNotes": [
-    "Log Produk Mode Ringkas Baku: Transaksi dengan Invoice, SKU, dan Lokasi sama kini otomatis menjadi tampilan standar WMS (tanpa saklar on/off manual)",
-    "Kolom Saldo Stok Real-Time: Menampilkan sisa stok fisik di rak pada detik mutasi terjadi (Running Balance) untuk verifikasi audit lapangan yang presisi",
-    "Desain Responsif Desktop & Seluler: Tampilan tabel spreadsheet dengan proporsi fixed dan kartu mobile dengan dual tiles (Qty Mutasi & Stok Saat Itu)",
-    "Harmonisasi Fitur Live Chat AI Studio: Posisi tombol floating seluler dan penyesuaian kontainer ruang obrolan terintegrasi"
+    "Perbaikan Notifikasi OS HP (Android/iOS/Desktop) layaknya WhatsApp untuk Pesanan Baru Store, Tiket Retur, SPS, dan Live Chat (mendukung Balas Cepat & Tandai Dibaca langsung dari bar notifikasi HP)",
+    "Registrasi otomatis Service Worker (/pwa-extras.js) di seluruh domain seluler dan pratinjau agar pop-up bar notifikasi sistem Android Chrome berjalan 100%",
+    "Pemindahan modul Stock Opname dari menu Scanner",
+    "LOG ke dalam Pengaturan Sistem khusus Superadmin serta perbaikan ikon ClipboardList"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.20",
+    "versionCode": 280,
+    "buildDate": "1 November 2026",
+    "buildHash": "wms-261101-v280-1544",
+    "releaseTitle": "WMS v2.6.20 — Mode Ringkas Baku & Kolom Saldo Stok Saat Mutasi (Log Produk)",
+    "releaseNotes": [
+      "Log Produk Mode Ringkas Baku: Transaksi dengan Invoice, SKU, dan Lokasi sama kini otomatis menjadi tampilan standar WMS (tanpa saklar on/off manual)",
+      "Kolom Saldo Stok Real-Time: Menampilkan sisa stok fisik di rak pada detik mutasi terjadi (Running Balance) untuk verifikasi audit lapangan yang presisi",
+      "Desain Responsif Desktop & Seluler: Tampilan tabel spreadsheet dengan proporsi fixed dan kartu mobile dengan dual tiles (Qty Mutasi & Stok Saat Itu)",
+      "Harmonisasi Fitur Live Chat AI Studio: Posisi tombol floating seluler dan penyesuaian kontainer ruang obrolan terintegrasi"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.19",
     "versionCode": 279,
@@ -121,18 +135,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Mengubah interval polling delta dari 10 detik ke 60 detik (menghemat 83 persen request)",
       "Menghapus kolom items yang besar dari select query notifikasi",
       "Menaikkan interval Service Worker background dari 25 detik ke 3 menit (menghemat 86 persen background traffic)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.12",
-    "versionCode": 272,
-    "buildDate": "30 Oktober 2026",
-    "buildHash": "wms-261030-v272-2109",
-    "releaseTitle": "WMS v2.6.12 — Backward Compatibility Thread Reply Email Retur Lama",
-    "releaseNotes": [
-      "Menambahkan auto-deteksi tiket retur legacy agar update berikutnya otomatis me-reply utas email yang sudah ada di inbox tim",
-      "Memastikan 100 persen tiket lama dan baru tersusun rapi dalam 1 thread percakapan"
     ],
     "minSupportedVersion": "v2.0.0"
   }

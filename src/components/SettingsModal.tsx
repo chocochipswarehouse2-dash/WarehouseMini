@@ -64,11 +64,13 @@ import {
   User,
   Info,
   MapPin,
-  Mail
+  Mail,
+  ClipboardList
 } from 'lucide-react';
 import { CURRENT_APP_VERSION } from '../config/appVersion';
 import { fetchOutlets, saveOutlet, deleteOutlet, OutletItem, getStoreContact } from '../services/gasManualShipment';
-import { UserSession, UserRole, UserPermissions, UserPermissionKey, LocalUserRecord, KaryawanRecord } from '../types';
+import { UserSession, UserRole, UserPermissions, UserPermissionKey, LocalUserRecord, KaryawanRecord, ProductItem } from '../types';
+import { StockOpnameView } from './StockOpnameView';
 import { getLocalUsers, saveLocalUsersList } from '../utils/localStore';
 import {
   DEFAULT_SUPABASE_URL,
@@ -126,6 +128,7 @@ interface SettingsModalProps {
   onOpenLocationPurge?: () => void;
   onOpenUpdateModal?: () => void;
   onNotify: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
+  productCatalog?: ProductItem[];
   // Theme Preferences (Akses Bebas Semua Pengguna)
   themeColor?: string;
   setThemeColor?: (color: string) => void;
@@ -140,7 +143,7 @@ interface SettingsModalProps {
   setThemeIconStyle?: (style: string) => void;
 }
 
-type SettingsTab = 'theme' | 'device' | 'database' | 'supabase' | 'users' | 'roles' | 'deploy_apk' | 'whatsapp' | 'outlets';
+type SettingsTab = 'theme' | 'device' | 'database' | 'supabase' | 'users' | 'roles' | 'deploy_apk' | 'whatsapp' | 'outlets' | 'opname';
 
 interface LocalRole {
   name: string;
@@ -162,6 +165,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onOpenLocationPurge,
   onOpenUpdateModal,
   onNotify,
+  productCatalog = [],
   themeColor = 'rose',
   setThemeColor = () => {},
   darkMode = false,
@@ -189,10 +193,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   // Guard: non-authorized users are kept on allowed tabs
   useEffect(() => {
+    if (activeTab === 'opname' && !userIsSuperadmin) {
+      setActiveTab('theme');
+      return;
+    }
     if (!canManageUsers && !canManageSettings && activeTab !== 'theme' && activeTab !== 'device') {
       setActiveTab('theme');
     }
-  }, [canManageUsers, canManageSettings, activeTab]);
+  }, [canManageUsers, canManageSettings, userIsSuperadmin, activeTab]);
 
   // Supabase Config State
   const [supabaseUrl, setSupabaseUrl] = useState<string>('');

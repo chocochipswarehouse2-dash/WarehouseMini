@@ -70,13 +70,35 @@ export function setLastOrderCheckTimestamp(ts: number = Date.now()): void {
   }
 }
 
+async function getActiveServiceWorkerRegistration(): Promise<ServiceWorkerRegistration | null> {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return null;
+  try {
+    let reg = await navigator.serviceWorker.getRegistration();
+    if (!reg) {
+      reg = await navigator.serviceWorker.register('/pwa-extras.js', { scope: '/' }).catch(() => undefined);
+    }
+    if (reg && (reg.active || reg.waiting || reg.installing)) {
+      if (reg.active) return reg;
+    }
+    // Wait up to 2500ms for serviceWorker.ready so it never hangs indefinitely
+    const readyReg = await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500)),
+    ]);
+    return readyReg || reg || null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Registers Periodic Background Sync & Background Sync on supported PWA browsers (Chrome/Edge Android & Desktop)
  */
 export async function registerBackgroundOrderSync(): Promise<void> {
   if (!('serviceWorker' in navigator)) return;
   try {
-    const registration = await navigator.serviceWorker.ready;
+    const registration = await getActiveServiceWorkerRegistration();
+    if (!registration) return;
     // 1. Periodic Background Sync (fires periodically even when PWA window is closed on Android/Desktop PWA)
     if ('periodicSync' in registration) {
       try {
@@ -126,8 +148,12 @@ export async function configureServiceWorkerOrderWatcher(params: {
   if (!('serviceWorker' in navigator)) return;
   try {
     await registerBackgroundOrderSync();
-    const registration = await navigator.serviceWorker.ready;
-    const targetSw = navigator.serviceWorker.controller || registration.active;
+    const registration = await getActiveServiceWorkerRegistration();
+    const targetSw =
+      navigator.serviceWorker.controller ||
+      registration?.active ||
+      registration?.waiting ||
+      registration?.installing;
     if (targetSw) {
       targetSw.postMessage({
         type: 'WMS_CONFIGURE_SW_WATCHER',
@@ -140,8 +166,11 @@ export async function configureServiceWorkerOrderWatcher(params: {
 export async function syncNotifiedOrdersToServiceWorker(notifiedIds: string[]): Promise<void> {
   if (!('serviceWorker' in navigator)) return;
   try {
-    const registration = await navigator.serviceWorker.ready;
-    const targetSw = navigator.serviceWorker.controller || registration.active;
+    const registration = await getActiveServiceWorkerRegistration();
+    const targetSw =
+      navigator.serviceWorker.controller ||
+      registration?.active ||
+      registration?.waiting;
     if (targetSw) {
       targetSw.postMessage({
         type: 'WMS_SYNC_NOTIFIED_ORDERS',
@@ -151,9 +180,31 @@ export async function syncNotifiedOrdersToServiceWorker(notifiedIds: string[]): 
   } catch {}
 }
 
+export async function triggerServiceWorkerCheckNow(): Promise<void> {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    const registration = await getActiveServiceWorkerRegistration();
+    const targetSw = navigator.serviceWorker.controller || registration?.active;
+    if (targetSw) {
+      targetSw.postMessage({ type: 'WMS_CHECK_ORDERS_NOW' });
+    }
+  } catch {}
+}
+
 export async function showPushNotification(
   title: string,
-  options?: NotificationOptions & { url?: string; page?: string }
+  options?: NotificationOptions & {
+    url?: string;
+    page?: string;
+    roomId?: string;
+    roomName?: string;
+    actions?: Array<{
+      action: string;
+      title: string;
+      type?: string;
+      placeholder?: string;
+    }>;
+  }
 ) {
   if (!('Notification' in window)) return;
 
@@ -163,26 +214,54 @@ export async function showPushNotification(
 
   if (Notification.permission !== 'granted') return;
 
+  const mergedData = {
+    url: options?.url || '/',
+    page: options?.page || '',
+    roomId: options?.roomId || '',
+    roomName: options?.roomName || '',
+    ...(options?.data && typeof options.data === 'object' ? options.data : {}),
+  };
+
   const defaultOptions: any = {
-    icon: '/pwa-192x192.png',
-    badge: '/pwa-192x192.png',
-    vibrate: [250, 100, 250, 100, 400],
+    ...options,
+    icon: options?.icon || '/icon-192.png',
+    badge: options?.badge || '/icon-192.png',
+    vibrate: (options as any)?.vibrate || [250, 100, 250, 100, 400],
     tag: options?.tag || 'wms-notification-' + Date.now(),
     renotify: true,
     requireInteraction: options?.requireInteraction ?? true,
-    data: {
-      url: options?.url || '/',
-      page: options?.page || '',
-    },
-    ...options,
+    data: mergedData,
   };
 
   try {
     if ('serviceWorker' in navigator) {
-      const registration = await navigator.serviceWorker.ready;
+      const registration = await getActiveServiceWorkerRegistration();
       if (registration && 'showNotification' in registration) {
-        await registration.showNotification(title, defaultOptions);
-        return;
+        try {
+          await registration.showNotification(title, defaultOptions);
+          return;
+        } catch {
+          // Fallback 1: If browser rejects `type: 'text'` inline reply action, retry with button actions only
+          if (Array.isArray(defaultOptions.actions) && defaultOptions.actions.length > 0) {
+            try {
+              const buttonOnlyOptions = {
+                ...defaultOptions,
+                actions: defaultOptions.actions.map((a: any) => ({
+                  action: a.action,
+                  title: a.title,
+                })),
+              };
+              await registration.showNotification(title, buttonOnlyOptions);
+              return;
+            } catch {
+              // Fallback 2: Retry without `actions` property
+              const noActionsOptions = { ...defaultOptions };
+              delete noActionsOptions.actions;
+              await registration.showNotification(title, noActionsOptions);
+              return;
+            }
+          }
+        }
       }
     }
   } catch (e) {
@@ -190,12 +269,21 @@ export async function showPushNotification(
   }
 
   try {
-    const notif = new Notification(title, defaultOptions);
+    const cleanOptions = { ...defaultOptions };
+    delete cleanOptions.actions;
+    const notif = new Notification(title, cleanOptions);
     notif.onclick = () => {
       window.focus();
+      if (mergedData.page || mergedData.roomId) {
+        window.dispatchEvent(
+          new CustomEvent('wms_inapp_notification_click', {
+            detail: mergedData,
+          })
+        );
+      }
       notif.close();
     };
   } catch (e) {
-    console.error('Failed to show notification:', e);
+    console.warn('Failed to show notification:', e);
   }
 }

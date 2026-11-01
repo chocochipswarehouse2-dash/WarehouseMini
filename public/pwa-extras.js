@@ -1,5 +1,44 @@
 // Extra Service Worker Listeners for Push Notifications, Background Sync & Periodic Order Watcher
 
+self.addEventListener('install', () => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
+async function safeShowNotification(title, options) {
+  if (!self.registration || typeof self.registration.showNotification !== 'function') {
+    return;
+  }
+  const opts = {
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    ...options,
+  };
+  try {
+    await self.registration.showNotification(title, opts);
+  } catch {
+    if (Array.isArray(opts.actions) && opts.actions.length > 0) {
+      try {
+        const buttonOnlyOpts = {
+          ...opts,
+          actions: opts.actions.map((a) => ({ action: a.action, title: a.title })),
+        };
+        await self.registration.showNotification(title, buttonOnlyOpts);
+        return;
+      } catch {
+        const noActionsOpts = { ...opts };
+        delete noActionsOpts.actions;
+        try {
+          await self.registration.showNotification(title, noActionsOpts);
+        } catch {}
+      }
+    }
+  }
+}
+
 const SW_DB_NAME = 'wms_sw_bg_db';
 const SW_STORE_NAME = 'sw_state';
 const SW_CONFIG_KEY = 'watcher_config';
@@ -49,7 +88,7 @@ async function saveSwConfig(cfg) {
 }
 
 /**
- * Check Supabase REST API directly from Service Worker for new orders
+ * Check Supabase REST API directly from Service Worker for new orders & live chats
  * Works even when no client tab is focused (during periodicsync, sync, push, or SW wake-up)
  */
 async function checkNewOrdersInBackground() {
@@ -61,7 +100,7 @@ async function checkNewOrdersInBackground() {
   // Check if any window client is currently visible & focused; if so, let the main thread handle audio + toast + push
   try {
     const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-    const hasFocusedClient = clientList.some((c) => c.focused || c.visibilityState === 'visible');
+    const hasFocusedClient = clientList.some((c) => c.focused && c.visibilityState === 'visible');
     if (hasFocusedClient) {
       return;
     }
@@ -150,10 +189,10 @@ async function checkNewOrdersInBackground() {
                 : `🛍️ Pesanan Baru dari ${storeName}`;
               const body = `Order #${orderId} • Customer: ${customerName} (${totalQty} pcs via ${jasaKirim})`;
 
-              await self.registration.showNotification(title, {
+              await safeShowNotification(title, {
                 body,
-                icon: '/pwa-192x192.png',
-                badge: '/pwa-192x192.png',
+                icon: '/icon-192.png',
+                badge: '/icon-192.png',
                 vibrate: [300, 120, 300, 120, 500],
                 tag: `manual-shipment-${primaryKey}`,
                 renotify: true,
@@ -182,10 +221,10 @@ async function checkNewOrdersInBackground() {
               newlyNotifiedIds.push(noRetur);
               updated = true;
 
-              await self.registration.showNotification('🔄 Tiket Retur Barang Baru!', {
+              await safeShowNotification('🔄 Tiket Retur Barang Baru!', {
                 body: `Tiket #${noRetur} atas nama ${r.nama_customer || 'Customer'} baru diajukan di Pusat Resolusi.`,
-                icon: '/pwa-192x192.png',
-                badge: '/pwa-192x192.png',
+                icon: '/icon-192.png',
+                badge: '/icon-192.png',
                 vibrate: [250, 100, 250],
                 tag: `retur-new-${noRetur}`,
                 renotify: true,
@@ -234,10 +273,10 @@ async function checkNewOrdersInBackground() {
               newlyNotifiedIds.push(g.noSps);
               updated = true;
 
-              await self.registration.showNotification(`📋 Permintaan SPS Baru — ${g.pic}`, {
+              await safeShowNotification(`📋 Permintaan SPS Baru — ${g.pic}`, {
                 body: `Invoice #${g.noSps} • ${g.keperluan} (${g.skuCount} SKU / ${g.totalQty} pcs). Buka untuk proses picking.`,
-                icon: '/pwa-192x192.png',
-                badge: '/pwa-192x192.png',
+                icon: '/icon-192.png',
+                badge: '/icon-192.png',
                 vibrate: [250, 100, 250, 100, 450],
                 tag: `sps-new-${g.noSps}`,
                 renotify: true,
@@ -297,10 +336,10 @@ async function checkNewOrdersInBackground() {
                   : `💬 Pesan dari ${senderLabel}`;
               const notifBody = String(room.last_message_text || 'Mengirim pesan baru').trim();
 
-              await self.registration.showNotification(notifTitle, {
+              await safeShowNotification(notifTitle, {
                 body: notifBody,
-                icon: '/pwa-192x192.png',
-                badge: '/pwa-192x192.png',
+                icon: '/icon-192.png',
+                badge: '/icon-192.png',
                 vibrate: [200, 100, 200],
                 tag: `wms-chat-${room.id}`,
                 renotify: true,
@@ -522,14 +561,14 @@ async function handleBackgroundChatAction(actionType, roomId, replyText) {
   }
 }
 
-// Keep a gentle background interval while the Service Worker thread is alive
+// Keep a responsive background interval while the Service Worker thread is alive
 let swCheckInterval = null;
 function ensureSwBackgroundTimer() {
   if (swCheckInterval) return;
-  // Cek berkala di background Service Worker saat tab tidak sedang fokus
+  // Cek berkala setiap 20 detik di background Service Worker saat tab tidak sedang fokus
   swCheckInterval = setInterval(() => {
     checkNewOrdersInBackground().catch(() => {});
-  }, 90000);
+  }, 20000);
 }
 
 self.addEventListener('message', (event) => {
@@ -589,8 +628,8 @@ self.addEventListener('push', (event) => {
   let data = {
     title: 'WMS Warehouse Pro',
     body: 'Ada pembaruan aktivitas gudang.',
-    icon: '/pwa-192x192.png',
-    badge: '/pwa-192x192.png',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
     url: '/',
     page: '',
   };
@@ -610,8 +649,8 @@ self.addEventListener('push', (event) => {
 
   const options = {
     body: data.body,
-    icon: data.icon || '/pwa-192x192.png',
-    badge: data.badge || '/pwa-192x192.png',
+    icon: data.icon || '/icon-192.png',
+    badge: data.badge || '/icon-192.png',
     vibrate: [300, 120, 300, 120, 500],
     tag: data.tag || 'wms-push-notif',
     renotify: true,
@@ -623,7 +662,7 @@ self.addEventListener('push', (event) => {
     },
   };
 
-  event.waitUntil(self.registration.showNotification(data.title, options));
+  event.waitUntil(safeShowNotification(data.title, options));
 });
 
 self.addEventListener('notificationclick', (event) => {
@@ -641,10 +680,10 @@ self.addEventListener('notificationclick', (event) => {
     event.waitUntil(
       handleBackgroundChatAction('chat_reply', targetRoomId, inlineReplyText).then(async (ok) => {
         if (ok) {
-          await self.registration.showNotification('✓ Balasan Terkirim', {
+          await safeShowNotification('✓ Balasan Terkirim', {
             body: `"${inlineReplyText}" → ${notifData.roomName || 'Ruang Chat'}`,
-            icon: '/pwa-192x192.png',
-            badge: '/pwa-192x192.png',
+            icon: '/icon-192.png',
+            badge: '/icon-192.png',
             tag: `wms-chat-sent-${targetRoomId}`,
             silent: true,
             requireInteraction: false,
@@ -668,7 +707,7 @@ self.addEventListener('notificationclick', (event) => {
         const client = windowClients[i];
         if ('focus' in client) {
           client.focus();
-          if (targetPage) {
+          if (targetPage || targetRoomId) {
             client.postMessage({
               type: 'WMS_NOTIFICATION_CLICK',
               page: targetPage,
