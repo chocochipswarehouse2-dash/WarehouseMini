@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.27",
-  "versionCode": 287,
+  "version": "v2.6.28",
+  "versionCode": 288,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v287-1927",
-  "releaseTitle": "WMS v2.6.27 — Support Supabase Secret Keys in Web Push",
+  "buildHash": "wms-261101-v288-1949",
+  "releaseTitle": "WMS v2.6.28 — Web Push CJS/ESM Interop & Exception Guard",
   "releaseNotes": [
-    "Kompatibilitas sb_secret_ pada backend push",
-    "Headers Authorization Bearer universal"
+    "Fix webpush module import di Vercel Node runtime",
+    "Try-catch internal error guard"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.27",
+    "versionCode": 287,
+    "buildDate": "1 November 2026",
+    "buildHash": "wms-261101-v287-1927",
+    "releaseTitle": "WMS v2.6.27 — Support Supabase Secret Keys in Web Push",
+    "releaseNotes": [
+      "Kompatibilitas sb_secret_ pada backend push",
+      "Headers Authorization Bearer universal"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.26",
     "versionCode": 286,
@@ -117,19 +129,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Kolom Saldo Stok Real-Time: Menampilkan sisa stok fisik di rak pada detik mutasi terjadi (Running Balance) untuk verifikasi audit lapangan yang presisi",
       "Desain Responsif Desktop & Seluler: Tampilan tabel spreadsheet dengan proporsi fixed dan kartu mobile dengan dual tiles (Qty Mutasi & Stok Saat Itu)",
       "Harmonisasi Fitur Live Chat AI Studio: Posisi tombol floating seluler dan penyesuaian kontainer ruang obrolan terintegrasi"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.19",
-    "versionCode": 279,
-    "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v279-1459",
-    "releaseTitle": "WMS v2.6.19 — Auto-Healing Endpoint GAS & Sinkronisasi Google Calendar",
-    "releaseNotes": [
-      "Auto-Healing Endpoint GAS: Menghubungkan Google Calendar WMS ke deployment aktif dan auto-sanitasi URL kadaluarsa",
-      "Resolusi Sinkronisasi 2-Arah: Penarikan event Google Calendar sukses tanpa kendala Unauthorized",
-      "Harmonisasi Multi-Branch AI Studio: Konsolidasi versi dan catatan rilis tanpa merge conflict"
     ],
     "minSupportedVersion": "v2.0.0"
   }

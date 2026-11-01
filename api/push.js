@@ -12,7 +12,8 @@
  *   PUSH_WEBHOOK_SECRET                                  (sama dengan di trigger SQL)
  *   SUPABASE_URL (atau VITE_SUPABASE_URL), SUPABASE_SERVICE_KEY
  */
-import webpush from 'web-push';
+import webpushRaw from 'web-push';
+const webpush = (webpushRaw && webpushRaw.default) ? webpushRaw.default : webpushRaw;
 
 const CHAT_INDEX_KEY = 'wms_chat_rooms_index_v1';
 
@@ -162,70 +163,78 @@ function matches(sub, audience) {
 }
 
 export default async function handler(req, res) {
-  if (req.method === 'GET') {
-    res.setHeader('Cache-Control', 'public, max-age=3600');
-    return res.status(200).json({ publicKey: process.env.VAPID_PUBLIC_KEY || '' });
-  }
-  if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
-
-  const secret = process.env.PUSH_WEBHOOK_SECRET || '';
-  if (!secret || req.headers['x-push-secret'] !== secret) {
-    return res.status(401).json({ error: 'unauthorized' });
-  }
-
-  const { url, key } = supaConfig();
-  if (!url || !key || !process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
-    return res.status(500).json({ error: 'server_not_configured' });
-  }
-  webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT || 'mailto:admin@example.com',
-    process.env.VAPID_PUBLIC_KEY,
-    process.env.VAPID_PRIVATE_KEY
-  );
-
-  const body = typeof req.body === 'string' ? parseJsonish(req.body, {}) : req.body || {};
-  const messages = buildMessages(body);
-  if (!messages.length) return res.status(200).json({ sent: 0, skipped: true });
-
-  const subRes = await fetch(
-    `${url}/rest/v1/push_subscriptions?select=endpoint,p256dh,auth,username,is_admin,is_picker`,
-    { headers: supaHeaders(key) }
-  );
-  if (!subRes.ok) return res.status(502).json({ error: 'subscriptions_fetch_failed' });
-  const subs = await subRes.json();
-
-  let sent = 0;
-  const dead = new Set();
-  const jobs = [];
-  for (const m of messages) {
-    const data = JSON.stringify(m.payload);
-    for (const s of subs) {
-      if (!matches(s, m.audience)) continue;
-      jobs.push(
-        webpush
-          .sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, data, {
-            TTL: 60 * 60 * 24,
-            urgency: 'high',
-            topic: String(m.payload.tag || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32) || undefined,
-          })
-          .then(() => {
-            sent += 1;
-          })
-          .catch((err) => {
-            if (err && (err.statusCode === 404 || err.statusCode === 410)) dead.add(s.endpoint);
-          })
-      );
+  try {
+    if (req.method === 'GET') {
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      return res.status(200).json({ publicKey: process.env.VAPID_PUBLIC_KEY || '' });
     }
-  }
-  await Promise.all(jobs);
+    if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
 
-  if (dead.size) {
-    const list = Array.from(dead).map((e) => `"${e.replace(/"/g, '')}"`).join(',');
-    await fetch(`${url}/rest/v1/push_subscriptions?endpoint=in.(${encodeURIComponent(list)})`, {
-      method: 'DELETE',
-      headers: supaHeaders(key),
-    }).catch(() => {});
+    const secret = process.env.PUSH_WEBHOOK_SECRET || '';
+    if (!secret || req.headers['x-push-secret'] !== secret) {
+      return res.status(401).json({ error: 'unauthorized' });
+    }
+
+    const { url, key } = supaConfig();
+    if (!url || !key || !process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
+      return res.status(500).json({ error: 'server_not_configured' });
+    }
+    webpush.setVapidDetails(
+      process.env.VAPID_SUBJECT || 'mailto:admin@example.com',
+      process.env.VAPID_PUBLIC_KEY,
+      process.env.VAPID_PRIVATE_KEY
+    );
+
+    const body = typeof req.body === 'string' ? parseJsonish(req.body, {}) : req.body || {};
+    const messages = buildMessages(body);
+    if (!messages.length) return res.status(200).json({ sent: 0, skipped: true });
+
+    const subRes = await fetch(
+      `${url}/rest/v1/push_subscriptions?select=endpoint,p256dh,auth,username,is_admin,is_picker`,
+      { headers: supaHeaders(key) }
+    );
+    if (!subRes.ok) return res.status(502).json({ error: 'subscriptions_fetch_failed' });
+    const subs = await subRes.json();
+
+    let sent = 0;
+    const dead = new Set();
+    const jobs = [];
+    for (const m of messages) {
+      const data = JSON.stringify(m.payload);
+      for (const s of subs) {
+        if (!matches(s, m.audience)) continue;
+        jobs.push(
+          webpush
+            .sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, data, {
+              TTL: 60 * 60 * 24,
+              urgency: 'high',
+              topic: String(m.payload.tag || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32) || undefined,
+            })
+            .then(() => {
+              sent += 1;
+            })
+            .catch((err) => {
+              if (err && (err.statusCode === 404 || err.statusCode === 410)) dead.add(s.endpoint);
+            })
+        );
+      }
+    }
+    await Promise.all(jobs);
+
+    if (dead.size) {
+      const list = Array.from(dead).map((e) => `"${e.replace(/"/g, '')}"`).join(',');
+      await fetch(`${url}/rest/v1/push_subscriptions?endpoint=in.(${encodeURIComponent(list)})`, {
+        method: 'DELETE',
+        headers: supaHeaders(key),
+      }).catch(() => {});
+    }
+    return res.status(200).json({ sent, removed: dead.size });
+  } catch (err) {
+    console.error('[PUSH ERROR]', err);
+    return res.status(500).json({
+      error: 'internal_push_error',
+      message: String(err && err.message ? err.message : err),
+    });
   }
-  return res.status(200).json({ sent, removed: dead.size });
 }
 

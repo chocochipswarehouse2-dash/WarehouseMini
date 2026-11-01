@@ -1,12 +1,12 @@
 {
-  "version": "v2.6.27",
-  "versionCode": 287,
+  "version": "v2.6.28",
+  "versionCode": 288,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v287-1927",
-  "releaseTitle": "WMS v2.6.27 — Support Supabase Secret Keys in Web Push",
+  "buildHash": "wms-261101-v288-1949",
+  "releaseTitle": "WMS v2.6.28 — Web Push CJS/ESM Interop & Exception Guard",
   "releaseNotes": [
-    "Kompatibilitas sb_secret_ pada backend push",
-    "Headers Authorization Bearer universal"
+    "Fix webpush module import di Vercel Node runtime",
+    "Try-catch internal error guard"
   ],
   "minSupportedVersion": "v2.0.0"
 }
