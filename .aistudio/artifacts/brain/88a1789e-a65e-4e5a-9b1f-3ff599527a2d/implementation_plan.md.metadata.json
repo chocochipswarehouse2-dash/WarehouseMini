@@ -1,6 +1,6 @@
 {
-  "summary":  "Rencana implementasi Dashboard Interaktif Simulasi Kapasitas Rak Penyimpanan pada halaman Inventory lengkap dengan mode ganda (Grid Visual Animasi & Tabel Ringkas), Setup Kapasitas Massal & Spesifik Rak, Simulasi Pindah Barang, Rekomendasi Rak Kosong Terdekat, serta integrasi Tab Log Produk & Mutasi.",
-  "updatedAt":  "2026-10-24T13:27:57.523566312Z",
+  "summary":  "Revisi rencana implementasi Live Chat & Ruang Diskusi: Menambahkan fitur Balas Chat Langsung dari Notification Bar (Inline Direct Reply & Tandai Dibaca tanpa buka aplikasi) serta Sinkronisasi Terpadu Notifikasi Background untuk Pesanan Baru Manual Shipment, Alter/Repair, Retur Barang, dan SPS di public/pwa-extras.js.",
+  "updatedAt":  "2026-11-01T05:17:13.823933820Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

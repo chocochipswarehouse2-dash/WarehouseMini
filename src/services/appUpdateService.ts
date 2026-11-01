@@ -134,6 +134,16 @@ class AppUpdateManager {
       return;
     }
 
+    const hostname = window.location?.hostname || '';
+    const isDevEnv =
+      import.meta.env.DEV ||
+      hostname.startsWith('ais-dev-') ||
+      hostname.startsWith('ais-pre-');
+
+    if (isDevEnv) {
+      return;
+    }
+
     // Only reload on controllerchange if the update was intentionally triggered by applyUpdate()
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (this.isApplyingUpdate) {
@@ -143,6 +153,13 @@ class AppUpdateManager {
 
     navigator.serviceWorker.getRegistration().then((reg) => {
       if (!reg) return;
+
+      const scriptUrl =
+        reg.active?.scriptURL || reg.installing?.scriptURL || reg.waiting?.scriptURL || '';
+      if (scriptUrl.includes('dev-sw.js')) {
+        void reg.unregister().catch(() => {});
+        return;
+      }
 
       if (reg.waiting) {
         this.notifySwUpdateReady(reg.waiting);
@@ -217,14 +234,26 @@ class AppUpdateManager {
     }
 
     try {
-      // 1. Trigger Service Worker update check quietly
-      if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      // 1. Trigger Service Worker update check quietly (skip in dev/preview to avoid dev-sw.js errors)
+      const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
+      const isDevEnv =
+        import.meta.env.DEV ||
+        hostname.startsWith('ais-dev-') ||
+        hostname.startsWith('ais-pre-');
+
+      if (!isDevEnv && typeof window !== 'undefined' && 'serviceWorker' in navigator) {
         try {
           const reg = await navigator.serviceWorker.getRegistration();
           if (reg) {
-            await reg.update();
-            if (reg.waiting) {
-              this.state.waitingWorker = reg.waiting;
+            const scriptUrl =
+              reg.active?.scriptURL || reg.installing?.scriptURL || reg.waiting?.scriptURL || '';
+            if (scriptUrl.includes('dev-sw.js')) {
+              await reg.unregister().catch(() => {});
+            } else {
+              await reg.update();
+              if (reg.waiting) {
+                this.state.waitingWorker = reg.waiting;
+              }
             }
           }
         } catch (swErr) {

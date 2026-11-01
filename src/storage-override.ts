@@ -69,7 +69,9 @@ function isSecurityErrorValue(val: unknown): boolean {
       s.includes('SecurityError') ||
       s.includes('Access is denied') ||
       s.includes('failed to connect to websocket') ||
-      s.includes('WebSocket closed without opened')
+      s.includes('WebSocket closed without opened') ||
+      s.includes('dev-sw.js') ||
+      s.includes('encountered an error during installation')
     );
   } catch {
     return false;

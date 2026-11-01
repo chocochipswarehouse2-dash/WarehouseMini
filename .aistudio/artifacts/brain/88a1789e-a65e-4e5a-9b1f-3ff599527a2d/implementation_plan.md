@@ -1,76 +1,113 @@
-# Rencana Implementasi: Dashboard Interaktif Simulasi Kapasitas Rak Penyimpanan
+# Live Chat & Ruang Diskusi Operasional Multi-User + Unified Background Notification (Direct Reply)
 
-## 1. Gambaran Umum & Struktur Halaman Inventory
-Halaman **Inventory** (`src/components/InventoryView.tsx`) akan ditingkatkan menjadi pusat kendali penyimpanan gudang terpadu dengan **3 Tab Utama** di bagian atas halaman:
-
-1. **Dashboard Kapasitas Rak** *(Baru)* — Visualisasi interaktif real-time kapasitas seluruh rak gudang, lengkap dengan animasi tingkat keterisian, deteksi overload (`>100%`), rekomendasi rak kosong terdekat per kategori, simulasi pindah barang, dan pengaturan kapasitas.
-2. **Data Inventory Produk** *(Eksisting)* — Tabel stok produk per Area dan lokasi rak yang saat ini sudah berjalan, dilengkapi filter Area, pencarian SKU, dan Export CSV.
-3. **Log Produk & Mutasi** *(Terintegrasi di Inventory & Tetap Ada di Scanner)* — Riwayat mutasi keluar-masuk barang (`#IN`, `#OUT`, `#SO`, `#ADJ_IN`, `#ADJ_OUT`) dari hasil scan operator/picker secara langsung di halaman Inventory, tanpa menghapus tab Log yang ada di halaman Scanner.
+Fitur komunikasi instan terintegrasi di dalam ekosistem **WMS Warehouse Mini** dengan **riwayat chat permanen**, **aturan Edit & Hapus pesan berstandar audit gudang (batas 5 menit & kunci saat sudah dibaca `✓✓`)**, **fitur Balas Langsung (*Inline Direct Reply*) dari Notification Bar HP/Desktop tanpa perlu membuka aplikasi**, serta **Sinkronisasi Background Terpadu untuk Notifikasi Pesanan Baru (Manual Shipment, Alter/Repair, Retur Barang, dan SPS)**.
 
 ---
 
-## 2. Arsitektur Data & Sinkronisasi Real-Time
+## User Review & Keputusan Produk Utama
 
-### A. Konfigurasi Kapasitas & Zona (`wms_system_docs`)
-Pengaturan kapasitas disimpan secara persisten di Supabase melalui dokumen sistem `rack_capacity_config` (dengan fallback `localStorage` agar instan saat dibuka):
-- **Default Zona Utama (Area Warehouse)**:
-  - **Zona A (`A001` – `A100`)**: Kategori **Dress** · Default Kapasitas Maksimal: `25 pcs` per rak
-  - **Zona B (`B001` – `B100`)**: Kategori **Bottom** · Default Kapasitas Maksimal: `40 pcs` per rak
-  - **Zona C (`C001` – `C100`)**: Kategori **Top** · Default Kapasitas Maksimal: `35 pcs` per rak
-  - **Zona D (`D001` – `D100`)**: Kategori **Sale** · Default Kapasitas Maksimal: `50 pcs` per rak
-- **Area Tambahan & Kustom**:
-  - Mendukung area gudang lain sesuai standar WMS (**Kolian** `R0.. / V0.. / Z0..`, **Blok F** `TIKTOK / SHOPEE / STUDIO`, **Aksesoris** `BELT / CARD / GIFT / BOX`, **Transit** `X / TRANSIT`) serta kemampuan **Tambah Area & Rentang Lokasi Baru** secara dinamis.
-- **Override Spesifik Per Rak**:
-  - Setiap lokasi rak (misal `A001 = 25 pcs`, `A005 = 35 pcs`, `B001 = 40 pcs`) dapat memiliki kapasitas maksimal dan label kategori tersendiri yang menimpa pengaturan default zona.
+> [!IMPORTANT]
+> Berikut adalah penyempurnaan rancangan berdasarkan masukan terbaru Anda mengenai **Balas Chat dari Notification Bar** dan **Sinkronisasi Notifikasi Pesanan Baru (Manual Shipment & Retur)** di background:
 
-### B. Integrasi Real-Time dengan Stok Fisik (`stok_real_fisik` & `log_produk`)
-- Perhitungan isi rak (`terisi_pcs`, `jumlah_sku`, dan `daftar_produk`) dihitung langsung secara reaktif dari `useInventoryStock` (`flattenStock()`) yang terhubung dengan scan `#IN`, `#OUT`, dan `#SO` oleh operator.
-- Sesuai aturan mutlak WMS (`GEMINI.md`), fitur **Simulasi Pindah Barang** di dashboard bersifat *non-destruktif* (simulasi visual & lembar kerja rekomendasi untuk picker), sehingga perubahan stok fisik nyata tetap 100% berasal dari scan fisik operator di lapangan.
+### 1. Balas Chat Langsung dari Notification Bar Tanpa Buka Aplikasi (*Inline Direct Reply* ala WhatsApp)
+Menggunakan fitur **Service Worker Notification Actions (`type: 'text'`)** pada `public/pwa-extras.js`:
+- Saat ada pesan Live Chat masuk ketika aplikasi sedang tertutup/di-*minimize*, notifikasi yang muncul di bar atas HP Android / Desktop memiliki **2 Tombol Aksi Langsung**:
+  1. **`💬 Balas Cepat` (*Inline Text Input*)**: Ketika diketuk, langsung memunculkan kolom ketik balasan di dalam bar notifikasi HP/Desktop (persis seperti WhatsApp). Begitu Anda ketik dan tekan kirim, **Service Worker langsung mengirim balasan tersebut ke ruang chat di background tanpa perlu membuka halaman aplikasi WMS**!
+  2. **`✓✓ Tandai Dibaca`**: Langsung mengubah status pesan menjadi sudah dibaca (`✓✓`) dan menutup notifikasi tanpa perlu membuka aplikasi.
 
----
+### 2. Sinkronisasi Terpadu Background: Live Chat + Manual Shipment + Alter + Retur Barang + SPS
+Dengan diaktifkannya mesin **Unified Live Background Sync** di `public/pwa-extras.js` dan penghubung otomatis saat user login di aplikasi:
+- **Tidak hanya Live Chat**, tetapi seluruh aktivitas krusial gudang otomatis ikut tersinkronisasi secara *real-time* di background:
+  - **`💬 Live Chat & Ruang Diskusi`**: Pesan pribadi (1-on-1) maupun pesan Grup Diskusi yang menyebut/melibatkan Anda.
+  - **`🛍️ Manual Shipment & ✂️ Form Alter/Repair Baru`**: Begitu Store menginput pesanan baru, Admin langsung mendapat notifikasi sistem (lengkap dengan tombol aksi cepat di notifikasi).
+  - **`🔄 Tiket Retur Barang Baru (Pusat Resolusi)`**: Begitu CS/Store mengajukan retur `RTR-...`, notifikasi langsung muncul di bar HP/Desktop Admin.
+  - **`📋 Permintaan Peminjaman Sementara (SPS) Baru`**: Notifikasi otomatis untuk Admin dan Tim Picker saat ada pengajuan SPS baru.
 
-## 3. Fitur Utama Dashboard Interaktif Kapasitas Rak
+### 3. Riwayat Chat Permanen (Tidak Pernah Hilang) & Hemat Kuota Supabase Free Tier
+- **Lapis 1 (`IndexedDB` Perangkat)**: Menyimpan seluruh riwayat chat lama secara permanen di perangkat masing-masing (`0 Byte` Egress Supabase saat buka chat lama).
+- **Lapis 2 (Supabase Hot Store)**: Menyimpan pesan aktif lintas perangkat (sangat hemat: 10.000 pesan teks = `~1,8 MB`).
+- **Lapis 3 (Arsip Otomatis ke Google Drive via GAS)**: Foto kendala (`0 Byte` di Supabase) dan arsip chat lama otomatis tersimpan di Google Drive Anda (kuota 15 GB gratis Google).
 
-### 1. Ringkasan Kapasitas Gudang & Kartu Zona (Header Analitik)
-- **Total Utilisasi Gudang**: Persentase keterisian keseluruhan gudang (`Total Pcs Terisi / Total Kapasitas Maksimal`), jumlah rak kosong (`0%`), rak aman (`1–70%`), rak hampir penuh (`71–99%`), dan rak overload (`>100%`).
-- **Kartu Progres Per Zona/Kategori**: Bar progres animasi untuk **Zona A (Dress)**, **Zona B (Bottom)**, **Zona C (Top)**, **Zona D (Sale)**, dan area lainnya. Klik pada kartu zona akan langsung memfilter tampilan rak ke zona tersebut.
-
-### 2. Mode Tampilan Ganda (Grid Visual Interaktif & Tabel Ringkas)
-- **Mode Grid Visual Rak**:
-  - Menampilkan deretan rak (`A001` s/d `A100`, dst.) sebagai slot rak modern dengan **animasi bar pengisian vertikal (liquid-fill)** dan angka tabular (`tabular-nums`):
-    - **Kosong (`0%`)**: Netral / Abu-abu terang — siap ditempati barang baru.
-    - **Aman (`1% – 70%`)**: Hijau Emerald — ruang masih longgar.
-    - **Hampir Penuh (`71% – 99%`)**: Kuning Amber — mendekati batas kapasitas.
-    - **Overload / Penuh (`>= 100%`)**: **Alert Visual Merah Berkedip** dengan penanda jelas untuk rak yang melebihi kapasitas maksimal.
-- **Mode Tabel Ringkas**:
-  - Tampilan tabel padat berkecepatan tinggi dengan kolom: `Kode Rak`, `Area & Zona`, `Kategori`, `Stok Saat Ini (pcs)`, `Kapasitas Max (pcs)`, `Persentase (%)`, `Jumlah SKU`, `Status`, dan tombol `Edit Kapasitas Cepat`.
-
-### 3. Filter Cepat & Pencarian Pintar
-- Filter 1-klik berdasarkan status rak: **Semua Rak**, **Rak Kosong (0%)**, **Masih Longgar (<70%)**, **Hampir Penuh (71–99%)**, dan **Overload (>100%)**.
-- Filter berdasarkan **Zona/Kategori** (`Dress`, `Bottom`, `Top`, `Sale`, dll.) serta pencarian langsung kode lokasi (`A012`) atau kode SKU untuk melacak di rak mana saja produk tersebut berada.
-
-### 4. Drawer Detail Rak & Rekomendasi Otomatis Rak Kosong Terdekat
-Saat pengguna mengklik salah satu rak (misal `A001`):
-- Menampilkan rincian produk/SKU beserta kuantitas fisik saat ini di rak tersebut.
-- Menampilkan **Riwayat Scan Terakhir** (`#IN` / `#OUT` / `#SO`) khusus di lokasi rak tersebut.
-- **Rekomendasi Pintar Rak Kosong / Longgar Terdekat**: Jika rak penuh atau overload, sistem otomatis merekomendasikan 5 rak kosong/longgar terdekat pada **kategori yang sama** (misal sesama Zona A - Dress, diurutkan berdasarkan jarak nomor rak terdekat seperti `A002`, `A003`, dst.).
-- Input cepat untuk langsung mengubah kapasitas maksimal atau kategori rak tersebut.
-
-### 5. Mode Simulasi Pindah Barang Antar Rak (Pre-Execution Simulator)
-- Memungkinkan Admin/Kepala Gudang memilih rak sumber (misal rak yang overload `A001`) dan memindahkan sejumlah `pcs` ke rak tujuan (misal `A004` yang kosong) di dalam layar simulasi.
-- Menampilkan **perbandingan persentase rak Sebelum vs Sesudah simulasi** secara langsung.
-- Daftar rencana pemindahan dapat disalin sebagai **Instruksi Tugas Pindah Rak (Format WA / Cetak)** untuk dieksekusi oleh picker menggunakan Scanner (`#OUT` rak asal $\rightarrow$ `#IN` rak tujuan).
-
-### 6. Modal Setup Kapasitas Massal & Area Baru
-- **Tab Setup Massal per Zona/Prefix**: Atur sekaligus rentang rak (contoh: Prefix `A`, Nomor `001` s/d `100`, Kategori `Dress`, Kapasitas `25 pcs`).
-- **Tab Tambah Area / Lokasi Kustom**: Tambahkan zona atau blok penyimpanan baru beserta warna identitas, kategori produk, dan kapasitas standarnya.
-- **Tab Edit Spesifik per Rak**: Cari rak tertentu dan sesuaikan kapasitas maksimalnya secara individual.
+### 4. Fitur Edit & Hapus Pesan Berstandar Audit Gudang (`✓✓ Dibaca` & Batas 5 Menit)
+- **Bisa Edit / Hapus**: Hanya jika **belum dibaca user lain (`✓`) DAN masih dalam batas waktu $\le 5$ menit** sejak dikirim.
+- **Penanda Transparan**:
+  - Jika diedit $\rightarrow$ muncul label **`(Diedit • 14:25)`**.
+  - Jika dihapus $\rightarrow$ berubah menjadi jejak **`🚫 Pesan ini telah dihapus oleh [Nama]`**.
+- **Terkunci Otomatis**: Begitu pesan **sudah dibaca (`✓✓`)** oleh penerima atau **lewat 5 menit**, tombol Edit & Hapus otomatis terkunci demi menjaga akuntabilitas instruksi gudang.
 
 ---
 
-## 4. Rencana Perubahan File
-1. `src/services/rackCapacityService.ts` *(Baru)* — Layanan manajemen konfigurasi kapasitas rak, generator default `A001–D100` (`A=Dress`, `B=Bottom`, `C=Top`, `D=Sale`), kalkulator utilisasi real-time, serta algoritma rekomendasi rak terdekat dan simulator relokasi.
-2. `src/components/inventory/RackCapacityDashboard.tsx` *(Baru)* — Komponen utama Dashboard Interaktif Kapasitas Rak (Header Zona, Toggle Grid/Tabel, Kartu Rak Animasi, Drawer Detail Rak, Modal Setup Kapasitas, dan Simulator Pindah Barang).
-3. `src/components/inventory/InventoryMutationLogTab.tsx` *(Baru)* — Komponen Tab Log Produk & Mutasi di halaman Inventory yang menampilkan riwayat scan `#IN`, `#OUT`, `#SO`, dan `#ADJ` dengan filter lokasi, tipe mutasi, dan pencarian SKU/Invoice.
-4. `src/components/InventoryView.tsx` *(Modifikasi)* — Menambahkan navigasi 3 tab (`Dashboard Kapasitas Rak`, `Data Inventory Produk`, `Log Produk & Mutasi`) serta menghubungkan state stok dan log produk.
-5. `src/App.tsx` *(Modifikasi Ringan)* — Meneruskan data `logs` (`log_produk`) dan callback refresh ke `InventoryView` agar tab Log Produk di halaman Inventory selalu sinkron dengan halaman Scanner.
+## 1. Gambaran Umum & Konsep Inti
+
+- **Apa yang Dilakukan**: Menghadirkan sistem **Live Chat (1-on-1) & Ruang Diskusi Grup** yang menampilkan user *Online* secara *real-time*, mendukung lampiran foto kendala (via Google Drive CDN), tag referensi `#Order / #SJ / #SKU`, fitur **Edit & Hapus Pesan berbatas 5 menit / status baca**, serta **Unified Background Notification dengan Inline Reply**.
+- **Hak Akses Grup**:
+  - **Hanya Admin & Superadmin** yang dapat membuat **Ruang Diskusi Grup baru** dan menambahkan (*ADD*) beberapa user ke dalamnya.
+  - Seluruh user dapat memulai chat personal (1-on-1) dengan rekan yang sedang online/offline dan berdiskusi di grup tempat mereka tergabung.
+
+---
+
+## 2. Pengalaman Pengguna (UX) & Desain Visual
+
+### Alur Balas Cepat dari Notification Bar (Tanpa Buka Aplikasi)
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│ 🔔 WMS Warehouse Mini • Baru saja                                    │
+│ 💬 Budi (Picker) di Grup: Koordinasi SO Blok A                       │
+│ "Kak, untuk SKU F26KTN07BAD di rak A012 fisik sisa 3 pcs ya"         │
+│                                                                      │
+│  [ 💬 Balas Cepat ]    [ ✓✓ Tandai Dibaca ]    [ 👁️ Buka Ruang ]     │
+├──────────────────────────────────────────────────────────────────────┤
+│  Ketik balasan langsung di sini...                              [➤]  │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+1. **Ketuk `💬 Balas Cepat`**: Kolom input terbuka langsung di bar notifikasi.
+2. **Ketik & Tekan Kirim (`➤`)**: Service Worker mengirim pesan balasan ke ruang chat terkait atas nama akun Anda, memperbarui status pesan sebelumnya menjadi **`✓✓ Dibaca`**, dan menampilkan konfirmasi singkat *"✓ Balasan terkirim"* tanpa perlu membuka layar aplikasi WMS.
+
+### Mode Tampilan Hybrid di Dalam Aplikasi (Floating Cepat + Halaman Penuh)
+
+- **Floating Chat Button & Drawer**: Tombol melayang di pojok kanan bawah dengan badge jumlah pesan belum dibaca & indikator jumlah user online. Bisa dibuka sebagai panel cepat di atas halaman mana pun.
+- **Halaman Penuh (Full-Page Workspace)**: Tampilan *Master-Detail* 2 kolom di layar Desktop dan tampilan responsif dengan sub-tab *horizontal swipe* di layar HP seluler.
+
+---
+
+## 3. Arsitektur Penyimpanan & Unified Background Sync
+
+### Diagram Arsitektur Sistem
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│                   KLIEN WMS & PWA SERVICE WORKER (HP / PC)                 │
+│                                                                            │
+│  ┌──────────────────────────────────┐  ┌────────────────────────────────┐  │
+│  │  UI Live Chat (Floating & Full)  │  │  Unified Background Watcher    │  │
+│  │  - Status Online & Typing        │  │  (public/pwa-extras.js)        │  │
+│  │  - ✓ / ✓✓ Read Receipt           │  │  1. Live Chat (+ Inline Reply) │  │
+│  │  - Edit/Hapus (<5 mnt & Unread)  │  │  2. Manual Shipment & Alter    │  │
+│  │  - Tag #Order / #SJ / #SKU       │  │  3. Retur Barang (RTR) & SPS   │  │
+│  └────────────────┬─────────────────┘  └───────────────┬────────────────┘  │
+│                   │                                    │                   │
+│                   ▼                                    ▼                   │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │        Lapis 1: Penyimpanan Permanen Perangkat (IndexedDB)           │  │
+│  │  - Menyimpan seluruh riwayat chat lama di HP/Browser (0 Egress DB)   │  │
+│  └────────┬───────────────────────────────────┬─────────────────────────┘  │
+└───────────┼───────────────────────────────────┼───────────────────────────┘
+            │                                   │
+   WebSocket Broadcast +                Foto Kendala & Arsip Lama
+   Hot Sync (Hemat Egress)              Disimpan di Google Drive (GAS)
+            │                                   │
+            ▼                                   ▼
+┌───────────────────────────────────┐ ┌─────────────────────────────────────┐
+│     INFRASTRUKTUR SUPABASE        │ │      GOOGLE DRIVE CDN (VIA GAS)     │
+│  - Realtime Presence & Broadcast  │ │  - Foto Chat (0 Byte di Supabase)   │
+│  - Lapis 2: Hot Message Store     │ │  - Lapis 3: Arsip Chat Lama (JSON)  │
+└───────────────────────────────────┘ └─────────────────────────────────────┘
+```
+
+### Sinkronisasi Otomatis Konfigurasi Background (`WMS_CONFIGURE_SW_WATCHER`)
+
+Begitu pengguna login ke aplikasi WMS, sistem otomatis menyinkronkan profil pengguna (`username`, `displayName`, `role`, `storeName`, `isAdmin`, `isPicker`) ke `IndexedDB` Service Worker (`wms_sw_bg_db`). Dengan demikian, meskipun tab aplikasi sedang di-*minimize* atau tidak sedang fokus:
+1. **Pesan Live Chat Baru** yang masuk ke ruang pribadi/grup pengguna langsung memicu notifikasi dengan tombol **`💬 Balas Cepat`** & **`✓✓ Tandai Dibaca`**.
+2. **Pesanan Baru Manual Shipment, Form Alter/Repair, Tiket Retur Barang (`RTR-`), dan SPS** otomatis terdeteksi secara berkala dan memunculkan notifikasi sistem real-time sesuai hak akses pengguna.

@@ -43,7 +43,9 @@
             s.indexOf('SecurityError') !== -1 ||
             s.indexOf('Access is denied') !== -1 ||
             s.indexOf('failed to connect to websocket') !== -1 ||
-            s.indexOf('WebSocket closed without opened') !== -1
+            s.indexOf('WebSocket closed without opened') !== -1 ||
+            s.indexOf('dev-sw.js') !== -1 ||
+            s.indexOf('encountered an error during installation') !== -1
           );
         }
 
@@ -91,6 +93,27 @@
 
         var isIframe = false;
         try { isIframe = window.self !== window.top; } catch (e) { isIframe = true; }
+        var isDevPreviewHost = false;
+        try {
+          var h = (window.location && window.location.hostname) || '';
+          isDevPreviewHost = h.indexOf('ais-dev-') === 0 || h.indexOf('ais-pre-') === 0 || h === 'localhost' || h === '127.0.0.1';
+        } catch (e) {}
+
+        // Clean up any stale dev-sw.js registrations on the real navigator.serviceWorker before shimming
+        try {
+          if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && navigator.serviceWorker && typeof navigator.serviceWorker.getRegistrations === 'function') {
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+              if (!Array.isArray(regs)) return;
+              for (var i = 0; i < regs.length; i++) {
+                var r = regs[i];
+                var sUrl = (r && ((r.active && r.active.scriptURL) || (r.installing && r.installing.scriptURL) || (r.waiting && r.waiting.scriptURL))) || '';
+                if (isIframe || isDevPreviewHost || sUrl.indexOf('dev-sw.js') !== -1) {
+                  r.unregister().catch(function() {});
+                }
+              }
+            }).catch(function() {});
+          }
+        } catch (e) {}
 
         // 2. Safe WebSocket wrapper (prevents vite-hmr / localhost:3000 & restricted WebSockets from throwing SecurityError)
         try {
@@ -225,7 +248,7 @@
         } catch (e) {}
 
         try {
-          if (isIframe && typeof navigator !== 'undefined') {
+          if ((isIframe || isDevPreviewHost) && typeof navigator !== 'undefined') {
             var safeLocks = {
               request: function(name, optionsOrCallback, callback) {
                 var cb = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback;
@@ -238,9 +261,11 @@
                 return Promise.resolve({ held: [], pending: [] });
               }
             };
-            try {
-              Object.defineProperty(navigator, 'locks', { get: function() { return safeLocks; }, configurable: true });
-            } catch (e2) {}
+            if (isIframe) {
+              try {
+                Object.defineProperty(navigator, 'locks', { get: function() { return safeLocks; }, configurable: true });
+              } catch (e2) {}
+            }
 
             var safeSw = {
               controller: null,

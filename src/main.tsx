@@ -35,8 +35,13 @@ import { appUpdateManager } from './services/appUpdateService';
 // Auto-register Service Worker safely (Multi-User Non-Disruptive: NEVER force reload mid-work!)
 try {
   const isIframe = isRunningInIframe();
+  const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
+  const isDevPreview =
+    import.meta.env.DEV ||
+    hostname.startsWith('ais-dev-') ||
+    hostname.startsWith('ais-pre-');
 
-  if (!isIframe && typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  if (!isIframe && !isDevPreview && typeof window !== 'undefined' && 'serviceWorker' in navigator) {
     registerSW({
       immediate: true,
       onNeedRefresh() {
@@ -51,6 +56,19 @@ try {
         console.warn('PWA registration skipped or error:', error);
       },
     });
+  } else if (typeof window !== 'undefined' && 'serviceWorker' in navigator && typeof navigator.serviceWorker?.getRegistrations === 'function') {
+    navigator.serviceWorker
+      .getRegistrations()
+      .then((regs) => {
+        for (const reg of regs) {
+          const scriptUrl =
+            reg.active?.scriptURL || reg.installing?.scriptURL || reg.waiting?.scriptURL || '';
+          if (isDevPreview || scriptUrl.includes('dev-sw.js')) {
+            void reg.unregister().catch(() => {});
+          }
+        }
+      })
+      .catch(() => {});
   }
 } catch (swErr) {
   console.warn('PWA registration skipped:', swErr);

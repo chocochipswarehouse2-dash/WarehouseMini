@@ -21,6 +21,26 @@ export default defineConfig(({ command }) => {
   return {
     base,
     plugins: [
+      {
+        name: 'wms-dev-sw-self-heal',
+        configureServer(server) {
+          server.middlewares.use((req, res, next) => {
+            const url = req.url || '';
+            if (url === '/dev-sw.js' || url.startsWith('/dev-sw.js?')) {
+              res.statusCode = 200;
+              res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+              res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+              res.setHeader('Service-Worker-Allowed', '/');
+              res.end(
+                "self.addEventListener('install',function(){self.skipWaiting()});" +
+                "self.addEventListener('activate',function(e){e.waitUntil(self.registration.unregister().catch(function(){}))});"
+              );
+              return;
+            }
+            next();
+          });
+        },
+      },
       react(),
       tailwindcss(),
       VitePWA({
@@ -35,7 +55,7 @@ export default defineConfig(({ command }) => {
           clientsClaim: false,
           cleanupOutdatedCaches: true,
           globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
-          globIgnores: ['**/version.json'],
+          globIgnores: ['**/version.json', '**/dev-sw.js'],
           importScripts: ['pwa-extras.js'],
           navigateFallback: 'index.html',
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
