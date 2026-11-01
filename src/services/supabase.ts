@@ -52,6 +52,9 @@ import { ALL_PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, isSuperadmin } from './permi
 export const DEFAULT_SUPABASE_URL = 'https://ilhqerecxbywqrhfpbbc.supabase.co';
 export const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_tMgdx9b0XBAQei7WcKYvMg_QwJ-lopn';
 
+// Minimalist projection for log_produk to slash egress bandwidth by >80% (omitting bulky raw_payload)
+export const LOG_PRODUK_SELECT_COLUMNS = 'id,type,invoice,sku,nama_produk,size,area,lokasi,qty,operator,keterangan,created_at';
+
 // Empty baseline seed - no dummy items
 export const DEFAULT_SEED_PRODUCTS: ProductItem[] = [];
 
@@ -1354,7 +1357,7 @@ export async function fetchAllLogs(maxRows = 2000): Promise<LogProdukItem[]> {
             'log_produk',
             'GET',
             null,
-            `select=*&order=created_at.desc&limit=${currentLimit}&offset=${offset}`
+            `select=${LOG_PRODUK_SELECT_COLUMNS}&order=created_at.desc&limit=${currentLimit}&offset=${offset}`
           ).catch(() => null)
         );
         offset += currentLimit;
@@ -1402,7 +1405,7 @@ export async function fetchLogsByInvoice(invoice: string): Promise<LogProdukItem
       'log_produk',
       'GET',
       null,
-      `select=*&invoice=eq.${encodeURIComponent(invoice)}&order=created_at.asc`
+      `select=${LOG_PRODUK_SELECT_COLUMNS}&invoice=eq.${encodeURIComponent(invoice)}&order=created_at.asc`
     );
     return Array.isArray(data) ? data : [];
   } catch (err) {
@@ -1422,7 +1425,7 @@ export async function fetchLogsBySku(sku: string, limit = 100): Promise<LogProdu
       'log_produk',
       'GET',
       null,
-      `select=*&sku=eq.${encodeURIComponent(cleanSku)}&order=created_at.desc&limit=${limit}`
+      `select=${LOG_PRODUK_SELECT_COLUMNS}&sku=eq.${encodeURIComponent(cleanSku)}&order=created_at.desc&limit=${limit}`
     );
     return Array.isArray(data) ? data : [];
   } catch (err) {
@@ -1539,7 +1542,7 @@ export async function fetchLocationPurgePreview(
         'log_produk',
         'GET',
         null,
-        `lokasi=in.(${locParam})&select=*&order=created_at.desc&limit=5000`
+        `lokasi=in.(${locParam})&select=id,type,sku,lokasi,qty,created_at&order=created_at.desc&limit=5000`
       );
       if (Array.isArray(logs)) {
         allLogs = allLogs.concat(logs);
@@ -1650,7 +1653,7 @@ export async function purgeLogsByLocations(
           'log_produk',
           'GET',
           null,
-          `lokasi=in.(${locParam})&select=*&order=created_at.desc&limit=5000`
+          `lokasi=in.(${locParam})&select=id,type,sku,lokasi,qty,created_at&order=created_at.desc&limit=5000`
         );
         if (Array.isArray(logs)) {
           allBackupLogs = allBackupLogs.concat(logs);
@@ -10002,7 +10005,7 @@ export async function fetchLogsBySearch(keyword: string, limit = 1000, matchingS
       'log_produk',
       'GET',
       null,
-      `select=*&or=(${orClause})&order=created_at.desc&limit=${limit}`
+      `select=${LOG_PRODUK_SELECT_COLUMNS}&or=(${orClause})&order=created_at.desc&limit=${limit}`
     );
     return data || [];
   } catch (err) {

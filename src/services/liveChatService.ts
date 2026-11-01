@@ -643,11 +643,12 @@ class LiveChatManager {
       clearInterval(this.syncTimer);
       this.syncTimer = null;
     }
+    // Hemat egress & log ingestion: sinkronisasi polling diperpanjang ke 60 detik dan hanya berjalan saat tab terlihat
     this.syncTimer = setInterval(() => {
-      if (this.currentSession?.username) {
+      if (this.currentSession?.username && typeof document !== 'undefined' && document.visibilityState === 'visible') {
         void this.syncRoomsFromServer(true);
       }
-    }, 15000);
+    }, 60000); // 60s (menghemat 75% request polling ke wms_system_docs)
 
     if (!this.swListenerBound && typeof window !== 'undefined') {
       this.swListenerBound = true;

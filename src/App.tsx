@@ -1707,13 +1707,21 @@ export default function App() {
       try {
         const nowMs = Date.now();
         const MAX_AGE_MS = 12 * 60 * 60 * 1000; // Hanya yang dibuat dalam 12 jam terakhir
+        const prevCheck = getLastOrderCheckTimestamp();
+        const deltaSinceIso = prevCheck && prevCheck > 0 && Math.abs(nowMs - prevCheck) <= MAX_AGE_MS
+          ? new Date(Math.max(nowMs - MAX_AGE_MS, prevCheck - 5000)).toISOString()
+          : null;
 
         if (userIsAdmin) {
+          const manualShipmentQuery = deltaSinceIso
+            ? `select=id,no_pesanan,no_transaksi_customer,nama_pengirim,pic_store,nama_tujuan,jasa_kirim,qty,notes_paket,created_at&created_at=gt.${encodeURIComponent(deltaSinceIso)}&order=created_at.desc&limit=15`
+            : 'select=id,no_pesanan,no_transaksi_customer,nama_pengirim,pic_store,nama_tujuan,jasa_kirim,qty,notes_paket,created_at&order=created_at.desc&limit=12';
+
           const latestRows = await supabaseFetch<any[]>(
             'manual_shipment',
             'GET',
             null,
-            'select=id,no_pesanan,no_transaksi_customer,nama_pengirim,pic_store,nama_tujuan,jasa_kirim,qty,notes_paket,created_at&order=created_at.desc&limit=12'
+            manualShipmentQuery
           );
           if (!isMounted) return;
 
@@ -1741,11 +1749,15 @@ export default function App() {
 
           // Cek juga tiket Retur Barang baru untuk Admin
           try {
+            const returQuery = deltaSinceIso
+              ? `select=id,no_retur,nama_customer,created_at&created_at=gt.${encodeURIComponent(deltaSinceIso)}&order=created_at.desc&limit=10`
+              : 'select=id,no_retur,nama_customer,created_at&order=created_at.desc&limit=6';
+
             const latestRetur = await supabaseFetch<any[]>(
               'retur_barang',
               'GET',
               null,
-              'select=id,no_retur,nama_customer,created_at&order=created_at.desc&limit=6'
+              returQuery
             );
             if (isMounted && Array.isArray(latestRetur)) {
               for (const r of [...latestRetur].reverse()) {
@@ -1771,11 +1783,15 @@ export default function App() {
         // Cek Permintaan Peminjaman Sementara (SPS) baru untuk Admin & Picker
         if (userIsAdmin || userIsPicker) {
           try {
+            const spsQuery = deltaSinceIso
+              ? `select=id,no_peminjaman,pic,keperluan,sku,nama_produk,qty,created_at&created_at=gt.${encodeURIComponent(deltaSinceIso)}&order=created_at.desc&limit=15`
+              : 'select=id,no_peminjaman,pic,keperluan,sku,nama_produk,qty,created_at&order=created_at.desc&limit=20';
+
             const latestSps = await supabaseFetch<any[]>(
               'peminjaman',
               'GET',
               null,
-              'select=id,no_peminjaman,pic,keperluan,sku,nama_produk,qty,created_at&order=created_at.desc&limit=20'
+              spsQuery
             );
             if (isMounted && Array.isArray(latestSps) && latestSps.length > 0) {
               const spsGroups = new Map<string, any>();
@@ -1906,7 +1922,7 @@ export default function App() {
     seedExistingOrders();
 
     // Polling responsif setiap 20 detik agar Pesanan Store, Retur, SPS, dan Live Chat muncul instan di Notification Bar HP
-    const intervalId = setInterval(checkNewStoreOrdersDelta, 20000);
+    const intervalId = setInterval(checkNewStoreOrdersDelta, 35000); // 35s hemat request & egress
     const handleVisibilityOrOnline = () => {
       if (document.visibilityState === 'visible') {
         setNotificationPermission(getNotificationPermissionStatus());

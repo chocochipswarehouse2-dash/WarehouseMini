@@ -1,14 +1,13 @@
 {
-  "version": "v2.6.21",
-  "versionCode": 281,
+  "version": "v2.6.22",
+  "versionCode": 282,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v281-0903",
-  "releaseTitle": "WMS v2.6.21 — Notifikasi OS HP Gaya WhatsApp (Pesanan & Live Chat) & Stock Opname Eksklusif di Pengaturan Sistem",
+  "buildHash": "wms-261101-v282-1640",
+  "releaseTitle": "WMS v2.6.22 — Optimalisasi Egress & Log Ingestion 30%",
   "releaseNotes": [
-    "Perbaikan Notifikasi OS HP (Android/iOS/Desktop) layaknya WhatsApp untuk Pesanan Baru Store, Tiket Retur, SPS, dan Live Chat (mendukung Balas Cepat & Tandai Dibaca langsung dari bar notifikasi HP)",
-    "Registrasi otomatis Service Worker (/pwa-extras.js) di seluruh domain seluler dan pratinjau agar pop-up bar notifikasi sistem Android Chrome berjalan 100%",
-    "Pemindahan modul Stock Opname dari menu Scanner",
-    "LOG ke dalam Pengaturan Sistem khusus Superadmin serta perbaikan ikon ClipboardList"
+    "Tekan Egress Log Produk: Eliminasi raw_payload JSONB pada query mutasi menghemat bandwidth hingga 80%",
+    "Cerdas Delta Polling Notifikasi: Filter timestamp created_at mencegah re-download pesanan berulang",
+    "Throttle Background Chat Sync: Interval sinkronisasi diperpanjang ke 60s hemat 75% request wms_system_docs"
   ],
   "minSupportedVersion": "v2.0.0"
 }

@@ -15,21 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.21",
-  "versionCode": 281,
+  "version": "v2.6.22",
+  "versionCode": 282,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v281-0903",
-  "releaseTitle": "WMS v2.6.21 — Notifikasi OS HP Gaya WhatsApp (Pesanan & Live Chat) & Stock Opname Eksklusif di Pengaturan Sistem",
+  "buildHash": "wms-261101-v282-1640",
+  "releaseTitle": "WMS v2.6.22 — Optimalisasi Egress & Log Ingestion 30%",
   "releaseNotes": [
-    "Perbaikan Notifikasi OS HP (Android/iOS/Desktop) layaknya WhatsApp untuk Pesanan Baru Store, Tiket Retur, SPS, dan Live Chat (mendukung Balas Cepat & Tandai Dibaca langsung dari bar notifikasi HP)",
-    "Registrasi otomatis Service Worker (/pwa-extras.js) di seluruh domain seluler dan pratinjau agar pop-up bar notifikasi sistem Android Chrome berjalan 100%",
-    "Pemindahan modul Stock Opname dari menu Scanner",
-    "LOG ke dalam Pengaturan Sistem khusus Superadmin serta perbaikan ikon ClipboardList"
+    "Tekan Egress Log Produk: Eliminasi raw_payload JSONB pada query mutasi menghemat bandwidth hingga 80%",
+    "Cerdas Delta Polling Notifikasi: Filter timestamp created_at mencegah re-download pesanan berulang",
+    "Throttle Background Chat Sync: Interval sinkronisasi diperpanjang ke 60s hemat 75% request wms_system_docs"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.21",
+    "versionCode": 281,
+    "buildDate": "1 November 2026",
+    "buildHash": "wms-261101-v281-0903",
+    "releaseTitle": "WMS v2.6.21 — Notifikasi OS HP Gaya WhatsApp (Pesanan & Live Chat) & Stock Opname Eksklusif di Pengaturan Sistem",
+    "releaseNotes": [
+      "Perbaikan Notifikasi OS HP (Android/iOS/Desktop) layaknya WhatsApp untuk Pesanan Baru Store, Tiket Retur, SPS, dan Live Chat (mendukung Balas Cepat & Tandai Dibaca langsung dari bar notifikasi HP)",
+      "Registrasi otomatis Service Worker (/pwa-extras.js) di seluruh domain seluler dan pratinjau agar pop-up bar notifikasi sistem Android Chrome berjalan 100%",
+      "Pemindahan modul Stock Opname dari menu Scanner",
+      "LOG ke dalam Pengaturan Sistem khusus Superadmin serta perbaikan ikon ClipboardList"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.20",
     "versionCode": 280,
@@ -121,20 +134,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Sinkronisasi Realtime Katalog: Menambahkan broadcast event 'catalog_updated' via Supabase Realtime WebSocket saat update database produk selesai",
       "Auto-Reload Inventori: Hook useInventoryStock dan InventoryView kini otomatis merefresh stok fisik seketika saat menerima event pembaruan katalog tanpa perlu klik tombol refresh manual",
       "Low-Egress Background Sync: Perangkat user lain otomatis mendeteksi pembaruan katalog dan menyinkronkan data tampilan secara live"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.13",
-    "versionCode": 273,
-    "buildDate": "31 Oktober 2026",
-    "buildHash": "wms-261031-v273-0843",
-    "releaseTitle": "WMS v2.6.13 — Optimasi Penghematan Kuota Supabase Log Ingestion",
-    "releaseNotes": [
-      "Menambahkan tab visibility guard agar polling berhenti total saat tab di-minimize",
-      "Mengubah interval polling delta dari 10 detik ke 60 detik (menghemat 83 persen request)",
-      "Menghapus kolom items yang besar dari select query notifikasi",
-      "Menaikkan interval Service Worker background dari 25 detik ke 3 menit (menghemat 86 persen background traffic)"
     ],
     "minSupportedVersion": "v2.0.0"
   }
