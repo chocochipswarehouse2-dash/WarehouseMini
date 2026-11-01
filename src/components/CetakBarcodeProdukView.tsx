@@ -677,7 +677,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
   }
 
   return (
-    <div className="p-3 sm:p-5 max-w-7xl mx-auto space-y-4 sm:space-y-6">
+    <div className="p-3 sm:p-5 w-full max-w-full space-y-4 sm:space-y-6">
       {/* ========================================================= */}
       {/* 1. HEADER SECTION & QUICK ACTIONS                         */}
       {/* ========================================================= */}

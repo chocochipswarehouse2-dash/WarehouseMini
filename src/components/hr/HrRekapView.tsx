@@ -552,7 +552,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
   };
 
   return (
-    <div className="p-2 sm:p-3 max-w-7xl mx-auto space-y-3 pb-24 text-slate-800 dark:text-slate-100">
+    <div className="p-2 sm:p-3 w-full max-w-full space-y-3 pb-24 text-slate-800 dark:text-slate-100">
       {/* HEADER */}
       <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-2">
         <div>

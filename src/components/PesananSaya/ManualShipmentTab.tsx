@@ -9585,7 +9585,7 @@ _WMS Warehouse System_`;
 
   return (
     <>
-    <div className="max-w-7xl mx-auto p-2.5 sm:p-5 lg:p-6 animate-in fade-in duration-300 print:hidden">
+    <div className="w-full max-w-full p-2.5 sm:p-5 lg:p-6 animate-in fade-in duration-300 print:hidden">
       {/* Tab Navigation - Compact, Sleek & Aesthetic */}
       <div className="flex items-center justify-between flex-wrap gap-2.5 mb-4">
         <div className="inline-flex p-1 bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700/80 rounded-xl shadow-xs">

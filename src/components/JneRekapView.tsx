@@ -434,7 +434,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
   };
 
   return (
-    <div className="space-y-4 max-w-7xl mx-auto pb-12">
+    <div className="space-y-4 w-full max-w-full pb-12">
       {/* 1. Header Toolbar & Action Bar */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">

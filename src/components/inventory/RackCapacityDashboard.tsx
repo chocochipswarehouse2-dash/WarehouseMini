@@ -1382,7 +1382,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
           })}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-6 min-[2000px]:grid-cols-8 gap-2.5">
           {summaryStats.zones.map((z) => {
             const pct = z.maxCapacity > 0 ? Math.round((z.currentQty / z.maxCapacity) * 100) : 0;
             const style = COLOR_STYLES[z.color] || COLOR_STYLES.slate;
@@ -1513,7 +1513,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
           </div>
 
           {/* Generator Action Cards Row: 1. Auto-Refill Koli -> ABCD, 2. Rapikan Overload, 3. Satukan SKU Terpencar, 4. Evakuasi ABCD -> Koli */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-6 min-[2000px]:grid-cols-8 gap-2.5">
             {/* 1. Refill Koli -> ABCD */}
             <div className="flex flex-col justify-between gap-2 p-3 rounded-xl bg-white dark:bg-[#131d31] border border-emerald-200 dark:border-emerald-900/60">
               <div className="min-w-0">
@@ -2132,7 +2132,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
           </p>
         </div>
       ) : viewMode === 'GRID' ? (
-        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12 min-[2200px]:grid-cols-14 gap-2.5">
           {filteredSlots.map((slot) => {
             // Pure physical reality display: UI = Data Fisik
             const activePct = slot.fillPercent;

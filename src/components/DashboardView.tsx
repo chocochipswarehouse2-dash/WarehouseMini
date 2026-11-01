@@ -4,7 +4,7 @@ import { ConstructionBanner } from './ConstructionBanner';
 
 export const DashboardView: React.FC = () => {
   return (
-    <div className="p-2 sm:p-3 space-y-3 max-w-7xl mx-auto pb-24">
+    <div className="p-2 sm:p-3 space-y-3 w-full max-w-full pb-24">
       <ConstructionBanner />
       {/* Header Section */}
       <div className="flex flex-col gap-2">

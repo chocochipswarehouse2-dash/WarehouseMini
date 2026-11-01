@@ -1,12 +1,13 @@
 {
-  "version": "v2.6.24",
-  "versionCode": 284,
+  "version": "v2.6.25",
+  "versionCode": 285,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v284-1052",
-  "releaseTitle": "WMS v2.6.24 — Perbaikan Tampilan & Simpan Penuh Roster Shift Bulanan (1-31)",
+  "buildHash": "wms-261101-v285-1831",
+  "releaseTitle": "WMS v2.6.25 — Fluid Full-Width Layout & Anti-Dead Zones pada Zoom Out",
   "releaseNotes": [
-    "Perbaikan batas 1.000 baris Supabase PostgREST pada fetchRosterShiftList dengan auto-paginasi agar jadwal tanggal 06-31 selalu tampil utuh",
-    "Optimasi batchSaveRosterShifts menggunakan bulk upsert atomik anti-bentrok ID untuk penyimpanan jadwal sebulan penuh dalam hitungan milidetik"
+    "Fluid Workspace Architecture: Eliminasi pembatas sempit max-w-7xl dan max-w-1600px di seluruh modul utama",
+    "Dynamic Grid Scaling: Rak visual otomatis menambah kolom hingga 12-14 kolom saat zoom out atau widescreen",
+    "Matriks Roster & Spreadsheet Lega: Kalender 31 hari dan tabel inventory kini memanfaatkan 100% lebar layar"
   ],
   "minSupportedVersion": "v2.0.0"
 }

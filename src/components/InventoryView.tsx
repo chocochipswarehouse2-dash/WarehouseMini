@@ -200,7 +200,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   }, [isLokasiExportModalOpen, flatStockSnapshot]);
 
   return (
-    <div className="w-full max-w-[1600px] mx-auto px-2 sm:px-4 lg:px-6 py-2 sm:py-4 space-y-4 animate-in fade-in duration-150">
+    <div className="w-full max-w-full px-1 sm:px-3 lg:px-4 py-2 sm:py-4 space-y-4 animate-in fade-in duration-150">
       {/* ========================================================
           0. NAVIGATION TABS: DASHBOARD KAPASITAS | DATA INVENTORY | LOG PRODUK
           ======================================================== */}

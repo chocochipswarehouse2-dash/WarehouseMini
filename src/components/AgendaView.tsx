@@ -796,7 +796,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
   };
 
   return (
-    <div className="w-full max-w-[1600px] mx-auto space-y-3 pb-16 text-slate-900 dark:text-slate-100">
+    <div className="w-full max-w-full space-y-3 pb-16 text-slate-900 dark:text-slate-100">
       
       {/* Top Header & Tab Navigation */}
       <div className="bg-white dark:bg-[#1a2332] p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">

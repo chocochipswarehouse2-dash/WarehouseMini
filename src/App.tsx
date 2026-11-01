@@ -2799,8 +2799,8 @@ export default function App() {
           <Menu className="w-6 h-6" />
         </button>
 
-        {/* Main Content Area based on active navigation tab with Keep-Alive */}
-        <main className={`flex-1 pb-24 sm:pb-8 p-2 sm:p-4 lg:p-6 w-full ${activePage === 'inventory' ? 'max-w-full' : 'max-w-7xl mx-auto'}`}>
+        {/* Main Content Area based on active navigation tab with Keep-Alive - Fluid Full-Width across all screens & zoom levels */}
+        <main className="flex-1 pb-24 sm:pb-8 p-2 sm:p-4 lg:p-6 w-full max-w-full">
           {session && !canAccessPage(session, activePage) ? (
             <div className="min-h-[60vh] flex items-center justify-center p-4">
               <div className="max-w-md w-full bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-2xl p-6 text-center shadow-lg space-y-4">

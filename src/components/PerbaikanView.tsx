@@ -1815,7 +1815,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   };
 
   return (
-    <div className="space-y-2 max-w-7xl mx-auto pb-16">
+    <div className="space-y-2 w-full max-w-full pb-16">
       {/* Section-Specific Header / Navigation if wrapped by QualityControlView */}
       {activeSection ? (
         <>

@@ -1024,7 +1024,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
   };
 
   return (
-    <div id="mutasiLogViewContainer" className="space-y-2 w-full max-w-[1600px] mx-auto pb-16">
+    <div id="mutasiLogViewContainer" className="space-y-2 w-full max-w-full pb-16">
       {/* Compact Top Bar - Responsive & Optimized for Mobile & Desktop */}
       <div className="bg-white dark:bg-[#09090B] border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-2 sm:p-2.5 shadow-xs space-y-2">
         {/* ROW 1: Search Input (Full width on phone, flexible on desktop) */}

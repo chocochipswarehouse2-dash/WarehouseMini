@@ -15,19 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.24",
-  "versionCode": 284,
+  "version": "v2.6.25",
+  "versionCode": 285,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v284-1052",
-  "releaseTitle": "WMS v2.6.24 — Perbaikan Tampilan & Simpan Penuh Roster Shift Bulanan (1-31)",
+  "buildHash": "wms-261101-v285-1831",
+  "releaseTitle": "WMS v2.6.25 — Fluid Full-Width Layout & Anti-Dead Zones pada Zoom Out",
   "releaseNotes": [
-    "Perbaikan batas 1.000 baris Supabase PostgREST pada fetchRosterShiftList dengan auto-paginasi agar jadwal tanggal 06-31 selalu tampil utuh",
-    "Optimasi batchSaveRosterShifts menggunakan bulk upsert atomik anti-bentrok ID untuk penyimpanan jadwal sebulan penuh dalam hitungan milidetik"
+    "Fluid Workspace Architecture: Eliminasi pembatas sempit max-w-7xl dan max-w-1600px di seluruh modul utama",
+    "Dynamic Grid Scaling: Rak visual otomatis menambah kolom hingga 12-14 kolom saat zoom out atau widescreen",
+    "Matriks Roster & Spreadsheet Lega: Kalender 31 hari dan tabel inventory kini memanfaatkan 100% lebar layar"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.24",
+    "versionCode": 284,
+    "buildDate": "1 November 2026",
+    "buildHash": "wms-261101-v284-1052",
+    "releaseTitle": "WMS v2.6.24 — Perbaikan Tampilan & Simpan Penuh Roster Shift Bulanan (1-31)",
+    "releaseNotes": [
+      "Perbaikan batas 1.000 baris Supabase PostgREST pada fetchRosterShiftList dengan auto-paginasi agar jadwal tanggal 06-31 selalu tampil utuh",
+      "Optimasi batchSaveRosterShifts menggunakan bulk upsert atomik anti-bentrok ID untuk penyimpanan jadwal sebulan penuh dalam hitungan milidetik"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.23",
     "versionCode": 283,
@@ -120,19 +133,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Penyimpanan Permanen 3-Tier Hemat Kuota (IndexedDB + wms_system_docs + Google Drive CDN 0 Byte Egress)",
       "Aturan Akuntabilitas Edit & Hapus Pesan (Maksimal 5 Menit & Belum Dibaca User Lain)",
       "Notifikasi Background & Balas Cepat Langsung dari Bar Notifikasi (Tanpa Buka Aplikasi), Tersinkron dengan Pesanan Baru & Retur"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.16",
-    "versionCode": 276,
-    "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v276-1146",
-    "releaseTitle": "WMS v2.6.16 — Pembaruan Latar Belakang Zero-Reload (Update Tanpa Memutus Layar Kerja Aktif)",
-    "releaseNotes": [
-      "Pembaruan Latar Belakang Zero-Reload: Tombol 'Perbarui' pada widget dan modal kini 100% menyiapkan update di background tanpa me-reload layar aktif",
-      "Transisi Alami Aman: Pembaruan baru diaplikasikan otomatis saat berpindah menu atau secara eksplisit jika user memilih muat ulang",
-      "Proteksi Pekerjaan Aktif: Mencegah gangguan visual atau kehilangan fokus saat sedang bekerja di tab tertentu"
     ],
     "minSupportedVersion": "v2.0.0"
   }

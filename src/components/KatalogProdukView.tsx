@@ -1332,7 +1332,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
   };
 
   return (
-    <div className="w-full max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6 animate-in fade-in duration-200">
+    <div className="w-full w-full max-w-full p-4 sm:p-6 lg:p-8 space-y-6 animate-in fade-in duration-200">
       {/* Input File Tersembunyi */}
       <input
         type="file"

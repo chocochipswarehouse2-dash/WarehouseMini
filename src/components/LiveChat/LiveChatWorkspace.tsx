@@ -498,7 +498,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
       className={
         isFloating
           ? 'flex flex-col w-full h-full bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 overflow-hidden'
-          : 'w-full max-w-[1600px] mx-auto px-3 sm:px-4 lg:px-6 py-3'
+          : 'w-full max-w-full px-3 sm:px-4 lg:px-6 py-3'
       }
     >
       <div

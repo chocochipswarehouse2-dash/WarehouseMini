@@ -664,7 +664,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
   }
 
   return (
-    <div id="stockOpnameViewContainer" className="space-y-2 max-w-7xl mx-auto pb-12">
+    <div id="stockOpnameViewContainer" className="space-y-2 w-full max-w-full pb-12">
       {/* Top Header Card */}
       <div className="bg-white dark:bg-[#09090B] border border-slate-200 dark:border-slate-800 rounded-2xl p-2 sm:p-3 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">

@@ -1919,7 +1919,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   };
 
   return (
-    <div id="peminjamanContainer" className="flex-1 p-2 sm:p-4 max-w-7xl mx-auto w-full space-y-3 sm:space-y-2">
+    <div id="peminjamanContainer" className="flex-1 p-2 sm:p-4 w-full max-w-full w-full space-y-3 sm:space-y-2">
       {/* 3 Tabs Peminjaman Sementara - Standar Style Quality Control */}
       <div className="bg-slate-100/90 dark:bg-[#09090b]/90 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs">
         <div className="grid grid-cols-3 sm:flex sm:items-center gap-1 sm:gap-1.5">

@@ -84,11 +84,12 @@ Use Tailwind CSS responsive prefixes consistently across all components:
 
 ---
 
-## 6. Browser Zoom In / Out Elasticity Standard (75% to 150%)
+## 6. Browser Zoom In / Out Elasticity Standard (67% to 150%)
 
-1. **Zoom Out Protection (75% – 90% or Widescreen 1920px+)**:
-   - Wrap views inside `<div className="w-full max-w-[1600px] mx-auto space-y-4">`.
-   - This keeps elements aesthetically clustered and prevents vast white dead zones.
+1. **Fluid Zoom Out & Widescreen Elasticity (67% – 90% or Widescreen 1920px+)**:
+   - DILARANG membatasi kontainer workspace utama dengan `max-w-7xl` (1280px) atau `max-w-[1600px]` kaku yang menciptakan area kosong (dead zones / pillarboxing) raksasa di tepi kiri dan kanan saat pengguna melakukan Zoom Out atau membuka di monitor lebar.
+   - Gunakan kontainer elastis penuh: `<div className="w-full max-w-full px-2 sm:px-4 lg:px-6 space-y-4">` sehingga saat pengguna Zoom Out (karena ingin melihat lebih banyak data di layar), konten tabel, kalender roster shift 31 hari, dan kartu rak visual dapat memanfaatkan seluruh lebar layar secara produktif.
+   - Terapkan penambahan kolom bertingkat pada grid (dynamic column scaling): misal `grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12 min-[2200px]:grid-cols-14` agar kartu mengisi layar secara merata tanpa batas ruang kosong buatan.
 2. **Zoom In Protection (110% – 150%)**:
    - Toolbars with more than 4 buttons MUST allow wrapping (`flex-wrap`) but controls should maintain `shrink-0` with minimum tap dimensions.
    - For tables, the table wrapper `<div className="w-full overflow-x-auto">` absorbs the horizontal zoom without breaking the parent card or header.
