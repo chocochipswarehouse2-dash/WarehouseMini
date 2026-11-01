@@ -14,6 +14,11 @@ import {
 import { fetchWmsSettings, saveWmsSettings } from '../services/settings';
 import { AgendaCategoryModal } from './AgendaCategoryModal';
 import { 
+  syncEventToGoogleCalendar, 
+  reconcileGoogleCalendarTwoWay, 
+  LAST_GCAL_SYNC_KEY 
+} from '../services/googleCalendarService';
+import { 
   AgendaEvent, ProjectItem, AgendaCategory, ProjectStatus, 
   ProjectPriority, AgendaAttachment, ProjectTask, NoteItem, NoteColor } from '../types';
 
@@ -126,6 +131,17 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
   const [notes, setNotes] = useState<NoteItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isGcalSyncing, setIsGcalSyncing] = useState(false);
+  const [lastGcalSync, setLastGcalSync] = useState<string | null>(() => {
+    try {
+      const raw = localStorage.getItem(LAST_GCAL_SYNC_KEY);
+      if (!raw) return null;
+      const d = new Date(raw);
+      return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return null;
+    }
+  });
 
   // Filters & Search
   const [selectedCategories, setSelectedCategories] = useState<Record<string, boolean>>({
@@ -189,6 +205,37 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
       setCalendarView('agenda');
     }
   }, []);
+
+  // Auto-sync Google Calendar di background jika belum pernah sync atau > 30 menit
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LAST_GCAL_SYNC_KEY);
+      const now = Date.now();
+      if (!raw || now - new Date(raw).getTime() > 30 * 60 * 1000) {
+        reconcileGoogleCalendarTwoWay().then(() => {
+          setLastGcalSync(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
+          loadData();
+        }).catch(() => {});
+      }
+    } catch {}
+  }, []);
+
+  const handleSyncGoogleCalendar = async () => {
+    if (isGcalSyncing) return;
+    setIsGcalSyncing(true);
+    try {
+      const res = await reconcileGoogleCalendarTwoWay();
+      const timeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+      setLastGcalSync(timeStr);
+      onShowToast?.(`Google Calendar tersinkronisasi! (${res.added} event baru ditarik, ${res.updated} diselaraskan)`, 'success');
+      await loadData();
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      onShowToast?.(`Gagal sync Google Calendar: ${errMsg}`, 'error');
+    } finally {
+      setIsGcalSyncing(false);
+    }
+  };
 
   // Fetch initial data
   const loadData = async () => {
@@ -477,10 +524,15 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
   const handleDeleteEvent = async (id: string) => {
     if (!window.confirm('Yakin ingin menghapus agenda ini?')) return;
     try {
+      const targetToDelete = events.find(e => e.id === id);
       await deleteAgendaEvent(id);
       onShowToast?.('Agenda berhasil dihapus', 'info');
       setDetailEvent(null);
       loadData();
+
+      if (targetToDelete?.google_event_id) {
+        syncEventToGoogleCalendar(targetToDelete, true).catch(console.warn);
+      }
     } catch (err) {
       onShowToast?.('Gagal menghapus agenda', 'error');
     }
@@ -499,11 +551,21 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
 
     setIsSyncing(true);
     try {
-      await saveAgendaEvent(editingEvent);
+      const saved = await saveAgendaEvent(editingEvent);
       onShowToast?.('Agenda berhasil disimpan!', 'success');
       setAgendaModalOpen(false);
       setEditingEvent(null);
       loadData();
+
+      // Background 2-way sync ke Google Calendar
+      syncEventToGoogleCalendar(saved, false).then(gRes => {
+        if (gRes.success && gRes.google_event_id && gRes.google_event_id !== saved.google_event_id) {
+          saved.google_event_id = gRes.google_event_id;
+          saveAgendaEvent(saved);
+          loadData();
+        }
+      }).catch(console.warn);
+
     } catch (err) {
       onShowToast?.('Gagal menyimpan agenda', 'error');
     } finally {
@@ -1084,6 +1146,27 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                   <span>Filter</span>
                 </button>
 
+                {/* Tombol Sinkron Google Calendar */}
+                <button
+                  onClick={handleSyncGoogleCalendar}
+                  disabled={isGcalSyncing}
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
+                    isGcalSyncing
+                      ? 'bg-primary-50 dark:bg-primary-950/40 text-primary-600 border-primary-200 dark:border-primary-800 animate-pulse'
+                      : 'bg-white dark:bg-[#1a2332] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-primary-400 dark:hover:border-primary-500 shadow-2xs'
+                  }`}
+                  title="Sinkronisasi 2-arah dengan Google Calendar Akun Utama"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isGcalSyncing ? 'animate-spin text-primary-500' : 'text-primary-600 dark:text-primary-400'}`} />
+                  <span className="hidden sm:inline">{isGcalSyncing ? 'Menyinkronkan...' : 'Sync G-Calendar'}</span>
+                  <span className="sm:hidden">{isGcalSyncing ? 'Sync...' : 'G-Cal'}</span>
+                  {lastGcalSync && !isGcalSyncing && (
+                    <span className="hidden xl:inline text-[10px] text-slate-400 font-normal">
+                      ({lastGcalSync})
+                    </span>
+                  )}
+                </button>
+
                 {/* View Switcher: Minggu, Bulan, Hari, Jadwal */}
                 <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
                   <button
@@ -1277,6 +1360,11 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                                           <Clock className="w-2.5 h-2.5" />
                                           {evt.start_time} - {evt.end_time || ''}
                                         </span>
+                                        {evt.google_event_id && (
+                                          <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-600 dark:text-emerald-400" title="Tersinkron Google Calendar">
+                                            <Calendar className="w-2.5 h-2.5" /> G-Cal
+                                          </span>
+                                        )}
                                       </div>
                                       <p className="text-xs font-black text-slate-800 dark:text-slate-100 leading-tight line-clamp-2">
                                         {evt.title}
@@ -1357,9 +1445,14 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                                 <div
                                   key={evt.id}
                                   onClick={(e) => { e.stopPropagation(); setDetailEvent(evt); }}
-                                  className={`text-[10px] font-bold p-1 rounded-md truncate border shadow-2xs ${cfg.badgeBg} ${cfg.badgeText} ${cfg.border}`}
+                                  className={`text-[10px] font-bold p-1 rounded-md truncate border shadow-2xs flex items-center justify-between gap-1 ${cfg.badgeBg} ${cfg.badgeText} ${cfg.border}`}
                                 >
-                                  {evt.is_all_day ? '☀️ ' : `${evt.start_time || ''} `}{evt.title}
+                                  <span className="truncate">
+                                    {evt.is_all_day ? '☀️ ' : `${evt.start_time || ''} `}{evt.title}
+                                  </span>
+                                  {evt.google_event_id && (
+                                    <span className="shrink-0 text-[9px] opacity-70" title="Tersinkron Google Calendar">📅</span>
+                                  )}
                                 </div>
                               );
                             })}
@@ -1905,6 +1998,25 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
+            </div>
+          </div>
+
+          {/* Quick Note Input Bar (Google Keep Style) */}
+          <div className="max-w-xl mx-auto w-full px-2">
+            <div 
+              onClick={() => handleOpenAddNote()}
+              className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md p-3.5 flex items-center justify-between gap-3 cursor-pointer hover:border-amber-400 dark:hover:border-amber-500 transition-all group"
+            >
+              <div className="flex items-center gap-3 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-200">
+                <StickyNote className="w-5 h-5 text-amber-500 shrink-0" />
+                <span className="text-sm font-medium">Tulis catatan atau memo cepat...</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-slate-400">
+                <span className="p-1.5 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-500 hover:text-amber-600 font-bold text-xs flex items-center gap-1">
+                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                  <span>Catat</span>
+                </span>
+              </div>
             </div>
           </div>
           
@@ -2605,6 +2717,12 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
               <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider ${(categoryConfig[detailEvent.category] || Object.values(categoryConfig)[0] || { label: detailEvent.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700' }).badgeBg} ${(categoryConfig[detailEvent.category] || Object.values(categoryConfig)[0] || { label: detailEvent.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700' }).badgeText}`}>
                 {(categoryConfig[detailEvent.category] || Object.values(categoryConfig)[0] || { label: detailEvent.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700' }).label}
               </span>
+              {detailEvent.google_event_id && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                  <Calendar className="w-3 h-3" />
+                  Google Calendar
+                </span>
+              )}
               <button 
                 onClick={() => setDetailEvent(null)}
                 className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"

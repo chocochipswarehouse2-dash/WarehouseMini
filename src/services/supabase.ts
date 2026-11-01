@@ -10313,6 +10313,8 @@ export async function saveAgendaEvent(item: Partial<AgendaEvent>): Promise<Agend
     pic: item.pic || '',
     project_id: item.project_id && isValidUUID(item.project_id) ? item.project_id : undefined,
     attachments: Array.isArray(item.attachments) ? item.attachments : [],
+    google_event_id: item.google_event_id || undefined,
+    source: item.source || 'wms',
     created_by: item.created_by || 'User',
     created_at: item.created_at || nowIso,
     updated_at: nowIso,

@@ -15,20 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.16",
-  "versionCode": 276,
+  "version": "v2.6.17",
+  "versionCode": 277,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v276-1146",
-  "releaseTitle": "WMS v2.6.16 — Pembaruan Latar Belakang Zero-Reload (Update Tanpa Memutus Layar Kerja Aktif)",
+  "buildHash": "wms-261101-v277-1247",
+  "releaseTitle": "WMS v2.6.17 — Sinkronisasi Google Calendar 2-Arah & Google Keep Style Notes",
   "releaseNotes": [
-    "Pembaruan Latar Belakang Zero-Reload: Tombol 'Perbarui' pada widget dan modal kini 100% menyiapkan update di background tanpa me-reload layar aktif",
-    "Transisi Alami Aman: Pembaruan baru diaplikasikan otomatis saat berpindah menu atau secara eksplisit jika user memilih muat ulang",
-    "Proteksi Pekerjaan Aktif: Mencegah gangguan visual atau kehilangan fokus saat sedang bekerja di tab tertentu"
+    "Integrasi Google Calendar: Sinkronisasi 2-arah agenda WMS dan Google Calendar via GAS backend akun utama",
+    "Google Calendar Style: Tampilan kalender modern dengan view bulan dan minggu, time-slot indikator, dan status sync real-time",
+    "Google Keep Style Notes: Quick note bar dan layout catatan warna pastel interaktif",
+    "Proteksi Zero-Reload: Pembaruan aman tanpa reload layar aktif"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.16",
+    "versionCode": 276,
+    "buildDate": "1 November 2026",
+    "buildHash": "wms-261101-v276-1146",
+    "releaseTitle": "WMS v2.6.16 — Pembaruan Latar Belakang Zero-Reload (Update Tanpa Memutus Layar Kerja Aktif)",
+    "releaseNotes": [
+      "Pembaruan Latar Belakang Zero-Reload: Tombol 'Perbarui' pada widget dan modal kini 100% menyiapkan update di background tanpa me-reload layar aktif",
+      "Transisi Alami Aman: Pembaruan baru diaplikasikan otomatis saat berpindah menu atau secara eksplisit jika user memilih muat ulang",
+      "Proteksi Pekerjaan Aktif: Mencegah gangguan visual atau kehilangan fokus saat sedang bekerja di tab tertentu"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.15",
     "versionCode": 275,
@@ -114,19 +128,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Memulihkan kembali tombol pilihan dan indikator mode aktif (#IN Masuk, #OUT Keluar, #SO Opname) pada QuickTagToolbar scanner web app",
       "Menjawab arsitektur delta update untuk pengeditan data di frontend"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.8",
-    "versionCode": 268,
-    "buildDate": "30 Oktober 2026",
-    "buildHash": "wms-261030-v268-1847",
-    "releaseTitle": "WMS v2.6.8 — Perbaikan Definisi Import fetchRecountAuditMapFromCloud & Ketahanan Sinkronisasi Nota",
-    "releaseNotes": [
-      "Menambahkan import fetchRecountAuditMapFromCloud dan getRecountAuditMap pada gasProduksiSync",
-      "Pembersihan type check TypeScript di seluruh modul produksi dan appUpdateService",
-      "Sinkronisasi Tarik Qty Nota kini 100% tervalidasi bebas runtime reference error"
     ],
     "minSupportedVersion": "v2.0.0"
   }

@@ -1168,6 +1168,8 @@ export interface AgendaEvent {
   pic?: string;
   project_id?: string;
   attachments?: AgendaAttachment[];
+  google_event_id?: string;
+  source?: 'wms' | 'google_calendar';
   created_by?: string;
   created_at?: string;
   updated_at?: string;
@@ -1212,6 +1214,8 @@ export interface ProjectItem {
   progress: number; // 0 - 100
   tasks: ProjectTask[];
   attachments?: AgendaAttachment[];
+  google_event_id?: string;
+  source?: 'wms' | 'google_calendar';
   created_by?: string;
   created_at?: string;
   updated_at?: string;
