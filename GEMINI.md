@@ -167,3 +167,16 @@ Whenever designing, modifying, or tidying up any frontend component, table, card
      3. **Picking List Tugas Picking (`invoice_picking` + `no_sj` + QR)**
      4. **Label Pengiriman Paket Thermal A6 (`100mm x 150mm`)**
      5. **Cetak Ukuran Struk Kasir Thermal (`58mm/60mm` & `80mm` Rangkap 2 & SPK)**
+
+## 11. Zero-Reload Background Update & Active Screen Protection Blueprint
+
+### A. Dual Update Architecture (Data vs Code Bundle)
+- **Data Business Updates (Katalog, Stok, Resolusi, Pesanan)**: Wajib disinkronkan via Supabase Realtime / WebSocket events (`catalog_updated`, event listener). DILARANG KERAS memaksa reload halaman untuk memuat pembaruan data bisnis.
+- **Application Code Bundle Updates (Vite / PWA SW)**: Saat versi baru (`v2.x.x`) dideploy, sistem Service Worker mengunduh bundle baru di background tanpa menginterupsi pengguna.
+
+### B. Zero-Reload Background Update (Hard Constraint)
+- **DILARANG FORCED RELOAD SAAT KLIK PERBARUI**: Mengklik tombol **"Perbarui"** pada widget mengambang (`AppUpdateFloatingWidget`) maupun modal detail (`AppUpdateModal`) **TIDAK BOLEH** langsung memicu `window.location.reload()`.
+- **Background Preparation**: Tombol update bertugas mengeksekusi `prepareUpdateInBackground()`, yaitu mengirim sinyal `SKIP_WAITING` ke Service Worker dan menandai status lokal bahwa bundel baru telah tersimpan di cache. Widget wajib langsung berganti tampilan hijau bertuliskan **`✅ Tersimpan (Akan aktif saat pindah menu)`**.
+- **Aktivasi Alami & Aman (Safe Menu Transition)**: Pembaruan kode baru hanya boleh diaktifkan saat transisi alami: ketika pengguna berpindah menu/halaman via sidebar (`handleSelectPage` di `App.tsx`) dan tidak ada sesi barcode scan staging yang belum tersimpan (`wms_active_staging_scans`).
+- **Reload Eksplisit Hanya Atas Izin User**: Reload seketika HANYA diperbolehkan jika pengguna secara eksplisit menekan tombol **"Muat Ulang Sekarang"** di dalam modal rincian update.
+- **Proteksi Pekerjaan Aktif (Zero Data Loss)**: Dilarang membuat fitur atau alur di modul manapun (Gudang, Produksi, Store, Packing, Resolusi, dll.) yang mengeksekusi `window.location.reload()` secara mendadak saat form, scanner, atau tabel sedang aktif dioperasikan.

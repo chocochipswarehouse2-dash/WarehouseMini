@@ -60,7 +60,9 @@ node tools/bump_version.cjs verify-release --output C:/Users/Chocochips\ Warehou
 - Confirm that `package.json`, `src/config/appVersion.ts`, and `public/version.json` all share the exact new `version` (`v2.5.x`) and `buildHash`.
 
 ### 3. Enforce Multi-User Safe OTA Rules (`tools/bump_version.cjs verify-release`)
-- **Zero Forced-Reload Mid-Work**:
+- **Zero Forced-Reload Mid-Work & Background Update Preparation**:
+  - Mengklik tombol **"Perbarui"** pada widget atau modal WAJIB memanggil `prepareUpdateInBackground()`, BUKAN `window.location.reload()`.
+  - Widget langsung berganti status hijau (`✅ Tersimpan`) dan bundel baru di-cache di background tanpa me-reload layar aktif pengguna.
   - [`vite.config.ts`](file:///d:/Antigravity/WMS%20Inventory/vite.config.ts) MUST maintain `registerType: 'prompt'`, `workbox.skipWaiting: false`, and `workbox.clientsClaim: false`.
   - [`src/main.tsx`](file:///d:/Antigravity/WMS%20Inventory/src/main.tsx) (`onNeedRefresh`) and [`src/services/appUpdateService.ts`](file:///d:/Antigravity/WMS%20Inventory/src/services/appUpdateService.ts) (`controllerchange`) MUST NEVER trigger an unprompted `window.location.reload()` while a user is typing in a form or scanning barcodes.
 - **Automatic Seamless Update on Safe Main-Menu Navigation**:
