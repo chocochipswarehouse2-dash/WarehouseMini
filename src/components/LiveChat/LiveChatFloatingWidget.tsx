@@ -100,7 +100,7 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
     <>
       {/* Incoming Message Pop-Up Toast */}
       {toastMsg && !isOpen && (
-        <div className="fixed bottom-20 right-4 sm:right-6 z-[85] max-w-sm w-[calc(100vw-2rem)] bg-slate-900/95 dark:bg-slate-800/95 backdrop-blur-md text-white rounded-2xl shadow-2xl border border-indigo-500/40 p-3.5 animate-in slide-in-from-bottom-4 duration-200">
+        <div className="fixed bottom-36 right-4 sm:right-6 lg:bottom-20 z-[85] max-w-sm w-[calc(100vw-2rem)] bg-slate-900/95 dark:bg-slate-800/95 backdrop-blur-md text-white rounded-2xl shadow-2xl border border-indigo-500/40 p-3.5 animate-in slide-in-from-bottom-4 duration-200 print:hidden">
           <div className="flex items-start justify-between gap-2.5">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0 font-bold text-xs shadow-inner">
@@ -166,7 +166,7 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
 
       {/* Floating Drawer Panel */}
       {isOpen && (
-        <div className="fixed bottom-4 right-3 sm:right-6 z-[90] w-[calc(100vw-1.5rem)] sm:w-[430px] md:w-[460px] h-[540px] sm:h-[580px] max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden animate-in zoom-in-95 duration-150">
+        <div className="fixed bottom-3 right-3 left-3 sm:left-auto sm:bottom-4 sm:right-6 z-[90] sm:w-[430px] md:w-[460px] h-[calc(100dvh-1.5rem)] max-h-[560px] sm:h-[580px] sm:max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden animate-in zoom-in-95 duration-150 print:hidden">
           <LiveChatWorkspace
             session={session}
             productCatalog={productCatalog}
@@ -184,16 +184,16 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
         </div>
       )}
 
-      {/* Floating Action Button (FAB) */}
+      {/* Floating Action Button (FAB) - Positioned above Mobile Nav Button on <1024px, bottom-right on Desktop lg: */}
       {!isOpen && (
-        <div className="fixed bottom-4 right-4 sm:right-6 z-[80] flex items-center gap-2">
+        <div className="fixed bottom-[5.25rem] right-5 sm:bottom-24 sm:right-6 lg:bottom-5 lg:right-6 z-40 flex items-center gap-2 print:hidden">
           <button
             onClick={() => setIsOpen(true)}
-            className="group relative flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white shadow-lg shadow-indigo-600/30 border border-indigo-400/30 transition-all"
+            className="group relative flex items-center justify-center gap-2.5 p-3.5 sm:px-3.5 sm:py-2.5 rounded-full sm:rounded-2xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white shadow-lg shadow-indigo-600/30 border border-indigo-400/30 transition-all cursor-pointer"
             title="Buka Live Chat & Diskusi Tim"
           >
             <div className="relative flex items-center justify-center">
-              <MessageSquare className="w-5 h-5" />
+              <MessageSquare className="w-6 h-6 sm:w-5 sm:h-5" />
               {otherOnlineCount > 0 && (
                 <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-indigo-600" />
               )}
@@ -206,7 +206,7 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
             </div>
 
             {totalUnread > 0 && (
-              <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-extrabold shadow-sm animate-bounce">
+              <span className="absolute -top-1.5 -right-1.5 sm:static sm:ml-0.5 min-w-[20px] h-5 px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-extrabold shadow-sm flex items-center justify-center animate-bounce ring-2 ring-white dark:ring-slate-900 sm:ring-0">
                 {totalUnread > 99 ? '99+' : totalUnread}
               </span>
             )}

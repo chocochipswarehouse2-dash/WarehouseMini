@@ -13,7 +13,7 @@ export const AppUpdateFloatingWidget: React.FC<AppUpdateFloatingWidgetProps> = (
 
   if (status === 'downloading') {
     return (
-      <div className="fixed bottom-20 right-4 z-40 print:hidden animate-in fade-in duration-200">
+      <div className="fixed bottom-36 lg:bottom-20 right-4 sm:right-6 z-40 print:hidden animate-in fade-in duration-200">
         <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-slate-900/95 text-white backdrop-blur-md shadow-2xl border border-emerald-500/40 text-xs font-bold">
           <RotateCw className="w-4 h-4 text-emerald-400 animate-spin shrink-0" />
           <span>Mempersiapkan pembaruan {latestVersion}...</span>
@@ -38,7 +38,7 @@ export const AppUpdateFloatingWidget: React.FC<AppUpdateFloatingWidgetProps> = (
   };
 
   return (
-    <div className="fixed bottom-20 right-4 z-40 print:hidden animate-in fade-in slide-in-from-bottom-2 duration-300">
+    <div className="fixed bottom-36 lg:bottom-20 right-4 sm:right-6 z-40 print:hidden animate-in fade-in slide-in-from-bottom-2 duration-300">
       <div className="flex items-center gap-2 p-2.5 rounded-2xl bg-slate-900/95 dark:bg-slate-800/95 text-white backdrop-blur-md shadow-2xl border border-amber-500/40 ring-2 ring-amber-500/15">
         <div
           onClick={onOpenModal}
