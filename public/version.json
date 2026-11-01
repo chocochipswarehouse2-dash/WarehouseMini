@@ -1,11 +1,13 @@
 {
-  "version": "v2.6.29",
-  "versionCode": 289,
+  "version": "v2.6.30",
+  "versionCode": 290,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v289-1953",
-  "releaseTitle": "WMS v2.6.29 — Clean Env Vars in Push Serverless",
+  "buildHash": "wms-261101-v290-2037",
+  "releaseTitle": "WMS v2.6.30 — Fix Live Chat Image Sync & Missing DocKey in Query",
   "releaseNotes": [
-    "Trim whitespace dan kutip dari env vars push backend"
+    "Perbaiki fetchSystemDocJson interpolasi docKey Supabase",
+    "Realtime re-render foto pada desktop & PWA",
+    "Passing initialRoomId ke workspace"
   ],
   "minSupportedVersion": "v2.0.0"
 }

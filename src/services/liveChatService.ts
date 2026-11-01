@@ -252,11 +252,13 @@ function mergeMessagesIdempotent(existing: ChatMessage[], incoming: ChatMessage[
 
 async function fetchSystemDocJson<T>(docKey: string): Promise<T | null> {
   try {
+    const cleanKey = encodeURIComponent(String(docKey || '').trim());
+    if (!cleanKey) return null;
     const rows = await supabaseFetch<Array<{ doc_key: string; content: any }>>(
       'wms_system_docs',
       'GET',
       null,
-      `select=content&or=(section_id.eq.,doc_key.eq.)&limit=1`
+      `select=content&or=(section_id.eq.${cleanKey},doc_key.eq.${cleanKey})&limit=1`
     );
     if (Array.isArray(rows) && rows.length > 0 && rows[0].content !== undefined) {
       const raw = rows[0].content;
@@ -1816,7 +1818,10 @@ class LiveChatManager {
 
     const isCurrentlyViewingRoom =
       this.state.activeRoomId === room.id &&
-      (this.state.isFloatingOpen || window.location.pathname.includes('live-chat'));
+      (this.state.isFloatingOpen ||
+        (typeof window !== 'undefined' &&
+          ((window as any).__wms_active_page === 'live_chat' ||
+            window.location.pathname.includes('live-chat'))));
 
     let finalRoom = room;
     if (isCurrentlyViewingRoom && message.sender_username.toLowerCase() !== me) {
@@ -1832,6 +1837,9 @@ class LiveChatManager {
       this.state.rooms.sort((a, b) => this.getRoomSortTime(b) - this.getRoomSortTime(a));
       await idbSaveRooms([finalRoom]);
     }
+
+    // Always notify UI listeners so active chat room re-renders with new message (text/photo) instantly
+    this.notify();
 
     // Trigger audio, toast & system notification if sent by someone else and not actively viewing
     if (

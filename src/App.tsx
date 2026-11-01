@@ -480,6 +480,9 @@ export default function App() {
   }, [session?.username, session?.role]);
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__wms_active_page = activePage;
+    }
     if (session) {
       liveChatManager.setActivePage(activePage);
     }
@@ -3050,6 +3053,7 @@ export default function App() {
                     productCatalog={productDatabase}
                     onNotify={showToast}
                     mode="full"
+                    initialRoomId={liveChatManager.getSnapshot().activeRoomId}
                     allSkus={productDatabase.map(p => p.k).filter(Boolean)}
                     onQuickSearchContext={(tagLabel) => {
                       showToast(`Tag Referensi: ${tagLabel}`, 'info');

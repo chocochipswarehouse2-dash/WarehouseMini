@@ -15,18 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.29",
-  "versionCode": 289,
+  "version": "v2.6.30",
+  "versionCode": 290,
   "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v289-1953",
-  "releaseTitle": "WMS v2.6.29 — Clean Env Vars in Push Serverless",
+  "buildHash": "wms-261101-v290-2037",
+  "releaseTitle": "WMS v2.6.30 — Fix Live Chat Image Sync & Missing DocKey in Query",
   "releaseNotes": [
-    "Trim whitespace dan kutip dari env vars push backend"
+    "Perbaiki fetchSystemDocJson interpolasi docKey Supabase",
+    "Realtime re-render foto pada desktop & PWA",
+    "Passing initialRoomId ke workspace"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.29",
+    "versionCode": 289,
+    "buildDate": "1 November 2026",
+    "buildHash": "wms-261101-v289-1953",
+    "releaseTitle": "WMS v2.6.29 — Clean Env Vars in Push Serverless",
+    "releaseNotes": [
+      "Trim whitespace dan kutip dari env vars push backend"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.28",
     "versionCode": 288,
@@ -112,20 +125,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Tampilan baru Matriks Sebulan (Tanggal 1-31 x Seluruh Karyawan) di menu Roster Shift tanpa perlu edit satu-satu atau import CSV",
       "Generator Massal 1 Bulan dengan fitur Bagi Hari Libur Bergilir Otomatis (Senin-Minggu merata antar staf), Rotasi Mingguan, dan Bagi 2 Tim",
       "Fitur Set Cepat 1 Bulan per baris karyawan (S1/S2/3A + Hari Off individu) serta Mode Kuas Klik & Geser (Drag Paint) di sel tanggal dengan 1-Klik Simpan Semua"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.21",
-    "versionCode": 281,
-    "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v281-0903",
-    "releaseTitle": "WMS v2.6.21 — Notifikasi OS HP Gaya WhatsApp (Pesanan & Live Chat) & Stock Opname Eksklusif di Pengaturan Sistem",
-    "releaseNotes": [
-      "Perbaikan Notifikasi OS HP (Android/iOS/Desktop) layaknya WhatsApp untuk Pesanan Baru Store, Tiket Retur, SPS, dan Live Chat (mendukung Balas Cepat & Tandai Dibaca langsung dari bar notifikasi HP)",
-      "Registrasi otomatis Service Worker (/pwa-extras.js) di seluruh domain seluler dan pratinjau agar pop-up bar notifikasi sistem Android Chrome berjalan 100%",
-      "Pemindahan modul Stock Opname dari menu Scanner",
-      "LOG ke dalam Pengaturan Sistem khusus Superadmin serta perbaikan ikon ClipboardList"
     ],
     "minSupportedVersion": "v2.0.0"
   }
