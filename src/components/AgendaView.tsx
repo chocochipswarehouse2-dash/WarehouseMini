@@ -4,7 +4,7 @@ import {
   CheckCircle2, ChevronLeft, ChevronRight, Clock, MapPin, User, Tag, 
   Trash2, Edit3, Search, Filter, Sun, Check, Sparkles, RefreshCw, 
   AlertTriangle, ArrowRight, Layers, Eye, CheckSquare, Square, MoreHorizontal, StickyNote,
-  FolderPlus, CalendarDays, ListFilter, RotateCcw, ChevronDown, ChevronUp
+  FolderPlus, CalendarDays, ListFilter, RotateCcw, ChevronDown, ChevronUp, Palette
 } from 'lucide-react';
 import { compressImage } from '../utils/imageCompressor';
 import { 
@@ -200,24 +200,29 @@ export const computeWeekEventSegments = (
   maxSlot: number;
   overflowByDay: number[];
 } => {
-  // 1. Filter events intersecting this week
+  // 1. Filter events intersecting this week with normalized start & end
   const intersectingEvents = allEvents.filter(evt => {
-    const start = evt.start_date;
-    const end = evt.end_date && evt.end_date >= evt.start_date ? evt.end_date : evt.start_date;
+    const rawStart = evt.start_date;
+    const rawEnd = evt.end_date || evt.start_date;
+    const start = rawStart <= rawEnd ? rawStart : rawEnd;
+    const end = rawStart <= rawEnd ? rawEnd : rawStart;
     return start <= weekEndStr && end >= weekStartStr;
   });
 
   // 2. Map each event to a preliminary segment
   const rawSegments = intersectingEvents.map(evt => {
-    const effectiveEnd = evt.end_date && evt.end_date >= evt.start_date ? evt.end_date : evt.start_date;
+    const rawStart = evt.start_date;
+    const rawEnd = evt.end_date || evt.start_date;
+    const effectiveStart = rawStart <= rawEnd ? rawStart : rawEnd;
+    const effectiveEnd = rawStart <= rawEnd ? rawEnd : rawStart;
 
     let startCol = 1;
     let continuesFromPrev = false;
-    if (evt.start_date < weekStartStr) {
+    if (effectiveStart < weekStartStr) {
       startCol = 1;
       continuesFromPrev = true;
     } else {
-      const idx = weekDays.findIndex(d => d.dateStr === evt.start_date);
+      const idx = weekDays.findIndex(d => d.dateStr === effectiveStart);
       startCol = idx !== -1 ? idx + 1 : 1;
       continuesFromPrev = false;
     }
@@ -310,26 +315,156 @@ export const computeWeekEventSegments = (
   return { segments, maxSlot, overflowByDay };
 };
 
+export interface AgendaColorOption {
+  id: string;
+  label: string;
+  hex: string;
+  barBg: string;
+  dot: string;
+  badgeBg: string;
+  badgeText: string;
+  border: string;
+  cardBg: string;
+}
+
+export const AGENDA_COLOR_OPTIONS: AgendaColorOption[] = [
+  { id: 'blue', label: 'Biru Google', hex: '#1a73e8', barBg: 'bg-[#1a73e8] hover:bg-[#1557b0] text-white', dot: 'bg-[#1a73e8]', badgeBg: 'bg-blue-100 dark:bg-blue-950/60', badgeText: 'text-blue-700 dark:text-blue-300', border: 'border-blue-400 dark:border-blue-700', cardBg: 'bg-blue-50/70 dark:bg-blue-950/30' },
+  { id: 'indigo', label: 'Ungu Indigo', hex: '#8430ce', barBg: 'bg-[#8430ce] hover:bg-[#7226b5] text-white', dot: 'bg-[#8430ce]', badgeBg: 'bg-indigo-100 dark:bg-indigo-950/60', badgeText: 'text-indigo-700 dark:text-indigo-300', border: 'border-indigo-400 dark:border-indigo-700', cardBg: 'bg-indigo-50/70 dark:bg-indigo-950/30' },
+  { id: 'emerald', label: 'Hijau Emerald', hex: '#0b8043', barBg: 'bg-[#0b8043] hover:bg-[#096e39] text-white', dot: 'bg-[#0b8043]', badgeBg: 'bg-emerald-100 dark:bg-emerald-950/60', badgeText: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-400 dark:border-emerald-700', cardBg: 'bg-emerald-50/70 dark:bg-emerald-950/30' },
+  { id: 'sky', label: 'Biru Langit', hex: '#039be5', barBg: 'bg-[#039be5] hover:bg-[#0288d1] text-white', dot: 'bg-[#039be5]', badgeBg: 'bg-sky-100 dark:bg-sky-950/60', badgeText: 'text-sky-700 dark:text-sky-300', border: 'border-sky-400 dark:border-sky-700', cardBg: 'bg-sky-50/70 dark:bg-sky-950/30' },
+  { id: 'amber', label: 'Kuning Amber', hex: '#f59e0b', barBg: 'bg-[#f59e0b] hover:bg-[#d97706] text-white', dot: 'bg-[#f59e0b]', badgeBg: 'bg-amber-100 dark:bg-amber-950/60', badgeText: 'text-amber-800 dark:text-amber-300', border: 'border-amber-400 dark:border-amber-700', cardBg: 'bg-amber-50/70 dark:bg-amber-950/30' },
+  { id: 'orange', label: 'Oranye Sunset', hex: '#f4511e', barBg: 'bg-[#f4511e] hover:bg-[#e04716] text-white', dot: 'bg-[#f4511e]', badgeBg: 'bg-orange-100 dark:bg-orange-950/60', badgeText: 'text-orange-700 dark:text-orange-300', border: 'border-orange-400 dark:border-orange-700', cardBg: 'bg-orange-50/70 dark:bg-orange-950/30' },
+  { id: 'rose', label: 'Merah Crimson', hex: '#d50000', barBg: 'bg-[#d50000] hover:bg-[#b70000] text-white', dot: 'bg-[#d50000]', badgeBg: 'bg-rose-100 dark:bg-rose-950/60', badgeText: 'text-rose-700 dark:text-rose-300', border: 'border-rose-400 dark:border-rose-700', cardBg: 'bg-rose-50/70 dark:bg-rose-950/30' },
+  { id: 'teal', label: 'Hijau Tosca', hex: '#00897b', barBg: 'bg-[#00897b] hover:bg-[#00796b] text-white', dot: 'bg-[#00897b]', badgeBg: 'bg-teal-100 dark:bg-teal-950/60', badgeText: 'text-teal-700 dark:text-teal-300', border: 'border-teal-400 dark:border-teal-700', cardBg: 'bg-teal-50/70 dark:bg-teal-950/30' },
+  { id: 'purple', label: 'Ungu Magenta', hex: '#7c3aed', barBg: 'bg-[#7c3aed] hover:bg-[#6d28d9] text-white', dot: 'bg-[#7c3aed]', badgeBg: 'bg-purple-100 dark:bg-purple-950/60', badgeText: 'text-purple-700 dark:text-purple-300', border: 'border-purple-400 dark:border-purple-700', cardBg: 'bg-purple-50/70 dark:bg-purple-950/30' },
+  { id: 'pink', label: 'Merah Muda', hex: '#d81b60', barBg: 'bg-[#d81b60] hover:bg-[#c2185b] text-white', dot: 'bg-[#d81b60]', badgeBg: 'bg-pink-100 dark:bg-pink-950/60', badgeText: 'text-pink-700 dark:text-pink-300', border: 'border-pink-400 dark:border-pink-700', cardBg: 'bg-pink-50/70 dark:bg-pink-950/30' },
+  { id: 'slate', label: 'Abu-abu Netral', hex: '#546e7a', barBg: 'bg-[#546e7a] hover:bg-[#455a64] text-white', dot: 'bg-[#546e7a]', badgeBg: 'bg-slate-200 dark:bg-slate-800', badgeText: 'text-slate-800 dark:text-slate-200', border: 'border-slate-400 dark:border-slate-700', cardBg: 'bg-slate-50 dark:bg-slate-800/40' },
+];
+
 export const getCategoryBarColor = (category: string, config?: Record<string, any>): string => {
+  const cfg = config?.[category];
+  if (cfg) {
+    if (cfg.barBg) return cfg.barBg;
+    if (cfg.dot) {
+      if (cfg.dot.includes('indigo') || cfg.dot.includes('purple')) return 'bg-[#8430ce] hover:bg-[#7226b5] text-white';
+      if (cfg.dot.includes('emerald') || cfg.dot.includes('teal')) return 'bg-[#0b8043] hover:bg-[#096e39] text-white';
+      if (cfg.dot.includes('sky') || cfg.dot.includes('blue')) return 'bg-[#039be5] hover:bg-[#0288d1] text-white';
+      if (cfg.dot.includes('amber') || cfg.dot.includes('orange')) return 'bg-[#f59e0b] hover:bg-[#d97706] text-white';
+      if (cfg.dot.includes('rose') || cfg.dot.includes('red')) return 'bg-[#d50000] hover:bg-[#b70000] text-white';
+      if (cfg.dot.includes('slate')) return 'bg-[#546e7a] hover:bg-[#455a64] text-white';
+    }
+    if (cfg.gradient) {
+      if (cfg.gradient.includes('purple') || cfg.gradient.includes('indigo')) return 'bg-[#8430ce] hover:bg-[#7226b5] text-white';
+      if (cfg.gradient.includes('emerald') || cfg.gradient.includes('teal')) return 'bg-[#0b8043] hover:bg-[#096e39] text-white';
+      if (cfg.gradient.includes('sky') || cfg.gradient.includes('blue')) return 'bg-[#039be5] hover:bg-[#0288d1] text-white';
+      if (cfg.gradient.includes('amber') || cfg.gradient.includes('orange')) return 'bg-[#f4511e] hover:bg-[#e04716] text-white';
+      if (cfg.gradient.includes('rose') || cfg.gradient.includes('pink') || cfg.gradient.includes('red')) return 'bg-[#d50000] hover:bg-[#b70000] text-white';
+    }
+  }
   if (GOOGLE_CALENDAR_COLORS[category]) {
     return GOOGLE_CALENDAR_COLORS[category].barBg;
-  }
-  const cfg = config?.[category];
-  if (cfg?.gradient) {
-    if (cfg.gradient.includes('purple') || cfg.gradient.includes('indigo')) return 'bg-[#8430ce] hover:bg-[#7226b5] text-white';
-    if (cfg.gradient.includes('emerald') || cfg.gradient.includes('teal')) return 'bg-[#0b8043] hover:bg-[#096e39] text-white';
-    if (cfg.gradient.includes('sky') || cfg.gradient.includes('blue')) return 'bg-[#039be5] hover:bg-[#0288d1] text-white';
-    if (cfg.gradient.includes('amber') || cfg.gradient.includes('orange')) return 'bg-[#f4511e] hover:bg-[#e04716] text-white';
-    if (cfg.gradient.includes('rose') || cfg.gradient.includes('pink') || cfg.gradient.includes('red')) return 'bg-[#d50000] hover:bg-[#b70000] text-white';
   }
   return 'bg-[#039be5] hover:bg-[#0288d1] text-white';
 };
 
 export const getCategoryDotColor = (category: string, config?: Record<string, any>): string => {
+  if (config?.[category]?.dot) {
+    return config[category].dot;
+  }
   if (GOOGLE_CALENDAR_COLORS[category]) {
     return GOOGLE_CALENDAR_COLORS[category].dot;
   }
-  return config?.[category]?.dot || 'bg-[#039be5]';
+  return 'bg-[#039be5]';
+};
+
+export const resolveEventColorStyle = (
+  event: Partial<AgendaEvent>,
+  categoryConfig?: Record<string, any>
+): {
+  barBgClass: string;
+  barBgStyle?: React.CSSProperties;
+  badgeBg: string;
+  badgeText: string;
+  border: string;
+  cardBg: string;
+  dot: string;
+  hex: string;
+  label: string;
+} => {
+  // 1. Cek warna spesifik agenda (event.color)
+  if (event.color) {
+    const preset = AGENDA_COLOR_OPTIONS.find(c => c.id === event.color);
+    if (preset) {
+      return {
+        barBgClass: preset.barBg,
+        badgeBg: preset.badgeBg,
+        badgeText: preset.badgeText,
+        border: preset.border,
+        cardBg: preset.cardBg,
+        dot: preset.dot,
+        hex: preset.hex,
+        label: preset.label
+      };
+    }
+    // Jika format hex custom (misal #10b981)
+    if (event.color.startsWith('#') || event.color.startsWith('rgb')) {
+      return {
+        barBgClass: 'text-white hover:brightness-110 shadow-xs',
+        barBgStyle: { backgroundColor: event.color },
+        badgeBg: 'bg-slate-100 dark:bg-slate-800',
+        badgeText: 'text-slate-800 dark:text-slate-100',
+        border: 'border-slate-300 dark:border-slate-700',
+        cardBg: 'bg-white dark:bg-[#1a2332]',
+        dot: 'bg-primary-500',
+        hex: event.color,
+        label: 'Warna Khusus'
+      };
+    }
+  }
+
+  // 2. Cek kategori dari config kustom pengguna
+  const catKey = event.category || 'umum';
+  const cfg = categoryConfig?.[catKey];
+  if (cfg) {
+    const barBg = getCategoryBarColor(catKey, categoryConfig);
+    return {
+      barBgClass: barBg,
+      badgeBg: cfg.badgeBg || 'bg-slate-100 dark:bg-slate-800',
+      badgeText: cfg.badgeText || 'text-slate-700 dark:text-slate-300',
+      border: cfg.border || 'border-slate-300 dark:border-slate-700',
+      cardBg: cfg.cardBg || 'bg-white dark:bg-[#1a2332]',
+      dot: cfg.dot || 'bg-slate-500',
+      hex: cfg.hex || '#039be5',
+      label: cfg.label || catKey
+    };
+  }
+
+  // 3. Fallback ke Google Calendar default colors
+  if (GOOGLE_CALENDAR_COLORS[catKey]) {
+    const gc = GOOGLE_CALENDAR_COLORS[catKey];
+    return {
+      barBgClass: gc.barBg,
+      badgeBg: 'bg-slate-100 dark:bg-slate-800',
+      badgeText: gc.text,
+      border: 'border-slate-300 dark:border-slate-700',
+      cardBg: 'bg-white dark:bg-[#1a2332]',
+      dot: gc.dot,
+      hex: gc.hex,
+      label: gc.label
+    };
+  }
+
+  // 4. Default fallback
+  return {
+    barBgClass: 'bg-[#039be5] hover:bg-[#0288d1] text-white',
+    badgeBg: 'bg-sky-100 dark:bg-sky-950/60',
+    badgeText: 'text-sky-700 dark:text-sky-300',
+    border: 'border-sky-300 dark:border-sky-800',
+    cardBg: 'bg-sky-50/70 dark:bg-sky-950/30',
+    dot: 'bg-[#039be5]',
+    hex: '#039be5',
+    label: catKey
+  };
 };
 
 
@@ -734,9 +869,12 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
   const eventsByDate = useMemo(() => {
     const map = new Map<string, AgendaEvent[]>();
     filteredEvents.forEach(e => {
-      const start = e.start_date;
-      const end = e.end_date && e.end_date >= e.start_date ? e.end_date : e.start_date;
-      if (start === end || !e.end_date) {
+      const rawStart = e.start_date;
+      const rawEnd = e.end_date || e.start_date;
+      const start = rawStart <= rawEnd ? rawStart : rawEnd;
+      const end = rawStart <= rawEnd ? rawEnd : rawStart;
+
+      if (start === end) {
         if (!map.has(start)) map.set(start, []);
         map.get(start)!.push(e);
       } else {
@@ -746,7 +884,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
           const curr = new Date(sy, sm - 1, sd);
           const last = new Date(ey, em - 1, ed);
           let count = 0;
-          while (curr <= last && count < 180) {
+          while (curr <= last && count < 366) {
             const dStr = formatIsoDate(curr);
             if (!map.has(dStr)) map.set(dStr, []);
             map.get(dStr)!.push(e);
@@ -802,6 +940,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
       start_time: sTime,
       end_time: eTime,
       category: 'operasional',
+      color: undefined,
       location: '',
       pic: session?.name || session?.username || '',
       attachments: []
@@ -815,10 +954,30 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
     setAgendaModalOpen(true);
   };
 
+  const handleQuickChangeColor = async (colorId: string) => {
+    if (!detailEvent) return;
+    const updated: AgendaEvent = { ...detailEvent, color: colorId || undefined };
+    setDetailEvent(updated);
+    // Optimistic UI update
+    setEvents(prev => prev.map(e => e.id === updated.id ? updated : e));
+    setIsSyncing(true);
+    try {
+      await saveAgendaEvent(updated);
+      onShowToast?.('Warna agenda berhasil diperbarui!', 'success');
+      loadData();
+    } catch {
+      onShowToast?.('Gagal memperbarui warna agenda', 'error');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const handleDeleteEvent = async (id: string) => {
     if (!window.confirm('Yakin ingin menghapus agenda ini?')) return;
     try {
       const targetToDelete = events.find(e => e.id === id);
+      // Optimistic delete
+      setEvents(prev => prev.filter(e => e.id !== id));
       await deleteAgendaEvent(id);
       onShowToast?.('Agenda berhasil dihapus', 'info');
       setDetailEvent(null);
@@ -843,13 +1002,45 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
       return;
     }
 
+    // Normalisasi cerdas jika user memilih rentang lintas tahun (misal: mulai Nov 2026, selesai Feb 2026 -> diset ke Feb 2027)
+    let sDate = editingEvent.start_date;
+    let eDate = editingEvent.end_date || sDate;
+    if (sDate && eDate && sDate > eDate) {
+      const [sy, sm] = sDate.split('-').map(Number);
+      const [ey, em] = eDate.split('-').map(Number);
+      if (sy === ey && em < sm) {
+        eDate = `${sy + 1}-${String(em).padStart(2, '0')}-${eDate.slice(8)}`;
+      } else {
+        const tmp = sDate;
+        sDate = eDate;
+        eDate = tmp;
+      }
+    }
+
+    const eventToSave: Partial<AgendaEvent> = {
+      ...editingEvent,
+      start_date: sDate,
+      end_date: eDate
+    };
+
     setIsSyncing(true);
     try {
-      const saved = await saveAgendaEvent(editingEvent);
+      const saved = await saveAgendaEvent(eventToSave);
+      
+      // OPTIMISTIC UPDATE: Langsung update state kalender di layar tanpa menunggu query asinkron
+      setEvents(prev => {
+        const oldId = editingEvent.id;
+        const exists = prev.some(ev => ev.id === saved.id || (oldId && ev.id === oldId));
+        if (exists) {
+          return prev.map(ev => (ev.id === saved.id || (oldId && ev.id === oldId)) ? saved : ev);
+        }
+        return [...prev, saved];
+      });
+
       onShowToast?.('Agenda berhasil disimpan!', 'success');
       setAgendaModalOpen(false);
       setEditingEvent(null);
-      loadData();
+      await loadData();
 
       // Background 2-way sync ke Google Calendar
       syncEventToGoogleCalendar(saved, false).then(gRes => {
@@ -1694,12 +1885,15 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                             className="p-1 border-r border-slate-200 dark:border-slate-800 last:border-0 space-y-1 hover:bg-slate-100/50 dark:hover:bg-slate-800/40 cursor-pointer"
                           >
                             {dayEvents.map(evt => {
-                              const cfg = categoryConfig[evt.category] || Object.values(categoryConfig)[0] || { label: evt.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', border: 'border-slate-300', cardBg: 'bg-white', dot: 'bg-slate-500' };
+                              const colorStyle = resolveEventColorStyle(evt, categoryConfig);
                               return (
                                 <div
                                   key={evt.id}
                                   onClick={(e) => { e.stopPropagation(); setDetailEvent(evt); }}
-                                  className={`text-[10px] p-1.5 rounded-lg font-bold truncate border shadow-xs transition-transform hover:scale-[1.02] cursor-pointer ${cfg.badgeBg} ${cfg.badgeText} ${cfg.border}`}
+                                  onDoubleClick={(e) => { e.stopPropagation(); handleEditEvent(evt); }}
+                                  style={colorStyle.barBgStyle}
+                                  className={`text-[10px] p-1.5 rounded-lg font-bold truncate border shadow-xs transition-transform hover:scale-[1.02] cursor-pointer ${colorStyle.badgeBg} ${colorStyle.badgeText} ${colorStyle.border}`}
+                                  title={`${evt.title} (Klik untuk rincian, klik 2x untuk edit)`}
                                 >
                                   ☀️ {evt.title}
                                 </div>
@@ -1737,12 +1931,14 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                                 className="p-1 border-r border-slate-100 dark:border-slate-800/40 last:border-0 relative hover:bg-slate-50/70 dark:hover:bg-slate-800/20 cursor-pointer transition-colors"
                               >
                                 {dayTimedEvents.map(evt => {
-                                  const cfg = categoryConfig[evt.category] || Object.values(categoryConfig)[0] || { label: evt.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', border: 'border-slate-300', cardBg: 'bg-white', dot: 'bg-slate-500' };
+                                  const colorStyle = resolveEventColorStyle(evt, categoryConfig);
                                   return (
                                     <div
                                       key={evt.id}
                                       onClick={(e) => { e.stopPropagation(); setDetailEvent(evt); }}
-                                      className={`p-2 rounded-xl border mb-1 font-sans shadow-xs transition-all hover:shadow-md cursor-pointer ${cfg.cardBg} ${cfg.border} border-l-4`}
+                                      onDoubleClick={(e) => { e.stopPropagation(); handleEditEvent(evt); }}
+                                      className={`p-2 rounded-xl border mb-1 font-sans shadow-xs transition-all hover:shadow-md cursor-pointer ${colorStyle.cardBg} ${colorStyle.border} border-l-4`}
+                                      title={`${evt.title} (Klik untuk rincian, klik 2x untuk edit)`}
                                     >
                                       <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-bold mb-0.5">
                                         <span className="flex items-center gap-1">
@@ -1811,27 +2007,33 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                             className={`relative ${minHeightClass} flex flex-col justify-start select-none`}
                           >
                             {/* Layer 1: Background Day Cells (Grid 7 Cols with Borders) */}
-                            <div className="grid grid-cols-7 divide-x divide-slate-100 dark:divide-slate-800/60 absolute inset-0 pointer-events-none">
+                            <div className="grid grid-cols-7 divide-x divide-slate-100 dark:divide-slate-800/60 absolute inset-0">
                               {weekDays.map((item, dIdx) => {
                                 const isTod = isToday(item.date);
                                 const isSel = isSameDay(item.date, selectedDate);
                                 return (
                                   <div
                                     key={dIdx}
-                                    className={`h-full transition-colors ${
+                                    onClick={() => {
+                                      setSelectedDate(item.date);
+                                      setCurrentDate(item.date);
+                                    }}
+                                    onDoubleClick={() => handleOpenAddEvent(item.dateStr)}
+                                    className={`h-full transition-colors cursor-pointer group/cell relative ${
                                       !item.currentMonth 
                                         ? 'bg-slate-50/50 dark:bg-slate-900/30' 
                                         : isTod 
                                         ? 'bg-blue-50/20 dark:bg-blue-950/10' 
                                         : 'bg-white dark:bg-[#1a2332]'
-                                    } ${isSel ? 'bg-primary-50/25 dark:bg-primary-950/20 ring-1 ring-primary-500/30 ring-inset' : ''}`}
+                                    } ${isSel ? 'bg-primary-50/25 dark:bg-primary-950/20 ring-1 ring-primary-500/30 ring-inset' : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/30'}`}
+                                    title={`Klik untuk pilih ${item.dateStr}, klik 2x untuk buat agenda`}
                                   />
                                 );
                               })}
                             </div>
 
-                            {/* Layer 2: Clickable Day Headers */}
-                            <div className="grid grid-cols-7 relative z-10 pt-1.5 pb-1">
+                            {/* Layer 2: Clickable Day Headers with Add Button */}
+                            <div className="grid grid-cols-7 relative z-10 pt-1.5 pb-1 px-1">
                               {weekDays.map((item, dIdx) => {
                                 const isTod = isToday(item.date);
                                 const isSel = isSameDay(item.date, selectedDate);
@@ -1849,7 +2051,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                                       setCurrentDate(item.date);
                                     }}
                                     onDoubleClick={() => handleOpenAddEvent(item.dateStr)}
-                                    className="flex flex-col items-center justify-start cursor-pointer group"
+                                    className="flex items-center justify-between px-1 cursor-pointer group"
                                     title={`Klik untuk pilih tanggal, klik dua kali untuk buat agenda pada ${item.dateStr}`}
                                   >
                                     <span
@@ -1867,6 +2069,17 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                                     >
                                       {displayLabel}
                                     </span>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenAddEvent(item.dateStr);
+                                      }}
+                                      className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 flex items-center justify-center transition-all cursor-pointer"
+                                      title={`+ Tambah agenda pada ${item.dateStr}`}
+                                    >
+                                      <Plus className="w-3 h-3 stroke-[2.5]" />
+                                    </button>
                                   </div>
                                 );
                               })}
@@ -1883,7 +2096,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                               {segments
                                 .filter(seg => seg.slot < 3)
                                 .map((seg, sIdx) => {
-                                  const barColor = getCategoryBarColor(seg.event.category, categoryConfig);
+                                  const colorStyle = resolveEventColorStyle(seg.event, categoryConfig);
                                   
                                   const borderRounding = 
                                     seg.continuesFromPrev && seg.continuesToNext
@@ -1901,13 +2114,18 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                                         e.stopPropagation();
                                         setDetailEvent(seg.event);
                                       }}
+                                      onDoubleClick={(e) => {
+                                        e.stopPropagation();
+                                        handleEditEvent(seg.event);
+                                      }}
                                       style={{
                                         gridColumnStart: seg.startCol,
                                         gridColumnEnd: seg.endCol + 1,
                                         gridRowStart: seg.slot + 1,
+                                        ...(colorStyle.barBgStyle || {})
                                       }}
-                                      className={`h-6 text-[11px] font-bold text-white flex items-center px-2 shadow-2xs cursor-pointer truncate transition-all hover:brightness-110 active:scale-[0.99] select-none ${barColor} ${borderRounding}`}
-                                      title={`${seg.event.title} (${seg.event.start_date}${seg.event.end_date ? ' s/d ' + seg.event.end_date : ''})`}
+                                      className={`h-6 text-[11px] font-bold text-white flex items-center px-2 shadow-2xs cursor-pointer truncate transition-all hover:brightness-110 active:scale-[0.99] select-none ${colorStyle.barBgClass} ${borderRounding}`}
+                                      title={`${seg.event.title} (${seg.event.start_date}${seg.event.end_date ? ' s/d ' + seg.event.end_date : ''}) - Klik untuk lihat, klik 2x untuk edit`}
                                     >
                                       {seg.continuesFromPrev && (
                                         <span className="text-[9px] mr-1 opacity-85 shrink-0 font-mono">◀</span>
@@ -2053,12 +2271,14 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                 <div className="divide-y divide-slate-100 dark:divide-slate-800">
                   {/* All day section in day view */}
                   {((eventsByDate.get(formatIsoDate(currentDate)) || []).filter(e => e.is_all_day)).map(evt => {
-                    const cfg = categoryConfig[evt.category] || Object.values(categoryConfig)[0] || { label: evt.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', border: 'border-slate-300', cardBg: 'bg-white', dot: 'bg-slate-500' };
+                    const colorStyle = resolveEventColorStyle(evt, categoryConfig);
                     return (
                       <div 
                         key={evt.id} 
                         onClick={() => setDetailEvent(evt)}
-                        className={`p-4 ${cfg.cardBg} border-l-4 ${cfg.border} cursor-pointer hover:opacity-95`}
+                        onDoubleClick={() => handleEditEvent(evt)}
+                        className={`p-4 ${colorStyle.cardBg} border-l-4 ${colorStyle.border} cursor-pointer hover:opacity-95 transition-all`}
+                        title={`${evt.title} (Klik untuk rincian, klik 2x untuk edit)`}
                       >
                         <span className="text-[10px] font-black uppercase tracking-wider text-amber-600 bg-amber-100 px-2 py-0.5 rounded-md">
                           ☀️ Acara Sepanjang Hari
@@ -2087,17 +2307,20 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                           className="flex-1 p-2 space-y-2 cursor-pointer"
                         >
                           {slotEvents.map(evt => {
-                            const cfg = categoryConfig[evt.category] || Object.values(categoryConfig)[0] || { label: evt.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', border: 'border-slate-300', cardBg: 'bg-white', dot: 'bg-slate-500' };
+                            const colorStyle = resolveEventColorStyle(evt, categoryConfig);
                             return (
                               <div
                                 key={evt.id}
                                 onClick={(e) => { e.stopPropagation(); setDetailEvent(evt); }}
-                                className={`p-3 rounded-xl border ${cfg.cardBg} ${cfg.border} border-l-4 shadow-sm`}
+                                onDoubleClick={(e) => { e.stopPropagation(); handleEditEvent(evt); }}
+                                className={`p-3 rounded-xl border ${colorStyle.cardBg} ${colorStyle.border} border-l-4 shadow-sm cursor-pointer hover:shadow-md transition-all`}
+                                title={`${evt.title} (Klik untuk rincian, klik 2x untuk edit)`}
                               >
                                 <div className="flex justify-between items-start">
                                   <h4 className="text-sm font-black text-slate-900 dark:text-white">{evt.title}</h4>
-                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${cfg.badgeBg} ${cfg.badgeText}`}>
-                                    {cfg.label}
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${colorStyle.badgeBg} ${colorStyle.badgeText} flex items-center gap-1`}>
+                                    <span className={`w-1.5 h-1.5 rounded-full ${colorStyle.dot}`}></span>
+                                    {colorStyle.label}
                                   </span>
                                 </div>
                                 <div className="flex flex-wrap gap-2 mt-2 text-xs text-slate-500 dark:text-slate-400">
@@ -2169,12 +2392,14 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                           {/* Event Cards for this Day */}
                           <div className="space-y-3">
                             {dayEvts.map(evt => {
-                              const cfg = categoryConfig[evt.category] || Object.values(categoryConfig)[0] || { label: evt.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', border: 'border-slate-300', cardBg: 'bg-white', dot: 'bg-slate-500' };
+                              const colorStyle = resolveEventColorStyle(evt, categoryConfig);
                               return (
                                 <div
                                   key={evt.id}
                                   onClick={() => setDetailEvent(evt)}
-                                  className={`p-2 sm:p-3 rounded-2xl border ${cfg.cardBg} ${cfg.border} border-l-4 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col justify-between gap-3`}
+                                  onDoubleClick={() => handleEditEvent(evt)}
+                                  className={`p-2 sm:p-3 rounded-2xl border ${colorStyle.cardBg} ${colorStyle.border} border-l-4 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col justify-between gap-3`}
+                                  title={`${evt.title} (Klik untuk rincian, klik 2x untuk edit)`}
                                 >
                                   <div>
                                     {/* Top badges */}
@@ -2189,8 +2414,9 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                                             <Clock className="w-3 h-3 text-primary-500" /> {evt.start_time} - {evt.end_time || 'Selesai'}
                                           </span>
                                         )}
-                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${cfg.badgeBg} ${cfg.badgeText}`}>
-                                          {cfg.label}
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${colorStyle.badgeBg} ${colorStyle.badgeText} flex items-center gap-1`}>
+                                          <span className={`w-1.5 h-1.5 rounded-full ${colorStyle.dot}`}></span>
+                                          {colorStyle.label}
                                         </span>
                                       </div>
 
@@ -2198,14 +2424,14 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                                       <div className="flex items-center gap-1">
                                         <button
                                           onClick={(e) => { e.stopPropagation(); handleEditEvent(evt); }}
-                                          className="p-1.5 text-slate-500 hover:text-primary-500 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-colors"
+                                          className="p-1.5 text-slate-500 hover:text-primary-500 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
                                           title="Edit Agenda"
                                         >
                                           <Edit3 className="w-4 h-4" />
                                         </button>
                                         <button
                                           onClick={(e) => { e.stopPropagation(); handleDeleteEvent(evt.id); }}
-                                          className="p-1.5 text-slate-500 hover:text-rose-500 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-colors"
+                                          className="p-1.5 text-slate-500 hover:text-rose-500 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
                                           title="Hapus Agenda"
                                         >
                                           <Trash2 className="w-4 h-4" />
@@ -2677,6 +2903,83 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                 </div>
               </div>
 
+              {/* PILIH WARNA AGENDA */}
+              <div className="space-y-2 p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700/80">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <Palette className="w-3.5 h-3.5 text-primary-500" />
+                    <span>Warna Agenda</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setEditingEvent({ ...editingEvent, color: undefined })}
+                    className={`text-[11px] font-bold px-2 py-0.5 rounded-lg transition-colors cursor-pointer ${
+                      !editingEvent.color 
+                        ? 'bg-primary-50 dark:bg-primary-950/40 text-primary-600 dark:text-primary-400 font-black' 
+                        : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Ikuti Kategori
+                  </button>
+                </div>
+
+                {/* Swatches */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  {AGENDA_COLOR_OPTIONS.map(opt => {
+                    const isSelected = editingEvent.color === opt.id || editingEvent.color === opt.hex;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setEditingEvent({ ...editingEvent, color: opt.id })}
+                        className={`group flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                          isSelected
+                            ? 'ring-2 ring-primary-500 ring-offset-1 dark:ring-offset-slate-900 border-transparent shadow-xs scale-105 bg-white dark:bg-slate-800'
+                            : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-[#1a2332]'
+                        }`}
+                        title={opt.label}
+                      >
+                        <span className={`w-3.5 h-3.5 rounded-full ${opt.dot} shrink-0 flex items-center justify-center text-white`}>
+                          {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                        </span>
+                        <span className={`text-[11px] ${isSelected ? 'text-slate-900 dark:text-white font-black' : 'text-slate-600 dark:text-slate-400'}`}>
+                          {opt.label}
+                        </span>
+                      </button>
+                    );
+                  })}
+
+                  {/* Custom Hex Color Picker */}
+                  <div className="flex items-center gap-1.5 pl-1.5 border-l border-slate-200 dark:border-slate-700">
+                    <input
+                      type="color"
+                      value={editingEvent.color && editingEvent.color.startsWith('#') ? editingEvent.color : '#1a73e8'}
+                      onChange={e => setEditingEvent({ ...editingEvent, color: e.target.value })}
+                      className="w-7 h-7 rounded-lg cursor-pointer border-0 bg-transparent p-0"
+                      title="Pilih warna bebas / kustom"
+                    />
+                    <span className="text-[10px] text-slate-400 font-mono">Custom</span>
+                  </div>
+                </div>
+
+                {/* Live Preview */}
+                <div className="mt-2 pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500 dark:text-slate-400 font-medium">Tampilan Bar Agenda:</span>
+                  <div 
+                    style={editingEvent.color && editingEvent.color.startsWith('#') ? { backgroundColor: editingEvent.color } : undefined}
+                    className={`px-3 py-1 rounded-md text-white font-bold text-xs truncate max-w-[220px] shadow-xs ${
+                      editingEvent.color && !editingEvent.color.startsWith('#')
+                        ? (AGENDA_COLOR_OPTIONS.find(c => c.id === editingEvent.color)?.barBg || 'bg-primary-500 text-white')
+                        : !editingEvent.color
+                        ? getCategoryBarColor(editingEvent.category || 'umum', categoryConfig)
+                        : ''
+                    }`}
+                  >
+                    {editingEvent.title || 'Judul Agenda'}
+                  </div>
+                </div>
+              </div>
+
               {/* TOGGLE: SEPANJANG HARI (ALL DAY) */}
               <div className="p-3.5 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 rounded-2xl border border-amber-200 dark:border-amber-800/50 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -2716,18 +3019,54 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                       type="date"
                       required
                       value={editingEvent.start_date || ''}
-                      onChange={e => setEditingEvent({ ...editingEvent, start_date: e.target.value })}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setEditingEvent(prev => {
+                          if (!prev) return prev;
+                          // Jika tanggal selesai belum ada atau sama dengan mulai lama, ikutkan
+                          const keepSync = !prev.end_date || prev.end_date === prev.start_date;
+                          return {
+                            ...prev,
+                            start_date: val,
+                            end_date: keepSync ? val : prev.end_date
+                          };
+                        });
+                      }}
                       className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-primary-500 outline-none"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                      Tanggal Selesai
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                      <span>Tanggal Selesai</span>
+                      {editingEvent.start_date && editingEvent.end_date && editingEvent.end_date < editingEvent.start_date && (
+                        <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+                          Lintas tahun / disesuaikan
+                        </span>
+                      )}
                     </label>
                     <input
                       type="date"
                       value={editingEvent.end_date || editingEvent.start_date || ''}
-                      onChange={e => setEditingEvent({ ...editingEvent, end_date: e.target.value })}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (!val) {
+                          setEditingEvent(prev => prev ? { ...prev, end_date: val } : prev);
+                          return;
+                        }
+                        const sDate = editingEvent.start_date;
+                        if (sDate && val < sDate) {
+                          const [sy, sm] = sDate.split('-').map(Number);
+                          const [ey, em] = val.split('-').map(Number);
+                          // Jika user memilih bulan yang lebih awal di tahun yang sama (misal mulai Nov 2026, selesai Feb 2026),
+                          // otomatis sesuaikan ke tahun berikutnya (2027) karena Februari terjadi setelah November!
+                          if (sy === ey && em < sm) {
+                            const adjusted = `${sy + 1}-${String(em).padStart(2, '0')}-${val.slice(8)}`;
+                            setEditingEvent(prev => prev ? { ...prev, end_date: adjusted } : prev);
+                            return;
+                          }
+                        }
+                        setEditingEvent(prev => prev ? { ...prev, end_date: val } : prev);
+                      }}
                       className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-primary-500 outline-none"
                     />
                   </div>
@@ -3243,106 +3582,157 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
       {/* ===================================================================== */}
       {/* MODAL QUICK DETAIL AGENDA */}
       {/* ===================================================================== */}
-      {detailEvent && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
-          <div className="bg-white dark:bg-[#1a2332] rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 p-6 space-y-2">
-            
-            <div className="flex justify-between items-start">
-              <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider ${(categoryConfig[detailEvent.category] || Object.values(categoryConfig)[0] || { label: detailEvent.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700' }).badgeBg} ${(categoryConfig[detailEvent.category] || Object.values(categoryConfig)[0] || { label: detailEvent.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700' }).badgeText}`}>
-                {(categoryConfig[detailEvent.category] || Object.values(categoryConfig)[0] || { label: detailEvent.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700' }).label}
-              </span>
-              {detailEvent.google_event_id && (
-                <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                  <Calendar className="w-3 h-3" />
-                  Google Calendar
-                </span>
-              )}
-              <button 
-                onClick={() => setDetailEvent(null)}
-                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      {detailEvent && (() => {
+        const detailColorStyle = resolveEventColorStyle(detailEvent, categoryConfig);
 
-            <div>
-              <h2 className="text-xl font-black text-slate-900 dark:text-white">
-                {detailEvent.title}
-              </h2>
-              <div className="flex items-center gap-2 mt-2 text-xs font-bold text-slate-500 dark:text-slate-400">
-                {detailEvent.is_all_day ? (
-                  <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-bold bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded-md">
-                    <Sun className="w-3.5 h-3.5" /> Sepanjang Hari ({detailEvent.start_date})
+        return (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+            <div className="bg-white dark:bg-[#1a2332] rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 p-6 space-y-3">
+              
+              <div className="flex justify-between items-start gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider flex items-center gap-1.5 ${detailColorStyle.badgeBg} ${detailColorStyle.badgeText}`}>
+                    <span className={`w-2 h-2 rounded-full ${detailColorStyle.dot}`}></span>
+                    {detailColorStyle.label}
                   </span>
-                ) : (
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-3.5 h-3.5 text-primary-500" />
-                    {detailEvent.start_date} • {detailEvent.start_time} - {detailEvent.end_time}
-                  </span>
+                  {detailEvent.color && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                      Warna Kustom
+                    </span>
+                  )}
+                  {detailEvent.google_event_id && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                      <Calendar className="w-3 h-3" />
+                      Google Calendar
+                    </span>
+                  )}
+                </div>
+                <button 
+                  onClick={() => setDetailEvent(null)}
+                  className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div>
+                <h2 className="text-xl font-black text-slate-900 dark:text-white leading-tight">
+                  {detailEvent.title}
+                </h2>
+                <div className="flex items-center gap-2 mt-2 text-xs font-bold text-slate-500 dark:text-slate-400">
+                  {detailEvent.is_all_day ? (
+                    <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-bold bg-amber-50 dark:bg-amber-950/50 px-2.5 py-1 rounded-lg">
+                      <Sun className="w-3.5 h-3.5" /> Sepanjang Hari ({detailEvent.start_date})
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg text-slate-700 dark:text-slate-300">
+                      <Clock className="w-3.5 h-3.5 text-primary-500" />
+                      {detailEvent.start_date} • {detailEvent.start_time} - {detailEvent.end_time || 'Selesai'}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {detailEvent.description && (
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800 whitespace-pre-wrap">
+                  {detailEvent.description}
+                </p>
+              )}
+
+              <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
+                {detailEvent.location && (
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-primary-500 shrink-0" />
+                    <span>Lokasi: <strong>{detailEvent.location}</strong></span>
+                  </div>
+                )}
+                {detailEvent.pic && (
+                  <div className="flex items-center gap-2">
+                    <User className="w-4 h-4 text-slate-400 shrink-0" />
+                    <span>PIC: <strong>{detailEvent.pic}</strong></span>
+                  </div>
                 )}
               </div>
-            </div>
 
-            {detailEvent.description && (
-              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
-                {detailEvent.description}
-              </p>
-            )}
-
-            <div className="space-y-2 text-xs text-slate-600 dark:text-slate-300">
-              {detailEvent.location && (
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-primary-500 shrink-0" />
-                  <span>Lokasi: <strong>{detailEvent.location}</strong></span>
+              {/* Attachments preview */}
+              {detailEvent.attachments && detailEvent.attachments.length > 0 && (
+                <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">
+                    Lampiran ({detailEvent.attachments.length})
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    {detailEvent.attachments.map(att => (
+                      <div key={att.id} className="p-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-2">
+                        {att.type === 'image' && att.url ? (
+                          <img src={att.url} alt={att.name} className="w-8 h-8 rounded object-cover" />
+                        ) : (
+                          <FileText className="w-5 h-5 text-slate-400" />
+                        )}
+                        <span className="truncate font-bold">{att.name}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
-              {detailEvent.pic && (
-                <div className="flex items-center gap-2">
-                  <User className="w-4 h-4 text-slate-400 shrink-0" />
-                  <span>PIC: <strong>{detailEvent.pic}</strong></span>
-                </div>
-              )}
-            </div>
 
-            {/* Attachments preview */}
-            {detailEvent.attachments && detailEvent.attachments.length > 0 && (
-              <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
-                <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">
-                  Lampiran ({detailEvent.attachments.length})
-                </span>
-                <div className="grid grid-cols-2 gap-2">
-                  {detailEvent.attachments.map(att => (
-                    <div key={att.id} className="p-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-2">
-                      {att.type === 'image' && att.url ? (
-                        <img src={att.url} alt={att.name} className="w-8 h-8 rounded object-cover" />
-                      ) : (
-                        <FileText className="w-5 h-5 text-slate-400" />
-                      )}
-                      <span className="truncate font-bold">{att.name}</span>
-                    </div>
-                  ))}
+              {/* Quick Color Switcher (1-Click) */}
+              <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                  <span className="flex items-center gap-1.5">
+                    <Palette className="w-3.5 h-3.5 text-primary-500" />
+                    <span>Ganti Warna Cepat (1-Klik):</span>
+                  </span>
+                  {detailEvent.color && (
+                    <button
+                      type="button"
+                      onClick={() => handleQuickChangeColor('')}
+                      className="text-[10px] text-primary-600 dark:text-primary-400 hover:underline cursor-pointer"
+                    >
+                      Reset Kategori
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                  {AGENDA_COLOR_OPTIONS.map(opt => {
+                    const isSelected = detailEvent.color === opt.id || detailEvent.color === opt.hex;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => handleQuickChangeColor(opt.id)}
+                        className={`w-6 h-6 rounded-full flex items-center justify-center transition-all cursor-pointer ${opt.dot} ${
+                          isSelected ? 'ring-2 ring-primary-500 ring-offset-2 scale-110 shadow-sm' : 'hover:scale-110 opacity-80 hover:opacity-100'
+                        }`}
+                        title={`Ubah ke ${opt.label}`}
+                      >
+                        {isSelected && <Check className="w-3 h-3 text-white stroke-[3]" />}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-            )}
 
-            {/* Actions */}
-            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-              <button
-                onClick={() => handleDeleteEvent(detailEvent.id)}
-                className="text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 px-3 py-2 rounded-xl flex items-center gap-1.5"
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Hapus
-              </button>
-              <button
-                onClick={() => handleEditEvent(detailEvent)}
-                className="text-xs font-bold text-white bg-primary-500 hover:bg-primary-600 px-2 py-2 rounded-xl flex items-center gap-1.5 shadow-sm"
-              >
-                <Edit3 className="w-3.5 h-3.5" /> Edit Agenda
-              </button>
+              {/* Actions */}
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleDeleteEvent(detailEvent.id)}
+                  className="text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 px-3 py-2 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Hapus
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleEditEvent(detailEvent)}
+                  className="text-xs font-bold text-white bg-primary-600 hover:bg-primary-700 px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-md shadow-primary-500/20 active:scale-95 transition-all cursor-pointer"
+                >
+                  <Edit3 className="w-3.5 h-3.5" /> Edit Agenda Lengkap
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ===================================================================== */}
       {/* MODAL KELOLA KATEGORI AGENDA */}

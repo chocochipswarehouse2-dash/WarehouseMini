@@ -855,6 +855,7 @@ CREATE TABLE IF NOT EXISTS public.wms_agenda (
   start_time TEXT DEFAULT '',
   end_time TEXT DEFAULT '',
   category TEXT DEFAULT 'umum',
+  color TEXT,
   location TEXT DEFAULT '',
   pic TEXT DEFAULT '',
   project_id UUID,
@@ -951,6 +952,7 @@ CREATE TABLE IF NOT EXISTS public.wms_agenda (
   start_time TEXT DEFAULT '',
   end_time TEXT DEFAULT '',
   category TEXT DEFAULT 'umum',
+  color TEXT,
   location TEXT DEFAULT '',
   pic TEXT DEFAULT '',
   project_id UUID REFERENCES public.wms_projects(id) ON DELETE SET NULL,
@@ -962,6 +964,7 @@ CREATE TABLE IF NOT EXISTS public.wms_agenda (
 
 -- Drop old check constraint if exists
 ALTER TABLE public.wms_agenda DROP CONSTRAINT IF EXISTS wms_agenda_category_check;
+ALTER TABLE public.wms_agenda ADD COLUMN IF NOT EXISTS color TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_wms_agenda_start_date ON public.wms_agenda(start_date);
 CREATE INDEX IF NOT EXISTS idx_wms_agenda_category ON public.wms_agenda(category);
@@ -10447,7 +10450,7 @@ function getRelativeDateStr(daysOffset: number): string {
 function getDefaultAgendaSeed(): AgendaEvent[] {
   return [
     {
-      id: 'seed-agenda-1',
+      id: 'a0000000-0000-4000-8000-000000000001',
       title: 'Briefing Tim Gudang & Jalur Distribusi',
       description: 'Sinkronisasi target picking harian, pengecekan ketersediaan rak, dan alokasi tim packer.',
       start_date: getRelativeDateStr(0),
@@ -10455,25 +10458,27 @@ function getDefaultAgendaSeed(): AgendaEvent[] {
       start_time: '08:30',
       end_time: '09:30',
       category: 'operasional',
+      color: 'emerald',
       location: 'Ruang Briefing Gudang Utama',
       pic: 'Budi Santoso',
       created_by: 'Superadmin',
       created_at: new Date().toISOString()
     },
     {
-      id: 'seed-agenda-2',
+      id: 'a0000000-0000-4000-8000-000000000002',
       title: 'Stock Opname Rutin Bulanan - Area B',
       description: 'Pengecekan fisik menyeluruh stok kategori atasan dan bawahan di rak B01-B12.',
       start_date: getRelativeDateStr(1),
       is_all_day: true,
       category: 'operasional',
+      color: 'emerald',
       location: 'Gudang Area B',
       pic: 'Agus Prawiro',
       created_by: 'Superadmin',
       created_at: new Date().toISOString()
     },
     {
-      id: 'seed-agenda-3',
+      id: 'a0000000-0000-4000-8000-000000000003',
       title: 'Meeting Negosiasi Supplier Kardus & Bubble Wrap',
       description: 'Pembahasan kontrak pengadaan bahan packing Q4 dan penyesuaian harga volume grosir.',
       start_date: getRelativeDateStr(2),
@@ -10481,13 +10486,14 @@ function getDefaultAgendaSeed(): AgendaEvent[] {
       start_time: '10:00',
       end_time: '11:30',
       category: 'supplier',
+      color: 'amber',
       location: 'Meeting Room Lantai 2 / Google Meet',
       pic: 'Dewi Rahmawati',
       created_by: 'Superadmin',
       created_at: new Date().toISOString()
     },
     {
-      id: 'seed-agenda-4',
+      id: 'a0000000-0000-4000-8000-000000000004',
       title: 'Review Sprint & Milestone Sistem WMS Scanner PWA',
       description: 'Demo integrasi kamera scanner offline dan pengujian fitur live picking task.',
       start_date: getRelativeDateStr(3),
@@ -10495,13 +10501,14 @@ function getDefaultAgendaSeed(): AgendaEvent[] {
       start_time: '14:00',
       end_time: '15:30',
       category: 'project',
+      color: 'sky',
       location: 'Studio & IT Hub',
       pic: 'Rian Kurnia',
       created_by: 'Superadmin',
       created_at: new Date().toISOString()
     },
     {
-      id: 'seed-agenda-5',
+      id: 'a0000000-0000-4000-8000-000000000005',
       title: 'Audit Standar Keselamatan (K3) & Jalur Forklift',
       description: 'Pengecekan marka jalan, APAR, dan kelaikan operasional forklift dan pallet jack.',
       start_date: getRelativeDateStr(5),
@@ -10509,6 +10516,7 @@ function getDefaultAgendaSeed(): AgendaEvent[] {
       start_time: '13:00',
       end_time: '14:30',
       category: 'urgent',
+      color: 'rose',
       location: 'Loading Dock & Area Transit',
       pic: 'Hendra Saputra',
       created_by: 'Superadmin',
@@ -10618,14 +10626,87 @@ function safeSetLocalStorage(key: string, data: any): void {
 }
 
 /**
+ * Helper untuk menyisipkan metadata ekstra (color, google_event_id, source) ke description
+ * agar tersimpan aman di Supabase tanpa terkena error kolom tidak ada (PGRST204).
+ */
+function encodeAgendaMetadata(
+  description: string,
+  meta: { color?: string; google_event_id?: string; source?: string }
+): string {
+  const clean = (description || '').replace(/<!--wms_meta:[\s\S]*?-->/g, '').trim();
+  const hasMeta = Boolean(meta.color || meta.google_event_id || (meta.source && meta.source !== 'wms'));
+  if (!hasMeta) return clean;
+  return `${clean}${clean ? '\n' : ''}<!--wms_meta:${JSON.stringify(meta)}-->`;
+}
+
+/**
+ * Helper untuk mengekstrak metadata ekstra dari description saat fetch dari Supabase
+ */
+function decodeAgendaMetadata(rawDescription: string): {
+  description: string;
+  meta: { color?: string; google_event_id?: string; source?: string };
+} {
+  if (!rawDescription) return { description: '', meta: {} };
+  const match = rawDescription.match(/<!--wms_meta:([\s\S]*?)-->/);
+  if (!match) return { description: rawDescription, meta: {} };
+  try {
+    const meta = JSON.parse(match[1]);
+    const cleanDesc = rawDescription.replace(/<!--wms_meta:[\s\S]*?-->/g, '').trim();
+    return { description: cleanDesc, meta };
+  } catch {
+    return { description: rawDescription, meta: {} };
+  }
+}
+
+/**
  * Mengambil daftar agenda dari Supabase dengan fallback ke local cache
  */
 export async function getAgendaEvents(): Promise<AgendaEvent[]> {
   try {
-    const data = await supabaseFetch<AgendaEvent[]>('wms_agenda', 'GET', null, 'order=start_date.asc,start_time.asc');
+    const data = await supabaseFetch<any[]>('wms_agenda', 'GET', null, 'order=start_date.asc,start_time.asc');
     if (Array.isArray(data)) {
-      safeSetLocalStorage(LOCAL_AGENDA_KEY, data);
-      return data;
+      const parsedData: AgendaEvent[] = data.map((item) => {
+        const { description, meta } = decodeAgendaMetadata(item.description || '');
+        return {
+          ...item,
+          description,
+          color: item.color || meta.color || undefined,
+          google_event_id: item.google_event_id || meta.google_event_id || undefined,
+          source: item.source || meta.source || 'wms',
+        };
+      });
+
+      // Sinkronkan dengan local cache agar perubahan lokal yang lebih baru tidak tertimpa
+      let merged = parsedData;
+      if (typeof window !== 'undefined') {
+        try {
+          const cached = localStorage.getItem(LOCAL_AGENDA_KEY);
+          if (cached) {
+            const localList: AgendaEvent[] = JSON.parse(cached);
+            if (Array.isArray(localList)) {
+              const localMap = new Map<string, AgendaEvent>();
+              localList.forEach((e) => {
+                if (e.id) localMap.set(e.id, e);
+              });
+              merged = parsedData.map((remote) => {
+                const local = localMap.get(remote.id);
+                if (
+                  local &&
+                  local.updated_at &&
+                  remote.updated_at &&
+                  new Date(local.updated_at).getTime() > new Date(remote.updated_at).getTime()
+                ) {
+                  return local;
+                }
+                return remote;
+              });
+            }
+          }
+        } catch {}
+      }
+
+      safeSetLocalStorage(LOCAL_AGENDA_KEY, merged);
+      return merged;
     }
   } catch (err) {
     console.info('Supabase wms_agenda offline/not yet migrated, using local cache:', err);
@@ -10654,20 +10735,46 @@ export async function getAgendaEvents(): Promise<AgendaEvent[]> {
  * Menyimpan / memperbarui agenda ke Supabase dan local cache
  */
 export async function saveAgendaEvent(item: Partial<AgendaEvent>): Promise<AgendaEvent> {
-  const isExistingUuid = Boolean(item.id && isValidUUID(item.id));
-  const id = isExistingUuid ? (item.id as string) : generateUUID();
+  const SEED_UUID_MAP: Record<string, string> = {
+    'seed-agenda-1': 'a0000000-0000-4000-8000-000000000001',
+    'seed-agenda-2': 'a0000000-0000-4000-8000-000000000002',
+    'seed-agenda-3': 'a0000000-0000-4000-8000-000000000003',
+    'seed-agenda-4': 'a0000000-0000-4000-8000-000000000004',
+    'seed-agenda-5': 'a0000000-0000-4000-8000-000000000005',
+  };
+  const effectiveId = item.id ? (SEED_UUID_MAP[item.id] || item.id) : undefined;
+  const isExistingUuid = Boolean(effectiveId && isValidUUID(effectiveId));
+  const id = isExistingUuid ? (effectiveId as string) : generateUUID();
   const nowIso = new Date().toISOString();
-  
+
+  // Smart multi-month & cross-year date normalization:
+  // e.g. Jika mulai November 2026 dan selesai Februari 2026, user bermaksud Februari 2027 (tahun berikutnya)
+  let startDate = item.start_date || getRelativeDateStr(0);
+  let endDate = item.end_date || startDate;
+  if (startDate && endDate && startDate > endDate) {
+    const [sy, sm] = startDate.split('-').map(Number);
+    const [ey, em] = endDate.split('-').map(Number);
+    if (sy === ey && em < sm) {
+      endDate = `${sy + 1}-${String(em).padStart(2, '0')}-${endDate.slice(8)}`;
+    } else {
+      // Inverted date protection
+      const tmp = startDate;
+      startDate = endDate;
+      endDate = tmp;
+    }
+  }
+
   const payload: AgendaEvent = {
     id,
     title: item.title || 'Agenda Baru',
     description: item.description || '',
-    start_date: item.start_date || getRelativeDateStr(0),
-    end_date: item.end_date || item.start_date || getRelativeDateStr(0),
+    start_date: startDate,
+    end_date: endDate,
     is_all_day: Boolean(item.is_all_day),
     start_time: item.start_time || '',
     end_time: item.end_time || '',
     category: item.category || 'umum',
+    color: item.color || undefined,
     location: item.location || '',
     pic: item.pic || '',
     project_id: item.project_id && isValidUUID(item.project_id) ? item.project_id : undefined,
@@ -10679,12 +10786,39 @@ export async function saveAgendaEvent(item: Partial<AgendaEvent>): Promise<Agend
     updated_at: nowIso,
   };
 
+  // Siapkan DB payload yang 100% kompatibel dengan schema tabel public.wms_agenda di Supabase
+  // Metadata ekstra (color, google_event_id, source) diamankan di dalam description
+  const dbDescription = encodeAgendaMetadata(payload.description, {
+    color: payload.color,
+    google_event_id: payload.google_event_id,
+    source: payload.source,
+  });
+
+  const dbPayload: Record<string, any> = {
+    id,
+    title: payload.title,
+    description: dbDescription,
+    start_date: payload.start_date,
+    end_date: payload.end_date,
+    is_all_day: payload.is_all_day,
+    start_time: payload.start_time,
+    end_time: payload.end_time,
+    category: payload.category,
+    location: payload.location,
+    pic: payload.pic,
+    project_id: payload.project_id,
+    attachments: payload.attachments,
+    created_by: payload.created_by,
+    created_at: payload.created_at,
+    updated_at: payload.updated_at,
+  };
+
   // 1. Simpan ke Supabase
   try {
     if (!isExistingUuid) {
-      await supabaseFetch('wms_agenda', 'POST', [payload]);
+      await supabaseFetch('wms_agenda', 'POST', [dbPayload]);
     } else {
-      const updateData = { ...payload };
+      const updateData = { ...dbPayload };
       delete (updateData as any).id;
       await supabaseFetch('wms_agenda', 'PATCH', updateData, `id=eq.${encodeURIComponent(id)}`);
     }
@@ -10699,7 +10833,9 @@ export async function saveAgendaEvent(item: Partial<AgendaEvent>): Promise<Agend
       let list: AgendaEvent[] = cached ? JSON.parse(cached) : [];
       // Replace existing by UUID or legacy id (e.g. seed-agenda-*)
       const oldId = item.id;
-      const idx = list.findIndex(a => a.id === id || (oldId && a.id === oldId));
+      const idx = list.findIndex(
+        (a) => a.id === id || (oldId && (a.id === oldId || a.id === effectiveId))
+      );
       if (idx >= 0) {
         list[idx] = payload;
       } else {
@@ -10719,9 +10855,18 @@ export async function saveAgendaEvent(item: Partial<AgendaEvent>): Promise<Agend
  * Menghapus agenda dari Supabase dan local cache
  */
 export async function deleteAgendaEvent(id: string): Promise<void> {
-  if (isValidUUID(id)) {
+  const SEED_UUID_MAP: Record<string, string> = {
+    'seed-agenda-1': 'a0000000-0000-4000-8000-000000000001',
+    'seed-agenda-2': 'a0000000-0000-4000-8000-000000000002',
+    'seed-agenda-3': 'a0000000-0000-4000-8000-000000000003',
+    'seed-agenda-4': 'a0000000-0000-4000-8000-000000000004',
+    'seed-agenda-5': 'a0000000-0000-4000-8000-000000000005',
+  };
+  const targetId = SEED_UUID_MAP[id] || id;
+
+  if (isValidUUID(targetId)) {
     try {
-      await supabaseFetch('wms_agenda', 'DELETE', null, `id=eq.${encodeURIComponent(id)}`);
+      await supabaseFetch('wms_agenda', 'DELETE', null, `id=eq.${encodeURIComponent(targetId)}`);
     } catch (err) {
       console.warn('Gagal hapus agenda di Supabase:', err);
     }
@@ -10732,11 +10877,13 @@ export async function deleteAgendaEvent(id: string): Promise<void> {
       const cached = localStorage.getItem(LOCAL_AGENDA_KEY);
       if (cached) {
         let list: AgendaEvent[] = JSON.parse(cached);
-        list = list.filter(a => a.id !== id);
+        list = list.filter(a => a.id !== id && a.id !== targetId);
         safeSetLocalStorage(LOCAL_AGENDA_KEY, list);
         window.dispatchEvent(new CustomEvent('wms_agenda_updated', { detail: { deletedId: id } }));
       }
-    } catch {}
+    } catch (e) {
+      console.error('Local cache error:', e);
+    }
   }
 }
 

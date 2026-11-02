@@ -1,7 +1,7 @@
 {
   "name": "warehouse-mini",
   "private": true,
-  "version": "2.6.47",
+  "version": "2.6.49",
   "description": "WMS Scanner PWA",
   "type": "module",
   "scripts": {

@@ -1171,6 +1171,7 @@ export interface AgendaEvent {
   start_time?: string; // HH:mm
   end_time?: string; // HH:mm
   category: AgendaCategory;
+  color?: string; // Hex color code (e.g. #1a73e8) or palette ID (indigo, emerald, amber, etc.)
   location?: string;
   pic?: string;
   project_id?: string;

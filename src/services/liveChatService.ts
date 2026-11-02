@@ -588,6 +588,10 @@ class LiveChatManager {
   public isUserInRoom(room: ChatRoom, username?: string): boolean {
     const u = String(username || this.currentSession?.username || '').trim().toLowerCase();
     if (!u) return false;
+    // Defensive check: Group creator is ALWAYS considered a member of their created group room
+    if (room.type === 'group' && String(room.created_by || '').trim().toLowerCase() === u) {
+      return true;
+    }
     return Array.isArray(room.participants) && room.participants.some((p) => p.toLowerCase() === u);
   }
 
@@ -1330,7 +1334,8 @@ class LiveChatManager {
     roomId: string,
     participantUsernames: string[],
     updatedName?: string,
-    updatedTopic?: string
+    updatedTopic?: string,
+    allowSelfRemoval: boolean = false
   ): Promise<{ success: boolean; error?: string }> {
     if (!this.currentSession) return { success: false, error: 'Sesi tidak ditemukan.' };
     const me = this.currentSession.username.trim().toLowerCase();
@@ -1353,9 +1358,20 @@ class LiveChatManager {
       };
     }
 
-    const uniqueMembers = Array.from(
-      new Set(participantUsernames.map((u) => u.trim().toLowerCase()).filter(Boolean))
-    );
+    const creator = String(room.created_by || '').trim().toLowerCase();
+    const cleanList = participantUsernames.map((u) => u.trim().toLowerCase()).filter(Boolean);
+
+    // CRITICAL: Creator dan user yang sedang mengedit TIDAK BOLEH terlepas secara tidak sengaja
+    // kecuali jika aksi ini adalah pemanggilan eksplisit leaveGroupRoom (allowSelfRemoval = true)
+    const membersToInclude = allowSelfRemoval
+      ? cleanList
+      : [
+          ...(creator ? [creator] : []),
+          me,
+          ...cleanList,
+        ];
+
+    const uniqueMembers = Array.from(new Set(membersToInclude));
 
     if (uniqueMembers.length === 0) {
       return this.deleteChatRoom(roomId);
@@ -1400,7 +1416,7 @@ class LiveChatManager {
     if (remaining.length === 0) {
       return this.deleteChatRoom(roomId);
     }
-    return this.updateGroupMembers(roomId, remaining, room.name, room.topic);
+    return this.updateGroupMembers(roomId, remaining, room.name, room.topic, true);
   }
 
   /**

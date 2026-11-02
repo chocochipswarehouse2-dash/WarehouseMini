@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS public.wms_agenda (
   start_time TEXT DEFAULT '', -- format "HH:mm" misal "09:00"
   end_time TEXT DEFAULT '',   -- format "HH:mm" misal "10:30"
   category TEXT DEFAULT 'umum', -- Kategori dinamis (tidak dibatasi CHECK constraint agar mendukung custom category)
+  color TEXT,                   -- Warna spesifik agenda (palette id atau hex)
   location TEXT DEFAULT '',
   pic TEXT DEFAULT '',
   project_id UUID REFERENCES public.wms_projects(id) ON DELETE SET NULL,
@@ -53,6 +54,7 @@ CREATE TABLE IF NOT EXISTS public.wms_agenda (
 
 -- Drop constraint kategori lama jika ada (agar kategori kustom/kapital tidak ditolak)
 ALTER TABLE public.wms_agenda DROP CONSTRAINT IF EXISTS wms_agenda_category_check;
+ALTER TABLE public.wms_agenda ADD COLUMN IF NOT EXISTS color TEXT;
 
 -- Index untuk tabel wms_agenda
 CREATE INDEX IF NOT EXISTS idx_wms_agenda_start_date ON public.wms_agenda(start_date);
