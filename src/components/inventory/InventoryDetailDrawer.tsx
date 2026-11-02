@@ -44,9 +44,10 @@ import {
   type InventoryRow,
 } from './inventoryModel';
 import { SelisihCell } from './InventoryList';
-import { fetchLogsBySku, deleteLogProdukItem, updateLogProdukItem, getAreaFromLokasi } from '../../services/supabase';
+import { fetchLogsBySku, deleteLogProdukItem, updateLogProdukItem, getAreaFromLokasi, supabaseFetch } from '../../services/supabase';
+import { applyDelta } from './useInventoryStock';
 import { formatOperatorWithPersonName } from '../../utils/userResolver';
-import type { LogProdukItem } from '../../types';
+import type { LogProdukItem, StockRealtimeItem } from '../../types';
 
 interface DrawerProps {
   row: InventoryRow | null;
@@ -159,6 +160,7 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<DrawerTab>('stok');
   const [logs, setLogs] = useState<LogProdukItem[]>([]);
+  const [liveStockRows, setLiveStockRows] = useState<StockRealtimeItem[] | null>(null);
   const [loadingLogs, setLoadingLogs] = useState<boolean>(false);
   const [logFilter, setLogFilter] = useState<LogFilterType>('ALL');
   const [logSearch, setLogSearch] = useState<string>('');
@@ -285,13 +287,20 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [row, onClose]);
 
-  // Load product logs automatically whenever a row is selected
+  // Load product logs & live physical stock automatically whenever a row is selected
   const loadProductLogs = React.useCallback(async (sku: string) => {
     if (!sku) return;
     setLoadingLogs(true);
     try {
-      const data = await fetchLogsBySku(sku, 150);
+      const [data, liveSrf] = await Promise.all([
+        fetchLogsBySku(sku, 150),
+        supabaseFetch<StockRealtimeItem[]>('stok_real_fisik', 'GET', null, `sku=eq.${encodeURIComponent(sku)}`).catch(() => null),
+      ]);
       setLogs(data);
+      if (liveSrf && Array.isArray(liveSrf)) {
+        setLiveStockRows(liveSrf);
+        applyDelta([sku], liveSrf);
+      }
     } catch (err) {
       console.warn('Gagal memuat log produk untuk SKU:', sku, err);
       setLogs([]);
@@ -302,11 +311,63 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
 
   useEffect(() => {
     if (row?.sku) {
+      setLiveStockRows(null);
       loadProductLogs(row.sku);
     } else {
       setLogs([]);
+      setLiveStockRows(null);
     }
   }, [row?.sku, loadProductLogs]);
+
+  const activeLocs = useMemo(() => {
+    if (liveStockRows !== null) {
+      return liveStockRows.map((r) => ({
+        name: r.lokasi,
+        qty: Number(r.sisa_stok) || 0,
+        area: r.area || getAreaFromLokasi(r.lokasi),
+        neg: (Number(r.sisa_stok) || 0) < 0,
+      }));
+    }
+    return row?.locs || [];
+  }, [liveStockRows, row?.locs]);
+
+  const currentTotalFisik = useMemo(() => {
+    if (liveStockRows !== null) {
+      return liveStockRows.reduce((sum, r) => sum + (Number(r.sisa_stok) || 0), 0);
+    }
+    return row?.totalFisik ?? 0;
+  }, [liveStockRows, row?.totalFisik]);
+
+  const currentSelisih = useMemo(() => {
+    return currentTotalFisik - (row?.totalDp ?? 0);
+  }, [currentTotalFisik, row?.totalDp]);
+
+  const activeFisik = useMemo(() => {
+    if (liveStockRows !== null) {
+      const res: Record<string, number> = {
+        WAREHOUSE: 0,
+        AKSESORIS: 0,
+        TRANSIT: 0,
+        KOLIAN: 0,
+        BLOK_F: 0,
+        PERBAIKAN: 0,
+        ANOMALI: 0,
+      };
+      liveStockRows.forEach((r) => {
+        const area = (r.area || getAreaFromLokasi(r.lokasi)).toUpperCase().trim();
+        const qty = Number(r.sisa_stok) || 0;
+        if (area.includes('WAREHOUSE')) res.WAREHOUSE = (res.WAREHOUSE || 0) + qty;
+        else if (area.includes('AKSESORIS')) res.AKSESORIS = (res.AKSESORIS || 0) + qty;
+        else if (area.includes('TRANSIT')) res.TRANSIT = (res.TRANSIT || 0) + qty;
+        else if (area.includes('KOLIAN')) res.KOLIAN = (res.KOLIAN || 0) + qty;
+        else if (area.includes('BLOK F') || area.includes('BLOK_F')) res.BLOK_F = (res.BLOK_F || 0) + qty;
+        else if (area.includes('PERBAIKAN')) res.PERBAIKAN = (res.PERBAIKAN || 0) + qty;
+        else res.ANOMALI = (res.ANOMALI || 0) + qty;
+      });
+      return res;
+    }
+    return row?.fisik || {};
+  }, [liveStockRows, row?.fisik]);
 
   // Summary counts for logs
   const logStats = useMemo(() => {
@@ -331,11 +392,11 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
     return { inQty, outQty, soCount, adjCount };
   }, [logs]);
 
-  // Pre-calculate running balance (saldo stok saat itu) per lokasi rak from row.locs (matching Log Produk in Scanner | LOG)
+  // Pre-calculate running balance (saldo stok saat itu) per lokasi rak dari live stock
   const logStockMap = useMemo(() => {
     const stockAtMoment = new Map<string | number, number>();
     const locLiveMap = new Map<string, number>();
-    (row?.locs || []).forEach((l) => {
+    activeLocs.forEach((l) => {
       locLiveMap.set((l.name || 'Warehouse').toUpperCase().trim(), Number(l.qty) || 0);
     });
 
@@ -352,7 +413,8 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
     }
 
     logsByLoc.forEach((list, locKey) => {
-      let running = locLiveMap.get(locKey) ?? 0;
+      const currentStock = locLiveMap.get(locKey);
+      let running = currentStock !== undefined ? currentStock : 0;
       for (let i = 0; i < list.length; i++) {
         const log = list[i];
         const logKey = log.id || `${log.invoice}_${log.sku}_${log.created_at}`;
@@ -369,7 +431,7 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
     });
 
     return stockAtMoment;
-  }, [logs, row?.locs]);
+  }, [logs, activeLocs]);
 
   // Filtered logs
   const filteredLogs = useMemo(() => {
@@ -431,16 +493,16 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
               <span className="px-2 py-0.5 rounded-md font-mono text-xs font-extrabold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                 {row.size}
               </span>
-              {row.selisih !== 0 && (
+              {currentSelisih !== 0 && (
                 <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
-                  Selisih {row.selisih > 0 ? `+${row.selisih}` : row.selisih} pcs
+                  Selisih {currentSelisih > 0 ? `+${currentSelisih}` : currentSelisih} pcs
                 </span>
               )}
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {onAddToCart && (() => {
-              const commercialLocs = (row.locs || []).filter(l => !isPerbaikanArea(getAreaFromLokasi(l.name)));
+              const commercialLocs = (activeLocs || []).filter(l => !isPerbaikanArea(getAreaFromLokasi(l.name)));
               const commStock = commercialLocs.reduce((s, l) => s + (Number(l.qty) || 0), 0);
               return (
                 <button
@@ -519,9 +581,9 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
               {/* Top Row: Totals + Shortcut Card to History Log */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
                 <div className="lg:col-span-7 grid grid-cols-3 gap-3">
-                  <Tile label="Fisik Gudang" value={row.totalFisik} tone="amber" />
+                  <Tile label="Fisik Gudang" value={currentTotalFisik} tone="amber" />
                   <Tile label="DealPOS" value={row.totalDp} tone="slate" />
-                  <Tile label="Selisih" value={row.selisih} tone="auto" />
+                  <Tile label="Selisih" value={currentSelisih} tone="auto" />
                 </div>
 
                 {/* Shortcut Card to History Log */}
@@ -572,7 +634,7 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
                           <span className="text-center">Selisih</span>
                         </div>
                         {KOMPARASI_5.map((k) => {
-                          const f = row.fisik[k] || 0;
+                          const f = activeFisik[k] || 0;
                           const d = row.dp[k] || 0;
                           return (
                             <div
@@ -601,15 +663,15 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
                   {/* Lokasi rak */}
                   <section>
                     <h3 className="text-[11px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2.5">
-                      Lokasi Rak ({row.locs.length})
+                      Lokasi Rak ({activeLocs.length})
                     </h3>
-                    {row.locs.length === 0 ? (
+                    {activeLocs.length === 0 ? (
                       <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs text-slate-400 italic">
                         Tidak ada stok fisik di rak manapun.
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {row.locs.map((l) => (
+                        {activeLocs.map((l) => (
                           <div
                             key={l.name}
                             className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-[#0E1420] border border-slate-200/80 dark:border-slate-800"

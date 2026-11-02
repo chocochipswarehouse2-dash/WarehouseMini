@@ -15,19 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.46",
-  "versionCode": 306,
+  "version": "v2.6.47",
+  "versionCode": 307,
   "buildDate": "2 November 2026",
-  "buildHash": "wms-261102-v306-1827",
-  "releaseTitle": "WMS v2.6.46 — Optimasi Loading Riwayat Pengecekan Surat Jalan & SWR Fast Cache",
+  "buildHash": "wms-261102-v307-2146",
+  "releaseTitle": "WMS v2.6.47 — Tab Minimalis Pengecekan, Koreksi Live Stock Drawer, Notifikasi Semua Role & Sync Pengguna",
   "releaseNotes": [
-    "Optimasi query pengecekan_sj Supabase dari 45 detik menjadi di bawah 1 detik",
-    "Menerapkan Stale-While-Revalidate agar riwayat surat jalan langsung tampil instan tanpa spinner macet"
+    "Tab Pengecekan dan Riwayat diperkecil minimalis rapi seukuran tab Transfer Order",
+    "Koreksi live stock & kalkulasi running balance saldo mutasi pada drawer Audit SKU",
+    "Membuka tombol izin notifikasi di Sidebar untuk semua role akun user",
+    "Presence Heartbeat berkala agar user online di HP/Laptop terdeteksi konsisten",
+    "Sinkronisasi akun Vina Kharisma ke Manajemen Pengguna & proteksi auto-heal karyawan"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.46",
+    "versionCode": 306,
+    "buildDate": "2 November 2026",
+    "buildHash": "wms-261102-v306-1827",
+    "releaseTitle": "WMS v2.6.46 — Optimasi Loading Riwayat Pengecekan Surat Jalan & SWR Fast Cache",
+    "releaseNotes": [
+      "Optimasi query pengecekan_sj Supabase dari 45 detik menjadi di bawah 1 detik",
+      "Menerapkan Stale-While-Revalidate agar riwayat surat jalan langsung tampil instan tanpa spinner macet"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.45",
     "versionCode": 305,
@@ -110,17 +125,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Sistem otomatis mendeteksi impor file SJ ganda tanpa mendobelkan kuantitas (prinsip Replace terproteksi)",
       "Peringatan visual seketika dan badge '⚠️ Pernah Selesai' jika SJ yang diimpor sudah pernah tercatat di Riwayat Pengecekan"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.38",
-    "versionCode": 298,
-    "buildDate": "2 November 2026",
-    "buildHash": "wms-261102-v298-0020",
-    "releaseTitle": "WMS v2.6.38 — Mode Presentasi 3D & Panduan Interaksi Rak",
-    "releaseNotes": [
-      "Menambahkan mode presentasi fullscreen 3D dengan tur 360° dan panduan lengkap edit, geser, serta ubah ukuran rak"
     ],
     "minSupportedVersion": "v2.0.0"
   }

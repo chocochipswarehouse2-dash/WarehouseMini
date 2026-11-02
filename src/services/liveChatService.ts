@@ -717,12 +717,13 @@ class LiveChatManager {
       clearInterval(this.syncTimer);
       this.syncTimer = null;
     }
-    // Hemat egress & log ingestion: sinkronisasi polling diperpanjang ke 60 detik dan hanya berjalan saat tab terlihat
+    // Periodic background sync + Presence Heartbeat (menjaga status online tetap aktif di HP & Laptop)
     this.syncTimer = setInterval(() => {
       if (this.currentSession?.username && typeof document !== 'undefined' && document.visibilityState === 'visible') {
         void this.syncRoomsFromServer(true);
+        this.trackPresence();
       }
-    }, 60000); // 60s (menghemat 75% request polling ke wms_system_docs)
+    }, 45000);
 
     if (!this.swListenerBound && typeof window !== 'undefined') {
       this.swListenerBound = true;
@@ -745,6 +746,12 @@ class LiveChatManager {
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible' && this.currentSession?.username) {
           void this.syncRoomsFromServer(true);
+          this.trackPresence();
+        }
+      });
+      window.addEventListener('focus', () => {
+        if (this.currentSession?.username) {
+          this.trackPresence();
         }
       });
     }

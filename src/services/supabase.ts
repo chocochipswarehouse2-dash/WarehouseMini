@@ -3171,7 +3171,6 @@ export const DEFAULT_WMS_USERS: WmsUser[] = [
   { username: 'ADMIN2', name: 'ADMIN', role: 'Superadmin', password: 'admin123' },
   { username: 'warehouse', name: 'Warehouse', role: 'Superadmin', password: 'admin123' },
   { username: 'chocochips.warehouse2@gmail.com', name: 'Warehouse Lead', role: 'Superadmin', password: 'admin123' },
-  { username: 'wh0006', name: 'Vina', role: 'Manager', password: '123456', nik: 'WH0006' },
   { username: 'operator', name: 'Operator Gudang', role: 'Operator', password: '123456' },
   { username: 'produk_team', name: 'Tim Produk & Stok', role: 'Produk', password: 'produk123' },
   { username: 'fulfillment_team', name: 'Tim Fulfillment', role: 'Fulfillment', password: 'fulfillment123' },

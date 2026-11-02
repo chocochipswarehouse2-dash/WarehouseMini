@@ -84,7 +84,7 @@ function replaceAll(list: StockRealtimeItem[]): void {
   loadedAt = Date.now();
 }
 
-function applyDelta(skus: string[], rows: StockRealtimeItem[]): void {
+export function applyDelta(skus: string[], rows: StockRealtimeItem[]): void {
   for (let i = 0; i < skus.length; i++) stockBySku.delete(skus[i]);
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];

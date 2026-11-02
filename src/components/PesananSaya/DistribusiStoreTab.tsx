@@ -1329,23 +1329,24 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
           </div>
         )}
 
-        {/* TABS SELECTOR - Style Quality Control */}
-        <div className="bg-slate-100/90 dark:bg-[#09090b]/90 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs">
-          <div className="grid grid-cols-2 gap-1 sm:gap-1.5">
+        {/* TABS SELECTOR - Style Minimalis LoadingDock & Quality Control */}
+        <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl p-1.5 sm:p-2 flex items-center justify-between gap-2 shadow-xs">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap py-0.5 px-0.5 w-full sm:w-auto">
             <button
               type="button"
               id="tab-distribusi-pengecekan"
               onClick={() => setActiveTab('pengecekan')}
-              className={`w-full py-2.5 px-3 text-xs sm:text-sm font-bold rounded-lg sm:rounded-xl transition-all duration-200 cursor-pointer flex items-center justify-center gap-1.5 sm:gap-2 select-none ${
+              className={`py-2 px-3.5 text-xs font-extrabold flex items-center justify-center gap-2 rounded-xl transition-all cursor-pointer select-none whitespace-nowrap shrink-0 relative ${
                 activeTab === 'pengecekan'
-                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25 ring-1 ring-emerald-500/50 font-extrabold'
-                  : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              <span>🔍 Pengecekan</span>
+              <ScanLine className="w-4 h-4 shrink-0" />
+              <span>Pengecekan</span>
               {drafts.length > 0 && (
                 <span
-                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-black leading-none ${
                     activeTab === 'pengecekan'
                       ? 'bg-white/25 text-white'
                       : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
@@ -1360,16 +1361,17 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
               type="button"
               id="tab-distribusi-riwayat"
               onClick={() => setActiveTab('riwayat')}
-              className={`w-full py-2.5 px-3 text-xs sm:text-sm font-bold rounded-lg sm:rounded-xl transition-all duration-200 cursor-pointer flex items-center justify-center gap-1.5 sm:gap-2 select-none ${
+              className={`py-2 px-3.5 text-xs font-extrabold flex items-center justify-center gap-2 rounded-xl transition-all cursor-pointer select-none whitespace-nowrap shrink-0 relative ${
                 activeTab === 'riwayat'
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/25 ring-1 ring-blue-500/50 font-extrabold'
-                  : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              <span>📋 Riwayat</span>
+              <FileText className="w-4 h-4 shrink-0" />
+              <span>Riwayat</span>
               {records.length > 0 && (
                 <span
-                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-black leading-none ${
                     activeTab === 'riwayat'
                       ? 'bg-white/25 text-white'
                       : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'

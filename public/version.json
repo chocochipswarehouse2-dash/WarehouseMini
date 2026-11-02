@@ -1,12 +1,15 @@
 {
-  "version": "v2.6.46",
-  "versionCode": 306,
+  "version": "v2.6.47",
+  "versionCode": 307,
   "buildDate": "2 November 2026",
-  "buildHash": "wms-261102-v306-1827",
-  "releaseTitle": "WMS v2.6.46 — Optimasi Loading Riwayat Pengecekan Surat Jalan & SWR Fast Cache",
+  "buildHash": "wms-261102-v307-2146",
+  "releaseTitle": "WMS v2.6.47 — Tab Minimalis Pengecekan, Koreksi Live Stock Drawer, Notifikasi Semua Role & Sync Pengguna",
   "releaseNotes": [
-    "Optimasi query pengecekan_sj Supabase dari 45 detik menjadi di bawah 1 detik",
-    "Menerapkan Stale-While-Revalidate agar riwayat surat jalan langsung tampil instan tanpa spinner macet"
+    "Tab Pengecekan dan Riwayat diperkecil minimalis rapi seukuran tab Transfer Order",
+    "Koreksi live stock & kalkulasi running balance saldo mutasi pada drawer Audit SKU",
+    "Membuka tombol izin notifikasi di Sidebar untuk semua role akun user",
+    "Presence Heartbeat berkala agar user online di HP/Laptop terdeteksi konsisten",
+    "Sinkronisasi akun Vina Kharisma ke Manajemen Pengguna & proteksi auto-heal karyawan"
   ],
   "minSupportedVersion": "v2.0.0"
 }

@@ -297,6 +297,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           store_code: u.store_code || u.permissions?.store_code || '',
           store_name: u.store_name || u.permissions?.store_name || '',
         }));
+
+        // Auto-heal: Pastikan semua karyawan dari tabel karyawan ikut terdaftar & tidak hilang dari Manajemen Pengguna
+        if (karyawanList && karyawanList.length > 0) {
+          const existingNiks = new Set(mappedUsers.map((u) => (u.nik || '').toUpperCase()).filter(Boolean));
+          const existingUsernames = new Set(mappedUsers.map((u) => (u.username || '').toLowerCase()).filter(Boolean));
+          for (const k of karyawanList) {
+            const kNik = (k.nik || '').toUpperCase();
+            const kUser = (k.username || `wh${k.nik?.replace(/\D/g, '') || ''}`).toLowerCase();
+            if (kNik && !existingNiks.has(kNik) && !existingUsernames.has(kUser)) {
+              mappedUsers.push({
+                username: kUser,
+                name: k.nama || kNik,
+                role: k.role === 'admin' ? 'Superadmin' : 'Operator',
+                password: k.password || '123456',
+                nik: kNik,
+                phone: k.no_hp || '',
+                no_hp: k.no_hp || '',
+                permissions: {},
+              });
+            }
+          }
+        }
+
         setUserList(mappedUsers);
         saveLocalUsersList(mappedUsers);
       } else {
@@ -317,7 +340,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       let deletedCount = 0;
       const dummyUsernames = DEFAULT_WMS_USERS
         .map(u => u.username)
-        .filter(u => !['admin', 'operator', 'chocochips.warehouse2@gmail.com'].includes(u));
+        .filter(u => !['admin', 'operator', 'chocochips.warehouse2@gmail.com'].includes(u) && !u.toLowerCase().startsWith('wh'));
         
       for (const username of dummyUsernames) {
         const result = await deleteWmsUserFromSupabase(username);
