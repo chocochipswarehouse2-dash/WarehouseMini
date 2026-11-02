@@ -1,12 +1,12 @@
 {
-  "version": "v2.6.41",
-  "versionCode": 301,
+  "version": "v2.6.42",
+  "versionCode": 302,
   "buildDate": "2 November 2026",
-  "buildHash": "wms-261102-v301-1015",
-  "releaseTitle": "WMS v2.6.41 — Proteksi Penolakan Duplikat File pada Sesi Upload Bersamaan",
+  "buildHash": "wms-261102-v302-1616",
+  "releaseTitle": "WMS v2.6.42 — Fitur Keranjang Belanja Order Picking di Modul Inventory",
   "releaseNotes": [
-    "Otomatis menerima file pertama dan menolak file kedua jika 2 file SJ kembar diupload bersamaan",
-    "Pesan peringatan transparan memunculkan nama file yang diterima dan file yang ditolak untuk mencegah data ganda"
+    "Tambah fitur Add to Cart Order Picking langsung dari tabel inventori dan drawer pencarian cepat",
+    "Integrasi penuh ke 3 output: Kirim Tugas Picking App (invoice_picking), Broadcast WA Grup (Fonnte), dan Cetak A4"
   ],
   "minSupportedVersion": "v2.0.0"
 }

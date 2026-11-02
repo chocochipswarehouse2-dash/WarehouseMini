@@ -22,7 +22,16 @@ import {
   Columns2,
   Table2,
   LayoutList,
+  ShoppingCart,
+  ArrowRight,
 } from 'lucide-react';
+import {
+  InventoryPickingCartDrawer,
+  type InventoryCartItem,
+  type InventoryOrderPickingDetails,
+} from './inventory/InventoryPickingCartDrawer';
+import { DistribusiPickingModal } from './PesananSaya/DistribusiPickingModal';
+import type { PengecekanSJDraft } from '../types';
 import type { ProductItem, UserSession } from '../types';
 import type { ScannerLayoutMode } from './OperasiStokView';
 import { hasPermission, isSuperadmin } from '../services/permissions';
@@ -242,6 +251,129 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     URL.revokeObjectURL(url);
     if (onNotify) onNotify(`File CSV berhasil diunduh (${sortedAreaRows.length} baris area)!`, 'success');
   };
+
+  // ==========================================
+  // INVENTORY PICKING CART STATE & HANDLERS
+  // ==========================================
+  const [cartItems, setCartItems] = useState<InventoryCartItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('wms_inventory_picking_cart');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('wms_inventory_picking_cart', JSON.stringify(cartItems));
+    } catch {}
+  }, [cartItems]);
+
+  const [isCartDrawerOpen, setIsCartDrawerOpen] = useState(false);
+  const [isPickingModalOpen, setIsPickingModalOpen] = useState(false);
+  const [pickingModalDraft, setPickingModalDraft] = useState<PengecekanSJDraft | null>(null);
+
+  const handleAddToCart = useCallback((item: Omit<InventoryCartItem, 'qty'>, addQty: number = 1) => {
+    setCartItems(prev => {
+      const existingIdx = prev.findIndex(it => it.sku.toUpperCase() === item.sku.toUpperCase());
+      if (existingIdx >= 0) {
+        const next = [...prev];
+        next[existingIdx] = {
+          ...next[existingIdx],
+          qty: next[existingIdx].qty + addQty,
+          available_stock: item.available_stock,
+          locations: item.locations && item.locations.length > 0 ? item.locations : next[existingIdx].locations,
+        };
+        return next;
+      }
+      return [...prev, { ...item, qty: Math.max(1, addQty) }];
+    });
+    if (onNotify) {
+      onNotify(`Ditambahkan ke keranjang: ${item.nama_produk || item.sku} (+${addQty} pcs)`, 'success');
+    }
+  }, [onNotify]);
+
+  const handleUpdateCartQty = useCallback((sku: string, newQty: number) => {
+    setCartItems(prev => prev.map(it => it.sku === sku ? { ...it, qty: Math.max(1, newQty) } : it));
+  }, []);
+
+  const handleRemoveFromCart = useCallback((sku: string) => {
+    setCartItems(prev => prev.filter(it => it.sku !== sku));
+    if (onNotify) onNotify('Item dihapus dari keranjang picking', 'info');
+  }, [onNotify]);
+
+  const handleClearCart = useCallback(() => {
+    setCartItems([]);
+    if (onNotify) onNotify('Keranjang picking telah dikosongkan', 'info');
+  }, [onNotify]);
+
+  // Derived available rows for Quick Search in Cart
+  const availableRowsForCart = useMemo(() => {
+    const map = new Map<string, {
+      sku: string;
+      produk: string;
+      size: string;
+      qty: number;
+      locations: Array<{ lokasi: string; qty: number; area?: string }>;
+    }>();
+
+    for (const r of allAreaRows) {
+      if (r.area === 'Perbaikan' || r.area === 'Anomali') continue;
+      const existing = map.get(r.sku);
+      if (!existing) {
+        map.set(r.sku, {
+          sku: r.sku,
+          produk: r.produk,
+          size: r.size,
+          qty: r.qty,
+          locations: [...r.locations],
+        });
+      } else {
+        existing.qty += r.qty;
+        existing.locations.push(...r.locations);
+      }
+    }
+    return Array.from(map.values());
+  }, [allAreaRows]);
+
+  const handleProceedToPicking = useCallback((details: InventoryOrderPickingDetails) => {
+    if (cartItems.length === 0) return;
+
+    const draft: PengecekanSJDraft = {
+      id: `PICK_CART_${Date.now()}`,
+      no_sj: details.no_dokumen,
+      source: 'Gudang Pusat',
+      destination: details.destinasi || details.tujuan,
+      tanggal_sj: new Date().toISOString().slice(0, 10),
+      tipe_import: 'Pengiriman',
+      items: cartItems.map(c => ({
+        sku: c.sku,
+        nama_produk: c.nama_produk,
+        size: c.size,
+        qty_sj: c.qty,
+      })),
+      scanQty: {},
+      unexpected: {},
+      catatan: `[Order Picking Inventory - ${details.tujuan}] ${details.catatan || ''}`.trim(),
+      status: 'draft',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    setPickingModalDraft(draft);
+    setIsCartDrawerOpen(false);
+    setIsPickingModalOpen(true);
+  }, [cartItems]);
+
+  const handlePickingSuccessSentToApp = useCallback((_draftId: string, invoicePicking?: string) => {
+    setCartItems([]);
+    setIsPickingModalOpen(false);
+    setPickingModalDraft(null);
+    if (onNotify) {
+      onNotify(`Order picking ${invoicePicking ? `(${invoicePicking})` : ''} berhasil didaftarkan ke antrean Tugas Picking!`, 'success');
+    }
+  }, [onNotify]);
 
   // Stock list snapshot for Capacity Dashboard & Lokasi Export Modal
   const flatStockSnapshot = useMemo(() => {
@@ -604,6 +736,27 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
               <span className="hidden sm:inline">LOKASI &amp; PRINT</span>
             </button>
 
+            {/* KERANJANG PICKING BUTTON */}
+            <button
+              type="button"
+              id="btn-inventory-picking-cart"
+              onClick={() => setIsCartDrawerOpen(true)}
+              className={`px-3 py-2 text-xs font-extrabold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                cartItems.length > 0
+                  ? 'bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-600 ring-2 ring-indigo-500/30'
+                  : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+              }`}
+              title="Buka Keranjang Order Picking"
+            >
+              <ShoppingCart className="w-3.5 h-3.5" />
+              <span>KERANJANG</span>
+              {cartItems.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black font-mono bg-white text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                  {cartItems.length}
+                </span>
+              )}
+            </button>
+
             {/* CSV EXPORT */}
             {canExportData && (
               <button
@@ -725,6 +878,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           onSort={setSortOption}
           onOpen={setSelectedSku}
           onLoc={handleOpenLokasiExport}
+          onAddToCart={handleAddToCart}
           resetKey={`${selectedArea}_${deferredSearch}_${onlyActive}_${sortOption}`}
         />
       )}
@@ -754,6 +908,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           handleOpenLokasiExport(loc);
         }}
         onReloadStock={handleManualRefresh}
+        onAddToCart={handleAddToCart}
       />
 
       {/* ========================================================
@@ -769,6 +924,59 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           currentLocations={currentLocations}
           session={session}
           onNotify={onNotify}
+        />
+      )}
+
+      {/* ========================================================
+          7. FLOATING ACTION BUTTON (FAB) ORDER PICKING
+          ======================================================== */}
+      {cartItems.length > 0 && (
+        <div className="fixed bottom-6 right-6 z-40 animate-in slide-in-from-bottom-4 duration-200">
+          <button
+            type="button"
+            onClick={() => setIsCartDrawerOpen(true)}
+            className="px-4 py-3 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white shadow-xl hover:shadow-2xl flex items-center gap-2.5 text-xs font-black transition-all cursor-pointer ring-4 ring-indigo-500/20 active:scale-95"
+          >
+            <div className="relative">
+              <ShoppingCart className="w-4 h-4" />
+              <span className="absolute -top-2 -right-2.5 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black flex items-center justify-center shadow-xs">
+                {cartItems.length}
+              </span>
+            </div>
+            <span>Order Picking ({cartItems.reduce((s, it) => s + (Number(it.qty) || 0), 0)} pcs)</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* ========================================================
+          8. INVENTORY PICKING CART DRAWER
+          ======================================================== */}
+      <InventoryPickingCartDrawer
+        isOpen={isCartDrawerOpen}
+        onClose={() => setIsCartDrawerOpen(false)}
+        cartItems={cartItems}
+        onUpdateQty={handleUpdateCartQty}
+        onRemoveItem={handleRemoveFromCart}
+        onClearCart={handleClearCart}
+        onAddToCart={handleAddToCart}
+        productCatalog={productCatalog}
+        availableRows={availableRowsForCart}
+        onProceedToPicking={handleProceedToPicking}
+      />
+
+      {/* ========================================================
+          9. DISTRIBUSI PICKING MODAL (WA / TUGAS APP / CETAK A4)
+          ======================================================== */}
+      {isPickingModalOpen && (
+        <DistribusiPickingModal
+          isOpen={isPickingModalOpen}
+          onClose={() => setIsPickingModalOpen(false)}
+          draft={pickingModalDraft}
+          productCatalog={productCatalog}
+          session={session}
+          onNotify={onNotify || (() => {})}
+          onSuccessSentToApp={handlePickingSuccessSentToApp}
         />
       )}
     </div>

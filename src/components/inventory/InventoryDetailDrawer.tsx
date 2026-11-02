@@ -30,6 +30,7 @@ import {
   Globe,
   ClipboardList,
   ArrowDownLeft,
+  ShoppingCart,
 } from 'lucide-react';
 import {
   KOMPARASI_5,
@@ -422,14 +423,35 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClo
               )}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Tutup"
-            className="p-2 shrink-0 rounded-xl hover:bg-slate-200/70 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 flex items-center justify-center cursor-pointer transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {onAddToCart && (
+              <button
+                type="button"
+                onClick={() => {
+                  onAddToCart({
+                    sku: row.sku,
+                    nama_produk: row.produk,
+                    size: row.size,
+                    available_stock: row.totalFisik || 0,
+                    locations: (row.locs || []).map(l => ({ lokasi: l.name, qty: l.qty })),
+                  }, 1);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                title="Tambah ke Keranjang Order Picking"
+              >
+                <ShoppingCart className="w-3.5 h-3.5" />
+                <span>+ Keranjang</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Tutup"
+              className="p-2 rounded-xl hover:bg-slate-200/70 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 flex items-center justify-center cursor-pointer transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Tab Navigation */}

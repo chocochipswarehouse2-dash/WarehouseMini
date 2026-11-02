@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.41",
-  "versionCode": 301,
+  "version": "v2.6.42",
+  "versionCode": 302,
   "buildDate": "2 November 2026",
-  "buildHash": "wms-261102-v301-1015",
-  "releaseTitle": "WMS v2.6.41 — Proteksi Penolakan Duplikat File pada Sesi Upload Bersamaan",
+  "buildHash": "wms-261102-v302-1616",
+  "releaseTitle": "WMS v2.6.42 — Fitur Keranjang Belanja Order Picking di Modul Inventory",
   "releaseNotes": [
-    "Otomatis menerima file pertama dan menolak file kedua jika 2 file SJ kembar diupload bersamaan",
-    "Pesan peringatan transparan memunculkan nama file yang diterima dan file yang ditolak untuk mencegah data ganda"
+    "Tambah fitur Add to Cart Order Picking langsung dari tabel inventori dan drawer pencarian cepat",
+    "Integrasi penuh ke 3 output: Kirim Tugas Picking App (invoice_picking), Broadcast WA Grup (Fonnte), dan Cetak A4"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.41",
+    "versionCode": 301,
+    "buildDate": "2 November 2026",
+    "buildHash": "wms-261102-v301-1015",
+    "releaseTitle": "WMS v2.6.41 — Proteksi Penolakan Duplikat File pada Sesi Upload Bersamaan",
+    "releaseNotes": [
+      "Otomatis menerima file pertama dan menolak file kedua jika 2 file SJ kembar diupload bersamaan",
+      "Pesan peringatan transparan memunculkan nama file yang diterima dan file yang ditolak untuk mencegah data ganda"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.40",
     "versionCode": 300,
@@ -110,19 +122,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Perbaiki error MessageSquare is not defined pada tab Pesanan Saya",
       "Rapikan order context card dan autocomplete mention pada Live Chat"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.33",
-    "versionCode": 293,
-    "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v293-1448",
-    "releaseTitle": "WMS v2.6.33 — Tabel Riwayat Peminjaman & Tanggal Kembali + Integrasi 3 Tab Cetak Label & Barcode",
-    "releaseNotes": [
-      "Riwayat Peminjaman (SPS) kini dilengkapi tampilan Tabel proporsional (selain Kartu & Panel Rapi), filter KPI interaktif, ekspor CSV, serta pencatatan Rencana & Tanggal Kembali Aktual beserta durasi pinjam dan catatan pengembalian.",
-      "Halaman Cetak kini disatukan menjadi 1 menu 'Cetak Label & Barcode' dengan 3 tab rapi: QR Prefix, Label Paket, dan Cetak Barcode.",
-      "Tampilan tab QR Prefix dirapikan total menjadi layout 2 kolom (Generator & Antrean di kiri, Pratinjau Stiker & Kustomisasi di kanan) tanpa duplikasi header bertumpuk."
     ],
     "minSupportedVersion": "v2.0.0"
   }
