@@ -54,6 +54,13 @@ interface DrawerProps {
   onClose: () => void;
   onLoc: (loc: string) => void;
   onReloadStock?: () => void;
+  onAddToCart?: (item: {
+    sku: string;
+    nama_produk: string;
+    size: string;
+    available_stock: number;
+    locations: Array<{ lokasi: string; qty: number; area?: string }>;
+  }, qty?: number) => void;
 }
 
 type DrawerTab = 'stok' | 'histori';
@@ -142,7 +149,14 @@ function formatDateTime(isoString: string): string {
   }
 }
 
-export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClose, onLoc, onReloadStock }) => {
+export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
+  row,
+  areas,
+  onClose,
+  onLoc,
+  onReloadStock,
+  onAddToCart,
+}) => {
   const [activeTab, setActiveTab] = useState<DrawerTab>('stok');
   const [logs, setLogs] = useState<LogProdukItem[]>([]);
   const [loadingLogs, setLoadingLogs] = useState<boolean>(false);

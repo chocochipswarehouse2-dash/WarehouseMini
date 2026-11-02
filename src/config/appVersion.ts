@@ -15,21 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.43",
-  "versionCode": 303,
+  "version": "v2.6.44",
+  "versionCode": 304,
   "buildDate": "2 November 2026",
-  "buildHash": "wms-261102-v303-1651",
-  "releaseTitle": "WMS v2.6.43 — Proteksi Stok Kosong Keranjang Picking, Auto-Tambah Dropdown & Impor CSV Excel",
+  "buildHash": "wms-261102-v304-1712",
+  "releaseTitle": "WMS v2.6.44 — Fix Props onAddToCart di InventoryDetailDrawer",
   "releaseNotes": [
-    "Proteksi anti-crash dan pencegahan order picking untuk produk dengan stok fisik 0 pcs di gudang",
-    "Pencarian cepat autocomplete langsung otomatis menambahkan produk ke keranjang tanpa klik ulang tombol tambah",
-    "Dukungan penuh multi-lokasi rak per SKU dengan kalkulasi stok komersial terintegrasi",
-    "Fitur baru Impor Massal CSV dan Excel serta tempel teks langsung ke dalam Keranjang Picking"
+    "Memperbaiki destructuring props onAddToCart di modal Audit Kartu SKU InventoryDetailDrawer agar tidak memicu ReferenceError"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.43",
+    "versionCode": 303,
+    "buildDate": "2 November 2026",
+    "buildHash": "wms-261102-v303-1651",
+    "releaseTitle": "WMS v2.6.43 — Proteksi Stok Kosong Keranjang Picking, Auto-Tambah Dropdown & Impor CSV Excel",
+    "releaseNotes": [
+      "Proteksi anti-crash dan pencegahan order picking untuk produk dengan stok fisik 0 pcs di gudang",
+      "Pencarian cepat autocomplete langsung otomatis menambahkan produk ke keranjang tanpa klik ulang tombol tambah",
+      "Dukungan penuh multi-lokasi rak per SKU dengan kalkulasi stok komersial terintegrasi",
+      "Fitur baru Impor Massal CSV dan Excel serta tempel teks langsung ke dalam Keranjang Picking"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.42",
     "versionCode": 302,
@@ -111,19 +122,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Memperbaiki inisialisasi gedung 4 lantai pada visual 3D",
       "Memperbaiki urutan parameter computeAllRackSlots agar kapasitas live WMS tersinkron sempurna"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.35",
-    "versionCode": 295,
-    "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v295-1554",
-    "releaseTitle": "WMS v2.6.35 — Tab 3D Visual Kapasitas Gudang di Inventory",
-    "releaseNotes": [
-      "Menambahkan tab baru 3D Visual Kapasitas pada halaman Inventory (5 tab terpadu)",
-      "Integrasi penuh Perancang Gudang 3D (4 Lantai, 92 aset awal) dengan stok & kapasitas rak Gudang WMS secara real-time",
-      "Fitur Mode Heatmap 3D Live (Hijau/Kuning/Merah), Auto-Map kode rak WMS (A/B/C/D, Koli R/V/Z, Studio), dan Simpan Layout ke Cloud"
     ],
     "minSupportedVersion": "v2.0.0"
   }
