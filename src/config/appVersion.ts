@@ -15,18 +15,30 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.44",
-  "versionCode": 304,
+  "version": "v2.6.45",
+  "versionCode": 305,
   "buildDate": "2 November 2026",
-  "buildHash": "wms-261102-v304-1712",
-  "releaseTitle": "WMS v2.6.44 — Fix Props onAddToCart di InventoryDetailDrawer",
+  "buildHash": "wms-261102-v305-1724",
+  "releaseTitle": "WMS v2.6.45 — Konsistensi Tombol Keranjang Tabel & Reposisi FAB Order Picking Bebas Tabrakan",
   "releaseNotes": [
-    "Memperbaiki destructuring props onAddToCart di modal Audit Kartu SKU InventoryDetailDrawer agar tidak memicu ReferenceError"
+    "Reposisi FAB Order Picking agar berdampingan rapi dengan Live Chat di desktop dan berjarak aman di mobile",
+    "Menampilkan tombol keranjang secara konsisten di seluruh baris produk perbaikan dengan proteksi stok 0 pcs"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.44",
+    "versionCode": 304,
+    "buildDate": "2 November 2026",
+    "buildHash": "wms-261102-v304-1712",
+    "releaseTitle": "WMS v2.6.44 — Fix Props onAddToCart di InventoryDetailDrawer",
+    "releaseNotes": [
+      "Memperbaiki destructuring props onAddToCart di modal Audit Kartu SKU InventoryDetailDrawer agar tidak memicu ReferenceError"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.43",
     "versionCode": 303,
@@ -110,18 +122,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Menambahkan import icon Crown, LogOut, UserMinus yang hilang pada LiveChat",
       "Perbaikan type-safety dan pembersihan order context card",
       "Sinkronisasi integrasi cloud 3D Warehouse layout"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.36",
-    "versionCode": 296,
-    "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v296-2222",
-    "releaseTitle": "WMS v2.6.36 — Perbaikan Visual 3D & Kapasitas Rak",
-    "releaseNotes": [
-      "Memperbaiki inisialisasi gedung 4 lantai pada visual 3D",
-      "Memperbaiki urutan parameter computeAllRackSlots agar kapasitas live WMS tersinkron sempurna"
     ],
     "minSupportedVersion": "v2.0.0"
   }

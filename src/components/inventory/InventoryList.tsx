@@ -399,14 +399,42 @@ export const InventoryList: React.FC<InventoryListProps> = ({
                             <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300">
                               {group.sku}
                             </span>
-                            <button
-                              type="button"
-                              onClick={() => onOpen(group.sku)}
-                              title="Audit kartu SKU"
-                              className="p-1 text-slate-400 hover:text-amber-500 rounded transition-colors cursor-pointer shrink-0"
-                            >
-                              <ExternalLink className="w-3 h-3" />
-                            </button>
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              {onAddToCart && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (commercialStock <= 0) {
+                                      if (onNotify) onNotify(`Stok fisik ${group.produk} kosong (0 pcs), tidak dapat ditambahkan ke keranjang picking`, 'warning');
+                                      return;
+                                    }
+                                    onAddToCart({
+                                      sku: group.sku,
+                                      nama_produk: group.produk,
+                                      size: group.size,
+                                      available_stock: commercialStock,
+                                      locations: commercialLocations,
+                                    }, 1);
+                                  }}
+                                  title={commercialStock > 0 ? `Tambah ke Keranjang Order Picking (${commercialStock} pcs)` : 'Stok fisik gudang kosong (0 pcs)'}
+                                  className={`p-1 rounded transition-colors ${
+                                    commercialStock > 0
+                                      ? 'text-slate-400 hover:text-emerald-500 cursor-pointer'
+                                      : 'text-slate-300 dark:text-slate-700 opacity-30 cursor-not-allowed'
+                                  }`}
+                                >
+                                  <ShoppingCart className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => onOpen(group.sku)}
+                                title="Audit kartu SKU & riwayat mutasi"
+                                className="p-1 text-slate-400 hover:text-amber-500 rounded transition-colors cursor-pointer shrink-0"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                              </button>
+                            </div>
                           </div>
                         </td>
                       </>

@@ -1,11 +1,12 @@
 {
-  "version": "v2.6.44",
-  "versionCode": 304,
+  "version": "v2.6.45",
+  "versionCode": 305,
   "buildDate": "2 November 2026",
-  "buildHash": "wms-261102-v304-1712",
-  "releaseTitle": "WMS v2.6.44 — Fix Props onAddToCart di InventoryDetailDrawer",
+  "buildHash": "wms-261102-v305-1724",
+  "releaseTitle": "WMS v2.6.45 — Konsistensi Tombol Keranjang Tabel & Reposisi FAB Order Picking Bebas Tabrakan",
   "releaseNotes": [
-    "Memperbaiki destructuring props onAddToCart di modal Audit Kartu SKU InventoryDetailDrawer agar tidak memicu ReferenceError"
+    "Reposisi FAB Order Picking agar berdampingan rapi dengan Live Chat di desktop dan berjarak aman di mobile",
+    "Menampilkan tombol keranjang secara konsisten di seluruh baris produk perbaikan dengan proteksi stok 0 pcs"
   ],
   "minSupportedVersion": "v2.0.0"
 }

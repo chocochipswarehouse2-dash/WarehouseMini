@@ -988,7 +988,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           7. FLOATING ACTION BUTTON (FAB) ORDER PICKING
           ======================================================== */}
       {cartItems.length > 0 && (
-        <div className="fixed bottom-6 right-6 z-40 animate-in slide-in-from-bottom-4 duration-200">
+        <div className="fixed bottom-36 sm:bottom-40 lg:bottom-5 right-5 sm:right-6 lg:right-52 z-40 animate-in slide-in-from-bottom-4 duration-200">
           <button
             type="button"
             onClick={() => setIsCartDrawerOpen(true)}
