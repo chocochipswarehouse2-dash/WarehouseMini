@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.45",
-  "versionCode": 305,
+  "version": "v2.6.46",
+  "versionCode": 306,
   "buildDate": "2 November 2026",
-  "buildHash": "wms-261102-v305-1724",
-  "releaseTitle": "WMS v2.6.45 — Konsistensi Tombol Keranjang Tabel & Reposisi FAB Order Picking Bebas Tabrakan",
+  "buildHash": "wms-261102-v306-1827",
+  "releaseTitle": "WMS v2.6.46 — Optimasi Loading Riwayat Pengecekan Surat Jalan & SWR Fast Cache",
   "releaseNotes": [
-    "Reposisi FAB Order Picking agar berdampingan rapi dengan Live Chat di desktop dan berjarak aman di mobile",
-    "Menampilkan tombol keranjang secara konsisten di seluruh baris produk perbaikan dengan proteksi stok 0 pcs"
+    "Optimasi query pengecekan_sj Supabase dari 45 detik menjadi di bawah 1 detik",
+    "Menerapkan Stale-While-Revalidate agar riwayat surat jalan langsung tampil instan tanpa spinner macet"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.45",
+    "versionCode": 305,
+    "buildDate": "2 November 2026",
+    "buildHash": "wms-261102-v305-1724",
+    "releaseTitle": "WMS v2.6.45 — Konsistensi Tombol Keranjang Tabel & Reposisi FAB Order Picking Bebas Tabrakan",
+    "releaseNotes": [
+      "Reposisi FAB Order Picking agar berdampingan rapi dengan Live Chat di desktop dan berjarak aman di mobile",
+      "Menampilkan tombol keranjang secara konsisten di seluruh baris produk perbaikan dengan proteksi stok 0 pcs"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.44",
     "versionCode": 304,
@@ -109,19 +121,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseTitle": "WMS v2.6.38 — Mode Presentasi 3D & Panduan Interaksi Rak",
     "releaseNotes": [
       "Menambahkan mode presentasi fullscreen 3D dengan tur 360° dan panduan lengkap edit, geser, serta ubah ukuran rak"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.37",
-    "versionCode": 297,
-    "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v297-2239",
-    "releaseTitle": "WMS v2.6.37 — Perbaikan LiveChat Icon & Typings",
-    "releaseNotes": [
-      "Menambahkan import icon Crown, LogOut, UserMinus yang hilang pada LiveChat",
-      "Perbaikan type-safety dan pembersihan order context card",
-      "Sinkronisasi integrasi cloud 3D Warehouse layout"
     ],
     "minSupportedVersion": "v2.0.0"
   }

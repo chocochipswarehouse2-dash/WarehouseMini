@@ -349,7 +349,19 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ---- RIWAYAT PENGECEKAN STATE ----
-  const [records, setRecords] = useState<PengecekanSJRecord[]>([]);
+  const [records, setRecords] = useState<PengecekanSJRecord[]>(() => {
+    try {
+      const cached = getCachedPengecekanSJList();
+      if (Array.isArray(cached) && cached.length > 0) {
+        return [...cached].sort((a, b) => {
+          const timeA = new Date(a.created_at || a.tanggal_sj || 0).getTime();
+          const timeB = new Date(b.created_at || b.tanggal_sj || 0).getTime();
+          return timeB - timeA;
+        });
+      }
+    } catch {}
+    return [];
+  });
   const [loadingRecords, setLoadingRecords] = useState(false);
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -2467,7 +2479,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
             )}
 
             {/* RECORD LIST */}
-            {loadingRecords ? (
+            {loadingRecords && filteredRecords.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-slate-400 gap-3">
                 <RefreshCw className="w-7 h-7 animate-spin text-primary-500" />
                 <span className="text-sm font-medium">Memuat riwayat pengecekan...</span>

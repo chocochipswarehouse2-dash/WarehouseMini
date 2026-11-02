@@ -158,19 +158,20 @@ export async function editPengecekanSJ(record: PengecekanSJRecord): Promise<bool
   return savePengecekanSJToSupabase(record);
 }
 
-export async function fetchPengecekanSJFromSupabase(): Promise<PengecekanSJRecord[]> {
+export const PENGECEKAN_SJ_COLUMNS = 'id,no_sj,tanggal_sj,source,destination,status,status_komparasi,total_qty_sj,total_qty_terima,total_sku,submitted_by,catatan,items,sync_status,created_at,updated_at';
+
+export async function fetchPengecekanSJFromSupabase(limit = 200): Promise<PengecekanSJRecord[]> {
   try {
-    const rawData = await supabaseFetch<any[]>('pengecekan_sj', 'GET', null, 'select=*&order=created_at.desc&limit=1000');
+    const rawData = await supabaseFetch<any[]>(
+      'pengecekan_sj',
+      'GET',
+      null,
+      `select=${PENGECEKAN_SJ_COLUMNS}&order=created_at.desc&limit=${limit}`
+    );
     return normalizeRecords(rawData);
   } catch (err) {
-    console.warn('Gagal fetchPengecekanSJFromSupabase via direct REST, mencoba delta sync:', err);
-    try {
-      const fallback = await fetchWithDeltaSync<any>('pengecekan_sj');
-      return normalizeRecords(fallback);
-    } catch (e2) {
-      console.error('Fallback delta sync juga gagal:', e2);
-      return [];
-    }
+    console.warn('Gagal fetchPengecekanSJFromSupabase via direct REST:', err);
+    return [];
   }
 }
 
@@ -289,11 +290,15 @@ export function getCachedPengecekanSJList(): PengecekanSJRecord[] {
   return [];
 }
 
-export async function fetchPengecekanSJList(): Promise<PengecekanSJRecord[]> {
-  const onlineData = await fetchPengecekanSJFromSupabase();
-  if (onlineData && onlineData.length > 0) {
-    try { localStorage.setItem(CACHE_KEY_RECORDS, JSON.stringify(onlineData)); } catch {}
-    return onlineData;
+export async function fetchPengecekanSJList(limit = 200): Promise<PengecekanSJRecord[]> {
+  try {
+    const onlineData = await fetchPengecekanSJFromSupabase(limit);
+    if (onlineData && onlineData.length > 0) {
+      try { localStorage.setItem(CACHE_KEY_RECORDS, JSON.stringify(onlineData)); } catch {}
+      return onlineData;
+    }
+  } catch (err) {
+    console.warn('Error fetching pengecekan SJ list:', err);
   }
   return getCachedPengecekanSJList();
 }
@@ -503,6 +508,6 @@ export async function submitTarikanMD(record: PengecekanSJRecord): Promise<{ suc
   }
 }
 
-export async function fetchTarikanMDRecords(): Promise<PengecekanSJRecord[]> {
-  return fetchPengecekanSJList();
+export async function fetchTarikanMDRecords(limit = 200): Promise<PengecekanSJRecord[]> {
+  return fetchPengecekanSJList(limit);
 }

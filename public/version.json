@@ -1,12 +1,12 @@
 {
-  "version": "v2.6.45",
-  "versionCode": 305,
+  "version": "v2.6.46",
+  "versionCode": 306,
   "buildDate": "2 November 2026",
-  "buildHash": "wms-261102-v305-1724",
-  "releaseTitle": "WMS v2.6.45 — Konsistensi Tombol Keranjang Tabel & Reposisi FAB Order Picking Bebas Tabrakan",
+  "buildHash": "wms-261102-v306-1827",
+  "releaseTitle": "WMS v2.6.46 — Optimasi Loading Riwayat Pengecekan Surat Jalan & SWR Fast Cache",
   "releaseNotes": [
-    "Reposisi FAB Order Picking agar berdampingan rapi dengan Live Chat di desktop dan berjarak aman di mobile",
-    "Menampilkan tombol keranjang secara konsisten di seluruh baris produk perbaikan dengan proteksi stok 0 pcs"
+    "Optimasi query pengecekan_sj Supabase dari 45 detik menjadi di bawah 1 detik",
+    "Menerapkan Stale-While-Revalidate agar riwayat surat jalan langsung tampil instan tanpa spinner macet"
   ],
   "minSupportedVersion": "v2.0.0"
 }
