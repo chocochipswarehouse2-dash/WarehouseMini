@@ -88,6 +88,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
 
   const canApproveSo = hasPermission(session, 'tab_ops_mutasi_so');
   const canExportData = hasPermission(session, 'action_export_data');
+  const userIsSuperadmin = isSuperadmin(session);
   const currentOperator = session?.username || 'Operator';
 
   const dedupQueueList = (data: StockOpnameQueueItem[]) => {

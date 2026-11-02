@@ -709,11 +709,38 @@ export function isExcludedFromWarehouseRelocation(area: string, lokasi: string):
  * 5. Optional Master Produk Catalog Lookup (so nama_produk & size are always accurate)
  */
 export function computeAllRackSlots(
-  config: RackCapacityConfig,
-  stockRows: StockRealtimeItem[],
+  configOrRows: any,
+  stockRowsOrConfig: any,
   simulationMoves: SimulationMove[] = [],
   catalogMap?: Map<string, EnrichedCatalogEntry>
 ): ComputedRackSlot[] {
+  let config: RackCapacityConfig;
+  let stockRows: StockRealtimeItem[];
+
+  if (Array.isArray(configOrRows)) {
+    stockRows = configOrRows;
+    config =
+      stockRowsOrConfig && typeof stockRowsOrConfig === 'object' && !Array.isArray(stockRowsOrConfig)
+        ? stockRowsOrConfig
+        : getDefaultRackCapacityConfig();
+  } else {
+    config =
+      configOrRows && typeof configOrRows === 'object' && !Array.isArray(configOrRows)
+        ? configOrRows
+        : getDefaultRackCapacityConfig();
+    stockRows = Array.isArray(stockRowsOrConfig) ? stockRowsOrConfig : [];
+  }
+
+  if (!config || !Array.isArray(config.zones)) {
+    config = { ...getDefaultRackCapacityConfig(), ...(config || {}) };
+    if (!Array.isArray(config.zones)) {
+      config.zones = DEFAULT_RACK_ZONES;
+    }
+  }
+  if (!config.overrides || typeof config.overrides !== 'object') {
+    config.overrides = {};
+  }
+
   // 1. Group real physical stock by uppercased lokasi
   const stockByLoc = new Map<string, Map<string, RackSkuItem>>();
   for (let i = 0; i < stockRows.length; i++) {

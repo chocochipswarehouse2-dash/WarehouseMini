@@ -13,6 +13,7 @@ import {
   Filter,
   ChevronDown,
   X,
+  Box,
   Boxes,
   LayoutGrid,
   ClipboardList,
@@ -47,9 +48,10 @@ import {
 import { InventoryList } from './inventory/InventoryList';
 import { InventoryDetailDrawer } from './inventory/InventoryDetailDrawer';
 import { RackCapacityDashboard } from './inventory/RackCapacityDashboard';
+import { Warehouse3DVisualTab } from './inventory/Warehouse3DVisualTab';
 import { MutasiLogView } from './MutasiLogView';
 
-export type InventoryPageTab = 'capacity' | 'inventory' | 'scanner' | 'logs';
+export type InventoryPageTab = 'capacity' | 'visual_3d' | 'inventory' | 'scanner' | 'logs';
 
 export interface InventoryViewProps {
   session?: UserSession | null;
@@ -281,6 +283,22 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           {canViewInventory && (
             <button
               type="button"
+              id="tab-inventory-3d-visual"
+              onClick={() => setActiveTab('visual_3d')}
+              className={`px-3.5 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
+                activeTab === 'visual_3d'
+                  ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Box className="w-4 h-4 shrink-0" />
+              <span>3D Visual Kapasitas</span>
+            </button>
+          )}
+
+          {canViewInventory && (
+            <button
+              type="button"
               onClick={() => setActiveTab('inventory')}
               className={`px-3.5 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
                 activeTab === 'inventory'
@@ -413,6 +431,18 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
       {activeTab === 'capacity' && (
         <RackCapacityDashboard
+          stockRows={flatStockSnapshot}
+          productCatalog={productCatalog}
+          session={session}
+          onNotify={onNotify}
+          onOpenPrintModal={handleOpenLokasiExport}
+          onRefreshStock={handleManualRefresh}
+          isRefreshingStock={isRefreshing || phase === 'syncing'}
+        />
+      )}
+
+      {activeTab === 'visual_3d' && (
+        <Warehouse3DVisualTab
           stockRows={flatStockSnapshot}
           productCatalog={productCatalog}
           session={session}

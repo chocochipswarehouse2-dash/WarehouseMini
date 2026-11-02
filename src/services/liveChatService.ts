@@ -302,7 +302,7 @@ async function saveSystemDocJson(docKey: string, content: any): Promise<boolean>
       'POST',
       payload,
       'on_conflict=section_id',
-      { Prefer: 'resolution=merge-duplicates,return=minimal' }
+      false
     );
     return true;
   } catch (err) {

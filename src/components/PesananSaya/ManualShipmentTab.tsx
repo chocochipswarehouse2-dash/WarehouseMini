@@ -391,26 +391,26 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
 
   // Shopee-Style "Chat ke Gudang" dari pesanan
   const handleChatWarehouse = (order: ManualShipmentOrder) => {
-    setSelectedOrderDetails(null);
+    const anyOrder = order as any;
     const itemsSummary = Array.isArray(order.items)
       ? order.items.map((i) => `${i.nama_produk || i.sku} (${i.qty}x)`).join(', ')
-      : (order as any).rincian_produk || '';
+      : anyOrder.rincian_produk || '';
     const totalPcs =
-      order.total_qty ||
+      anyOrder.total_qty ||
       (Array.isArray(order.items)
         ? order.items.reduce((s, x) => s + (Number(x.qty) || 0), 0)
         : undefined);
 
     void liveChatManager.openOrderChat({
-      order_id: order.no_pesanan || order.no_sj || String(order.id),
-      store_name: order.nama_toko || (order as any).store_name,
-      customer_name: order.nama_pembeli,
+      order_id: anyOrder.no_pesanan || anyOrder.no_sj || String(order.id),
+      store_name: anyOrder.nama_toko || anyOrder.store_name,
+      customer_name: anyOrder.nama_pembeli,
       items_summary: itemsSummary,
       total_pcs: totalPcs,
       status: order.status,
       no_resi: order.no_resi,
     });
-    onShowToast?.(`Membuka percakapan dengan Gudang untuk pesanan #${order.no_pesanan || order.no_sj}...`, 'info');
+    onShowToast?.(`Membuka percakapan dengan Gudang untuk pesanan #${anyOrder.no_pesanan || anyOrder.no_sj}...`, 'info');
   };
 
   const getCleanCustomerPhone = (phone?: string): string => {

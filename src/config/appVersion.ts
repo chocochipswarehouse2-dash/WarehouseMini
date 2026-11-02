@@ -17,13 +17,13 @@ export interface VersionInfo {
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
   "version": "v2.6.37",
   "versionCode": 297,
-  "buildDate": "2 November 2026",
-  "buildHash": "wms-261102-v297-0615",
-  "releaseTitle": "WMS v2.6.37 — Project & Task 6-Tab Horizontal Status Navigation",
+  "buildDate": "1 November 2026",
+  "buildHash": "wms-261101-v297-2239",
+  "releaseTitle": "WMS v2.6.37 — Perbaikan LiveChat Icon & Typings",
   "releaseNotes": [
-    "Mengganti filter dropdown status project dengan 6 tab horizontal interaktif (Semua, Mulai, Berjalan, Evaluasi, Selesai, Ditunda) dengan live count badge",
-    "Navigasi tab responsif mobile dengan horizontal swipe scroll dan status dot berwarna",
-    "Menambahkan kartu empty state yang informatif saat tab status project kosong"
+    "Menambahkan import icon Crown, LogOut, UserMinus yang hilang pada LiveChat",
+    "Perbaikan type-safety dan pembersihan order context card",
+    "Sinkronisasi integrasi cloud 3D Warehouse layout"
   ],
   "minSupportedVersion": "v2.0.0"
 };
@@ -32,13 +32,12 @@ export const VERSION_HISTORY: VersionInfo[] = [
   {
     "version": "v2.6.36",
     "versionCode": 296,
-    "buildDate": "2 November 2026",
-    "buildHash": "wms-261102-v296-0535",
-    "releaseTitle": "WMS v2.6.36 — Google Calendar Month View & Multi-Day Spanning Event Bars",
+    "buildDate": "1 November 2026",
+    "buildHash": "wms-261101-v296-2222",
+    "releaseTitle": "WMS v2.6.36 — Perbaikan Visual 3D & Kapasitas Rak",
     "releaseNotes": [
-      "Tampilan Kalender Mode Bulan diperbarui mengikuti Google Calendar dengan event multi-hari horizontal continuous spanning banner",
-      "Navigasi header Google Calendar: badge tanggal hari ini, tombol Hari Ini, panah navigasi, dan dropdown view (Bulan, Minggu, Hari, Jadwal)",
-      "Sidebar kiri Google Calendar: tombol + Buat multi-warna dengan dropdown (Acara, Project, Catatan), mini-kalender Senin-start, dan filter kategori checkbox berwarna"
+      "Memperbaiki inisialisasi gedung 4 lantai pada visual 3D",
+      "Memperbaiki urutan parameter computeAllRackSlots agar kapasitas live WMS tersinkron sempurna"
     ],
     "minSupportedVersion": "v2.0.0"
   },
@@ -46,12 +45,12 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "version": "v2.6.35",
     "versionCode": 295,
     "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v295-2242",
-    "releaseTitle": "WMS v2.6.35 — Navigasi Otomatis Chat Gudang & Sinkronisasi Multidevice HP/Laptop",
+    "buildHash": "wms-261101-v295-1554",
+    "releaseTitle": "WMS v2.6.35 — Tab 3D Visual Kapasitas Gudang di Inventory",
     "releaseNotes": [
-      "Otomatis mengarahkan ke tab Live Chat dan membuka room dengan draft pesan saat klik Chat Gudang",
-      "Perbaiki sinkronisasi room multidevice (HP dan Laptop) agar percakapan Ria Nur Fiana, Nanang, dan Tim QC tampil konsisten",
-      "Pencegahan race-condition penimpaan daftar ruang obrolan di server"
+      "Menambahkan tab baru 3D Visual Kapasitas pada halaman Inventory (5 tab terpadu)",
+      "Integrasi penuh Perancang Gudang 3D (4 Lantai, 92 aset awal) dengan stok & kapasitas rak Gudang WMS secara real-time",
+      "Fitur Mode Heatmap 3D Live (Hijau/Kuning/Merah), Auto-Map kode rak WMS (A/B/C/D, Koli R/V/Z, Studio), dan Simpan Layout ke Cloud"
     ],
     "minSupportedVersion": "v2.0.0"
   },

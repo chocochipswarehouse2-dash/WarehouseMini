@@ -220,9 +220,13 @@ export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
                               {item.text}
                             </span>
                             {!item.isInvalidSku ? (
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" title="Terdaftar di katalog" />
+                              <span title="Terdaftar di katalog" className="inline-flex shrink-0">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                              </span>
                             ) : (
-                              <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" title="SKU tidak terdaftar" />
+                              <span title="SKU tidak terdaftar" className="inline-flex shrink-0">
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
+                              </span>
                             )}
                           </div>
                           <div className="text-[10px] font-mono text-slate-400 mt-0.5">{item.time}</div>

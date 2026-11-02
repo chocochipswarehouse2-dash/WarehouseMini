@@ -1,13 +1,13 @@
 {
   "version": "v2.6.37",
   "versionCode": 297,
-  "buildDate": "2 November 2026",
-  "buildHash": "wms-261102-v297-0615",
-  "releaseTitle": "WMS v2.6.37 — Project & Task 6-Tab Horizontal Status Navigation",
+  "buildDate": "1 November 2026",
+  "buildHash": "wms-261101-v297-2239",
+  "releaseTitle": "WMS v2.6.37 — Perbaikan LiveChat Icon & Typings",
   "releaseNotes": [
-    "Mengganti filter dropdown status project dengan 6 tab horizontal interaktif (Semua, Mulai, Berjalan, Evaluasi, Selesai, Ditunda) dengan live count badge",
-    "Navigasi tab responsif mobile dengan horizontal swipe scroll dan status dot berwarna",
-    "Menambahkan kartu empty state yang informatif saat tab status project kosong"
+    "Menambahkan import icon Crown, LogOut, UserMinus yang hilang pada LiveChat",
+    "Perbaikan type-safety dan pembersihan order context card",
+    "Sinkronisasi integrasi cloud 3D Warehouse layout"
   ],
   "minSupportedVersion": "v2.0.0"
 }
