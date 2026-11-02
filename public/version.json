@@ -1,13 +1,11 @@
 {
-  "version": "v2.6.37",
-  "versionCode": 297,
-  "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v297-2239",
-  "releaseTitle": "WMS v2.6.37 — Perbaikan LiveChat Icon & Typings",
+  "version": "v2.6.38",
+  "versionCode": 298,
+  "buildDate": "2 November 2026",
+  "buildHash": "wms-261102-v298-0020",
+  "releaseTitle": "WMS v2.6.38 — Mode Presentasi 3D & Panduan Interaksi Rak",
   "releaseNotes": [
-    "Menambahkan import icon Crown, LogOut, UserMinus yang hilang pada LiveChat",
-    "Perbaikan type-safety dan pembersihan order context card",
-    "Sinkronisasi integrasi cloud 3D Warehouse layout"
+    "Menambahkan mode presentasi fullscreen 3D dengan tur 360° dan panduan lengkap edit, geser, serta ubah ukuran rak"
   ],
   "minSupportedVersion": "v2.0.0"
 }

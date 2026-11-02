@@ -17,6 +17,11 @@ import {
   RotateCcw,
   Eye,
   X,
+  Presentation,
+  Tv,
+  Play,
+  Pause,
+  Compass,
 } from 'lucide-react';
 import type { StockRealtimeItem, ProductItem, UserSession } from '../../types';
 import { cleanProductName, extractCleanSizeToken, extractSizeFromSku } from '../../utils/sortUtils';
@@ -795,6 +800,36 @@ window.addEventListener('message',e=>{
     drawP();
   } else if(d.type==='WMS_SET_HEATMAP'){
     tgHeatmap(Boolean(d.payload));
+  } else if(d.type==='WMS_SET_PRESENTATION_MODE'){
+    const isP = Boolean(d.payload);
+    const side = $('side'), chips = $('chips'), cams = $('cams'), hint = $('hint'), bhm = $('bhm'), gd = $('gd');
+    if(side) side.style.display = isP ? 'none' : '';
+    if(chips) chips.style.display = isP ? 'none' : '';
+    if(cams) cams.style.display = isP ? 'none' : '';
+    if(hint) hint.style.display = isP ? 'none' : '';
+    if(bhm) bhm.style.display = isP ? 'none' : '';
+    if(gd) gd.style.display = 'none';
+    rs();
+  } else if(d.type==='WMS_SET_AUTO_ROTATE'){
+    oc.autoRotate = Boolean(d.payload);
+    oc.autoRotateSpeed = 1.35;
+    dirty = 1;
+  } else if(d.type==='WMS_SET_CAMERA_PRESET'){
+    cm(Number(d.payload));
+    dirty = 1;
+  } else if(d.type==='WMS_SET_ACTIVE_FLOOR'){
+    if(d.payload === 'ALL'){
+      S.all = true;
+      buildB();
+      renderObjs();
+      cm(0);
+    } else {
+      S.all = false;
+      const fl = Math.max(0, Math.min(S.floors.length - 1, Number(d.payload)));
+      goF(fl);
+      cm(0);
+    }
+    dirty = 1;
   } else if(d.type==='WMS_AUTO_MAP_RACKS'){
     S.objs.forEach(o=>{delete o.wmsCode});
     autoMapWmsCodesToObjs(S.objs);
@@ -830,7 +865,7 @@ function rs(){inv();const v=$('view');R.setSize(v.clientWidth,v.clientHeight,fal
 new ResizeObserver(rs).observe($('view'));
 drawFloors();buildB();renderObjs();drawP();rs();cm(0);pushH();applyTheme();
 window.parent.postMessage({type:'WMS_3D_READY'},'*');
-(function loop(){requestAnimationFrame(loop);const ch=oc.update();if(ch||dirty){dirty=0;if(GG)GG.position.set(fo(S.cur).x,0,fo(S.cur).z);R.render(sc,cam)}})();
+(function loop(){requestAnimationFrame(loop);const ch=oc.update();if(ch||dirty||oc.autoRotate){dirty=0;if(GG)GG.position.set(fo(S.cur).x,0,fo(S.cur).z);R.render(sc,cam)}})();
 </script>
 </body></html>`;
 }
@@ -845,9 +880,14 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
   isRefreshingStock,
 }) => {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const [config, setConfig] = useState<RackCapacityConfig>(() => loadLocalRackCapacityConfig());
   const [heatmapActive, setHeatmapActive] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isPresentation, setIsPresentation] = useState(false);
+  const [isAutoRotate, setIsAutoRotate] = useState(false);
+  const [activeFloor, setActiveFloor] = useState<'ALL' | number>('ALL');
+  const [activeCameraPreset, setActiveCameraPreset] = useState<number>(0);
   const [isSavingCloud, setIsSavingCloud] = useState(false);
   const [selectedRackInfo, setSelectedRackInfo] = useState<Selected3DRackInfo | null>(null);
   const latest3DStateRef = useRef<string | null>(null);
@@ -1043,14 +1083,109 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
     return () => window.removeEventListener('message', handleMessage);
   }, [syncCapacityToIframe, allRackSlots, onOpenPrintModal]);
 
-  const handleToggleHeatmap = () => {
-    const next = !heatmapActive;
-    setHeatmapActive(next);
+  const handleToggleHeatmap = useCallback(() => {
+    setHeatmapActive((prev) => {
+      const next = !prev;
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: 'WMS_SET_HEATMAP', payload: next },
+        '*'
+      );
+      return next;
+    });
+  }, []);
+
+  const handleEnterPresentation = useCallback(() => {
+    setIsPresentation(true);
+    setIsAutoRotate(true);
+    setTimeout(() => {
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: 'WMS_SET_PRESENTATION_MODE', payload: true },
+        '*'
+      );
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: 'WMS_SET_AUTO_ROTATE', payload: true },
+        '*'
+      );
+    }, 60);
+  }, []);
+
+  const handleExitPresentation = useCallback(() => {
+    setIsPresentation(false);
+    setIsAutoRotate(false);
     iframeRef.current?.contentWindow?.postMessage(
-      { type: 'WMS_SET_HEATMAP', payload: next },
+      { type: 'WMS_SET_PRESENTATION_MODE', payload: false },
       '*'
     );
-  };
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: 'WMS_SET_AUTO_ROTATE', payload: false },
+      '*'
+    );
+  }, []);
+
+  const handleToggleAutoRotate = useCallback(() => {
+    setIsAutoRotate((prev) => {
+      const next = !prev;
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: 'WMS_SET_AUTO_ROTATE', payload: next },
+        '*'
+      );
+      return next;
+    });
+  }, []);
+
+  const handleSelectFloor = useCallback((floor: 'ALL' | number) => {
+    setActiveFloor(floor);
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: 'WMS_SET_ACTIVE_FLOOR', payload: floor },
+      '*'
+    );
+  }, []);
+
+  const handleSelectCameraPreset = useCallback((camIndex: number) => {
+    setActiveCameraPreset(camIndex);
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: 'WMS_SET_CAMERA_PRESET', payload: camIndex },
+      '*'
+    );
+  }, []);
+
+  // Keyboard navigation for presentation mode
+  useEffect(() => {
+    if (!isPresentation) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (/INPUT|TEXTAREA|SELECT/.test((e.target as HTMLElement)?.tagName || '')) return;
+
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        handleExitPresentation();
+      } else if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault();
+        handleToggleAutoRotate();
+      } else if (e.key === 'h' || e.key === 'H') {
+        e.preventDefault();
+        handleToggleHeatmap();
+      } else if (e.key === '0') {
+        e.preventDefault();
+        handleSelectFloor('ALL');
+      } else if (e.key === '1') {
+        e.preventDefault();
+        handleSelectFloor(0);
+      } else if (e.key === '2') {
+        e.preventDefault();
+        handleSelectFloor(1);
+      } else if (e.key === '3') {
+        e.preventDefault();
+        handleSelectFloor(2);
+      } else if (e.key === '4') {
+        e.preventDefault();
+        handleSelectFloor(3);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isPresentation, handleExitPresentation, handleToggleAutoRotate, handleToggleHeatmap, handleSelectFloor]);
 
   const handleAutoMapRacks = () => {
     iframeRef.current?.contentWindow?.postMessage({ type: 'WMS_AUTO_MAP_RACKS' }, '*');
@@ -1103,167 +1238,476 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
 
   return (
     <div
+      ref={containerRef}
       className={
-        isFullscreen
+        isPresentation
+          ? 'fixed inset-0 z-[120] bg-slate-950 flex flex-col overflow-hidden select-none'
+          : isFullscreen
           ? 'fixed inset-0 z-50 bg-slate-950 flex flex-col p-2 sm:p-3 space-y-2.5'
           : 'w-full space-y-3'
       }
     >
       {/* ========================================================
-          1. TOP CONTROL & LIVE CAPACITY BAR
+          A. FULLSCREEN PRESENTATION MODE HUD OVERLAYS
           ======================================================== */}
-      <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl p-3 shadow-xs space-y-2.5">
-        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
-          {/* Title & Live Status */}
-          <div className="flex items-start sm:items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-indigo-600/10 dark:bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
-              <Box className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white">
-                  Visualisasi 3D Layout &amp; Kapasitas Gudang (4 Lantai)
-                </h2>
-                <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
-                  LIVE SYNC WMS ({summaryStats.totalRacks.toLocaleString('id-ID')} Rak)
-                </span>
+      {isPresentation ? (
+        <>
+          {/* Top Floating Executive HUD */}
+          <div className="absolute top-3 left-3 right-3 z-30 pointer-events-none flex flex-wrap items-center justify-between gap-2.5">
+            {/* Left Brand Badge */}
+            <div className="pointer-events-auto bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-2xl px-3.5 py-2 shadow-2xl flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shrink-0">
+                <Tv className="w-4 h-4" />
               </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Klik rak pada gedung 3D untuk menginspeksi kapasitas real-time, mengubah kode rak WMS, atau mencetak daftar isi rak.
-              </p>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-extrabold text-xs sm:text-sm text-white tracking-wide">
+                    Presentasi 3D Gudang
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                    LIVE SYNC
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-400 hidden sm:block">
+                  Kapasitas Real-Time &amp; Tur 360° ({summaryStats.totalRacks.toLocaleString('id-ID')} Rak)
+                </p>
+              </div>
             </div>
-          </div>
 
-          {/* Toolbar Actions (Strictly 1 primary solid button + neutral outline secondary buttons) */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              onClick={handleToggleHeatmap}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs ${
-                heatmapActive
-                  ? 'bg-indigo-600 text-white border border-indigo-500'
-                  : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
-              }`}
-              title="Ubah warna rak 3D berdasarkan tingkat kepenuhan stok nyata (Hijau / Kuning / Merah)"
-            >
-              {heatmapActive ? (
-                <>
-                  <Flame className="w-3.5 h-3.5 text-amber-300" />
-                  <span>Heatmap Kapasitas: ON</span>
-                </>
-              ) : (
-                <>
-                  <Palette className="w-3.5 h-3.5 text-indigo-500" />
-                  <span>Aktifkan Heatmap 3D</span>
-                </>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleAutoMapRacks}
-              className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-              title="Petakan otomatis rak 3D ke kode rak A, B, C, D, Koli R/V/Z, & Studio"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              <span>Auto-Map Rak</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={isSavingCloud}
-              onClick={handleSaveCloud}
-              className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
-              title="Simpan perubahan desain 3D ke database server"
-            >
-              <CloudUpload className={`w-3.5 h-3.5 text-emerald-500 ${isSavingCloud ? 'animate-bounce' : ''}`} />
-              <span>{isSavingCloud ? 'Menyimpan...' : 'Simpan Cloud'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleResetDefaultLayout}
-              className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-              title="Kembalikan tata letak 3D ke desain awal"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
-              <span className="hidden sm:inline">Reset Default</span>
-            </button>
-
-            {onRefreshStock && (
+            {/* Center Floor Switcher Tabs */}
+            <div className="pointer-events-auto bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-2xl p-1 shadow-2xl flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full">
               <button
                 type="button"
-                disabled={isRefreshingStock}
-                onClick={onRefreshStock}
-                className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
-                title="Segarkan stok fisik dari database"
+                onClick={() => handleSelectFloor('ALL')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                  activeFloor === 'ALL'
+                    ? 'bg-indigo-600 text-white shadow-md'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+                }`}
+                title="Tampilkan seluruh gedung 4 lantai (Tekan 0)"
               >
-                <RefreshCw className={`w-3.5 h-3.5 text-indigo-500 ${isRefreshingStock ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">Refresh Stok</span>
+                <Layers className="w-3.5 h-3.5" />
+                <span>Semua (4 Lt)</span>
               </button>
-            )}
+              <button
+                type="button"
+                onClick={() => handleSelectFloor(0)}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  activeFloor === 0
+                    ? 'bg-indigo-600 text-white shadow-md'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+                }`}
+                title="Lantai 1: Studio & Jahit (Tekan 1)"
+              >
+                Lt.1 Studio
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectFloor(1)}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  activeFloor === 1
+                    ? 'bg-indigo-600 text-white shadow-md'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+                }`}
+                title="Lantai 2: Rak C & D (Tekan 2)"
+              >
+                Lt.2 Rak C &amp; D
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectFloor(2)}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  activeFloor === 2
+                    ? 'bg-indigo-600 text-white shadow-md'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+                }`}
+                title="Lantai 3: Section A (Dress) & B (Bottom) (Tekan 3)"
+              >
+                Lt.3 Rak A &amp; B
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectFloor(3)}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  activeFloor === 3
+                    ? 'bg-indigo-600 text-white shadow-md'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+                }`}
+                title="Lantai 4: Area Kolian R/V/Z (Tekan 4)"
+              >
+                Lt.4 Kolian
+              </button>
+            </div>
 
-            <button
-              type="button"
-              onClick={() => setIsFullscreen((prev) => !prev)}
-              className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-              title={isFullscreen ? 'Keluar Layar Penuh' : 'Tampilan Layar Penuh'}
-            >
-              {isFullscreen ? (
-                <>
-                  <Minimize2 className="w-3.5 h-3.5 text-rose-500" />
-                  <span>Tutup Fullscreen</span>
-                </>
-              ) : (
-                <>
-                  <Maximize2 className="w-3.5 h-3.5 text-slate-500" />
-                  <span className="hidden sm:inline">Layar Penuh</span>
-                </>
+            {/* Right Controls: Camera Presets, 360 Tour, Heatmap & Exit */}
+            <div className="pointer-events-auto flex items-center gap-1.5">
+              {/* Camera Presets */}
+              <div className="bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-2xl p-1 shadow-2xl hidden md:flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleSelectCameraPreset(0)}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    activeCameraPreset === 0
+                      ? 'bg-indigo-600 text-white'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+                  }`}
+                  title="Sudut Pandang Isometrik 3D"
+                >
+                  3D Iso
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelectCameraPreset(1)}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    activeCameraPreset === 1
+                      ? 'bg-indigo-600 text-white'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+                  }`}
+                  title="Tampak Denah Atas (2D Top View)"
+                >
+                  Tampak Atas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelectCameraPreset(2)}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    activeCameraPreset === 2
+                      ? 'bg-indigo-600 text-white'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+                  }`}
+                  title="Sudut Pandang Fokus Depan"
+                >
+                  Fokus
+                </button>
+              </div>
+
+              {/* 360° Auto-Rotate Tour Button */}
+              <button
+                type="button"
+                onClick={handleToggleAutoRotate}
+                className={`px-3 py-2 rounded-2xl text-xs font-bold backdrop-blur-md border flex items-center gap-1.5 transition-all cursor-pointer shadow-2xl ${
+                  isAutoRotate
+                    ? 'bg-amber-500/25 text-amber-300 border-amber-500/60 ring-2 ring-amber-500/30'
+                    : 'bg-slate-900/90 hover:bg-slate-800 text-slate-300 border-slate-700/80'
+                }`}
+                title="Mulai/Hentikan putaran kamera 360° otomatis mengitari gedung (Tekan Spasi)"
+              >
+                {isAutoRotate ? (
+                  <>
+                    <Pause className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                    <span className="hidden sm:inline">Pause 360°</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3.5 h-3.5 text-slate-300" />
+                    <span className="hidden sm:inline">Tur 360°</span>
+                  </>
+                )}
+              </button>
+
+              {/* Heatmap Toggle */}
+              <button
+                type="button"
+                onClick={handleToggleHeatmap}
+                className={`px-3 py-2 rounded-2xl text-xs font-bold backdrop-blur-md border flex items-center gap-1.5 transition-all cursor-pointer shadow-2xl ${
+                  heatmapActive
+                    ? 'bg-indigo-600 text-white border-indigo-500 ring-2 ring-indigo-500/30'
+                    : 'bg-slate-900/90 hover:bg-slate-800 text-slate-300 border-slate-700/80'
+                }`}
+                title="Tampilkan heatmap tingkat kepenuhan rak (Tekan H)"
+              >
+                <Flame className={`w-3.5 h-3.5 ${heatmapActive ? 'text-amber-300' : 'text-slate-400'}`} />
+                <span className="hidden sm:inline">Heatmap</span>
+              </button>
+
+              {/* Exit Presentation */}
+              <button
+                type="button"
+                onClick={handleExitPresentation}
+                className="px-3.5 py-2 rounded-2xl text-xs font-bold bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/50 backdrop-blur-md flex items-center gap-1.5 transition-all cursor-pointer shadow-2xl"
+                title="Keluar dari mode presentasi (Tekan ESC)"
+              >
+                <X className="w-4 h-4" />
+                <span className="hidden sm:inline">Keluar [ESC]</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Floating Selected Rack Live Inspector (if user clicks a rack during presentation) */}
+          {selectedRackInfo && selectedRackInfo.wmsCode && (
+            <div className="absolute right-4 bottom-18 sm:bottom-16 z-30 pointer-events-auto bg-slate-900/95 backdrop-blur-md border border-indigo-500/40 rounded-2xl p-3.5 shadow-2xl max-w-sm w-full text-xs space-y-2 animate-in fade-in">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="px-2 py-0.5 rounded-lg bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 font-mono font-extrabold text-xs shrink-0">
+                    📍 {selectedRackInfo.wmsCode}
+                  </span>
+                  <span className="font-bold text-white truncate">
+                    {selectedRackInfo.name}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRackInfo(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                  title="Tutup inspektor"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between text-[11px] text-slate-300">
+                <span>Tingkat Kepenuhan:</span>
+                <span className="font-mono font-bold text-indigo-400">
+                  {selectedRackInfo.totalCurrentQty} / {selectedRackInfo.totalMaxCapacity} pcs ({selectedRackInfo.fillPercent}%)
+                </span>
+              </div>
+
+              <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden border border-slate-700/60">
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    selectedRackInfo.fillPercent >= 100
+                      ? 'bg-rose-500'
+                      : selectedRackInfo.fillPercent >= 80
+                      ? 'bg-amber-500'
+                      : 'bg-emerald-500'
+                  }`}
+                  style={{ width: `${Math.min(100, selectedRackInfo.fillPercent)}%` }}
+                />
+              </div>
+
+              {selectedRackInfo.matchedSlots[0] && onOpenPrintModal && (
+                <button
+                  type="button"
+                  onClick={() => onOpenPrintModal(selectedRackInfo.matchedSlots[0].lokasi)}
+                  className="w-full mt-1 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Detail &amp; Cetak Rak ({selectedRackInfo.matchedSlots[0].lokasi})</span>
+                </button>
               )}
-            </button>
+            </div>
+          )}
+
+          {/* Bottom Floating Executive KPI Strip & Shortcuts */}
+          <div className="absolute bottom-3 left-3 right-3 z-30 pointer-events-none flex flex-col sm:flex-row items-center justify-between gap-2.5">
+            {/* KPI Live Capacity Meter */}
+            <div className="pointer-events-auto bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-2xl px-4 py-2.5 shadow-2xl flex flex-wrap items-center gap-3.5 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold text-slate-400">Okupansi Gudang:</span>
+                <span className="font-mono font-extrabold text-indigo-400 text-sm">
+                  {summaryStats.totalCurrent.toLocaleString('id-ID')} / {summaryStats.totalMax.toLocaleString('id-ID')} pcs ({summaryStats.overallPct}%)
+                </span>
+              </div>
+              <div className="w-24 sm:w-36 h-2 rounded-full bg-slate-800 overflow-hidden border border-slate-700">
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    summaryStats.overallPct >= 90
+                      ? 'bg-rose-500'
+                      : summaryStats.overallPct >= 75
+                      ? 'bg-amber-500'
+                      : 'bg-emerald-500'
+                  }`}
+                  style={{ width: `${Math.min(100, summaryStats.overallPct)}%` }}
+                />
+              </div>
+              <span className="text-slate-700 hidden sm:inline">|</span>
+              <div className="flex items-center gap-3 text-[11px]">
+                <span className="inline-flex items-center gap-1 font-semibold text-emerald-400">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                  Aman: <b className="font-mono">{summaryStats.safeCount}</b>
+                </span>
+                <span className="inline-flex items-center gap-1 font-semibold text-amber-400">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
+                  Hampir Penuh: <b className="font-mono">{summaryStats.warnCount}</b>
+                </span>
+                <span className="inline-flex items-center gap-1 font-semibold text-rose-400">
+                  <span className="w-2 h-2 rounded-full bg-rose-500 inline-block" />
+                  Overload: <b className="font-mono">{summaryStats.fullOverloadCount}</b>
+                </span>
+              </div>
+            </div>
+
+            {/* Keyboard shortcut tips */}
+            <div className="pointer-events-auto hidden md:flex items-center gap-2 bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-xl px-3.5 py-2 text-[11px] text-slate-400 font-mono shadow-xl">
+              <span>[Spasi] Tur 360°</span>
+              <span className="text-slate-700">·</span>
+              <span>[H] Heatmap</span>
+              <span className="text-slate-700">·</span>
+              <span>[0-4] Pilih Lantai</span>
+              <span className="text-slate-700">·</span>
+              <span>[ESC] Keluar</span>
+            </div>
+          </div>
+        </>
+      ) : (
+        /* ========================================================
+            B. STANDARD MODE: TOP CONTROL & LIVE CAPACITY BAR
+            ======================================================== */
+        <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl p-3 shadow-xs space-y-2.5">
+          <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+            {/* Title & Live Status */}
+            <div className="flex items-start sm:items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-indigo-600/10 dark:bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
+                <Box className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white">
+                    Visualisasi 3D Layout &amp; Kapasitas Gudang (4 Lantai)
+                  </h2>
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                    LIVE SYNC WMS ({summaryStats.totalRacks.toLocaleString('id-ID')} Rak)
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Klik rak pada gedung 3D untuk menginspeksi kapasitas real-time, mengubah kode rak WMS, atau mencetak daftar isi rak.
+                </p>
+              </div>
+            </div>
+
+            {/* Toolbar Actions (Max 1 primary solid button + neutral secondary outline buttons per Rule 10) */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {/* PRIMARY SOLID BUTTON: Fullscreen 3D Presentation */}
+              <button
+                type="button"
+                onClick={handleEnterPresentation}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:shadow-indigo-500/20"
+                title="Buka tampilan 3D dalam mode presentasi layar penuh interaktif (dengan tur kamera 360° dan switcher lantai)"
+              >
+                <Presentation className="w-3.5 h-3.5" />
+                <span>Mode Presentasi 3D</span>
+              </button>
+
+              {/* SECONDARY OUTLINE: Heatmap */}
+              <button
+                type="button"
+                onClick={handleToggleHeatmap}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs ${
+                  heatmapActive
+                    ? 'bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 border border-indigo-300 dark:border-indigo-700'
+                    : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
+                }`}
+                title="Ubah warna rak 3D berdasarkan tingkat kepenuhan stok nyata (Hijau / Kuning / Merah)"
+              >
+                {heatmapActive ? (
+                  <>
+                    <Flame className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Heatmap: ON</span>
+                  </>
+                ) : (
+                  <>
+                    <Palette className="w-3.5 h-3.5 text-indigo-500" />
+                    <span>Heatmap 3D</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleAutoMapRacks}
+                className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                title="Petakan otomatis rak 3D ke kode rak A, B, C, D, Koli R/V/Z, & Studio"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>Auto-Map Rak</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={isSavingCloud}
+                onClick={handleSaveCloud}
+                className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
+                title="Simpan perubahan desain 3D ke database server"
+              >
+                <CloudUpload className={`w-3.5 h-3.5 text-emerald-500 ${isSavingCloud ? 'animate-bounce' : ''}`} />
+                <span>{isSavingCloud ? 'Menyimpan...' : 'Simpan Cloud'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleResetDefaultLayout}
+                className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                title="Kembalikan tata letak 3D ke desain awal"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+                <span className="hidden sm:inline">Reset Default</span>
+              </button>
+
+              {onRefreshStock && (
+                <button
+                  type="button"
+                  disabled={isRefreshingStock}
+                  onClick={onRefreshStock}
+                  className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
+                  title="Segarkan stok fisik dari database"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-indigo-500 ${isRefreshingStock ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">Refresh Stok</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setIsFullscreen((prev) => !prev)}
+                className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                title={isFullscreen ? 'Keluar Layar Penuh' : 'Tampilan Layar Penuh'}
+              >
+                {isFullscreen ? (
+                  <>
+                    <Minimize2 className="w-3.5 h-3.5 text-rose-500" />
+                    <span>Tutup Fullscreen</span>
+                  </>
+                ) : (
+                  <>
+                    <Maximize2 className="w-3.5 h-3.5 text-slate-500" />
+                    <span className="hidden sm:inline">Layar Penuh</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Live Capacity Legend & Mini Metrics Strip */}
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Okupansi Gudang:</span>
+                <span className="font-mono font-extrabold text-indigo-600 dark:text-indigo-400">
+                  {summaryStats.totalCurrent.toLocaleString('id-ID')} / {summaryStats.totalMax.toLocaleString('id-ID')} pcs ({summaryStats.overallPct}%)
+                </span>
+              </div>
+              <span className="text-slate-300 dark:text-slate-700">|</span>
+              <div className="flex flex-wrap items-center gap-2.5 text-[11px]">
+                <span className="inline-flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
+                  Aman (&lt;80%): <b className="font-mono">{summaryStats.safeCount}</b>
+                </span>
+                <span className="inline-flex items-center gap-1 font-semibold text-amber-600 dark:text-amber-400">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" />
+                  Hampir Penuh (80-99%): <b className="font-mono">{summaryStats.warnCount}</b>
+                </span>
+                <span className="inline-flex items-center gap-1 font-semibold text-rose-600 dark:text-rose-400">
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" />
+                  Penuh/Overload (≥100%): <b className="font-mono">{summaryStats.fullOverloadCount}</b>
+                </span>
+                <span className="inline-flex items-center gap-1 font-semibold text-slate-500 dark:text-slate-400">
+                  <span className="w-2.5 h-2.5 rounded-full bg-slate-400 inline-block" />
+                  Kosong: <b className="font-mono">{summaryStats.emptyCount}</b>
+                </span>
+              </div>
+            </div>
+
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+              Lt.1 Studio &amp; Jahit · Lt.2 Rak C &amp; D · Lt.3 Section A (Dress) &amp; B (Bottom) · Lt.4 Area Kolian (R/V/Z)
+            </div>
           </div>
         </div>
-
-        {/* Live Capacity Legend & Mini Metrics Strip */}
-        <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-xs">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Okupansi Gudang:</span>
-              <span className="font-mono font-extrabold text-indigo-600 dark:text-indigo-400">
-                {summaryStats.totalCurrent.toLocaleString('id-ID')} / {summaryStats.totalMax.toLocaleString('id-ID')} pcs ({summaryStats.overallPct}%)
-              </span>
-            </div>
-            <span className="text-slate-300 dark:text-slate-700">|</span>
-            <div className="flex flex-wrap items-center gap-2.5 text-[11px]">
-              <span className="inline-flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
-                Aman (&lt;80%): <b className="font-mono">{summaryStats.safeCount}</b>
-              </span>
-              <span className="inline-flex items-center gap-1 font-semibold text-amber-600 dark:text-amber-400">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" />
-                Hampir Penuh (80-99%): <b className="font-mono">{summaryStats.warnCount}</b>
-              </span>
-              <span className="inline-flex items-center gap-1 font-semibold text-rose-600 dark:text-rose-400">
-                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" />
-                Penuh/Overload (≥100%): <b className="font-mono">{summaryStats.fullOverloadCount}</b>
-              </span>
-              <span className="inline-flex items-center gap-1 font-semibold text-slate-500 dark:text-slate-400">
-                <span className="w-2.5 h-2.5 rounded-full bg-slate-400 inline-block" />
-                Kosong: <b className="font-mono">{summaryStats.emptyCount}</b>
-              </span>
-            </div>
-          </div>
-
-          <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-            Lt.1 Studio &amp; Jahit · Lt.2 Rak C &amp; D · Lt.3 Section A (Dress) &amp; B (Bottom) · Lt.4 Area Kolian (R/V/Z)
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* ========================================================
-          2. SELECTED 3D RACK LIVE INSPECTOR BAR (IF A RACK IS CLICKED)
+          C. SELECTED 3D RACK LIVE INSPECTOR BAR (IF A RACK IS CLICKED IN STANDARD MODE)
           ======================================================== */}
-      {selectedRackInfo && selectedRackInfo.wmsCode && (
+      {!isPresentation && selectedRackInfo && selectedRackInfo.wmsCode && (
         <div className="bg-white dark:bg-[#131d31] border border-indigo-200 dark:border-indigo-900/70 rounded-2xl p-3 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div className="flex items-start sm:items-center gap-3 min-w-0">
             <div className="px-2.5 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-mono font-extrabold text-xs shrink-0">
@@ -1343,11 +1787,15 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
       )}
 
       {/* ========================================================
-          3. INTERACTIVE 3D WAREHOUSE DESIGNER & VISUALIZER WORKSPACE
+          D. INTERACTIVE 3D WAREHOUSE CANVAS (IFRAME)
           ======================================================== */}
       <div
-        className={`w-full rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm bg-[#0f172a] ${
-          isFullscreen ? 'flex-1 min-h-0' : 'h-[calc(100vh-220px)] min-h-[640px]'
+        className={`w-full overflow-hidden border shadow-sm bg-[#0f172a] relative ${
+          isPresentation
+            ? 'flex-1 min-h-0 border-0 rounded-none'
+            : isFullscreen
+            ? 'flex-1 min-h-0 rounded-2xl border-slate-200 dark:border-slate-800'
+            : 'h-[calc(100vh-220px)] min-h-[640px] rounded-2xl border-slate-200 dark:border-slate-800'
         }`}
       >
         <iframe

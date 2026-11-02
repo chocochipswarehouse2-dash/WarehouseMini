@@ -15,20 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.37",
-  "versionCode": 297,
-  "buildDate": "1 November 2026",
-  "buildHash": "wms-261101-v297-2239",
-  "releaseTitle": "WMS v2.6.37 — Perbaikan LiveChat Icon & Typings",
+  "version": "v2.6.38",
+  "versionCode": 298,
+  "buildDate": "2 November 2026",
+  "buildHash": "wms-261102-v298-0020",
+  "releaseTitle": "WMS v2.6.38 — Mode Presentasi 3D & Panduan Interaksi Rak",
   "releaseNotes": [
-    "Menambahkan import icon Crown, LogOut, UserMinus yang hilang pada LiveChat",
-    "Perbaikan type-safety dan pembersihan order context card",
-    "Sinkronisasi integrasi cloud 3D Warehouse layout"
+    "Menambahkan mode presentasi fullscreen 3D dengan tur 360° dan panduan lengkap edit, geser, serta ubah ukuran rak"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.37",
+    "versionCode": 297,
+    "buildDate": "1 November 2026",
+    "buildHash": "wms-261101-v297-2239",
+    "releaseTitle": "WMS v2.6.37 — Perbaikan LiveChat Icon & Typings",
+    "releaseNotes": [
+      "Menambahkan import icon Crown, LogOut, UserMinus yang hilang pada LiveChat",
+      "Perbaikan type-safety dan pembersihan order context card",
+      "Sinkronisasi integrasi cloud 3D Warehouse layout"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.36",
     "versionCode": 296,
@@ -115,17 +126,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Log Produk",
       "Redesain tombol tab atas Scanner",
       "Log Produk menjadi lebih proporsional disertai 3 opsi tata letak (Panel Rapi, Tabel, Ringkas)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.29",
-    "versionCode": 289,
-    "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v289-1953",
-    "releaseTitle": "WMS v2.6.29 — Clean Env Vars in Push Serverless",
-    "releaseNotes": [
-      "Trim whitespace dan kutip dari env vars push backend"
     ],
     "minSupportedVersion": "v2.0.0"
   }
