@@ -132,6 +132,7 @@ export interface InventoryListProps {
     available_stock: number;
     locations: Array<{ lokasi: string; qty: number; area?: string }>;
   }, qty?: number) => void;
+  onNotify?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void;
   resetKey: string;
 }
 
@@ -144,6 +145,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({
   onOpen,
   onLoc,
   onAddToCart,
+  onNotify,
   resetKey,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -220,6 +222,10 @@ export const InventoryList: React.FC<InventoryListProps> = ({
           {/* TABLE BODY (Per SKU Group) */}
           {displayedGroups.map((group) => {
             const totalSkuRows = group.commercialAreas.length + group.perbaikanAreas.length;
+            const commercialStock = (group.commercialAreas || []).reduce((s, a) => s + (Number(a.qty) || 0), 0);
+            const commercialLocations = (group.commercialAreas || [])
+              .flatMap((a) => a.locations || [])
+              .filter((l) => l && l.lokasi && l.lokasi !== '-');
 
             return (
               <tbody
@@ -271,15 +277,25 @@ export const InventoryList: React.FC<InventoryListProps> = ({
                               {onAddToCart && (
                                 <button
                                   type="button"
-                                  onClick={() => onAddToCart({
-                                    sku: group.sku,
-                                    nama_produk: group.produk,
-                                    size: group.size,
-                                    available_stock: group.commercialAreas.reduce((s, a) => s + a.qty, 0),
-                                    locations: group.commercialAreas.flatMap(a => a.locations),
-                                  }, 1)}
-                                  title="Tambah ke Keranjang Order Picking"
-                                  className="p-1 text-slate-400 hover:text-emerald-500 rounded transition-colors cursor-pointer"
+                                  onClick={() => {
+                                    if (commercialStock <= 0) {
+                                      if (onNotify) onNotify(`Stok fisik ${group.produk} kosong (0 pcs), tidak dapat ditambahkan ke keranjang picking`, 'warning');
+                                      return;
+                                    }
+                                    onAddToCart({
+                                      sku: group.sku,
+                                      nama_produk: group.produk,
+                                      size: group.size,
+                                      available_stock: commercialStock,
+                                      locations: commercialLocations,
+                                    }, 1);
+                                  }}
+                                  title={commercialStock > 0 ? `Tambah ke Keranjang Order Picking (${commercialStock} pcs)` : 'Stok fisik gudang kosong (0 pcs)'}
+                                  className={`p-1 rounded transition-colors ${
+                                    commercialStock > 0
+                                      ? 'text-slate-400 hover:text-emerald-500 cursor-pointer'
+                                      : 'text-slate-300 dark:text-slate-700 opacity-30 cursor-not-allowed'
+                                  }`}
                                 >
                                   <ShoppingCart className="w-3.5 h-3.5" />
                                 </button>
@@ -482,22 +498,39 @@ export const InventoryList: React.FC<InventoryListProps> = ({
                   <span className="px-2 py-0.5 rounded-md font-mono text-[11px] font-black bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
                     {group.size}
                   </span>
-                  {onAddToCart && (
-                    <button
-                      type="button"
-                      onClick={() => onAddToCart({
-                        sku: group.sku,
-                        nama_produk: group.produk,
-                        size: group.size,
-                        available_stock: group.commercialAreas.reduce((s, a) => s + a.qty, 0),
-                        locations: group.commercialAreas.flatMap(a => a.locations),
-                      }, 1)}
-                      className="p-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 rounded-lg text-emerald-600 dark:text-emerald-400 transition-colors cursor-pointer"
-                      title="Tambah ke Keranjang Order Picking"
-                    >
-                      <ShoppingCart className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+                  {onAddToCart && (() => {
+                    const commercialStock = (group.commercialAreas || []).reduce((s, a) => s + (Number(a.qty) || 0), 0);
+                    const commercialLocations = (group.commercialAreas || [])
+                      .flatMap((a) => a.locations || [])
+                      .filter((l) => l && l.lokasi && l.lokasi !== '-');
+
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (commercialStock <= 0) {
+                            if (onNotify) onNotify(`Stok fisik ${group.produk} kosong (0 pcs), tidak dapat ditambahkan ke keranjang picking`, 'warning');
+                            return;
+                          }
+                          onAddToCart({
+                            sku: group.sku,
+                            nama_produk: group.produk,
+                            size: group.size,
+                            available_stock: commercialStock,
+                            locations: commercialLocations,
+                          }, 1);
+                        }}
+                        className={`p-1.5 rounded-lg transition-colors ${
+                          commercialStock > 0
+                            ? 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400 cursor-pointer'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-300 dark:text-slate-600 opacity-40 cursor-not-allowed'
+                        }`}
+                        title={commercialStock > 0 ? `Tambah ke Keranjang Order Picking (${commercialStock} pcs)` : 'Stok fisik gudang kosong (0 pcs)'}
+                      >
+                        <ShoppingCart className="w-3.5 h-3.5" />
+                      </button>
+                    );
+                  })()}
                   <button
                     type="button"
                     onClick={() => onOpen(group.sku)}

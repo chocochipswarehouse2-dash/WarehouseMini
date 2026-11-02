@@ -39,6 +39,7 @@ import {
   ONLINE_COLS,
   STORE_COLS,
   isAreaOn,
+  isPerbaikanArea,
   type AreaFilterType,
   type InventoryRow,
 } from './inventoryModel';
@@ -424,25 +425,35 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClo
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {onAddToCart && (
-              <button
-                type="button"
-                onClick={() => {
-                  onAddToCart({
-                    sku: row.sku,
-                    nama_produk: row.produk,
-                    size: row.size,
-                    available_stock: row.totalFisik || 0,
-                    locations: (row.locs || []).map(l => ({ lokasi: l.name, qty: l.qty })),
-                  }, 1);
-                }}
-                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-                title="Tambah ke Keranjang Order Picking"
-              >
-                <ShoppingCart className="w-3.5 h-3.5" />
-                <span>+ Keranjang</span>
-              </button>
-            )}
+            {onAddToCart && (() => {
+              const commercialLocs = (row.locs || []).filter(l => !isPerbaikanArea(getAreaFromLokasi(l.name)));
+              const commStock = commercialLocs.reduce((s, l) => s + (Number(l.qty) || 0), 0);
+              return (
+                <button
+                  type="button"
+                  disabled={commStock <= 0}
+                  onClick={() => {
+                    if (commStock <= 0) return;
+                    onAddToCart({
+                      sku: row.sku,
+                      nama_produk: row.produk,
+                      size: row.size,
+                      available_stock: commStock,
+                      locations: commercialLocs.map(l => ({ lokasi: l.name, qty: l.qty })),
+                    }, 1);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 ${
+                    commStock > 0
+                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600 opacity-40 cursor-not-allowed'
+                  }`}
+                  title={commStock > 0 ? `Tambah ke Keranjang Order Picking (${commStock} pcs)` : 'Stok fisik gudang kosong (0 pcs)'}
+                >
+                  <ShoppingCart className="w-3.5 h-3.5" />
+                  <span>+ Keranjang</span>
+                </button>
+              );
+            })()}
             <button
               type="button"
               onClick={onClose}

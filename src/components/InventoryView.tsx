@@ -275,6 +275,18 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   const [pickingModalDraft, setPickingModalDraft] = useState<PengecekanSJDraft | null>(null);
 
   const handleAddToCart = useCallback((item: Omit<InventoryCartItem, 'qty'>, addQty: number = 1) => {
+    const avail = Number(item.available_stock) || 0;
+    if (avail <= 0) {
+      if (onNotify) {
+        onNotify(`Stok fisik ${item.nama_produk || item.sku} kosong (0 pcs), tidak dapat ditambahkan ke keranjang picking!`, 'warning');
+      }
+      return;
+    }
+
+    const cleanLocations = Array.isArray(item.locations)
+      ? item.locations.filter(l => l && l.lokasi && l.lokasi !== '-')
+      : [];
+
     setCartItems(prev => {
       const existingIdx = prev.findIndex(it => it.sku.toUpperCase() === item.sku.toUpperCase());
       if (existingIdx >= 0) {
@@ -282,15 +294,59 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         next[existingIdx] = {
           ...next[existingIdx],
           qty: next[existingIdx].qty + addQty,
-          available_stock: item.available_stock,
-          locations: item.locations && item.locations.length > 0 ? item.locations : next[existingIdx].locations,
+          available_stock: avail,
+          locations: cleanLocations.length > 0 ? cleanLocations : next[existingIdx].locations,
         };
         return next;
       }
-      return [...prev, { ...item, qty: Math.max(1, addQty) }];
+      return [...prev, {
+        ...item,
+        available_stock: avail,
+        locations: cleanLocations,
+        qty: Math.max(1, addQty)
+      }];
     });
     if (onNotify) {
       onNotify(`Ditambahkan ke keranjang: ${item.nama_produk || item.sku} (+${addQty} pcs)`, 'success');
+    }
+  }, [onNotify]);
+
+  const handleBulkAddToCart = useCallback((itemsToAdd: Array<{ item: Omit<InventoryCartItem, 'qty'>; qty: number }>) => {
+    if (!itemsToAdd || itemsToAdd.length === 0) return;
+    setCartItems(prev => {
+      const map = new Map<string, InventoryCartItem>();
+      for (const it of prev) {
+        map.set(it.sku.toUpperCase(), { ...it });
+      }
+      let addedCount = 0;
+      for (const entry of itemsToAdd) {
+        const it = entry.item;
+        const q = Math.max(1, Number(entry.qty) || 1);
+        const avail = Number(it.available_stock) || 0;
+        if (avail <= 0) continue;
+        const key = it.sku.toUpperCase();
+        const cleanLocations = Array.isArray(it.locations)
+          ? it.locations.filter(l => l && l.lokasi && l.lokasi !== '-')
+          : [];
+        const existing = map.get(key);
+        if (existing) {
+          existing.qty += q;
+          existing.available_stock = avail;
+          if (cleanLocations.length > 0) existing.locations = cleanLocations;
+        } else {
+          map.set(key, {
+            ...it,
+            available_stock: avail,
+            locations: cleanLocations,
+            qty: q,
+          });
+        }
+        addedCount++;
+      }
+      return Array.from(map.values());
+    });
+    if (onNotify) {
+      onNotify(`Berhasil menambahkan ${itemsToAdd.length} SKU ke keranjang picking!`, 'success');
     }
   }, [onNotify]);
 
@@ -879,6 +935,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           onOpen={setSelectedSku}
           onLoc={handleOpenLokasiExport}
           onAddToCart={handleAddToCart}
+          onNotify={onNotify}
           resetKey={`${selectedArea}_${deferredSearch}_${onlyActive}_${sortOption}`}
         />
       )}
@@ -960,6 +1017,8 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         onRemoveItem={handleRemoveFromCart}
         onClearCart={handleClearCart}
         onAddToCart={handleAddToCart}
+        onBulkAddToCart={handleBulkAddToCart}
+        onNotify={onNotify}
         productCatalog={productCatalog}
         availableRows={availableRowsForCart}
         onProceedToPicking={handleProceedToPicking}

@@ -15,19 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.42",
-  "versionCode": 302,
+  "version": "v2.6.43",
+  "versionCode": 303,
   "buildDate": "2 November 2026",
-  "buildHash": "wms-261102-v302-1616",
-  "releaseTitle": "WMS v2.6.42 — Fitur Keranjang Belanja Order Picking di Modul Inventory",
+  "buildHash": "wms-261102-v303-1651",
+  "releaseTitle": "WMS v2.6.43 — Proteksi Stok Kosong Keranjang Picking, Auto-Tambah Dropdown & Impor CSV Excel",
   "releaseNotes": [
-    "Tambah fitur Add to Cart Order Picking langsung dari tabel inventori dan drawer pencarian cepat",
-    "Integrasi penuh ke 3 output: Kirim Tugas Picking App (invoice_picking), Broadcast WA Grup (Fonnte), dan Cetak A4"
+    "Proteksi anti-crash dan pencegahan order picking untuk produk dengan stok fisik 0 pcs di gudang",
+    "Pencarian cepat autocomplete langsung otomatis menambahkan produk ke keranjang tanpa klik ulang tombol tambah",
+    "Dukungan penuh multi-lokasi rak per SKU dengan kalkulasi stok komersial terintegrasi",
+    "Fitur baru Impor Massal CSV dan Excel serta tempel teks langsung ke dalam Keranjang Picking"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.42",
+    "versionCode": 302,
+    "buildDate": "2 November 2026",
+    "buildHash": "wms-261102-v302-1616",
+    "releaseTitle": "WMS v2.6.42 — Fitur Keranjang Belanja Order Picking di Modul Inventory",
+    "releaseNotes": [
+      "Tambah fitur Add to Cart Order Picking langsung dari tabel inventori dan drawer pencarian cepat",
+      "Integrasi penuh ke 3 output: Kirim Tugas Picking App (invoice_picking), Broadcast WA Grup (Fonnte), dan Cetak A4"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.41",
     "versionCode": 301,
@@ -110,18 +124,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Menambahkan tab baru 3D Visual Kapasitas pada halaman Inventory (5 tab terpadu)",
       "Integrasi penuh Perancang Gudang 3D (4 Lantai, 92 aset awal) dengan stok & kapasitas rak Gudang WMS secara real-time",
       "Fitur Mode Heatmap 3D Live (Hijau/Kuning/Merah), Auto-Map kode rak WMS (A/B/C/D, Koli R/V/Z, Studio), dan Simpan Layout ke Cloud"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.34",
-    "versionCode": 294,
-    "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v294-2218",
-    "releaseTitle": "WMS v2.6.34 — Perbaikan Pesanan Saya (MessageSquare) & Live Chat Order Card",
-    "releaseNotes": [
-      "Perbaiki error MessageSquare is not defined pada tab Pesanan Saya",
-      "Rapikan order context card dan autocomplete mention pada Live Chat"
     ],
     "minSupportedVersion": "v2.0.0"
   }
