@@ -15,18 +15,30 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.38",
-  "versionCode": 298,
+  "version": "v2.6.39",
+  "versionCode": 299,
   "buildDate": "2 November 2026",
-  "buildHash": "wms-261102-v298-0020",
-  "releaseTitle": "WMS v2.6.38 — Mode Presentasi 3D & Panduan Interaksi Rak",
+  "buildHash": "wms-261102-v299-0953",
+  "releaseTitle": "WMS v2.6.39 — Proteksi Impor Duplikat SJ & Indikator Riwayat Pengecekan",
   "releaseNotes": [
-    "Menambahkan mode presentasi fullscreen 3D dengan tur 360° dan panduan lengkap edit, geser, serta ubah ukuran rak"
+    "Sistem otomatis mendeteksi impor file SJ ganda tanpa mendobelkan kuantitas (prinsip Replace terproteksi)",
+    "Peringatan visual seketika dan badge '⚠️ Pernah Selesai' jika SJ yang diimpor sudah pernah tercatat di Riwayat Pengecekan"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.38",
+    "versionCode": 298,
+    "buildDate": "2 November 2026",
+    "buildHash": "wms-261102-v298-0020",
+    "releaseTitle": "WMS v2.6.38 — Mode Presentasi 3D & Panduan Interaksi Rak",
+    "releaseNotes": [
+      "Menambahkan mode presentasi fullscreen 3D dengan tur 360° dan panduan lengkap edit, geser, serta ubah ukuran rak"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.37",
     "versionCode": 297,
@@ -111,21 +123,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseTitle": "WMS v2.6.31 — Penambahan Kolom Stok pada Tabel Log Produk di Detail Inventory",
     "releaseNotes": [
       "Penambahan kolom Stok (saldo stok rak saat transaksi) pada tabel dan kartu Log Produk di modal Detail Produk Inventory agar identik dengan tabel Log Produk utama"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.30",
-    "versionCode": 290,
-    "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v290-1336",
-    "releaseTitle": "WMS v2.6.30 — Redesain Scanner | Log Produk & Tampilan Tabel Log Produk di Detail Inventory",
-    "releaseNotes": [
-      "Perubahan nama Histori Mutasi & Mutasi menjadi Log Produk di seluruh aplikasi",
-      "Penambahan tampilan Tabel (Table View) pada Log Produk di modal Detail Produk Inventory seperti pada halaman Scanner",
-      "Log Produk",
-      "Redesain tombol tab atas Scanner",
-      "Log Produk menjadi lebih proporsional disertai 3 opsi tata letak (Panel Rapi, Tabel, Ringkas)"
     ],
     "minSupportedVersion": "v2.0.0"
   }

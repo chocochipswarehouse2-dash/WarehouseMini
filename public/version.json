@@ -1,11 +1,12 @@
 {
-  "version": "v2.6.38",
-  "versionCode": 298,
+  "version": "v2.6.39",
+  "versionCode": 299,
   "buildDate": "2 November 2026",
-  "buildHash": "wms-261102-v298-0020",
-  "releaseTitle": "WMS v2.6.38 — Mode Presentasi 3D & Panduan Interaksi Rak",
+  "buildHash": "wms-261102-v299-0953",
+  "releaseTitle": "WMS v2.6.39 — Proteksi Impor Duplikat SJ & Indikator Riwayat Pengecekan",
   "releaseNotes": [
-    "Menambahkan mode presentasi fullscreen 3D dengan tur 360° dan panduan lengkap edit, geser, serta ubah ukuran rak"
+    "Sistem otomatis mendeteksi impor file SJ ganda tanpa mendobelkan kuantitas (prinsip Replace terproteksi)",
+    "Peringatan visual seketika dan badge '⚠️ Pernah Selesai' jika SJ yang diimpor sudah pernah tercatat di Riwayat Pengecekan"
   ],
   "minSupportedVersion": "v2.0.0"
 }

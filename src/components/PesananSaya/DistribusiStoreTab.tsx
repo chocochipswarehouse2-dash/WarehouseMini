@@ -494,6 +494,8 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
 
     let totalSjFound = 0;
     const newDrafts: PengecekanSJDraft[] = [];
+    const overwrittenDrafts: string[] = [];
+    const alreadyInRiwayat: string[] = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -504,6 +506,13 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         for (const g of groups) {
           const draftId = `${g.no_sj.trim().toUpperCase()}___${(g.source || '').trim().toUpperCase()}___${(g.destination || '').trim().toUpperCase()}`;
           const existing = drafts.find(d => d.id === draftId);
+          if (existing && !overwrittenDrafts.includes(g.no_sj)) {
+            overwrittenDrafts.push(g.no_sj);
+          }
+          const inRiwayat = records.find(r => r.no_sj.trim().toUpperCase() === g.no_sj.trim().toUpperCase());
+          if (inRiwayat && !alreadyInRiwayat.includes(g.no_sj)) {
+            alreadyInRiwayat.push(g.no_sj);
+          }
 
           const draft: PengecekanSJDraft = {
             id: draftId,
@@ -542,10 +551,21 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
       // Otomatis pilih draft pertama yang baru diimport jika belum ada yang aktif
       setActiveDraftId(newDrafts[0].id);
       onShowToast(`Berhasil mengimpor ${totalSjFound} Surat Jalan ke Antrean Pengecekan!`, 'success');
+
+      if (overwrittenDrafts.length > 0) {
+        setTimeout(() => {
+          onShowToast(`Info: SJ ${overwrittenDrafts.slice(0, 3).join(', ')}${overwrittenDrafts.length > 3 ? '...' : ''} sudah ada di antrean. Daftar item diperbarui, hasil scan fisik tetap aman.`, 'info');
+        }, 600);
+      }
+      if (alreadyInRiwayat.length > 0) {
+        setTimeout(() => {
+          onShowToast(`Perhatian: SJ ${alreadyInRiwayat.slice(0, 3).join(', ')}${alreadyInRiwayat.length > 3 ? '...' : ''} tercatat sudah pernah selesai dicek sebelumnya di Riwayat!`, 'warning');
+        }, 1200);
+      }
     }
 
     if (fileInputRef.current) fileInputRef.current.value = '';
-  }, [drafts, onShowToast, importType, productCatalog]);
+  }, [drafts, records, onShowToast, importType, productCatalog]);
 
   // ==========================================
   // SCAN HANDLER & CATALOG LOOKUP
@@ -1433,6 +1453,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                     const isSelected = draft.id === activeDraftId;
                     const isCheckedForBulk = selectedDraftIds.has(draft.id);
                     const isAlreadySentToApp = Boolean(draft.catatan?.includes('[Tugas Picking App Terkirim]'));
+                    const isPernahSelesai = records.some(r => r.no_sj.trim().toUpperCase() === draft.no_sj.trim().toUpperCase());
                     const totalQtySj = draft.items.reduce((s, i) => s + i.qty_sj, 0);
                     const totalScanned = Object.values(draft.scanQty).reduce((s, v) => s + v, 0) +
                                          Object.values(draft.unexpected || {}).reduce((s, v) => s + v.qty, 0);
@@ -1473,6 +1494,11 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                               </span>
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
+                              {isPernahSelesai && (
+                                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800" title="SJ ini sudah pernah selesai dicek dan tercatat di Riwayat">
+                                  ⚠️ Pernah Selesai
+                                </span>
+                              )}
                               {isAlreadySentToApp && (
                                 <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
                                   ✓ Picking App
