@@ -1,12 +1,12 @@
 {
-  "version": "v2.6.39",
-  "versionCode": 299,
+  "version": "v2.6.40",
+  "versionCode": 300,
   "buildDate": "2 November 2026",
-  "buildHash": "wms-261102-v299-0953",
-  "releaseTitle": "WMS v2.6.39 — Proteksi Impor Duplikat SJ & Indikator Riwayat Pengecekan",
+  "buildHash": "wms-261102-v300-1006",
+  "releaseTitle": "WMS v2.6.40 — Blokir & Tolak Otomatis Import Duplikat Surat Jalan",
   "releaseNotes": [
-    "Sistem otomatis mendeteksi impor file SJ ganda tanpa mendobelkan kuantitas (prinsip Replace terproteksi)",
-    "Peringatan visual seketika dan badge '⚠️ Pernah Selesai' jika SJ yang diimpor sudah pernah tercatat di Riwayat Pengecekan"
+    "Sistem otomatis menolak import file jika Nomor Surat Jalan sudah terdaftar di sistem (Riwayat Pending/Selesai atau Draft Aktif)",
+    "Dialog peringatan penolakan lengkap dengan rincian status SJ lama dan opsi konfirmasi timpa khusus revisi resmi"
   ],
   "minSupportedVersion": "v2.0.0"
 }

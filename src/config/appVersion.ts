@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.39",
-  "versionCode": 299,
+  "version": "v2.6.40",
+  "versionCode": 300,
   "buildDate": "2 November 2026",
-  "buildHash": "wms-261102-v299-0953",
-  "releaseTitle": "WMS v2.6.39 — Proteksi Impor Duplikat SJ & Indikator Riwayat Pengecekan",
+  "buildHash": "wms-261102-v300-1006",
+  "releaseTitle": "WMS v2.6.40 — Blokir & Tolak Otomatis Import Duplikat Surat Jalan",
   "releaseNotes": [
-    "Sistem otomatis mendeteksi impor file SJ ganda tanpa mendobelkan kuantitas (prinsip Replace terproteksi)",
-    "Peringatan visual seketika dan badge '⚠️ Pernah Selesai' jika SJ yang diimpor sudah pernah tercatat di Riwayat Pengecekan"
+    "Sistem otomatis menolak import file jika Nomor Surat Jalan sudah terdaftar di sistem (Riwayat Pending/Selesai atau Draft Aktif)",
+    "Dialog peringatan penolakan lengkap dengan rincian status SJ lama dan opsi konfirmasi timpa khusus revisi resmi"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.39",
+    "versionCode": 299,
+    "buildDate": "2 November 2026",
+    "buildHash": "wms-261102-v299-0953",
+    "releaseTitle": "WMS v2.6.39 — Proteksi Impor Duplikat SJ & Indikator Riwayat Pengecekan",
+    "releaseNotes": [
+      "Sistem otomatis mendeteksi impor file SJ ganda tanpa mendobelkan kuantitas (prinsip Replace terproteksi)",
+      "Peringatan visual seketika dan badge '⚠️ Pernah Selesai' jika SJ yang diimpor sudah pernah tercatat di Riwayat Pengecekan"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.38",
     "versionCode": 298,
@@ -112,17 +124,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Integrasi Scanner Barcode dan Log Produk ke dalam 4 Tab halaman Inventory (menghilangkan duplikasi menu Scanner",
       "LOG)",
       "Integrasi Tugas Picking sebagai tab ke-4 di halaman Loading Dock (Penerimaan, Pengiriman, Transfer Order, Tugas Picking)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.31",
-    "versionCode": 291,
-    "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v291-1347",
-    "releaseTitle": "WMS v2.6.31 — Penambahan Kolom Stok pada Tabel Log Produk di Detail Inventory",
-    "releaseNotes": [
-      "Penambahan kolom Stok (saldo stok rak saat transaksi) pada tabel dan kartu Log Produk di modal Detail Produk Inventory agar identik dengan tabel Log Produk utama"
     ],
     "minSupportedVersion": "v2.0.0"
   }

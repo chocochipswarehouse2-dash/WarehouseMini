@@ -492,10 +492,17 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    let totalSjFound = 0;
-    const newDrafts: PengecekanSJDraft[] = [];
-    const overwrittenDrafts: string[] = [];
-    const alreadyInRiwayat: string[] = [];
+    interface DuplicateConflict {
+      no_sj: string;
+      source?: string;
+      destination?: string;
+      reason: string;
+      status: 'pending' | 'selesai' | 'draft';
+      parsedDraft: PengecekanSJDraft;
+    }
+
+    const validNewDrafts: PengecekanSJDraft[] = [];
+    const conflicts: DuplicateConflict[] = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -504,15 +511,14 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         const groups = parseCsvContent(content, file.name, productCatalog);
 
         for (const g of groups) {
-          const draftId = `${g.no_sj.trim().toUpperCase()}___${(g.source || '').trim().toUpperCase()}___${(g.destination || '').trim().toUpperCase()}`;
-          const existing = drafts.find(d => d.id === draftId);
-          if (existing && !overwrittenDrafts.includes(g.no_sj)) {
-            overwrittenDrafts.push(g.no_sj);
-          }
-          const inRiwayat = records.find(r => r.no_sj.trim().toUpperCase() === g.no_sj.trim().toUpperCase());
-          if (inRiwayat && !alreadyInRiwayat.includes(g.no_sj)) {
-            alreadyInRiwayat.push(g.no_sj);
-          }
+          const cleanNoSj = g.no_sj.trim().toUpperCase();
+          const draftId = `${cleanNoSj}___${(g.source || '').trim().toUpperCase()}___${(g.destination || '').trim().toUpperCase()}`;
+
+          // Cek apakah sudah pernah ada di Riwayat (Pending / Selesai)
+          const inRiwayat = records.find(r => r.no_sj.trim().toUpperCase() === cleanNoSj);
+
+          // Cek apakah sudah ada di Antrean Draft Aktif
+          const inDrafts = drafts.find(d => d.id === draftId || d.no_sj.trim().toUpperCase() === cleanNoSj);
 
           const draft: PengecekanSJDraft = {
             id: draftId,
@@ -523,48 +529,87 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
             tipe_import: importType,
             file_name: file.name,
             items: g.items,
-            scanQty: existing ? existing.scanQty : {},
-            unexpected: existing ? existing.unexpected : {},
-            catatan: existing ? existing.catatan : '',
+            scanQty: inDrafts ? inDrafts.scanQty : {},
+            unexpected: inDrafts ? inDrafts.unexpected : {},
+            catatan: inDrafts ? inDrafts.catatan : '',
             status: 'draft',
-            created_at: existing ? existing.created_at : new Date().toISOString(),
+            created_at: inDrafts ? inDrafts.created_at : new Date().toISOString(),
             updated_at: new Date().toISOString(),
           };
 
-          newDrafts.push(draft);
-          totalSjFound++;
+          if (inRiwayat || inDrafts) {
+            const reason = inRiwayat
+              ? (inRiwayat.status === 'pending'
+                  ? `Sudah ada di Riwayat Pengecekan (Status: PENDING, ${inRiwayat.total_qty_terima || 0}/${inRiwayat.total_qty_sj || 0} pcs diselesaikan oleh ${inRiwayat.admin || 'Admin'})`
+                  : `Sudah pernah selesai dicek di Riwayat (Status: SELESAI, ${inRiwayat.total_qty_terima || 0}/${inRiwayat.total_qty_sj || 0} pcs)`)
+              : `Sudah ada di Antrean Draft Aktif yang sedang dikerjakan`;
+
+            if (!conflicts.some(c => c.no_sj.trim().toUpperCase() === cleanNoSj)) {
+              conflicts.push({
+                no_sj: g.no_sj,
+                source: g.source,
+                destination: g.destination,
+                reason,
+                status: inRiwayat ? inRiwayat.status : 'draft',
+                parsedDraft: draft,
+              });
+            }
+          } else {
+            // Belum pernah ada sama sekali -> Valid untuk diimpor
+            validNewDrafts.push(draft);
+          }
         }
       } catch (err) {
         onShowToast(`Gagal membaca "${file.name}": ${err instanceof Error ? err.message : 'Format error'}`, 'error');
       }
     }
 
-    if (newDrafts.length > 0) {
+    // Reset file input agar user bisa memilih kembali file jika diperlukan
+    if (fileInputRef.current) fileInputRef.current.value = '';
+
+    // Skenario A: Ada SJ baru yang valid
+    if (validNewDrafts.length > 0) {
       setDrafts(prev => {
-        // Timpa atau tambahkan draft dengan ID yang sama
         const map = new Map<string, PengecekanSJDraft>();
         prev.forEach(d => map.set(d.id, d));
-        newDrafts.forEach(d => map.set(d.id, d));
+        validNewDrafts.forEach(d => map.set(d.id, d));
         return Array.from(map.values());
       });
+      setActiveDraftId(validNewDrafts[0].id);
 
-      // Otomatis pilih draft pertama yang baru diimport jika belum ada yang aktif
-      setActiveDraftId(newDrafts[0].id);
-      onShowToast(`Berhasil mengimpor ${totalSjFound} Surat Jalan ke Antrean Pengecekan!`, 'success');
-
-      if (overwrittenDrafts.length > 0) {
-        setTimeout(() => {
-          onShowToast(`Info: SJ ${overwrittenDrafts.slice(0, 3).join(', ')}${overwrittenDrafts.length > 3 ? '...' : ''} sudah ada di antrean. Daftar item diperbarui, hasil scan fisik tetap aman.`, 'info');
-        }, 600);
-      }
-      if (alreadyInRiwayat.length > 0) {
-        setTimeout(() => {
-          onShowToast(`Perhatian: SJ ${alreadyInRiwayat.slice(0, 3).join(', ')}${alreadyInRiwayat.length > 3 ? '...' : ''} tercatat sudah pernah selesai dicek sebelumnya di Riwayat!`, 'warning');
-        }, 1200);
+      if (conflicts.length === 0) {
+        onShowToast(`Berhasil mengimpor ${validNewDrafts.length} Surat Jalan ke Antrean Pengecekan!`, 'success');
+      } else {
+        onShowToast(`Berhasil mengimpor ${validNewDrafts.length} Surat Jalan baru. ${conflicts.length} Surat Jalan lainnya ditolak karena sudah ada di sistem.`, 'warning');
       }
     }
 
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    // Skenario B: Ada SJ yang ditolak karena sudah pernah ada di sistem
+    if (conflicts.length > 0) {
+      if (validNewDrafts.length === 0) {
+        onShowToast(`❌ Import Ditolak: ${conflicts.length} Surat Jalan sudah pernah diimpor & terdaftar di sistem!`, 'error');
+      }
+
+      setConfirmModal({
+        title: '❌ Import Surat Jalan Ditolak (Sudah Ada di Sistem)',
+        message: `Sistem menolak import file ini karena Nomor Surat Jalan berikut sudah terdaftar di sistem WMS:\n\n` +
+          conflicts.map(c => `• ${c.no_sj} (${c.source || '-'} → ${c.destination || '-'})` + '\n  ' + `Alasan: ${c.reason}`).join('\n\n') +
+          `\n\n🛡️ Proteksi Integritas Data:\nSistem menolak import otomatis ini guna mencegah duplikasi data, selisih perhitungan, atau tertimpanya progres fisik yang sedang berjalan.\n\nApakah Anda ingin membatalkan (disarankan), atau ini adalah Revisi File resmi yang perlu menimpa data lama?`,
+        confirmLabel: 'Tetap Timpa (Revisi Resmi)',
+        isDanger: true,
+        onConfirm: () => {
+          const draftsToApply = conflicts.map(c => c.parsedDraft);
+          setDrafts(prev => {
+            const map = new Map<string, PengecekanSJDraft>();
+            prev.forEach(d => map.set(d.id, d));
+            draftsToApply.forEach(d => map.set(d.id, d));
+            return Array.from(map.values());
+          });
+          setActiveDraftId(draftsToApply[0].id);
+          onShowToast(`Surat Jalan ${draftsToApply.map(d => d.no_sj).join(', ')} berhasil ditimpa dengan file revisi baru.`, 'info');
+        }
+      });
+    }
   }, [drafts, records, onShowToast, importType, productCatalog]);
 
   // ==========================================
@@ -2886,7 +2931,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                   <h4 className="text-sm font-black text-slate-900 dark:text-white">
                     {confirmModal.title}
                   </h4>
-                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed whitespace-pre-line">
                     {confirmModal.message}
                   </p>
                 </div>
