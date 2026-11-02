@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.40",
-  "versionCode": 300,
+  "version": "v2.6.41",
+  "versionCode": 301,
   "buildDate": "2 November 2026",
-  "buildHash": "wms-261102-v300-1006",
-  "releaseTitle": "WMS v2.6.40 — Blokir & Tolak Otomatis Import Duplikat Surat Jalan",
+  "buildHash": "wms-261102-v301-1015",
+  "releaseTitle": "WMS v2.6.41 — Proteksi Penolakan Duplikat File pada Sesi Upload Bersamaan",
   "releaseNotes": [
-    "Sistem otomatis menolak import file jika Nomor Surat Jalan sudah terdaftar di sistem (Riwayat Pending/Selesai atau Draft Aktif)",
-    "Dialog peringatan penolakan lengkap dengan rincian status SJ lama dan opsi konfirmasi timpa khusus revisi resmi"
+    "Otomatis menerima file pertama dan menolak file kedua jika 2 file SJ kembar diupload bersamaan",
+    "Pesan peringatan transparan memunculkan nama file yang diterima dan file yang ditolak untuk mencegah data ganda"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.40",
+    "versionCode": 300,
+    "buildDate": "2 November 2026",
+    "buildHash": "wms-261102-v300-1006",
+    "releaseTitle": "WMS v2.6.40 — Blokir & Tolak Otomatis Import Duplikat Surat Jalan",
+    "releaseNotes": [
+      "Sistem otomatis menolak import file jika Nomor Surat Jalan sudah terdaftar di sistem (Riwayat Pending/Selesai atau Draft Aktif)",
+      "Dialog peringatan penolakan lengkap dengan rincian status SJ lama dan opsi konfirmasi timpa khusus revisi resmi"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.39",
     "versionCode": 299,
@@ -111,19 +123,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Riwayat Peminjaman (SPS) kini dilengkapi tampilan Tabel proporsional (selain Kartu & Panel Rapi), filter KPI interaktif, ekspor CSV, serta pencatatan Rencana & Tanggal Kembali Aktual beserta durasi pinjam dan catatan pengembalian.",
       "Halaman Cetak kini disatukan menjadi 1 menu 'Cetak Label & Barcode' dengan 3 tab rapi: QR Prefix, Label Paket, dan Cetak Barcode.",
       "Tampilan tab QR Prefix dirapikan total menjadi layout 2 kolom (Generator & Antrean di kiri, Pratinjau Stiker & Kustomisasi di kanan) tanpa duplikasi header bertumpuk."
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.32",
-    "versionCode": 292,
-    "buildDate": "1 November 2026",
-    "buildHash": "wms-261101-v292-1417",
-    "releaseTitle": "WMS v2.6.32 — Konsolidasi 4 Tab Inventory (Termasuk Scanner Barcode) & 4 Tab Loading Dock (Termasuk Tugas Picking)",
-    "releaseNotes": [
-      "Integrasi Scanner Barcode dan Log Produk ke dalam 4 Tab halaman Inventory (menghilangkan duplikasi menu Scanner",
-      "LOG)",
-      "Integrasi Tugas Picking sebagai tab ke-4 di halaman Loading Dock (Penerimaan, Pengiriman, Transfer Order, Tugas Picking)"
     ],
     "minSupportedVersion": "v2.0.0"
   }

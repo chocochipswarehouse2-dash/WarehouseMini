@@ -496,8 +496,9 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
       no_sj: string;
       source?: string;
       destination?: string;
+      file_name: string;
       reason: string;
-      status: 'pending' | 'selesai' | 'draft';
+      status: 'pending' | 'selesai' | 'draft' | 'batch_duplicate';
       parsedDraft: PengecekanSJDraft;
     }
 
@@ -514,11 +515,14 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
           const cleanNoSj = g.no_sj.trim().toUpperCase();
           const draftId = `${cleanNoSj}___${(g.source || '').trim().toUpperCase()}___${(g.destination || '').trim().toUpperCase()}`;
 
-          // Cek apakah sudah pernah ada di Riwayat (Pending / Selesai)
+          // 1. Cek apakah sudah pernah ada di Riwayat (Pending / Selesai)
           const inRiwayat = records.find(r => r.no_sj.trim().toUpperCase() === cleanNoSj);
 
-          // Cek apakah sudah ada di Antrean Draft Aktif
+          // 2. Cek apakah sudah ada di Antrean Draft Aktif yang tersimpan
           const inDrafts = drafts.find(d => d.id === draftId || d.no_sj.trim().toUpperCase() === cleanNoSj);
+
+          // 3. Cek apakah sudah diproses oleh file sebelumnya pada sesi upload bersamaan ini
+          const inCurrentBatch = validNewDrafts.find(d => d.no_sj.trim().toUpperCase() === cleanNoSj);
 
           const draft: PengecekanSJDraft = {
             id: draftId,
@@ -537,18 +541,30 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
             updated_at: new Date().toISOString(),
           };
 
-          if (inRiwayat || inDrafts) {
+          if (inCurrentBatch) {
+            // Skenario upload bersamaan 2 file yang sama: File pertama diterima, file kedua ditolak sebagai duplikat
+            conflicts.push({
+              no_sj: g.no_sj,
+              source: g.source,
+              destination: g.destination,
+              file_name: file.name,
+              reason: `Duplikat pada upload bersamaan: Nomor SJ sudah terbaca dari file "${inCurrentBatch.file_name}" (file "${file.name}" ditolak)`,
+              status: 'batch_duplicate',
+              parsedDraft: draft,
+            });
+          } else if (inRiwayat || inDrafts) {
             const reason = inRiwayat
               ? (inRiwayat.status === 'pending'
                   ? `Sudah ada di Riwayat Pengecekan (Status: PENDING, ${inRiwayat.total_qty_terima || 0}/${inRiwayat.total_qty_sj || 0} pcs diselesaikan oleh ${inRiwayat.admin || 'Admin'})`
                   : `Sudah pernah selesai dicek di Riwayat (Status: SELESAI, ${inRiwayat.total_qty_terima || 0}/${inRiwayat.total_qty_sj || 0} pcs)`)
               : `Sudah ada di Antrean Draft Aktif yang sedang dikerjakan`;
 
-            if (!conflicts.some(c => c.no_sj.trim().toUpperCase() === cleanNoSj)) {
+            if (!conflicts.some(c => c.no_sj.trim().toUpperCase() === cleanNoSj && c.file_name === file.name)) {
               conflicts.push({
                 no_sj: g.no_sj,
                 source: g.source,
                 destination: g.destination,
+                file_name: file.name,
                 reason,
                 status: inRiwayat ? inRiwayat.status : 'draft',
                 parsedDraft: draft,
@@ -580,35 +596,55 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
       if (conflicts.length === 0) {
         onShowToast(`Berhasil mengimpor ${validNewDrafts.length} Surat Jalan ke Antrean Pengecekan!`, 'success');
       } else {
-        onShowToast(`Berhasil mengimpor ${validNewDrafts.length} Surat Jalan baru. ${conflicts.length} Surat Jalan lainnya ditolak karena sudah ada di sistem.`, 'warning');
+        const batchDuplicates = conflicts.filter(c => c.status === 'batch_duplicate');
+        if (batchDuplicates.length > 0) {
+          onShowToast(`File "${batchDuplicates[0].file_name}" ditolak karena duplikat dengan "${validNewDrafts[0].file_name}" (SJ ${batchDuplicates[0].no_sj} berhasil diimpor 1x).`, 'warning');
+        } else {
+          onShowToast(`Berhasil mengimpor ${validNewDrafts.length} Surat Jalan baru. ${conflicts.length} Surat Jalan lainnya ditolak karena sudah ada di sistem.`, 'warning');
+        }
       }
     }
 
-    // Skenario B: Ada SJ yang ditolak karena sudah pernah ada di sistem
+    // Skenario B: Ada SJ yang ditolak (karena duplikat batch atau sudah ada sebelumnya)
     if (conflicts.length > 0) {
-      if (validNewDrafts.length === 0) {
-        onShowToast(`❌ Import Ditolak: ${conflicts.length} Surat Jalan sudah pernah diimpor & terdaftar di sistem!`, 'error');
-      }
+      const isOnlyBatchDuplicates = conflicts.every(c => c.status === 'batch_duplicate');
 
-      setConfirmModal({
-        title: '❌ Import Surat Jalan Ditolak (Sudah Ada di Sistem)',
-        message: `Sistem menolak import file ini karena Nomor Surat Jalan berikut sudah terdaftar di sistem WMS:\n\n` +
-          conflicts.map(c => `• ${c.no_sj} (${c.source || '-'} → ${c.destination || '-'})` + '\n  ' + `Alasan: ${c.reason}`).join('\n\n') +
-          `\n\n🛡️ Proteksi Integritas Data:\nSistem menolak import otomatis ini guna mencegah duplikasi data, selisih perhitungan, atau tertimpanya progres fisik yang sedang berjalan.\n\nApakah Anda ingin membatalkan (disarankan), atau ini adalah Revisi File resmi yang perlu menimpa data lama?`,
-        confirmLabel: 'Tetap Timpa (Revisi Resmi)',
-        isDanger: true,
-        onConfirm: () => {
-          const draftsToApply = conflicts.map(c => c.parsedDraft);
-          setDrafts(prev => {
-            const map = new Map<string, PengecekanSJDraft>();
-            prev.forEach(d => map.set(d.id, d));
-            draftsToApply.forEach(d => map.set(d.id, d));
-            return Array.from(map.values());
-          });
-          setActiveDraftId(draftsToApply[0].id);
-          onShowToast(`Surat Jalan ${draftsToApply.map(d => d.no_sj).join(', ')} berhasil ditimpa dengan file revisi baru.`, 'info');
+      if (isOnlyBatchDuplicates && validNewDrafts.length > 0) {
+        // Jika hanya duplikat file pada sesi upload yang sama (salah satu sudah berhasil masuk draft)
+        setConfirmModal({
+          title: '⚠️ File Duplikat Ditolak (Upload Bersamaan)',
+          message: `Sistem mendeteksi 2 file dengan Nomor Surat Jalan yang sama diupload bersamaan:\n\n` +
+            conflicts.map(c => `• ${c.no_sj} (File: "${c.file_name}")` + '\n  ' + `Alasan: ${c.reason}`).join('\n\n') +
+            `\n\n✅ Status Penanganan:\nFile pertama ("${validNewDrafts[0].file_name}") telah berhasil diimpor ke Antrean Pengecekan.\nFile kedua ditolak otomatis untuk mencegah duplikasi data atau double count.`,
+          confirmLabel: 'Mengerti',
+          isDanger: false,
+          onConfirm: () => setConfirmModal(null)
+        });
+      } else {
+        if (validNewDrafts.length === 0) {
+          onShowToast(`❌ Import Ditolak: ${conflicts.length} Surat Jalan sudah pernah diimpor & terdaftar di sistem!`, 'error');
         }
-      });
+
+        setConfirmModal({
+          title: '❌ Import Surat Jalan Ditolak (Sudah Ada di Sistem)',
+          message: `Sistem menolak import file ini karena Nomor Surat Jalan berikut sudah terdaftar di sistem WMS:\n\n` +
+            conflicts.map(c => `• ${c.no_sj} (${c.source || '-'} → ${c.destination || '-'})` + '\n  ' + `Alasan: ${c.reason}`).join('\n\n') +
+            `\n\n🛡️ Proteksi Integritas Data:\nSistem menolak import otomatis ini guna mencegah duplikasi data, selisih perhitungan, atau tertimpanya progres fisik yang sedang berjalan.\n\nApakah Anda ingin membatalkan (disarankan), atau ini adalah Revisi File resmi yang perlu menimpa data lama?`,
+          confirmLabel: 'Tetap Timpa (Revisi Resmi)',
+          isDanger: true,
+          onConfirm: () => {
+            const draftsToApply = conflicts.map(c => c.parsedDraft);
+            setDrafts(prev => {
+              const map = new Map<string, PengecekanSJDraft>();
+              prev.forEach(d => map.set(d.id, d));
+              draftsToApply.forEach(d => map.set(d.id, d));
+              return Array.from(map.values());
+            });
+            setActiveDraftId(draftsToApply[0].id);
+            onShowToast(`Surat Jalan ${draftsToApply.map(d => d.no_sj).join(', ')} berhasil ditimpa dengan file revisi baru.`, 'info');
+          }
+        });
+      }
     }
   }, [drafts, records, onShowToast, importType, productCatalog]);
 
