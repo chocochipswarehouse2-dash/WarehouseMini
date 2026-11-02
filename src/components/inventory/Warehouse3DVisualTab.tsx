@@ -16,6 +16,7 @@ import {
   Tag,
   RotateCcw,
   Eye,
+  EyeOff,
   X,
   Presentation,
   Tv,
@@ -829,7 +830,15 @@ window.addEventListener('message',e=>{
       goF(fl);
       cm(0);
     }
-    dirty = 1;
+  } else if(d.type==='WMS_SET_SHOW_TAGS'){
+    const show = Boolean(d.payload);
+    WMS_SHOW_RACK_TAGS = show;
+    S.tags = show;
+    const cw = $('ck-wtag'), ct = $('ck-tg');
+    if(cw) cw.checked = show;
+    if(ct) ct.checked = show;
+    renderObjs();
+    persist();
   } else if(d.type==='WMS_AUTO_MAP_RACKS'){
     S.objs.forEach(o=>{delete o.wmsCode});
     autoMapWmsCodesToObjs(S.objs);
@@ -883,6 +892,7 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [config, setConfig] = useState<RackCapacityConfig>(() => loadLocalRackCapacityConfig());
   const [heatmapActive, setHeatmapActive] = useState(false);
+  const [showTags, setShowTags] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPresentation, setIsPresentation] = useState(false);
   const [isAutoRotate, setIsAutoRotate] = useState(false);
@@ -1094,6 +1104,17 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
     });
   }, []);
 
+  const handleToggleTags = useCallback(() => {
+    setShowTags((prev) => {
+      const next = !prev;
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: 'WMS_SET_SHOW_TAGS', payload: next },
+        '*'
+      );
+      return next;
+    });
+  }, []);
+
   const handleEnterPresentation = useCallback(() => {
     setIsPresentation(true);
     setIsAutoRotate(true);
@@ -1165,6 +1186,9 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
       } else if (e.key === 'h' || e.key === 'H') {
         e.preventDefault();
         handleToggleHeatmap();
+      } else if (e.key === 't' || e.key === 'T') {
+        e.preventDefault();
+        handleToggleTags();
       } else if (e.key === '0') {
         e.preventDefault();
         handleSelectFloor('ALL');
@@ -1185,7 +1209,7 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPresentation, handleExitPresentation, handleToggleAutoRotate, handleToggleHeatmap, handleSelectFloor]);
+  }, [isPresentation, handleExitPresentation, handleToggleAutoRotate, handleToggleHeatmap, handleToggleTags, handleSelectFloor]);
 
   const handleAutoMapRacks = () => {
     iframeRef.current?.contentWindow?.postMessage({ type: 'WMS_AUTO_MAP_RACKS' }, '*');
@@ -1420,6 +1444,30 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
                 <span className="hidden sm:inline">Heatmap</span>
               </button>
 
+              {/* Toggle Label / Marking Rak */}
+              <button
+                type="button"
+                onClick={handleToggleTags}
+                className={`px-3 py-2 rounded-2xl text-xs font-bold backdrop-blur-md border flex items-center gap-1.5 transition-all cursor-pointer shadow-2xl ${
+                  showTags
+                    ? 'bg-slate-900/90 hover:bg-slate-800 text-slate-200 border-slate-700/80'
+                    : 'bg-slate-900/60 text-slate-500 border-slate-800'
+                }`}
+                title="Sembunyikan/Tampilkan tulisan penanda & label kode rak di 3D (Tekan T)"
+              >
+                {showTags ? (
+                  <>
+                    <Eye className="w-3.5 h-3.5 text-indigo-400" />
+                    <span className="hidden sm:inline">Marking: ON</span>
+                  </>
+                ) : (
+                  <>
+                    <EyeOff className="w-3.5 h-3.5 text-slate-500" />
+                    <span className="hidden sm:inline">Marking: OFF</span>
+                  </>
+                )}
+              </button>
+
               {/* Exit Presentation */}
               <button
                 type="button"
@@ -1533,6 +1581,8 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
               <span className="text-slate-700">·</span>
               <span>[H] Heatmap</span>
               <span className="text-slate-700">·</span>
+              <span>[T] Marking</span>
+              <span className="text-slate-700">·</span>
               <span>[0-4] Pilih Lantai</span>
               <span className="text-slate-700">·</span>
               <span>[ESC] Keluar</span>
@@ -1598,6 +1648,30 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
                   <>
                     <Palette className="w-3.5 h-3.5 text-indigo-500" />
                     <span>Heatmap 3D</span>
+                  </>
+                )}
+              </button>
+
+              {/* SECONDARY OUTLINE: Toggle Marking / Penanda Rak */}
+              <button
+                type="button"
+                onClick={handleToggleTags}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs border ${
+                  showTags
+                    ? 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+                    : 'bg-slate-100 dark:bg-slate-850 hover:bg-slate-200 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-800'
+                }`}
+                title="Sembunyikan atau tampilkan tulisan penanda & label kode rak di gedung 3D (Tekan T)"
+              >
+                {showTags ? (
+                  <>
+                    <Eye className="w-3.5 h-3.5 text-indigo-500" />
+                    <span>Marking: ON</span>
+                  </>
+                ) : (
+                  <>
+                    <EyeOff className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Marking: OFF</span>
                   </>
                 )}
               </button>
