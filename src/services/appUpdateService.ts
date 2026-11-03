@@ -163,6 +163,19 @@ class AppUpdateManager {
 
       if (reg.waiting) {
         this.notifySwUpdateReady(reg.waiting);
+      } else {
+        // Quiet startup version check
+        this.fetchServerVersionJson().then((serverInfo) => {
+          if (serverInfo) {
+            this.state.latestVersion = serverInfo.version || this.state.latestVersion;
+            this.state.releaseInfo = serverInfo;
+            if (isNewerVersion(serverInfo.version, CURRENT_APP_VERSION, serverInfo.buildHash, CURRENT_APP_VERSION_INFO.buildHash)) {
+              this.state.status = 'ready';
+              this.state.progress = 100;
+              this.notify();
+            }
+          }
+        }).catch(() => {});
       }
 
       reg.addEventListener('updatefound', () => {
@@ -183,7 +196,11 @@ class AppUpdateManager {
   private async fetchServerVersionJson(): Promise<VersionInfo | null> {
     try {
       const timestamp = Date.now();
-      const res = await fetch(`/version.json?t=${timestamp}`, {
+      const baseUrl = (typeof import.meta !== 'undefined' && (import.meta as any).env?.BASE_URL) || '/';
+      const cleanBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+      const url = `${cleanBase}version.json?t=${timestamp}`;
+
+      const res = await fetch(url, {
         cache: 'no-store',
         headers: {
           'Accept': 'application/json',
@@ -319,6 +336,16 @@ class AppUpdateManager {
    * WITHOUT triggering any page reload! The update will take effect seamlessly on the next safe navigation.
    */
   public prepareUpdateInBackground(): void {
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      try {
+        navigator.serviceWorker.getRegistrations().then((regs) => {
+          for (const reg of regs) {
+            if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+            if (reg.installing) reg.installing.postMessage({ type: 'SKIP_WAITING' });
+          }
+        }).catch(() => {});
+      } catch {}
+    }
     if (this.state.waitingWorker) {
       try {
         this.state.waitingWorker.postMessage({ type: 'SKIP_WAITING' });
@@ -355,39 +382,45 @@ class AppUpdateManager {
     };
     this.notify();
 
-    try {
-      // Selalu bersihkan precache/workbox lama agar bundle JS versi terbaru langsung aktif
-      const purgeOldCaches = async () => {
-        if (typeof caches !== 'undefined' && caches.keys) {
-          try {
-            const names = await caches.keys();
-            await Promise.all(
-              names
-                .filter((name) => options?.hardReload || name.includes('precache') || name.includes('workbox'))
-                .map((name) => caches.delete(name))
-            );
-          } catch {}
-        }
-      };
-
+    const doApply = async () => {
+      // 1. Post SKIP_WAITING to all waiting/installing service workers
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+        try {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          for (const reg of regs) {
+            if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+            if (reg.installing) reg.installing.postMessage({ type: 'SKIP_WAITING' });
+          }
+        } catch {}
+      }
       if (this.state.waitingWorker) {
-        purgeOldCaches().finally(() => {
-          this.state.waitingWorker?.postMessage({ type: 'SKIP_WAITING' });
-          // Fallback reload if controllerchange doesn't fire within 600ms
-          setTimeout(() => {
-            window.location.reload();
-          }, 600);
-        });
-        return;
+        try {
+          this.state.waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+        } catch {}
       }
 
-      purgeOldCaches().finally(() => {
-        location.reload();
-      });
-    } catch (err) {
+      // 2. Selalu bersihkan precache/workbox lama agar bundle JS versi terbaru langsung aktif
+      if (typeof caches !== 'undefined' && caches.keys) {
+        try {
+          const names = await caches.keys();
+          await Promise.all(
+            names
+              .filter((name) => options?.hardReload || name.includes('precache') || name.includes('workbox'))
+              .map((name) => caches.delete(name))
+          );
+        } catch {}
+      }
+
+      // 3. Fallback reload jika controllerchange tidak langsung memicu reload
+      setTimeout(() => {
+        window.location.reload();
+      }, 350);
+    };
+
+    doApply().catch((err) => {
       console.warn('[AppUpdate] Apply reload fallback:', err);
       window.location.reload();
-    }
+    });
   }
 
   /**

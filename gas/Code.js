@@ -862,8 +862,8 @@ function handleGoogleCalendarFetch(payload) {
 
     var now = new Date();
     // Default rentang: 30 hari ke belakang s/d 90 hari ke depan
-    var startTime = payload.startDate ? new Date(payload.startDate) : new Date(now.getTime() - (30 * 24 * 3600 * 1000));
-    var endTime = payload.endDate ? new Date(payload.endDate) : new Date(now.getTime() + (90 * 24 * 3600 * 1000));
+    var startTime = payload.startDate ? new Date(payload.startDate) : new Date(now.getTime() - (60 * 24 * 3600 * 1000));
+    var endTime = payload.endDate ? new Date(payload.endDate) : new Date(now.getTime() + (180 * 24 * 3600 * 1000));
 
     var events = cal.getEvents(startTime, endTime);
     var list = [];
@@ -881,22 +881,52 @@ function handleGoogleCalendarFetch(payload) {
       var wmsId = wmsIdMatch ? wmsIdMatch[1].trim() : null;
 
       var sDateStr = sDate.getFullYear() + '-' + pad(sDate.getMonth() + 1) + '-' + pad(sDate.getDate());
-      var eDateStr = eDate.getFullYear() + '-' + pad(eDate.getMonth() + 1) + '-' + pad(eDate.getDate());
+      var eDateStr = '';
+      if (isAllDay) {
+        // Kurangi 1 hari karena Google Calendar menyimpan end date all-day secara exclusive (+1 hari)
+        var adjEnd = new Date(eDate.getTime() - (24 * 3600 * 1000));
+        if (adjEnd < sDate) adjEnd = sDate;
+        eDateStr = adjEnd.getFullYear() + '-' + pad(adjEnd.getMonth() + 1) + '-' + pad(adjEnd.getDate());
+      } else {
+        eDateStr = eDate.getFullYear() + '-' + pad(eDate.getMonth() + 1) + '-' + pad(eDate.getDate());
+      }
 
       var sTimeStr = isAllDay ? '' : (pad(sDate.getHours()) + ':' + pad(sDate.getMinutes()));
       var eTimeStr = isAllDay ? '' : (pad(eDate.getHours()) + ':' + pad(eDate.getMinutes()));
+
+      var lastUpdatedStr = '';
+      try {
+        if (ev.getLastUpdated) {
+          lastUpdatedStr = ev.getLastUpdated().toISOString();
+        }
+      } catch (upErr) {}
+
+      var cleanDesc = desc;
+      var picMatch = desc.match(/PIC:\s*([^\n\r]+)/i);
+      var picVal = picMatch ? picMatch[1].trim() : '';
+      var catMatch = desc.match(/Kategori:\s*([^\n\r]+)/i);
+      var catVal = catMatch ? catMatch[1].trim() : '';
+
+      cleanDesc = cleanDesc
+        .replace(/\[WMS-ID:\s*[^\\\]]+\]/gi, '')
+        .replace(/PIC:\s*[^\n\r]+/gi, '')
+        .replace(/Kategori:\s*[^\n\r]+/gi, '')
+        .trim();
 
       list.push({
         google_event_id: ev.getId(),
         wms_id: wmsId,
         title: ev.getTitle() || 'Tanpa Judul',
-        description: desc,
+        description: cleanDesc,
         location: ev.getLocation() || '',
         start_date: sDateStr,
         end_date: eDateStr,
         start_time: sTimeStr,
         end_time: eTimeStr,
-        is_all_day: isAllDay
+        is_all_day: isAllDay,
+        pic: picVal,
+        category: catVal,
+        updated_at: lastUpdatedStr
       });
     }
 

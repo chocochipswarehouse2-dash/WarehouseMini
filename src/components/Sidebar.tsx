@@ -45,7 +45,7 @@ import {
 import { UserSession, ActivePage } from '../types';
 import { hasPermission, isSuperadmin, canAccessSettings, canAccessJneRekap, canAccessLiveChat, ROLE_DETAILS } from '../services/permissions';
 import { getUserPersonName } from '../utils/userResolver';
-import { CURRENT_APP_VERSION } from '../config/appVersion';
+import { CURRENT_APP_VERSION, CURRENT_APP_VERSION_INFO, isNewerVersion } from '../config/appVersion';
 import { useAppUpdate } from '../hooks/useAppUpdate';
 import { liveChatManager } from '../services/liveChatService';
 
@@ -94,8 +94,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   hasNewPickingAlert = false,
   hasNewPesananAlert = false,
 }) => {
-  const { status: updateStatus, latestVersion } = useAppUpdate();
-  const hasUpdatePending = updateStatus === 'available' || updateStatus === 'ready';
+  const { status: updateStatus, latestVersion, currentVersion, releaseInfo } = useAppUpdate();
+  const hasUpdatePending =
+    updateStatus === 'available' ||
+    updateStatus === 'ready' ||
+    isNewerVersion(
+      latestVersion,
+      currentVersion,
+      releaseInfo?.buildHash,
+      CURRENT_APP_VERSION_INFO.buildHash
+    );
   const isUpdateDownloading = updateStatus === 'downloading';
 
   const [chatUnreadCount, setChatUnreadCount] = React.useState<number>(() => liveChatManager.getTotalUnreadCount());

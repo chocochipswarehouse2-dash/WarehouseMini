@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Sparkles, RotateCw, X, Info, Check } from 'lucide-react';
 import { useAppUpdate } from '../../hooks/useAppUpdate';
+import { CURRENT_APP_VERSION_INFO, isNewerVersion } from '../../config/appVersion';
 
 interface AppUpdateFloatingWidgetProps {
   onOpenModal: () => void;
@@ -8,8 +9,18 @@ interface AppUpdateFloatingWidgetProps {
 }
 
 export const AppUpdateFloatingWidget: React.FC<AppUpdateFloatingWidgetProps> = ({ onOpenModal, onNotify }) => {
-  const { status, latestVersion, isMinimized, prepareUpdateInBackground, setMinimized } = useAppUpdate();
+  const { status, latestVersion, currentVersion, releaseInfo, isMinimized, prepareUpdateInBackground, setMinimized } = useAppUpdate();
   const [isPrepared, setIsPrepared] = useState(false);
+
+  const hasUpdate =
+    status === 'available' ||
+    status === 'ready' ||
+    isNewerVersion(
+      latestVersion,
+      currentVersion,
+      releaseInfo?.buildHash,
+      CURRENT_APP_VERSION_INFO.buildHash
+    );
 
   if (status === 'downloading') {
     return (
@@ -22,7 +33,7 @@ export const AppUpdateFloatingWidget: React.FC<AppUpdateFloatingWidgetProps> = (
     );
   }
 
-  if ((status !== 'available' && status !== 'ready') || isMinimized) {
+  if (!hasUpdate || isMinimized) {
     return null;
   }
 

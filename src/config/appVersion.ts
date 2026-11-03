@@ -15,49 +15,52 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.49",
-  "versionCode": 309,
+  "version": "v2.6.51",
+  "versionCode": 311,
   "buildDate": "3 November 2026",
-  "buildHash": "wms-261103-v309-0701",
-  "releaseTitle": "WMS v2.6.49 — Pengaturan Khusus Owner, Filter User & Notifikasi Picking Background",
+  "buildHash": "wms-261103-v311-0842",
+  "releaseTitle": "WMS v2.6.51 — Full 2-Way Sync Google Calendar & PWA Auto-Update Delivery Hardening",
   "releaseNotes": [
-    "Batasi akses Pengaturan Sistem, Update Database & Migrasi Supabase khusus akun @warehouse/pemilik",
-    "Hapus akun dummy default dari kode & hapus filter localStorage",
-    "Urutkan daftar pengguna berdasarkan hierarki role dan urutan NIK (Vina Kharisma WH0006 langsung terlihat rapi)",
-    "Tambahkan search filter & tab role filter di Manajemen Pengguna",
-    "Tambahkan delta polling background untuk antrean picking_list agar operator tetap dapat notifikasi saat WebSocket suspend",
-    "Perjelas tombol Notifikasi Perangkat untuk semua pengguna"
+    "Otomasi sinkronisasi 2-arah Google Calendar & WMS (polling 45 detik saat tab aktif & auto-sync saat tab fokus kembali)",
+    "Perbaikan end date all-day event Google Calendar agar tidak bergeser 1 hari",
+    "Pembersihan otomatis metadata tag [WMS-ID] dari deskripsi agenda",
+    "Sinkronisasi perubahan judul, tanggal, jam, lokasi, deskripsi dari Google Calendar ke WMS & pembersihan agenda yang dihapus",
+    "Perkuatan OTA PWA Auto-Update: bypass cache Vercel CDN untuk version.json, auto-detect update instan pada startup & broadcast SKIP_WAITING ke semua worker",
+    "Pembaruan badge Sidebar & Floating Update Widget agar langsung aktif mendeteksi rilis baru di seluruh perangkat"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
   {
-    "version": "v2.6.48",
-    "versionCode": 308,
+    "version": "v2.6.50",
+    "versionCode": 310,
     "buildDate": "3 November 2026",
-    "buildHash": "wms-261103-v308-0641",
-    "releaseTitle": "WMS v2.6.48 — Pembaruan Deskripsi Chocochips Warehouse & Restriksi Owner",
+    "buildHash": "wms-261103-v310-0739",
+    "releaseTitle": "WMS v2.6.50 — Full 2-Way Sync & Auto-Reconcile Google Calendar",
     "releaseNotes": [
-      "Mengubah deskripsi aplikasi menjadi Chocochips Warehouse",
-      "Akses Pengaturan Sistem dan Database dibatasi eksklusif hanya untuk akun @warehouse / Pemilik Sistem",
-      "Menghapus seluruh akun dummy default dari kode aplikasi",
-      "Satu-satunya akun default sistem adalah warehouse"
+      "Otomasi sinkronisasi 2-arah Google Calendar & WMS: Polling 45 detik saat tab aktif & auto-sync saat tab browser difokuskan kembali",
+      "Perbaikan end date all-day event Google Calendar agar tidak bergeser 1 hari",
+      "Pembersihan otomatis metadata tag dari deskripsi agenda",
+      "Sinkronisasi perubahan judul, tanggal, jam, lokasi, deskripsi dari Google Calendar ke WMS",
+      "Deteksi dan pembersihan event yang dihapus di Google Calendar",
+      "Notifikasi visual toast status sinkronisasi Google Calendar saat simpan dan hapus agenda"
     ],
     "minSupportedVersion": "v2.0.0"
   },
   {
-    "version": "v2.6.47",
-    "versionCode": 307,
-    "buildDate": "2 November 2026",
-    "buildHash": "wms-261102-v307-2146",
-    "releaseTitle": "WMS v2.6.47 — Tab Minimalis Pengecekan, Koreksi Live Stock Drawer, Notifikasi Semua Role & Sync Pengguna",
+    "version": "v2.6.49",
+    "versionCode": 309,
+    "buildDate": "3 November 2026",
+    "buildHash": "wms-261103-v309-0701",
+    "releaseTitle": "WMS v2.6.49 — Pengaturan Khusus Owner, Filter User & Notifikasi Picking Background",
     "releaseNotes": [
-      "Tab Pengecekan dan Riwayat diperkecil minimalis rapi seukuran tab Transfer Order",
-      "Koreksi live stock & kalkulasi running balance saldo mutasi pada drawer Audit SKU",
-      "Membuka tombol izin notifikasi di Sidebar untuk semua role akun user",
-      "Presence Heartbeat berkala agar user online di HP/Laptop terdeteksi konsisten",
-      "Sinkronisasi akun Vina Kharisma ke Manajemen Pengguna & proteksi auto-heal karyawan"
+      "Batasi akses Pengaturan Sistem, Update Database & Migrasi Supabase khusus akun @warehouse/pemilik",
+      "Hapus akun dummy default dari kode & hapus filter localStorage",
+      "Urutkan daftar pengguna berdasarkan hierarki role dan urutan NIK (Vina Kharisma WH0006 langsung terlihat rapi)",
+      "Tambahkan search filter & tab role filter di Manajemen Pengguna",
+      "Tambahkan delta polling background untuk antrean picking_list agar operator tetap dapat notifikasi saat WebSocket suspend",
+      "Perjelas tombol Notifikasi Perangkat untuk semua pengguna"
     ],
     "minSupportedVersion": "v2.0.0"
   },

@@ -585,18 +585,53 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
     }
   }, []);
 
-  // Auto-sync Google Calendar di background jika belum pernah sync atau > 30 menit
+  // Auto-sync Google Calendar di background: sinkronisasi berkala (tiap 45s saat tab aktif) & saat tab kembali difokuskan
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(LAST_GCAL_SYNC_KEY);
-      const now = Date.now();
-      if (!raw || now - new Date(raw).getTime() > 30 * 60 * 1000) {
-        reconcileGoogleCalendarTwoWay().then(() => {
-          setLastGcalSync(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
-          loadData();
-        }).catch(() => {});
+    let isMounted = true;
+
+    const runAutoSync = (force: boolean = false) => {
+      try {
+        const raw = localStorage.getItem(LAST_GCAL_SYNC_KEY);
+        const now = Date.now();
+        // Sync jika belum pernah, atau > 45 detik (polling normal), atau jika forced > 15 detik
+        const minGap = force ? 15 * 1000 : 45 * 1000;
+        if (!raw || now - new Date(raw).getTime() > minGap) {
+          reconcileGoogleCalendarTwoWay().then((res) => {
+            if (!isMounted) return;
+            setLastGcalSync(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
+            if (res.added > 0 || res.updated > 0 || res.deleted > 0) {
+              loadData();
+            }
+          }).catch(() => {});
+        }
+      } catch {}
+    };
+
+    // Jalankan segera saat masuk halaman
+    runAutoSync(true);
+
+    // Polling periodik tiap 45 detik selama tab aktif
+    const intervalId = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        runAutoSync(false);
       }
-    } catch {}
+    }, 45000);
+
+    // Deteksi saat pengguna kembali membuka tab browser (misal sehabis edit di Google Calendar)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        runAutoSync(true);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleVisibilityChange);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleVisibilityChange);
+    };
   }, []);
 
   const handleSyncGoogleCalendar = async () => {
@@ -606,7 +641,12 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
       const res = await reconcileGoogleCalendarTwoWay();
       const timeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
       setLastGcalSync(timeStr);
-      onShowToast?.(`Google Calendar tersinkronisasi! (${res.added} event baru ditarik, ${res.updated} diselaraskan)`, 'success');
+      const changesText = [];
+      if (res.added > 0) changesText.push(`${res.added} baru`);
+      if (res.updated > 0) changesText.push(`${res.updated} diselaraskan`);
+      if (res.deleted > 0) changesText.push(`${res.deleted} dihapus`);
+      const summary = changesText.length > 0 ? ` (${changesText.join(', ')})` : ' (Data sudah mutakhir)';
+      onShowToast?.(`Google Calendar tersinkronisasi!${summary}`, 'success');
       await loadData();
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -992,7 +1032,11 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
       loadData();
 
       if (targetToDelete?.google_event_id) {
-        syncEventToGoogleCalendar(targetToDelete, true).catch(console.warn);
+        syncEventToGoogleCalendar(targetToDelete, true).then((gRes) => {
+          if (gRes.success) {
+            onShowToast?.('🗑️ Event juga dihapus dari Google Calendar.', 'info');
+          }
+        }).catch(console.warn);
       }
     } catch (err) {
       onShowToast?.('Gagal menghapus agenda', 'error');
@@ -1050,14 +1094,22 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
       setEditingEvent(null);
       await loadData();
 
-      // Background 2-way sync ke Google Calendar
-      syncEventToGoogleCalendar(saved, false).then(gRes => {
-        if (gRes.success && gRes.google_event_id && gRes.google_event_id !== saved.google_event_id) {
-          saved.google_event_id = gRes.google_event_id;
-          saveAgendaEvent(saved);
-          loadData();
+      // Background 2-way sync ke Google Calendar dengan konfirmasi visual
+      syncEventToGoogleCalendar(saved, false).then(async (gRes) => {
+        if (gRes.success) {
+          if (gRes.google_event_id && gRes.google_event_id !== saved.google_event_id) {
+            saved.google_event_id = gRes.google_event_id;
+            await saveAgendaEvent(saved);
+            loadData();
+          }
+          setLastGcalSync(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
+          onShowToast?.('📅 Event berhasil disinkronkan ke Google Calendar!', 'info');
+        } else {
+          onShowToast?.(`⚠️ Event tersimpan di WMS, namun gagal sync ke Google Calendar: ${gRes.error || 'Timeout'}`, 'warning');
         }
-      }).catch(console.warn);
+      }).catch((err) => {
+        console.warn('GCal sync error:', err);
+      });
 
     } catch (err) {
       onShowToast?.('Gagal menyimpan agenda', 'error');
