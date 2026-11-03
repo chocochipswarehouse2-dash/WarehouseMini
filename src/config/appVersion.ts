@@ -15,21 +15,35 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.52",
-  "versionCode": 312,
+  "version": "v2.6.53",
+  "versionCode": 313,
   "buildDate": "3 November 2026",
-  "buildHash": "wms-261103-v312-1420",
-  "releaseTitle": "WMS v2.6.52 — Hide/Unhide Panel Editor pada Fullscreen 3D Warehouse",
+  "buildHash": "wms-261103-v313-1605",
+  "releaseTitle": "WMS v2.6.53 — Hide/Unhide Panel Samping & Kartu Kalender Agenda",
   "releaseNotes": [
-    "Tambah fitur toggle sembunyikan/buka panel editor 3D gudang saat layar penuh maupun normal",
-    "Tombol toggle interaktif di chips lantai, toolbar fullscreen, dan kontrol kamera",
-    "Shortcut keyboard H untuk sembunyikan/buka panel desain secara instan",
-    "Canvas Three.js otomatis melebar penuh 100% tanpa distorsi saat panel disembunyikan"
+    "Tambah toggle sembunyikan/buka panel samping kalender (Mini Kalender & Kategori) gaya Google Calendar",
+    "Grid kalender otomatis melebar penuh 100% saat panel samping disembunyikan",
+    "Tambah tombol collapse/expand independen pada kartu Mini Kalender dan Filter Kategori",
+    "Menyimpan preferensi tampilan panel samping di localStorage"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.52",
+    "versionCode": 312,
+    "buildDate": "3 November 2026",
+    "buildHash": "wms-261103-v312-1420",
+    "releaseTitle": "WMS v2.6.52 — Hide/Unhide Panel Editor pada Fullscreen 3D Warehouse",
+    "releaseNotes": [
+      "Tambah fitur toggle sembunyikan/buka panel editor 3D gudang saat layar penuh maupun normal",
+      "Tombol toggle interaktif di chips lantai, toolbar fullscreen, dan kontrol kamera",
+      "Shortcut keyboard H untuk sembunyikan/buka panel desain secara instan",
+      "Canvas Three.js otomatis melebar penuh 100% tanpa distorsi saat panel disembunyikan"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.51",
     "versionCode": 311,
@@ -124,18 +138,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Pencarian cepat autocomplete langsung otomatis menambahkan produk ke keranjang tanpa klik ulang tombol tambah",
       "Dukungan penuh multi-lokasi rak per SKU dengan kalkulasi stok komersial terintegrasi",
       "Fitur baru Impor Massal CSV dan Excel serta tempel teks langsung ke dalam Keranjang Picking"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.42",
-    "versionCode": 302,
-    "buildDate": "2 November 2026",
-    "buildHash": "wms-261102-v302-1616",
-    "releaseTitle": "WMS v2.6.42 — Fitur Keranjang Belanja Order Picking di Modul Inventory",
-    "releaseNotes": [
-      "Tambah fitur Add to Cart Order Picking langsung dari tabel inventori dan drawer pencarian cepat",
-      "Integrasi penuh ke 3 output: Kirim Tugas Picking App (invoice_picking), Broadcast WA Grup (Fonnte), dan Cetak A4"
     ],
     "minSupportedVersion": "v2.0.0"
   }

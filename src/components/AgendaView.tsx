@@ -4,7 +4,8 @@ import {
   CheckCircle2, ChevronLeft, ChevronRight, Clock, MapPin, User, Tag, 
   Trash2, Edit3, Search, Filter, Sun, Check, Sparkles, RefreshCw, 
   AlertTriangle, ArrowRight, Layers, Eye, CheckSquare, Square, MoreHorizontal, StickyNote,
-  FolderPlus, CalendarDays, ListFilter, RotateCcw, ChevronDown, ChevronUp, Palette
+  FolderPlus, CalendarDays, ListFilter, RotateCcw, ChevronDown, ChevronUp, Palette,
+  PanelLeft, PanelLeftClose
 } from 'lucide-react';
 import { compressImage } from '../utils/imageCompressor';
 import { 
@@ -546,6 +547,26 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
   const [isNoteModalOpen, setNoteModalOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<Partial<NoteItem> | null>(null);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+  const [showCalendarSidebar, setShowCalendarSidebar] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('wms_calendar_sidebar_open');
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+  const [isMiniCalendarCollapsed, setIsMiniCalendarCollapsed] = useState(false);
+  const [isCategoryFilterCollapsed, setIsCategoryFilterCollapsed] = useState(false);
+
+  const toggleCalendarSidebar = () => {
+    setShowCalendarSidebar((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('wms_calendar_sidebar_open', String(next));
+      } catch {}
+      return next;
+    });
+  };
 
   const [viewDropdownOpen, setViewDropdownOpen] = useState(false);
   const [createDropdownOpen, setCreateDropdownOpen] = useState(false);
@@ -1447,10 +1468,11 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 pb-24 sm:pb-8">
           
           {/* Left Sidebar Panel (Desktop: permanent 3 cols; Mobile: expandable drawer or toggle) */}
-          <div className={`lg:col-span-3 space-y-2 ${mobileFilterOpen ? 'block' : 'hidden lg:block'}`}>
+          <div className={`${showCalendarSidebar ? 'lg:col-span-3 lg:block' : 'lg:hidden'} space-y-2 ${mobileFilterOpen ? 'block' : 'hidden'}`}>
             
-            {/* Google Calendar Style Create FAB Button */}
-            <div className="relative mb-2" ref={createDropdownRef}>
+            {/* Google Calendar Style Create FAB Button + Hide Sidebar Toggle */}
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="relative" ref={createDropdownRef}>
               <button
                 type="button"
                 onClick={() => setCreateDropdownOpen(!createDropdownOpen)}
@@ -1524,6 +1546,19 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
               )}
             </div>
 
+              {/* Close/Hide Sidebar Button */}
+              <button
+                type="button"
+                onClick={toggleCalendarSidebar}
+                className="hidden lg:flex p-2.5 rounded-xl text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1a2332] shadow-2xs items-center gap-1.5 text-xs font-bold"
+                title="Sembunyikan panel samping kalender"
+              >
+                <PanelLeftClose className="w-4 h-4 text-slate-500" />
+                <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">Sembunyikan</span>
+              </button>
+            </div>
+
+
             {/* Mini Interactive Month Calendar (Desktop & Tablet) */}
             <div className="bg-white dark:bg-[#1a2332] p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <div className="flex justify-between items-center mb-3">
@@ -1551,10 +1586,20 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                   >
                     <ChevronRight className="w-3.5 h-3.5" />
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsMiniCalendarCollapsed(!isMiniCalendarCollapsed)}
+                    className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors ml-0.5 cursor-pointer"
+                    title={isMiniCalendarCollapsed ? "Buka mini kalender" : "Sembunyikan mini kalender"}
+                  >
+                    {isMiniCalendarCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                  </button>
                 </div>
               </div>
 
-              {/* Days Header */}
+              {!isMiniCalendarCollapsed && (
+                <>
+                  {/* Days Header */}
               <div className="grid grid-cols-7 text-center mb-1">
                 {DAYS_INITIALS_MONDAY_START.map((init, i) => (
                   <span key={i} className="text-[10px] font-bold text-slate-400 py-1">
@@ -1599,7 +1644,9 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                   );
                 })}
               </div>
-            </div>
+            </>
+          )}
+        </div>
 
             {/* Category Filter Checkboxes */}
             <div className="bg-white dark:bg-[#1a2332] p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
@@ -1626,10 +1673,19 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                     <RotateCcw className="w-2.5 h-2.5" />
                     <span>{isAllCategoriesSelected ? 'Batal' : 'Reset'}</span>
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsCategoryFilterCollapsed(!isCategoryFilterCollapsed)}
+                    className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors ml-0.5 cursor-pointer"
+                    title={isCategoryFilterCollapsed ? "Buka filter kategori" : "Sembunyikan filter kategori"}
+                  >
+                    {isCategoryFilterCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                  </button>
                 </div>
               </div>
 
-              <div className="space-y-1.5">
+              {!isCategoryFilterCollapsed && (
+                <div className="space-y-1.5">
                 {Object.keys(categoryConfig).map(catKey => {
                   const cfg = categoryConfig[catKey] || { label: catKey, dot: 'bg-slate-500' };
                   const isChecked = Boolean(selectedCategories[catKey]);
@@ -1664,7 +1720,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                   );
                 })}
               </div>
-            </div>
+            )}
+          </div>
 
             {/* Quick Summary Card */}
             <div className="p-4 rounded-2xl bg-gradient-to-br from-primary-500/10 via-amber-500/5 to-transparent border border-primary-200/50 dark:border-primary-900/30">
@@ -1679,13 +1736,31 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
           </div>
 
           {/* Right Main Calendar Area (9 cols on Desktop) */}
-          <div className="lg:col-span-9 space-y-2">
+          <div className={`${showCalendarSidebar ? 'lg:col-span-9' : 'lg:col-span-12'} space-y-2 transition-all duration-200`}>
             
             {/* Calendar Controls Toolbar (Google Calendar Layout) */}
             <div className="bg-white dark:bg-[#1a2332] p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-row flex-wrap justify-between items-center gap-3">
               
               {/* Left Navigation: Logo, Today, < >, and Title */}
               <div className="flex flex-wrap items-center justify-between sm:justify-start gap-2 sm:gap-3">
+                {/* Toggle Sidebar Button (Google Calendar Style) */}
+                <button
+                  type="button"
+                  onClick={toggleCalendarSidebar}
+                  className={`p-2 rounded-xl border flex items-center justify-center transition-all cursor-pointer shadow-2xs ${
+                    showCalendarSidebar
+                      ? 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
+                      : 'bg-primary-50 dark:bg-primary-950/60 text-primary-600 dark:text-primary-400 border-primary-300 dark:border-primary-800 hover:bg-primary-100 dark:hover:bg-primary-900/60'
+                  }`}
+                  title={showCalendarSidebar ? "Sembunyikan panel samping kalender" : "Buka panel samping (Mini Kalender & Kategori)"}
+                >
+                  {showCalendarSidebar ? (
+                    <PanelLeftClose className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+                  ) : (
+                    <PanelLeft className="w-4 h-4 text-primary-600 dark:text-primary-400" />
+                  )}
+                </button>
+
                 {/* Google Calendar Logo / Date Badge */}
                 <div className="flex items-center gap-2 mr-1">
                   <div className="w-9 h-9 rounded-xl bg-[#1a73e8] text-white flex flex-col items-center justify-center font-bold shadow-xs select-none">
