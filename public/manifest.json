@@ -2,7 +2,7 @@
   "id": "warehouse-mini-portrait",
   "name": "Warehouse Mini",
   "short_name": "Warehouse Mini",
-  "description": "Aplikasi Scanner Barcode & WMS Warehouse Management System dengan sinkronisasi Supabase real-time",
+  "description": "Chocochips Warehouse",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

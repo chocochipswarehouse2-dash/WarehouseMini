@@ -1,8 +1,8 @@
 {
   "name": "warehouse-mini",
   "private": true,
-  "version": "2.6.49",
-  "description": "WMS Scanner PWA",
+  "version": "2.6.48",
+  "description": "Chocochips Warehouse",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 3000 --strictPort",

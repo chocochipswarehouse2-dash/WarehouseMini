@@ -1,15 +1,11 @@
 {
-  "version": "v2.6.47",
-  "versionCode": 307,
+  "version": "v2.6.48",
+  "versionCode": 308,
   "buildDate": "2 November 2026",
-  "buildHash": "wms-261102-v307-2146",
-  "releaseTitle": "WMS v2.6.47 — Tab Minimalis Pengecekan, Koreksi Live Stock Drawer, Notifikasi Semua Role & Sync Pengguna",
+  "buildHash": "wms-261102-v308-2358",
+  "releaseTitle": "WMS v2.6.48 — Pembaruan Deskripsi Aplikasi Chocochips Warehouse",
   "releaseNotes": [
-    "Tab Pengecekan dan Riwayat diperkecil minimalis rapi seukuran tab Transfer Order",
-    "Koreksi live stock & kalkulasi running balance saldo mutasi pada drawer Audit SKU",
-    "Membuka tombol izin notifikasi di Sidebar untuk semua role akun user",
-    "Presence Heartbeat berkala agar user online di HP/Laptop terdeteksi konsisten",
-    "Sinkronisasi akun Vina Kharisma ke Manajemen Pengguna & proteksi auto-heal karyawan"
+    "Mengubah deskripsi aplikasi di package.json, manifest.json, metadata.json, dan index.html menjadi Chocochips Warehouse"
   ],
   "minSupportedVersion": "v2.0.0"
 }

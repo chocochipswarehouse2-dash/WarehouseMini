@@ -15,22 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.47",
-  "versionCode": 307,
+  "version": "v2.6.48",
+  "versionCode": 308,
   "buildDate": "2 November 2026",
-  "buildHash": "wms-261102-v307-2146",
-  "releaseTitle": "WMS v2.6.47 — Tab Minimalis Pengecekan, Koreksi Live Stock Drawer, Notifikasi Semua Role & Sync Pengguna",
+  "buildHash": "wms-261102-v308-2358",
+  "releaseTitle": "WMS v2.6.48 — Pembaruan Deskripsi Aplikasi Chocochips Warehouse",
   "releaseNotes": [
-    "Tab Pengecekan dan Riwayat diperkecil minimalis rapi seukuran tab Transfer Order",
-    "Koreksi live stock & kalkulasi running balance saldo mutasi pada drawer Audit SKU",
-    "Membuka tombol izin notifikasi di Sidebar untuk semua role akun user",
-    "Presence Heartbeat berkala agar user online di HP/Laptop terdeteksi konsisten",
-    "Sinkronisasi akun Vina Kharisma ke Manajemen Pengguna & proteksi auto-heal karyawan"
+    "Mengubah deskripsi aplikasi di package.json, manifest.json, metadata.json, dan index.html menjadi Chocochips Warehouse"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.47",
+    "versionCode": 307,
+    "buildDate": "2 November 2026",
+    "buildHash": "wms-261102-v307-2146",
+    "releaseTitle": "WMS v2.6.47 — Tab Minimalis Pengecekan, Koreksi Live Stock Drawer, Notifikasi Semua Role & Sync Pengguna",
+    "releaseNotes": [
+      "Tab Pengecekan dan Riwayat diperkecil minimalis rapi seukuran tab Transfer Order",
+      "Koreksi live stock & kalkulasi running balance saldo mutasi pada drawer Audit SKU",
+      "Membuka tombol izin notifikasi di Sidebar untuk semua role akun user",
+      "Presence Heartbeat berkala agar user online di HP/Laptop terdeteksi konsisten",
+      "Sinkronisasi akun Vina Kharisma ke Manajemen Pengguna & proteksi auto-heal karyawan"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.46",
     "versionCode": 306,
@@ -113,18 +124,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Sistem otomatis menolak import file jika Nomor Surat Jalan sudah terdaftar di sistem (Riwayat Pending/Selesai atau Draft Aktif)",
       "Dialog peringatan penolakan lengkap dengan rincian status SJ lama dan opsi konfirmasi timpa khusus revisi resmi"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.39",
-    "versionCode": 299,
-    "buildDate": "2 November 2026",
-    "buildHash": "wms-261102-v299-0953",
-    "releaseTitle": "WMS v2.6.39 — Proteksi Impor Duplikat SJ & Indikator Riwayat Pengecekan",
-    "releaseNotes": [
-      "Sistem otomatis mendeteksi impor file SJ ganda tanpa mendobelkan kuantitas (prinsip Replace terproteksi)",
-      "Peringatan visual seketika dan badge '⚠️ Pernah Selesai' jika SJ yang diimpor sudah pernah tercatat di Riwayat Pengecekan"
     ],
     "minSupportedVersion": "v2.0.0"
   }
