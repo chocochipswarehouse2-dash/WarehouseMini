@@ -479,7 +479,15 @@ export async function supabaseFetch<T = unknown>(
 
   if (!response) {
     // If it's a GET request and REST fetch failed completely, attempt fallback to Supabase JS Client
-    if (method === 'GET') {
+    // ONLY when there are no row-filtering predicates in queryParams (otherwise returning unfiltered rows[0] corrupts callers!)
+    const hasRowFilter =
+      Boolean(queryParams) &&
+      (queryParams.includes('=eq.') ||
+        queryParams.includes('or=') ||
+        queryParams.includes('=in.') ||
+        queryParams.includes('=like.') ||
+        queryParams.includes('=ilike.'));
+    if (method === 'GET' && !hasRowFilter) {
       try {
         const client = getSupabaseClient();
         const { data, error } = await client.from(table).select('*').limit(1000);

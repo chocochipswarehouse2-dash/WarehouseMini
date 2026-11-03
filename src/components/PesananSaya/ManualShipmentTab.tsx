@@ -389,7 +389,7 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
     return false;
   };
 
-  // Shopee-Style "Chat ke Gudang" dari pesanan
+  // Shopee-Style "Chat ke Gudang / Store" dari pesanan
   const handleChatWarehouse = (order: ManualShipmentOrder) => {
     const anyOrder = order as any;
     const itemsSummary = Array.isArray(order.items)
@@ -400,17 +400,22 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
       (Array.isArray(order.items)
         ? order.items.reduce((s, x) => s + (Number(x.qty) || 0), 0)
         : undefined);
+    const resolvedStoreName = order.nama_pengirim || anyOrder.nama_toko || anyOrder.store_name;
+    const resolvedCustomerName = order.nama_tujuan || anyOrder.nama_pembeli;
 
     void liveChatManager.openOrderChat({
       order_id: anyOrder.no_pesanan || anyOrder.no_sj || String(order.id),
-      store_name: anyOrder.nama_toko || anyOrder.store_name,
-      customer_name: anyOrder.nama_pembeli,
+      store_name: resolvedStoreName,
+      customer_name: resolvedCustomerName,
       items_summary: itemsSummary,
       total_pcs: totalPcs,
       status: order.status,
       no_resi: order.no_resi,
     });
-    onShowToast?.(`Membuka percakapan dengan Gudang untuk pesanan #${anyOrder.no_pesanan || anyOrder.no_sj}...`, 'info');
+    onShowToast?.(
+      `Membuka percakapan untuk pesanan #${anyOrder.no_pesanan || anyOrder.no_sj}...`,
+      'info'
+    );
   };
 
   const getCleanCustomerPhone = (phone?: string): string => {

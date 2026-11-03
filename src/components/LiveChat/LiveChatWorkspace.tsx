@@ -248,10 +248,24 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
     return list;
   }, [activeRoom, chatState.onlineUsers, myUsername]);
 
-  // Filtered rooms list
+  // Filtered rooms list (strictly excluding any accidental self-chat room)
+  const visibleRooms = useMemo(
+    () =>
+      chatState.rooms.filter((r) => {
+        if (r.type === 'direct') {
+          const uniqueParts = new Set(
+            (r.participants || []).map((p) => String(p || '').trim().toLowerCase()).filter(Boolean)
+          );
+          if (uniqueParts.size < 2) return false;
+        }
+        return true;
+      }),
+    [chatState.rooms]
+  );
+
   const filteredRooms = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return chatState.rooms.filter((r) => {
+    return visibleRooms.filter((r) => {
       if (activeTab === 'groups' && r.type !== 'group') return false;
       if (!q) return true;
       const meta = getRoomDisplayMeta(r);
@@ -261,7 +275,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
         (r.last_message_text || '').toLowerCase().includes(q)
       );
     });
-  }, [chatState.rooms, activeTab, searchQuery, chatState.onlineUsers, chatState.allUsersDirectory]);
+  }, [visibleRooms, activeTab, searchQuery, chatState.onlineUsers, chatState.allUsersDirectory]);
 
   // Online & Directory users list
   const sortedDirectoryUsers = useMemo(() => {
@@ -309,9 +323,13 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
       });
   }, [chatState.allUsersDirectory, chatState.onlineUsers, searchQuery, myUsername]);
 
+  // Exact count of online colleagues (excluding self & independent of searchQuery), matching Sidebar badge 100%
   const onlineOthersCount = useMemo(
-    () => sortedDirectoryUsers.filter((u) => u.isOnline).length,
-    [sortedDirectoryUsers]
+    () =>
+      Object.keys(chatState.onlineUsers).filter(
+        (uname) => uname.trim().toLowerCase() !== myUsername
+      ).length,
+    [chatState.onlineUsers, myUsername]
   );
 
   // Quick SKU suggestions from local productCatalog (0 Egress!)
@@ -661,18 +679,18 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
         >
           {/* Left Header */}
           <div className="p-3 sm:p-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/80 flex items-center justify-between gap-2 shrink-0">
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <MessageSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
                 <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate">
-                  Live Chat & Diskusi
+                  {isFloating ? 'Live Chat Tim' : 'Live Chat & Diskusi'}
                 </h2>
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
                 <span className="font-mono tabular-nums font-semibold text-emerald-600 dark:text-emerald-400">
-                  {onlineOthersCount + 1}
+                  {onlineOthersCount}
                 </span>{' '}
-                user online aktif · Riwayat permanen
+                rekan online · {isFloating ? 'Realtime' : 'Riwayat tersimpan'}
               </p>
             </div>
 
@@ -681,11 +699,11 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                 <button
                   type="button"
                   onClick={handleOpenCreateGroupModal}
-                  className="px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 shadow-xs"
+                  className="px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0 shadow-xs"
                   title="Buat Ruang Diskusi Grup & Tambah Beberapa User (Khusus Admin/Superadmin)"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>Buat Grup</span>
+                  <span>{isFloating ? 'Grup' : 'Buat Grup'}</span>
                 </button>
               )}
 
@@ -744,7 +762,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
-                Semua Chat ({chatState.rooms.length})
+                Semua Chat ({visibleRooms.length})
               </button>
               <button
                 type="button"
@@ -755,7 +773,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
-                Grup Diskusi ({chatState.rooms.filter((r) => r.type === 'group').length})
+                Grup Diskusi ({visibleRooms.filter((r) => r.type === 'group').length})
               </button>
               <button
                 type="button"
@@ -884,7 +902,10 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                 const unreadCount =
                   room.unread_counts?.[myUsername] ||
                   (Array.isArray(room.unread_by) && room.unread_by.includes(myUsername) ? 1 : 0);
-                const canDeleteThisRoom = room.type === 'direct' || isAdminGroupManager;
+                const canDeleteThisRoom =
+                  room.type === 'direct' ||
+                  isAdminGroupManager ||
+                  String(room.created_by || '').trim().toLowerCase() === myUsername;
 
                 return (
                   <div

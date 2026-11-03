@@ -121,12 +121,61 @@ const HOT_MESSAGE_LIMIT_PER_ROOM = 150;
 const ARCHIVE_BATCH_SIZE = 50;
 
 const ROOMS_INDEX_DOC_KEY = 'wms_chat_rooms_index_v1';
+const ROOMS_TOMBSTONE_DOC_KEY = 'wms_chat_deleted_rooms_v1';
 const ROOM_MSGS_DOC_PREFIX = 'wms_chat_room_msgs_';
+const LOCAL_TOMBSTONES_STORAGE_KEY = 'wms_chat_deleted_rooms_cache_v1';
 
 const IDB_NAME = 'wms_live_chat_idb_v1';
 const IDB_VERSION = 1;
 const STORE_ROOMS = 'chat_rooms';
 const STORE_MESSAGES = 'chat_messages'; // keyed by room_id -> ChatMessage[]
+
+function loadLocalDeletedTombstones(): Record<string, string> {
+  try {
+    if (typeof localStorage === 'undefined') return {};
+    const raw = localStorage.getItem(LOCAL_TOMBSTONES_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveLocalDeletedTombstones(map: Record<string, string>): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(LOCAL_TOMBSTONES_STORAGE_KEY, JSON.stringify(map));
+  } catch {}
+}
+
+export function isSelfDirectRoom(room: ChatRoom | null | undefined): boolean {
+  if (!room || !room.id) return true;
+  if (room.type !== 'direct') return false;
+  if (/^direct_([a-z0-9_-]+)_\1$/i.test(room.id)) return true;
+  const uniqueParticipants = new Set(
+    (Array.isArray(room.participants) ? room.participants : [])
+      .map((p) => String(p || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+  return uniqueParticipants.size < 2;
+}
+
+export function isRoomDeletedByTombstone(
+  room: ChatRoom | null | undefined,
+  tombstones: Record<string, string>
+): boolean {
+  if (!room || !room.id) return true;
+  if (isSelfDirectRoom(room)) return true;
+  const deletedAtIso = tombstones[room.id];
+  if (!deletedAtIso) return false;
+  const deletedMs = new Date(deletedAtIso).getTime();
+  if (!Number.isFinite(deletedMs) || deletedMs <= 0) return false;
+  const createdMs = room.created_at ? new Date(room.created_at).getTime() : 0;
+  // If the room was created BEFORE or AT the deletion timestamp, it is deleted.
+  // If a direct room was re-created AFTER the deletion timestamp, it is valid.
+  return !Number.isFinite(createdMs) || createdMs <= deletedMs;
+}
 
 // =============================================================================
 // TIER 1: PERMANENT LOCAL INDEXED-DB STORAGE (0 EGRESS FOR OLD HISTORY)
@@ -182,6 +231,48 @@ async function idbSaveRooms(rooms: ChatRoom[]): Promise<void> {
   } catch {}
 }
 
+/**
+ * Authoritatively reconciles IndexedDB rooms with the server's active rooms list.
+ * Any room present in local IndexedDB that is no longer in `authoritativeRooms`
+ * is purged from both STORE_ROOMS and STORE_MESSAGES so deleted chats never resurrect on other devices.
+ */
+async function idbReconcileAuthoritativeRooms(
+  authoritativeRooms: ChatRoom[],
+  tombstones: Record<string, string> = {}
+): Promise<string[]> {
+  const purgedRoomIds: string[] = [];
+  try {
+    const db = await openChatIdb();
+    const existingRooms = await idbGetRooms();
+    const validIds = new Set(authoritativeRooms.map((r) => r.id));
+
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction([STORE_ROOMS, STORE_MESSAGES], 'readwrite');
+      const roomStore = tx.objectStore(STORE_ROOMS);
+      const msgStore = tx.objectStore(STORE_MESSAGES);
+
+      for (const oldRoom of existingRooms) {
+        if (!oldRoom?.id) continue;
+        if (!validIds.has(oldRoom.id) || isRoomDeletedByTombstone(oldRoom, tombstones)) {
+          roomStore.delete(oldRoom.id);
+          msgStore.delete(oldRoom.id);
+          purgedRoomIds.push(oldRoom.id);
+        }
+      }
+
+      for (const r of authoritativeRooms) {
+        if (r?.id && !isRoomDeletedByTombstone(r, tombstones)) {
+          roomStore.put(r);
+        }
+      }
+
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  } catch {}
+  return purgedRoomIds;
+}
+
 async function idbDeleteRoom(roomId: string): Promise<void> {
   try {
     const db = await openChatIdb();
@@ -225,13 +316,26 @@ async function idbSaveRoomMessages(roomId: string, messages: ChatMessage[]): Pro
  * Merges two message arrays idempotently by message ID, preserving chronological order
  * and keeping all permanent historical messages stored on the device.
  */
-function mergeMessagesIdempotent(existing: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
+function mergeMessagesIdempotent(
+  existing: ChatMessage[],
+  incoming: ChatMessage[],
+  minCreatedAtMs = 0
+): ChatMessage[] {
   const map = new Map<string, ChatMessage>();
   for (const m of existing) {
-    if (m && m.id) map.set(m.id, m);
+    if (!m || !m.id) continue;
+    if (minCreatedAtMs > 0) {
+      const ms = new Date(m.created_at).getTime();
+      if (Number.isFinite(ms) && ms <= minCreatedAtMs) continue;
+    }
+    map.set(m.id, m);
   }
   for (const m of incoming) {
     if (!m || !m.id) continue;
+    if (minCreatedAtMs > 0) {
+      const ms = new Date(m.created_at).getTime();
+      if (Number.isFinite(ms) && ms <= minCreatedAtMs) continue;
+    }
     const prev = map.get(m.id);
     if (!prev) {
       map.set(m.id, m);
@@ -244,12 +348,19 @@ function mergeMessagesIdempotent(existing: ChatMessage[], incoming: ChatMessage[
       for (const r of m.read_by || []) {
         if (r?.username) readMap.set(r.username.toLowerCase(), r);
       }
+      const isDeleted = Boolean(prev.is_deleted || m.is_deleted);
       map.set(m.id, {
         ...prev,
         ...m,
+        text: isDeleted ? '' : (m.text ?? prev.text),
+        attachment_url: isDeleted ? undefined : (m.attachment_url ?? prev.attachment_url),
+        context_tags: isDeleted ? undefined : (m.context_tags ?? prev.context_tags),
+        order_context: isDeleted ? undefined : (m.order_context ?? prev.order_context),
         read_by: Array.from(readMap.values()),
         is_edited: Boolean(prev.is_edited || m.is_edited),
-        is_deleted: Boolean(prev.is_deleted || m.is_deleted),
+        is_deleted: isDeleted,
+        deleted_at: m.deleted_at || prev.deleted_at,
+        deleted_by: m.deleted_by || prev.deleted_by,
       });
     }
   }
@@ -264,24 +375,28 @@ function mergeMessagesIdempotent(existing: ChatMessage[], incoming: ChatMessage[
 
 async function fetchSystemDocJson<T>(docKey: string): Promise<T | null> {
   try {
-    const cleanKey = encodeURIComponent(String(docKey || '').trim());
+    const rawKey = String(docKey || '').trim();
+    const cleanKey = encodeURIComponent(rawKey);
     if (!cleanKey) return null;
-    const rows = await supabaseFetch<Array<{ doc_key: string; content: any }>>(
+    const rows = await supabaseFetch<Array<{ section_id?: string; doc_key?: string; content: any }>>(
       'wms_system_docs',
       'GET',
       null,
-      `select=content&or=(section_id.eq.${cleanKey},doc_key.eq.${cleanKey})&limit=1`
+      `select=section_id,doc_key,content&or=(section_id.eq.${cleanKey},doc_key.eq.${cleanKey})&limit=5`
     );
-    if (Array.isArray(rows) && rows.length > 0 && rows[0].content !== undefined) {
-      const raw = rows[0].content;
-      if (typeof raw === 'string') {
-        try {
-          return JSON.parse(raw) as T;
-        } catch {
-          return null;
+    if (Array.isArray(rows) && rows.length > 0) {
+      const matched = rows.find((r) => r && (r.section_id === rawKey || r.doc_key === rawKey));
+      if (matched && matched.content !== undefined) {
+        const raw = matched.content;
+        if (typeof raw === 'string') {
+          try {
+            return JSON.parse(raw) as T;
+          } catch {
+            return null;
+          }
         }
+        return raw as T;
       }
-      return raw as T;
     }
   } catch (err) {
     console.warn(`[LiveChat] fetchSystemDocJson(${docKey}) warning:`, err);
@@ -503,6 +618,10 @@ class LiveChatManager {
   private incomingListeners = new Set<IncomingMessageListener>();
   private currentSession: UserSession | null = null;
   private channel: any = null;
+  private crossTabChannel: BroadcastChannel | null = null;
+  private clientInstanceId = `inst_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  private deletedRoomTombstones: Record<string, string> = loadLocalDeletedTombstones();
+  private pendingUpsertRooms = new Map<string, ChatRoom>();
   private initializedForUser: string | null = null;
   private typingTimeout: any = null;
   private directoryLoadedAt = 0;
@@ -586,6 +705,7 @@ class LiveChatManager {
   }
 
   public isUserInRoom(room: ChatRoom, username?: string): boolean {
+    if (!room || isSelfDirectRoom(room)) return false;
     const u = String(username || this.currentSession?.username || '').trim().toLowerCase();
     if (!u) return false;
     // Defensive check: Group creator is ALWAYS considered a member of their created group room
@@ -619,42 +739,76 @@ class LiveChatManager {
       console.warn('[LiveChat] Cannot open order chat: session not found');
       return;
     }
-    const me = this.currentSession.username.trim().toLowerCase();
-    let targetUsername = 'warehouse';
-    if (me === 'warehouse') {
-      targetUsername = orderData.store_name?.toLowerCase().replace(/\s+/g, '_') || 'warehouse';
+    if (this.state.allUsersDirectory.length === 0) {
+      await this.refreshUsersDirectory();
     }
 
-    let targetProfile = this.state.allUsersDirectory.find(
-      (u) => u.username.toLowerCase() === targetUsername.toLowerCase()
-    );
-    if (!targetProfile) {
-      targetProfile = {
-        username: targetUsername,
-        name: targetUsername === 'warehouse' ? 'Warehouse (Gudang Pusat)' : orderData.store_name || targetUsername,
-        role: targetUsername === 'warehouse' ? 'Superadmin' : 'Store',
-      };
+    const me = this.currentSession.username.trim().toLowerCase();
+    const isWarehouseSide = me === 'warehouse' || me === 'admwh' || me === 'chocoadm';
+
+    let targetProfile: ChatParticipantProfile | undefined;
+
+    if (isWarehouseSide) {
+      const storeHint = String(orderData.store_name || '').trim().toLowerCase();
+      // Extract store code from order_id e.g. MSSPM-261101-TP7A -> spm -> chocospm
+      const codeMatch = String(orderData.order_id || '').match(/^MS([A-Z]{2,6})[-_]/i);
+      const storeCode = codeMatch ? codeMatch[1].toLowerCase() : '';
+      const candidateUsername = storeCode ? `choco${storeCode}` : '';
+
+      targetProfile = this.state.allUsersDirectory.find((u) => {
+        const uLower = u.username.toLowerCase();
+        if (uLower === me) return false;
+        if (candidateUsername && uLower === candidateUsername) return true;
+        if (storeHint) {
+          if (uLower === storeHint || uLower === storeHint.replace(/\s+/g, '_')) return true;
+          if (u.name.toLowerCase() === storeHint || u.name.toLowerCase().includes(storeHint)) return true;
+          if (u.store_name && u.store_name.toLowerCase() === storeHint) return true;
+        }
+        return false;
+      });
+
+      if (!targetProfile && candidateUsername && candidateUsername !== me) {
+        targetProfile = {
+          username: candidateUsername,
+          name: orderData.store_name || candidateUsername.toUpperCase(),
+          role: 'Store',
+          store_name: orderData.store_name,
+        };
+      }
+    } else {
+      targetProfile =
+        this.state.allUsersDirectory.find((u) => u.username.toLowerCase() === 'warehouse') || {
+          username: 'warehouse',
+          name: 'Warehouse (Gudang Pusat)',
+          role: 'Superadmin',
+        };
     }
 
     this.pendingOrderContext = orderData;
     this.setFloatingOpen(true);
+
+    if (!targetProfile || targetProfile.username.toLowerCase() === me) {
+      // Do NOT create a self-chat room if store target could not be resolved; just open Live Chat
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('wms_navigate_page', { detail: { page: 'live_chat' } })
+        );
+      }
+      return;
+    }
+
     const room = await this.openOrCreateDirectRoom(targetProfile);
     if (room) {
       await this.selectRoom(room.id);
       if (typeof window !== 'undefined') {
-        // 1. Arahkan halaman langsung ke Live Chat (seperti Shopee Chat ke Penjual)
         window.dispatchEvent(
           new CustomEvent('wms_navigate_page', { detail: { page: 'live_chat' } })
         );
-
-        // 2. Buka room tersebut secara eksplisit
         window.dispatchEvent(
           new CustomEvent('wms_open_live_chat_room', {
-            detail: { roomId: room.id, openFullPage: true }
+            detail: { roomId: room.id, openFullPage: true },
           })
         );
-
-        // 3. Pasang order context pada room
         window.dispatchEvent(
           new CustomEvent('wms:open_order_chat', { detail: { roomId: room.id, orderData } })
         );
@@ -693,12 +847,13 @@ class LiveChatManager {
 
     this.initializedForUser = username;
     this.hasSeededUnread = false;
+    this.deletedRoomTombstones = loadLocalDeletedTombstones();
     this.notifiedMessageIds = new Set<string>(loadPersistedNotifiedOrderIds());
 
-    // 1. Load cached rooms from IndexedDB immediately (0 ms, 0 egress)
+    // 1. Load cached rooms from IndexedDB immediately (0 ms, 0 egress), filtering out any locally known deleted rooms
     const cachedRooms = await idbGetRooms();
     const myCachedRooms = cachedRooms
-      .filter((r) => this.isUserInRoom(r, username))
+      .filter((r) => this.isUserInRoom(r, username) && !isRoomDeletedByTombstone(r, this.deletedRoomTombstones))
       .sort((a, b) => this.getRoomSortTime(b) - this.getRoomSortTime(a));
 
     if (myCachedRooms.length > 0) {
@@ -710,7 +865,7 @@ class LiveChatManager {
     this.setupRealtimeChannel(session, activePage);
     this.setupBackgroundSyncLoop();
 
-    // 3. Load user directory and sync rooms index from wms_system_docs
+    // 3. Load user directory and sync authoritative rooms index from wms_system_docs
     void this.refreshUsersDirectory();
     await this.syncRoomsFromServer(false);
     this.hasSeededUnread = true;
@@ -721,13 +876,34 @@ class LiveChatManager {
       clearInterval(this.syncTimer);
       this.syncTimer = null;
     }
-    // Periodic background sync + Presence Heartbeat (menjaga status online tetap aktif di HP & Laptop)
+    // Periodic background sync + Presence Heartbeat (menjaga status & hapus chat tetap sinkron di HP & Laptop)
     this.syncTimer = setInterval(() => {
       if (this.currentSession?.username && typeof document !== 'undefined' && document.visibilityState === 'visible') {
         void this.syncRoomsFromServer(true);
         this.trackPresence();
       }
-    }, 45000);
+    }, 8000);
+
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window && !this.crossTabChannel) {
+      try {
+        this.crossTabChannel = new BroadcastChannel('wms_live_chat_sync_v1');
+        this.crossTabChannel.onmessage = (ev: MessageEvent) => {
+          const data = ev.data;
+          if (!data || data.clientInstanceId === this.clientInstanceId) return;
+          if (data.type === 'ROOM_DELETED' && data.roomId) {
+            void this.handleIncomingRoomDeleted(String(data.roomId), data.deletedAt);
+          } else if (data.type === 'ROOM_UPSERTED' && data.room) {
+            void this.handleIncomingRoomUpsert(data.room as ChatRoom);
+          } else if (data.type === 'MESSAGE_UPDATED' && data.roomId && data.message) {
+            void this.handleIncomingMessageUpdate(
+              String(data.roomId),
+              data.message as ChatMessage,
+              data.room as ChatRoom | undefined
+            );
+          }
+        };
+      } catch {}
+    }
 
     if (!this.swListenerBound && typeof window !== 'undefined') {
       this.swListenerBound = true;
@@ -755,6 +931,7 @@ class LiveChatManager {
       });
       window.addEventListener('focus', () => {
         if (this.currentSession?.username) {
+          void this.syncRoomsFromServer(true);
           this.trackPresence();
         }
       });
@@ -767,10 +944,36 @@ class LiveChatManager {
     return Number.isFinite(ms) ? ms : 0;
   }
 
+  private getMinValidMessageTimeMs(roomId: string, room?: ChatRoom | null): number {
+    let minMs = 0;
+    const deletedIso = this.deletedRoomTombstones[roomId];
+    if (deletedIso) {
+      const dMs = new Date(deletedIso).getTime();
+      if (Number.isFinite(dMs) && dMs > minMs) {
+        minMs = dMs;
+      }
+    }
+    const targetRoom = room || this.state.rooms.find((r) => r.id === roomId);
+    if (targetRoom?.type === 'direct' && targetRoom.created_at && deletedIso) {
+      // If a direct room was re-created after a previous deletion, any message prior to its new created_at is stale
+      const cMs = new Date(targetRoom.created_at).getTime();
+      if (Number.isFinite(cMs) && cMs > minMs) {
+        minMs = cMs - 1000;
+      }
+    }
+    return minMs;
+  }
+
   private cleanupChannel() {
     if (this.syncTimer) {
       clearInterval(this.syncTimer);
       this.syncTimer = null;
+    }
+    if (this.crossTabChannel) {
+      try {
+        this.crossTabChannel.close();
+      } catch {}
+      this.crossTabChannel = null;
     }
     if (this.channel) {
       try {
@@ -788,10 +991,13 @@ class LiveChatManager {
 
     try {
       const client = getSupabaseClient();
+      // CRITICAL: broadcast.self = true ensures that when the SAME account is logged in on both
+      // Laptop and HP (sharing the same presence key `username`), broadcast events are always
+      // delivered to all connected devices of that user. We filter out our own tab via clientInstanceId.
       const ch = client.channel('wms-live-chat-v1', {
         config: {
           presence: { key: username },
-          broadcast: { self: false },
+          broadcast: { self: true },
         },
       });
 
@@ -824,6 +1030,7 @@ class LiveChatManager {
       ch.on('broadcast', { event: 'chat:new_message' }, (payload: any) => {
         const data = payload?.payload;
         if (!data || !data.message || !data.room) return;
+        if (data.clientInstanceId && data.clientInstanceId === this.clientInstanceId) return;
         void this.handleIncomingBroadcastMessage(data.room as ChatRoom, data.message as ChatMessage);
       });
 
@@ -831,13 +1038,19 @@ class LiveChatManager {
       ch.on('broadcast', { event: 'chat:message_updated' }, (payload: any) => {
         const data = payload?.payload;
         if (!data || !data.message || !data.roomId) return;
-        void this.handleIncomingMessageUpdate(String(data.roomId), data.message as ChatMessage, data.room as ChatRoom | undefined);
+        if (data.clientInstanceId && data.clientInstanceId === this.clientInstanceId) return;
+        void this.handleIncomingMessageUpdate(
+          String(data.roomId),
+          data.message as ChatMessage,
+          data.room as ChatRoom | undefined
+        );
       });
 
       // Broadcast Event 3: Messages Read (✓✓)
       ch.on('broadcast', { event: 'chat:messages_read' }, (payload: any) => {
         const data = payload?.payload;
         if (!data || !data.roomId || !data.reader) return;
+        if (data.clientInstanceId && data.clientInstanceId === this.clientInstanceId) return;
         void this.handleIncomingReadReceipt(String(data.roomId), data.reader as ChatReadReceipt);
       });
 
@@ -845,26 +1058,36 @@ class LiveChatManager {
       ch.on('broadcast', { event: 'chat:room_updated' }, (payload: any) => {
         const data = payload?.payload;
         if (!data) return;
+        if (data.clientInstanceId && data.clientInstanceId === this.clientInstanceId) return;
         if (data.deletedRoomId) {
-          void this.handleIncomingRoomDeleted(String(data.deletedRoomId));
+          void this.handleIncomingRoomDeleted(String(data.deletedRoomId), data.deletedAt);
         } else if (data.room) {
           void this.handleIncomingRoomUpsert(data.room as ChatRoom);
         }
       });
 
-      // Postgres Changes Event 5: Listen to wms_system_docs updates (e.g. inline replies from Notification Bar or background sync)
+      // Postgres Changes Event 5: Listen to wms_system_docs updates (multi-device DB sync)
       ch.on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'wms_system_docs' },
         (payload: any) => {
-          const docKey = String(payload?.new?.doc_key || '');
-          if (docKey === ROOMS_INDEX_DOC_KEY) {
+          const docKey = String(
+            payload?.new?.doc_key ||
+              payload?.new?.section_id ||
+              payload?.old?.doc_key ||
+              payload?.old?.section_id ||
+              ''
+          );
+          if (docKey === ROOMS_INDEX_DOC_KEY || docKey === ROOMS_TOMBSTONE_DOC_KEY) {
             void this.syncRoomsFromServer(true);
-          } else if (
-            this.state.activeRoomId &&
-            docKey === `${ROOM_MSGS_DOC_PREFIX}${this.state.activeRoomId}`
-          ) {
-            void this.selectRoom(this.state.activeRoomId);
+          } else if (docKey.startsWith(ROOM_MSGS_DOC_PREFIX)) {
+            const changedRoomId = docKey.slice(ROOM_MSGS_DOC_PREFIX.length);
+            if (
+              changedRoomId &&
+              (this.state.activeRoomId === changedRoomId || Boolean(this.state.messagesByRoom[changedRoomId]))
+            ) {
+              void this.syncRoomMessagesFromServer(changedRoomId);
+            }
           }
         }
       );
@@ -982,7 +1205,8 @@ class LiveChatManager {
   }
 
   /**
-   * Syncs the lightweight rooms index from wms_system_docs
+   * Syncs the authoritative rooms index and deletion tombstones from wms_system_docs.
+   * Ensures any room deleted on Laptop is immediately removed from HP's state & IndexedDB.
    */
   public async syncRoomsFromServer(triggerNotification = false): Promise<ChatRoom[]> {
     if (!this.currentSession?.username) return [];
@@ -991,24 +1215,77 @@ class LiveChatManager {
     this.notify();
 
     try {
-      const serverRooms = await fetchSystemDocJson<ChatRoom[]>(ROOMS_INDEX_DOC_KEY);
-      const validRooms = Array.isArray(serverRooms) ? serverRooms : [];
+      const [serverRooms, serverTombstones] = await Promise.all([
+        fetchSystemDocJson<ChatRoom[]>(ROOMS_INDEX_DOC_KEY),
+        fetchSystemDocJson<Record<string, string>>(ROOMS_TOMBSTONE_DOC_KEY),
+      ]);
 
-      // Merge with local cached rooms
+      if (serverTombstones && typeof serverTombstones === 'object') {
+        for (const [rid, ts] of Object.entries(serverTombstones)) {
+          if (!rid || typeof ts !== 'string') continue;
+          const prevTs = this.deletedRoomTombstones[rid];
+          if (!prevTs || new Date(ts).getTime() > new Date(prevTs).getTime()) {
+            this.deletedRoomTombstones[rid] = ts;
+          }
+        }
+        saveLocalDeletedTombstones(this.deletedRoomTombstones);
+      }
+
       const roomMap = new Map<string, ChatRoom>();
-      for (const r of this.state.rooms) {
-        if (r?.id) roomMap.set(r.id, r);
-      }
-      for (const r of validRooms) {
-        if (r?.id) roomMap.set(r.id, r);
+
+      if (Array.isArray(serverRooms)) {
+        // Server index is authoritative! Only include rooms present on the server (that aren't deleted by a newer tombstone)
+        for (const r of serverRooms) {
+          if (r?.id && !isRoomDeletedByTombstone(r, this.deletedRoomTombstones)) {
+            roomMap.set(r.id, r);
+          }
+        }
+        // Plus any room currently in the middle of an optimistic upsert on this device
+        for (const [id, pendingRoom] of this.pendingUpsertRooms.entries()) {
+          if (!isRoomDeletedByTombstone(pendingRoom, this.deletedRoomTombstones)) {
+            roomMap.set(id, pendingRoom);
+          }
+        }
+      } else {
+        // Offline / fallback only when server doc could not be fetched
+        for (const r of this.state.rooms) {
+          if (r?.id && !isRoomDeletedByTombstone(r, this.deletedRoomTombstones)) {
+            roomMap.set(r.id, r);
+          }
+        }
       }
 
-      const allMerged = Array.from(roomMap.values());
-      await idbSaveRooms(allMerged);
+      const allAuthoritative = Array.from(roomMap.values());
 
-      const myRooms = allMerged
+      if (Array.isArray(serverRooms)) {
+        // Purge any rooms from local IndexedDB & memory that were deleted on another device
+        const purgedRoomIds = await idbReconcileAuthoritativeRooms(
+          allAuthoritative,
+          this.deletedRoomTombstones
+        );
+        for (const purgedId of purgedRoomIds) {
+          delete this.state.messagesByRoom[purgedId];
+        }
+        // Also clean any in-memory rooms that are no longer in roomMap
+        for (const prevRoom of this.state.rooms) {
+          if (prevRoom?.id && !roomMap.has(prevRoom.id)) {
+            delete this.state.messagesByRoom[prevRoom.id];
+            await idbDeleteRoom(prevRoom.id);
+          }
+        }
+      } else {
+        await idbSaveRooms(allAuthoritative);
+      }
+
+      const myRooms = allAuthoritative
         .filter((r) => this.isUserInRoom(r, me))
         .sort((a, b) => this.getRoomSortTime(b) - this.getRoomSortTime(a));
+
+      // If the currently active room was deleted on another device (or user was removed), close it cleanly
+      if (this.state.activeRoomId && !myRooms.some((r) => r.id === this.state.activeRoomId)) {
+        delete this.state.messagesByRoom[this.state.activeRoomId];
+        this.state.activeRoomId = null;
+      }
 
       const isOnLiveChatPage =
         typeof window !== 'undefined' && window.location.pathname.includes('live-chat');
@@ -1021,7 +1298,6 @@ class LiveChatManager {
           Array.isArray(r.unread_by) && r.unread_by.some((u) => String(u || '').toLowerCase() === me);
 
         if (!this.hasSeededUnread && !triggerNotification) {
-          // On initial boot: if the message arrived very recently (< 10 mins ago) and wasn't notified yet, notify once; otherwise seed it
           const msgTs = r.last_message_at ? new Date(r.last_message_at).getTime() : 0;
           const isRecentMissed =
             isUnread &&
@@ -1103,6 +1379,12 @@ class LiveChatManager {
       this.state.rooms = myRooms;
       this.state.isLoadingRooms = false;
       this.notify();
+
+      // Also delta-sync messages for the currently open room so message deletions/edits sync across devices
+      if (this.state.activeRoomId) {
+        void this.syncRoomMessagesFromServer(this.state.activeRoomId);
+      }
+
       return myRooms;
     } catch {
       this.state.isLoadingRooms = false;
@@ -1112,17 +1394,69 @@ class LiveChatManager {
   }
 
   /**
+   * Syncs messages for a specific room from Supabase and reconciles deletions/edits with local IndexedDB
+   */
+  public async syncRoomMessagesFromServer(roomId: string): Promise<void> {
+    if (!roomId) return;
+    const room = this.state.rooms.find((r) => r.id === roomId);
+    if (room && isRoomDeletedByTombstone(room, this.deletedRoomTombstones)) {
+      await this.handleIncomingRoomDeleted(roomId, this.deletedRoomTombstones[roomId]);
+      return;
+    }
+
+    try {
+      const [localMsgs, hotMsgs] = await Promise.all([
+        idbGetRoomMessages(roomId),
+        fetchSystemDocJson<ChatMessage[]>(`${ROOM_MSGS_DOC_PREFIX}${roomId}`),
+      ]);
+
+      const minValidMs = this.getMinValidMessageTimeMs(roomId, room);
+
+      if (Array.isArray(hotMsgs)) {
+        const hasColdArchives = Boolean(room && Array.isArray(room.archive_urls) && room.archive_urls.length > 0);
+        // If server hot store is empty and there are no cold archives, the room has no messages (or was cleared/deleted)
+        if (hotMsgs.length === 0 && !hasColdArchives) {
+          this.state.messagesByRoom[roomId] = [];
+          await idbSaveRoomMessages(roomId, []);
+        } else {
+          const merged = mergeMessagesIdempotent(localMsgs, hotMsgs, minValidMs);
+          this.state.messagesByRoom[roomId] = merged;
+          await idbSaveRoomMessages(roomId, merged);
+        }
+        this.notify();
+      }
+    } catch {}
+  }
+
+  /**
    * Opens a room, loads permanent local IndexedDB messages immediately, and delta-syncs hot messages from Supabase
    */
   public async selectRoom(roomId: string | null): Promise<void> {
-    this.state.activeRoomId = roomId;
     if (!roomId) {
+      this.state.activeRoomId = null;
       this.notify();
       return;
     }
 
+    const room = this.state.rooms.find((r) => r.id === roomId);
+    if (room && isRoomDeletedByTombstone(room, this.deletedRoomTombstones)) {
+      await this.handleIncomingRoomDeleted(roomId, this.deletedRoomTombstones[roomId]);
+      return;
+    }
+
+    this.state.activeRoomId = roomId;
+    const minValidMs = this.getMinValidMessageTimeMs(roomId, room);
+
     // 1. Load permanent local messages from IndexedDB (0 ms, 0 egress)
-    const localMsgs = await idbGetRoomMessages(roomId);
+    const rawLocalMsgs = await idbGetRoomMessages(roomId);
+    const localMsgs =
+      minValidMs > 0
+        ? rawLocalMsgs.filter((m) => {
+            const ms = new Date(m.created_at).getTime();
+            return Number.isFinite(ms) && ms > minValidMs;
+          })
+        : rawLocalMsgs;
+
     if (localMsgs.length > 0) {
       this.state.messagesByRoom[roomId] = localMsgs;
       this.notify();
@@ -1135,9 +1469,15 @@ class LiveChatManager {
     try {
       const hotMsgs = await fetchSystemDocJson<ChatMessage[]>(`${ROOM_MSGS_DOC_PREFIX}${roomId}`);
       if (Array.isArray(hotMsgs)) {
-        const merged = mergeMessagesIdempotent(localMsgs, hotMsgs);
-        this.state.messagesByRoom[roomId] = merged;
-        await idbSaveRoomMessages(roomId, merged);
+        const hasColdArchives = Boolean(room && Array.isArray(room.archive_urls) && room.archive_urls.length > 0);
+        if (hotMsgs.length === 0 && !hasColdArchives) {
+          this.state.messagesByRoom[roomId] = [];
+          await idbSaveRoomMessages(roomId, []);
+        } else {
+          const merged = mergeMessagesIdempotent(localMsgs, hotMsgs, minValidMs);
+          this.state.messagesByRoom[roomId] = merged;
+          await idbSaveRoomMessages(roomId, merged);
+        }
       } else if (!this.state.messagesByRoom[roomId]) {
         this.state.messagesByRoom[roomId] = [];
       }
@@ -1159,6 +1499,7 @@ class LiveChatManager {
       return 0;
     }
 
+    const minValidMs = this.getMinValidMessageTimeMs(roomId, room);
     let addedCount = 0;
     const currentMsgs = this.state.messagesByRoom[roomId] || (await idbGetRoomMessages(roomId));
     let merged = [...currentMsgs];
@@ -1170,7 +1511,7 @@ class LiveChatManager {
           const archivedBatch = await res.json();
           if (Array.isArray(archivedBatch)) {
             const beforeLen = merged.length;
-            merged = mergeMessagesIdempotent(merged, archivedBatch);
+            merged = mergeMessagesIdempotent(merged, archivedBatch, minValidMs);
             addedCount += Math.max(0, merged.length - beforeLen);
           }
         }
@@ -1192,16 +1533,22 @@ class LiveChatManager {
     if (!this.currentSession?.username) return null;
     const me = this.currentSession.username.trim().toLowerCase();
     const other = targetUser.username.trim().toLowerCase();
-    if (!me || !other) return null;
+    if (!me || !other || me === other) return null;
 
     const sortedPair = [me, other].sort();
     const directRoomId = `direct_${sortedPair[0]}_${sortedPair[1]}`;
 
-    const existing = this.state.rooms.find((r) => r.id === directRoomId);
+    const existing = this.state.rooms.find(
+      (r) => r.id === directRoomId && !isRoomDeletedByTombstone(r, this.deletedRoomTombstones)
+    );
     if (existing) {
       await this.selectRoom(existing.id);
       return existing;
     }
+
+    // Ensure any stale local messages from a previously deleted conversation with this ID are wiped first
+    await idbDeleteRoom(directRoomId);
+    delete this.state.messagesByRoom[directRoomId];
 
     const myName =
       this.currentSession.name ||
@@ -1439,12 +1786,12 @@ class LiveChatManager {
       return { success: false, error: 'Anda tidak memiliki akses untuk menghapus percakapan ini.' };
     }
 
-    const serverRooms = (await fetchSystemDocJson<ChatRoom[]>(ROOMS_INDEX_DOC_KEY)) || [];
-    const remaining = serverRooms.filter((r) => r.id !== roomId);
-    await saveSystemDocJson(ROOMS_INDEX_DOC_KEY, remaining);
-    await saveSystemDocJson(`${ROOM_MSGS_DOC_PREFIX}${roomId}`, []);
-    await idbDeleteRoom(roomId);
+    const deletedAt = new Date().toISOString();
+    this.deletedRoomTombstones[roomId] = deletedAt;
+    saveLocalDeletedTombstones(this.deletedRoomTombstones);
+    this.pendingUpsertRooms.delete(roomId);
 
+    // 1. Optimistic local state + IndexedDB removal
     this.state.rooms = this.state.rooms.filter((r) => r.id !== roomId);
     delete this.state.messagesByRoom[roomId];
     if (this.state.activeRoomId === roomId) {
@@ -1452,13 +1799,53 @@ class LiveChatManager {
     }
     this.notify();
 
+    await idbDeleteRoom(roomId);
+
+    // 2. Broadcast immediately to all other devices (including same-account HP/Laptop & other participants)
     try {
       this.channel?.send({
         type: 'broadcast',
         event: 'chat:room_updated',
-        payload: { deletedRoomId: roomId },
+        payload: {
+          deletedRoomId: roomId,
+          deletedAt,
+          clientInstanceId: this.clientInstanceId,
+        },
       });
     } catch {}
+
+    try {
+      this.crossTabChannel?.postMessage({
+        type: 'ROOM_DELETED',
+        roomId,
+        deletedAt,
+        clientInstanceId: this.clientInstanceId,
+      });
+    } catch {}
+
+    // 3. Persist deletion tombstone & updated rooms index to Supabase wms_system_docs
+    const [serverRooms, serverTombstones] = await Promise.all([
+      fetchSystemDocJson<ChatRoom[]>(ROOMS_INDEX_DOC_KEY),
+      fetchSystemDocJson<Record<string, string>>(ROOMS_TOMBSTONE_DOC_KEY),
+    ]);
+
+    const mergedTombstones: Record<string, string> = {
+      ...(serverTombstones && typeof serverTombstones === 'object' ? serverTombstones : {}),
+      ...this.deletedRoomTombstones,
+      [roomId]: deletedAt,
+    };
+    this.deletedRoomTombstones = mergedTombstones;
+    saveLocalDeletedTombstones(mergedTombstones);
+
+    const remaining = (Array.isArray(serverRooms) ? serverRooms : []).filter(
+      (r) => r && r.id !== roomId && !isRoomDeletedByTombstone(r, mergedTombstones)
+    );
+
+    await Promise.all([
+      saveSystemDocJson(ROOMS_TOMBSTONE_DOC_KEY, mergedTombstones),
+      saveSystemDocJson(ROOMS_INDEX_DOC_KEY, remaining),
+      saveSystemDocJson(`${ROOM_MSGS_DOC_PREFIX}${roomId}`, []),
+    ]);
 
     return { success: true };
   }
@@ -1468,42 +1855,71 @@ class LiveChatManager {
   }
 
   private async upsertRoomToServer(room: ChatRoom): Promise<void> {
-    // Update local state immediately
-    const idx = this.state.rooms.findIndex((r) => r.id === room.id);
-    if (idx >= 0) {
-      this.state.rooms[idx] = room;
-    } else {
-      this.state.rooms.unshift(room);
-    }
-    this.state.rooms.sort((a, b) => this.getRoomSortTime(b) - this.getRoomSortTime(a));
-    this.notify();
-
-    await idbSaveRooms([room]);
-
-    // Sync with server index without losing any existing rooms from server or memory
-    const serverRooms = (await fetchSystemDocJson<ChatRoom[]>(ROOMS_INDEX_DOC_KEY)) || [];
-    const map = new Map<string, ChatRoom>();
-    for (const r of serverRooms) {
-      if (r?.id) map.set(r.id, r);
-    }
-    for (const r of this.state.rooms) {
-      if (r?.id && !map.has(r.id)) {
-        map.set(r.id, r);
-      }
-    }
-    map.set(room.id, room);
-    const updatedList = Array.from(map.values()).sort(
-      (a, b) => this.getRoomSortTime(b) - this.getRoomSortTime(a)
-    );
-    await saveSystemDocJson(ROOMS_INDEX_DOC_KEY, updatedList);
+    this.pendingUpsertRooms.set(room.id, room);
 
     try {
-      this.channel?.send({
-        type: 'broadcast',
-        event: 'chat:room_updated',
-        payload: { room },
-      });
-    } catch {}
+      // Update local state immediately
+      const idx = this.state.rooms.findIndex((r) => r.id === room.id);
+      if (idx >= 0) {
+        this.state.rooms[idx] = room;
+      } else {
+        this.state.rooms.unshift(room);
+      }
+      this.state.rooms.sort((a, b) => this.getRoomSortTime(b) - this.getRoomSortTime(a));
+      this.notify();
+
+      await idbSaveRooms([room]);
+
+      // Sync with server index WITHOUT re-inserting stale local rooms that may have been deleted on another device
+      const [serverRooms, serverTombstones] = await Promise.all([
+        fetchSystemDocJson<ChatRoom[]>(ROOMS_INDEX_DOC_KEY),
+        fetchSystemDocJson<Record<string, string>>(ROOMS_TOMBSTONE_DOC_KEY),
+      ]);
+
+      if (serverTombstones && typeof serverTombstones === 'object') {
+        Object.assign(this.deletedRoomTombstones, serverTombstones);
+        saveLocalDeletedTombstones(this.deletedRoomTombstones);
+      }
+
+      const map = new Map<string, ChatRoom>();
+      for (const r of Array.isArray(serverRooms) ? serverRooms : []) {
+        if (r?.id && !isRoomDeletedByTombstone(r, this.deletedRoomTombstones)) {
+          map.set(r.id, r);
+        }
+      }
+      for (const [id, pendingRoom] of this.pendingUpsertRooms.entries()) {
+        if (!isRoomDeletedByTombstone(pendingRoom, this.deletedRoomTombstones)) {
+          map.set(id, pendingRoom);
+        }
+      }
+      map.set(room.id, room);
+
+      const updatedList = Array.from(map.values()).sort(
+        (a, b) => this.getRoomSortTime(b) - this.getRoomSortTime(a)
+      );
+      await saveSystemDocJson(ROOMS_INDEX_DOC_KEY, updatedList);
+
+      try {
+        this.channel?.send({
+          type: 'broadcast',
+          event: 'chat:room_updated',
+          payload: {
+            room,
+            clientInstanceId: this.clientInstanceId,
+          },
+        });
+      } catch {}
+
+      try {
+        this.crossTabChannel?.postMessage({
+          type: 'ROOM_UPSERTED',
+          room,
+          clientInstanceId: this.clientInstanceId,
+        });
+      } catch {}
+    } finally {
+      this.pendingUpsertRooms.delete(room.id);
+    }
   }
 
   /**
@@ -1588,8 +2004,9 @@ class LiveChatManager {
     }
 
     // 1. Optimistic Local Update + IndexedDB permanent save
+    const minValidMs = this.getMinValidMessageTimeMs(room.id, room);
     const existingLocal = this.state.messagesByRoom[room.id] || (await idbGetRoomMessages(room.id));
-    const updatedLocal = mergeMessagesIdempotent(existingLocal, [newMsg]);
+    const updatedLocal = mergeMessagesIdempotent(existingLocal, [newMsg], minValidMs);
     this.state.messagesByRoom[room.id] = updatedLocal;
 
     const previewText = cleanText
@@ -1629,7 +2046,7 @@ class LiveChatManager {
     // Clear typing indicator
     this.sendTypingIndicator(null);
 
-    // 2. Broadcast immediately via WebSocket for 0-latency delivery to online users
+    // 2. Broadcast immediately via WebSocket for 0-latency delivery to online users & other logged-in devices
     try {
       this.channel?.send({
         type: 'broadcast',
@@ -1637,6 +2054,7 @@ class LiveChatManager {
         payload: {
           room: updatedRoom,
           message: newMsg,
+          clientInstanceId: this.clientInstanceId,
         },
       });
     } catch {}
@@ -1654,25 +2072,41 @@ class LiveChatManager {
   ): Promise<void> {
     let hotMessages = allMessages;
 
-    // If messages exceed HOT_MESSAGE_LIMIT_PER_ROOM, keep the newest HOT_MESSAGE_LIMIT_PER_ROOM in Supabase
-    // while all historical messages remain permanently in IndexedDB!
     if (hotMessages.length > HOT_MESSAGE_LIMIT_PER_ROOM) {
       hotMessages = hotMessages.slice(-HOT_MESSAGE_LIMIT_PER_ROOM);
     }
 
+    const [serverRooms, serverTombstones] = await Promise.all([
+      fetchSystemDocJson<ChatRoom[]>(ROOMS_INDEX_DOC_KEY),
+      fetchSystemDocJson<Record<string, string>>(ROOMS_TOMBSTONE_DOC_KEY),
+    ]);
+
+    if (serverTombstones && typeof serverTombstones === 'object') {
+      Object.assign(this.deletedRoomTombstones, serverTombstones);
+      saveLocalDeletedTombstones(this.deletedRoomTombstones);
+    }
+
+    // If this room was deleted by another device while we were persisting, abort so we don't resurrect it
+    if (isRoomDeletedByTombstone(updatedRoom, this.deletedRoomTombstones)) {
+      await this.handleIncomingRoomDeleted(updatedRoom.id, this.deletedRoomTombstones[updatedRoom.id]);
+      return;
+    }
+
     await saveSystemDocJson(`${ROOM_MSGS_DOC_PREFIX}${updatedRoom.id}`, hotMessages);
 
-    const serverRooms = (await fetchSystemDocJson<ChatRoom[]>(ROOMS_INDEX_DOC_KEY)) || [];
     const map = new Map<string, ChatRoom>();
-    for (const r of serverRooms) {
-      if (r?.id) map.set(r.id, r);
-    }
-    for (const r of this.state.rooms) {
-      if (r?.id && !map.has(r.id)) {
+    for (const r of Array.isArray(serverRooms) ? serverRooms : []) {
+      if (r?.id && !isRoomDeletedByTombstone(r, this.deletedRoomTombstones)) {
         map.set(r.id, r);
       }
     }
+    for (const [id, pendingRoom] of this.pendingUpsertRooms.entries()) {
+      if (!isRoomDeletedByTombstone(pendingRoom, this.deletedRoomTombstones)) {
+        map.set(id, pendingRoom);
+      }
+    }
     map.set(updatedRoom.id, updatedRoom);
+
     const sortedRooms = Array.from(map.values()).sort(
       (a, b) => this.getRoomSortTime(b) - this.getRoomSortTime(a)
     );
@@ -1752,7 +2186,18 @@ class LiveChatManager {
           roomId,
           message: updatedMsg,
           room: updatedRoom,
+          clientInstanceId: this.clientInstanceId,
         },
+      });
+    } catch {}
+
+    try {
+      this.crossTabChannel?.postMessage({
+        type: 'MESSAGE_UPDATED',
+        roomId,
+        message: updatedMsg,
+        room: updatedRoom,
+        clientInstanceId: this.clientInstanceId,
       });
     } catch {}
 
@@ -1812,6 +2257,7 @@ class LiveChatManager {
       text: '',
       attachment_url: undefined,
       context_tags: undefined,
+      order_context: undefined,
       is_deleted: true,
       deleted_at: now,
       deleted_by: myName,
@@ -1842,7 +2288,18 @@ class LiveChatManager {
           roomId,
           message: deletedMsg,
           room: updatedRoom,
+          clientInstanceId: this.clientInstanceId,
         },
+      });
+    } catch {}
+
+    try {
+      this.crossTabChannel?.postMessage({
+        type: 'MESSAGE_UPDATED',
+        roomId,
+        message: deletedMsg,
+        room: updatedRoom,
+        clientInstanceId: this.clientInstanceId,
       });
     } catch {}
 
@@ -1902,6 +2359,9 @@ class LiveChatManager {
 
     if (roomIdx >= 0) {
       const room = this.state.rooms[roomIdx];
+      if (isRoomDeletedByTombstone(room, this.deletedRoomTombstones)) {
+        return;
+      }
       const wasUnread =
         (Array.isArray(room.unread_by) && room.unread_by.includes(me)) ||
         (room.unread_counts && (room.unread_counts[me] || 0) > 0);
@@ -1930,6 +2390,7 @@ class LiveChatManager {
           payload: {
             roomId,
             reader: receipt,
+            clientInstanceId: this.clientInstanceId,
           },
         });
       } catch {}
@@ -1942,10 +2403,23 @@ class LiveChatManager {
       }
 
       if (updatedRoom) {
-        const serverRooms = (await fetchSystemDocJson<ChatRoom[]>(ROOMS_INDEX_DOC_KEY)) || [];
+        const [serverRooms, serverTombstones] = await Promise.all([
+          fetchSystemDocJson<ChatRoom[]>(ROOMS_INDEX_DOC_KEY),
+          fetchSystemDocJson<Record<string, string>>(ROOMS_TOMBSTONE_DOC_KEY),
+        ]);
+        if (serverTombstones && typeof serverTombstones === 'object') {
+          Object.assign(this.deletedRoomTombstones, serverTombstones);
+          saveLocalDeletedTombstones(this.deletedRoomTombstones);
+        }
+        if (isRoomDeletedByTombstone(updatedRoom, this.deletedRoomTombstones)) {
+          await this.handleIncomingRoomDeleted(updatedRoom.id, this.deletedRoomTombstones[updatedRoom.id]);
+          return;
+        }
         const map = new Map<string, ChatRoom>();
-        for (const r of serverRooms) {
-          if (r?.id) map.set(r.id, r);
+        for (const r of Array.isArray(serverRooms) ? serverRooms : []) {
+          if (r?.id && !isRoomDeletedByTombstone(r, this.deletedRoomTombstones)) {
+            map.set(r.id, r);
+          }
         }
         map.set(updatedRoom.id, updatedRoom);
         await saveSystemDocJson(ROOMS_INDEX_DOC_KEY, Array.from(map.values()));
@@ -1963,9 +2437,10 @@ class LiveChatManager {
     const me = this.currentSession.username.trim().toLowerCase();
     if (!this.isUserInRoom(room, me)) return;
 
+    const minValidMs = this.getMinValidMessageTimeMs(room.id, room);
     const existingMsgs = this.state.messagesByRoom[room.id] || (await idbGetRoomMessages(room.id));
     const alreadyExists = existingMsgs.some((m) => m.id === message.id);
-    const mergedMsgs = mergeMessagesIdempotent(existingMsgs, [message]);
+    const mergedMsgs = mergeMessagesIdempotent(existingMsgs, [message], minValidMs);
     this.state.messagesByRoom[room.id] = mergedMsgs;
     await idbSaveRoomMessages(room.id, mergedMsgs);
 
@@ -2059,8 +2534,9 @@ class LiveChatManager {
     if (!this.currentSession?.username) return;
     const me = this.currentSession.username.trim().toLowerCase();
 
+    const minValidMs = this.getMinValidMessageTimeMs(roomId, updatedRoom);
     const existingMsgs = this.state.messagesByRoom[roomId] || (await idbGetRoomMessages(roomId));
-    const merged = mergeMessagesIdempotent(existingMsgs, [updatedMessage]);
+    const merged = mergeMessagesIdempotent(existingMsgs, [updatedMessage], minValidMs);
     this.state.messagesByRoom[roomId] = merged;
     await idbSaveRoomMessages(roomId, merged);
 
@@ -2101,10 +2577,13 @@ class LiveChatManager {
 
   private async handleIncomingRoomUpsert(room: ChatRoom) {
     if (!this.currentSession?.username) return;
+    if (isRoomDeletedByTombstone(room, this.deletedRoomTombstones)) return;
     const me = this.currentSession.username.trim().toLowerCase();
     if (!this.isUserInRoom(room, me)) {
       // If current user was removed from group
       this.state.rooms = this.state.rooms.filter((r) => r.id !== room.id);
+      delete this.state.messagesByRoom[room.id];
+      await idbDeleteRoom(room.id);
       if (this.state.activeRoomId === room.id) {
         this.state.activeRoomId = null;
       }
@@ -2129,11 +2608,21 @@ class LiveChatManager {
     this.notify();
   }
 
-  private async handleIncomingRoomDeleted(roomId: string) {
+  private async handleIncomingRoomDeleted(roomId: string, deletedAt?: string) {
+    const ts = deletedAt || new Date().toISOString();
+    const prevTs = this.deletedRoomTombstones[roomId];
+    if (!prevTs || new Date(ts).getTime() > new Date(prevTs).getTime()) {
+      this.deletedRoomTombstones[roomId] = ts;
+      saveLocalDeletedTombstones(this.deletedRoomTombstones);
+    }
+    this.pendingUpsertRooms.delete(roomId);
     this.state.rooms = this.state.rooms.filter((r) => r.id !== roomId);
     delete this.state.messagesByRoom[roomId];
     if (this.state.activeRoomId === roomId) {
       this.state.activeRoomId = null;
+    }
+    if (this.state.incomingToastMessage?.room?.id === roomId) {
+      this.state.incomingToastMessage = null;
     }
     await idbDeleteRoom(roomId);
     this.notify();

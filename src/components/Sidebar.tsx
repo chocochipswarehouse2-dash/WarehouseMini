@@ -188,10 +188,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'live_chat' as ActivePage,
-      label: 'Live Chat & Diskusi',
+      label: chatUnreadCount > 0 || chatOnlineCount > 0 ? 'Live Chat Tim' : 'Live Chat & Diskusi',
       shortLabel: 'Live Chat',
       icon: MessageSquare,
-      description: chatOnlineCount > 0 ? `${chatOnlineCount} rekan online • Grup & Japri` : 'Ruang Diskusi & Chat Tim',
+      description: chatOnlineCount > 0 ? `${chatOnlineCount} rekan online · Grup & Japri` : 'Ruang Diskusi & Chat Tim',
       access: canLiveChat,
       badgeText: chatUnreadCount > 0 ? `${chatUnreadCount} BARU` : (chatOnlineCount > 0 ? `${chatOnlineCount} ONLINE` : undefined),
     },
