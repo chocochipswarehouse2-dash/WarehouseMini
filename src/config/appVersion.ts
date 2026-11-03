@@ -15,23 +15,37 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.51",
-  "versionCode": 311,
+  "version": "v2.6.52",
+  "versionCode": 312,
   "buildDate": "3 November 2026",
-  "buildHash": "wms-261103-v311-0842",
-  "releaseTitle": "WMS v2.6.51 — Full 2-Way Sync Google Calendar & PWA Auto-Update Delivery Hardening",
+  "buildHash": "wms-261103-v312-1420",
+  "releaseTitle": "WMS v2.6.52 — Hide/Unhide Panel Editor pada Fullscreen 3D Warehouse",
   "releaseNotes": [
-    "Otomasi sinkronisasi 2-arah Google Calendar & WMS (polling 45 detik saat tab aktif & auto-sync saat tab fokus kembali)",
-    "Perbaikan end date all-day event Google Calendar agar tidak bergeser 1 hari",
-    "Pembersihan otomatis metadata tag [WMS-ID] dari deskripsi agenda",
-    "Sinkronisasi perubahan judul, tanggal, jam, lokasi, deskripsi dari Google Calendar ke WMS & pembersihan agenda yang dihapus",
-    "Perkuatan OTA PWA Auto-Update: bypass cache Vercel CDN untuk version.json, auto-detect update instan pada startup & broadcast SKIP_WAITING ke semua worker",
-    "Pembaruan badge Sidebar & Floating Update Widget agar langsung aktif mendeteksi rilis baru di seluruh perangkat"
+    "Tambah fitur toggle sembunyikan/buka panel editor 3D gudang saat layar penuh maupun normal",
+    "Tombol toggle interaktif di chips lantai, toolbar fullscreen, dan kontrol kamera",
+    "Shortcut keyboard H untuk sembunyikan/buka panel desain secara instan",
+    "Canvas Three.js otomatis melebar penuh 100% tanpa distorsi saat panel disembunyikan"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.51",
+    "versionCode": 311,
+    "buildDate": "3 November 2026",
+    "buildHash": "wms-261103-v311-0842",
+    "releaseTitle": "WMS v2.6.51 — Full 2-Way Sync Google Calendar & PWA Auto-Update Delivery Hardening",
+    "releaseNotes": [
+      "Otomasi sinkronisasi 2-arah Google Calendar & WMS (polling 45 detik saat tab aktif & auto-sync saat tab fokus kembali)",
+      "Perbaikan end date all-day event Google Calendar agar tidak bergeser 1 hari",
+      "Pembersihan otomatis metadata tag [WMS-ID] dari deskripsi agenda",
+      "Sinkronisasi perubahan judul, tanggal, jam, lokasi, deskripsi dari Google Calendar ke WMS & pembersihan agenda yang dihapus",
+      "Perkuatan OTA PWA Auto-Update: bypass cache Vercel CDN untuk version.json, auto-detect update instan pada startup & broadcast SKIP_WAITING ke semua worker",
+      "Pembaruan badge Sidebar & Floating Update Widget agar langsung aktif mendeteksi rilis baru di seluruh perangkat"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.50",
     "versionCode": 310,
@@ -122,30 +136,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Tambah fitur Add to Cart Order Picking langsung dari tabel inventori dan drawer pencarian cepat",
       "Integrasi penuh ke 3 output: Kirim Tugas Picking App (invoice_picking), Broadcast WA Grup (Fonnte), dan Cetak A4"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.41",
-    "versionCode": 301,
-    "buildDate": "2 November 2026",
-    "buildHash": "wms-261102-v301-1015",
-    "releaseTitle": "WMS v2.6.41 — Proteksi Penolakan Duplikat File pada Sesi Upload Bersamaan",
-    "releaseNotes": [
-      "Otomatis menerima file pertama dan menolak file kedua jika 2 file SJ kembar diupload bersamaan",
-      "Pesan peringatan transparan memunculkan nama file yang diterima dan file yang ditolak untuk mencegah data ganda"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.40",
-    "versionCode": 300,
-    "buildDate": "2 November 2026",
-    "buildHash": "wms-261102-v300-1006",
-    "releaseTitle": "WMS v2.6.40 — Blokir & Tolak Otomatis Import Duplikat Surat Jalan",
-    "releaseNotes": [
-      "Sistem otomatis menolak import file jika Nomor Surat Jalan sudah terdaftar di sistem (Riwayat Pending/Selesai atau Draft Aktif)",
-      "Dialog peringatan penolakan lengkap dengan rincian status SJ lama dan opsi konfirmasi timpa khusus revisi resmi"
     ],
     "minSupportedVersion": "v2.0.0"
   }

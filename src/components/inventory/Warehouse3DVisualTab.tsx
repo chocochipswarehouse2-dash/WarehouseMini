@@ -17,6 +17,8 @@ import {
   RotateCcw,
   Eye,
   EyeOff,
+  PanelLeft,
+  PanelLeftClose,
   X,
   Presentation,
   Tv,
@@ -252,7 +254,7 @@ textarea{width:100%;height:60px;font:11px monospace;background:var(--inp);color:
 @media(max-width:800px){#app{flex-direction:column}#view{flex:none;height:54%}#side{width:auto;flex:1;border-right:0;border-top:1px solid var(--bd)}#hint{display:none}}
 </style></head><body>
 <div id="app"><div id="side">
-<h1>Perancang Gudang 3D</h1><div class="mu">Satuan meter. Terhubung ke kapasitas Rak Gudang WMS secara real-time.</div>
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px"><div><h1 style="margin:0 0 2px">Perancang Gudang 3D</h1><div class="mu">Satuan meter. Terhubung ke kapasitas Rak WMS.</div></div><button id="btn-side-close" onclick="tgSide(false)" title="Sembunyikan Panel Desain (Tekan H)" style="padding:4px 8px;font-size:11px;shrink:0;cursor:pointer;white-space:nowrap;background:var(--inp);border:1px solid var(--bd)">◀ Sembunyikan</button></div>
 <h3>Lantai &amp; luas area (P × L × T)</h3><div id="fl-ed"></div>
 <div class="row"><button onclick="addF()">+ Lantai</button><button onclick="delF()">− Lantai terakhir</button></div><div id="tot" class="mu" style="margin-top:6px"></div>
 <label style="margin-top:8px">Saat ubah panjang (P): sisi yang tetap<select id="al"><option value="left">Kiri tetap (tambah ke kanan)</option><option value="center">Tengah (dua sisi)</option><option value="right">Kanan tetap (tambah ke kiri)</option></select></label>
@@ -275,7 +277,7 @@ textarea{width:100%;height:60px;font:11px monospace;background:var(--inp);color:
 <h3>Unduh &amp; buka file</h3><div class="pal"><button onclick="dlJson()">Data (.json)</button><button onclick="dlHtml()">Aplikasi + data (.html)</button><button onclick="dlPng()">Gambar 3D (.png)</button><button onclick="dlCsv()">Daftar aset (.csv)</button></div><div class="row"><button onclick="$('fi').click()">Buka file data (.json)</button></div><input type="file" id="fi" accept=".json,application/json" style="display:none">
 <h3>Ekspor / impor teks</h3><textarea id="ta" placeholder="Data layout (JSON)"></textarea><div class="row"><button id="ex">Ekspor</button><button id="im">Muat</button></div>
 </div>
-<div id="view"><canvas id="cv"></canvas><div id="chips"></div><div id="cams"><button id="bhm" onclick="tgHeatmap()">🔥 Heatmap Live</button><button onclick="cm(0)">3D</button><button onclick="cm(1)">Atas</button><button onclick="cm(2)">Fokus lantai</button><button onclick="undo()">Undo</button><button onclick="redo()">Redo</button><button id="bm" onclick="tgM()">Multi</button><button onclick="selAll()">Pilih semua</button><button id="bt" onclick="cycTheme()">Tema: Gelap</button></div><div id="ic"></div><div id="gd"></div><div id="hint">Seret = pindah (magnet + garis bantu, Alt = bebas) · Klik Rak = Lihat Kapasitas &amp; Stok Real-Time WMS · Tarik kotak warna = ubah ukuran · L kunci · R putar · Del hapus</div></div></div>
+<div id="view"><canvas id="cv"></canvas><div id="chips"></div><div id="cams"><button id="btn-cams-side" onclick="tgSide()" title="Sembunyikan / Buka Panel Desain (Tekan H)">📐 Panel</button><button id="bhm" onclick="tgHeatmap()">🔥 Heatmap Live</button><button onclick="cm(0)">3D</button><button onclick="cm(1)">Atas</button><button onclick="cm(2)">Fokus lantai</button><button onclick="undo()">Undo</button><button onclick="redo()">Redo</button><button id="bm" onclick="tgM()">Multi</button><button onclick="selAll()">Pilih semua</button><button id="bt" onclick="cycTheme()">Tema: Gelap</button></div><div id="ic"></div><div id="gd"></div><div id="hint">Seret = pindah (magnet + garis bantu, Alt = bebas) · Klik Rak = Lihat Kapasitas &amp; Stok Real-Time WMS · H = Sembunyikan/Buka Panel · Tarik kotak warna = ubah ukuran · L kunci · R putar · Del hapus</div></div></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js"></script>
@@ -637,10 +639,22 @@ function tgLock(v){S.objs.forEach(o=>{if(S.ms.includes(o.id)){if(v)o.lk=1;else d
 function lockFlSet(i,v){const f=S.floors[i];if(v)f.lk=1;else delete f.lk;S.objs.forEach(o=>{if(o.floor===i){if(v)o.lk=1;else delete o.lk}});renderObjs();drawFloors();drawP();save()}
 function lockFl(i){lockFlSet(i,!S.floors[i].lk)}
 function lockFloor(v){lockFlSet(S.cur,v)}
+let sideVisible = true;
+function tgSide(forceVal){
+  sideVisible = typeof forceVal === 'boolean' ? forceVal : !sideVisible;
+  const side = $('side');
+  if(side) side.style.display = sideVisible ? '' : 'none';
+  rs();
+  drawFloors();
+  const btnCams = $('btn-cams-side');
+  if(btnCams) btnCams.classList.toggle('on', !sideVisible);
+  window.parent.postMessage({type:'WMS_PANEL_VISIBILITY_CHANGED',payload:sideVisible},'*');
+}
 function tgM(){MM=!MM;$('bm').classList.toggle('on',MM)}
 function tgHeatmap(val){WMS_HEATMAP = typeof val==='boolean'?val:!WMS_HEATMAP;$('bhm').classList.toggle('on',WMS_HEATMAP);$('ck-hm').checked=WMS_HEATMAP;renderObjs();window.parent.postMessage({type:'WMS_3D_HEATMAP_CHANGED',payload:WMS_HEATMAP},'*')}
 function drawFloors(){
- $('chips').innerHTML=S.floors.map((f,i)=>\`<button class="\${i===S.cur?'on':''}" onclick="goF(\${i})">Lt \${i+1}\${f.lk?' 🔒':''}</button>\`).join('');
+ const toggleBtn = '<button id="btn-tg-side" class="' + (!sideVisible ? 'on' : '') + '" onclick="tgSide()" title="' + (sideVisible ? 'Sembunyikan Panel Desain (Tekan H)' : 'Buka Panel Desain (Tekan H)') + '" style="' + (!sideVisible ? 'background:var(--ac);color:#fff;font-weight:700;' : '') + '">' + (sideVisible ? '◀ Sembunyikan' : '🛠️ Panel Desain') + '</button>';
+ $('chips').innerHTML=toggleBtn+S.floors.map((f,i)=>\`<button class="\${i===S.cur?'on':''}" onclick="goF(\${i})">Lt \${i+1}\${f.lk?' 🔒':''}</button>\`).join('');
  $('fl-ed').innerHTML=S.floors.map((f,i)=>\`<div class="fr \${i===S.cur?'on':''}"><b onclick="goF(\${i})">Lantai \${i+1}</b>\${['L','W','H'].map((k,j)=>\`<label>\${['P','L','T'][j]}<input type="number" min="1" step="0.5" value="\${f[k]}" \${k==='H'?'oninput':'onchange'}="setF(\${i},'\${k}',this.value)"></label>\`).join('')}<span id="fa\${i}"></span><div class="fx"><label>Lantai<select onchange="setX(\${i},'ft',this.value)">\${[['keramik','Keramik'],['beton','Beton'],['kayu','Kayu'],['epoxy','Epoksi']].map(a=>\`<option value="\${a[0]}"\${(f.ft||'keramik')===a[0]?' selected':''}>\${a[1]}</option>\`).join('')}</select></label><label>Warna<input type="color" value="\${f.fc||'#bdb8b0'}" oninput="setX(\${i},'fc',this.value)"></label><label>Ubin (cm)<input type="number" min="10" step="5" value="\${Math.round((f.fs||.6)*100)}" oninput="setX(\${i},'fs',this.value)"></label></div><div class="fx2"><label>Geser X (m)<input type="number" step="0.5" value="\${+(f.ox||0).toFixed(2)}" onchange="setO(\${i},'ox',this.value)"></label><label>Geser Z (m)<input type="number" step="0.5" value="\${+(f.oz||0).toFixed(2)}" onchange="setO(\${i},'oz',this.value)"></label>\${i>0?\`<button onclick="alignF(\${i},'corner')">Rata kiri-belakang lt.\${i}</button><button onclick="alignF(\${i},'center')">Rata tengah lt.\${i}</button>\`:''}<button style="grid-column:1/3" onclick="lockFl(\${i})">\${f.lk?'Buka kunci semua aset lantai ini':'Kunci semua aset lantai ini'}</button></div></div>\`).join('');areas()}
 function areas(){let t=0;S.floors.forEach((f,i)=>{t+=f.L*f.W;const e=$('fa'+i);if(e)e.textContent='Luas '+(f.L*f.W).toFixed(0)+' m²'});$('tot').textContent=\`Total \${t.toFixed(0)} m² · tinggi gedung \${elev(S.floors.length).toFixed(1)} m\`}
 function shiftF(i,k,nv){const f=S.floors[i],ov=f[k],d=nv-ov;if(!d)return;const ax=k==='L'?'x':'z',mode=k==='L'?(S.al||'left'):(S.aw||'back'),half=ov/2;
@@ -747,7 +761,7 @@ cv.addEventListener('pointermove',e=>{if(fz){doFloor(e);return}if(rz){doResize(e
  BHs.forEach(b=>b.update())});
 addEventListener('pointerup',e=>{if(fz){endFloor();dn=null;return}if(rz){rz=null;oc.enabled=true;clearG();renderObjs();drawP();save();dn=null;return}if(drag){drag=null;oc.enabled=true;clearG();renderObjs();drawP();save()}else if(dn&&!dn.hit&&Math.hypot(e.clientX-dn.x,e.clientY-dn.y)<4&&e.target===cv&&S.ms.length){select(null)}dn=null});
 cv.addEventListener('dblclick',e=>{setM(e);const gs=OG.children.filter(g=>{const q=S.objs.find(o=>o.id===g.userData.id);return q&&q.floor===S.cur}),hit=ray.intersectObjects(gs,true).filter(q=>!q.object.userData.np)[0];if(!hit)return;let g=hit.object;while(g&&!g.userData.id)g=g.parent;if(g)setSel([g.userData.id])});
-addEventListener('keydown',e=>{if(/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))return;const k=e.key.toLowerCase(),m=e.ctrlKey||e.metaKey;if(m&&k==='z'){e.preventDefault();e.shiftKey?redo():undo()}else if(m&&k==='y'){e.preventDefault();redo()}else if(m&&k==='a'){e.preventDefault();selAll()}else if(m&&k==='g'){e.preventDefault();e.shiftKey?ungrp():mkgrp()}else if(m)return;else if(k.startsWith('arrow')){e.preventDefault();nudge(k,e)}else if(k==='delete'||k==='backspace')del();else if(k==='r')rot();else if(k==='l'){const a=S.objs.filter(o=>S.ms.includes(o.id));if(a.length)tgLock(!a.every(o=>o.lk))}else if(k==='escape')select(null)});
+addEventListener('keydown',e=>{if(/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))return;const k=e.key.toLowerCase(),m=e.ctrlKey||e.metaKey;if(m&&k==='z'){e.preventDefault();e.shiftKey?redo():undo()}else if(m&&k==='y'){e.preventDefault();redo()}else if(m&&k==='a'){e.preventDefault();selAll()}else if(m&&k==='g'){e.preventDefault();e.shiftKey?ungrp():mkgrp()}else if(m)return;else if(k.startsWith('arrow')){e.preventDefault();nudge(k,e)}else if(k==='delete'||k==='backspace')del();else if(k==='r')rot();else if(k==='l'){const a=S.objs.filter(o=>S.ms.includes(o.id));if(a.length)tgLock(!a.every(o=>o.lk))}else if(k==='h'){e.preventDefault();tgSide()}else if(k==='escape')select(null)});
 const isDark=()=>S.th==='dark'||(S.th!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);
 function applyTheme(){inv();const r=document.documentElement;if(S.th==='light'||S.th==='dark')r.setAttribute('data-theme',S.th);else r.removeAttribute('data-theme');const d=isDark(),bg=d?0x0b1324:0xdde5ea;sc.background.set(bg);sc.fog.color.set(bg);gnd.material.color.set(d?0x161f30:0xb9c2a8);hemi.intensity=d?.5:.85;sun.intensity=d?.75:1.1;sun.color.set(d?0xcfd8ff:0xfff2de);R.toneMappingExposure=d?.95:1;$('bt').textContent='Tema: '+({auto:'Otomatis',light:'Terang',dark:'Gelap'})[S.th]}
 function openWmsLocModal(loc){
@@ -804,13 +818,17 @@ window.addEventListener('message',e=>{
   } else if(d.type==='WMS_SET_PRESENTATION_MODE'){
     const isP = Boolean(d.payload);
     const side = $('side'), chips = $('chips'), cams = $('cams'), hint = $('hint'), bhm = $('bhm'), gd = $('gd');
-    if(side) side.style.display = isP ? 'none' : '';
+    if(side) side.style.display = isP ? 'none' : (sideVisible ? '' : 'none');
     if(chips) chips.style.display = isP ? 'none' : '';
     if(cams) cams.style.display = isP ? 'none' : '';
     if(hint) hint.style.display = isP ? 'none' : '';
     if(bhm) bhm.style.display = isP ? 'none' : '';
     if(gd) gd.style.display = 'none';
     rs();
+  } else if(d.type==='WMS_SET_PANEL_VISIBILITY'){
+    tgSide(Boolean(d.payload));
+  } else if(d.type==='WMS_TOGGLE_PANEL_VISIBILITY'){
+    tgSide();
   } else if(d.type==='WMS_SET_AUTO_ROTATE'){
     oc.autoRotate = Boolean(d.payload);
     oc.autoRotateSpeed = 1.35;
@@ -894,6 +912,7 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
   const [heatmapActive, setHeatmapActive] = useState(false);
   const [showTags, setShowTags] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isSidePanelHidden, setIsSidePanelHidden] = useState(false);
   const [isPresentation, setIsPresentation] = useState(false);
   const [isAutoRotate, setIsAutoRotate] = useState(false);
   const [activeFloor, setActiveFloor] = useState<'ALL' | number>('ALL');
@@ -1059,6 +1078,8 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
           .catch(() => {});
       } else if (data.type === 'WMS_3D_STATE_CHANGED') {
         latest3DStateRef.current = data.payload;
+      } else if (data.type === 'WMS_PANEL_VISIBILITY_CHANGED') {
+        setIsSidePanelHidden(!Boolean(data.payload));
       } else if (data.type === 'WMS_3D_HEATMAP_CHANGED') {
         setHeatmapActive(Boolean(data.payload));
       } else if (data.type === 'WMS_3D_OPEN_LOC_MODAL') {
@@ -1210,6 +1231,20 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isPresentation, handleExitPresentation, handleToggleAutoRotate, handleToggleHeatmap, handleToggleTags, handleSelectFloor]);
+
+  const handleToggleSidePanel = useCallback((forceVal?: boolean) => {
+    if (typeof forceVal === 'boolean') {
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: 'WMS_SET_PANEL_VISIBILITY', payload: forceVal },
+        '*'
+      );
+    } else {
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: 'WMS_TOGGLE_PANEL_VISIBILITY' },
+        '*'
+      );
+    }
+  }, []);
 
   const handleAutoMapRacks = () => {
     iframeRef.current?.contentWindow?.postMessage({ type: 'WMS_AUTO_MAP_RACKS' }, '*');
@@ -1719,6 +1754,29 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
                   <span className="hidden sm:inline">Refresh Stok</span>
                 </button>
               )}
+
+              <button
+                type="button"
+                onClick={() => handleToggleSidePanel()}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs ${
+                  isSidePanelHidden
+                    ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700'
+                    : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+                }`}
+                title="Sembunyikan atau buka panel editor perancang gudang (Tekan H)"
+              >
+                {isSidePanelHidden ? (
+                  <>
+                    <PanelLeft className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Buka Panel Desain</span>
+                  </>
+                ) : (
+                  <>
+                    <PanelLeftClose className="w-3.5 h-3.5 text-slate-500" />
+                    <span className="hidden sm:inline">Sembunyikan Panel</span>
+                  </>
+                )}
+              </button>
 
               <button
                 type="button"

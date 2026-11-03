@@ -1,16 +1,14 @@
 {
-  "version": "v2.6.51",
-  "versionCode": 311,
+  "version": "v2.6.52",
+  "versionCode": 312,
   "buildDate": "3 November 2026",
-  "buildHash": "wms-261103-v311-0842",
-  "releaseTitle": "WMS v2.6.51 — Full 2-Way Sync Google Calendar & PWA Auto-Update Delivery Hardening",
+  "buildHash": "wms-261103-v312-1420",
+  "releaseTitle": "WMS v2.6.52 — Hide/Unhide Panel Editor pada Fullscreen 3D Warehouse",
   "releaseNotes": [
-    "Otomasi sinkronisasi 2-arah Google Calendar & WMS (polling 45 detik saat tab aktif & auto-sync saat tab fokus kembali)",
-    "Perbaikan end date all-day event Google Calendar agar tidak bergeser 1 hari",
-    "Pembersihan otomatis metadata tag [WMS-ID] dari deskripsi agenda",
-    "Sinkronisasi perubahan judul, tanggal, jam, lokasi, deskripsi dari Google Calendar ke WMS & pembersihan agenda yang dihapus",
-    "Perkuatan OTA PWA Auto-Update: bypass cache Vercel CDN untuk version.json, auto-detect update instan pada startup & broadcast SKIP_WAITING ke semua worker",
-    "Pembaruan badge Sidebar & Floating Update Widget agar langsung aktif mendeteksi rilis baru di seluruh perangkat"
+    "Tambah fitur toggle sembunyikan/buka panel editor 3D gudang saat layar penuh maupun normal",
+    "Tombol toggle interaktif di chips lantai, toolbar fullscreen, dan kontrol kamera",
+    "Shortcut keyboard H untuk sembunyikan/buka panel desain secara instan",
+    "Canvas Three.js otomatis melebar penuh 100% tanpa distorsi saat panel disembunyikan"
   ],
   "minSupportedVersion": "v2.0.0"
 }
