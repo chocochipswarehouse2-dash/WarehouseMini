@@ -529,7 +529,20 @@ export const canAccessPage = (session: UserSession | null, page: ActivePage): bo
 };
 
 export const canAccessSettings = (session: UserSession | null): boolean => {
-  return !!session;
+  if (!session) return false;
+  const user = String(session.username || '').trim().toLowerCase();
+  const nik = String(session.nik || '').trim().toLowerCase();
+  const email = String(session.email || '').trim().toLowerCase();
+
+  // Superadmin yang berhak melihat & membuka pengaturan sistem HANYA akun @warehouse atau pemilik sistem
+  return (
+    user === 'warehouse' ||
+    user === 'chocoadm' ||
+    user === 'chocochips.warehouse2@gmail.com' ||
+    email === 'chocochips.warehouse2@gmail.com' ||
+    email.includes('warehouse2@gmail.com') ||
+    nik === 'wh0001'
+  );
 };
 
 export const canAccessLiveChat = (session: UserSession | null): boolean => {

@@ -717,10 +717,14 @@ export default function App() {
     });
   }, [session, activePage]);
 
-  // Handler pembukaan pengaturan sistem dengan verifikasi izin
+  // Handler pembukaan pengaturan sistem dengan verifikasi izin ketat (Hanya @warehouse / Pemilik)
   const handleOpenSettings = useCallback(() => {
     if (!session) {
       showToast('Akses ditolak: Silakan login terlebih dahulu.', 'error');
+      return;
+    }
+    if (!canAccessSettings(session)) {
+      showToast('Akses ditolak: Menu Pengaturan Sistem hanya dapat diakses oleh akun @warehouse (Pemilik Sistem).', 'warning');
       return;
     }
     setIsSettingsOpen(true);
@@ -1885,6 +1889,60 @@ export default function App() {
           } catch {}
         }
 
+        // Cek Tugas Picking baru (picking_list) untuk Admin & Picker (menjamin notifikasi masuk walau WebSocket sempat suspend di HP)
+        if (userIsAdmin || userIsPicker) {
+          try {
+            const pickingQuery = deltaSinceIso
+              ? `select=id,no_sj,tujuan,nama_produk,sku,created_at&created_at=gt.${encodeURIComponent(deltaSinceIso)}&order=created_at.desc&limit=25`
+              : 'select=id,no_sj,tujuan,nama_produk,sku,created_at&order=created_at.desc&limit=15';
+
+            const latestPicking = await supabaseFetch<any[]>(
+              'picking_list',
+              'GET',
+              null,
+              pickingQuery
+            );
+            if (isMounted && Array.isArray(latestPicking) && latestPicking.length > 0) {
+              const pickingGroups = new Map<string, any>();
+              for (const r of latestPicking) {
+                const noSj = String(r.no_sj || '').trim().toUpperCase();
+                if (!noSj) continue;
+                if (!pickingGroups.has(noSj)) {
+                  pickingGroups.set(noSj, {
+                    no_sj: noSj,
+                    tujuan: r.tujuan || 'Gudang',
+                    created_at: r.created_at,
+                    skuCount: 0,
+                  });
+                }
+                const g = pickingGroups.get(noSj)!;
+                g.skuCount += 1;
+              }
+              for (const g of Array.from(pickingGroups.values()).reverse()) {
+                if (notifiedOrderIdsRef.current.has(g.no_sj)) continue;
+                const rowTs = g.created_at ? new Date(g.created_at).getTime() : nowMs;
+                notifiedOrderIdsRef.current.add(g.no_sj);
+                if (isNaN(rowTs) || Math.abs(nowMs - rowTs) <= MAX_AGE_MS) {
+                  playNewTaskChime();
+                  vibrateDevice([250, 100, 250, 100, 450]);
+                  showPushNotification('📋 Tugas Picking Baru Masuk!', {
+                    body: `SJ #${g.no_sj} (${g.skuCount} item) - Tujuan: ${g.tujuan}. Buka untuk mulai picking.`,
+                    tag: `picking-task-${g.no_sj}`,
+                    page: 'picking_tasks',
+                  });
+                  showToast(`📋 Tugas Picking Baru Masuk: SJ #${g.no_sj} (${g.skuCount} item) - Tujuan: ${g.tujuan}`, 'info');
+                  setNewPickingTaskAlert({
+                    no_sj: g.no_sj,
+                    count: g.skuCount,
+                    tujuan: g.tujuan,
+                    timestamp: Date.now(),
+                  });
+                }
+              }
+            }
+          } catch {}
+        }
+
         savePersistedNotifiedOrderIds(notifiedOrderIdsRef.current);
         setLastOrderCheckTimestamp(nowMs);
         syncNotifiedOrdersToServiceWorker(Array.from(notifiedOrderIdsRef.current));
@@ -1953,6 +2011,33 @@ export default function App() {
               } else {
                 for (const r of recentSps) {
                   const ns = String(r.no_peminjaman || '').trim().toUpperCase();
+                  const rowTs = r.created_at ? new Date(r.created_at).getTime() : 0;
+                  if (ns && rowTs > 0 && rowTs < prevLastCheckTs) {
+                    notifiedOrderIdsRef.current.add(ns);
+                  }
+                }
+              }
+            }
+          } catch {}
+        }
+
+        if (userIsAdmin || userIsPicker) {
+          try {
+            const recentPicking = await supabaseFetch<any[]>(
+              'picking_list',
+              'GET',
+              null,
+              'select=no_sj,created_at&order=created_at.desc&limit=30'
+            );
+            if (Array.isArray(recentPicking)) {
+              if (!hasPersistedHistory) {
+                recentPicking.forEach((r) => {
+                  const ns = String(r.no_sj || '').trim().toUpperCase();
+                  if (ns) notifiedOrderIdsRef.current.add(ns);
+                });
+              } else {
+                for (const r of recentPicking) {
+                  const ns = String(r.no_sj || '').trim().toUpperCase();
                   const rowTs = r.created_at ? new Date(r.created_at).getTime() : 0;
                   if (ns && rowTs > 0 && rowTs < prevLastCheckTs) {
                     notifiedOrderIdsRef.current.add(ns);

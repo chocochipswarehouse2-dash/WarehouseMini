@@ -15,18 +15,37 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.48",
-  "versionCode": 308,
-  "buildDate": "2 November 2026",
-  "buildHash": "wms-261102-v308-2358",
-  "releaseTitle": "WMS v2.6.48 — Pembaruan Deskripsi Aplikasi Chocochips Warehouse",
+  "version": "v2.6.49",
+  "versionCode": 309,
+  "buildDate": "3 November 2026",
+  "buildHash": "wms-261103-v309-0701",
+  "releaseTitle": "WMS v2.6.49 — Pengaturan Khusus Owner, Filter User & Notifikasi Picking Background",
   "releaseNotes": [
-    "Mengubah deskripsi aplikasi di package.json, manifest.json, metadata.json, dan index.html menjadi Chocochips Warehouse"
+    "Batasi akses Pengaturan Sistem, Update Database & Migrasi Supabase khusus akun @warehouse/pemilik",
+    "Hapus akun dummy default dari kode & hapus filter localStorage",
+    "Urutkan daftar pengguna berdasarkan hierarki role dan urutan NIK (Vina Kharisma WH0006 langsung terlihat rapi)",
+    "Tambahkan search filter & tab role filter di Manajemen Pengguna",
+    "Tambahkan delta polling background untuk antrean picking_list agar operator tetap dapat notifikasi saat WebSocket suspend",
+    "Perjelas tombol Notifikasi Perangkat untuk semua pengguna"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.48",
+    "versionCode": 308,
+    "buildDate": "3 November 2026",
+    "buildHash": "wms-261103-v308-0641",
+    "releaseTitle": "WMS v2.6.48 — Pembaruan Deskripsi Chocochips Warehouse & Restriksi Owner",
+    "releaseNotes": [
+      "Mengubah deskripsi aplikasi menjadi Chocochips Warehouse",
+      "Akses Pengaturan Sistem dan Database dibatasi eksklusif hanya untuk akun @warehouse / Pemilik Sistem",
+      "Menghapus seluruh akun dummy default dari kode aplikasi",
+      "Satu-satunya akun default sistem adalah warehouse"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.47",
     "versionCode": 307,
@@ -114,6 +133,7 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Pesan peringatan transparan memunculkan nama file yang diterima dan file yang ditolak untuk mencegah data ganda"
     ],
     "minSupportedVersion": "v2.0.0"
+<<<<<<< HEAD
   },
   {
     "version": "v2.6.40",
@@ -126,6 +146,8 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Dialog peringatan penolakan lengkap dengan rincian status SJ lama dan opsi konfirmasi timpa khusus revisi resmi"
     ],
     "minSupportedVersion": "v2.0.0"
+=======
+>>>>>>> a0830c4 (feat: batasi akses pengaturan khusus @warehouse, urutkan & filter user, serta optimasi notifikasi picking background)
   }
 ];
 

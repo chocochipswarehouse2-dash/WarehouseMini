@@ -508,15 +508,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </a>
       )}
 
-      {/* Settings Modal - Khusus Admin / Superadmin */}
-      {userIsAdmin && (
+      {/* Settings Modal - Khusus Akun @warehouse / Pemilik Sistem */}
+      {userCanAccessSettings && (
         <button
           type="button"
           onClick={() => {
             onOpenSettings();
             onCloseMobile();
           }}
-          title="Pengaturan Sistem, Database & User Role (Admin Only)"
+          title="Pengaturan Sistem, Database & User Role (Khusus Pemilik @warehouse)"
           className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
             collapsed ? 'justify-center px-2' : ''
           }`}
@@ -535,8 +535,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
       )}
 
-      {/* Update Database (Superadmin only) */}
-      {userIsAdmin && onOpenUpdateDatabase && (
+      {/* Update Database (Khusus Pemilik @warehouse) */}
+      {userCanAccessSettings && onOpenUpdateDatabase && (
         <button
           type="button"
           onClick={() => {
@@ -562,8 +562,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
       )}
 
-      {/* Migrasi Akun Supabase (Superadmin only - Bypass Egress Limit) */}
-      {userIsAdmin && (
+      {/* Migrasi Akun Supabase (Khusus Pemilik @warehouse) */}
+      {userCanAccessSettings && (
         <button
           type="button"
           onClick={() => {
@@ -638,9 +638,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
         {!collapsed && (
           <div className="flex-1 text-left truncate flex items-center justify-between">
-            <span className="font-extrabold text-slate-800 dark:text-slate-200">
-              {userIsAdmin ? 'Notifikasi Admin' : 'Notifikasi Perangkat'}
-            </span>
+            <div>
+              <div className="font-extrabold text-slate-800 dark:text-slate-200">
+                Notifikasi Perangkat
+              </div>
+              <div className="text-[10px] text-slate-400 font-normal">
+                Chat, Pesanan & Picking
+              </div>
+            </div>
             <span
               className={`text-[9px] px-1.5 py-0.2 rounded font-black border ${
                 notificationPermission === 'granted'

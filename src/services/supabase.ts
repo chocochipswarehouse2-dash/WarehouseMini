@@ -3167,17 +3167,9 @@ export async function deleteSupabaseUser(username: string, id?: string): Promise
   return deleteWmsUserFromSupabase(username, id);
 }
 
+// Satu-satunya akun default bawaan sistem adalah warehouse (Pemilik Sistem)
 export const DEFAULT_WMS_USERS: WmsUser[] = [
-  { username: 'admin', name: 'Super Admin Utama', role: 'Superadmin', password: 'admin123' },
-  { username: 'superadmin', name: 'Super Admin', role: 'Superadmin', password: 'admin123' },
-  { username: 'chocoadm', name: 'AdminWH', role: 'Superadmin', password: 'admin123', nik: 'WH0001' },
-  { username: 'ADMIN2', name: 'ADMIN', role: 'Superadmin', password: 'admin123' },
-  { username: 'warehouse', name: 'Warehouse', role: 'Superadmin', password: 'admin123' },
-  { username: 'chocochips.warehouse2@gmail.com', name: 'Warehouse Lead', role: 'Superadmin', password: 'admin123' },
-  { username: 'operator', name: 'Operator Gudang', role: 'Operator', password: '123456' },
-  { username: 'produk_team', name: 'Tim Produk & Stok', role: 'Produk', password: 'produk123' },
-  { username: 'fulfillment_team', name: 'Tim Fulfillment', role: 'Fulfillment', password: 'fulfillment123' },
-  { username: 'peminjaman_team', name: 'Tim Peminjaman SPS', role: 'Peminjaman', password: 'peminjaman123' },
+  { username: 'warehouse', name: 'Warehouse (Owner)', role: 'Superadmin', password: 'admin123' },
 ];
 
 /**
@@ -3350,9 +3342,6 @@ export async function verifySupabaseLogin(
       const role = u.role || 'Operator';
       const isUserSuper =
         role.toLowerCase() === 'superadmin' ||
-        role.toLowerCase() === 'admin' ||
-        u.username.toLowerCase() === 'admin' ||
-        u.username.toLowerCase() === 'admin2' ||
         u.username.toLowerCase() === 'warehouse' ||
         u.username.toLowerCase() === 'chocoadm' ||
         (u.nik && u.nik.toLowerCase() === 'wh0001');
@@ -3547,17 +3536,6 @@ export function resolveStoreDetails(storeNameOrCode?: string, username?: string)
  */
 export async function fetchWmsUsersFromSupabase(): Promise<WmsUser[]> {
   try {
-    let deletedSet = new Set<string>();
-    try {
-      const delRaw = localStorage.getItem('wms_deleted_users');
-      if (delRaw) {
-        const parsed = JSON.parse(delRaw);
-        if (Array.isArray(parsed)) {
-          deletedSet = new Set(parsed.map((s: string) => String(s).toLowerCase().trim()));
-        }
-      }
-    } catch {}
-
     const data = await supabaseFetch<WmsUser[]>(
       'wms_users',
       'GET',
@@ -3570,7 +3548,7 @@ export async function fetchWmsUsersFromSupabase(): Promise<WmsUser[]> {
       for (const raw of data) {
         const u = { ...raw };
         const key = (u.username || '').toLowerCase().trim();
-        if (!key || deletedSet.has(key)) continue;
+        if (!key) continue;
 
         // Auto-resolve store info from columns or JSONB permissions
         const p = (u.permissions || {}) as any;
@@ -3635,6 +3613,23 @@ export async function fetchWmsUsersFromSupabase(): Promise<WmsUser[]> {
       }
 
       const deduplicated = Array.from(seen.values());
+      const roleRank: Record<string, number> = {
+        superadmin: 1,
+        admin: 2,
+        manager: 3,
+        operator: 4,
+        'customer service': 5,
+        peminjaman: 6,
+        store: 7,
+      };
+      deduplicated.sort((a, b) => {
+        const rankA = roleRank[(a.role || '').toLowerCase()] || 99;
+        const rankB = roleRank[(b.role || '').toLowerCase()] || 99;
+        if (rankA !== rankB) return rankA - rankB;
+        const nikA = (a.nik || a.username || '').toLowerCase();
+        const nikB = (b.nik || b.username || '').toLowerCase();
+        return nikA.localeCompare(nikB, undefined, { numeric: true, sensitivity: 'base' });
+      });
       registerUserNames(deduplicated);
       try {
         localStorage.setItem('wms_local_users', JSON.stringify(deduplicated));
