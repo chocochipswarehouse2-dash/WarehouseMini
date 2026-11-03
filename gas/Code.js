@@ -773,6 +773,29 @@ function handleGoogleCalendarSync(payload) {
       }
     }
 
+    // Jika google_event_id tidak disediakan / tidak ditemukan, cari event yang sudah ada berdasarkan WMS-ID atau judul + rentang tanggal
+    if (!targetEvent && data.id) {
+      try {
+        var searchStart = new Date(sYear, sMonth, sDay - 1);
+        var searchEnd = new Date(eYear, eMonth, eDay + 2);
+        var rangeEvents = cal.getEvents(searchStart, searchEnd);
+        for (var rIdx = 0; rIdx < rangeEvents.length; rIdx++) {
+          var evCand = rangeEvents[rIdx];
+          var evDesc = evCand.getDescription() || '';
+          if (evDesc.indexOf('[WMS-ID: ' + data.id + ']') > -1) {
+            targetEvent = evCand;
+            break;
+          }
+          if (evCand.getTitle().trim().toLowerCase() === title.toLowerCase()) {
+            targetEvent = evCand;
+            break;
+          }
+        }
+      } catch (searchErr) {
+        Logger.log('Pencarian event Google Calendar fallback error: ' + searchErr.toString());
+      }
+    }
+
     var isAllDay = Boolean(data.is_all_day || !data.start_time);
 
     if (isAllDay) {

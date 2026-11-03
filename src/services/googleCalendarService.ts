@@ -143,6 +143,8 @@ export async function fetchEventsFromGoogleCalendar(
   }
 }
 
+let isReconcilingInProgress = false;
+
 /**
  * Rekonsiliasi 2-Arah Penuh antara WMS Agenda dan Google Calendar
  * Menarik event dari Google Calendar dan memasukkannya ke database WMS jika belum ada
@@ -150,81 +152,112 @@ export async function fetchEventsFromGoogleCalendar(
 export async function reconcileGoogleCalendarTwoWay(
   onProgress?: (status: string) => void
 ): Promise<{ added: number; updated: number; totalGcal: number }> {
-  if (onProgress) onProgress('Menghubungi Google Calendar via GAS...');
-
-  const fetchRes = await fetchEventsFromGoogleCalendar();
-  if (!fetchRes.success || !fetchRes.events) {
-    throw new Error(fetchRes.error || 'Gagal mengambil event dari Google Calendar');
+  if (isReconcilingInProgress) {
+    return { added: 0, updated: 0, totalGcal: 0 };
   }
+  isReconcilingInProgress = true;
 
-  const gcalEvents = fetchRes.events;
-  if (onProgress) onProgress(`Memproses ${gcalEvents.length} event dari Google Calendar...`);
+  try {
+    if (onProgress) onProgress('Menghubungi Google Calendar via GAS...');
 
-  // Ambil data WMS yang ada saat ini
-  const currentWmsEvents = await getAgendaEvents();
-  const wmsMapByGoogleId = new Map<string, AgendaEvent>();
-  const wmsMapById = new Map<string, AgendaEvent>();
-
-  for (const ev of currentWmsEvents) {
-    if (ev.google_event_id) {
-      wmsMapByGoogleId.set(ev.google_event_id, ev);
-    }
-    if (ev.id) {
-      wmsMapById.set(ev.id, ev);
-    }
-  }
-
-  let addedCount = 0;
-  let updatedCount = 0;
-
-  for (const gEv of gcalEvents) {
-    // 1. Cek apakah ada yang cocok berdasarkan wms_id tag di deskripsi
-    let existing: AgendaEvent | undefined;
-    if (gEv.wms_id && wmsMapById.has(gEv.wms_id)) {
-      existing = wmsMapById.get(gEv.wms_id);
-    } else if (wmsMapByGoogleId.has(gEv.google_event_id)) {
-      existing = wmsMapByGoogleId.get(gEv.google_event_id);
+    const fetchRes = await fetchEventsFromGoogleCalendar();
+    if (!fetchRes.success || !fetchRes.events) {
+      throw new Error(fetchRes.error || 'Gagal mengambil event dari Google Calendar');
     }
 
-    if (!existing) {
-      // Event baru dari Google Calendar -> Tambahkan ke WMS
-      const newEvent: Partial<AgendaEvent> = {
-        title: gEv.title || 'Agenda Google Calendar',
-        description: gEv.description || '',
-        start_date: gEv.start_date,
-        end_date: gEv.end_date || gEv.start_date,
-        start_time: gEv.start_time || '',
-        end_time: gEv.end_time || '',
-        is_all_day: gEv.is_all_day,
-        category: 'umum',
-        location: gEv.location || '',
-        pic: 'Google Calendar',
-        google_event_id: gEv.google_event_id,
-        source: 'google_calendar',
-      };
+    const gcalEvents = fetchRes.events;
+    if (onProgress) onProgress(`Memproses ${gcalEvents.length} event dari Google Calendar...`);
 
-      await saveAgendaEvent(newEvent);
-      addedCount++;
-    } else {
-      // Event sudah ada, perbarui google_event_id jika belum tercatat
-      if (!existing.google_event_id || existing.google_event_id !== gEv.google_event_id) {
-        existing.google_event_id = gEv.google_event_id;
-        await saveAgendaEvent(existing);
-        updatedCount++;
+    // Ambil data WMS yang ada saat ini
+    const currentWmsEvents = await getAgendaEvents();
+    const wmsMapByGoogleId = new Map<string, AgendaEvent>();
+    const wmsMapById = new Map<string, AgendaEvent>();
+
+    for (const ev of currentWmsEvents) {
+      if (ev.google_event_id) {
+        wmsMapByGoogleId.set(ev.google_event_id, ev);
+      }
+      if (ev.id) {
+        wmsMapById.set(ev.id, ev);
       }
     }
+
+    let addedCount = 0;
+    let updatedCount = 0;
+
+    const normalizeTitle = (t: string) => (t || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+    for (const gEv of gcalEvents) {
+      // 1. Cek apakah ada yang cocok berdasarkan wms_id tag di deskripsi
+      let existing: AgendaEvent | undefined;
+      if (gEv.wms_id && wmsMapById.has(gEv.wms_id)) {
+        existing = wmsMapById.get(gEv.wms_id);
+      } else if (wmsMapByGoogleId.has(gEv.google_event_id)) {
+        existing = wmsMapByGoogleId.get(gEv.google_event_id);
+      } else {
+        // 3. Fallback matching cerdas: Judul dan tanggal mulai (anti duplikasi)
+        const gTitleNorm = normalizeTitle(gEv.title);
+        existing = currentWmsEvents.find((wEv) => {
+          const wTitleNorm = normalizeTitle(wEv.title);
+          const isTitleMatch =
+            wTitleNorm === gTitleNorm ||
+            wTitleNorm.replace(/[^a-z0-9]/g, '') === gTitleNorm.replace(/[^a-z0-9]/g, '') ||
+            (wTitleNorm.includes('bazaar') && gTitleNorm.includes('bazaar') &&
+              wTitleNorm.split(' ').sort().join(' ') === gTitleNorm.split(' ').sort().join(' '));
+          const isDateMatch = wEv.start_date === gEv.start_date;
+          return isTitleMatch && isDateMatch;
+        });
+      }
+
+      if (!existing) {
+        // Event baru dari Google Calendar -> Tambahkan ke WMS
+        const newEvent: Partial<AgendaEvent> = {
+          title: gEv.title || 'Agenda Google Calendar',
+          description: gEv.description || '',
+          start_date: gEv.start_date,
+          end_date: gEv.end_date || gEv.start_date,
+          start_time: gEv.start_time || '',
+          end_time: gEv.end_time || '',
+          is_all_day: gEv.is_all_day,
+          category: 'umum',
+          location: gEv.location || '',
+          pic: 'Google Calendar',
+          google_event_id: gEv.google_event_id,
+          source: 'google_calendar',
+        };
+
+        const saved = await saveAgendaEvent(newEvent);
+        addedCount++;
+        // Daftarkan langsung ke map agar iterasi berikutnya tidak membuat duplikat
+        if (saved.id) wmsMapById.set(saved.id, saved);
+        if (saved.google_event_id) wmsMapByGoogleId.set(saved.google_event_id, saved);
+        currentWmsEvents.push(saved);
+      } else {
+        // Event sudah ada, perbarui google_event_id jika belum tercatat
+        if (!existing.google_event_id || existing.google_event_id !== gEv.google_event_id) {
+          existing.google_event_id = gEv.google_event_id;
+          const updated = await saveAgendaEvent(existing);
+          updatedCount++;
+          if (updated.id) wmsMapById.set(updated.id, updated);
+          if (updated.google_event_id) wmsMapByGoogleId.set(updated.google_event_id, updated);
+        }
+      }
+    }
+
+    // Tandai waktu terakhir sync
+    try {
+      localStorage.setItem(LAST_GCAL_SYNC_KEY, new Date().toISOString());
+    } catch {}
+
+    if (onProgress) onProgress(`Selesai! ${addedCount} event baru ditambahkan, ${updatedCount} diselaraskan.`);
+
+    return {
+      added: addedCount,
+      updated: updatedCount,
+      totalGcal: gcalEvents.length,
+    };
+  } finally {
+    isReconcilingInProgress = false;
   }
-
-  // Tandai waktu terakhir sync
-  try {
-    localStorage.setItem(LAST_GCAL_SYNC_KEY, new Date().toISOString());
-  } catch {}
-
-  if (onProgress) onProgress(`Selesai! ${addedCount} event baru ditambahkan, ${updatedCount} diselaraskan.`);
-
-  return {
-    added: addedCount,
-    updated: updatedCount,
-    totalGcal: gcalEvents.length,
-  };
 }
+

@@ -10700,8 +10700,30 @@ export async function getAgendaEvents(): Promise<AgendaEvent[]> {
         } catch {}
       }
 
-      safeSetLocalStorage(LOCAL_AGENDA_KEY, merged);
-      return merged;
+      // Deduplikasi cerdas (anti duplikat id, anti duplikat google_event_id, anti duplikat title+start_date)
+      const seenIds = new Set<string>();
+      const seenGoogleIds = new Set<string>();
+      const seenTitleDates = new Set<string>();
+      const deduplicated: AgendaEvent[] = [];
+
+      for (const item of merged) {
+        if (!item.id || seenIds.has(item.id)) continue;
+        seenIds.add(item.id);
+
+        if (item.google_event_id) {
+          if (seenGoogleIds.has(item.google_event_id)) continue;
+          seenGoogleIds.add(item.google_event_id);
+        }
+
+        const titleKey = `${(item.title || '').trim().toLowerCase().replace(/\s+/g, ' ')}_${item.start_date}`;
+        if (titleKey && seenTitleDates.has(titleKey)) continue;
+        seenTitleDates.add(titleKey);
+
+        deduplicated.push(item);
+      }
+
+      safeSetLocalStorage(LOCAL_AGENDA_KEY, deduplicated);
+      return deduplicated;
     }
   } catch (err) {
     console.info('Supabase wms_agenda offline/not yet migrated, using local cache:', err);
