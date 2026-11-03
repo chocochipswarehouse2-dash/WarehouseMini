@@ -133,7 +133,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Pesan peringatan transparan memunculkan nama file yang diterima dan file yang ditolak untuk mencegah data ganda"
     ],
     "minSupportedVersion": "v2.0.0"
-<<<<<<< HEAD
   },
   {
     "version": "v2.6.40",
@@ -146,8 +145,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Dialog peringatan penolakan lengkap dengan rincian status SJ lama dan opsi konfirmasi timpa khusus revisi resmi"
     ],
     "minSupportedVersion": "v2.0.0"
-=======
->>>>>>> a0830c4 (feat: batasi akses pengaturan khusus @warehouse, urutkan & filter user, serta optimasi notifikasi picking background)
   }
 ];
 

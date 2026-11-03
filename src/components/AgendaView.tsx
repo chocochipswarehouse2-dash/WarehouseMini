@@ -101,14 +101,22 @@ const PROJECT_STATUS_CONFIG: Record<ProjectStatus, { label: string; badge: strin
   on_hold: { label: 'Ditunda', badge: 'bg-purple-100 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300' }
 };
 
-const PROJECT_STATUS_TABS = [
+interface ProjectStatusTab {
+  id: string;
+  label: string;
+  subLabel?: string;
+  dot: string;
+  activeText: string;
+}
+
+const PROJECT_STATUS_TABS: readonly ProjectStatusTab[] = [
   { id: 'all', label: 'Semua Status', dot: 'bg-primary-500', activeText: 'text-primary-600 dark:text-primary-400' },
   { id: 'planned', label: 'Mulai', subLabel: 'Planned', dot: 'bg-slate-400', activeText: 'text-slate-700 dark:text-slate-200' },
   { id: 'in_progress', label: 'Berjalan', subLabel: 'In Progress', dot: 'bg-blue-500', activeText: 'text-blue-600 dark:text-blue-400' },
   { id: 'review', label: 'Evaluasi', subLabel: 'Review', dot: 'bg-amber-500', activeText: 'text-amber-600 dark:text-amber-400' },
   { id: 'completed', label: 'Selesai', subLabel: 'Completed', dot: 'bg-emerald-500', activeText: 'text-emerald-600 dark:text-emerald-400' },
   { id: 'on_hold', label: 'Ditunda', subLabel: 'On Hold', dot: 'bg-purple-500', activeText: 'text-purple-600 dark:text-purple-400' },
-] as const;
+];
 
 const PROJECT_PRIORITY_CONFIG: Record<ProjectPriority, { label: string; color: string }> = {
   low: { label: 'Rendah', color: 'text-slate-500 bg-slate-100 dark:bg-slate-800' },
@@ -1432,7 +1440,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                         priority: 'medium',
                         progress: 0,
                         start_date: formatIsoDate(new Date()),
-                        due_date: formatIsoDate(new Date(Date.now() + 7 * 86400000)),
+                        deadline: formatIsoDate(new Date(Date.now() + 7 * 86400000)),
                         tasks: [],
                         pic: session?.name || session?.username || ''
                       });
@@ -1451,8 +1459,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                       setEditingNote({
                         title: '',
                         content: '',
-                        color: 'yellow',
-                        is_pinned: false
+                        color: 'yellow'
                       });
                       setNoteModalOpen(true);
                     }}

@@ -3598,10 +3598,10 @@ export async function fetchWmsUsersFromSupabase(): Promise<WmsUser[]> {
         seen.set(key, normalized);
       }
 
-      // Ensure default system accounts (admin, superadmin, etc.) are present if not in DB or deleted
+      // Ensure default system accounts (admin, superadmin, etc.) are present if not in DB
       for (const defUser of DEFAULT_WMS_USERS) {
         const defKey = defUser.username.toLowerCase().trim();
-        if (!seen.has(defKey) && !deletedSet.has(defKey)) {
+        if (!seen.has(defKey)) {
           seen.set(defKey, {
             ...defUser,
             permissions:

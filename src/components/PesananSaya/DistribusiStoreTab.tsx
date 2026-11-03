@@ -567,7 +567,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
           } else if (inRiwayat || inDrafts) {
             const reason = inRiwayat
               ? (inRiwayat.status === 'pending'
-                  ? `Sudah ada di Riwayat Pengecekan (Status: PENDING, ${inRiwayat.total_qty_terima || 0}/${inRiwayat.total_qty_sj || 0} pcs diselesaikan oleh ${inRiwayat.admin || 'Admin'})`
+                  ? `Sudah ada di Riwayat Pengecekan (Status: PENDING, ${inRiwayat.total_qty_terima || 0}/${inRiwayat.total_qty_sj || 0} pcs diselesaikan oleh ${inRiwayat.submitted_by || 'Admin'})`
                   : `Sudah pernah selesai dicek di Riwayat (Status: SELESAI, ${inRiwayat.total_qty_terima || 0}/${inRiwayat.total_qty_sj || 0} pcs)`)
               : `Sudah ada di Antrean Draft Aktif yang sedang dikerjakan`;
 

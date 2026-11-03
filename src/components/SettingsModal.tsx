@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { clearLocalDb } from '../services/localDb';
 import {
   X,
@@ -26,6 +26,7 @@ import {
   Vibrate,
   Smartphone,
   Bell,
+  BellRing,
   Sun,
   Moon,
   Copy,
@@ -68,6 +69,7 @@ import {
   ClipboardList
 } from 'lucide-react';
 import { CURRENT_APP_VERSION } from '../config/appVersion';
+import { canAccessSettings } from '../services/permissions';
 import { fetchOutlets, saveOutlet, deleteOutlet, OutletItem, getStoreContact } from '../services/gasManualShipment';
 import { UserSession, UserRole, UserPermissions, UserPermissionKey, LocalUserRecord, KaryawanRecord, ProductItem } from '../types';
 import { StockOpnameView } from './StockOpnameView';
