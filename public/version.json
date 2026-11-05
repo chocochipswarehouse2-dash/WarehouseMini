@@ -1,13 +1,13 @@
 {
-  "version": "v2.6.63",
-  "versionCode": 323,
+  "version": "v2.6.64",
+  "versionCode": 324,
   "buildDate": "5 November 2026",
-  "buildHash": "wms-261105-v323-2135",
-  "releaseTitle": "WMS v2.6.63 — Integrasi UI/UX Pro Max & Visual Hygiene",
+  "buildHash": "wms-261105-v324-2252",
+  "releaseTitle": "WMS v2.6.64 — Renovasi Dashboard Utama Bento Grid & Zero-Egress Protection",
   "releaseNotes": [
-    "Integrasi skill UI/UX Pro Max dengan 80 visual styles dan design intelligence",
-    "Pembersihan button hierarchy anti-pelangi pada Produksi Spreadsheet View",
-    "Eliminasi container dead-zones pada Packing, Penerimaan, Pengiriman, dan Migration View"
+    "Transformasi Dashboard Utama dari dummy data menjadi Bento Box Grid operasional real-time",
+    "Implementasi arsitektur Ultra-Lean Zero-Egress dengan HTTP Head-Only count headers dan cache 15 menit melindungi kuota Supabase Free Tier",
+    "Pusat antrean kerja gudang dan 5 mutasi live ledger terkini dengan pintasan modul langsung"
   ],
   "minSupportedVersion": "v2.0.0"
 }

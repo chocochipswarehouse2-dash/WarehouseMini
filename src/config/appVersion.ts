@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.63",
-  "versionCode": 323,
+  "version": "v2.6.64",
+  "versionCode": 324,
   "buildDate": "5 November 2026",
-  "buildHash": "wms-261105-v323-2135",
-  "releaseTitle": "WMS v2.6.63 — Integrasi UI/UX Pro Max & Visual Hygiene",
+  "buildHash": "wms-261105-v324-2252",
+  "releaseTitle": "WMS v2.6.64 — Renovasi Dashboard Utama Bento Grid & Zero-Egress Protection",
   "releaseNotes": [
-    "Integrasi skill UI/UX Pro Max dengan 80 visual styles dan design intelligence",
-    "Pembersihan button hierarchy anti-pelangi pada Produksi Spreadsheet View",
-    "Eliminasi container dead-zones pada Packing, Penerimaan, Pengiriman, dan Migration View"
+    "Transformasi Dashboard Utama dari dummy data menjadi Bento Box Grid operasional real-time",
+    "Implementasi arsitektur Ultra-Lean Zero-Egress dengan HTTP Head-Only count headers dan cache 15 menit melindungi kuota Supabase Free Tier",
+    "Pusat antrean kerja gudang dan 5 mutasi live ledger terkini dengan pintasan modul langsung"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.63",
+    "versionCode": 323,
+    "buildDate": "5 November 2026",
+    "buildHash": "wms-261105-v323-2135",
+    "releaseTitle": "WMS v2.6.63 — Integrasi UI/UX Pro Max & Visual Hygiene",
+    "releaseNotes": [
+      "Integrasi skill UI/UX Pro Max dengan 80 visual styles dan design intelligence",
+      "Pembersihan button hierarchy anti-pelangi pada Produksi Spreadsheet View",
+      "Eliminasi container dead-zones pada Packing, Penerimaan, Pengiriman, dan Migration View"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.62",
     "versionCode": 322,
@@ -116,34 +129,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseTitle": "WMS v2.6.56 — Fix import useCallback pada RackCapacityDashboard",
     "releaseNotes": [
       "Memperbaiki impor useCallback dari React pada komponen RackCapacityDashboard di modul Inventory"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.55",
-    "versionCode": 315,
-    "buildDate": "5 November 2026",
-    "buildHash": "wms-261105-v315-1020",
-    "releaseTitle": "WMS v2.6.55 — Integrasi Kapasitas Warehouse (Rak + Koli), Blok F & SPS IGLive",
-    "releaseNotes": [
-      "Kapasitas Warehouse mencakup Rak ABCD dan Koli R,V,Z,X,CC,PMK,DF secara total",
-      "Status kapasitas masing-masing kategori penyimpanan (Rak, Koli, dan Blok F)",
-      "Setup IGLive pada kapasitas rak dan integrasi zona Blok F",
-      "Penambahan tab, filter & tabel IGLive pada modul SPS (Peminjaman)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.54",
-    "versionCode": 314,
-    "buildDate": "5 November 2026",
-    "buildHash": "wms-261105-v314-0910",
-    "releaseTitle": "WMS v2.6.54 — Penambahan Variabel Lokasi Baru IGLIVE pada Area Blok F",
-    "releaseNotes": [
-      "Tambah variabel lokasi resmi IGLIVE pada Area Blok F dengan prioritas picking Priority 3",
-      "Mendukung variasi penulisan IGlive, IG LIVE, IG-LIVE secara otomatis",
-      "Integrasi ke Quick Tag Toolbar, cetak label barcode rak, dan kapasitas rak WMS",
-      "Sinkronisasi modul webhook dan logic Fonnte GAS"
     ],
     "minSupportedVersion": "v2.0.0"
   }

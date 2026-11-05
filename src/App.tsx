@@ -2982,7 +2982,13 @@ export default function App() {
           <ErrorBoundary fallbackTitle="Kendala Memuat Halaman" onReset={() => window.location.reload()}>
             <React.Suspense fallback={<div className="flex justify-center p-8"><span className="animate-spin text-3xl">⏳</span></div>}>
               {activePage === 'dashboard' && (
-                  <DashboardView />
+                  <DashboardView
+                    session={session}
+                    onNavigate={handleSelectPage}
+                    productCatalog={productDatabase}
+                    currentLocations={activeLocations}
+                    onShowToast={showToast}
+                  />
               )}
               {activePage === 'packing' && (
                   <PackingView />

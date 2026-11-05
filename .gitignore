@@ -15,3 +15,7 @@ gas/.clasprc.json
 supabase/.env
 
 scratch/
+ 
+# Python Cache
+__pycache__/
+*.pyc
