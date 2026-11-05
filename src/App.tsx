@@ -417,6 +417,7 @@ export default function App() {
     if (p === 'tugas-picking' || p === 'picking' || p === 'picking-tasks') return 'picking_tasks';
     return undefined;
   });
+  const [agendaInitialTab, setAgendaInitialTab] = useState<'calendar' | 'project' | 'notes'>('calendar');
   const [cetakLabelInitialTab, setCetakLabelInitialTab] = useState<'qr_prefix' | 'paket' | 'barcode' | undefined>(() => {
     if (typeof window === 'undefined') return undefined;
     const p = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
@@ -2984,7 +2985,12 @@ export default function App() {
               {activePage === 'dashboard' && (
                   <DashboardView
                     session={session}
-                    onNavigate={handleSelectPage}
+                    onNavigate={(page, subTab) => {
+                      if (page === 'agenda' && subTab) setAgendaInitialTab(subTab as any);
+                      if (page === 'loading_dock' && subTab) setLoadingDockInitialTab(subTab as any);
+                      if (page === 'inventory' && subTab) setInventoryInitialTab(subTab as any);
+                      handleSelectPage(page as any);
+                    }}
                     productCatalog={productDatabase}
                     currentLocations={activeLocations}
                     onShowToast={showToast}
@@ -2997,6 +3003,7 @@ export default function App() {
                   <AgendaView 
                     session={session}
                     onShowToast={showToast}
+                    initialTab={agendaInitialTab}
                   />
               )}
               {activePage === 'produksi' && (

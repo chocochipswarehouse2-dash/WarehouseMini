@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.64",
-  "versionCode": 324,
-  "buildDate": "5 November 2026",
-  "buildHash": "wms-261105-v324-2252",
-  "releaseTitle": "WMS v2.6.64 — Renovasi Dashboard Utama Bento Grid & Zero-Egress Protection",
+  "version": "v2.6.65",
+  "versionCode": 325,
+  "buildDate": "6 November 2026",
+  "buildHash": "wms-261106-v325-0551",
+  "releaseTitle": "WMS v2.6.65 — Audit Seluler & Integrasi Agenda Project pada Dashboard",
   "releaseNotes": [
-    "Transformasi Dashboard Utama dari dummy data menjadi Bento Box Grid operasional real-time",
-    "Implementasi arsitektur Ultra-Lean Zero-Egress dengan HTTP Head-Only count headers dan cache 15 menit melindungi kuota Supabase Free Tier",
-    "Pusat antrean kerja gudang dan 5 mutasi live ledger terkini dengan pintasan modul langsung"
+    "Audit menyeluruh antarmuka seluler (HP) dengan grid 2x2 rapi, zero text overflow, dan header ramping",
+    "Menggantikan indikator SO dengan integrasi Proyek Berjalan dan Jadwal Kerja Hari Ini/Terdekat",
+    "Navigasi instan dari dashboard langsung ke tab Kalendar Kerja & Proyek Milestone"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.64",
+    "versionCode": 324,
+    "buildDate": "5 November 2026",
+    "buildHash": "wms-261105-v324-2252",
+    "releaseTitle": "WMS v2.6.64 — Renovasi Dashboard Utama Bento Grid & Zero-Egress Protection",
+    "releaseNotes": [
+      "Transformasi Dashboard Utama dari dummy data menjadi Bento Box Grid operasional real-time",
+      "Implementasi arsitektur Ultra-Lean Zero-Egress dengan HTTP Head-Only count headers dan cache 15 menit melindungi kuota Supabase Free Tier",
+      "Pusat antrean kerja gudang dan 5 mutasi live ledger terkini dengan pintasan modul langsung"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.63",
     "versionCode": 323,
@@ -118,17 +131,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Memulihkan konfigurasi lengkap rack_capacity_config_v1 di Supabase wms_system_docs termasuk zona IGLive Blok F",
       "Memastikan modal Setup Kapasitas Rak dan pemisahan utilitas Gudang, Koli, dan Blok F berjalan normal tanpa kendala memuat halaman"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.56",
-    "versionCode": 316,
-    "buildDate": "5 November 2026",
-    "buildHash": "wms-261105-v316-1028",
-    "releaseTitle": "WMS v2.6.56 — Fix import useCallback pada RackCapacityDashboard",
-    "releaseNotes": [
-      "Memperbaiki impor useCallback dari React pada komponen RackCapacityDashboard di modul Inventory"
     ],
     "minSupportedVersion": "v2.0.0"
   }

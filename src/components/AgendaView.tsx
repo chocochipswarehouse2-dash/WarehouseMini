@@ -26,6 +26,7 @@ import {
 interface AgendaViewProps {
   session?: any;
   onShowToast?: (msg: string, type: 'success' | 'error' | 'info' | 'warning') => void;
+  initialTab?: 'calendar' | 'project' | 'notes';
 }
 
 export const DEFAULT_CATEGORY_CONFIG: Record<string, { 
@@ -477,9 +478,13 @@ export const resolveEventColorStyle = (
 };
 
 
-export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) => {
+export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, initialTab }) => {
   // Main Tab
-  const [activeTab, setActiveTab] = useState<'calendar' | 'project' | 'notes'>('calendar');
+  const [activeTab, setActiveTab] = useState<'calendar' | 'project' | 'notes'>(initialTab || 'calendar');
+
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+  }, [initialTab]);
 
   // Calendar View Mode: week (default desktop), month, day, agenda (default mobile)
   const [calendarView, setCalendarView] = useState<'week' | 'month' | 'day' | 'agenda'>('month');
