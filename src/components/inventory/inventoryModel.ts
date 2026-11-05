@@ -263,7 +263,7 @@ type Bucket = 'MAP' | 'LIVE' | 'STUDIO' | 'OTHER';
 function bucketOf(l: string, a: string): Bucket {
   const isStudio = l.includes('STUDIO') || l.includes('SAMPLE') || a.includes('STUDIO');
   if (
-    l.includes('SHOPEE') || l.includes('TIKTOK') || l === 'TT' || l.includes('SHP') || l.includes('TTK') ||
+    l.includes('SHOPEE') || l.includes('TIKTOK') || l.includes('IGLIVE') || l.includes('IG LIVE') || l === 'TT' || l.includes('SHP') || l.includes('TTK') ||
     l.includes('LIVE') || a.includes('LIVE') || a === 'BLOK F' || a.includes('BLOK')
   ) {
     return isStudio ? 'STUDIO' : 'LIVE';

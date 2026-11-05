@@ -10,7 +10,7 @@ interface QuickTagToolbarProps {
   onSelectLocation: (loc: string) => void;
 }
 
-const COMMON_LOCATIONS = ['SHOPEE', 'TIKTOK', 'STUDIO', 'TRANSIT'];
+const COMMON_LOCATIONS = ['SHOPEE', 'TIKTOK', 'IGLIVE', 'STUDIO', 'TRANSIT'];
 
 export const QuickTagToolbar: React.FC<QuickTagToolbarProps> = ({
   isVisible = true,

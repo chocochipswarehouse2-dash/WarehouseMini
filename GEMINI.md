@@ -96,7 +96,7 @@ All location string inputs MUST be strictly mapped to their respective areas usi
 - **Aksesoris**: `BELT...`, `CARD...`, `GIFT...`, `BOX...`
 - **Transit**: `X` / `TRANSIT`
 - **Kolian**: `R0...`, `V0...`, `Z0...`
-- **Blok F**: `TIKTOK`, `SHOPEE`, `STUDIO`
+- **Blok F**: `TIKTOK`, `SHOPEE`, `STUDIO`, `IGLIVE` (termasuk `IGlive` / `IG LIVE`)
 - **Perbaikan**: `CC...` (Cuci), `PMK...` (Permak), `DF...` (Defect)
 - **Anomaly**: Any location string not fitting the above patterns MUST be flagged as an anomaly.
 

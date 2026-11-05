@@ -273,6 +273,9 @@ export function normalizeLokasi(lokasi: string): string {
   if (trimmed === 'TIK TOK' || trimmed === 'TIK-TOK') {
     return 'TIKTOK';
   }
+  if (trimmed === 'IG LIVE' || trimmed === 'IG-LIVE' || trimmed === 'IG_LIVE') {
+    return 'IGLIVE';
+  }
 
   // 2. Kasus tertentu: typo pasti huruf 'O' vs angka '0' pada kode rak standar (misal: CO43 -> C043, ROO5 -> R005)
   // Format ketat: 1 huruf prefix rak baku (A-D, R, V, Z, X) diikuti kombinasi huruf O dan angka
@@ -306,8 +309,8 @@ export function getAreaFromLokasi(lokasi: string, _area?: string): string {
   // 4. Kolian: R0..., V0..., Z0... (e.g. R047, R01, V003, Z005, Z105, KOLI...)
   if (/^[RVZ]-?\d+$/.test(l) || l.startsWith('KOLI')) return 'Kolian';
 
-  // 5. Blok F: TIKTOK, SHOPEE, STUDIO
-  if (/^(TIKTOK|SHOPEE|STUDIO)$/.test(l) || l.includes('BLOK F') || l.includes('SHOPEE') || l.includes('TIKTOK') || l.includes('STUDIO')) return 'Blok F';
+  // 5. Blok F: TIKTOK, SHOPEE, STUDIO, IGLIVE
+  if (/^(TIKTOK|SHOPEE|STUDIO|IGLIVE)$/.test(l) || l.includes('BLOK F') || l.includes('SHOPEE') || l.includes('TIKTOK') || l.includes('STUDIO') || l.includes('IGLIVE') || l.includes('IG LIVE')) return 'Blok F';
 
   // 6. Perbaikan: CC... (Cuci), PMK... (Permak), DF... (Defect)
   if (/^(CC|PMK|DF)-?\d*$/.test(l) || l.includes('PERBAIKAN') || l.includes('CUCI') || l.includes('PERMAK') || l.includes('DEFECT')) return 'Perbaikan';
@@ -4926,13 +4929,14 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
 
       const isShopee = lokUpper.includes('SHOPEE') || lokUpper.includes('SHP') || lokUpper.includes('LIVE SHOPEE') || areaUpper.includes('SHOPEE');
       const isTikTok = lokUpper.includes('TIKTOK') || lokUpper === 'TTK' || lokUpper === 'TT' || lokUpper.includes('LIVE TIKTOK') || areaUpper.includes('TIKTOK');
+      const isIgLive = lokUpper.includes('IGLIVE') || lokUpper.includes('IG LIVE') || lokUpper === 'IG' || areaUpper.includes('IGLIVE') || areaUpper.includes('IG LIVE');
       const isBlokF = lokUpper.includes('BLOK F') || areaUpper.includes('BLOK F') || lokUpper.startsWith('F-');
       
       let isStudio = lokUpper.includes('STUDIO') || lokUpper === 'SAMPLE' || lokUpper === 'LIVE' || lokUpper.includes('FOTO') || areaUpper.includes('STUDIO');
       if (isBlokF) {
-        if (!isShopee && !isTikTok) isStudio = true;
+        if (!isShopee && !isTikTok && !isIgLive) isStudio = true;
       }
-      const isWh = !isStudio && !isShopee && !isTikTok && !isBlokF && (areaUpper.includes('WAREHOUSE') || areaUpper.includes('GUDANG') || isWarehouseLocation(lokName, locInfo.area));
+      const isWh = !isStudio && !isShopee && !isTikTok && !isIgLive && !isBlokF && (areaUpper.includes('WAREHOUSE') || areaUpper.includes('GUDANG') || isWarehouseLocation(lokName, locInfo.area));
 
       if (isStudio) {
         studioQty += q;
@@ -8488,6 +8492,8 @@ export async function fetchChannelStocksBySkus(skus: string[]): Promise<import('
         shp += q;
       } else if (a === 'TIKTOK' || a === 'TTK' || l === 'TIKTOK' || l === 'TTK') {
         ttk += q;
+      } else if (a === 'IGLIVE' || a === 'IG LIVE' || l === 'IGLIVE' || l === 'IG LIVE') {
+        std += q;
       } else if (a === 'ONLINE') {
         shp += q; // Fallback mapping
       } else {

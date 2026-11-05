@@ -9,7 +9,7 @@ function getAreaFromLokasi(lokasi) {
   if (/^(BELT|CARD|GIFT|BOX)(\d*|-?\d+)$/.test(l) || l === 'BELT' || l === 'CARD' || l === 'GIFT' || l === 'BOX') return 'Aksesoris';
   if (l === 'X' || /^X-?\d*$/.test(l) || l === 'TRANSIT' || l.startsWith('TRANSIT')) return 'Transit';
   if (/^[RVZ]-?\d+$/.test(l) || l.startsWith('KOLI')) return 'Kolian';
-  if (/^(TIKTOK|SHOPEE|STUDIO)$/.test(l) || l.includes('BLOK F') || l.includes('SHOPEE') || l.includes('TIKTOK') || l.includes('STUDIO')) return 'Blok F';
+  if (/^(TIKTOK|SHOPEE|STUDIO|IGLIVE)$/.test(l) || l.includes('BLOK F') || l.includes('SHOPEE') || l.includes('TIKTOK') || l.includes('STUDIO') || l.includes('IGLIVE') || l.includes('IG LIVE')) return 'Blok F';
   if (/^(CC|PMK|DF)-?\d*$/.test(l) || l.includes('PERBAIKAN') || l.includes('CUCI') || l.includes('PERMAK') || l.includes('DEFECT')) return 'Perbaikan';
   return 'Anomali';
 }

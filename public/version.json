@@ -1,14 +1,14 @@
 {
-  "version": "v2.6.53",
-  "versionCode": 313,
-  "buildDate": "3 November 2026",
-  "buildHash": "wms-261103-v313-1605",
-  "releaseTitle": "WMS v2.6.53 — Hide/Unhide Panel Samping & Kartu Kalender Agenda",
+  "version": "v2.6.54",
+  "versionCode": 314,
+  "buildDate": "5 November 2026",
+  "buildHash": "wms-261105-v314-0910",
+  "releaseTitle": "WMS v2.6.54 — Penambahan Variabel Lokasi Baru IGLIVE pada Area Blok F",
   "releaseNotes": [
-    "Tambah toggle sembunyikan/buka panel samping kalender (Mini Kalender & Kategori) gaya Google Calendar",
-    "Grid kalender otomatis melebar penuh 100% saat panel samping disembunyikan",
-    "Tambah tombol collapse/expand independen pada kartu Mini Kalender dan Filter Kategori",
-    "Menyimpan preferensi tampilan panel samping di localStorage"
+    "Tambah variabel lokasi resmi IGLIVE pada Area Blok F dengan prioritas picking Priority 3",
+    "Mendukung variasi penulisan IGlive, IG LIVE, IG-LIVE secara otomatis",
+    "Integrasi ke Quick Tag Toolbar, cetak label barcode rak, dan kapasitas rak WMS",
+    "Sinkronisasi modul webhook dan logic Fonnte GAS"
   ],
   "minSupportedVersion": "v2.0.0"
 }

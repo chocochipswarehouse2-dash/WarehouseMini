@@ -275,7 +275,7 @@ export const CetakLokasiRakTab: React.FC<CetakLokasiRakTabProps> = ({ onShowToas
   };
 
   const handleAddAllBlokFPreset = () => {
-    const blokFList = ['SHOPEE', 'TIKTOK', 'STUDIO'];
+    const blokFList = ['SHOPEE', 'TIKTOK', 'IGLIVE', 'STUDIO'];
     const newItems: LocationLabelItem[] = blokFList.map((loc, idx) => ({
       id: `loc_${Date.now()}_blokf_${idx}`,
       locCode: loc,
@@ -286,7 +286,7 @@ export const CetakLokasiRakTab: React.FC<CetakLokasiRakTabProps> = ({ onShowToas
       selected: true,
     }));
     setQueue((prev) => [...newItems, ...prev]);
-    notify('+3 lokasi Blok F (SHOPEE, TIKTOK, STUDIO) ditambahkan ke antrean.', 'success');
+    notify('+4 lokasi Blok F (SHOPEE, TIKTOK, IGLIVE, STUDIO) ditambahkan ke antrean.', 'success');
   };
 
   const handleAddPerbaikanPreset = (prefix: string, count: number = 5, zoneLabel: string = 'PERBAIKAN') => {

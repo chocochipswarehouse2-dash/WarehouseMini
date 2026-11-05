@@ -232,6 +232,19 @@ export const DEFAULT_RACK_ZONES: RackZoneRule[] = [
     color: 'purple',
   },
   {
+    id: 'zone_blok_f_iglive',
+    area: 'Blok F',
+    zoneName: 'Area Blok F — IGLIVE',
+    prefix: 'IGLIVE',
+    startNum: 0,
+    endNum: 0,
+    padLength: 0,
+    staticLocations: ['IGLIVE'],
+    category: 'Instagram Live',
+    defaultMaxCapacity: 80,
+    color: 'rose',
+  },
+  {
     id: 'zone_blok_f_studio',
     area: 'Blok F',
     zoneName: 'Area Blok F — STUDIO',
@@ -645,6 +658,16 @@ function inferZoneForUnmappedLocation(lokasi: string): {
         category: 'Live TikTok',
         defaultMaxCapacity: 80,
         color: 'purple',
+      };
+    }
+    if (loc === 'IGLIVE' || loc === 'IG LIVE') {
+      return {
+        area: 'Blok F',
+        zoneId: 'zone_blok_f_iglive',
+        zoneName: 'Area Blok F — IGLIVE',
+        category: 'Instagram Live',
+        defaultMaxCapacity: 80,
+        color: 'rose',
       };
     }
     if (loc === 'STUDIO') {

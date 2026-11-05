@@ -455,7 +455,7 @@ function getArea(lokasi) {
   if (/^(BELT|CARD|GIFT|BOX)(\d*|-?\d+)$/.test(l) || l === 'BELT' || l === 'CARD' || l === 'GIFT' || l === 'BOX') return 'Aksesoris';
   if (l === 'X' || /^X-?\d*$/.test(l) || l === 'TRANSIT' || l.indexOf('TRANSIT') === 0) return 'Transit';
   if (/^[RVZ]-?\d+$/.test(l) || l.indexOf('KOLI') === 0) return 'Kolian';
-  if (/^(TIKTOK|SHOPEE|STUDIO)$/.test(l) || l.indexOf('BLOK F') > -1 || l.indexOf('SHOPEE') > -1 || l.indexOf('TIKTOK') > -1 || l.indexOf('STUDIO') > -1) return 'Blok F';
+  if (/^(TIKTOK|SHOPEE|STUDIO|IGLIVE)$/.test(l) || l.indexOf('BLOK F') > -1 || l.indexOf('SHOPEE') > -1 || l.indexOf('TIKTOK') > -1 || l.indexOf('STUDIO') > -1 || l.indexOf('IGLIVE') > -1 || l.indexOf('IG LIVE') > -1) return 'Blok F';
   if (/^(CC|PMK|DF)-?\d*$/.test(l) || l.indexOf('PERBAIKAN') > -1 || l.indexOf('CUCI') > -1 || l.indexOf('PERMAK') > -1 || l.indexOf('DEFECT') > -1) return 'Perbaikan';
   return 'Anomali';
 }

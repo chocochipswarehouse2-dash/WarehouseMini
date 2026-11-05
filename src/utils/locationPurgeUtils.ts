@@ -119,11 +119,11 @@ export function parseBlockLocations(
       }
     });
   } else if (key === 'BLOK_F') {
-    ['TIKTOK', 'SHOPEE', 'STUDIO', 'Tiktok', 'Shopee', 'Studio', 'tiktok', 'shopee', 'studio'].forEach((b) => locSet.add(b));
+    ['TIKTOK', 'SHOPEE', 'STUDIO', 'IGLIVE', 'Tiktok', 'Shopee', 'Studio', 'Iglive', 'tiktok', 'shopee', 'studio', 'iglive'].forEach((b) => locSet.add(b));
     existingLocations.forEach((rawLoc) => {
       const loc = (rawLoc || '').trim();
       const up = loc.toUpperCase();
-      if (up.includes('TIKTOK') || up.includes('SHOPEE') || up.includes('STUDIO') || up.includes('BLOK F')) {
+      if (up.includes('TIKTOK') || up.includes('SHOPEE') || up.includes('STUDIO') || up.includes('IGLIVE') || up.includes('IG LIVE') || up.includes('BLOK F')) {
         locSet.add(loc);
       }
     });

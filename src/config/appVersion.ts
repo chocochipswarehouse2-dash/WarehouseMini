@@ -15,21 +15,35 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.53",
-  "versionCode": 313,
-  "buildDate": "3 November 2026",
-  "buildHash": "wms-261103-v313-1605",
-  "releaseTitle": "WMS v2.6.53 — Hide/Unhide Panel Samping & Kartu Kalender Agenda",
+  "version": "v2.6.54",
+  "versionCode": 314,
+  "buildDate": "5 November 2026",
+  "buildHash": "wms-261105-v314-0910",
+  "releaseTitle": "WMS v2.6.54 — Penambahan Variabel Lokasi Baru IGLIVE pada Area Blok F",
   "releaseNotes": [
-    "Tambah toggle sembunyikan/buka panel samping kalender (Mini Kalender & Kategori) gaya Google Calendar",
-    "Grid kalender otomatis melebar penuh 100% saat panel samping disembunyikan",
-    "Tambah tombol collapse/expand independen pada kartu Mini Kalender dan Filter Kategori",
-    "Menyimpan preferensi tampilan panel samping di localStorage"
+    "Tambah variabel lokasi resmi IGLIVE pada Area Blok F dengan prioritas picking Priority 3",
+    "Mendukung variasi penulisan IGlive, IG LIVE, IG-LIVE secara otomatis",
+    "Integrasi ke Quick Tag Toolbar, cetak label barcode rak, dan kapasitas rak WMS",
+    "Sinkronisasi modul webhook dan logic Fonnte GAS"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.53",
+    "versionCode": 313,
+    "buildDate": "3 November 2026",
+    "buildHash": "wms-261103-v313-1605",
+    "releaseTitle": "WMS v2.6.53 — Hide/Unhide Panel Samping & Kartu Kalender Agenda",
+    "releaseNotes": [
+      "Tambah toggle sembunyikan/buka panel samping kalender (Mini Kalender & Kategori) gaya Google Calendar",
+      "Grid kalender otomatis melebar penuh 100% saat panel samping disembunyikan",
+      "Tambah tombol collapse/expand independen pada kartu Mini Kalender dan Filter Kategori",
+      "Menyimpan preferensi tampilan panel samping di localStorage"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.52",
     "versionCode": 312,
@@ -124,20 +138,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseTitle": "WMS v2.6.44 — Fix Props onAddToCart di InventoryDetailDrawer",
     "releaseNotes": [
       "Memperbaiki destructuring props onAddToCart di modal Audit Kartu SKU InventoryDetailDrawer agar tidak memicu ReferenceError"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.43",
-    "versionCode": 303,
-    "buildDate": "2 November 2026",
-    "buildHash": "wms-261102-v303-1651",
-    "releaseTitle": "WMS v2.6.43 — Proteksi Stok Kosong Keranjang Picking, Auto-Tambah Dropdown & Impor CSV Excel",
-    "releaseNotes": [
-      "Proteksi anti-crash dan pencegahan order picking untuk produk dengan stok fisik 0 pcs di gudang",
-      "Pencarian cepat autocomplete langsung otomatis menambahkan produk ke keranjang tanpa klik ulang tombol tambah",
-      "Dukungan penuh multi-lokasi rak per SKU dengan kalkulasi stok komersial terintegrasi",
-      "Fitur baru Impor Massal CSV dan Excel serta tempel teks langsung ke dalam Keranjang Picking"
     ],
     "minSupportedVersion": "v2.0.0"
   }
