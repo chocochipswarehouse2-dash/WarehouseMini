@@ -21,6 +21,316 @@ function colToLetter(col) {
 }
 
 /**
+ * ================================================================================================
+ * GOOGLE APPS SCRIPT TRIGGERS: onOpen & onEdit (REAL-TIME AUTO-SYNC QTY NOTA - OPSI A)
+ * ================================================================================================
+ * Simple Trigger: Otomatis berjalan saat pengguna membuka atau mengedit sel di Google Spreadsheet.
+ * OPSI A:
+ * Saat Buyer mengetik / mengedit QTY NOTA di Tab Tanggal manapun (contoh: '15-10-2026 (CMT)'),
+ * nilai QTY NOTA tersebut langsung otomatis disalin (direct overwrite) ke baris kode produk bersangkutan
+ * pada Sheet Master Produksi ('Master Produksi (CMT)' atau 'Master Produksi (Kargo)').
+ * Berlaku juga sebaliknya jika diedit di Master Sheet, agar seluruh sheet selalu seimbang dan klop!
+ */
+
+function onOpen(e) {
+  try {
+    SpreadsheetApp.getUi()
+      .createMenu('⚡ WMS Produksi')
+      .addItem('🔄 Sinkronkan Semua Qty Nota (Tanggal ➜ Master)', 'menuSyncAllQtyNota')
+      .addItem('📋 Refresh Indeks Tanggal (DAFTAR_TANGGAL)', 'menuRefreshIndexDaftarTanggal')
+      .addToUi();
+  } catch (errUi) {
+    Logger.log('onOpen error: ' + errUi);
+  }
+}
+
+function onEdit(e) {
+  try {
+    if (!e || !e.range) return;
+    handleSheetCellEdit(e);
+  } catch (err) {
+    Logger.log('onEdit error: ' + err.toString());
+  }
+}
+
+/**
+ * Logika inti penanganan edit sel spreadsheet secara real-time
+ */
+function handleSheetCellEdit(e) {
+  var range = e.range;
+  var sheet = range.getSheet();
+  var sheetName = sheet.getName().trim();
+
+  // Hanya periksa tab Master Produksi atau tab Tanggal
+  var isMasterCMT = (sheetName === 'Master Produksi (CMT)');
+  var isMasterKargo = (sheetName === 'Master Produksi (Kargo)');
+  var isMaster = isMasterCMT || isMasterKargo;
+  var dateMatch = sheetName.match(/^(\d{2})[-/](\d{2})[-/](\d{4})(?:\s*\((.*?)\))?/);
+
+  if (!isMaster && !dateMatch) return;
+
+  var ss = e.source || sheet.getParent();
+  var startRow = range.getRow();
+  var startCol = range.getColumn();
+  var numRows = range.getNumRows();
+  var numCols = range.getNumColumns();
+
+  // Lewati jika edit di header banner atas (baris 1-2)
+  if (startRow <= 2) return;
+
+  // 1. Cari baris header blok di atas baris yang diedit (NO & CODE)
+  var headerRow = findBlockHeaderRowAbove(sheet, startRow);
+  if (!headerRow) return;
+
+  // 2. Baca nama kolom di baris header blok untuk menentukan indeks kolom QTY NOTA
+  var lastCol = Math.min(50, Math.max(1, sheet.getLastColumn()));
+  var headerVals = sheet.getRange(headerRow, 1, 1, lastCol).getValues()[0];
+  var colQtyNota = -1;
+  for (var c = 0; c < headerVals.length; c++) {
+    var hText = String(headerVals[c] || '').trim().toUpperCase();
+    if (hText.indexOf('QTY NOTA') !== -1 || hText === 'NOTA') {
+      colQtyNota = c + 1; // 1-based index
+      break;
+    }
+  }
+
+  // Jika blok tidak memiliki kolom QTY NOTA atau yang diedit bukan kolom QTY NOTA, abaikan
+  if (colQtyNota === -1) return;
+  if (startCol > colQtyNota || (startCol + numCols - 1) < colQtyNota) return;
+
+  // 3. Ekstrak Kode Produk dari baris pertama blok data (headerRow + 2)
+  var firstDataRow = headerRow + 2;
+  var rawCode = sheet.getRange(firstDataRow, 2).getValue();
+  if (!rawCode || String(rawCode).trim() === '') {
+    rawCode = sheet.getRange(startRow, 2).getValue();
+  }
+  var cleanCode = String(rawCode || '').replace(/^'+/, '').trim().toUpperCase();
+  if (!cleanCode || cleanCode === '-' || cleanCode === 'CODE') return;
+
+  // 4. Ambil nilai baru QTY NOTA yang diketik Buyer
+  var rawVal = range.getValue();
+  var newQtyVal = '';
+  if (rawVal !== '' && rawVal !== null && rawVal !== undefined) {
+    var num = Number(rawVal);
+    newQtyVal = !isNaN(num) ? num : rawVal;
+  }
+
+  // 5. Eksekusi Sinkronisasi Opsi A
+  if (dateMatch) {
+    // -------------------------------------------------------------------------
+    // KASUS 1: BUYER MENGISI DI SHEET TANGGAL -> SALIN KE MASTER PRODUKSI
+    // -------------------------------------------------------------------------
+    var isKargo = sheetName.toLowerCase().indexOf('kargo') !== -1;
+    var targetMasterName = isKargo ? 'Master Produksi (Kargo)' : 'Master Produksi (CMT)';
+    var targetMasterSheet = ss.getSheetByName(targetMasterName);
+    if (!targetMasterSheet) return;
+
+    var mScan = scanExistingSheetBlocksData(targetMasterSheet);
+    var mRec = findNotaRecordForCode(mScan.oldNotaMap, cleanCode);
+
+    if (mRec && mRec.rowNum > 0 && mRec.colQtyNota > 0) {
+      var curMasterVal = targetMasterSheet.getRange(mRec.rowNum, mRec.colQtyNota).getValue();
+      if (curMasterVal !== newQtyVal && String(curMasterVal) !== String(newQtyVal)) {
+        if (newQtyVal === '') {
+          targetMasterSheet.getRange(mRec.rowNum, mRec.colQtyNota).clearContent();
+        } else {
+          targetMasterSheet.getRange(mRec.rowNum, mRec.colQtyNota).setValue(newQtyVal).setNumberFormat('0');
+        }
+
+        // Tampilkan notifikasi toast di Google Sheets
+        try {
+          ss.toast(
+            'Qty Nota Kode ' + cleanCode + ' (' + (newQtyVal === '' ? 'Dihapus' : newQtyVal) + ') disalin ke ' + targetMasterName + ' (Baris ' + mRec.rowNum + ')',
+            '⚡ Auto-Sync Qty Nota (Opsi A)',
+            4
+          );
+        } catch (eToast) {}
+      }
+    }
+  } else if (isMaster) {
+    // -------------------------------------------------------------------------
+    // KASUS 2: DIEDIT DI MASTER PRODUKSI -> SALIN KE SELURUH SHEET TANGGAL KODE INI
+    // -------------------------------------------------------------------------
+    var isKargoM = isMasterKargo;
+    var allSheets = ss.getSheets();
+    var syncedSheets = [];
+
+    for (var i = 0; i < allSheets.length; i++) {
+      var curS = allSheets[i];
+      var cName = curS.getName().trim();
+      var dM = cName.match(/^(\d{2})[-/](\d{2})[-/](\d{4})(?:\s*\((.*?)\))?/);
+      if (!dM) continue;
+
+      var curIsKargo = cName.toLowerCase().indexOf('kargo') !== -1;
+      if (curIsKargo !== isKargoM) continue;
+
+      var dScan = scanExistingSheetBlocksData(curS);
+      var dRec = findNotaRecordForCode(dScan.oldNotaMap, cleanCode);
+      if (dRec && dRec.rowNum > 0 && dRec.colQtyNota > 0) {
+        var curDateVal = curS.getRange(dRec.rowNum, dRec.colQtyNota).getValue();
+        if (curDateVal !== newQtyVal && String(curDateVal) !== String(newQtyVal)) {
+          if (newQtyVal === '') {
+            curS.getRange(dRec.rowNum, dRec.colQtyNota).clearContent();
+          } else {
+            curS.getRange(dRec.rowNum, dRec.colQtyNota).setValue(newQtyVal).setNumberFormat('0');
+          }
+          syncedSheets.push(cName);
+        }
+      }
+    }
+
+    if (syncedSheets.length > 0) {
+      try {
+        ss.toast(
+          'Qty Nota Kode ' + cleanCode + ' disinkronkan ke ' + syncedSheets.length + ' Sheet Tanggal (' + syncedSheets.join(', ') + ')',
+          '⚡ Auto-Sync Qty Nota (Opsi A)',
+          4
+        );
+      } catch (eToast2) {}
+    }
+  }
+}
+
+/**
+ * Mencari baris header blok di atas baris tertentu (mencari NO di kolom 1 & CODE di kolom 2)
+ */
+function findBlockHeaderRowAbove(sheet, startRow) {
+  var maxScanUp = Math.min(startRow, 120);
+  if (maxScanUp < 1) return null;
+  var fromRow = Math.max(1, startRow - maxScanUp);
+  var numRowsToScan = startRow - fromRow + 1;
+  var colAB = sheet.getRange(fromRow, 1, numRowsToScan, 2).getValues();
+
+  for (var i = colAB.length - 1; i >= 0; i--) {
+    var c0 = String(colAB[i][0] || '').trim().toUpperCase();
+    var c1 = String(colAB[i][1] || '').replace(/^'+/, '').trim().toUpperCase();
+    if (c0 === 'NO' && c1 === 'CODE') {
+      return fromRow + i;
+    }
+  }
+  return null;
+}
+
+/**
+ * Mencari record Qty Nota untuk kode tertentu dalam notaMap (dengan toleransi normalisasi digit/prefix)
+ */
+function findNotaRecordForCode(notaMap, targetCode) {
+  if (!notaMap) return null;
+  var clean = String(targetCode || '').replace(/^'+/, '').trim().toUpperCase();
+  if (notaMap[clean]) return notaMap[clean];
+
+  var stripped = clean.replace(/\D/g, '');
+  var keys = Object.keys(notaMap);
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    if (k === clean) return notaMap[k];
+    if (stripped && k.replace(/\D/g, '') === stripped) return notaMap[k];
+    if (k.indexOf(clean) !== -1 || clean.indexOf(k) !== -1) return notaMap[k];
+  }
+  return null;
+}
+
+/**
+ * Menu Item Handler: Sinkronkan seluruh Qty Nota dari semua Sheet Tanggal ke Sheet Master Produksi
+ */
+function menuSyncAllQtyNota() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var res = syncAllDateSheetsNotaToMaster(ss);
+    if (res && res.success) {
+      ss.toast(
+        'Berhasil menyalin ' + res.updatedMasterCount + ' Qty Nota dari Sheet Tanggal ke Master Produksi!',
+        '⚡ Sinkronisasi Sukses (Opsi A)',
+        5
+      );
+    } else {
+      ss.toast('Sinkronisasi selesai: ' + (res.error || 'Semua Qty Nota sudah sinkron.'), 'Info', 4);
+    }
+  } catch (err) {
+    SpreadsheetApp.getActiveSpreadsheet().toast('Error: ' + err.toString(), '❌ Gagal', 5);
+  }
+}
+
+/**
+ * Menu Item Handler: Perbarui tab DAFTAR_TANGGAL
+ */
+function menuRefreshIndexDaftarTanggal() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var res = updateIndexDaftarTanggal(ss);
+    if (res && res.success) {
+      ss.toast('Berhasil memperbarui tab DAFTAR_TANGGAL!', '📋 Sukses', 4);
+    } else {
+      ss.toast('Gagal memperbarui tab DAFTAR_TANGGAL', '❌ Error', 4);
+    }
+  } catch (err) {
+    SpreadsheetApp.getActiveSpreadsheet().toast('Error: ' + err.toString(), '❌ Gagal', 4);
+  }
+}
+
+/**
+ * Fungsi pembantu sinkronisasi massal seluruh Sheet Tanggal ke Master Produksi (Opsi A)
+ */
+function syncAllDateSheetsNotaToMaster(ss) {
+  try {
+    var allSheets = ss.getSheets();
+    var dateSheets = [];
+    var masterCMT = ss.getSheetByName('Master Produksi (CMT)');
+    var masterKargo = ss.getSheetByName('Master Produksi (Kargo)');
+
+    for (var i = 0; i < allSheets.length; i++) {
+      var s = allSheets[i];
+      var name = s.getName().trim();
+      var dMatch = name.match(/^(\d{2})[-/](\d{2})[-/](\d{4})(?:\s*\((.*?)\))?/);
+      if (dMatch) {
+        dateSheets.push({
+          sheet: s,
+          name: name,
+          isKargo: name.toLowerCase().indexOf('kargo') !== -1
+        });
+      }
+    }
+
+    var cmtScan = masterCMT ? scanExistingSheetBlocksData(masterCMT) : { oldNotaMap: {} };
+    var kargoScan = masterKargo ? scanExistingSheetBlocksData(masterKargo) : { oldNotaMap: {} };
+    var updatedCount = 0;
+
+    for (var d = 0; d < dateSheets.length; d++) {
+      var ds = dateSheets[d];
+      var dScan = scanExistingSheetBlocksData(ds.sheet);
+      var dNotaMap = dScan.oldNotaMap || {};
+      var targetMaster = ds.isKargo ? masterKargo : masterCMT;
+      var targetScan = ds.isKargo ? kargoScan : cmtScan;
+
+      if (!targetMaster) continue;
+
+      for (var code in dNotaMap) {
+        var dRec = dNotaMap[code];
+        if (dRec.qtyNota !== null && dRec.qtyNota !== undefined && dRec.qtyNota !== '') {
+          var mRec = findNotaRecordForCode(targetScan.oldNotaMap, code);
+          if (mRec && mRec.rowNum > 0 && mRec.colQtyNota > 0) {
+            var curVal = targetMaster.getRange(mRec.rowNum, mRec.colQtyNota).getValue();
+            if (curVal !== dRec.qtyNota && Number(curVal) !== Number(dRec.qtyNota)) {
+              targetMaster.getRange(mRec.rowNum, mRec.colQtyNota).setValue(Number(dRec.qtyNota)).setNumberFormat('0');
+              mRec.qtyNota = Number(dRec.qtyNota);
+              updatedCount++;
+            }
+          }
+        }
+      }
+    }
+
+    return {
+      success: true,
+      updatedMasterCount: updatedCount
+    };
+  } catch (err) {
+    Logger.log('syncAllDateSheetsNotaToMaster error: ' + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
  * Entry point Web App untuk menerima request push/pull dari WMS
  */
 function doPost(e) {
@@ -1467,12 +1777,15 @@ function handleFetchQtyNota(ss, data) {
       var lastDateSheetName = '';
       var inferredKat = mEntry ? mEntry.kategori : (dList[0] ? dList[0].kategori : 'Kargo');
 
+      var latestDateNota = null;
       for (var j = 0; j < dList.length; j++) {
         var de = dList[j];
         sumDateDiterima += Number(de.totalDiterima) || 0;
-        if (de.qtyNota !== null && de.qtyNota !== undefined && !isNaN(Number(de.qtyNota))) {
-          byDate[de.tanggal] = Number(de.qtyNota);
-          sumDateNota += Number(de.qtyNota);
+        if (de.qtyNota !== null && de.qtyNota !== undefined && !isNaN(Number(de.qtyNota)) && String(de.qtyNota).trim() !== '') {
+          var numN = Number(de.qtyNota);
+          byDate[de.tanggal] = numN;
+          latestDateNota = numN;
+          sumDateNota += numN;
           hasDateNota = true;
           lastDateSheetName = de.sheetName;
         }
@@ -1482,13 +1795,15 @@ function handleFetchQtyNota(ss, data) {
       var finalTotalDiterima = mEntry ? (Number(mEntry.totalDiterima) || sumDateDiterima) : sumDateDiterima;
       var sourceSheet = '';
 
-      if (hasDateNota && (!mEntry || mEntry.qtyNota === null || mEntry.qtyNota === undefined)) {
-        // Buyer mengisi di Sheet Tanggal, sedangkan di Master belum terisi -> pakai nilai Sheet Tanggal
-        finalQtyNota = sumDateNota;
+      if (hasDateNota && (!mEntry || mEntry.qtyNota === null || mEntry.qtyNota === undefined || mEntry.qtyNota === '')) {
+        // OPSI A: Buyer mengisi di Sheet Tanggal, sedangkan di Master belum terisi -> langsung salin nilai Qty Nota dari Sheet Tanggal (direct value)
+        finalQtyNota = latestDateNota !== null ? latestDateNota : sumDateNota;
         sourceSheet = lastDateSheetName;
-      } else if (mEntry && mEntry.qtyNota !== null && mEntry.qtyNota !== undefined) {
-        // Buyer mengisi di Master Sheet (atau keduanya terisi)
-        finalQtyNota = hasDateNota && sumDateNota !== mEntry.qtyNota && dList.length === 1 ? byDate[dList[0].tanggal] : Number(mEntry.qtyNota);
+      } else if (mEntry && mEntry.qtyNota !== null && mEntry.qtyNota !== undefined && mEntry.qtyNota !== '') {
+        // Buyer mengisi di Master Sheet (atau keduanya terisi) -> jika ada date sheet dengan nilai baru yang berbeda, prioritaskan date sheet
+        finalQtyNota = (hasDateNota && latestDateNota !== null && Number(latestDateNota) !== Number(mEntry.qtyNota) && dList.length === 1)
+          ? latestDateNota
+          : Number(mEntry.qtyNota);
         sourceSheet = mEntry.sheetName;
       }
 
@@ -1505,23 +1820,21 @@ function handleFetchQtyNota(ss, data) {
           updated_at: nowIso
         };
 
-        // AUTO-MIRROR 2 ARAH:
-        // 1. Jika Buyer isi di Sheet Tanggal, tapi di Master Sheet sel Qty Nota masih kosong:
-        //    Tuliskan finalQtyNota ke sel Master Sheet!
-        if (mEntry && (mEntry.qtyNota === null || mEntry.qtyNota === undefined || mEntry.qtyNota === '')) {
+        // AUTO-MIRROR 2 ARAH (OPSI A):
+        // 1. Jika Buyer isi di Sheet Tanggal, salin finalQtyNota ke sel Master Sheet jika belum terisi / berbeda:
+        if (mEntry && (mEntry.qtyNota === null || mEntry.qtyNota === undefined || mEntry.qtyNota === '' || (hasDateNota && Number(mEntry.qtyNota) !== Number(finalQtyNota)))) {
           try {
-            mEntry.sheet.getRange(mEntry.rowNum, mEntry.colQtyNota).setValue(Number(finalQtyNota));
+            mEntry.sheet.getRange(mEntry.rowNum, mEntry.colQtyNota).setValue(Number(finalQtyNota)).setNumberFormat('0');
             mEntry.qtyNota = Number(finalQtyNota);
           } catch (eSyncM) {}
         }
 
-        // 2. Jika Buyer isi di Master Sheet, dan ada Sheet Tanggal untuk kode ini yang sel Qty Nota-nya masih kosong:
-        //    Tuliskan finalQtyNota ke sel Sheet Tanggal tersebut!
+        // 2. Jika Buyer isi di Master Sheet, dan ada Sheet Tanggal untuk kode ini yang sel Qty Nota-nya masih kosong / berbeda:
         for (var k = 0; k < dList.length; k++) {
           var deSync = dList[k];
-          if (deSync && (deSync.qtyNota === null || deSync.qtyNota === undefined || deSync.qtyNota === '')) {
+          if (deSync && (deSync.qtyNota === null || deSync.qtyNota === undefined || deSync.qtyNota === '' || Number(deSync.qtyNota) !== Number(finalQtyNota))) {
             try {
-              deSync.sheet.getRange(deSync.rowNum, deSync.colQtyNota).setValue(Number(finalQtyNota));
+              deSync.sheet.getRange(deSync.rowNum, deSync.colQtyNota).setValue(Number(finalQtyNota)).setNumberFormat('0');
               deSync.qtyNota = Number(finalQtyNota);
             } catch (eSyncD) {}
           }
