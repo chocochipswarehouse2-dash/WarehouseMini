@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.61",
-  "versionCode": 321,
+  "version": "v2.6.62",
+  "versionCode": 322,
   "buildDate": "5 November 2026",
-  "buildHash": "wms-261105-v321-1108",
-  "releaseTitle": "WMS v2.6.61 — Checklist & Drag-Drop pada Catatan serta Tinggi Baris Fleksibel Kalender",
+  "buildHash": "wms-261105-v322-1415",
+  "releaseTitle": "WMS v2.6.62 — Fix Riwayat Log Audit Hitung Ulang & Sinkronisasi Cloud",
   "releaseNotes": [
-    "Tambah fitur Checkbox / Checklist interaktif pada Sticky Notes (bisa dicentang langsung di kartu maupun di modal)",
-    "Dukungan Drag & Drop (geser posisi kartu) untuk mengurutkan Catatan sesuai keinginan",
-    "Baris minggu pada Kalender Bulanan kini otomatis memanjang fleksibel menampilkan seluruh agenda tanpa disembunyikan di balik +1 lagi"
+    "Perbaikan modal Riwayat Audit Fisik yang kosong pada kode produksi yang sudah dihitung ulang (mis. 251061, 1027, 2430) akibat log sebelumnya hanya tersimpan di LocalStorage perangkat pembuat",
+    "Sinkronisasi otomatis riwayat log hitung ulang ke Cloud Supabase (wms_system_docs: recount_history_logs_v1) agar tampil di semua perangkat",
+    "Auto-Synthesize & Backfill riwayat log lengkap per varian (Warna, Size, Hitung Awal, Fisik, Selisih vs Awal, Selisih vs Nota Buyer, Putaran, & Petugas) dari hasil audit cloud & tabel penerimaan_produksi"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.61",
+    "versionCode": 321,
+    "buildDate": "5 November 2026",
+    "buildHash": "wms-261105-v321-1108",
+    "releaseTitle": "WMS v2.6.61 — Checklist & Drag-Drop pada Catatan serta Tinggi Baris Fleksibel Kalender",
+    "releaseNotes": [
+      "Tambah fitur Checkbox / Checklist interaktif pada Sticky Notes (bisa dicentang langsung di kartu maupun di modal)",
+      "Dukungan Drag & Drop (geser posisi kartu) untuk mengurutkan Catatan sesuai keinginan",
+      "Baris minggu pada Kalender Bulanan kini otomatis memanjang fleksibel menampilkan seluruh agenda tanpa disembunyikan di balik +1 lagi"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.60",
     "versionCode": 320,
@@ -118,20 +131,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Mendukung variasi penulisan IGlive, IG LIVE, IG-LIVE secara otomatis",
       "Integrasi ke Quick Tag Toolbar, cetak label barcode rak, dan kapasitas rak WMS",
       "Sinkronisasi modul webhook dan logic Fonnte GAS"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.53",
-    "versionCode": 313,
-    "buildDate": "3 November 2026",
-    "buildHash": "wms-261103-v313-1605",
-    "releaseTitle": "WMS v2.6.53 — Hide/Unhide Panel Samping & Kartu Kalender Agenda",
-    "releaseNotes": [
-      "Tambah toggle sembunyikan/buka panel samping kalender (Mini Kalender & Kategori) gaya Google Calendar",
-      "Grid kalender otomatis melebar penuh 100% saat panel samping disembunyikan",
-      "Tambah tombol collapse/expand independen pada kartu Mini Kalender dan Filter Kategori",
-      "Menyimpan preferensi tampilan panel samping di localStorage"
     ],
     "minSupportedVersion": "v2.0.0"
   }

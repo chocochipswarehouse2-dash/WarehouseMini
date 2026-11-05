@@ -1,13 +1,13 @@
 {
-  "version": "v2.6.61",
-  "versionCode": 321,
+  "version": "v2.6.62",
+  "versionCode": 322,
   "buildDate": "5 November 2026",
-  "buildHash": "wms-261105-v321-1108",
-  "releaseTitle": "WMS v2.6.61 — Checklist & Drag-Drop pada Catatan serta Tinggi Baris Fleksibel Kalender",
+  "buildHash": "wms-261105-v322-1415",
+  "releaseTitle": "WMS v2.6.62 — Fix Riwayat Log Audit Hitung Ulang & Sinkronisasi Cloud",
   "releaseNotes": [
-    "Tambah fitur Checkbox / Checklist interaktif pada Sticky Notes (bisa dicentang langsung di kartu maupun di modal)",
-    "Dukungan Drag & Drop (geser posisi kartu) untuk mengurutkan Catatan sesuai keinginan",
-    "Baris minggu pada Kalender Bulanan kini otomatis memanjang fleksibel menampilkan seluruh agenda tanpa disembunyikan di balik +1 lagi"
+    "Perbaikan modal Riwayat Audit Fisik yang kosong pada kode produksi yang sudah dihitung ulang (mis. 251061, 1027, 2430) akibat log sebelumnya hanya tersimpan di LocalStorage perangkat pembuat",
+    "Sinkronisasi otomatis riwayat log hitung ulang ke Cloud Supabase (wms_system_docs: recount_history_logs_v1) agar tampil di semua perangkat",
+    "Auto-Synthesize & Backfill riwayat log lengkap per varian (Warna, Size, Hitung Awal, Fisik, Selisih vs Awal, Selisih vs Nota Buyer, Putaran, & Petugas) dari hasil audit cloud & tabel penerimaan_produksi"
   ],
   "minSupportedVersion": "v2.0.0"
 }

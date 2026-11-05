@@ -1088,17 +1088,173 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
     }
   };
 
+  // Helper to synthesize a complete recount history log from live recountAuditMap / allCodeGroups / penerimaanItems
+  const synthesizeHistoryLogForCode = (rawCode: string): PenerimaanRecountLogItem | null => {
+    const normCode = normalizeProductCode(rawCode);
+    if (!normCode) return null;
+
+    const group = allCodeGroups.find((g) => normalizeProductCode(g.kode_produksi) === normCode);
+    const auditRec =
+      recountAuditMap[normCode] ||
+      recountAuditMap[rawCode] ||
+      Object.values(recountAuditMap).find(
+        (v: any) => normalizeProductCode(v?.kode_produksi || '') === normCode
+      );
+
+    const codeItems =
+      group?.items && group.items.length > 0
+        ? group.items
+        : penerimaanItems.filter((it) => normalizeProductCode(it.kode_produksi) === normCode);
+
+    const hasCountedItems = codeItems.some(
+      (it) =>
+        (it.recount_qty !== undefined && it.recount_qty !== null) ||
+        Boolean(it.recount_auditor) ||
+        Boolean(it.recount_round)
+    );
+
+    if (!auditRec && !group?.is_counted && !hasCountedItems) {
+      return null;
+    }
+
+    let details: PenerimaanRecountLogDetailItem[] = [];
+    if (auditRec && Array.isArray(auditRec.variants) && auditRec.variants.length > 0) {
+      details = auditRec.variants.map((v: any) => {
+        const qAsli = Number(v.qty_asli) || 0;
+        const qFisik =
+          v.qty_fisik !== undefined && v.qty_fisik !== null ? Number(v.qty_fisik) : qAsli;
+        return {
+          kode_produksi: normCode,
+          warna: v.warna || '-',
+          size: v.size || '-',
+          qty_sebelumnya: qAsli,
+          qty_fisik: qFisik,
+          selisih:
+            v.selisih !== undefined && v.selisih !== null ? Number(v.selisih) : qFisik - qAsli,
+          catatan: v.note || v.catatan || '',
+        };
+      });
+    } else if (codeItems.length > 0) {
+      const vMap = new Map<string, PenerimaanRecountLogDetailItem>();
+      codeItems.forEach((it) => {
+        const key = `${it.warna || '-'}_${it.size || '-'}`;
+        const prevQ = Number(it.qty) || 0;
+        const countQ =
+          it.recount_qty !== undefined && it.recount_qty !== null ? Number(it.recount_qty) : prevQ;
+        if (!vMap.has(key)) {
+          vMap.set(key, {
+            kode_produksi: normCode,
+            nama_produk: it.nama_produk,
+            warna: it.warna || '-',
+            size: it.size || '-',
+            tanggal_penerimaan: it.tanggal_penerimaan,
+            no_surat_jalan: it.no_surat_jalan,
+            qty_sebelumnya: 0,
+            qty_fisik: 0,
+            selisih: 0,
+            catatan: it.recount_notes || '',
+          });
+        }
+        const rec = vMap.get(key)!;
+        rec.qty_sebelumnya += prevQ;
+        rec.qty_fisik += countQ;
+        rec.selisih = rec.qty_fisik - rec.qty_sebelumnya;
+        if (!rec.catatan && it.recount_notes) rec.catatan = it.recount_notes;
+      });
+      details = Array.from(vMap.values());
+    }
+
+    const totalAsli =
+      auditRec?.total_asli !== undefined
+        ? Number(auditRec.total_asli)
+        : group?.total_asli !== undefined
+        ? Number(group.total_asli)
+        : details.reduce((acc, d) => acc + (Number(d.qty_sebelumnya) || 0), 0);
+
+    const totalFisik =
+      auditRec?.total_fisik !== undefined
+        ? Number(auditRec.total_fisik)
+        : group?.total_fisik !== undefined && group.total_fisik !== null
+        ? Number(group.total_fisik)
+        : details.reduce((acc, d) => acc + (Number(d.qty_fisik) || 0), 0);
+
+    const totalSelisih = totalFisik - totalAsli;
+    const roundNum = Number(auditRec?.round || group?.last_round || 1);
+    const auditorStr =
+      auditRec?.auditor ||
+      group?.last_auditor ||
+      codeItems.find((it) => it.recount_auditor)?.recount_auditor ||
+      'Auditor Gudang';
+
+    const rawDate =
+      auditRec?.tanggal_audit ||
+      auditRec?.updated_at ||
+      group?.last_audit_date ||
+      codeItems.find((it) => it.recount_updated_at)?.recount_updated_at ||
+      new Date().toISOString();
+
+    const notesStr =
+      auditRec?.catatan ||
+      group?.last_notes ||
+      codeItems.find((it) => it.recount_notes)?.recount_notes ||
+      '';
+
+    return {
+      id: `recount_sync_${normCode}_r${roundNum}`,
+      tanggal_audit: String(rawDate).slice(0, 10),
+      auditor: auditorStr,
+      kode_produksi: normCode,
+      total_sebelumnya: totalAsli,
+      total_fisik: totalFisik,
+      total_selisih: totalSelisih,
+      general_notes: notesStr,
+      details,
+      created_at: String(rawDate).includes('T')
+        ? String(rawDate)
+        : `${String(rawDate).slice(0, 10)}T07:00:00.000Z`,
+    };
+  };
+
   // Open History Logs Modal for a code
   const handleOpenHistoryModal = async (code: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setHistoryTargetCode(code);
     setIsHistoryModalOpen(true);
+
+    const synthLog = synthesizeHistoryLogForCode(code);
+    if (synthLog) {
+      setHistoryLogs([synthLog]);
+    } else {
+      setHistoryLogs([]);
+    }
+
     setIsLoadingHistory(true);
     try {
       const logs = await fetchPenerimaanRecountLogs(code);
-      setHistoryLogs(logs);
+      if (logs && logs.length > 0) {
+        if (synthLog) {
+          const hasSameIdOrTotals = logs.some(
+            (l) =>
+              l.id === synthLog.id ||
+              (Number(l.total_fisik) === Number(synthLog.total_fisik) &&
+                String(l.tanggal_audit).slice(0, 10) === String(synthLog.tanggal_audit).slice(0, 10) &&
+                (l.auditor || '').toLowerCase() === (synthLog.auditor || '').toLowerCase())
+          );
+          const merged = hasSameIdOrTotals ? logs : [synthLog, ...logs];
+          setHistoryLogs(merged);
+        } else {
+          setHistoryLogs(logs);
+        }
+      } else if (synthLog) {
+        setHistoryLogs([synthLog]);
+        // Backfill ke cloud history agar sesi ini tersimpan permanen lintas perangkat
+        savePenerimaanRecountLog(synthLog).catch(() => {});
+      } else {
+        setHistoryLogs([]);
+      }
     } catch (err) {
       console.warn('Error loading recount logs:', err);
+      if (synthLog) setHistoryLogs([synthLog]);
     } finally {
       setIsLoadingHistory(false);
     }
@@ -2555,54 +2711,104 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                     return getSizeWeight(a.size) - getSizeWeight(b.size);
                   });
 
+                  const targetGroup = allCodeGroups.find(
+                    (g) => normalizeProductCode(g.kode_produksi) === normalizeProductCode(historyTargetCode)
+                  );
+                  const auditRecForCode =
+                    recountAuditMap[normalizeProductCode(historyTargetCode)] ||
+                    recountAuditMap[historyTargetCode];
+                  const roundNumber =
+                    (log as any).round ||
+                    auditRecForCode?.round ||
+                    targetGroup?.last_round ||
+                    historyLogs.length - idx;
+                  const qtyNota =
+                    targetGroup?.qty_nota !== undefined && targetGroup?.qty_nota !== null
+                      ? Number(targetGroup.qty_nota)
+                      : null;
+                  const selisihVsAwal = Number(log.total_fisik) - Number(log.total_sebelumnya);
+                  const selisihVsNota =
+                    qtyNota !== null ? Number(log.total_fisik) - qtyNota : null;
+
                   return (
                     <div
                       key={log.id || idx}
                       className="p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3"
                     >
                       <div className="flex items-center justify-between flex-wrap gap-2">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-700 font-mono text-[11px] font-black text-slate-800 dark:text-slate-200">
                             Sesi #{historyLogs.length - idx}
                           </span>
+                          <span className="px-2 py-0.5 rounded-md bg-rose-100 dark:bg-rose-950/60 font-mono text-[10px] font-black text-rose-700 dark:text-rose-300">
+                            Putaran {roundNumber}
+                          </span>
                           <span className="text-xs font-bold text-slate-900 dark:text-white">
-                            Tgl Audit: <strong>{log.tanggal_audit}</strong> &bull; Oleh: <strong className="text-rose-600">{log.auditor}</strong>
+                            Tgl Audit: <strong>{log.tanggal_audit}</strong> &bull; Petugas: <strong className="text-rose-600">{log.auditor}</strong>
                           </span>
                         </div>
-                        <span className="text-[10px] text-slate-400">
+                        <span className="text-[10px] text-slate-400 font-mono">
                           {log.created_at ? new Date(log.created_at).toLocaleString('id-ID') : ''}
                         </span>
                       </div>
 
                       {/* Top Metrics Cards */}
-                      <div className="grid grid-cols-3 gap-2 bg-white dark:bg-slate-900 p-2.5 rounded-xl text-center font-mono text-xs border border-slate-200 dark:border-slate-800">
+                      <div
+                        className={`grid ${
+                          qtyNota !== null ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'
+                        } gap-2 bg-white dark:bg-slate-900 p-2.5 rounded-xl text-center font-mono text-xs border border-slate-200 dark:border-slate-800`}
+                      >
                         <div>
-                          <span className="text-[9px] text-slate-400 block uppercase font-bold">Dokumen Surat Jalan</span>
+                          <span className="text-[9px] text-slate-400 block uppercase font-bold">Hitung Awal (SJ)</span>
                           <span className="font-bold text-slate-700 dark:text-slate-300 text-sm">{log.total_sebelumnya} pcs</span>
                         </div>
                         <div>
-                          <span className="text-[9px] text-slate-400 block uppercase font-bold">Hasil Fisik Auditor</span>
+                          <span className="text-[9px] text-slate-400 block uppercase font-bold">Hitung Ulang Fisik</span>
                           <span className="font-black text-blue-600 dark:text-blue-400 text-sm">{log.total_fisik} pcs</span>
                         </div>
                         <div>
-                          <span className="text-[9px] text-slate-400 block uppercase font-bold">Total Selisih</span>
+                          <span className="text-[9px] text-slate-400 block uppercase font-bold">Selisih vs Awal</span>
                           <span
                             className={`font-black text-sm ${
-                              log.total_selisih === 0
+                              selisihVsAwal === 0
                                 ? 'text-emerald-600'
-                                : log.total_selisih < 0
+                                : selisihVsAwal < 0
                                 ? 'text-rose-600'
                                 : 'text-blue-600'
                             }`}
                           >
-                            {log.total_selisih > 0 ? `+${log.total_selisih}` : log.total_selisih} pcs
+                            {selisihVsAwal > 0 ? `+${selisihVsAwal}` : selisihVsAwal} pcs
                           </span>
                         </div>
+                        {qtyNota !== null && selisihVsNota !== null && (
+                          <div className="border-t sm:border-t-0 sm:border-l border-slate-100 dark:border-slate-800 pt-1.5 sm:pt-0 sm:pl-2">
+                            <span className="text-[9px] text-amber-600 dark:text-amber-400 block uppercase font-bold">
+                              vs Nota ({qtyNota} pcs)
+                            </span>
+                            <span
+                              className={`font-black text-sm ${
+                                selisihVsNota === 0
+                                  ? 'text-emerald-600'
+                                  : selisihVsNota < 0
+                                  ? 'text-rose-600'
+                                  : 'text-blue-600'
+                              }`}
+                            >
+                              {selisihVsNota > 0 ? `+${selisihVsNota}` : selisihVsNota} pcs
+                            </span>
+                          </div>
+                        )}
                       </div>
 
+                      {targetGroup?.catatan_petunjuk ? (
+                        <p className="text-[11px] text-amber-800 dark:text-amber-200 bg-amber-50/80 dark:bg-amber-950/30 p-2 rounded-lg border border-amber-200/70 dark:border-amber-800/40 font-medium">
+                          📌 <strong>Petunjuk:</strong> {targetGroup.catatan_petunjuk}
+                        </p>
+                      ) : null}
+
                       {log.general_notes ? (
-                        <p className="text-[11px] text-slate-600 dark:text-slate-300 italic bg-amber-50/50 dark:bg-amber-950/20 p-2 rounded-lg border border-amber-200/50 dark:border-amber-800/30">
-                          Catatan Sesi: &quot;{log.general_notes}&quot;
+                        <p className="text-[11px] text-slate-600 dark:text-slate-300 italic bg-slate-100/80 dark:bg-slate-800/60 p-2 rounded-lg border border-slate-200 dark:border-slate-700">
+                          Catatan Auditor: &quot;{log.general_notes}&quot;
                         </p>
                       ) : null}
 

@@ -10169,9 +10169,10 @@ export async function hapusBatchPenerimaanProduksiFromSupabase(noSuratJalan: str
 // AUDIT & HITUNG ULANG FISIK LOGS (Dual-Storage: Supabase log_produk & Local)
 // ---------------------------------------------------------------------------
 const LOCAL_STORAGE_KEY_RECOUNT_LOGS = 'wms_penerimaan_recount_logs';
+const SYSTEM_DOC_RECOUNT_HISTORY_ID = 'recount_history_logs_v1';
 
 /**
- * Simpan sesi hitung ulang fisik ke riwayat log (Local Storage + log_produk audit trace)
+ * Simpan sesi hitung ulang fisik ke riwayat log (Local Storage + Cloud wms_system_docs + penerimaan_recount_logs)
  */
 export async function savePenerimaanRecountLog(
   log: Omit<PenerimaanRecountLogItem, 'id' | 'created_at'> & { id?: string; created_at?: string }
@@ -10185,19 +10186,61 @@ export async function savePenerimaanRecountLog(
     created_at: nowIso,
   };
 
+  let mergedList: PenerimaanRecountLogItem[] = [record];
+
   // 1. Simpan ke LocalStorage history
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY_RECOUNT_LOGS);
     const list: PenerimaanRecountLogItem[] = raw ? JSON.parse(raw) : [];
-    // Unshift to top
-    const updated = [record, ...list.filter((r) => r.id !== finalId)].slice(0, 300);
-    localStorage.setItem(LOCAL_STORAGE_KEY_RECOUNT_LOGS, JSON.stringify(updated));
+    mergedList = [record, ...list.filter((r) => r.id !== finalId)].slice(0, 500);
+    localStorage.setItem(LOCAL_STORAGE_KEY_RECOUNT_LOGS, JSON.stringify(mergedList));
   } catch (err) {
     console.warn('Gagal simpan recount log ke local storage:', err);
   }
 
-  // CATATAN: Hasil Hitung Ulang Kedatangan TIDAK boleh dimasukkan ke log_produk (kartu stok perpindahan barang).
-  // Hitung ulang kedatangan hanya dicatat di histori internal penerimaan / tabel penerimaan_recount_logs.
+  // 2. Simpan ke Cloud Supabase via wms_system_docs (recount_history_logs_v1) agar tersinkron lintas perangkat
+  try {
+    const existingDoc = await supabaseFetch<any[]>(
+      'wms_system_docs',
+      'GET',
+      null,
+      `section_id=eq.${SYSTEM_DOC_RECOUNT_HISTORY_ID}&limit=1`
+    );
+    if (existingDoc && existingDoc[0] && existingDoc[0].content) {
+      const cloudArr = JSON.parse(existingDoc[0].content);
+      if (Array.isArray(cloudArr)) {
+        const byId = new Map<string, PenerimaanRecountLogItem>();
+        [...mergedList, ...cloudArr].forEach((item) => {
+          if (item && item.id && !byId.has(item.id)) {
+            byId.set(item.id, item);
+          }
+        });
+        mergedList = Array.from(byId.values())
+          .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+          .slice(0, 500);
+        try {
+          localStorage.setItem(LOCAL_STORAGE_KEY_RECOUNT_LOGS, JSON.stringify(mergedList));
+        } catch {}
+      }
+    }
+    await supabaseFetch(
+      'wms_system_docs',
+      'POST',
+      [
+        {
+          section_id: SYSTEM_DOC_RECOUNT_HISTORY_ID,
+          title: 'Riwayat Log Audit Hitung Ulang Produksi',
+          content: JSON.stringify(mergedList),
+          updated_by: record.auditor || 'Auditor Gudang',
+          updated_at: new Date().toISOString(),
+        },
+      ],
+      'on_conflict=section_id',
+      true
+    );
+  } catch (errCloud) {
+    console.warn('Gagal sync recount log ke wms_system_docs:', errCloud);
+  }
 
   // 3. Coba simpan ke dedicated tabel jika sewaktu-waktu tabel dibuat di Supabase
   try {
@@ -10210,20 +10253,31 @@ export async function savePenerimaanRecountLog(
 }
 
 /**
- * Ambil riwayat log hitung ulang fisik
+ * Ambil riwayat log hitung ulang fisik (Local + Cloud wms_system_docs + Auto-Synthesize dari hasil audit)
  */
 export async function fetchPenerimaanRecountLogs(kodeProduksi?: string): Promise<PenerimaanRecountLogItem[]> {
-  let list: PenerimaanRecountLogItem[] = [];
+  const byId = new Map<string, PenerimaanRecountLogItem>();
+  const normFilter = kodeProduksi ? kodeProduksi.trim().toUpperCase() : '';
 
-  // 1. Ambil dari LocalStorage terlebih dahulu (agar data langsung muncul tanpa delay)
+  const matchesCode = (logCode?: string): boolean => {
+    if (!normFilter) return true;
+    const raw = (logCode || '').trim().toUpperCase();
+    if (!raw) return false;
+    if (raw === normFilter) return true;
+    // Support comma-separated multi-code logs
+    const parts = raw.split(',').map((s) => s.trim().toUpperCase());
+    return parts.includes(normFilter) || raw.includes(normFilter);
+  };
+
+  // 1. Ambil dari LocalStorage terlebih dahulu
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY_RECOUNT_LOGS);
     if (raw) {
       const localList: PenerimaanRecountLogItem[] = JSON.parse(raw);
       if (Array.isArray(localList)) {
         localList.forEach((it) => {
-          if (!kodeProduksi || it.kode_produksi?.toUpperCase()?.includes(kodeProduksi.toUpperCase())) {
-            list.push(it);
+          if (it && it.id && matchesCode(it.kode_produksi)) {
+            byId.set(it.id, it);
           }
         });
       }
@@ -10232,23 +10286,214 @@ export async function fetchPenerimaanRecountLogs(kodeProduksi?: string): Promise
     console.warn('Gagal membaca local recount logs:', e);
   }
 
-  // 2. Sinkronkan dengan Supabase penerimaan_recount_logs
+  // 2. Sinkronkan dari Cloud wms_system_docs (recount_history_logs_v1)
+  try {
+    const docRows = await supabaseFetch<any[]>(
+      'wms_system_docs',
+      'GET',
+      null,
+      `section_id=eq.${SYSTEM_DOC_RECOUNT_HISTORY_ID}&limit=1`
+    );
+    if (docRows && docRows[0] && docRows[0].content) {
+      const cloudList: PenerimaanRecountLogItem[] = JSON.parse(docRows[0].content);
+      if (Array.isArray(cloudList)) {
+        cloudList.forEach((it) => {
+          if (it && it.id && matchesCode(it.kode_produksi) && !byId.has(it.id)) {
+            byId.set(it.id, it);
+          }
+        });
+      }
+    }
+  } catch {}
+
+  // 3. Sinkronkan dengan Supabase penerimaan_recount_logs (jika tabel tersedia)
   try {
     const q = kodeProduksi
-      ? `kode_produksi=ilike.*${encodeURIComponent(kodeProduksi)}*&order=created_at.desc&limit=100`
+      ? `kode_produksi=ilike.*${encodeURIComponent(kodeProduksi.trim())}*&order=created_at.desc&limit=100`
       : 'order=created_at.desc&limit=100';
     const remote = await supabaseFetch<PenerimaanRecountLogItem[]>('penerimaan_recount_logs', 'GET', null, q);
     if (remote && Array.isArray(remote) && remote.length > 0) {
-      const existingIds = new Set(list.map((r) => r.id));
       remote.forEach((r) => {
-        if (!existingIds.has(r.id)) {
-          list.push(r);
+        if (r && r.id && matchesCode(r.kode_produksi) && !byId.has(r.id)) {
+          byId.set(r.id, r);
         }
       });
     }
   } catch {}
 
-  return list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  // 4. Fallback / Auto-Synthesize dari recount_audit_results (Cloud/Local) & penerimaan_produksi
+  // Menjamin kode yang sudah pernah dihitung ulang (mis. dari perangkat lain atau sinkronisasi tabel)
+  // selalu memiliki minimal 1 entri riwayat lengkap beserta rincian varian.
+  try {
+    let auditMap: Record<string, any> = {};
+    try {
+      const rawMap = localStorage.getItem('wms_recount_audit_map');
+      if (rawMap) {
+        auditMap = JSON.parse(rawMap) || {};
+      }
+    } catch {}
+
+    if (Object.keys(auditMap).length === 0) {
+      try {
+        const docAudit = await supabaseFetch<any[]>(
+          'wms_system_docs',
+          'GET',
+          null,
+          'section_id=eq.recount_audit_results&limit=1'
+        );
+        if (docAudit && docAudit[0] && docAudit[0].content) {
+          auditMap = JSON.parse(docAudit[0].content) || {};
+        }
+      } catch {}
+    }
+
+    let prodItems: PenerimaanProduksiItem[] = [];
+    try {
+      const rawProd = localStorage.getItem('wms_local_penerimaan_produksi');
+      if (rawProd) {
+        prodItems = JSON.parse(rawProd) || [];
+      }
+    } catch {}
+
+    // Kumpulkan kode produksi yang perlu dicek
+    const candidateCodes = new Set<string>();
+    if (normFilter) {
+      candidateCodes.add(normFilter);
+    } else {
+      Object.keys(auditMap).forEach((k) => candidateCodes.add(k.trim().toUpperCase()));
+      prodItems.forEach((it) => {
+        if (it.recount_qty !== undefined && it.recount_qty !== null && it.kode_produksi) {
+          candidateCodes.add(it.kode_produksi.trim().toUpperCase());
+        }
+      });
+    }
+
+    const existingLoggedCodes = new Set<string>();
+    byId.forEach((logItem) => {
+      if (logItem.kode_produksi) {
+        logItem.kode_produksi
+          .split(',')
+          .map((s) => s.trim().toUpperCase())
+          .forEach((c) => existingLoggedCodes.add(c));
+      }
+    });
+
+    candidateCodes.forEach((codeKey) => {
+      if (!codeKey || existingLoggedCodes.has(codeKey)) return;
+
+      const auditRec =
+        auditMap[codeKey] ||
+        Object.values(auditMap).find(
+          (v: any) => (v?.kode_produksi || '').trim().toUpperCase() === codeKey
+        );
+
+      const codeRows = prodItems.filter(
+        (it) => (it.kode_produksi || '').trim().toUpperCase() === codeKey
+      );
+      const hasCountedRows = codeRows.some(
+        (it) => it.recount_qty !== undefined && it.recount_qty !== null
+      );
+
+      if (!auditRec && !hasCountedRows) return;
+
+      // Bangun details per varian
+      let details: PenerimaanRecountLogDetailItem[] = [];
+      if (auditRec && Array.isArray(auditRec.variants) && auditRec.variants.length > 0) {
+        details = auditRec.variants.map((v: any) => {
+          const qAsli = Number(v.qty_asli) || 0;
+          const qFisik =
+            v.qty_fisik !== undefined && v.qty_fisik !== null ? Number(v.qty_fisik) : qAsli;
+          return {
+            kode_produksi: codeKey,
+            warna: v.warna || '-',
+            size: v.size || '-',
+            qty_sebelumnya: qAsli,
+            qty_fisik: qFisik,
+            selisih:
+              v.selisih !== undefined && v.selisih !== null ? Number(v.selisih) : qFisik - qAsli,
+            catatan: v.note || v.catatan || '',
+          };
+        });
+      } else if (codeRows.length > 0) {
+        const vMap = new Map<string, PenerimaanRecountLogDetailItem>();
+        codeRows.forEach((it) => {
+          const vKey = `${it.warna || '-'}_${it.size || '-'}`;
+          const prevQ = Number(it.qty) || 0;
+          const countQ =
+            it.recount_qty !== undefined && it.recount_qty !== null ? Number(it.recount_qty) : prevQ;
+          if (!vMap.has(vKey)) {
+            vMap.set(vKey, {
+              kode_produksi: codeKey,
+              nama_produk: it.nama_produk,
+              warna: it.warna || '-',
+              size: it.size || '-',
+              tanggal_penerimaan: it.tanggal_penerimaan,
+              no_surat_jalan: it.no_surat_jalan,
+              qty_sebelumnya: 0,
+              qty_fisik: 0,
+              selisih: 0,
+              catatan: it.recount_notes || '',
+            });
+          }
+          const cur = vMap.get(vKey)!;
+          cur.qty_sebelumnya += prevQ;
+          cur.qty_fisik += countQ;
+          cur.selisih = cur.qty_fisik - cur.qty_sebelumnya;
+          if (!cur.catatan && it.recount_notes) cur.catatan = it.recount_notes;
+        });
+        details = Array.from(vMap.values());
+      }
+
+      const sumAsli =
+        auditRec?.total_asli !== undefined
+          ? Number(auditRec.total_asli)
+          : details.reduce((acc, d) => acc + (Number(d.qty_sebelumnya) || 0), 0);
+      const sumFisik =
+        auditRec?.total_fisik !== undefined
+          ? Number(auditRec.total_fisik)
+          : details.reduce((acc, d) => acc + (Number(d.qty_fisik) || 0), 0);
+      const sumSelisih =
+        auditRec?.total_selisih !== undefined
+          ? Number(auditRec.total_selisih)
+          : sumFisik - sumAsli;
+
+      const rowWithAuditor = codeRows.find((it) => it.recount_auditor);
+      const rowWithDate = codeRows.find((it) => it.recount_updated_at);
+      const rowWithNotes = codeRows.find((it) => it.recount_notes);
+      const roundNum =
+        auditRec?.round ||
+        codeRows.reduce((maxR, it) => Math.max(maxR, Number(it.recount_round) || 0), 0) ||
+        1;
+
+      const rawDate =
+        auditRec?.tanggal_audit ||
+        auditRec?.updated_at ||
+        rowWithDate?.recount_updated_at ||
+        new Date().toISOString();
+
+      const synthId = `recount_sync_${codeKey}_r${roundNum}`;
+      byId.set(synthId, {
+        id: synthId,
+        tanggal_audit: String(rawDate).slice(0, 10),
+        auditor: auditRec?.auditor || rowWithAuditor?.recount_auditor || 'Auditor Gudang',
+        kode_produksi: codeKey,
+        total_sebelumnya: sumAsli,
+        total_fisik: sumFisik,
+        total_selisih: sumSelisih,
+        general_notes: auditRec?.catatan || rowWithNotes?.recount_notes || '',
+        details,
+        created_at: String(rawDate).includes('T')
+          ? String(rawDate)
+          : `${String(rawDate).slice(0, 10)}T07:00:00.000Z`,
+      });
+    });
+  } catch (errSynth) {
+    console.warn('Gagal synthesize recount logs fallback:', errSynth);
+  }
+
+  return Array.from(byId.values()).sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
 }
 
 /**
@@ -10261,6 +10506,36 @@ export async function deletePenerimaanRecountLog(id: string): Promise<boolean> {
       const list: PenerimaanRecountLogItem[] = JSON.parse(raw);
       const filtered = list.filter((r) => r.id !== id);
       localStorage.setItem(LOCAL_STORAGE_KEY_RECOUNT_LOGS, JSON.stringify(filtered));
+    }
+  } catch {}
+
+  try {
+    const existingDoc = await supabaseFetch<any[]>(
+      'wms_system_docs',
+      'GET',
+      null,
+      `section_id=eq.${SYSTEM_DOC_RECOUNT_HISTORY_ID}&limit=1`
+    );
+    if (existingDoc && existingDoc[0] && existingDoc[0].content) {
+      const cloudArr: PenerimaanRecountLogItem[] = JSON.parse(existingDoc[0].content);
+      if (Array.isArray(cloudArr)) {
+        const filteredCloud = cloudArr.filter((r) => r.id !== id);
+        await supabaseFetch(
+          'wms_system_docs',
+          'POST',
+          [
+            {
+              section_id: SYSTEM_DOC_RECOUNT_HISTORY_ID,
+              title: 'Riwayat Log Audit Hitung Ulang Produksi',
+              content: JSON.stringify(filteredCloud),
+              updated_by: 'System',
+              updated_at: new Date().toISOString(),
+            },
+          ],
+          'on_conflict=section_id',
+          true
+        );
+      }
     }
   } catch {}
 
