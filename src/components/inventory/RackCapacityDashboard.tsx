@@ -42,6 +42,7 @@ import {
   loadLocalRackCapacityConfig,
   fetchRackCapacityConfig,
   persistRackCapacityConfig,
+  normalizeAndMigrateRackConfig,
   computeAllRackSlots,
   getRecommendedNearbyRacks,
   getDefaultRackCapacityConfig,
@@ -626,6 +627,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       kpiSubtitle,
       warehouseTotal: {
         totalRacks: whTotalRacks,
+        rackCount: whTotalRacks,
         totalCapacity: whTotalCapacity,
         totalFilled: whTotalFilled,
         totalSimulated: whTotalSimulated,

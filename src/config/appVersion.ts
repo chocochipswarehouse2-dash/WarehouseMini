@@ -15,19 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.57",
-  "versionCode": 317,
+  "version": "v2.6.58",
+  "versionCode": 318,
   "buildDate": "5 November 2026",
-  "buildHash": "wms-261105-v317-1138",
-  "releaseTitle": "WMS v2.6.57 — Perbaikan Setup Kapasitas & Sinkronisasi IGLive Blok F",
+  "buildHash": "wms-261105-v318-1314",
+  "releaseTitle": "WMS v2.6.58 — Pulihkan Konfigurasi Kapasitas Rak & Perbaikan Tombol Setup",
   "releaseNotes": [
-    "Memulihkan konfigurasi lengkap rack_capacity_config_v1 di Supabase wms_system_docs termasuk zona IGLive Blok F",
-    "Memastikan modal Setup Kapasitas Rak dan pemisahan utilitas Gudang, Koli, dan Blok F berjalan normal tanpa kendala memuat halaman"
+    "Perbaikan tombol Setup Kapasitas & Lokasi yang tidak merespons saat diklik (import normalizeAndMigrateRackConfig)",
+    "Pemulihan konfigurasi kapasitas rak custom (Lokasi A-D: 75/75/80/75 pcs, Transit X & Koli R/V/Z: 40 pcs, Shopee: 400, TikTok: 250, IGLive: 250, Studio: 500, Perbaikan CC/PMK/DF: 50 pcs)",
+    "Perbaikan label jumlah lokasi pada tombol filter Semua Warehouse (Rak + Koli)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.57",
+    "versionCode": 317,
+    "buildDate": "5 November 2026",
+    "buildHash": "wms-261105-v317-1138",
+    "releaseTitle": "WMS v2.6.57 — Perbaikan Setup Kapasitas & Sinkronisasi IGLive Blok F",
+    "releaseNotes": [
+      "Memulihkan konfigurasi lengkap rack_capacity_config_v1 di Supabase wms_system_docs termasuk zona IGLive Blok F",
+      "Memastikan modal Setup Kapasitas Rak dan pemisahan utilitas Gudang, Koli, dan Blok F berjalan normal tanpa kendala memuat halaman"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.56",
     "versionCode": 316,
@@ -124,22 +137,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Sinkronisasi perubahan judul, tanggal, jam, lokasi, deskripsi dari Google Calendar ke WMS",
       "Deteksi dan pembersihan event yang dihapus di Google Calendar",
       "Notifikasi visual toast status sinkronisasi Google Calendar saat simpan dan hapus agenda"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.49",
-    "versionCode": 309,
-    "buildDate": "3 November 2026",
-    "buildHash": "wms-261103-v309-0701",
-    "releaseTitle": "WMS v2.6.49 — Pengaturan Khusus Owner, Filter User & Notifikasi Picking Background",
-    "releaseNotes": [
-      "Batasi akses Pengaturan Sistem, Update Database & Migrasi Supabase khusus akun @warehouse/pemilik",
-      "Hapus akun dummy default dari kode & hapus filter localStorage",
-      "Urutkan daftar pengguna berdasarkan hierarki role dan urutan NIK (Vina Kharisma WH0006 langsung terlihat rapi)",
-      "Tambahkan search filter & tab role filter di Manajemen Pengguna",
-      "Tambahkan delta polling background untuk antrean picking_list agar operator tetap dapat notifikasi saat WebSocket suspend",
-      "Perjelas tombol Notifikasi Perangkat untuk semua pengguna"
     ],
     "minSupportedVersion": "v2.0.0"
   }
