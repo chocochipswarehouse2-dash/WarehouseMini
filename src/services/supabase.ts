@@ -4108,6 +4108,7 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
   let stokStudio: number | undefined = undefined;
   let stokShp: number | undefined = undefined;
   let stokTtk: number | undefined = undefined;
+  let stokIglive: number | undefined = undefined;
   let komparasi: ProductItem['komparasi'] = undefined;
   const d: Record<string, number> = {};
   const b: Record<string, number> = {};
@@ -4213,6 +4214,9 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
   if (rowLok.includes('TIKTOK') || rowLok.includes('TTK') || rowArea.includes('TIKTOK')) {
     stokTtk = (stokTtk || 0) + rowQty;
   }
+  if (rowLok.includes('IGLIVE') || rowLok.includes('IG LIVE') || rowArea.includes('IGLIVE') || rowArea.includes('IG LIVE')) {
+    stokIglive = (stokIglive || 0) + rowQty;
+  }
 
   if (row.komparasi && typeof row.komparasi === 'object') {
     komparasi = row.komparasi;
@@ -4238,6 +4242,7 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
     stokStudio,
     stokShp,
     stokTtk,
+    stokIglive,
     komparasi,
     d,
     b,
@@ -4762,6 +4767,7 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
       directStudio?: number;
       directShp?: number;
       directTtk?: number;
+      directIg?: number;
     }
   >();
 
@@ -4769,6 +4775,7 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
     const targetChannelLocations = [
       'TIKTOK', 'Tiktok', 'tiktok',
       'SHOPEE', 'Shopee', 'shopee',
+      'IGLIVE', 'IGlive', 'iglive', 'IG LIVE', 'IG live', 'ig live', 'IG-LIVE', 'IG_LIVE',
       'STUDIO', 'Studio', 'studio',
       'BLOK F', 'Blok F',
       'LIVE SHOPEE', 'LIVE TIKTOK', 'SAMPLE', 'FOTO'
@@ -4896,6 +4903,7 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
             if (m.dealpos_channels.STUDIO !== undefined) entry.directStudio = Number(m.dealpos_channels.STUDIO) || 0;
             if (m.dealpos_channels.SHOPEE !== undefined) entry.directShp = Number(m.dealpos_channels.SHOPEE) || 0;
             if (m.dealpos_channels.TIKTOK !== undefined) entry.directTtk = Number(m.dealpos_channels.TIKTOK) || 0;
+            if (m.dealpos_channels.IGLIVE !== undefined || m.dealpos_channels['IG LIVE'] !== undefined) entry.directIg = Number(m.dealpos_channels.IGLIVE ?? m.dealpos_channels['IG LIVE']) || 0;
           }
         }
       }
@@ -4912,6 +4920,7 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
     let studioQty = entry.directStudio || 0;
     let shpQty = entry.directShp || 0;
     let ttkQty = entry.directTtk || 0;
+    let igQty = entry.directIg || 0;
     let blokFQty = 0;
     let whQty = 0;
     let totalQty = 0;
@@ -4947,6 +4956,9 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
       if (isTikTok) {
         ttkQty += q;
       }
+      if (isIgLive) {
+        igQty += q;
+      }
       if (isBlokF) {
         blokFQty += q;
       }
@@ -4961,9 +4973,9 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
       }
     }
 
-    // Default formatting of location string (only Studio, Shopee, TikTok)
+    // Default formatting of location string (Studio, Shopee, TikTok, IGlive)
     let locStr = locParts.length > 0 ? locParts.join(', ') : 'BLOK F (0)';
-    const channelTotalQty = studioQty + shpQty + ttkQty;
+    const channelTotalQty = studioQty + shpQty + ttkQty + igQty;
 
     channelStockList.push({
       sku: entry.sku,
@@ -4974,6 +4986,7 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
       studioQty,
       shpQty,
       ttkQty,
+      igQty,
       blokFQty,
       whQty: 0,
       totalQty: channelTotalQty,
@@ -8438,6 +8451,7 @@ export async function fetchChannelStocksBySkus(skus: string[]): Promise<import('
       directStudio?: number;
       directShp?: number;
       directTtk?: number;
+      directIg?: number;
     }
   >();
   
@@ -8478,7 +8492,7 @@ export async function fetchChannelStocksBySkus(skus: string[]): Promise<import('
   const result: import('../types').ChannelStockItem[] = [];
   
   for (const entry of stockMap.values()) {
-    let wh = 0, std = 0, shp = 0, ttk = 0;
+    let wh = 0, std = 0, shp = 0, ttk = 0, ig = 0;
     
     // Default mapped specific locations if direct counts not present
     for (const [_, locData] of entry.locations.entries()) {
@@ -8493,7 +8507,7 @@ export async function fetchChannelStocksBySkus(skus: string[]): Promise<import('
       } else if (a === 'TIKTOK' || a === 'TTK' || l === 'TIKTOK' || l === 'TTK') {
         ttk += q;
       } else if (a === 'IGLIVE' || a === 'IG LIVE' || l === 'IGLIVE' || l === 'IG LIVE') {
-        std += q;
+        ig += q;
       } else if (a === 'ONLINE') {
         shp += q; // Fallback mapping
       } else {
@@ -8503,7 +8517,7 @@ export async function fetchChannelStocksBySkus(skus: string[]): Promise<import('
     
     // Add locStr logic
     const locNames = Array.from(entry.locations.values())
-      .filter(it => it.qty > 0 && it.area !== 'STUDIO' && it.area !== 'SHOPEE' && it.area !== 'TIKTOK' && it.area !== 'ONLINE')
+      .filter(it => it.qty > 0 && it.area !== 'STUDIO' && it.area !== 'SHOPEE' && it.area !== 'TIKTOK' && it.area !== 'IGLIVE' && it.area !== 'ONLINE')
       .map(it => it.lokasi);
     const uniqueLocs = Array.from(new Set(locNames));
     const locStr = uniqueLocs.length > 0 ? uniqueLocs.join(', ') : 'Gudang (Stok Habis)';
@@ -8517,7 +8531,8 @@ export async function fetchChannelStocksBySkus(skus: string[]): Promise<import('
       studioQty: entry.directStudio ?? std,
       shpQty: entry.directShp ?? shp,
       ttkQty: entry.directTtk ?? ttk,
-      totalQty: wh + (entry.directStudio ?? std) + (entry.directShp ?? shp) + (entry.directTtk ?? ttk)
+      igQty: entry.directIg ?? ig,
+      totalQty: wh + (entry.directStudio ?? std) + (entry.directShp ?? shp) + (entry.directTtk ?? ttk) + (entry.directIg ?? ig)
     });
   }
   

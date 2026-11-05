@@ -215,7 +215,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   };
 
   // Channel stock state - Loaded directly from Supabase realtime
-  const [selectedChannel, setSelectedChannel] = useState<'STUDIO' | 'SHOPEE' | 'TIKTOK' | 'ALL'>('STUDIO');
+  const [selectedChannel, setSelectedChannel] = useState<'STUDIO' | 'SHOPEE' | 'TIKTOK' | 'IGLIVE' | 'ALL'>('STUDIO');
   const [searchStock, setSearchStock] = useState<string>('');
   const [searchHistory, setSearchHistory] = useState<string>('');
   const [channelStocks, setChannelStocks] = useState<ChannelStockItem[]>([]);
@@ -1365,7 +1365,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     let rows: (string | number)[][] = [];
 
     if (selectedChannel === 'ALL') {
-      headers = ['PRODUK', 'SIZE', 'SKU', 'STUDIO (BLOK F)', 'SHOPEE (SHP)', 'TIKTOK (TTK)', 'TOTAL LIVE'];
+      headers = ['PRODUK', 'SIZE', 'SKU', 'STUDIO (BLOK F)', 'SHOPEE (SHP)', 'TIKTOK (TTK)', 'IG LIVE (IGL)', 'TOTAL LIVE'];
       rows = filteredStocks.map((it) => [
         `"${it.produk.replace(/"/g, '""')}"`,
         `"${it.size}"`,
@@ -1373,13 +1373,28 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         it.studioQty,
         it.shpQty,
         it.ttkQty,
-        it.studioQty + it.shpQty + it.ttkQty,
+        it.igQty || 0,
+        it.studioQty + it.shpQty + it.ttkQty + (it.igQty || 0),
       ]);
     } else {
-      const channelLabel = selectedChannel === 'STUDIO' ? 'STUDIO' : selectedChannel === 'SHOPEE' ? 'SHOPEE' : 'TIKTOK';
+      const channelLabel =
+        selectedChannel === 'STUDIO'
+          ? 'STUDIO'
+          : selectedChannel === 'SHOPEE'
+          ? 'SHOPEE'
+          : selectedChannel === 'TIKTOK'
+          ? 'TIKTOK'
+          : 'IG LIVE';
       headers = ['PRODUK', 'SIZE', 'SKU', `QTY ${channelLabel}`];
       rows = filteredStocks.map((it) => {
-        const qty = selectedChannel === 'STUDIO' ? it.studioQty : selectedChannel === 'SHOPEE' ? it.shpQty : it.ttkQty;
+        const qty =
+          selectedChannel === 'STUDIO'
+            ? it.studioQty
+            : selectedChannel === 'SHOPEE'
+            ? it.shpQty
+            : selectedChannel === 'TIKTOK'
+            ? it.ttkQty
+            : (it.igQty || 0);
         return [
           `"${it.produk.replace(/"/g, '""')}"`,
           `"${it.size}"`,
@@ -1414,8 +1429,10 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         if (it.shpQty <= 0) return false;
       } else if (selectedChannel === 'TIKTOK') {
         if (it.ttkQty <= 0) return false;
+      } else if (selectedChannel === 'IGLIVE') {
+        if ((it.igQty || 0) <= 0) return false;
       } else if (selectedChannel === 'ALL') {
-        if ((it.studioQty || 0) + (it.shpQty || 0) + (it.ttkQty || 0) <= 0) return false;
+        if ((it.studioQty || 0) + (it.shpQty || 0) + (it.ttkQty || 0) + (it.igQty || 0) <= 0) return false;
       }
 
       // Search query filter (Multi-keyword partial matching on SKU, Name, Size)
@@ -1636,7 +1653,8 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       if (selectedChannel === 'STUDIO') return acc + curr.studioQty;
       if (selectedChannel === 'SHOPEE') return acc + curr.shpQty;
       if (selectedChannel === 'TIKTOK') return acc + curr.ttkQty;
-      return acc + curr.studioQty + curr.shpQty + curr.ttkQty;
+      if (selectedChannel === 'IGLIVE') return acc + (curr.igQty || 0);
+      return acc + curr.studioQty + curr.shpQty + curr.ttkQty + (curr.igQty || 0);
     }, 0);
   }, [filteredStocks, selectedChannel]);
 
@@ -2677,7 +2695,9 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                     ? '🧡 STOK TERSEDIA DI SHOPEE (SHP)'
                     : selectedChannel === 'TIKTOK'
                     ? '🖤 STOK TERSEDIA DI TIKTOK (TTK)'
-                    : '🌐 GABUNGAN STOK (STUDIO / SHP / TTK)'}
+                    : selectedChannel === 'IGLIVE'
+                    ? '📸 STOK TERSEDIA DI IG LIVE (IGL)'
+                    : '🌐 GABUNGAN STOK (STUDIO / SHP / TTK / IGL)'}
                 </span>
               </div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">
@@ -2712,8 +2732,8 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             </div>
           </div>
 
-          {/* Segmented Channel & Location Buttons (4-tabs including SEMUA) */}
-          <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100/90 dark:bg-[#0b1324] border border-slate-200/80 dark:border-slate-800/80 rounded-xl text-[10px] sm:text-xs font-semibold">
+          {/* Segmented Channel & Location Buttons (5-tabs including SEMUA) */}
+          <div className="grid grid-cols-5 gap-1 p-1 bg-slate-100/90 dark:bg-[#0b1324] border border-slate-200/80 dark:border-slate-800/80 rounded-xl text-[10px] sm:text-xs font-semibold">
             <button
               type="button"
               onClick={() => setSelectedChannel('STUDIO')}
@@ -2746,6 +2766,17 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
               }`}
             >
               🖤 TikTok
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedChannel('IGLIVE')}
+              className={`py-1.5 rounded-lg transition-all text-center cursor-pointer ${
+                selectedChannel === 'IGLIVE'
+                  ? 'bg-rose-600 text-white font-bold shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              📸 IG Live
             </button>
             <button
               type="button"
@@ -2788,17 +2819,24 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                   <tr>
                     <th className="p-2.5">Produk &amp; SKU</th>
                     <th className="p-2.5 text-center w-10">Size</th>
-                    <th className="p-2.5 text-center w-12 text-blue-600 dark:text-blue-400">Studio</th>
-                    <th className="p-2.5 text-center w-12 text-amber-600 dark:text-amber-400">SHP</th>
-                    <th className="p-2.5 text-center w-12 text-slate-700 dark:text-slate-300">TTK</th>
+                    <th className="p-2.5 text-center w-11 text-blue-600 dark:text-blue-400">Studio</th>
+                    <th className="p-2.5 text-center w-11 text-amber-600 dark:text-amber-400">SHP</th>
+                    <th className="p-2.5 text-center w-11 text-slate-700 dark:text-slate-300">TTK</th>
+                    <th className="p-2.5 text-center w-11 text-rose-600 dark:text-rose-400">IGL</th>
                     <th className="p-2.5 text-center w-12 text-indigo-600 dark:text-indigo-400">Total</th>
                   </tr>
                 ) : (
                   <tr>
-                    <th className="p-2.5">Produk & SKU</th>
+                    <th className="p-2.5">Produk &amp; SKU</th>
                     <th className="p-2.5 text-center w-12">Size</th>
                     <th className="p-2.5 text-center w-14">
-                      {selectedChannel === 'STUDIO' ? 'Studio' : selectedChannel === 'SHOPEE' ? 'Shopee' : 'TikTok'}
+                      {selectedChannel === 'STUDIO'
+                        ? 'Studio'
+                        : selectedChannel === 'SHOPEE'
+                        ? 'Shopee'
+                        : selectedChannel === 'TIKTOK'
+                        ? 'TikTok'
+                        : 'IG Live'}
                     </th>
                   </tr>
                 )}
@@ -2806,7 +2844,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                 {loadingStock ? (
                   <tr>
-                    <td colSpan={selectedChannel === 'ALL' ? 6 : 3} className="p-6 text-center text-slate-400 italic text-xs">
+                    <td colSpan={selectedChannel === 'ALL' ? 7 : 3} className="p-6 text-center text-slate-400 italic text-xs">
                       <div className="flex items-center justify-center gap-2">
                         <RefreshCw className="w-4 h-4 animate-spin text-blue-600 dark:text-blue-400" />
                         <span>Memuat stok real-time dari Database...</span>
@@ -2815,7 +2853,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                   </tr>
                 ) : filteredStocks.length === 0 ? (
                   <tr>
-                    <td colSpan={selectedChannel === 'ALL' ? 6 : 3} className="p-8 text-center text-slate-400 dark:text-slate-500 text-xs">
+                    <td colSpan={selectedChannel === 'ALL' ? 7 : 3} className="p-8 text-center text-slate-400 dark:text-slate-500 text-xs">
                       <div className="flex flex-col items-center justify-center gap-1.5 py-2">
                         <span className="font-semibold text-slate-600 dark:text-slate-300">
                           {selectedChannel === 'STUDIO'
@@ -2824,6 +2862,8 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                             ? '🧡 Stok Shopee Kosong (0 Pcs)'
                             : selectedChannel === 'TIKTOK'
                             ? '🖤 Stok TikTok Kosong (0 Pcs)'
+                            : selectedChannel === 'IGLIVE'
+                            ? '📸 Stok IG Live Kosong (0 Pcs)'
                             : 'Stok Kosong pada Filter Ini'}
                         </span>
                         <span className="text-[11px] text-slate-400 dark:text-slate-500">
@@ -2842,9 +2882,15 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                         ? stk.studioQty
                         : selectedChannel === 'SHOPEE'
                         ? stk.shpQty
-                        : stk.ttkQty;
+                        : selectedChannel === 'TIKTOK'
+                        ? stk.ttkQty
+                        : (stk.igQty || 0);
 
-                    const totalLive = (stk.studioQty || 0) + (stk.shpQty || 0) + (stk.ttkQty || 0);
+                    const totalLive =
+                      (stk.studioQty || 0) +
+                      (stk.shpQty || 0) +
+                      (stk.ttkQty || 0) +
+                      (stk.igQty || 0);
 
                     if (selectedChannel === 'ALL') {
                       return (
@@ -2876,6 +2922,11 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                                   🖤 TikTok: {stk.ttkQty}
                                 </span>
                               )}
+                              {(stk.igQty || 0) > 0 && (
+                                <span className="inline-flex items-center text-[9px] px-1.5 py-0.5 bg-rose-500/15 text-rose-700 dark:text-rose-300 rounded font-mono font-bold border border-rose-500/20">
+                                  📸 IG Live: {stk.igQty}
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td className="p-2.5 text-center">
@@ -2896,6 +2947,11 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                           <td className="p-2.5 text-center">
                             <span className={`font-mono text-xs font-bold ${stk.ttkQty > 0 ? 'text-slate-800 dark:text-slate-200 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
                               {stk.ttkQty || 0}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-center">
+                            <span className={`font-mono text-xs font-bold ${(stk.igQty || 0) > 0 ? 'text-rose-600 dark:text-rose-400 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                              {stk.igQty || 0}
                             </span>
                           </td>
                           <td className="p-2.5 text-center">
@@ -2941,7 +2997,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                   })}
                   {filteredStocks.length > displayLimit && (
                     <tr>
-                      <td colSpan={selectedChannel === 'ALL' ? 6 : 3} className="p-3 text-center">
+                      <td colSpan={selectedChannel === 'ALL' ? 7 : 3} className="p-3 text-center">
                         <button
                           type="button"
                           onClick={() => setDisplayLimit((prev) => prev + 30)}

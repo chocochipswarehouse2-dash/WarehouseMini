@@ -368,6 +368,7 @@ export interface ProductItem {
   stokStudio?: number;
   stokShp?: number;
   stokTtk?: number;
+  stokIglive?: number;
   komparasi?: unknown;
   locList?: (string | { lokasi: string; qty?: number })[];
   [key: string]: unknown;
@@ -418,6 +419,7 @@ export interface PeminjamanItemForm {
   stokStudio?: number;
   stokShp?: number;
   stokTtk?: number;
+  stokIglive?: number;
   stokBlokF?: number;
   stokWh?: number;
   selected?: boolean;
@@ -467,6 +469,7 @@ export interface ChannelStockItem {
   studioQty?: number;
   shpQty?: number;
   ttkQty?: number;
+  igQty?: number;
   blokFQty?: number;
   whQty?: number;
   locStr?: string;

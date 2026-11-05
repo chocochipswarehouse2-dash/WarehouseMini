@@ -337,15 +337,86 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     };
   }, [selectedSlot?.lokasi]);
 
+  // 1. Kapasitas Penyimpanan Rak = ABCD
+  const isRakSlot = useCallback((s: ComputedRackSlot) => {
+    const a = (s.area || '').toUpperCase();
+    const l = (s.lokasi || '').toUpperCase();
+    if (a === 'WAREHOUSE') return true;
+    if (/^[ABCD]-?\d+/i.test(l)) return true;
+    return false;
+  }, []);
+
+  // 2. Kapasitas Penyimpanan Koli = R, V, Z, X, CC, PMK, DF
+  const isKoliSlot = useCallback((s: ComputedRackSlot) => {
+    const a = (s.area || '').toUpperCase();
+    const l = (s.lokasi || '').toUpperCase();
+    if (a === 'KOLIAN' || a === 'KOLI' || a === 'TRANSIT' || a === 'PERBAIKAN') return true;
+    if (/^[RVZ]-?\d+/i.test(l)) return true;
+    if (/^X-?\d*/i.test(l) || l === 'X' || l === 'TRANSIT') return true;
+    if (/^(CC|PMK|DF)-?\d*/i.test(l)) return true;
+    return false;
+  }, []);
+
+  // 3. Kapasitas Blok F = Studio, Shopee, Tiktok, IGLive
+  const isBlokFSlot = useCallback((s: ComputedRackSlot) => {
+    const a = (s.area || '').toUpperCase();
+    const l = (s.lokasi || '').toUpperCase();
+    if (a === 'BLOK F') return true;
+    if (['SHOPEE', 'TIKTOK', 'IGLIVE', 'STUDIO'].includes(l)) return true;
+    if (l.includes('IG LIVE') || l.includes('IGLIVE')) return true;
+    return false;
+  }, []);
+
+  // Kapasitas Warehouse = Penyimpanan RAK + Koli secara total kapasitas
+  const isWarehouseSlot = useCallback((s: ComputedRackSlot) => {
+    return isRakSlot(s) || isKoliSlot(s);
+  }, [isRakSlot, isKoliSlot]);
+
+  // Backward-compatibility alias
+  const isWarehouseRackSlot = isRakSlot;
+
   // Global KPI & Zone Summaries
   const summaryStats = useMemo(() => {
-    let totalCapacity = 0;
-    let totalFilled = 0;
-    let totalSimulated = 0;
-    let emptyCount = 0;
-    let safeCount = 0;
-    let warningFullCount = 0;
-    let overloadCount = 0;
+    // Category 1: Rak ABCD
+    const rakStats = {
+      rackCount: 0,
+      totalCapacity: 0,
+      totalFilled: 0,
+      totalSimulated: 0,
+      emptyCount: 0,
+      safeCount: 0,
+      warningFullCount: 0,
+      overloadCount: 0,
+    };
+
+    // Category 2: Koli (R, V, Z, X, CC, PMK, DF)
+    const koliStats = {
+      rackCount: 0,
+      totalCapacity: 0,
+      totalFilled: 0,
+      totalSimulated: 0,
+      emptyCount: 0,
+      safeCount: 0,
+      warningFullCount: 0,
+      overloadCount: 0,
+      breakdown: {
+        kolianFilled: 0,
+        transitFilled: 0,
+        perbaikanFilled: 0,
+      },
+    };
+
+    // Category 3: Blok F (Studio, Shopee, Tiktok, IGLive)
+    const blokFStats = {
+      rackCount: 0,
+      totalCapacity: 0,
+      totalFilled: 0,
+      totalSimulated: 0,
+      emptyCount: 0,
+      safeCount: 0,
+      warningFullCount: 0,
+      overloadCount: 0,
+    };
 
     const zoneStatsMap = new Map<
       string,
@@ -384,16 +455,52 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     }
 
     for (const s of allSlots) {
-      totalCapacity += s.maxCapacity;
-      totalFilled += s.currentQty;
-      totalSimulated += s.simulatedQty;
+      const isRak = isRakSlot(s);
+      const isKoli = isKoliSlot(s);
+      const isBlokF = isBlokFSlot(s);
 
-      // Pure physical status — UI displays real warehouse state
-      const effectiveStatus = s.status;
-      if (effectiveStatus === 'EMPTY') emptyCount++;
-      else if (effectiveStatus === 'SAFE') safeCount++;
-      else if (effectiveStatus === 'WARNING' || effectiveStatus === 'FULL') warningFullCount++;
-      else if (effectiveStatus === 'OVERLOAD') overloadCount++;
+      const areaUpper = (s.area || '').toUpperCase();
+      const lokUpper = (s.lokasi || '').toUpperCase();
+
+      if (isRak) {
+        rakStats.rackCount += 1;
+        rakStats.totalCapacity += s.maxCapacity;
+        rakStats.totalFilled += s.currentQty;
+        rakStats.totalSimulated += s.simulatedQty;
+
+        if (s.status === 'EMPTY') rakStats.emptyCount++;
+        else if (s.status === 'SAFE') rakStats.safeCount++;
+        else if (s.status === 'WARNING' || s.status === 'FULL') rakStats.warningFullCount++;
+        else if (s.status === 'OVERLOAD') rakStats.overloadCount++;
+      } else if (isKoli) {
+        koliStats.rackCount += 1;
+        koliStats.totalCapacity += s.maxCapacity;
+        koliStats.totalFilled += s.currentQty;
+        koliStats.totalSimulated += s.simulatedQty;
+
+        if (s.status === 'EMPTY') koliStats.emptyCount++;
+        else if (s.status === 'SAFE') koliStats.safeCount++;
+        else if (s.status === 'WARNING' || s.status === 'FULL') koliStats.warningFullCount++;
+        else if (s.status === 'OVERLOAD') koliStats.overloadCount++;
+
+        if (areaUpper === 'KOLIAN' || areaUpper === 'KOLI' || /^[RVZ]-?\d+/i.test(lokUpper)) {
+          koliStats.breakdown.kolianFilled += s.currentQty;
+        } else if (areaUpper === 'TRANSIT' || /^X-?\d*/i.test(lokUpper) || lokUpper === 'X') {
+          koliStats.breakdown.transitFilled += s.currentQty;
+        } else if (areaUpper === 'PERBAIKAN' || /^(CC|PMK|DF)-?\d*/i.test(lokUpper)) {
+          koliStats.breakdown.perbaikanFilled += s.currentQty;
+        }
+      } else if (isBlokF) {
+        blokFStats.rackCount += 1;
+        blokFStats.totalCapacity += s.maxCapacity;
+        blokFStats.totalFilled += s.currentQty;
+        blokFStats.totalSimulated += s.simulatedQty;
+
+        if (s.status === 'EMPTY') blokFStats.emptyCount++;
+        else if (s.status === 'SAFE') blokFStats.safeCount++;
+        else if (s.status === 'WARNING' || s.status === 'FULL') blokFStats.warningFullCount++;
+        else if (s.status === 'OVERLOAD') blokFStats.overloadCount++;
+      }
 
       let zs = zoneStatsMap.get(s.zoneId);
       if (!zs) {
@@ -416,26 +523,162 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       zs.rackCount += 1;
       zs.currentQty += s.currentQty;
       zs.maxCapacity += s.maxCapacity;
-      if (effectiveStatus === 'EMPTY') zs.emptyRackCount += 1;
+      if (s.status === 'EMPTY') zs.emptyRackCount += 1;
       else zs.activeRackCount += 1;
-      if (effectiveStatus === 'OVERLOAD') zs.overloadRackCount += 1;
+      if (s.status === 'OVERLOAD') zs.overloadRackCount += 1;
     }
 
-    const overallPercent = totalCapacity > 0 ? Math.round((totalFilled / totalCapacity) * 100) : 0;
+    const rakPercent =
+      rakStats.totalCapacity > 0 ? Math.round((rakStats.totalFilled / rakStats.totalCapacity) * 100) : 0;
+    const koliPercent =
+      koliStats.totalCapacity > 0 ? Math.round((koliStats.totalFilled / koliStats.totalCapacity) * 100) : 0;
+    const blokFPercent =
+      blokFStats.totalCapacity > 0 ? Math.round((blokFStats.totalFilled / blokFStats.totalCapacity) * 100) : 0;
+
+    // Kapasitas Warehouse = Penyimpanan RAK + Koli secara total kapasitas
+    const whTotalCapacity = rakStats.totalCapacity + koliStats.totalCapacity;
+    const whTotalFilled = rakStats.totalFilled + koliStats.totalFilled;
+    const whTotalSimulated = rakStats.totalSimulated + koliStats.totalSimulated;
+    const whPercent = whTotalCapacity > 0 ? Math.round((whTotalFilled / whTotalCapacity) * 100) : 0;
+    const whOverload = rakStats.overloadCount + koliStats.overloadCount;
+    const whWarningFull = rakStats.warningFullCount + koliStats.warningFullCount;
+    const whSafe = rakStats.safeCount + koliStats.safeCount;
+    const whEmpty = rakStats.emptyCount + koliStats.emptyCount;
+    const whTotalRacks = rakStats.rackCount + koliStats.rackCount;
+
+    // Determine Top KPI active numbers based on selectedArea
+    let activeKpi = {
+      totalRacks: whTotalRacks,
+      totalCapacity: whTotalCapacity,
+      totalFilled: whTotalFilled,
+      totalSimulated: whTotalSimulated,
+      overallPercent: whPercent,
+      emptyCount: whEmpty,
+      safeCount: whSafe,
+      warningFullCount: whWarningFull,
+      overloadCount: whOverload,
+    };
+    let kpiTitle = 'KAPASITAS WAREHOUSE (TOTAL)';
+    let kpiSubtitle = `Rak ABCD (${rakStats.totalFilled.toLocaleString('id-ID')} pcs) + Koli (${koliStats.totalFilled.toLocaleString('id-ID')} pcs)`;
+
+    const selAreaUp = (selectedArea || '').toUpperCase();
+    if (selAreaUp === 'RAK_ABCD' || selAreaUp === 'WAREHOUSE') {
+      activeKpi = {
+        totalRacks: rakStats.rackCount,
+        totalCapacity: rakStats.totalCapacity,
+        totalFilled: rakStats.totalFilled,
+        totalSimulated: rakStats.totalSimulated,
+        overallPercent: rakPercent,
+        emptyCount: rakStats.emptyCount,
+        safeCount: rakStats.safeCount,
+        warningFullCount: rakStats.warningFullCount,
+        overloadCount: rakStats.overloadCount,
+      };
+      kpiTitle = 'KAPASITAS PENYIMPANAN RAK (ABCD)';
+      kpiSubtitle = 'Rak Penyimpanan Utama A, B, C, D';
+    } else if (
+      selAreaUp === 'KOLI_ALL' ||
+      selAreaUp === 'KOLIAN' ||
+      selAreaUp === 'KOLI' ||
+      selAreaUp === 'TRANSIT' ||
+      selAreaUp === 'PERBAIKAN'
+    ) {
+      activeKpi = {
+        totalRacks: koliStats.rackCount,
+        totalCapacity: koliStats.totalCapacity,
+        totalFilled: koliStats.totalFilled,
+        totalSimulated: koliStats.totalSimulated,
+        overallPercent: koliPercent,
+        emptyCount: koliStats.emptyCount,
+        safeCount: koliStats.safeCount,
+        warningFullCount: koliStats.warningFullCount,
+        overloadCount: koliStats.overloadCount,
+      };
+      kpiTitle = 'KAPASITAS PENYIMPANAN KOLI';
+      kpiSubtitle = 'Penampungan Koli (R, V, Z, X, CC, PMK, DF)';
+    } else if (selAreaUp === 'BLOK_F' || selAreaUp === 'BLOK F') {
+      activeKpi = {
+        totalRacks: blokFStats.rackCount,
+        totalCapacity: blokFStats.totalCapacity,
+        totalFilled: blokFStats.totalFilled,
+        totalSimulated: blokFStats.totalSimulated,
+        overallPercent: blokFPercent,
+        emptyCount: blokFStats.emptyCount,
+        safeCount: blokFStats.safeCount,
+        warningFullCount: blokFStats.warningFullCount,
+        overloadCount: blokFStats.overloadCount,
+      };
+      kpiTitle = 'KAPASITAS BLOK F';
+      kpiSubtitle = 'Studio, Shopee, TikTok, IGlive (Area Terpisah)';
+    }
 
     return {
-      totalRacks: allSlots.length,
-      totalCapacity,
-      totalFilled,
-      totalSimulated,
-      overallPercent,
-      emptyCount,
-      safeCount,
-      warningFullCount,
-      overloadCount,
+      totalRacks: activeKpi.totalRacks,
+      totalCapacity: activeKpi.totalCapacity,
+      totalFilled: activeKpi.totalFilled,
+      totalSimulated: activeKpi.totalSimulated,
+      overallPercent: activeKpi.overallPercent,
+      emptyCount: activeKpi.emptyCount,
+      safeCount: activeKpi.safeCount,
+      warningFullCount: activeKpi.warningFullCount,
+      overloadCount: activeKpi.overloadCount,
+      kpiTitle,
+      kpiSubtitle,
+      warehouseTotal: {
+        totalRacks: whTotalRacks,
+        totalCapacity: whTotalCapacity,
+        totalFilled: whTotalFilled,
+        totalSimulated: whTotalSimulated,
+        overallPercent: whPercent,
+        emptyCount: whEmpty,
+        safeCount: whSafe,
+        warningFullCount: whWarningFull,
+        overloadCount: whOverload,
+      },
+      rak: {
+        ...rakStats,
+        overallPercent: rakPercent,
+      },
+      koli: {
+        ...koliStats,
+        overallPercent: koliPercent,
+      },
+      blokF: {
+        ...blokFStats,
+        overallPercent: blokFPercent,
+      },
+      // Backward compatibility aliases
+      abcd: {
+        totalRacks: rakStats.rackCount,
+        totalCapacity: rakStats.totalCapacity,
+        totalFilled: rakStats.totalFilled,
+        overallPercent: rakPercent,
+        emptyCount: rakStats.emptyCount,
+        safeCount: rakStats.safeCount,
+        warningFullCount: rakStats.warningFullCount,
+        overloadCount: rakStats.overloadCount,
+      },
+      kolian: {
+        totalFilled: koliStats.breakdown.kolianFilled,
+        totalCapacity: koliStats.totalCapacity,
+        rackCount: koliStats.rackCount,
+        overloadCount: koliStats.overloadCount,
+      },
+      transit: {
+        totalFilled: koliStats.breakdown.transitFilled,
+        totalCapacity: koliStats.totalCapacity,
+        rackCount: koliStats.rackCount,
+        overloadCount: koliStats.overloadCount,
+      },
+      perbaikan: {
+        totalFilled: koliStats.breakdown.perbaikanFilled,
+        totalCapacity: koliStats.totalCapacity,
+        rackCount: koliStats.rackCount,
+        overloadCount: koliStats.overloadCount,
+      },
       zones: Array.from(zoneStatsMap.values()).filter((z) => z.rackCount > 0),
     };
-  }, [allSlots, config.zones, simulationMoves.length]);
+  }, [allSlots, config.zones, selectedArea, simulationMoves.length, isRakSlot, isKoliSlot, isBlokFSlot]);
 
   // Distinct Areas & Categories for Filter
   const availableAreas = useMemo(() => {
@@ -457,10 +700,26 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   // Filtered Racks
   const filteredSlots = useMemo(() => {
     const q = searchQuery.trim().toUpperCase();
+    const selAreaUp = (selectedArea || '').toUpperCase();
+
     return allSlots.filter((s) => {
-      if (selectedArea !== 'ALL' && s.area.toUpperCase() !== selectedArea.toUpperCase()) {
-        return false;
+      const isRak = isRakSlot(s);
+      const isKoli = isKoliSlot(s);
+      const isBlokF = isBlokFSlot(s);
+
+      if (selAreaUp === 'RAK_ABCD' || selAreaUp === 'WAREHOUSE') {
+        if (!isRak) return false;
+      } else if (selAreaUp === 'KOLI_ALL') {
+        if (!isKoli) return false;
+      } else if (selAreaUp === 'BLOK_F' || selAreaUp === 'BLOK F') {
+        if (!isBlokF) return false;
+      } else if (selAreaUp === 'ALL') {
+        // Warehouse Total: Rak ABCD + Koli
+        if (!isRak && !isKoli) return false;
+      } else if (selectedArea) {
+        if (s.area.toUpperCase() !== selAreaUp) return false;
       }
+
       if (selectedZoneId !== 'ALL' && s.zoneId !== selectedZoneId) return false;
       if (selectedCategory !== 'ALL' && s.category.toUpperCase() !== selectedCategory.toUpperCase()) {
         return false;
@@ -494,6 +753,9 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     statusFilter,
     searchQuery,
     simulationMoves.length,
+    isRakSlot,
+    isKoliSlot,
+    isBlokFSlot,
   ]);
 
   // Nearby empty/available recommendations for selected rack
@@ -546,7 +808,8 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   };
 
   const handleOpenSetupModal = () => {
-    setDraftZones(config.zones.map((z) => ({ ...z })));
+    const normalized = normalizeAndMigrateRackConfig(config);
+    setDraftZones(normalized.zones.map((z) => ({ ...z })));
     setIsSetupModalOpen(true);
   };
 
@@ -1159,8 +1422,8 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
         {/* Total Utilisasi Gudang (Full width on mobile, 1 col on desktop) */}
         <div className="col-span-2 sm:col-span-1 p-3.5 rounded-2xl border bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 shadow-2xs">
           <div className="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400">
-            <span>UTILISASI GUDANG</span>
-            <Layers className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <span className="truncate">{summaryStats.kpiTitle}</span>
+            <Layers className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 ml-1" />
           </div>
           <div className="mt-1 flex items-baseline gap-2">
             <span className="text-2xl font-black text-slate-900 dark:text-white font-mono tabular-nums">
@@ -1179,6 +1442,9 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               }}
             />
           </div>
+          <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1.5 truncate">
+            {summaryStats.kpiSubtitle}
+          </div>
         </div>
 
         {/* Rak Overload (>100%) */}
@@ -1194,7 +1460,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
           }`}
         >
           <div className="flex items-center justify-between text-xs font-bold text-rose-600 dark:text-rose-400">
-            <span>RAK OVERLOAD (&gt;100%)</span>
+            <span>{selectedArea === 'ALL' || selectedArea === 'Warehouse' ? 'RAK OVERLOAD (>100%)' : 'OVERLOAD (>100%)'}</span>
             <AlertTriangle
               className={`w-4 h-4 ${summaryStats.overloadCount > 0 ? 'animate-bounce' : ''}`}
             />
@@ -1204,7 +1470,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             <span className="text-xs font-normal text-slate-400">rak</span>
           </div>
           <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 leading-tight">
-            Klik untuk filter rak melebihi kapasitas
+            {selectedArea === 'ALL' || selectedArea === 'Warehouse' ? 'Rak A–D melebihi kapasitas' : 'Lokasi melebihi kapasitas'}
           </div>
         </button>
 
@@ -1229,7 +1495,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             <span className="text-xs font-normal text-slate-400">rak</span>
           </div>
           <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 leading-tight">
-            Mendekati batas maksimum rak
+            {selectedArea === 'ALL' || selectedArea === 'Warehouse' ? 'Rak A–D mendekati batas maksimum' : 'Mendekati batas maksimum'}
           </div>
         </button>
 
@@ -1252,7 +1518,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             <span className="text-xs font-normal text-slate-400">rak</span>
           </div>
           <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-            Terisi 1% – 74% dari kapasitas
+            {selectedArea === 'ALL' || selectedArea === 'Warehouse' ? 'Rak A–D terisi 1% – 74%' : 'Terisi 1% – 74%'}
           </div>
         </button>
 
@@ -1267,7 +1533,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
           }`}
         >
           <div className="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400">
-            <span>RAK KOSONG (0%)</span>
+            <span>{selectedArea === 'ALL' || selectedArea === 'Warehouse' ? 'RAK KOSONG (0%)' : 'KOSONG (0%)'}</span>
             <MapPin className="w-4 h-4" />
           </div>
           <div className="mt-1 text-2xl font-black text-slate-800 dark:text-slate-100 font-mono tabular-nums">
@@ -1275,9 +1541,265 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             <span className="text-xs font-normal text-slate-400">rak</span>
           </div>
           <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 leading-tight">
-            Siap ditempati stok baru
+            {selectedArea === 'ALL' || selectedArea === 'Warehouse' ? 'Rak A–D siap ditempati stok' : 'Siap ditempati stok baru'}
           </div>
         </button>
+      </div>
+
+      {/* ============================================================================
+          1.1 STATUS KAPASITAS MASING-MASING KATEGORI PENYIMPANAN
+          (1. Rak ABCD · 2. Koli R,V,Z,X,CC,PMK,DF · 3. Blok F Studio,Shopee,TikTok,IGlive)
+          ============================================================================ */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <span>Status Kapasitas Kategori Penyimpanan</span>
+            </h3>
+            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+              (Klik kartu untuk memfilter tampilan rak secara spesifik)
+            </span>
+          </div>
+          {selectedArea !== 'ALL' && (
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedArea('ALL');
+                setSelectedZoneId('ALL');
+              }}
+              className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-1"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Reset ke Semua Warehouse (Rak + Koli)</span>
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {/* Kategori 1: Kapasitas Penyimpanan Rak (ABCD) */}
+          <div
+            onClick={() => {
+              setSelectedArea((prev) => (prev === 'RAK_ABCD' || prev === 'Warehouse' ? 'ALL' : 'RAK_ABCD'));
+              setSelectedZoneId('ALL');
+            }}
+            className={`p-3.5 rounded-2xl border transition-all text-left cursor-pointer flex flex-col justify-between shadow-2xs group ${
+              selectedArea === 'RAK_ABCD' || selectedArea === 'Warehouse'
+                ? 'bg-blue-50/70 dark:bg-blue-950/40 border-blue-500 ring-2 ring-blue-500/20'
+                : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-600'
+            }`}
+          >
+            <div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Layers className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <span className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">
+                    Penyimpanan Rak (ABCD)
+                  </span>
+                </div>
+                <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300">
+                  Utilitas Rak
+                </span>
+              </div>
+
+              <div className="mt-2 flex items-baseline justify-between">
+                <span className="text-2xl font-black text-blue-600 dark:text-blue-400 font-mono tabular-nums">
+                  {summaryStats.rak.overallPercent}%
+                </span>
+                <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 tabular-nums">
+                  {summaryStats.rak.totalFilled.toLocaleString('id-ID')} / {summaryStats.rak.totalCapacity.toLocaleString('id-ID')}{' '}
+                  <span className="font-normal text-slate-400 text-[10px]">pcs</span>
+                </span>
+              </div>
+
+              {/* Progress bar */}
+              <div className="mt-2 h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-blue-600 transition-transform duration-200 origin-left"
+                  style={{
+                    transform: `scaleX(${Math.min(1, summaryStats.rak.overallPercent / 100)})`,
+                  }}
+                />
+              </div>
+
+              {/* Status chips */}
+              <div className="grid grid-cols-4 gap-1 mt-2.5 text-center">
+                <div className="p-1 rounded bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-mono text-[10px]">
+                  <div className="font-extrabold">{summaryStats.rak.overloadCount}</div>
+                  <div className="text-[8px] uppercase">Overload</div>
+                </div>
+                <div className="p-1 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 font-mono text-[10px]">
+                  <div className="font-extrabold">{summaryStats.rak.warningFullCount}</div>
+                  <div className="text-[8px] uppercase">Penuh</div>
+                </div>
+                <div className="p-1 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-mono text-[10px]">
+                  <div className="font-extrabold">{summaryStats.rak.safeCount}</div>
+                  <div className="text-[8px] uppercase">Tersedia</div>
+                </div>
+                <div className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono text-[10px]">
+                  <div className="font-extrabold">{summaryStats.rak.emptyCount}</div>
+                  <div className="text-[8px] uppercase">Kosong</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-2.5 flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-1.5">
+              <span>{summaryStats.rak.rackCount} rak utama</span>
+              <span className="font-bold text-blue-600 dark:text-blue-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
+                {selectedArea === 'RAK_ABCD' || selectedArea === 'Warehouse' ? '✓ Aktif' : 'Lihat Rak →'}
+              </span>
+            </div>
+          </div>
+
+          {/* Kategori 2: Kapasitas Penyimpanan Koli (R, V, Z, X, CC, PMK, DF) */}
+          <div
+            onClick={() => {
+              setSelectedArea((prev) => (prev === 'KOLI_ALL' ? 'ALL' : 'KOLI_ALL'));
+              setSelectedZoneId('ALL');
+            }}
+            className={`p-3.5 rounded-2xl border transition-all text-left cursor-pointer flex flex-col justify-between shadow-2xs group ${
+              selectedArea === 'KOLI_ALL' || selectedArea === 'Kolian' || selectedArea === 'Transit' || selectedArea === 'Perbaikan'
+                ? 'bg-amber-50/70 dark:bg-amber-950/40 border-amber-500 ring-2 ring-amber-500/20'
+                : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-amber-400 dark:hover:border-amber-600'
+            }`}
+          >
+            <div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Boxes className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">
+                    Penyimpanan Koli
+                  </span>
+                </div>
+                <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300">
+                  R, V, Z, X, CC, PMK, DF
+                </span>
+              </div>
+
+              <div className="mt-2 flex items-baseline justify-between">
+                <span className="text-2xl font-black text-amber-600 dark:text-amber-400 font-mono tabular-nums">
+                  {summaryStats.koli.overallPercent}%
+                </span>
+                <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 tabular-nums">
+                  {summaryStats.koli.totalFilled.toLocaleString('id-ID')} / {summaryStats.koli.totalCapacity.toLocaleString('id-ID')}{' '}
+                  <span className="font-normal text-slate-400 text-[10px]">pcs</span>
+                </span>
+              </div>
+
+              {/* Progress bar */}
+              <div className="mt-2 h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-amber-500 transition-transform duration-200 origin-left"
+                  style={{
+                    transform: `scaleX(${Math.min(1, summaryStats.koli.overallPercent / 100)})`,
+                  }}
+                />
+              </div>
+
+              {/* Status chips */}
+              <div className="grid grid-cols-4 gap-1 mt-2.5 text-center">
+                <div className="p-1 rounded bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-mono text-[10px]">
+                  <div className="font-extrabold">{summaryStats.koli.overloadCount}</div>
+                  <div className="text-[8px] uppercase">Overload</div>
+                </div>
+                <div className="p-1 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 font-mono text-[10px]">
+                  <div className="font-extrabold">{summaryStats.koli.warningFullCount}</div>
+                  <div className="text-[8px] uppercase">Penuh</div>
+                </div>
+                <div className="p-1 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-mono text-[10px]">
+                  <div className="font-extrabold">{summaryStats.koli.safeCount}</div>
+                  <div className="text-[8px] uppercase">Tersedia</div>
+                </div>
+                <div className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono text-[10px]">
+                  <div className="font-extrabold">{summaryStats.koli.emptyCount}</div>
+                  <div className="text-[8px] uppercase">Kosong</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-2.5 flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-1.5">
+              <span className="truncate">
+                R/V/Z: {summaryStats.koli.breakdown.kolianFilled.toLocaleString('id-ID')} · X: {summaryStats.koli.breakdown.transitFilled.toLocaleString('id-ID')} · CC/PMK/DF: {summaryStats.koli.breakdown.perbaikanFilled.toLocaleString('id-ID')} pcs
+              </span>
+              <span className="font-bold text-amber-600 dark:text-amber-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5 shrink-0 ml-1">
+                {selectedArea === 'KOLI_ALL' ? '✓ Aktif' : 'Lihat Koli →'}
+              </span>
+            </div>
+          </div>
+
+          {/* Kategori 3: Kapasitas Blok F (Studio, Shopee, TikTok, IGlive) */}
+          <div
+            onClick={() => {
+              setSelectedArea((prev) => (prev === 'BLOK_F' || prev === 'Blok F' ? 'ALL' : 'BLOK_F'));
+              setSelectedZoneId('ALL');
+            }}
+            className={`p-3.5 rounded-2xl border transition-all text-left cursor-pointer flex flex-col justify-between shadow-2xs group ${
+              selectedArea === 'BLOK_F' || selectedArea === 'Blok F'
+                ? 'bg-purple-50/70 dark:bg-purple-950/40 border-purple-500 ring-2 ring-purple-500/20'
+                : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-purple-400 dark:hover:border-purple-600'
+            }`}
+          >
+            <div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                  <span className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">
+                    Kapasitas Blok F
+                  </span>
+                </div>
+                <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300">
+                  Area Terpisah
+                </span>
+              </div>
+
+              <div className="mt-2 flex items-baseline justify-between">
+                <span className="text-2xl font-black text-purple-600 dark:text-purple-400 font-mono tabular-nums">
+                  {summaryStats.blokF.overallPercent}%
+                </span>
+                <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 tabular-nums">
+                  {summaryStats.blokF.totalFilled.toLocaleString('id-ID')} / {summaryStats.blokF.totalCapacity.toLocaleString('id-ID')}{' '}
+                  <span className="font-normal text-slate-400 text-[10px]">pcs</span>
+                </span>
+              </div>
+
+              {/* Progress bar */}
+              <div className="mt-2 h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-purple-600 transition-transform duration-200 origin-left"
+                  style={{
+                    transform: `scaleX(${Math.min(1, summaryStats.blokF.overallPercent / 100)})`,
+                  }}
+                />
+              </div>
+
+              {/* Status chips */}
+              <div className="grid grid-cols-4 gap-1 mt-2.5 text-center">
+                <div className="p-1 rounded bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-mono text-[10px]">
+                  <div className="font-extrabold">{summaryStats.blokF.overloadCount}</div>
+                  <div className="text-[8px] uppercase">Overload</div>
+                </div>
+                <div className="p-1 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 font-mono text-[10px]">
+                  <div className="font-extrabold">{summaryStats.blokF.warningFullCount}</div>
+                  <div className="text-[8px] uppercase">Penuh</div>
+                </div>
+                <div className="p-1 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-mono text-[10px]">
+                  <div className="font-extrabold">{summaryStats.blokF.safeCount}</div>
+                  <div className="text-[8px] uppercase">Tersedia</div>
+                </div>
+                <div className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono text-[10px]">
+                  <div className="font-extrabold">{summaryStats.blokF.emptyCount}</div>
+                  <div className="text-[8px] uppercase">Kosong</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-2.5 flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-1.5">
+              <span>Shopee, TikTok, IGlive, Studio</span>
+              <span className="font-bold text-purple-600 dark:text-purple-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
+                {selectedArea === 'BLOK_F' || selectedArea === 'Blok F' ? '✓ Aktif' : 'Lihat Blok F →'}
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* ============================================================================
@@ -1290,7 +1812,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               Kapasitas Per Area &amp; Kategori Zona Rak
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Klik kartu zona di bawah untuk memfilter rak (Warehouse Utama: A–D · Suplai Kolian: R, V, Z · Transit: X · Blok F: Shopee, TikTok, Studio · Perbaikan: CC, PMK, DF)
+              Klik kartu zona di bawah untuk memfilter rak (Warehouse Utama: A–D · Suplai Kolian: R, V, Z · Transit: X · Blok F: Shopee, TikTok, IGlive, Studio · Perbaikan: CC, PMK, DF)
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -1342,44 +1864,57 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             }}
             className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer ${
               selectedArea === 'ALL'
-                ? 'bg-slate-900 text-white border-slate-900 dark:bg-amber-500 dark:text-black dark:border-amber-500'
+                ? 'bg-slate-900 text-white border-slate-900 dark:bg-amber-500 dark:text-black dark:border-amber-500 shadow-2xs'
                 : 'bg-slate-50 dark:bg-[#0E1420] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
             }`}
           >
-            Semua Area ({allSlots.length} lokasi)
+            🏢 Semua Warehouse (Rak + Koli) ({summaryStats.warehouseTotal.rackCount} lokasi)
           </button>
-          {availableAreas.map((areaName) => {
-            const countInArea = allSlots.filter(
-              (s) => s.area.toUpperCase() === areaName.toUpperCase()
-            ).length;
-            const active = selectedArea.toUpperCase() === areaName.toUpperCase();
-            return (
-              <button
-                key={areaName}
-                type="button"
-                onClick={() => {
-                  setSelectedArea((prev) =>
-                    prev.toUpperCase() === areaName.toUpperCase() ? 'ALL' : areaName
-                  );
-                  setSelectedZoneId('ALL');
-                }}
-                className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer ${
-                  active
-                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-amber-500 dark:text-black dark:border-amber-500'
-                    : 'bg-slate-50 dark:bg-[#0E1420] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
-                }`}
-              >
-                {areaName === 'Kolian'
-                  ? 'Kolian / Koli (R, V, Z)'
-                  : areaName === 'Transit'
-                  ? 'Transit (X)'
-                  : areaName === 'Perbaikan'
-                  ? 'Perbaikan (CC, PMK, DF)'
-                  : areaName}{' '}
-                ({countInArea})
-              </button>
-            );
-          })}
+
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedArea((prev) => (prev === 'RAK_ABCD' || prev === 'Warehouse' ? 'ALL' : 'RAK_ABCD'));
+              setSelectedZoneId('ALL');
+            }}
+            className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer ${
+              selectedArea === 'RAK_ABCD' || selectedArea === 'Warehouse'
+                ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                : 'bg-slate-50 dark:bg-[#0E1420] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
+            }`}
+          >
+            🗄️ Penyimpanan Rak (ABCD) ({summaryStats.rak.rackCount} rak)
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedArea((prev) => (prev === 'KOLI_ALL' ? 'ALL' : 'KOLI_ALL'));
+              setSelectedZoneId('ALL');
+            }}
+            className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer ${
+              selectedArea === 'KOLI_ALL' || selectedArea === 'Kolian' || selectedArea === 'Transit' || selectedArea === 'Perbaikan'
+                ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
+                : 'bg-slate-50 dark:bg-[#0E1420] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
+            }`}
+          >
+            📦 Penyimpanan Koli ({summaryStats.koli.rackCount} lokasi)
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedArea((prev) => (prev === 'BLOK_F' || prev === 'Blok F' ? 'ALL' : 'BLOK_F'));
+              setSelectedZoneId('ALL');
+            }}
+            className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer ${
+              selectedArea === 'BLOK_F' || selectedArea === 'Blok F'
+                ? 'bg-purple-600 text-white border-purple-600 shadow-2xs'
+                : 'bg-slate-50 dark:bg-[#0E1420] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
+            }`}
+          >
+            🎬 Blok F ({summaryStats.blokF.rackCount} lokasi)
+          </button>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-6 min-[2000px]:grid-cols-8 gap-2.5">
@@ -2868,7 +3403,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-slate-500">
-                      Ubah kategori produk, prefix &amp; rentang nomor, serta kapasitas maksimal default untuk Warehouse (A–D), Transit (X), Kolian/Koli (R, V, Z), Blok F (Shopee, TikTok, Studio), dan Perbaikan (Cuci CC, Permak PMK, Defect DF).
+                      Ubah kategori produk, prefix &amp; rentang nomor, serta kapasitas maksimal default untuk Warehouse (A–D), Transit (X), Kolian/Koli (R, V, Z), Blok F (Shopee, TikTok, IGlive, Studio), dan Perbaikan (Cuci CC, Permak PMK, Defect DF).
                     </span>
                     <button
                       type="button"

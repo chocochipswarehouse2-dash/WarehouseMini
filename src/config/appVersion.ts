@@ -15,21 +15,35 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.54",
-  "versionCode": 314,
+  "version": "v2.6.55",
+  "versionCode": 315,
   "buildDate": "5 November 2026",
-  "buildHash": "wms-261105-v314-0910",
-  "releaseTitle": "WMS v2.6.54 — Penambahan Variabel Lokasi Baru IGLIVE pada Area Blok F",
+  "buildHash": "wms-261105-v315-1020",
+  "releaseTitle": "WMS v2.6.55 — Integrasi Kapasitas Warehouse (Rak + Koli), Blok F & SPS IGLive",
   "releaseNotes": [
-    "Tambah variabel lokasi resmi IGLIVE pada Area Blok F dengan prioritas picking Priority 3",
-    "Mendukung variasi penulisan IGlive, IG LIVE, IG-LIVE secara otomatis",
-    "Integrasi ke Quick Tag Toolbar, cetak label barcode rak, dan kapasitas rak WMS",
-    "Sinkronisasi modul webhook dan logic Fonnte GAS"
+    "Kapasitas Warehouse mencakup Rak ABCD dan Koli R,V,Z,X,CC,PMK,DF secara total",
+    "Status kapasitas masing-masing kategori penyimpanan (Rak, Koli, dan Blok F)",
+    "Setup IGLive pada kapasitas rak dan integrasi zona Blok F",
+    "Penambahan tab, filter & tabel IGLive pada modul SPS (Peminjaman)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.54",
+    "versionCode": 314,
+    "buildDate": "5 November 2026",
+    "buildHash": "wms-261105-v314-0910",
+    "releaseTitle": "WMS v2.6.54 — Penambahan Variabel Lokasi Baru IGLIVE pada Area Blok F",
+    "releaseNotes": [
+      "Tambah variabel lokasi resmi IGLIVE pada Area Blok F dengan prioritas picking Priority 3",
+      "Mendukung variasi penulisan IGlive, IG LIVE, IG-LIVE secara otomatis",
+      "Integrasi ke Quick Tag Toolbar, cetak label barcode rak, dan kapasitas rak WMS",
+      "Sinkronisasi modul webhook dan logic Fonnte GAS"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.53",
     "versionCode": 313,
@@ -127,17 +141,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Reposisi FAB Order Picking agar berdampingan rapi dengan Live Chat di desktop dan berjarak aman di mobile",
       "Menampilkan tombol keranjang secara konsisten di seluruh baris produk perbaikan dengan proteksi stok 0 pcs"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.44",
-    "versionCode": 304,
-    "buildDate": "2 November 2026",
-    "buildHash": "wms-261102-v304-1712",
-    "releaseTitle": "WMS v2.6.44 — Fix Props onAddToCart di InventoryDetailDrawer",
-    "releaseNotes": [
-      "Memperbaiki destructuring props onAddToCart di modal Audit Kartu SKU InventoryDetailDrawer agar tidak memicu ReferenceError"
     ],
     "minSupportedVersion": "v2.0.0"
   }

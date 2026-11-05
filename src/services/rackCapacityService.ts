@@ -297,7 +297,7 @@ export const DEFAULT_RACK_ZONES: RackZoneRule[] = [
 
 export function getDefaultRackCapacityConfig(): RackCapacityConfig {
   return {
-    version: 5,
+    version: 6,
     updatedAt: new Date().toISOString(),
     zones: DEFAULT_RACK_ZONES,
     overrides: {},
@@ -359,7 +359,7 @@ export function normalizeAndMigrateRackConfig(raw: RackCapacityConfig): RackCapa
     ) {
       const legacyCap = z.defaultMaxCapacity || 80;
       const blokFDefaults = DEFAULT_RACK_ZONES.filter((dz) =>
-        ['zone_blok_f_shopee', 'zone_blok_f_tiktok', 'zone_blok_f_studio'].includes(dz.id)
+        ['zone_blok_f_shopee', 'zone_blok_f_tiktok', 'zone_blok_f_iglive', 'zone_blok_f_studio'].includes(dz.id)
       );
       for (const bf of blokFDefaults) {
         if (!upgradedZones.some((uz) => uz.id === bf.id)) {
@@ -381,7 +381,7 @@ export function normalizeAndMigrateRackConfig(raw: RackCapacityConfig): RackCapa
     upgradedZones.push(z);
   }
 
-  // Ensure Koli R, V, Z, Transit X, separate Blok F (SHOPEE, TIKTOK, STUDIO), and Perbaikan (CC, PMK, DF) exist
+  // Ensure Koli R, V, Z, Transit X, separate Blok F (SHOPEE, TIKTOK, IGLIVE, STUDIO), and Perbaikan (CC, PMK, DF) exist
   const requiredZones = DEFAULT_RACK_ZONES.filter((dz) =>
     [
       'zone_transit',
@@ -390,6 +390,7 @@ export function normalizeAndMigrateRackConfig(raw: RackCapacityConfig): RackCapa
       'zone_koli_z',
       'zone_blok_f_shopee',
       'zone_blok_f_tiktok',
+      'zone_blok_f_iglive',
       'zone_blok_f_studio',
       'zone_perbaikan_cc',
       'zone_perbaikan_pmk',
@@ -403,10 +404,17 @@ export function normalizeAndMigrateRackConfig(raw: RackCapacityConfig): RackCapa
         z.id === req.id ||
         (req.staticLocations?.length === 1 &&
           z.staticLocations?.length === 1 &&
-          z.staticLocations[0].toUpperCase() === req.staticLocations[0]) ||
+          z.staticLocations[0].toUpperCase() === req.staticLocations[0].toUpperCase()) ||
         (!req.staticLocations && z.prefix && z.prefix.toUpperCase() === req.prefix)
     );
     if (!exists) {
+      if (req.id === 'zone_blok_f_iglive') {
+        const ttIdx = upgradedZones.findIndex((z) => z.id === 'zone_blok_f_tiktok');
+        if (ttIdx !== -1) {
+          upgradedZones.splice(ttIdx + 1, 0, { ...req });
+          continue;
+        }
+      }
       upgradedZones.push({ ...req });
     }
   }
@@ -430,7 +438,7 @@ export function normalizeAndMigrateRackConfig(raw: RackCapacityConfig): RackCapa
     : { ...DEFAULT_ABCD_TO_KOLI_RULE };
 
   return {
-    version: Math.max(5, raw.version || 5),
+    version: Math.max(6, raw.version || 6),
     updatedAt: raw.updatedAt || new Date().toISOString(),
     updatedBy: raw.updatedBy,
     zones: upgradedZones,
@@ -718,7 +726,7 @@ export function isExcludedFromWarehouseRelocation(area: string, lokasi: string):
   const a = (area || '').trim().toUpperCase();
   const l = (lokasi || '').trim().toUpperCase();
   if (a === 'BLOK F' || a === 'PERBAIKAN' || a === 'ANOMALI') return true;
-  if (l === 'SHOPEE' || l === 'TIKTOK' || l === 'STUDIO') return true;
+  if (l === 'SHOPEE' || l === 'TIKTOK' || l === 'STUDIO' || l === 'IGLIVE' || l === 'IG LIVE') return true;
   if (/^(CC|PMK|DF)\d*/i.test(l)) return true;
   return false;
 }
