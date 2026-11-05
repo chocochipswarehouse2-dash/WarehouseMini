@@ -263,23 +263,71 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
     [chatState.rooms]
   );
 
+  const matchesUserSearch = (
+    u: { username: string; name: string; role: string; store_name?: string },
+    rawQuery: string
+  ): boolean => {
+    const q = rawQuery.trim().toLowerCase();
+    if (!q) return true;
+    const qCompact = q.replace(/[\s_-]+/g, '');
+    const uname = (u.username || '').toLowerCase();
+    const unameCompact = uname.replace(/[\s_-]+/g, '');
+    const nameLower = (u.name || '').toLowerCase();
+    const nameCompact = nameLower.replace(/[\s_-]+/g, '');
+    const roleLower = (u.role || '').toLowerCase();
+    const storeLower = (u.store_name || '').toLowerCase();
+
+    if (
+      nameLower.includes(q) ||
+      uname.includes(q) ||
+      roleLower.includes(q) ||
+      storeLower.includes(q)
+    ) {
+      return true;
+    }
+    if (
+      qCompact &&
+      (nameCompact.includes(qCompact) ||
+        unameCompact.includes(qCompact) ||
+        roleLower.replace(/[\s_-]+/g, '').includes(qCompact) ||
+        storeLower.replace(/[\s_-]+/g, '').includes(qCompact))
+    ) {
+      return true;
+    }
+    // Alias for Customer Service accounts (cs, cs1, cs2, chococs1, chococs2)
+    if (
+      (qCompact === 'cs' || qCompact === 'cs1' || qCompact === 'cs2') &&
+      (unameCompact.includes(qCompact) || (qCompact === 'cs' && roleLower.includes('customer service')))
+    ) {
+      return true;
+    }
+    return false;
+  };
+
   const filteredRooms = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
+    const qCompact = q.replace(/[\s_-]+/g, '');
     return visibleRooms.filter((r) => {
       if (activeTab === 'groups' && r.type !== 'group') return false;
       if (!q) return true;
       const meta = getRoomDisplayMeta(r);
+      const titleLower = meta.title.toLowerCase();
+      const subtitleLower = meta.subtitle.toLowerCase();
+      const otherUname = (meta.otherUsername || '').toLowerCase();
       return (
-        meta.title.toLowerCase().includes(q) ||
-        meta.subtitle.toLowerCase().includes(q) ||
-        (r.last_message_text || '').toLowerCase().includes(q)
+        titleLower.includes(q) ||
+        subtitleLower.includes(q) ||
+        otherUname.includes(q) ||
+        (r.last_message_text || '').toLowerCase().includes(q) ||
+        (qCompact &&
+          (titleLower.replace(/[\s_-]+/g, '').includes(qCompact) ||
+            otherUname.replace(/[\s_-]+/g, '').includes(qCompact)))
       );
     });
   }, [visibleRooms, activeTab, searchQuery, chatState.onlineUsers, chatState.allUsersDirectory]);
 
-  // Online & Directory users list
-  const sortedDirectoryUsers = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+  // All colleague users (excluding self, independent of searchQuery)
+  const allColleagueUsers = useMemo(() => {
     const map = new Map<string, ChatParticipantProfile & { isOnline: boolean; activePage?: string }>();
 
     for (const u of chatState.allUsersDirectory) {
@@ -307,21 +355,17 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
       }
     }
 
-    return Array.from(map.values())
-      .filter((u) => {
-        if (!q) return true;
-        return (
-          u.name.toLowerCase().includes(q) ||
-          u.username.toLowerCase().includes(q) ||
-          u.role.toLowerCase().includes(q) ||
-          (u.store_name || '').toLowerCase().includes(q)
-        );
-      })
-      .sort((a, b) => {
-        if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
-        return a.name.localeCompare(b.name, 'id');
-      });
-  }, [chatState.allUsersDirectory, chatState.onlineUsers, searchQuery, myUsername]);
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
+      return a.name.localeCompare(b.name, 'id');
+    });
+  }, [chatState.allUsersDirectory, chatState.onlineUsers, myUsername]);
+
+  // Online & Directory users list filtered by searchQuery
+  const sortedDirectoryUsers = useMemo(
+    () => allColleagueUsers.filter((u) => matchesUserSearch(u, searchQuery)),
+    [allColleagueUsers, searchQuery]
+  );
 
   // Exact count of online colleagues (excluding self & independent of searchQuery), matching Sidebar badge 100%
   const onlineOthersCount = useMemo(
@@ -777,7 +821,10 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setActiveTab('online')}
+                onClick={() => {
+                  setActiveTab('online');
+                  void liveChatManager.refreshUsersDirectory();
+                }}
                 className={`flex-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 flex items-center justify-center gap-1.5 ${
                   activeTab === 'online'
                     ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
@@ -785,7 +832,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                 }`}
               >
                 <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                <span>User ({onlineOthersCount})</span>
+                <span>Rekan ({allColleagueUsers.length})</span>
               </button>
             </div>
 
@@ -862,27 +909,30 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                   </button>
                 ))
               )
-            ) : filteredRooms.length === 0 ? (
+            ) : filteredRooms.length === 0 && (!searchQuery.trim() || sortedDirectoryUsers.length === 0) ? (
               <div className="p-6 text-center space-y-3">
                 <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto text-slate-400">
                   <MessageSquare className="w-5 h-5" />
                 </div>
                 <div className="space-y-1">
                   <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                    Belum ada percakapan aktif
+                    {searchQuery.trim() ? 'Tidak ada percakapan atau rekan yang cocok' : 'Belum ada percakapan aktif'}
                   </p>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Pilih tab <strong>User</strong> untuk mulai chat 1-on-1
+                    Pilih tab <strong>Rekan</strong> untuk mulai chat 1-on-1
                     {isAdminGroupManager ? ' atau klik "+ Buat Grup" untuk membuka Ruang Diskusi.' : '.'}
                   </p>
                 </div>
                 <div className="flex items-center justify-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setActiveTab('online')}
+                    onClick={() => {
+                      setActiveTab('online');
+                      void liveChatManager.refreshUsersDirectory();
+                    }}
                     className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-indigo-500 transition-colors cursor-pointer"
                   >
-                    Lihat User Online ({onlineOthersCount})
+                    Pilih Rekan Chat ({allColleagueUsers.length})
                   </button>
                   {isAdminGroupManager && (
                     <button
@@ -896,118 +946,169 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                 </div>
               </div>
             ) : (
-              filteredRooms.map((room) => {
-                const meta = getRoomDisplayMeta(room);
-                const isSelected = activeRoom?.id === room.id;
-                const unreadCount =
-                  room.unread_counts?.[myUsername] ||
-                  (Array.isArray(room.unread_by) && room.unread_by.includes(myUsername) ? 1 : 0);
-                const canDeleteThisRoom =
-                  room.type === 'direct' ||
-                  isAdminGroupManager ||
-                  String(room.created_by || '').trim().toLowerCase() === myUsername;
+              <>
+                {filteredRooms.map((room) => {
+                  const meta = getRoomDisplayMeta(room);
+                  const isSelected = activeRoom?.id === room.id;
+                  const unreadCount =
+                    room.unread_counts?.[myUsername] ||
+                    (Array.isArray(room.unread_by) && room.unread_by.includes(myUsername) ? 1 : 0);
+                  const canDeleteThisRoom =
+                    room.type === 'direct' ||
+                    isAdminGroupManager ||
+                    String(room.created_by || '').trim().toLowerCase() === myUsername;
 
-                return (
-                  <div
-                    key={room.id}
-                    onClick={() => void liveChatManager.selectRoom(room.id)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        void liveChatManager.selectRoom(room.id);
-                      }
-                    }}
-                    className={`group w-full px-3.5 py-3 flex items-start justify-between gap-2.5 transition-colors text-left cursor-pointer ${
-                      isSelected
-                        ? 'bg-indigo-50/80 dark:bg-indigo-950/40'
-                        : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                    }`}
-                  >
-                    <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                      <div className="relative shrink-0 mt-0.5">
-                        <div
-                          className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold uppercase border ${
-                            room.type === 'group'
-                              ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-300'
-                              : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
-                          }`}
-                        >
-                          {room.type === 'group' ? <Users className="w-4 h-4" /> : meta.title.slice(0, 2)}
-                        </div>
-                        {meta.isOnline && (
-                          <span
-                            className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900"
-                            title="Online"
-                          />
-                        )}
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-1.5">
-                          <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                            {meta.title}
-                          </span>
-                          {room.last_message_at && (
-                            <span className="text-[10px] font-mono tabular-nums text-slate-400 shrink-0">
-                              {formatTimeShort(room.last_message_at)}
-                            </span>
+                  return (
+                    <div
+                      key={room.id}
+                      onClick={() => void liveChatManager.selectRoom(room.id)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          void liveChatManager.selectRoom(room.id);
+                        }
+                      }}
+                      className={`group w-full px-3.5 py-3 flex items-start justify-between gap-2.5 transition-colors text-left cursor-pointer ${
+                        isSelected
+                          ? 'bg-indigo-50/80 dark:bg-indigo-950/40'
+                          : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                      }`}
+                    >
+                      <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                        <div className="relative shrink-0 mt-0.5">
+                          <div
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold uppercase border ${
+                              room.type === 'group'
+                                ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-300'
+                                : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                            }`}
+                          >
+                            {room.type === 'group' ? <Users className="w-4 h-4" /> : meta.title.slice(0, 2)}
+                          </div>
+                          {meta.isOnline && (
+                            <span
+                              className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900"
+                              title="Online"
+                            />
                           )}
                         </div>
 
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                          {meta.subtitle}
-                        </div>
-
-                        {room.last_message_text && (
-                          <div
-                            className={`text-xs truncate mt-0.5 ${
-                              unreadCount > 0
-                                ? 'font-semibold text-slate-900 dark:text-white'
-                                : 'text-slate-500 dark:text-slate-400'
-                            }`}
-                          >
-                            {room.last_message_sender &&
-                            room.last_message_sender.toLowerCase() === myUsername
-                              ? 'Anda: '
-                              : room.type === 'group' && room.last_message_sender_name
-                              ? `${room.last_message_sender_name}: `
-                              : ''}
-                            {room.last_message_text}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-1.5">
+                            <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                              {meta.title}
+                            </span>
+                            {room.last_message_at && (
+                              <span className="text-[10px] font-mono tabular-nums text-slate-400 shrink-0">
+                                {formatTimeShort(room.last_message_at)}
+                              </span>
+                            )}
                           </div>
+
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                            {meta.subtitle}
+                          </div>
+
+                          {room.last_message_text && (
+                            <div
+                              className={`text-xs truncate mt-0.5 ${
+                                unreadCount > 0
+                                  ? 'font-semibold text-slate-900 dark:text-white'
+                                  : 'text-slate-500 dark:text-slate-400'
+                              }`}
+                            >
+                              {room.last_message_sender &&
+                              room.last_message_sender.toLowerCase() === myUsername
+                                ? 'Anda: '
+                                : room.type === 'group' && room.last_message_sender_name
+                                ? `${room.last_message_sender_name}: `
+                                : ''}
+                              {room.last_message_text}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+                        {unreadCount > 0 && (
+                          <span className="px-1.5 py-0.5 min-w-[20px] rounded-full bg-indigo-600 text-white text-[10px] font-mono tabular-nums font-bold text-center shrink-0">
+                            {unreadCount}
+                          </span>
+                        )}
+
+                        {canDeleteThisRoom && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmDeleteRoom(room);
+                            }}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors cursor-pointer"
+                            title={
+                              room.type === 'group'
+                                ? 'Hapus Ruang Diskusi Grup'
+                                : `Hapus Chat dengan ${meta.title}`
+                            }
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         )}
                       </div>
                     </div>
+                  );
+                })}
 
-                    <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
-                      {unreadCount > 0 && (
-                        <span className="px-1.5 py-0.5 min-w-[20px] rounded-full bg-indigo-600 text-white text-[10px] font-mono tabular-nums font-bold text-center shrink-0">
-                          {unreadCount}
-                        </span>
-                      )}
-
-                      {canDeleteThisRoom && (
+                {searchQuery.trim() && sortedDirectoryUsers.length > 0 && (
+                  <div className="bg-slate-50/40 dark:bg-slate-900/40">
+                    <div className="px-3.5 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 bg-slate-100/70 dark:bg-slate-800/60 border-y border-slate-200/70 dark:border-slate-800">
+                      Mulai Chat 1-on-1 dengan Rekan ({sortedDirectoryUsers.length})
+                    </div>
+                    <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                      {sortedDirectoryUsers.map((u) => (
                         <button
+                          key={`search_user_${u.username}`}
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setConfirmDeleteRoom(room);
+                          onClick={() => {
+                            void liveChatManager.openOrCreateDirectRoom(u);
+                            setSearchQuery('');
+                            setActiveTab('all');
                           }}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors cursor-pointer"
-                          title={
-                            room.type === 'group'
-                              ? 'Hapus Ruang Diskusi Grup'
-                              : `Hapus Chat dengan ${meta.title}`
-                          }
+                          className="w-full px-3.5 py-2.5 flex items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors text-left cursor-pointer"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="relative shrink-0">
+                              <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-xs font-bold text-slate-700 dark:text-slate-200 uppercase">
+                                {u.name.slice(0, 2)}
+                              </div>
+                              <span
+                                className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-white dark:ring-slate-900 ${
+                                  u.isOnline ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'
+                                }`}
+                                title={u.isOnline ? 'Sedang Online' : 'Offline'}
+                              />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                                {u.name}
+                              </div>
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                                <span>{u.role}</span>
+                                {u.store_name ? ` · ${u.store_name}` : ''}
+                                {` · @${u.username}`}
+                              </div>
+                            </div>
+                          </div>
+                          <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 shrink-0">
+                            Chat →
+                          </span>
                         </button>
-                      )}
+                      ))}
                     </div>
                   </div>
-                );
-              })
+                )}
+              </>
             )}
           </div>
         </div>
@@ -1831,7 +1932,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                     disabled={
                       isSending ||
                       isUploadingImage ||
-                      (!inputText.trim() && !pendingAttachmentUrl && selectedTags.length === 0)
+                      (!inputText.trim() && !pendingAttachmentUrl && selectedTags.length === 0 && !pendingOrderContext)
                     }
                     className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
                   >
@@ -1910,7 +2011,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          const allUnames = sortedDirectoryUsers.map((u) => u.username.toLowerCase());
+                          const allUnames = allColleagueUsers.map((u) => u.username.toLowerCase());
                           setSelectedMemberUsernames(new Set(allUnames));
                         }}
                         className="text-indigo-600 dark:text-indigo-400 hover:underline font-semibold cursor-pointer"
@@ -1940,17 +2041,8 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                   </div>
 
                   <div className="max-h-56 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800">
-                    {sortedDirectoryUsers
-                      .filter((u) => {
-                        if (!memberSearchQuery.trim()) return true;
-                        const q = memberSearchQuery.trim().toLowerCase();
-                        return (
-                          u.name.toLowerCase().includes(q) ||
-                          u.username.toLowerCase().includes(q) ||
-                          u.role.toLowerCase().includes(q) ||
-                          (u.store_name || '').toLowerCase().includes(q)
-                        );
-                      })
+                    {allColleagueUsers
+                      .filter((u) => matchesUserSearch(u, memberSearchQuery))
                       .map((u) => {
                         const uname = u.username.toLowerCase();
                         const isMe = uname === myUsername;

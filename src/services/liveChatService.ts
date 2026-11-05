@@ -622,6 +622,7 @@ class LiveChatManager {
   private clientInstanceId = `inst_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   private deletedRoomTombstones: Record<string, string> = loadLocalDeletedTombstones();
   private pendingUpsertRooms = new Map<string, ChatRoom>();
+  private recentlyUpsertedRooms = new Map<string, { room: ChatRoom; expiresAt: number }>();
   private initializedForUser: string | null = null;
   private typingTimeout: any = null;
   private directoryLoadedAt = 0;
@@ -1156,9 +1157,14 @@ class LiveChatManager {
       for (const u of users || []) {
         const uname = String(u.username || '').trim().toLowerCase();
         if (!uname) continue;
+        const rawName = String(u.name || '').trim();
+        const resolvedName =
+          rawName && rawName.toLowerCase() !== uname
+            ? rawName
+            : getUserPersonName(uname) || rawName || u.store_name || uname;
         map.set(uname, {
           username: uname,
-          name: u.name || getUserPersonName(uname) || u.store_name || uname,
+          name: resolvedName,
           role: u.role || 'Operator',
           store_name: u.store_name || undefined,
         });
@@ -1237,6 +1243,10 @@ class LiveChatManager {
         // Server index is authoritative! Only include rooms present on the server (that aren't deleted by a newer tombstone)
         for (const r of serverRooms) {
           if (r?.id && !isRoomDeletedByTombstone(r, this.deletedRoomTombstones)) {
+            if (this.deletedRoomTombstones[r.id]) {
+              delete this.deletedRoomTombstones[r.id];
+              saveLocalDeletedTombstones(this.deletedRoomTombstones);
+            }
             roomMap.set(r.id, r);
           }
         }
@@ -1244,6 +1254,17 @@ class LiveChatManager {
         for (const [id, pendingRoom] of this.pendingUpsertRooms.entries()) {
           if (!isRoomDeletedByTombstone(pendingRoom, this.deletedRoomTombstones)) {
             roomMap.set(id, pendingRoom);
+          }
+        }
+        // Plus any room created/upserted within the last 20 seconds so overlapping background polls never purge a newly opened chat
+        const nowMs = Date.now();
+        for (const [id, entry] of this.recentlyUpsertedRooms.entries()) {
+          if (nowMs > entry.expiresAt) {
+            this.recentlyUpsertedRooms.delete(id);
+            continue;
+          }
+          if (!roomMap.has(id) && !isRoomDeletedByTombstone(entry.room, this.deletedRoomTombstones)) {
+            roomMap.set(id, entry.room);
           }
         }
       } else {
@@ -1414,8 +1435,13 @@ class LiveChatManager {
 
       if (Array.isArray(hotMsgs)) {
         const hasColdArchives = Boolean(room && Array.isArray(room.archive_urls) && room.archive_urls.length > 0);
-        // If server hot store is empty and there are no cold archives, the room has no messages (or was cleared/deleted)
-        if (hotMsgs.length === 0 && !hasColdArchives) {
+        const nowMs = Date.now();
+        const hasVeryRecentLocal = localMsgs.some((m) => {
+          const ms = new Date(m.created_at).getTime();
+          return Number.isFinite(ms) && nowMs - ms < 20_000;
+        });
+        // If server hot store is empty and there are no cold archives or in-flight local messages, clear messages
+        if (hotMsgs.length === 0 && !hasColdArchives && !hasVeryRecentLocal) {
           this.state.messagesByRoom[roomId] = [];
           await idbSaveRoomMessages(roomId, []);
         } else {
@@ -1470,7 +1496,12 @@ class LiveChatManager {
       const hotMsgs = await fetchSystemDocJson<ChatMessage[]>(`${ROOM_MSGS_DOC_PREFIX}${roomId}`);
       if (Array.isArray(hotMsgs)) {
         const hasColdArchives = Boolean(room && Array.isArray(room.archive_urls) && room.archive_urls.length > 0);
-        if (hotMsgs.length === 0 && !hasColdArchives) {
+        const nowMs = Date.now();
+        const hasVeryRecentLocal = localMsgs.some((m) => {
+          const ms = new Date(m.created_at).getTime();
+          return Number.isFinite(ms) && nowMs - ms < 20_000;
+        });
+        if (hotMsgs.length === 0 && !hasColdArchives && !hasVeryRecentLocal) {
           this.state.messagesByRoom[roomId] = [];
           await idbSaveRoomMessages(roomId, []);
         } else {
@@ -1542,13 +1573,11 @@ class LiveChatManager {
       (r) => r.id === directRoomId && !isRoomDeletedByTombstone(r, this.deletedRoomTombstones)
     );
     if (existing) {
+      this.state.activeRoomId = existing.id;
+      this.notify();
       await this.selectRoom(existing.id);
       return existing;
     }
-
-    // Ensure any stale local messages from a previously deleted conversation with this ID are wiped first
-    await idbDeleteRoom(directRoomId);
-    delete this.state.messagesByRoom[directRoomId];
 
     const myName =
       this.currentSession.name ||
@@ -1556,11 +1585,25 @@ class LiveChatManager {
       this.currentSession.store_name ||
       me;
 
-    const now = new Date().toISOString();
+    const prevDeletedIso = this.deletedRoomTombstones[directRoomId];
+    const prevDeletedMs = prevDeletedIso ? new Date(prevDeletedIso).getTime() : 0;
+    const safeNowMs = Math.max(Date.now(), Number.isFinite(prevDeletedMs) ? prevDeletedMs + 2000 : 0);
+    const now = new Date(safeNowMs).toISOString();
+
+    if (this.deletedRoomTombstones[directRoomId]) {
+      delete this.deletedRoomTombstones[directRoomId];
+      saveLocalDeletedTombstones(this.deletedRoomTombstones);
+    }
+
+    const otherDisplayName =
+      targetUser.name && targetUser.name.trim().toLowerCase() !== other
+        ? targetUser.name.trim()
+        : getUserPersonName(other) || targetUser.name || other;
+
     const newRoom: ChatRoom = {
       id: directRoomId,
       type: 'direct',
-      name: targetUser.name || other,
+      name: otherDisplayName,
       participants: sortedPair,
       participant_profiles: {
         [me]: {
@@ -1571,7 +1614,7 @@ class LiveChatManager {
         },
         [other]: {
           username: other,
-          name: targetUser.name || getUserPersonName(other) || other,
+          name: otherDisplayName,
           role: targetUser.role || 'Operator',
           store_name: targetUser.store_name || undefined,
         },
@@ -1584,6 +1627,25 @@ class LiveChatManager {
       unread_counts: {},
     };
 
+    // Optimistically activate room in 0ms so UI switches to the chat conversation immediately
+    this.pendingUpsertRooms.set(directRoomId, newRoom);
+    this.recentlyUpsertedRooms.set(directRoomId, {
+      room: newRoom,
+      expiresAt: Date.now() + 20_000,
+    });
+    this.state.messagesByRoom[directRoomId] = [];
+    const existingIdx = this.state.rooms.findIndex((r) => r.id === directRoomId);
+    if (existingIdx >= 0) {
+      this.state.rooms[existingIdx] = newRoom;
+    } else {
+      this.state.rooms.unshift(newRoom);
+    }
+    this.state.rooms.sort((a, b) => this.getRoomSortTime(b) - this.getRoomSortTime(a));
+    this.state.activeRoomId = newRoom.id;
+    this.notify();
+
+    // Ensure any stale local messages from a previously deleted conversation with this ID are wiped first
+    await idbDeleteRoom(directRoomId);
     await this.upsertRoomToServer(newRoom);
     await this.selectRoom(newRoom.id);
     return newRoom;
@@ -1790,6 +1852,7 @@ class LiveChatManager {
     this.deletedRoomTombstones[roomId] = deletedAt;
     saveLocalDeletedTombstones(this.deletedRoomTombstones);
     this.pendingUpsertRooms.delete(roomId);
+    this.recentlyUpsertedRooms.delete(roomId);
 
     // 1. Optimistic local state + IndexedDB removal
     this.state.rooms = this.state.rooms.filter((r) => r.id !== roomId);
@@ -1856,6 +1919,10 @@ class LiveChatManager {
 
   private async upsertRoomToServer(room: ChatRoom): Promise<void> {
     this.pendingUpsertRooms.set(room.id, room);
+    this.recentlyUpsertedRooms.set(room.id, {
+      room,
+      expiresAt: Date.now() + 20_000,
+    });
 
     try {
       // Update local state immediately
@@ -1876,8 +1943,16 @@ class LiveChatManager {
         fetchSystemDocJson<Record<string, string>>(ROOMS_TOMBSTONE_DOC_KEY),
       ]);
 
+      let tombstoneCleaned = false;
       if (serverTombstones && typeof serverTombstones === 'object') {
         Object.assign(this.deletedRoomTombstones, serverTombstones);
+        if (
+          this.deletedRoomTombstones[room.id] &&
+          !isRoomDeletedByTombstone(room, this.deletedRoomTombstones)
+        ) {
+          delete this.deletedRoomTombstones[room.id];
+          tombstoneCleaned = true;
+        }
         saveLocalDeletedTombstones(this.deletedRoomTombstones);
       }
 
@@ -1897,7 +1972,12 @@ class LiveChatManager {
       const updatedList = Array.from(map.values()).sort(
         (a, b) => this.getRoomSortTime(b) - this.getRoomSortTime(a)
       );
-      await saveSystemDocJson(ROOMS_INDEX_DOC_KEY, updatedList);
+      await Promise.all([
+        saveSystemDocJson(ROOMS_INDEX_DOC_KEY, updatedList),
+        tombstoneCleaned
+          ? saveSystemDocJson(ROOMS_TOMBSTONE_DOC_KEY, this.deletedRoomTombstones)
+          : Promise.resolve(),
+      ]);
 
       try {
         this.channel?.send({
@@ -2070,6 +2150,10 @@ class LiveChatManager {
     updatedRoom: ChatRoom,
     allMessages: ChatMessage[]
   ): Promise<void> {
+    this.recentlyUpsertedRooms.set(updatedRoom.id, {
+      room: updatedRoom,
+      expiresAt: Date.now() + 20_000,
+    });
     let hotMessages = allMessages;
 
     if (hotMessages.length > HOT_MESSAGE_LIMIT_PER_ROOM) {
@@ -2616,6 +2700,7 @@ class LiveChatManager {
       saveLocalDeletedTombstones(this.deletedRoomTombstones);
     }
     this.pendingUpsertRooms.delete(roomId);
+    this.recentlyUpsertedRooms.delete(roomId);
     this.state.rooms = this.state.rooms.filter((r) => r.id !== roomId);
     delete this.state.messagesByRoom[roomId];
     if (this.state.activeRoomId === roomId) {

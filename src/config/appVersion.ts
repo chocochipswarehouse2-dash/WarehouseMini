@@ -15,20 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.58",
-  "versionCode": 318,
+  "version": "v2.6.59",
+  "versionCode": 319,
   "buildDate": "5 November 2026",
-  "buildHash": "wms-261105-v318-1314",
-  "releaseTitle": "WMS v2.6.58 — Pulihkan Konfigurasi Kapasitas Rak & Perbaikan Tombol Setup",
+  "buildHash": "wms-261105-v319-1633",
+  "releaseTitle": "WMS v2.6.59 — Audit & Perbaikan Total Live Chat (Chat CS1/CS2, Anti-Hilang Room & SW Sync)",
   "releaseNotes": [
-    "Perbaikan tombol Setup Kapasitas & Lokasi yang tidak merespons saat diklik (import normalizeAndMigrateRackConfig)",
-    "Pemulihan konfigurasi kapasitas rak custom (Lokasi A-D: 75/75/80/75 pcs, Transit X & Koli R/V/Z: 40 pcs, Shopee: 400, TikTok: 250, IGLive: 250, Studio: 500, Perbaikan CC/PMK/DF: 50 pcs)",
-    "Perbaikan label jumlah lokasi pada tombol filter Semua Warehouse (Rak + Koli)"
+    "Perbaikan pencarian rekan chat (CS1/CS2/chococs2) langsung dari tab Semua Chat maupun tab Rekan meskipun user sedang offline.",
+    "Perbaikan race condition pembukaan chat 1-on-1 baru (0ms aktivasi instan & proteksi grace window 20 detik dari background sync).",
+    "Perbaikan bug Service Worker (pwa-extras.js) yang sebelumnya mengosongkan riwayat pesan saat klik Tandai Dibaca / Balas Cepat dari notifikasi.",
+    "Penambahan template hak akses default role Customer Service dan normalisasi profil CS 1 & CS 2."
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.58",
+    "versionCode": 318,
+    "buildDate": "5 November 2026",
+    "buildHash": "wms-261105-v318-1314",
+    "releaseTitle": "WMS v2.6.58 — Pulihkan Konfigurasi Kapasitas Rak & Perbaikan Tombol Setup",
+    "releaseNotes": [
+      "Perbaikan tombol Setup Kapasitas & Lokasi yang tidak merespons saat diklik (import normalizeAndMigrateRackConfig)",
+      "Pemulihan konfigurasi kapasitas rak custom (Lokasi A-D: 75/75/80/75 pcs, Transit X & Koli R/V/Z: 40 pcs, Shopee: 400, TikTok: 250, IGLive: 250, Studio: 500, Perbaikan CC/PMK/DF: 50 pcs)",
+      "Perbaikan label jumlah lokasi pada tombol filter Semua Warehouse (Rak + Koli)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.57",
     "versionCode": 317,
@@ -121,22 +135,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Sinkronisasi perubahan judul, tanggal, jam, lokasi, deskripsi dari Google Calendar ke WMS & pembersihan agenda yang dihapus",
       "Perkuatan OTA PWA Auto-Update: bypass cache Vercel CDN untuk version.json, auto-detect update instan pada startup & broadcast SKIP_WAITING ke semua worker",
       "Pembaruan badge Sidebar & Floating Update Widget agar langsung aktif mendeteksi rilis baru di seluruh perangkat"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.50",
-    "versionCode": 310,
-    "buildDate": "3 November 2026",
-    "buildHash": "wms-261103-v310-0739",
-    "releaseTitle": "WMS v2.6.50 — Full 2-Way Sync & Auto-Reconcile Google Calendar",
-    "releaseNotes": [
-      "Otomasi sinkronisasi 2-arah Google Calendar & WMS: Polling 45 detik saat tab aktif & auto-sync saat tab browser difokuskan kembali",
-      "Perbaikan end date all-day event Google Calendar agar tidak bergeser 1 hari",
-      "Pembersihan otomatis metadata tag dari deskripsi agenda",
-      "Sinkronisasi perubahan judul, tanggal, jam, lokasi, deskripsi dari Google Calendar ke WMS",
-      "Deteksi dan pembersihan event yang dihapus di Google Calendar",
-      "Notifikasi visual toast status sinkronisasi Google Calendar saat simpan dan hapus agenda"
     ],
     "minSupportedVersion": "v2.0.0"
   }

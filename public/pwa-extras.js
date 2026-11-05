@@ -425,7 +425,7 @@ async function handleBackgroundChatAction(actionType, roomId, replyText) {
     // 1. Ambil daftar pesan ruang chat terkait
     const msgsDocKey = `wms_chat_room_msgs_${roomId}`;
     const msgsRes = await fetch(
-      `${cfg.supabaseUrl}/rest/v1/wms_system_docs?select=content&or=(section_id.eq.,doc_key.eq.)&limit=1`,
+      `${cfg.supabaseUrl}/rest/v1/wms_system_docs?select=content&or=(section_id.eq.${encodeURIComponent(msgsDocKey)},doc_key.eq.${encodeURIComponent(msgsDocKey)})&limit=1`,
       { method: 'GET', headers }
     );
     let messages = [];
@@ -471,7 +471,7 @@ async function handleBackgroundChatAction(actionType, roomId, replyText) {
     }
 
     // Simpan kembali daftar pesan ke wms_system_docs
-    await fetch(`${cfg.supabaseUrl}/rest/v1/wms_system_docs?on_conflict=section_id`, {
+    if (messages.length > 0) await fetch(`${cfg.supabaseUrl}/rest/v1/wms_system_docs?on_conflict=section_id`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -530,7 +530,7 @@ async function handleBackgroundChatAction(actionType, roomId, replyText) {
           };
         });
 
-        await fetch(`${cfg.supabaseUrl}/rest/v1/wms_system_docs?on_conflict=section_id`, {
+        if (rooms.length > 0) await fetch(`${cfg.supabaseUrl}/rest/v1/wms_system_docs?on_conflict=section_id`, {
           method: 'POST',
           headers,
           body: JSON.stringify({

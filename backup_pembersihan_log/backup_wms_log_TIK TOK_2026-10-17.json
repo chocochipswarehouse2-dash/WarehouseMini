@@ -1,0 +1,65 @@
+{
+  "metadata": {
+    "timestamp": "2026-10-17T03:25:21.273Z",
+    "operator": "Warehouse",
+    "totalLogs": 2,
+    "uniqueSkus": 2,
+    "totalPhysicalQty": 2,
+    "locations": [
+      "TIK TOK"
+    ],
+    "systemNote": "WMS Location Purge Backup Snapshot"
+  },
+  "stocksBeforePurge": [
+    {
+      "sku": "F26HBI376PIM",
+      "nama_produk": "Oslo Skort Pink",
+      "size": "M",
+      "lokasi": "TIK TOK",
+      "area": "Blok F",
+      "sisa_stok": 1,
+      "updated_at": "2026-08-28T07:13:42.205778+00:00"
+    },
+    {
+      "sku": "F26HBI376DDS",
+      "nama_produk": "Oslo Skort Dark Denim",
+      "size": "S",
+      "lokasi": "TIK TOK",
+      "area": "Blok F",
+      "sisa_stok": 1,
+      "updated_at": "2026-08-28T07:13:42.205778+00:00"
+    }
+  ],
+  "logs": [
+    {
+      "id": 307861,
+      "type": "IN",
+      "invoice": "INV004108",
+      "sku": "F26HBI376PIM",
+      "nama_produk": "Oslo Skort Pink",
+      "size": "M",
+      "area": "Blok F",
+      "lokasi": "TIK TOK",
+      "qty": 1,
+      "operator": "pipinnn | 120363426359702090@g.us",
+      "keterangan": "IN",
+      "raw_payload": null,
+      "created_at": "2026-08-28T07:13:42.205778+00:00"
+    },
+    {
+      "id": 307862,
+      "type": "IN",
+      "invoice": "INV004108",
+      "sku": "F26HBI376DDS",
+      "nama_produk": "Oslo Skort Dark Denim",
+      "size": "S",
+      "area": "Blok F",
+      "lokasi": "TIK TOK",
+      "qty": 1,
+      "operator": "pipinnn | 120363426359702090@g.us",
+      "keterangan": "IN",
+      "raw_payload": null,
+      "created_at": "2026-08-28T07:13:42.205778+00:00"
+    }
+  ]
+}

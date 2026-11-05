@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { MessageSquare, X, Maximize2, ArrowRight, Volume2 } from 'lucide-react';
 import { UserSession, ActivePage, ProductItem } from '../../types';
 import {
@@ -35,21 +35,30 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
   const [onlineUsers, setOnlineUsers] = useState<ChatPresenceUser[]>(() => liveChatManager.getOnlineUsers());
   const [toastMsg, setToastMsg] = useState<{ room: ChatRoom; message: ChatMessage } | null>(null);
 
+  const isOpenRef = useRef(isOpen);
+  isOpenRef.current = isOpen;
+  const selectedRoomIdRef = useRef(selectedRoomId);
+  selectedRoomIdRef.current = selectedRoomId;
+
   const hasAccess = canAccessLiveChat(session);
 
-  useEffect(() => {
-    liveChatManager.setFloatingOpen(isOpen);
-  }, [isOpen]);
+  const setFloatingDrawerOpen = (open: boolean) => {
+    isOpenRef.current = open;
+    setIsOpen(open);
+    liveChatManager.setFloatingOpen(open);
+  };
 
   useEffect(() => {
     if (!hasAccess) return;
     const unsubState = liveChatManager.subscribe((state) => {
       setRooms([...liveChatManager.getVisibleRooms()]);
       setOnlineUsers([...liveChatManager.getOnlineUsers()]);
-      if (typeof state.isFloatingOpen === 'boolean' && state.isFloatingOpen !== isOpen) {
+      if (typeof state.isFloatingOpen === 'boolean' && state.isFloatingOpen !== isOpenRef.current) {
+        isOpenRef.current = state.isFloatingOpen;
         setIsOpen(state.isFloatingOpen);
       }
-      if (state.activeRoomId !== selectedRoomId) {
+      if (state.activeRoomId !== selectedRoomIdRef.current) {
+        selectedRoomIdRef.current = state.activeRoomId;
         setSelectedRoomId(state.activeRoomId);
       }
       setToastMsg((prev) =>
@@ -60,7 +69,7 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
     const unsubIncoming = liveChatManager.subscribeIncomingMessage((room, message) => {
       // Only show toast if drawer isn't currently viewing that exact room or user is not on full live_chat page
       if (activePage === 'live_chat') return;
-      if (isOpen && selectedRoomId === room.id) return;
+      if (isOpenRef.current && selectedRoomIdRef.current === room.id) return;
       setToastMsg({ room, message });
     });
 
@@ -69,12 +78,13 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
       const custom = e as CustomEvent<{ roomId?: string; openFullPage?: boolean }>;
       const targetRoomId = custom.detail?.roomId;
       if (targetRoomId) {
+        selectedRoomIdRef.current = targetRoomId;
         setSelectedRoomId(targetRoomId);
         void liveChatManager.selectRoom(targetRoomId);
         if (custom.detail?.openFullPage) {
           onSelectPage('live_chat');
         } else {
-          setIsOpen(true);
+          setFloatingDrawerOpen(true);
         }
       }
     };
@@ -85,7 +95,7 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
       unsubIncoming();
       window.removeEventListener('wms_open_live_chat_room', handleOpenRoomEvent as EventListener);
     };
-  }, [hasAccess, activePage, isOpen, selectedRoomId, onSelectPage]);
+  }, [hasAccess, activePage, onSelectPage]);
 
   useEffect(() => {
     if (!toastMsg) return;
@@ -148,9 +158,10 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
               onClick={() => {
                 const rid = toastMsg.room.id;
                 setToastMsg(null);
+                selectedRoomIdRef.current = rid;
                 setSelectedRoomId(rid);
+                setFloatingDrawerOpen(true);
                 void liveChatManager.selectRoom(rid);
-                setIsOpen(true);
               }}
               className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold flex items-center gap-1 transition-colors"
             >
@@ -160,6 +171,7 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
               onClick={() => {
                 const rid = toastMsg.room.id;
                 setToastMsg(null);
+                selectedRoomIdRef.current = rid;
                 setSelectedRoomId(rid);
                 void liveChatManager.selectRoom(rid);
                 onSelectPage('live_chat');
@@ -182,9 +194,9 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
             onNotify={onNotify}
             mode="floating"
             initialRoomId={selectedRoomId}
-            onCloseFloating={() => setIsOpen(false)}
+            onCloseFloating={() => setFloatingDrawerOpen(false)}
             onExpandToFullPage={() => {
-              setIsOpen(false);
+              setFloatingDrawerOpen(false);
               onSelectPage('live_chat');
             }}
             allSkus={allSkus}
@@ -197,7 +209,7 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
       {!isOpen && (
         <div className="fixed bottom-[5.25rem] right-5 sm:bottom-24 sm:right-6 lg:bottom-5 lg:right-6 z-40 flex items-center gap-2 print:hidden">
           <button
-            onClick={() => setIsOpen(true)}
+            onClick={() => setFloatingDrawerOpen(true)}
             className="group relative flex items-center justify-center gap-2.5 p-3.5 sm:px-3.5 sm:py-2.5 rounded-full sm:rounded-2xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white shadow-lg shadow-indigo-600/30 border border-indigo-400/30 transition-all cursor-pointer"
             title="Buka Live Chat & Diskusi Tim"
           >

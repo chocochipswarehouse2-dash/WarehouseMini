@@ -3396,7 +3396,13 @@ export async function verifySupabaseLogin(
       const p = (u.permissions || {}) as any;
       let storeCode = u.store_code || p.store_code || p._store_code || '';
       let storeName = u.store_name || p.store_name || p._store_name || '';
-      if (!storeName && (role === 'Store' || u.username.toLowerCase().startsWith('choco'))) {
+      const lowerU = u.username.toLowerCase();
+      const isCsAccount = role === 'Customer Service' || lowerU.startsWith('chococs');
+      if (isCsAccount && (storeName.toLowerCase() === lowerU || storeCode.toLowerCase() === lowerU)) {
+        storeCode = '';
+        storeName = '';
+      }
+      if (!storeName && !isCsAccount && (role === 'Store' || (lowerU.startsWith('choco') && lowerU !== 'chocoadm'))) {
         const auto = resolveStoreDetails(u.name || u.username, u.username);
         storeCode = auto.store_code;
         storeName = auto.store_name;
@@ -3571,11 +3577,22 @@ export async function fetchWmsUsersFromSupabase(): Promise<WmsUser[]> {
         let storeCode = u.store_code !== undefined && u.store_code !== null ? u.store_code : (p.store_code || p._store_code || '');
         let storeName = u.store_name !== undefined && u.store_name !== null ? u.store_name : (p.store_name || p._store_name || '');
 
-        if (!storeName && (u.role === 'Store' || key.startsWith('choco'))) {
+        const isCsAccount = u.role === 'Customer Service' || key.startsWith('chococs');
+        if (isCsAccount && (String(storeName).toLowerCase() === key || String(storeCode).toLowerCase() === key)) {
+          storeCode = '';
+          storeName = '';
+        }
+
+        if (!storeName && !isCsAccount && (u.role === 'Store' || (key.startsWith('choco') && key !== 'chocoadm'))) {
           const auto = resolveStoreDetails(u.name || key, key);
           storeCode = storeCode || auto.store_code;
           storeName = storeName || auto.store_name;
         }
+
+        const resolvedUserName =
+          u.name && u.name.trim().toLowerCase() !== key
+            ? u.name.trim()
+            : getUserPersonName(key) || u.name || key;
 
         // Clean permissions dictionary by omitting non-permission metadata fields
         const cleanPerms: any = { ...p };
@@ -3598,6 +3615,7 @@ export async function fetchWmsUsersFromSupabase(): Promise<WmsUser[]> {
 
         const normalized: WmsUser = {
           ...u,
+          name: resolvedUserName,
           store_code: storeCode || undefined,
           store_name: storeName || undefined,
           no_hp: phone || undefined,

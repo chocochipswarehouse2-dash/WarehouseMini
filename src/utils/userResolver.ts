@@ -37,6 +37,10 @@ const BASELINE_USER_NAMES: Record<string, string> = {
   chocotp: 'Tunjungan Plaza Surabaya',
   chocostyling: 'Chocostyling',
   chocolive: 'chocoLIVE',
+  chococs1: 'CS 1 (Customer Service)',
+  chococs2: 'CS 2 (Customer Service)',
+  cs1: 'CS 1 (Customer Service)',
+  cs2: 'CS 2 (Customer Service)',
   yesinta: 'Yesinta Agistisari',
   userqc1: 'Warehouse Admin',
   userqc2: 'Irma',
@@ -58,7 +62,18 @@ try {
     const saved = localStorage.getItem('wms_user_name_map');
     if (saved) {
       const parsed = JSON.parse(saved);
-      inMemoryUserMap = { ...inMemoryUserMap, ...parsed };
+      if (parsed && typeof parsed === 'object') {
+        for (const [k, v] of Object.entries(parsed)) {
+          const cleanK = k.trim().toLowerCase();
+          const cleanV = String(v || '').trim();
+          if (!cleanK || !cleanV) continue;
+          // Do not let raw login username overwrite a friendly baseline display name
+          if (BASELINE_USER_NAMES[cleanK] && cleanV.toLowerCase() === cleanK) {
+            continue;
+          }
+          inMemoryUserMap[cleanK] = cleanV;
+        }
+      }
     }
   }
 } catch {
@@ -81,8 +96,13 @@ export function registerUserNames(
 
     if (u.username) {
       const cleanU = u.username.trim().toLowerCase();
-      if (cleanU && (!inMemoryUserMap[cleanU] || inMemoryUserMap[cleanU] !== fullName)) {
-        inMemoryUserMap[cleanU] = fullName;
+      // Preserve friendly baseline display name if DB name is just the raw username
+      const effectiveName =
+        BASELINE_USER_NAMES[cleanU] && fullName.toLowerCase() === cleanU
+          ? BASELINE_USER_NAMES[cleanU]
+          : fullName;
+      if (cleanU && (!inMemoryUserMap[cleanU] || inMemoryUserMap[cleanU] !== effectiveName)) {
+        inMemoryUserMap[cleanU] = effectiveName;
         hasUpdates = true;
       }
     }
