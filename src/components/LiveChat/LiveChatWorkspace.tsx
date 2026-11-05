@@ -5,6 +5,7 @@ import {
   Plus,
   Send,
   Image as ImageIcon,
+  Camera,
   Hash,
   Search,
   Check,
@@ -131,7 +132,15 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Reset tinggi textarea (auto-grow) setelah pesan terkirim / dikosongkan
+  useEffect(() => {
+    if (!inputText && textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+  }, [inputText]);
 
   const myUsername = String(session?.username || '').trim().toLowerCase();
   const isAdminGroupManager = canManageChatGroups(session);
@@ -706,7 +715,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
         className={
           isFloating
             ? 'flex-1 flex flex-col min-h-0 overflow-hidden'
-            : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden flex flex-col lg:grid lg:grid-cols-12 h-[calc(100vh-110px)] min-h-[540px]'
+            : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden flex flex-col lg:grid lg:grid-cols-12 h-[calc(100dvh-110px)] min-h-[540px]'
         }
       >
         {/* LEFT PANE: ROOMS & ONLINE USERS DIRECTORY */}
@@ -848,7 +857,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                     ? 'Cari nama user, role, atau store...'
                     : 'Cari ruang diskusi atau rekan...'
                 }
-                className="w-full pl-8 pr-7 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500"
+                className="w-full pl-8 pr-7 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 text-base sm:text-xs text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500"
               />
               {searchQuery && (
                 <button
@@ -1526,7 +1535,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                                       });
                                       textareaRef.current?.focus();
                                     }}
-                                    className="hover:underline flex items-center gap-0.5 cursor-pointer opacity-85 hover:opacity-100"
+                                    className="hover:underline flex items-center gap-0.5 cursor-pointer opacity-85 hover:opacity-100 py-1.5 sm:py-0 px-1 sm:px-0"
                                     title="Balas pesan ini"
                                   >
                                     <Reply className="w-3 h-3" />
@@ -1539,7 +1548,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                                       <button
                                         type="button"
                                         onClick={() => handleStartEditMessage(msg)}
-                                        className="hover:underline flex items-center gap-0.5 cursor-pointer text-amber-200 hover:text-white"
+                                        className="hover:underline flex items-center gap-0.5 cursor-pointer text-amber-200 hover:text-white py-1.5 sm:py-0 px-1 sm:px-0"
                                         title={`Edit pesan (Sisa waktu ${Math.floor(modCheck.remainingSeconds / 60)}m ${modCheck.remainingSeconds % 60}d sebelum dibaca)`}
                                       >
                                         <Edit3 className="w-3 h-3" />
@@ -1548,7 +1557,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                                       <button
                                         type="button"
                                         onClick={() => void handleDeleteMessage(msg)}
-                                        className="hover:underline flex items-center gap-0.5 cursor-pointer text-rose-200 hover:text-white"
+                                        className="hover:underline flex items-center gap-0.5 cursor-pointer text-rose-200 hover:text-white py-1.5 sm:py-0 px-1 sm:px-0"
                                         title="Tarik / Hapus pesan (Sebelum dibaca)"
                                       >
                                         <Trash2 className="w-3 h-3" />
@@ -1590,7 +1599,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
               </div>
 
               {/* Composer Area */}
-              <div className="p-2.5 sm:p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 space-y-2 shrink-0">
+              <div className="p-2.5 sm:p-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 space-y-2 shrink-0">
                 {/* Active Edit Banner */}
                 {editingMessage && (
                   <div className="px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 flex items-center justify-between gap-2 text-xs">
@@ -1801,6 +1810,18 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                       e.target.value = '';
                     }}
                   />
+                  <input
+                    ref={cameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) void handleImageFileSelect(file);
+                      e.target.value = '';
+                    }}
+                  />
 
                   {!editingMessage && (
                     <div className="flex items-center gap-1 shrink-0">
@@ -1834,9 +1855,21 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                       <button
                         type="button"
                         disabled={isUploadingImage}
+                        onClick={() => cameraInputRef.current?.click()}
+                        className="p-2.5 sm:p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-colors cursor-pointer disabled:opacity-50"
+                        title="Ambil Foto dari Kamera (HP)"
+                        aria-label="Ambil foto dari kamera"
+                      >
+                        <Camera className="w-4 h-4" />
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isUploadingImage}
                         onClick={() => fileInputRef.current?.click()}
-                        className="p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-colors cursor-pointer disabled:opacity-50"
-                        title="Lampirkan Foto / Screenshot Kendala (Otomatis disimpan di Google Drive CDN)"
+                        className="p-2.5 sm:p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-colors cursor-pointer disabled:opacity-50"
+                        title="Lampirkan Foto dari Galeri / Screenshot (Otomatis disimpan di Google Drive CDN)"
+                        aria-label="Lampirkan foto dari galeri"
                       >
                         {isUploadingImage ? (
                           <RefreshCw className="w-4 h-4 animate-spin text-indigo-600" />
@@ -1886,6 +1919,8 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                       onChange={(e) => {
                         const val = e.target.value;
                         setInputText(val);
+                        e.target.style.height = 'auto';
+                        e.target.style.height = `${Math.min(e.target.scrollHeight, 112)}px`;
                         if (activeRoom) {
                           liveChatManager.sendTypingIndicator(val.trim() ? activeRoom.id : null);
                         }
@@ -1914,6 +1949,12 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                           }
                         }
                         if (e.key === 'Enter' && !e.shiftKey) {
+                          // HP/tablet (layar sentuh): Enter = baris baru seperti WhatsApp; kirim lewat tombol Kirim
+                          const isTouchDevice =
+                            typeof window !== 'undefined' &&
+                            typeof window.matchMedia === 'function' &&
+                            window.matchMedia('(pointer: coarse)').matches;
+                          if (isTouchDevice) return;
                           e.preventDefault();
                           void handleSendOrSaveEdit();
                         }
@@ -1923,7 +1964,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                           ? 'Ketik perubahan pesan...'
                           : 'Ketik pesan... (@tag user, #tag dokumen, paste foto)'
                       }
-                      className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 resize-none max-h-28"
+                      className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-base sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 resize-none max-h-28 overflow-y-auto"
                     />
                   </div>
 

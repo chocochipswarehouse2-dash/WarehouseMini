@@ -1,3 +1,27 @@
+export function isIosDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  const isIpadOs = navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1;
+  return /iPhone|iPad|iPod/i.test(ua) || isIpadOs;
+}
+
+export function isStandalonePwa(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return (
+      (typeof window.matchMedia === 'function' && window.matchMedia('(display-mode: standalone)').matches) ||
+      (navigator as any).standalone === true
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** iPhone/iPad hanya mendukung notifikasi jika web app sudah ditambahkan ke Layar Utama (iOS 16.4+) */
+export function needsIosHomeScreenInstall(): boolean {
+  return isIosDevice() && !isStandalonePwa();
+}
+
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
   if (!('Notification' in window)) {
     console.warn('Browser does not support notifications.');

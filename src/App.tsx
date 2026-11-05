@@ -176,6 +176,7 @@ import {
   savePersistedNotifiedOrderIds,
   setLastOrderCheckTimestamp,
   showPushNotification,
+  needsIosHomeScreenInstall,
   syncNotifiedOrdersToServiceWorker,
   triggerServiceWorkerCheckNow,
 } from './services/pushNotification';
@@ -2191,6 +2192,13 @@ export default function App() {
 
   // Notification permission requester & live test trigger
   const handleRequestNotification = async () => {
+    if (needsIosHomeScreenInstall()) {
+      showToast(
+        "iPhone/iPad: ketuk tombol Bagikan (kotak panah) di Safari lalu pilih \"Tambah ke Layar Utama\", buka aplikasi dari ikon Layar Utama, lalu aktifkan notifikasi lagi (butuh iOS 16.4+).",
+        'warning'
+      );
+      return;
+    }
     const perm = await requestNotificationPermission();
     setNotificationPermission(perm);
     if (perm === 'granted') {

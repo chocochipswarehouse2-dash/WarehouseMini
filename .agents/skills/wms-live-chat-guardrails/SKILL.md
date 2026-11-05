@@ -40,29 +40,67 @@ Penyimpanan (tabel `wms_system_docs`, key = `section_id` = `doc_key`):
 12. **Dilarang `window.location.reload()`** di alur chat (aturan Zero-Reload GEMINI.md §11). Data chat disinkronkan via Realtime + polling 8 dtk.
 13. Base64 gambar dilarang di pesan (`data:`); wajib upload GDrive dulu.
 
-## 3. Alur Kerja Saat Mengubah Live Chat
+## 3. Spesifikasi Paritas "Ala WhatsApp" (Android, iPhone, PC)
+
+Target: semua fitur di bawah WAJIB tetap berfungsi di Android (Chrome/PWA), iPhone (Safari/PWA Layar Utama), dan PC (Chrome/Edge). Status per v2.6.60:
+
+| Fitur | Status | Catatan / lokasi |
+|---|---|---|
+| Chat 1-on-1 & cari rekan | Ada | `openOrCreateDirectRoom`, `matchesUserSearch` |
+| Chat grup (buat/kelola/keluar/hapus) | Ada | Buat/kelola khusus Admin/Superadmin (`canManageChatGroups`); anggota bisa `leaveGroupRoom` |
+| Kirim, balas (quote) | Ada | `sendMessage`, `replyTo` |
+| Edit & hapus pesan | Ada | Aturan: ≤ 5 menit DAN belum dibaca (`canModifyMessage`); jejak "Pesan dihapus" |
+| Read receipt ✓/✓✓ + detail pembaca | Ada | `read_by`, `markRoomAsRead`, `inspectReadMessage` |
+| Mengetik..., online/offline | Ada | Presence Realtime |
+| @mention, tag SKU/SJ/Order, kartu konteks pesanan | Ada | |
+| Lampiran foto (galeri) + paste (PC) | Ada | `compressAndUploadChatImage` → GDrive (dilarang base64) |
+| **Foto kamera langsung** | Ada (v2.6.60) | Tombol Kamera, `<input capture="environment">` |
+| Notifikasi push + bunyi/getar | Ada | `showPushNotification`, `pwa-extras.js`, Web Push |
+| Quick reply dari notifikasi | Ada (Android/PC) | iOS/Safari TIDAK mendukung input teks di notifikasi → fallback buka aplikasi |
+| Badge angka ikon aplikasi | Ada (v2.6.60) | `syncAppBadge` (`navigator.setAppBadge`, bila didukung) |
+| Pencarian pesan dalam room | Ada | `showMessageSearch` |
+| Lampiran dokumen (PDF/Excel) | BELUM | Upload GDrive baru untuk gambar (`uploadImageToGdrive`) |
+| Reaksi emoji, forward, voice note, kirim banyak foto sekaligus | BELUM | Bukan prioritas; tambahkan bila diminta |
+
+### Aturan lintas-platform (jangan dilanggar)
+- **iPhone zoom otomatis**: input/textarea di layar kecil WAJIB `text-base` (≥16px) lalu `sm:text-sm`/`sm:text-xs`. Jangan kembalikan `text-xs` murni pada input.
+- **Enter di HP**: pada layar sentuh (`pointer: coarse`) Enter = baris baru, kirim lewat tombol Kirim; di PC Enter = kirim, Shift+Enter = baris baru.
+- **Tinggi layar**: gunakan `dvh` (bukan `vh`) dan `env(safe-area-inset-bottom)` pada composer (poni/bar Safari iPhone).
+- **Textarea auto-grow** (maks 112px) dan reset saat kosong.
+- **Tap target** tombol Balas/Edit/Hapus di HP ≥ ~32px tinggi (`py-1.5 sm:py-0`).
+- **Kamera**: gunakan input file terpisah `capture="environment"`; jangan `getUserMedia` kustom (tidak stabil di iOS PWA).
+- **iOS Push**: hanya jalan jika aplikasi ditambahkan ke Layar Utama (iOS ≥ 16.4) dan izin diminta dari gestur user. `needsIosHomeScreenInstall()` memberi instruksi; jangan memanggil `Notification.requestPermission()` otomatis di iOS Safari biasa.
+- **Notifikasi `actions`**: Safari/iOS mengabaikannya; `safeShowNotification` harus tetap punya fallback tanpa `actions`.
+- **Service Worker** baru aktif setelah user pindah menu (zero-reload); catat di rilis jika `pwa-extras.js` berubah.
+
+## 4. Alur Kerja Saat Mengubah Live Chat
 
 1. `git pull --rebase` + `node tools/gas_status.cjs` (aturan pre-task).
 2. Baca bagian terkait di 5 file pada peta di atas; jangan edit buta.
 3. Jika menyentuh room/pesan, cek invarian 1–5 secara eksplisit.
-4. Jalankan checklist regresi (bagian 4) — minimal secara baca kode; idealnya manual di browser dengan 2 akun.
+4. Jalankan checklist regresi (bagian 5) — minimal secara baca kode; idealnya manual di browser dengan 2 akun, termasuk emulasi HP (DevTools) dan iPhone bila ada.
 5. UI mengikuti `wms-ui-ux-design-system` & `wms-responsive-desktop-mobile` (1 tombol solid per toolbar, `font-mono` untuk ID, tanpa titik pemisah menggantung).
 6. Bump versi → `npm run build` → commit → push → laporan `### 🚀 Deployment Status`.
 7. Jika `public/pwa-extras.js` berubah, sebutkan bahwa Service Worker baru aktif setelah user berpindah menu (zero-reload).
 
-## 4. Checklist Regresi Live Chat
+## 5. Checklist Regresi Live Chat
 
 - [ ] Ketik `cs2`, `cs 2`, `chococs2` di tab Semua Chat → muncul seksi rekan → klik → ruang terbuka instan (drawer & halaman penuh, desktop & HP).
 - [ ] Tab `Rekan (n)` menampilkan user offline & bisa di-chat.
 - [ ] Tunggu ≥ 10 dtk setelah membuka chat baru (satu siklus polling) → room tidak tertutup.
 - [ ] Hapus chat lalu buka lagi dengan user yang sama → room muncul & tidak langsung hilang.
 - [ ] Kirim pesan → muncul di akun lawan (Realtime), unread badge naik, buka → ✓✓.
-- [ ] Notifikasi push: "Tandai Dibaca" & "Balas Cepat" → riwayat pesan tetap utuh (cek `wms_chat_room_msgs_<id>` di Supabase tidak menjadi `[]`).
+- [ ] Edit/Hapus pesan ≤ 5 menit & belum dibaca berhasil; setelah dibaca tombol terkunci.
+- [ ] Grup: buat (admin), kirim, anggota lain menerima, keluar/hapus.
+- [ ] Tombol Kamera membuka kamera di Android & iPhone; Galeri membuka pilihan foto; paste screenshot di PC; foto muncul sebagai lampiran & bisa dibuka (lightbox).
+- [ ] iPhone: input tidak memicu zoom; composer tidak tertutup bar Safari; Enter = baris baru.
+- [ ] Notifikasi push: "Tandai Dibaca" & "Balas Cepat" (Android/PC) → riwayat pesan tetap utuh (cek `wms_chat_room_msgs_<id>` di Supabase tidak menjadi `[]`).
+- [ ] iPhone belum di Layar Utama → tombol aktifkan notifikasi menampilkan instruksi, bukan error.
 - [ ] Login `chococs1`/`chococs2` → FAB/menu Live Chat tampil; nama tampil `CS 1/2 (Customer Service)`.
 - [ ] Tombol "Tanya Pesanan / Chat ke Gudang" (`openOrderChat`) membuka room & konteks pesanan terlampir.
 - [ ] `npm run build` bersih.
 
-## 5. Diagnosa Cepat (Supabase REST, anon key dari `DEFAULT_SUPABASE_ANON_KEY`)
+## 6. Diagnosa Cepat (Supabase REST, anon key dari `DEFAULT_SUPABASE_ANON_KEY`)
 
 ```
 GET /rest/v1/wms_system_docs?select=content&section_id=eq.wms_chat_rooms_index_v1
@@ -78,9 +116,10 @@ Gejala → penyebab umum:
 - User tidak ketemu → `matchesUserSearch`/direktori belum dimuat (`refreshUsersDirectory(true)`), atau role tanpa `menu_ops_live_chat`.
 - Drawer berkedip/menutup → dependency effect FloatingWidget (invarian 10).
 
-## 6. Jangan Lakukan
+## 7. Jangan Lakukan
 - Jangan menghapus tombstone/room/pesan massal di Supabase tanpa persetujuan user.
 - Jangan menyuntikkan pesan sistem otomatis atas nama user.
 - Jangan mengubah format key `wms_chat_*` atau struktur `ChatRoom`/`ChatMessage` tanpa migrasi & update skill ini.
 
 > Setiap bug Live Chat baru yang ditemukan: tambahkan sebagai invarian/checklist di skill ini.
+

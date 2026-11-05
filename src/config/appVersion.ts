@@ -15,21 +15,35 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.59",
-  "versionCode": 319,
+  "version": "v2.6.60",
+  "versionCode": 320,
   "buildDate": "5 November 2026",
-  "buildHash": "wms-261105-v319-1633",
-  "releaseTitle": "WMS v2.6.59 — Audit & Perbaikan Total Live Chat (Chat CS1/CS2, Anti-Hilang Room & SW Sync)",
+  "buildHash": "wms-261105-v320-1726",
+  "releaseTitle": "WMS v2.6.60 — Live Chat Ala WhatsApp: Kamera, Enter HP, iPhone & Badge",
   "releaseNotes": [
-    "Perbaikan pencarian rekan chat (CS1/CS2/chococs2) langsung dari tab Semua Chat maupun tab Rekan meskipun user sedang offline.",
-    "Perbaikan race condition pembukaan chat 1-on-1 baru (0ms aktivasi instan & proteksi grace window 20 detik dari background sync).",
-    "Perbaikan bug Service Worker (pwa-extras.js) yang sebelumnya mengosongkan riwayat pesan saat klik Tandai Dibaca / Balas Cepat dari notifikasi.",
-    "Penambahan template hak akses default role Customer Service dan normalisasi profil CS 1 & CS 2."
+    "Tombol Kamera langsung (Android/iPhone) selain Galeri untuk lampiran foto chat.",
+    "Perbaikan iPhone: tidak zoom saat mengetik, composer aman dari bar Safari, instruksi aktivasi notifikasi via Layar Utama.",
+    "Enter di HP membuat baris baru (kirim lewat tombol), textarea auto-grow, tombol Balas/Edit/Hapus lebih mudah diketuk.",
+    "Badge angka pesan belum dibaca pada ikon aplikasi (PWA)."
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.59",
+    "versionCode": 319,
+    "buildDate": "5 November 2026",
+    "buildHash": "wms-261105-v319-1633",
+    "releaseTitle": "WMS v2.6.59 — Audit & Perbaikan Total Live Chat (Chat CS1/CS2, Anti-Hilang Room & SW Sync)",
+    "releaseNotes": [
+      "Perbaikan pencarian rekan chat (CS1/CS2/chococs2) langsung dari tab Semua Chat maupun tab Rekan meskipun user sedang offline.",
+      "Perbaikan race condition pembukaan chat 1-on-1 baru (0ms aktivasi instan & proteksi grace window 20 detik dari background sync).",
+      "Perbaikan bug Service Worker (pwa-extras.js) yang sebelumnya mengosongkan riwayat pesan saat klik Tandai Dibaca / Balas Cepat dari notifikasi.",
+      "Penambahan template hak akses default role Customer Service dan normalisasi profil CS 1 & CS 2."
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.58",
     "versionCode": 318,
@@ -119,22 +133,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Tombol toggle interaktif di chips lantai, toolbar fullscreen, dan kontrol kamera",
       "Shortcut keyboard H untuk sembunyikan/buka panel desain secara instan",
       "Canvas Three.js otomatis melebar penuh 100% tanpa distorsi saat panel disembunyikan"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.51",
-    "versionCode": 311,
-    "buildDate": "3 November 2026",
-    "buildHash": "wms-261103-v311-0842",
-    "releaseTitle": "WMS v2.6.51 — Full 2-Way Sync Google Calendar & PWA Auto-Update Delivery Hardening",
-    "releaseNotes": [
-      "Otomasi sinkronisasi 2-arah Google Calendar & WMS (polling 45 detik saat tab aktif & auto-sync saat tab fokus kembali)",
-      "Perbaikan end date all-day event Google Calendar agar tidak bergeser 1 hari",
-      "Pembersihan otomatis metadata tag [WMS-ID] dari deskripsi agenda",
-      "Sinkronisasi perubahan judul, tanggal, jam, lokasi, deskripsi dari Google Calendar ke WMS & pembersihan agenda yang dihapus",
-      "Perkuatan OTA PWA Auto-Update: bypass cache Vercel CDN untuk version.json, auto-detect update instan pada startup & broadcast SKIP_WAITING ke semua worker",
-      "Pembaruan badge Sidebar & Floating Update Widget agar langsung aktif mendeteksi rilis baru di seluruh perangkat"
     ],
     "minSupportedVersion": "v2.0.0"
   }

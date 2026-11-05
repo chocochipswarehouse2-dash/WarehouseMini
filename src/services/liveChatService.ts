@@ -703,6 +703,24 @@ class LiveChatManager {
       }
     }
     this.state.totalUnreadCount = total;
+    this.syncAppBadge(total);
+  }
+
+  private lastBadgeCount = -1;
+
+  /** Badge angka di ikon aplikasi (PWA Android/iPhone terpasang/PC) bila didukung browser */
+  private syncAppBadge(count: number) {
+    if (count === this.lastBadgeCount) return;
+    this.lastBadgeCount = count;
+    try {
+      const nav: any = typeof navigator !== 'undefined' ? navigator : null;
+      if (!nav) return;
+      if (count > 0 && typeof nav.setAppBadge === 'function') {
+        void nav.setAppBadge(count).catch(() => {});
+      } else if (count === 0 && typeof nav.clearAppBadge === 'function') {
+        void nav.clearAppBadge().catch(() => {});
+      }
+    } catch {}
   }
 
   public isUserInRoom(room: ChatRoom, username?: string): boolean {

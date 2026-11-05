@@ -1,14 +1,14 @@
 {
-  "version": "v2.6.59",
-  "versionCode": 319,
+  "version": "v2.6.60",
+  "versionCode": 320,
   "buildDate": "5 November 2026",
-  "buildHash": "wms-261105-v319-1633",
-  "releaseTitle": "WMS v2.6.59 — Audit & Perbaikan Total Live Chat (Chat CS1/CS2, Anti-Hilang Room & SW Sync)",
+  "buildHash": "wms-261105-v320-1726",
+  "releaseTitle": "WMS v2.6.60 — Live Chat Ala WhatsApp: Kamera, Enter HP, iPhone & Badge",
   "releaseNotes": [
-    "Perbaikan pencarian rekan chat (CS1/CS2/chococs2) langsung dari tab Semua Chat maupun tab Rekan meskipun user sedang offline.",
-    "Perbaikan race condition pembukaan chat 1-on-1 baru (0ms aktivasi instan & proteksi grace window 20 detik dari background sync).",
-    "Perbaikan bug Service Worker (pwa-extras.js) yang sebelumnya mengosongkan riwayat pesan saat klik Tandai Dibaca / Balas Cepat dari notifikasi.",
-    "Penambahan template hak akses default role Customer Service dan normalisasi profil CS 1 & CS 2."
+    "Tombol Kamera langsung (Android/iPhone) selain Galeri untuk lampiran foto chat.",
+    "Perbaikan iPhone: tidak zoom saat mengetik, composer aman dari bar Safari, instruksi aktivasi notifikasi via Layar Utama.",
+    "Enter di HP membuat baris baru (kirim lewat tombol), textarea auto-grow, tombol Balas/Edit/Hapus lebih mudah diketuk.",
+    "Badge angka pesan belum dibaca pada ikon aplikasi (PWA)."
   ],
   "minSupportedVersion": "v2.0.0"
 }
