@@ -1,13 +1,13 @@
 {
-  "version": "v2.6.65",
-  "versionCode": 325,
+  "version": "v2.6.66",
+  "versionCode": 326,
   "buildDate": "6 November 2026",
-  "buildHash": "wms-261106-v325-0551",
-  "releaseTitle": "WMS v2.6.65 — Audit Seluler & Integrasi Agenda Project pada Dashboard",
+  "buildHash": "wms-261106-v326-0608",
+  "releaseTitle": "WMS v2.6.66 — Penyempurnaan Responsif Mobile Multi-Modul & Sticky App Bar",
   "releaseNotes": [
-    "Audit menyeluruh antarmuka seluler (HP) dengan grid 2x2 rapi, zero text overflow, dan header ramping",
-    "Menggantikan indikator SO dengan integrasi Proyek Berjalan dan Jadwal Kerja Hari Ini/Terdekat",
-    "Navigasi instan dari dashboard langsung ke tab Kalendar Kerja & Proyek Milestone"
+    "Header Sticky Mobile App Bar dengan hamburger, brand dan status aktif",
+    "Navigasi tab horizontal swipeable di modul Produksi",
+    "Wadah fluid elastis tanpa limit margin di modul Picking"
   ],
   "minSupportedVersion": "v2.0.0"
 }

@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.65",
-  "versionCode": 325,
+  "version": "v2.6.66",
+  "versionCode": 326,
   "buildDate": "6 November 2026",
-  "buildHash": "wms-261106-v325-0551",
-  "releaseTitle": "WMS v2.6.65 — Audit Seluler & Integrasi Agenda Project pada Dashboard",
+  "buildHash": "wms-261106-v326-0608",
+  "releaseTitle": "WMS v2.6.66 — Penyempurnaan Responsif Mobile Multi-Modul & Sticky App Bar",
   "releaseNotes": [
-    "Audit menyeluruh antarmuka seluler (HP) dengan grid 2x2 rapi, zero text overflow, dan header ramping",
-    "Menggantikan indikator SO dengan integrasi Proyek Berjalan dan Jadwal Kerja Hari Ini/Terdekat",
-    "Navigasi instan dari dashboard langsung ke tab Kalendar Kerja & Proyek Milestone"
+    "Header Sticky Mobile App Bar dengan hamburger, brand dan status aktif",
+    "Navigasi tab horizontal swipeable di modul Produksi",
+    "Wadah fluid elastis tanpa limit margin di modul Picking"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.65",
+    "versionCode": 325,
+    "buildDate": "6 November 2026",
+    "buildHash": "wms-261106-v325-0551",
+    "releaseTitle": "WMS v2.6.65 — Audit Seluler & Integrasi Agenda Project pada Dashboard",
+    "releaseNotes": [
+      "Audit menyeluruh antarmuka seluler (HP) dengan grid 2x2 rapi, zero text overflow, dan header ramping",
+      "Menggantikan indikator SO dengan integrasi Proyek Berjalan dan Jadwal Kerja Hari Ini/Terdekat",
+      "Navigasi instan dari dashboard langsung ke tab Kalendar Kerja & Proyek Milestone"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.64",
     "versionCode": 324,
@@ -119,18 +132,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Perbaikan tombol Setup Kapasitas & Lokasi yang tidak merespons saat diklik (import normalizeAndMigrateRackConfig)",
       "Pemulihan konfigurasi kapasitas rak custom (Lokasi A-D: 75/75/80/75 pcs, Transit X & Koli R/V/Z: 40 pcs, Shopee: 400, TikTok: 250, IGLive: 250, Studio: 500, Perbaikan CC/PMK/DF: 50 pcs)",
       "Perbaikan label jumlah lokasi pada tombol filter Semua Warehouse (Rak + Koli)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.57",
-    "versionCode": 317,
-    "buildDate": "5 November 2026",
-    "buildHash": "wms-261105-v317-1138",
-    "releaseTitle": "WMS v2.6.57 — Perbaikan Setup Kapasitas & Sinkronisasi IGLive Blok F",
-    "releaseNotes": [
-      "Memulihkan konfigurasi lengkap rack_capacity_config_v1 di Supabase wms_system_docs termasuk zona IGLive Blok F",
-      "Memastikan modal Setup Kapasitas Rak dan pemisahan utilitas Gudang, Koli, dan Blok F berjalan normal tanpa kendala memuat halaman"
     ],
     "minSupportedVersion": "v2.0.0"
   }

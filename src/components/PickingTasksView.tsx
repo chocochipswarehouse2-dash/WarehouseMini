@@ -2147,7 +2147,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   return (
     <>
       {activeSJ ? (
-        <div className="max-w-4xl mx-auto space-y-2 pb-8">
+        <div className="w-full max-w-full space-y-2.5 pb-8">
           {/* Top Header Bar */}
           <div className="bg-white dark:bg-[#131d31] p-2 sm:p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
             <div className="flex flex-wrap justify-between items-start gap-3">
@@ -3105,7 +3105,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       /* =========================================================================
          VIEW 1: DAFTAR SURAT JALAN / INVOICE (List Per SJ)
          ========================================================================= */
-      <div className="max-w-4xl mx-auto space-y-2 animate-in fade-in duration-200">
+      <div className="w-full max-w-full space-y-2.5 animate-in fade-in duration-200">
       {/* Filter Tabs & Search Bar */}
       <div className="bg-white dark:bg-[#131d31] p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

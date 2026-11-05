@@ -1760,26 +1760,26 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       {/* 1. Header Page & Tabs Combined */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-2 sm:p-3 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          {/* Top-Level Tab Switcher */}
-          <div className="flex-1 grid grid-cols-2 sm:flex sm:bg-transparent sm:dark:bg-transparent sm:p-0 sm:gap-2">
+          {/* Top-Level Tab Switcher (Mobile Swipeable Horizontal Bar) */}
+          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar scroll-smooth py-1 px-1 -mx-1 sm:mx-0 w-full sm:w-auto flex-nowrap shrink-0">
             <button
               type="button"
               onClick={() => {
                 setSelectedQcTargetCode(undefined);
                 setActiveTab('riwayat');
               }}
-              className={`flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 py-2 sm:px-3 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs cursor-pointer ${
+              className={`flex items-center gap-1.5 sm:gap-2 px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs cursor-pointer shrink-0 whitespace-nowrap ${
                 activeTab === 'riwayat'
-                  ? 'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 sm:bg-emerald-600 sm:text-white sm:shadow-emerald-600/25 sm:ring-2 sm:ring-emerald-600/30'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 sm:bg-slate-100 sm:dark:bg-slate-800 sm:hover:bg-slate-200 sm:dark:hover:bg-slate-700 sm:text-slate-700 sm:dark:text-slate-300'
+                  ? 'bg-emerald-600 text-white shadow-emerald-600/25 ring-2 ring-emerald-600/30'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700'
               }`}
             >
-              <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
               <span>Riwayat</span>
               <span
-                className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
+                className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full shrink-0 ${
                   activeTab === 'riwayat'
-                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 sm:bg-white/20 sm:text-white'
+                    ? 'bg-white/20 text-white'
                     : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
                 }`}
               >
@@ -1794,13 +1794,13 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                 setSelectedQcTargetCode(undefined);
                 setActiveTab('input');
               }}
-              className={`flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 py-2 sm:px-3 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs cursor-pointer ${
+              className={`flex items-center gap-1.5 sm:gap-2 px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs cursor-pointer shrink-0 whitespace-nowrap ${
                 activeTab === 'input'
-                  ? 'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 sm:bg-teal-600 sm:text-white sm:shadow-teal-600/25 sm:ring-2 sm:ring-teal-600/30'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 sm:bg-slate-100 sm:dark:bg-slate-800 sm:hover:bg-slate-200 sm:dark:hover:bg-slate-700 sm:text-slate-700 sm:dark:text-slate-300'
+                  ? 'bg-teal-600 text-white shadow-teal-600/25 ring-2 ring-teal-600/30'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700'
               }`}
             >
-              <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
               <span>Form Penerimaan</span>
             </button>
 
@@ -1811,13 +1811,13 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                 setSelectedQcTargetCode(undefined);
                 setActiveTab('qc_pengerjaan');
               }}
-              className={`flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 py-2 sm:px-3 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs cursor-pointer ${
+              className={`flex items-center gap-1.5 sm:gap-2 px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs cursor-pointer shrink-0 whitespace-nowrap ${
                 activeTab === 'qc_pengerjaan'
-                  ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 sm:bg-indigo-600 sm:text-white sm:shadow-indigo-600/25 sm:ring-2 sm:ring-indigo-600/30'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 sm:bg-slate-100 sm:dark:bg-slate-800 sm:hover:bg-slate-200 sm:dark:hover:bg-slate-700 sm:text-slate-700 sm:dark:text-slate-300'
+                  ? 'bg-indigo-600 text-white shadow-indigo-600/25 ring-2 ring-indigo-600/30'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700'
               }`}
             >
-              <CheckSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <CheckSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
               <span>Pengerjaan QC</span>
             </button>
 
@@ -1828,16 +1828,16 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                 setSelectedQcTargetCode(undefined);
                 setActiveTab('audit_hitung_ulang');
               }}
-              className={`flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 py-2 sm:px-3 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs cursor-pointer ${
+              className={`flex items-center gap-1.5 sm:gap-2 px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs cursor-pointer shrink-0 whitespace-nowrap ${
                 activeTab === 'audit_hitung_ulang'
-                  ? 'bg-white dark:bg-slate-700 text-rose-700 dark:text-rose-300 sm:bg-rose-600 sm:text-white sm:shadow-rose-600/25 sm:ring-2 sm:ring-rose-600/30'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 sm:bg-slate-100 sm:dark:bg-slate-800 sm:hover:bg-slate-200 sm:dark:hover:bg-slate-700 sm:text-slate-700 sm:dark:text-slate-300'
+                  ? 'bg-rose-600 text-white shadow-rose-600/25 ring-2 ring-rose-600/30'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700'
               }`}
             >
-              <Scale className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <Scale className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
               <span>Audit Hitung Ulang</span>
               {recountCounts.diff > 0 ? (
-                <span className="text-[10px] font-black px-1.5 py-0.2 rounded-full bg-rose-500 text-white animate-pulse">
+                <span className="text-[10px] font-black px-1.5 py-0.2 rounded-full bg-rose-500 text-white animate-pulse shrink-0">
                   {recountCounts.diff}
                 </span>
               ) : null}
