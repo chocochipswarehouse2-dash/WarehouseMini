@@ -167,6 +167,9 @@ Whenever designing, modifying, or tidying up any frontend component, table, card
      3. **Picking List Tugas Picking (`invoice_picking` + `no_sj` + QR)**
      4. **Label Pengiriman Paket Thermal A6 (`100mm x 150mm`)**
      5. **Cetak Ukuran Struk Kasir Thermal (`58mm/60mm` & `80mm` Rangkap 2 & SPK)**
+5. **UI/UX Pro Max Design Intelligence (`.agents/skills/ui-ux-pro-max/SKILL.md`)**:
+   - Integrasi database desain profesional (80 visual styles, 192 product palettes, 119 UX guidelines, 74 font pairings) menggunakan script `python .agents/skills/ui-ux-pro-max/scripts/search.py "<query>"`.
+   - Mengarahkan implementasi antarmuka agar menghindari tampilan kaku / generik AI, mempertahankan 8pt spacing system, micro-interactions, dark mode elegance, dan visual hierarchy kelas enterprise tanpa mengganggu fungsionalitas dan logika bisnis yang sudah berjalan.
 
 ## 11. Zero-Reload Background Update & Active Screen Protection Blueprint
 

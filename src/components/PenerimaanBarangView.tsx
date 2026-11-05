@@ -16,7 +16,7 @@ export const PenerimaanBarangView: React.FC<PenerimaanBarangViewProps> = ({
   const [instrumentTab, setInstrumentTab] = useState<'store' | 'paket'>('store');
 
   return (
-    <div className="p-2 sm:p-4 space-y-4 max-w-5xl mx-auto pb-24">
+    <div className="p-2 sm:p-4 space-y-4 w-full max-w-full pb-24">
       {/* Instrument Switcher Tabs: Store & Paket */}
       <div className="bg-slate-100/90 dark:bg-[#09090b]/90 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs w-full sm:w-auto inline-block">
         <div className="grid grid-cols-2 sm:flex sm:items-center gap-1 sm:gap-1.5">

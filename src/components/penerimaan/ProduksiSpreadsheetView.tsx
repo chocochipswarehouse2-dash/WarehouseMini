@@ -1746,7 +1746,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
           <button
             type="button"
             onClick={handleAddNewBlock}
-            className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border border-slate-200 dark:border-slate-700"
+            className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border border-slate-200 dark:border-slate-700 shadow-2xs"
             title="Tambah Tabel Kode Baru"
           >
             <Plus className="w-3.5 h-3.5 text-rose-500" />
@@ -1757,17 +1757,17 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
             type="button"
             disabled={isSyncingQtyNota}
             onClick={() => handleSyncQtyNotaFromSheet(false)}
-            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-400 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+            className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 disabled:opacity-50 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border border-slate-200 dark:border-slate-700 shadow-2xs"
             title="Tarik Qty Nota yang diisi Buyer di Google Sheet, backup ke Supabase, dan buat Antrian Hitung Ulang otomatis jika selisih"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isSyncingQtyNota ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 text-amber-500 ${isSyncingQtyNota ? 'animate-spin' : ''}`} />
             <span>{isSyncingQtyNota ? 'Sync Nota...' : 'Tarik Qty Nota'}</span>
           </button>
 
           <button
             type="button"
             onClick={() => setIsPushDateModalOpen(true)}
-            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition cursor-pointer shadow-xs"
             title={selectedDateFilter !== 'all' ? `Push Sheet Khusus Tanggal ${formatDateHeader(selectedDateFilter)}` : 'Push Sheet Per Tanggal'}
           >
             <CloudUpload className="w-3.5 h-3.5" />
@@ -1782,7 +1782,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
             href={`https://docs.google.com/spreadsheets/d/${PRODUKSI_SPREADSHEET_ID}/edit`}
             target="_blank"
             rel="noreferrer"
-            className="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border border-slate-200 dark:border-slate-700 shadow-xs"
+            className="px-2.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border border-slate-200 dark:border-slate-700 shadow-2xs"
             title="Buka Google Spreadsheet (Indeks DAFTAR_TANGGAL & Tab Master)"
           >
             <ExternalLink className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
@@ -1792,20 +1792,20 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
           <button
             type="button"
             onClick={handleOpenExportModal}
-            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+            className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 shadow-2xs transition cursor-pointer"
             title={`Download Excel Modern ${activeTab} (.xlsx)`}
           >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
             <span>Excel ({activeTab})</span>
           </button>
 
           <button
             type="button"
             onClick={() => window.print()}
-            className="p-1.5 sm:px-2.5 sm:py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1 transition cursor-pointer border border-slate-200 dark:border-slate-700"
+            className="p-1.5 sm:px-2.5 sm:py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1 transition cursor-pointer border border-slate-200 dark:border-slate-700 shadow-2xs"
             title="Cetak Lanskap Spreadsheet"
           >
-            <Printer className="w-3.5 h-3.5" />
+            <Printer className="w-3.5 h-3.5 text-slate-500" />
             <span className="hidden sm:inline">Cetak</span>
           </button>
         </div>

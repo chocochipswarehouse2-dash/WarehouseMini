@@ -426,7 +426,7 @@ export const SupabaseMigrationView: React.FC = () => {
   const totalTransferredRows = tables.reduce((acc, t) => acc + (t.transferredCount || 0), 0);
 
   return (
-    <div className="flex-1 p-3 sm:p-5 max-w-7xl mx-auto w-full space-y-3">
+    <div className="flex-1 p-3 sm:p-5 w-full max-w-full space-y-3">
       {/* Header Banner */}
       <div className="bg-white dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-2">
         <div className="space-y-1">

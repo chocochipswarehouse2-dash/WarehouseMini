@@ -286,7 +286,7 @@ export default function SystemWorkflow({ session, onShowToast }: any) {
 
   return (
     <div className="flex flex-col gap-6 p-4 sm:p-6 bg-slate-50 dark:bg-[#0a0f1c] h-full overflow-y-auto">
-      <div className="max-w-7xl mx-auto w-full space-y-8 pb-20">
+      <div className="w-full max-w-full space-y-8 pb-20">
         
         {/* TOOLBAR */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-white dark:bg-[#131d31] p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm gap-4">

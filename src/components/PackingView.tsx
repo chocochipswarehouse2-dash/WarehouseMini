@@ -15,7 +15,7 @@ export const PackingView: React.FC = () => {
   ];
 
   return (
-    <div className="p-2 sm:p-3 space-y-3 max-w-5xl mx-auto pb-24">
+    <div className="p-2 sm:p-4 space-y-4 w-full max-w-full pb-24">
       <ConstructionBanner />
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
