@@ -15,21 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.55",
-  "versionCode": 315,
+  "version": "v2.6.56",
+  "versionCode": 316,
   "buildDate": "5 November 2026",
-  "buildHash": "wms-261105-v315-1020",
-  "releaseTitle": "WMS v2.6.55 — Integrasi Kapasitas Warehouse (Rak + Koli), Blok F & SPS IGLive",
+  "buildHash": "wms-261105-v316-1028",
+  "releaseTitle": "WMS v2.6.56 — Fix import useCallback pada RackCapacityDashboard",
   "releaseNotes": [
-    "Kapasitas Warehouse mencakup Rak ABCD dan Koli R,V,Z,X,CC,PMK,DF secara total",
-    "Status kapasitas masing-masing kategori penyimpanan (Rak, Koli, dan Blok F)",
-    "Setup IGLive pada kapasitas rak dan integrasi zona Blok F",
-    "Penambahan tab, filter & tabel IGLive pada modul SPS (Peminjaman)"
+    "Memperbaiki impor useCallback dari React pada komponen RackCapacityDashboard di modul Inventory"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.55",
+    "versionCode": 315,
+    "buildDate": "5 November 2026",
+    "buildHash": "wms-261105-v315-1020",
+    "releaseTitle": "WMS v2.6.55 — Integrasi Kapasitas Warehouse (Rak + Koli), Blok F & SPS IGLive",
+    "releaseNotes": [
+      "Kapasitas Warehouse mencakup Rak ABCD dan Koli R,V,Z,X,CC,PMK,DF secara total",
+      "Status kapasitas masing-masing kategori penyimpanan (Rak, Koli, dan Blok F)",
+      "Setup IGLive pada kapasitas rak dan integrasi zona Blok F",
+      "Penambahan tab, filter & tabel IGLive pada modul SPS (Peminjaman)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.54",
     "versionCode": 314,
@@ -129,18 +140,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Optimasi query pengecekan_sj Supabase dari 45 detik menjadi di bawah 1 detik",
       "Menerapkan Stale-While-Revalidate agar riwayat surat jalan langsung tampil instan tanpa spinner macet"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.45",
-    "versionCode": 305,
-    "buildDate": "2 November 2026",
-    "buildHash": "wms-261102-v305-1724",
-    "releaseTitle": "WMS v2.6.45 — Konsistensi Tombol Keranjang Tabel & Reposisi FAB Order Picking Bebas Tabrakan",
-    "releaseNotes": [
-      "Reposisi FAB Order Picking agar berdampingan rapi dengan Live Chat di desktop dan berjarak aman di mobile",
-      "Menampilkan tombol keranjang secara konsisten di seluruh baris produk perbaikan dengan proteksi stok 0 pcs"
     ],
     "minSupportedVersion": "v2.0.0"
   }

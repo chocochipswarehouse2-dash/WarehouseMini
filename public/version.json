@@ -1,14 +1,11 @@
 {
-  "version": "v2.6.55",
-  "versionCode": 315,
+  "version": "v2.6.56",
+  "versionCode": 316,
   "buildDate": "5 November 2026",
-  "buildHash": "wms-261105-v315-1020",
-  "releaseTitle": "WMS v2.6.55 — Integrasi Kapasitas Warehouse (Rak + Koli), Blok F & SPS IGLive",
+  "buildHash": "wms-261105-v316-1028",
+  "releaseTitle": "WMS v2.6.56 — Fix import useCallback pada RackCapacityDashboard",
   "releaseNotes": [
-    "Kapasitas Warehouse mencakup Rak ABCD dan Koli R,V,Z,X,CC,PMK,DF secara total",
-    "Status kapasitas masing-masing kategori penyimpanan (Rak, Koli, dan Blok F)",
-    "Setup IGLive pada kapasitas rak dan integrasi zona Blok F",
-    "Penambahan tab, filter & tabel IGLive pada modul SPS (Peminjaman)"
+    "Memperbaiki impor useCallback dari React pada komponen RackCapacityDashboard di modul Inventory"
   ],
   "minSupportedVersion": "v2.0.0"
 }
