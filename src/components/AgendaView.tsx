@@ -5,7 +5,7 @@ import {
   Trash2, Edit3, Search, Filter, Sun, Check, Sparkles, RefreshCw, 
   AlertTriangle, ArrowRight, Layers, Eye, CheckSquare, Square, MoreHorizontal, StickyNote,
   FolderPlus, CalendarDays, ListFilter, RotateCcw, ChevronDown, ChevronUp, Palette,
-  PanelLeft, PanelLeftClose
+  PanelLeft, PanelLeftClose, LayoutGrid, Columns, CalendarRange, GripVertical
 } from 'lucide-react';
 import { compressImage } from '../utils/imageCompressor';
 import { 
@@ -544,6 +544,26 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
   const [projectStatusFilter, setProjectStatusFilter] = useState<string>('all');
   const [projectPriorityFilter, setProjectPriorityFilter] = useState<string>('all');
   const [creatorFilter, setCreatorFilter] = useState<string>('all');
+  const [projectViewMode, setProjectViewMode] = useState<'grid' | 'kanban' | 'gantt'>(() => {
+    try {
+      const saved = localStorage.getItem('wms_project_view_mode');
+      if (saved === 'grid' || saved === 'kanban' || saved === 'gantt') return saved;
+    } catch {}
+    return 'grid';
+  });
+  const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<ProjectStatus | null>(null);
+  const [ganttScale, setGanttScale] = useState<'day' | 'week' | 'month'>('day');
+  const [ganttOffsetDays, setGanttOffsetDays] = useState<number>(0);
+  const [expandedGanttProjects, setExpandedGanttProjects] = useState<Record<string, boolean>>({});
+
+  const handleChangeProjectViewMode = (mode: 'grid' | 'kanban' | 'gantt') => {
+    setProjectViewMode(mode);
+    try {
+      localStorage.setItem('wms_project_view_mode', mode);
+    } catch {}
+  };
+
   const [isNoteModalOpen, setNoteModalOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<Partial<NoteItem> | null>(null);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
@@ -904,10 +924,9 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
     return counts;
   }, [projects]);
 
-  // Filtered Projects
-    const filteredProjects = useMemo(() => {
+  // Base Filtered Projects (without status filter, used for Kanban columns & status counts)
+  const baseFilteredProjects = useMemo(() => {
     return projects.filter(p => {
-      if (projectStatusFilter !== 'all' && p.status !== projectStatusFilter) return false;
       if (projectPriorityFilter !== 'all' && p.priority !== projectPriorityFilter) return false;
       if (creatorFilter !== 'all' && p.created_by !== creatorFilter) return false;
       if (searchQuery.trim()) {
@@ -915,11 +934,20 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
         const matchTitle = p.title.toLowerCase().includes(q);
         const matchDesc = p.description?.toLowerCase().includes(q);
         const matchPic = p.pic?.toLowerCase().includes(q);
-        if (!matchTitle && !matchDesc && !matchPic) return false;
+        const matchCat = p.category?.toLowerCase().includes(q);
+        if (!matchTitle && !matchDesc && !matchPic && !matchCat) return false;
       }
       return true;
     });
-  }, [projects, projectStatusFilter, projectPriorityFilter, creatorFilter, searchQuery]);
+  }, [projects, projectPriorityFilter, creatorFilter, searchQuery]);
+
+  // Filtered Projects (including status tab filter)
+  const filteredProjects = useMemo(() => {
+    return baseFilteredProjects.filter(p => {
+      if (projectStatusFilter !== 'all' && p.status !== projectStatusFilter) return false;
+      return true;
+    });
+  }, [baseFilteredProjects, projectStatusFilter]);
 
   const filteredNotes = useMemo(() => {
     return notes.filter(n => {
@@ -1184,25 +1212,51 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
     }
   };
 
-  const handleOpenAddProject = (existing?: ProjectItem) => {
+  const handleOpenAddProject = (existing?: ProjectItem, initialStatus?: ProjectStatus) => {
     if (existing) {
-      setEditingProject({ ...existing });
+      setEditingProject({
+        ...existing,
+        start_date: existing.start_date || (existing.created_at ? existing.created_at.slice(0, 10) : formatIsoDate(new Date())),
+      });
     } else {
       setEditingProject({
         title: '',
         description: '',
-        status: 'in_progress',
+        status: initialStatus || (projectStatusFilter !== 'all' ? (projectStatusFilter as ProjectStatus) : 'in_progress'),
         priority: 'medium',
         category: 'Infrastruktur',
         pic: session?.name || session?.username || '',
         start_date: formatIsoDate(new Date()),
         deadline: formatIsoDate(new Date(Date.now() + 14 * 86400000)),
-        progress: 0,
+        progress: initialStatus === 'completed' ? 100 : 0,
         tasks: [],
         attachments: []
       });
     }
     setProjectModalOpen(true);
+  };
+
+  const handleQuickStatusChange = async (proj: ProjectItem, newStatus: ProjectStatus) => {
+    if (proj.status === newStatus) return;
+    const updatedProgress = newStatus === 'completed'
+      ? 100
+      : (proj.status === 'completed' && proj.progress === 100 && proj.tasks.length === 0 ? 50 : proj.progress);
+    const updatedProj: ProjectItem = {
+      ...proj,
+      status: newStatus,
+      progress: updatedProgress
+    };
+    setProjects(prev => prev.map(p => p.id === proj.id ? updatedProj : p));
+    try {
+      await saveProject(updatedProj);
+      const label = PROJECT_STATUS_CONFIG[newStatus]?.label || newStatus;
+      onShowToast?.(`Status "${proj.title}" dipindahkan ke ${label}`, 'success');
+      loadData();
+    } catch (err) {
+      console.error(err);
+      onShowToast?.('Gagal memperbarui status project', 'error');
+      loadData();
+    }
   };
 
   const handleSaveProject = async (e: React.FormEvent) => {
@@ -2663,10 +2717,55 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
             </div>
           </div>
 
-          {/* Controls Bar for Projects (Secondary Filters & Actions) */}
-          <div className="bg-white dark:bg-[#1a2332] p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3">
-            {/* Secondary Filters */}
+          {/* Controls Bar for Projects (View Switcher, Secondary Filters & Actions) */}
+          <div className="bg-white dark:bg-[#1a2332] p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3">
+            {/* Left: View Switcher (Grid | Kanban | Gantt Chart) + Secondary Filters */}
             <div className="flex flex-wrap items-center gap-2">
+              {/* Segmented View Mode Switcher */}
+              <div className="inline-flex items-center bg-slate-100 dark:bg-[#0f172a] p-1 rounded-xl border border-slate-200 dark:border-slate-700/80 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleChangeProjectViewMode('grid')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    projectViewMode === 'grid'
+                      ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-2xs ring-1 ring-slate-200/80 dark:ring-slate-700'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                  title="Tampilan Kartu (Grid)"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
+                  <span>Kartu</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleChangeProjectViewMode('kanban')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    projectViewMode === 'kanban'
+                      ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-2xs ring-1 ring-slate-200/80 dark:ring-slate-700'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                  title="Tampilan Papan Kanban (Drag & Drop Status)"
+                >
+                  <Columns className="w-3.5 h-3.5 shrink-0" />
+                  <span>Kanban</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleChangeProjectViewMode('gantt')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    projectViewMode === 'gantt'
+                      ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-2xs ring-1 ring-slate-200/80 dark:ring-slate-700'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                  title="Tampilan Timeline Gantt Chart"
+                >
+                  <CalendarRange className="w-3.5 h-3.5 shrink-0" />
+                  <span>Gantt Chart</span>
+                </button>
+              </div>
+
+              <div className="h-5 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block mx-0.5" />
+
               <select
                 value={projectPriorityFilter}
                 onChange={(e) => setProjectPriorityFilter(e.target.value)}
@@ -2690,13 +2789,13 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
               </select>
             </div>
             
-            {/* Actions: Search & Add */}
+            {/* Right Actions: Search & Add */}
             <div className="flex items-center gap-2">
-              <div className="relative flex-1 md:w-56">
+              <div className="relative flex-1 lg:w-56">
                 <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Cari project / PIC..."
+                  placeholder="Cari project / PIC / kategori..."
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   className="w-full pl-8 pr-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-primary-500"
@@ -2705,7 +2804,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
               <button
                 type="button"
                 onClick={() => handleOpenAddProject()}
-                className="bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-md shadow-primary-500/20 shrink-0 cursor-pointer transition-all active:scale-95"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer transition-all active:scale-95"
               >
                 <Plus className="w-4 h-4" />
                 <span>Buat Project</span>
@@ -2713,157 +2812,973 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
             </div>
           </div>
 
-          {filteredProjects.length === 0 ? (
-            <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center shadow-xs">
-              <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 mx-auto flex items-center justify-center mb-3">
-                <Briefcase className="w-6 h-6" />
-              </div>
-              <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">
-                Tidak ada project pada status ini
-              </h3>
-              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                {searchQuery
-                  ? `Tidak ada project yang cocok dengan pencarian "${searchQuery}"`
-                  : 'Belum ada project yang terdaftar dalam status ini.'}
-              </p>
-              <button
-                type="button"
-                onClick={() => handleOpenAddProject()}
-                className="mt-4 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm cursor-pointer"
-              >
-                + Buat Project Baru
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filteredProjects.map(proj => {
-              const stCfg = PROJECT_STATUS_CONFIG[proj.status] || PROJECT_STATUS_CONFIG.in_progress;
-              const priCfg = PROJECT_PRIORITY_CONFIG[proj.priority] || PROJECT_PRIORITY_CONFIG.medium;
-              const totalTasks = proj.tasks.length;
-              const completedTasks = proj.tasks.filter(t => t.is_completed).length;
-
-              return (
-                <div
-                  key={proj.id}
-                  className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between"
+          {/* ================================================================= */}
+          {/* VIEW 1: GRID / CARD VIEW */}
+          {/* ================================================================= */}
+          {projectViewMode === 'grid' && (
+            filteredProjects.length === 0 ? (
+              <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center shadow-xs">
+                <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 mx-auto flex items-center justify-center mb-3">
+                  <Briefcase className="w-6 h-6" />
+                </div>
+                <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                  Tidak ada project pada status ini
+                </h3>
+                <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                  {searchQuery
+                    ? `Tidak ada project yang cocok dengan pencarian "${searchQuery}"`
+                    : 'Belum ada project yang terdaftar dalam status ini.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => handleOpenAddProject()}
+                  className="mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer"
                 >
-                  <div>
-                    {/* Header: Status, Priority & Actions */}
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex items-center gap-1.5">
-                        <select
-                          value={proj.status}
-                          onChange={async (e) => {
-                            const newStatus = e.target.value;
-                            try {
-                              await saveProject({ 
-                                ...proj, 
-                                status: newStatus as any, 
-                                progress: newStatus === 'completed' ? 100 : proj.progress 
-                              });
-                              loadData();
-                            } catch(err) {
-                              console.error(err);
-                            }
-                          }}
-                          className={`text-[10px] font-black uppercase px-2 py-1 rounded-md tracking-wider cursor-pointer border-none outline-none appearance-none ${stCfg.badge}`}
-                        >
-                          <option value="planned">MULAI (PLANNED)</option>
-                          <option value="in_progress">BERJALAN (IN PROGRESS)</option>
-                          <option value="review">EVALUASI (REVIEW)</option>
-                          <option value="completed">SELESAI (COMPLETED)</option>
-                          <option value="on_hold">DITUNDA (ON HOLD)</option>
-                        </select>
-                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${priCfg.color}`}>
-                          {priCfg.label}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => handleOpenAddProject(proj)}
-                          className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteProject(proj.id)}
-                          className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
+                  + Buat Project Baru
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {filteredProjects.map(proj => {
+                  const stCfg = PROJECT_STATUS_CONFIG[proj.status] || PROJECT_STATUS_CONFIG.in_progress;
+                  const priCfg = PROJECT_PRIORITY_CONFIG[proj.priority] || PROJECT_PRIORITY_CONFIG.medium;
+                  const totalTasks = proj.tasks.length;
+                  const completedTasks = proj.tasks.filter(t => t.is_completed).length;
 
-                    {/* Title & Desc */}
-                    <h3 className="text-base font-black text-slate-900 dark:text-white mb-1.5">
-                      {proj.title}
-                    </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed mb-2">
-                      {proj.description || 'Tidak ada deskripsi rinci.'}
-                    </p>
-
-                    {/* Progress Bar */}
-                    <div className="space-y-1.5 mb-2 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
-                      <div className="flex justify-between text-xs font-bold">
-                        <span className="text-slate-500">Progres Pelaksanaan</span>
-                        <span className="text-primary-600 dark:text-primary-400">{proj.progress}%</span>
-                      </div>
-                      <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-primary-500 to-amber-500 rounded-full transition-all duration-500"
-                          style={{ width: `${proj.progress}%` }}
-                        ></div>
-                      </div>
-                      <div className="text-[10px] text-slate-400 font-medium">
-                        {completedTasks} dari {totalTasks} checklist tugas selesai
-                      </div>
-                    </div>
-
-                    {/* Interactive Task Checklist (Quick tap) */}
-                    {proj.tasks.length > 0 && (
-                      <div className="space-y-1.5 mb-2">
-                        <span className="text-[11px] font-black uppercase text-slate-400 tracking-wider">
-                          Checklist Tugas:
-                        </span>
-                        <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
-                          {proj.tasks.map(task => (
-                            <div
-                              key={task.id}
-                              onClick={() => handleToggleTask(proj, task.id)}
-                              className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer text-xs transition-colors"
+                  return (
+                    <div
+                      key={proj.id}
+                      className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between"
+                    >
+                      <div>
+                        {/* Header: Status, Priority & Actions */}
+                        <div className="flex justify-between items-start mb-3">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <select
+                              value={proj.status}
+                              onChange={(e) => handleQuickStatusChange(proj, e.target.value as ProjectStatus)}
+                              className={`text-[10px] font-black uppercase px-2 py-1 rounded-md tracking-wider cursor-pointer border-none outline-none appearance-none ${stCfg.badge}`}
                             >
-                              {task.is_completed ? (
-                                <CheckSquare className="w-4 h-4 text-emerald-500 shrink-0" />
-                              ) : (
-                                <Square className="w-4 h-4 text-slate-400 shrink-0" />
-                              )}
-                              <span className={`truncate ${task.is_completed ? 'line-through text-slate-400' : 'font-medium text-slate-700 dark:text-slate-200'}`}>
-                                {task.title}
+                              <option value="planned">MULAI (PLANNED)</option>
+                              <option value="in_progress">BERJALAN (IN PROGRESS)</option>
+                              <option value="review">EVALUASI (REVIEW)</option>
+                              <option value="completed">SELESAI (COMPLETED)</option>
+                              <option value="on_hold">DITUNDA (ON HOLD)</option>
+                            </select>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${priCfg.color}`}>
+                              {priCfg.label}
+                            </span>
+                            {proj.category && (
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/70 dark:border-slate-700">
+                                {proj.category}
                               </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleOpenAddProject(proj)}
+                              className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg cursor-pointer"
+                              title="Edit Project"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteProject(proj.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg cursor-pointer"
+                              title="Hapus Project"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Title & Desc */}
+                        <h3 className="text-base font-black text-slate-900 dark:text-white mb-1.5">
+                          {proj.title}
+                        </h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed mb-2">
+                          {proj.description || 'Tidak ada deskripsi rinci.'}
+                        </p>
+
+                        {/* Progress Bar */}
+                        <div className="space-y-1.5 mb-2 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+                          <div className="flex justify-between text-xs font-bold">
+                            <span className="text-slate-500">Progres Pelaksanaan</span>
+                            <span className="text-primary-600 dark:text-primary-400 font-mono tabular-nums">{proj.progress}%</span>
+                          </div>
+                          <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-primary-500 to-amber-500 rounded-full transition-all duration-500"
+                              style={{ width: `${proj.progress}%` }}
+                            ></div>
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-medium font-mono tabular-nums">
+                            {completedTasks} dari {totalTasks} checklist tugas selesai
+                          </div>
+                        </div>
+
+                        {/* Interactive Task Checklist (Quick tap) */}
+                        {proj.tasks.length > 0 && (
+                          <div className="space-y-1.5 mb-2">
+                            <span className="text-[11px] font-black uppercase text-slate-400 tracking-wider">
+                              Checklist Tugas:
+                            </span>
+                            <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                              {proj.tasks.map(task => (
+                                <div
+                                  key={task.id}
+                                  onClick={() => handleToggleTask(proj, task.id)}
+                                  className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer text-xs transition-colors"
+                                >
+                                  {task.is_completed ? (
+                                    <CheckSquare className="w-4 h-4 text-emerald-500 shrink-0" />
+                                  ) : (
+                                    <Square className="w-4 h-4 text-slate-400 shrink-0" />
+                                  )}
+                                  <span className={`truncate ${task.is_completed ? 'line-through text-slate-400' : 'font-medium text-slate-700 dark:text-slate-200'}`}>
+                                    {task.title}
+                                  </span>
+                                </div>
+                              ))}
                             </div>
-                          ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Project Footer Meta */}
+                      <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-1.5 text-slate-500">
+                          <User className="w-3.5 h-3.5" />
+                          <span className="font-bold">{proj.pic || 'Tim Gudang'}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 font-mono tabular-nums text-[11px]">
+                          {proj.start_date && (
+                            <span className="text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
+                              {proj.start_date}
+                            </span>
+                          )}
+                          {proj.deadline && (
+                            <span className="text-rose-500 font-bold bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded-md">
+                              Tenggat: {proj.deadline}
+                            </span>
+                          )}
                         </div>
                       </div>
-                    )}
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          )}
+
+          {/* ================================================================= */}
+          {/* VIEW 2: KANBAN BOARD VIEW */}
+          {/* ================================================================= */}
+          {projectViewMode === 'kanban' && (() => {
+            const kanbanColumns: {
+              id: ProjectStatus;
+              label: string;
+              subLabel: string;
+              dot: string;
+              headerBorder: string;
+              headerBg: string;
+              countBadge: string;
+            }[] = [
+              {
+                id: 'planned',
+                label: 'Mulai',
+                subLabel: 'Planned',
+                dot: 'bg-slate-400',
+                headerBorder: 'border-t-4 border-t-slate-400',
+                headerBg: 'bg-slate-50/80 dark:bg-slate-800/50',
+                countBadge: 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
+              },
+              {
+                id: 'in_progress',
+                label: 'Berjalan',
+                subLabel: 'In Progress',
+                dot: 'bg-blue-500',
+                headerBorder: 'border-t-4 border-t-blue-500',
+                headerBg: 'bg-blue-50/50 dark:bg-blue-950/20',
+                countBadge: 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300'
+              },
+              {
+                id: 'review',
+                label: 'Evaluasi',
+                subLabel: 'Review',
+                dot: 'bg-amber-500',
+                headerBorder: 'border-t-4 border-t-amber-500',
+                headerBg: 'bg-amber-50/50 dark:bg-amber-950/20',
+                countBadge: 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300'
+              },
+              {
+                id: 'completed',
+                label: 'Selesai',
+                subLabel: 'Completed',
+                dot: 'bg-emerald-500',
+                headerBorder: 'border-t-4 border-t-emerald-500',
+                headerBg: 'bg-emerald-50/50 dark:bg-emerald-950/20',
+                countBadge: 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300'
+              },
+              {
+                id: 'on_hold',
+                label: 'Ditunda',
+                subLabel: 'On Hold',
+                dot: 'bg-purple-500',
+                headerBorder: 'border-t-4 border-t-purple-500',
+                headerBg: 'bg-purple-50/50 dark:bg-purple-950/20',
+                countBadge: 'bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300'
+              }
+            ];
+
+            const statusOrder: ProjectStatus[] = ['planned', 'in_progress', 'review', 'completed', 'on_hold'];
+
+            return (
+              <div className="space-y-3">
+                {/* Info helper bar */}
+                <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-slate-500 dark:text-slate-400">
+                  <div className="flex items-center gap-2">
+                    <GripVertical className="w-3.5 h-3.5 text-slate-400" />
+                    <span>
+                      Tarik & lepas (<strong>Drag & Drop</strong>) kartu antar kolom atau klik panah status untuk memindahkan tahap project.
+                    </span>
+                  </div>
+                  {projectStatusFilter !== 'all' && (
+                    <button
+                      type="button"
+                      onClick={() => setProjectStatusFilter('all')}
+                      className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer flex items-center gap-1"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Tampilkan Semua Kolom Penuh ({ baseFilteredProjects.length })</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Responsive 5-Column Kanban Board */}
+                <div className="flex xl:grid xl:grid-cols-5 gap-3.5 overflow-x-auto pb-4 snap-x snap-mandatory">
+                  {kanbanColumns.map((col) => {
+                    const colProjects = baseFilteredProjects.filter(p => p.status === col.id);
+                    const isFilteredOut = projectStatusFilter !== 'all' && projectStatusFilter !== col.id;
+                    const isDragTarget = dragOverColumn === col.id;
+                    const avgProgress = colProjects.length > 0
+                      ? Math.round(colProjects.reduce((acc, p) => acc + (p.progress || 0), 0) / colProjects.length)
+                      : 0;
+
+                    return (
+                      <div
+                        key={col.id}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          if (dragOverColumn !== col.id) setDragOverColumn(col.id);
+                        }}
+                        onDragLeave={() => {
+                          if (dragOverColumn === col.id) setDragOverColumn(null);
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setDragOverColumn(null);
+                          const droppedId = e.dataTransfer.getData('text/plain') || draggedProjectId;
+                          setDraggedProjectId(null);
+                          if (!droppedId) return;
+                          const targetProj = projects.find(p => p.id === droppedId);
+                          if (targetProj && targetProj.status !== col.id) {
+                            handleQuickStatusChange(targetProj, col.id);
+                          }
+                        }}
+                        className={`min-w-[285px] sm:min-w-[300px] xl:min-w-0 flex-1 snap-start rounded-2xl border bg-slate-50/70 dark:bg-[#131c2b] flex flex-col transition-all ${col.headerBorder} ${
+                          isDragTarget
+                            ? 'ring-2 ring-indigo-500 border-indigo-400 dark:border-indigo-500 bg-indigo-50/30 dark:bg-indigo-950/20'
+                            : 'border-slate-200 dark:border-slate-800'
+                        } ${isFilteredOut ? 'opacity-45 hover:opacity-95' : ''}`}
+                      >
+                        {/* Column Header */}
+                        <div className={`p-3 rounded-t-xl border-b border-slate-200/80 dark:border-slate-800 ${col.headerBg}`}>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className={`w-2.5 h-2.5 rounded-full ${col.dot} shrink-0`} />
+                              <h4 className="text-xs font-black text-slate-900 dark:text-white truncate">
+                                {col.label}
+                              </h4>
+                              <span className="text-[10px] text-slate-400 font-medium truncate">
+                                ({col.subLabel})
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className={`text-[10px] font-mono tabular-nums font-black px-2 py-0.5 rounded-full ${col.countBadge}`}>
+                                {colProjects.length}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenAddProject(undefined, col.id)}
+                                className="p-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 transition-colors cursor-pointer"
+                                title={`Tambah Project di kolom ${col.label}`}
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                          {/* Column mini progress bar */}
+                          <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+                            <span>Rata-rata Progres</span>
+                            <span className="font-bold">{avgProgress}%</span>
+                          </div>
+                          <div className="w-full h-1 bg-slate-200/80 dark:bg-slate-700/70 rounded-full overflow-hidden mt-1">
+                            <div
+                              className={`h-full ${col.dot} transition-all duration-300`}
+                              style={{ width: `${avgProgress}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Column Cards List */}
+                        <div className="p-2.5 space-y-2.5 flex-1 min-h-[260px] max-h-[70vh] overflow-y-auto">
+                          {colProjects.length === 0 ? (
+                            <div className="h-44 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 flex flex-col items-center justify-center p-4 text-center text-slate-400">
+                              <p className="text-[11px] font-semibold">Belum ada project</p>
+                              <p className="text-[10px] mt-0.5">Tarik kartu ke sini atau</p>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenAddProject(undefined, col.id)}
+                                className="mt-2 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-indigo-400 hover:text-indigo-600 transition-colors cursor-pointer"
+                              >
+                                + Buat di {col.label}
+                              </button>
+                            </div>
+                          ) : (
+                            colProjects.map((proj) => {
+                              const priCfg = PROJECT_PRIORITY_CONFIG[proj.priority] || PROJECT_PRIORITY_CONFIG.medium;
+                              const totalTasks = proj.tasks.length;
+                              const completedTasks = proj.tasks.filter(t => t.is_completed).length;
+                              const currentIdx = statusOrder.indexOf(proj.status);
+                              const prevStatus = currentIdx > 0 ? statusOrder[currentIdx - 1] : null;
+                              const nextStatus = currentIdx < statusOrder.length - 1 ? statusOrder[currentIdx + 1] : null;
+                              const isOverdue = proj.deadline && proj.status !== 'completed' && proj.deadline < formatIsoDate(new Date());
+
+                              return (
+                                <div
+                                  key={proj.id}
+                                  draggable
+                                  onDragStart={(e) => {
+                                    setDraggedProjectId(proj.id);
+                                    e.dataTransfer.setData('text/plain', proj.id);
+                                    e.dataTransfer.effectAllowed = 'move';
+                                  }}
+                                  onDragEnd={() => {
+                                    setDraggedProjectId(null);
+                                    setDragOverColumn(null);
+                                  }}
+                                  className={`bg-white dark:bg-[#1a2332] rounded-xl border p-3.5 shadow-2xs hover:shadow-md transition-all cursor-grab active:cursor-grabbing flex flex-col justify-between gap-2.5 ${
+                                    draggedProjectId === proj.id
+                                      ? 'opacity-50 ring-2 ring-indigo-500 border-indigo-400'
+                                      : 'border-slate-200 dark:border-slate-800'
+                                  }`}
+                                >
+                                  <div>
+                                    {/* Top Row: Priority, Category & Actions */}
+                                    <div className="flex items-center justify-between gap-1.5 mb-2">
+                                      <div className="flex flex-wrap items-center gap-1 min-w-0">
+                                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${priCfg.color}`}>
+                                          {priCfg.label}
+                                        </span>
+                                        {proj.category && (
+                                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 truncate max-w-[110px]">
+                                            {proj.category}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-0.5 shrink-0">
+                                        {prevStatus && (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleQuickStatusChange(proj, prevStatus);
+                                            }}
+                                            className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md cursor-pointer"
+                                            title={`Pindah ke ${PROJECT_STATUS_CONFIG[prevStatus].label}`}
+                                          >
+                                            <ChevronLeft className="w-3.5 h-3.5" />
+                                          </button>
+                                        )}
+                                        {nextStatus && (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleQuickStatusChange(proj, nextStatus);
+                                            }}
+                                            className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md cursor-pointer"
+                                            title={`Maju ke ${PROJECT_STATUS_CONFIG[nextStatus].label}`}
+                                          >
+                                            <ChevronRight className="w-3.5 h-3.5" />
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleOpenAddProject(proj);
+                                          }}
+                                          className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md cursor-pointer"
+                                          title="Edit Project"
+                                        >
+                                          <Edit3 className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeleteProject(proj.id);
+                                          }}
+                                          className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-md cursor-pointer"
+                                          title="Hapus Project"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* Title & Description */}
+                                    <h5
+                                      onClick={() => handleOpenAddProject(proj)}
+                                      className="text-xs sm:text-sm font-black text-slate-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer leading-snug mb-1"
+                                    >
+                                      {proj.title}
+                                    </h5>
+                                    {proj.description && (
+                                      <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed mb-2">
+                                        {proj.description}
+                                      </p>
+                                    )}
+
+                                    {/* Compact Progress Bar */}
+                                    <div className="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-100 dark:border-slate-800 space-y-1">
+                                      <div className="flex items-center justify-between text-[10px] font-bold">
+                                        <span className="text-slate-500 dark:text-slate-400">
+                                          {totalTasks > 0 ? `${completedTasks}/${totalTasks} Tugas` : 'Progres'}
+                                        </span>
+                                        <span className="text-indigo-600 dark:text-indigo-400 font-mono tabular-nums">
+                                          {proj.progress}%
+                                        </span>
+                                      </div>
+                                      <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                                        <div
+                                          className={`h-full rounded-full transition-all duration-300 ${
+                                            proj.progress === 100 ? 'bg-emerald-500' : 'bg-indigo-600'
+                                          }`}
+                                          style={{ width: `${proj.progress}%` }}
+                                        />
+                                      </div>
+                                    </div>
+
+                                    {/* Mini Task Checklist */}
+                                    {proj.tasks.length > 0 && (
+                                      <div className="mt-2 space-y-1 max-h-28 overflow-y-auto pr-0.5">
+                                        {proj.tasks.map((task) => (
+                                          <div
+                                            key={task.id}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleToggleTask(proj, task.id);
+                                            }}
+                                            className="flex items-center gap-1.5 p-1 rounded-md hover:bg-slate-50 dark:hover:bg-slate-800/80 cursor-pointer text-[11px] transition-colors"
+                                          >
+                                            {task.is_completed ? (
+                                              <CheckSquare className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                                            ) : (
+                                              <Square className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                            )}
+                                            <span className={`truncate ${task.is_completed ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-200 font-medium'}`}>
+                                              {task.title}
+                                            </span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Card Footer */}
+                                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2 text-[11px]">
+                                    <div className="flex items-center gap-1 text-slate-600 dark:text-slate-300 truncate">
+                                      <User className="w-3 h-3 text-slate-400 shrink-0" />
+                                      <span className="font-bold truncate">{proj.pic || 'Tim Gudang'}</span>
+                                    </div>
+                                    {proj.deadline && (
+                                      <span className={`font-mono tabular-nums text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
+                                        isOverdue
+                                          ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300'
+                                          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                                      }`}>
+                                        {proj.deadline.slice(5)}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ================================================================= */}
+          {/* VIEW 3: GANTT CHART TIMELINE VIEW */}
+          {/* ================================================================= */}
+          {projectViewMode === 'gantt' && (() => {
+            const dayWidth = ganttScale === 'day' ? 40 : ganttScale === 'week' ? 24 : 14;
+            const totalDaysBefore = ganttScale === 'day' ? 7 : ganttScale === 'week' ? 14 : 30;
+            const totalWindowDays = ganttScale === 'day' ? 35 : ganttScale === 'week' ? 60 : 120;
+
+            const todayObj = new Date();
+            todayObj.setHours(0, 0, 0, 0);
+            const todayStr = formatIsoDate(todayObj);
+
+            // Compute timeline start date based on today + offset (or earliest project start_date)
+            const windowStart = new Date(todayObj);
+            windowStart.setDate(todayObj.getDate() - totalDaysBefore + ganttOffsetDays);
+            windowStart.setHours(0, 0, 0, 0);
+
+            const timelineDays: {
+              date: Date;
+              dateStr: string;
+              dayNum: number;
+              dayName: string;
+              monthLabel: string;
+              isWeekend: boolean;
+              isToday: boolean;
+            }[] = [];
+
+            for (let i = 0; i < totalWindowDays; i++) {
+              const d = new Date(windowStart);
+              d.setDate(windowStart.getDate() + i);
+              const dStr = formatIsoDate(d);
+              const dow = d.getDay();
+              timelineDays.push({
+                date: d,
+                dateStr: dStr,
+                dayNum: d.getDate(),
+                dayName: DAYS_NAME[dow],
+                monthLabel: `${MONTHS_ID[d.getMonth()]} ${d.getFullYear()}`,
+                isWeekend: dow === 0 || dow === 6,
+                isToday: dStr === todayStr
+              });
+            }
+
+            // Group consecutive days by Month Label for the top header row
+            const monthGroups: { label: string; count: number }[] = [];
+            timelineDays.forEach((td) => {
+              const last = monthGroups[monthGroups.length - 1];
+              if (last && last.label === td.monthLabel) {
+                last.count++;
+              } else {
+                monthGroups.push({ label: td.monthLabel, count: 1 });
+              }
+            });
+
+            const parseDateSafe = (str?: string, fallback?: Date): Date => {
+              if (str && /^\d{4}-\d{2}-\d{2}/.test(str)) {
+                const [y, m, d] = str.slice(0, 10).split('-').map(Number);
+                const parsed = new Date(y, m - 1, d);
+                if (!isNaN(parsed.getTime())) {
+                  parsed.setHours(0, 0, 0, 0);
+                  return parsed;
+                }
+              }
+              return fallback ? new Date(fallback) : new Date(todayObj);
+            };
+
+            const diffDaysBetween = (start: Date, end: Date): number => {
+              return Math.round((end.getTime() - start.getTime()) / 86400000);
+            };
+
+            const todayColIdx = timelineDays.findIndex(d => d.isToday);
+
+            const statusBarStyles: Record<ProjectStatus, { track: string; fill: string; border: string; text: string }> = {
+              planned: {
+                track: 'bg-slate-200 dark:bg-slate-700/80',
+                fill: 'bg-slate-500 dark:bg-slate-400',
+                border: 'border-slate-300 dark:border-slate-600',
+                text: 'text-slate-800 dark:text-slate-100'
+              },
+              in_progress: {
+                track: 'bg-indigo-100 dark:bg-indigo-950/80',
+                fill: 'bg-indigo-600 dark:bg-indigo-500',
+                border: 'border-indigo-300 dark:border-indigo-700',
+                text: 'text-indigo-950 dark:text-indigo-100'
+              },
+              review: {
+                track: 'bg-amber-100 dark:bg-amber-950/80',
+                fill: 'bg-amber-500 dark:bg-amber-500',
+                border: 'border-amber-300 dark:border-amber-700',
+                text: 'text-amber-950 dark:text-amber-100'
+              },
+              completed: {
+                track: 'bg-emerald-100 dark:bg-emerald-950/80',
+                fill: 'bg-emerald-600 dark:bg-emerald-500',
+                border: 'border-emerald-300 dark:border-emerald-700',
+                text: 'text-emerald-950 dark:text-emerald-100'
+              },
+              on_hold: {
+                track: 'bg-purple-100 dark:bg-purple-950/80',
+                fill: 'bg-purple-600 dark:bg-purple-500',
+                border: 'border-purple-300 dark:border-purple-700',
+                text: 'text-purple-950 dark:text-purple-100'
+              }
+            };
+
+            return (
+              <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                {/* Gantt Top Toolbar */}
+                <div className="p-3 sm:px-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-50/60 dark:bg-slate-800/40">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-black text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                      <CalendarRange className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      <span>Timeline Gantt Chart</span>
+                    </span>
+                    {/* Scale Switcher */}
+                    <div className="inline-flex items-center bg-white dark:bg-[#0f172a] p-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                      {([
+                        { id: 'day', label: 'Harian' },
+                        { id: 'week', label: 'Mingguan' },
+                        { id: 'month', label: 'Bulanan' }
+                      ] as const).map((sc) => (
+                        <button
+                          key={sc.id}
+                          type="button"
+                          onClick={() => setGanttScale(sc.id)}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
+                            ganttScale === sc.id
+                              ? 'bg-indigo-600 text-white'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                          }`}
+                        >
+                          {sc.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Date Range Navigation */}
+                    <div className="inline-flex items-center gap-1 bg-white dark:bg-[#0f172a] p-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => setGanttOffsetDays(prev => prev - (ganttScale === 'day' ? 7 : ganttScale === 'week' ? 14 : 30))}
+                        className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 cursor-pointer"
+                        title="Geser Mundur"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setGanttOffsetDays(0)}
+                        className="px-2 py-0.5 text-[11px] font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded cursor-pointer"
+                      >
+                        Hari Ini
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setGanttOffsetDays(prev => prev + (ganttScale === 'day' ? 7 : ganttScale === 'week' ? 14 : 30))}
+                        className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 cursor-pointer"
+                        title="Geser Maju"
+                      >
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Project Footer Meta */}
-                  <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-1.5 text-slate-500">
-                      <User className="w-3.5 h-3.5" />
-                      <span className="font-bold">{proj.pic || 'Tim Gudang'}</span>
-                    </div>
-                    {proj.deadline && (
-                      <span className="text-rose-500 font-bold bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded-md text-[11px]">
-                        Tenggat: {proj.deadline}
-                      </span>
-                    )}
+                  {/* Status Legend */}
+                  <div className="flex flex-wrap items-center gap-3 text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-slate-400" /> Mulai
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-indigo-600" /> Berjalan
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-amber-500" /> Evaluasi
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500" /> Selesai
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-purple-500" /> Ditunda
+                    </span>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-          )}
+
+                {filteredProjects.length === 0 ? (
+                  <div className="p-12 text-center">
+                    <CalendarRange className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                      Tidak ada project untuk ditampilkan di Gantt Chart
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Tambahkan project baru atau ubah filter pencarian di atas.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col md:flex-row w-full overflow-hidden">
+                    {/* Left Fixed Column: Project & Sub-task List */}
+                    <div className="w-full md:w-72 lg:w-80 shrink-0 border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1a2332] z-10">
+                      {/* Left Column Header (matches height of 2-tier right header: 60px) */}
+                      <div className="h-[60px] px-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#131c2b] flex items-center justify-between text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        <span>Daftar Project ({filteredProjects.length})</span>
+                        <span>Progres</span>
+                      </div>
+
+                      {/* Left Column Rows */}
+                      <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                        {filteredProjects.map((proj) => {
+                          const isExpanded = !!expandedGanttProjects[proj.id];
+                          const hasTasks = proj.tasks && proj.tasks.length > 0;
+                          const stDot = PROJECT_STATUS_TABS.find(t => t.id === proj.status)?.dot || 'bg-indigo-500';
+
+                          return (
+                            <React.Fragment key={proj.id}>
+                              <div className="h-[52px] px-3 flex items-center justify-between gap-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                  {hasTasks ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setExpandedGanttProjects(prev => ({ ...prev, [proj.id]: !prev[proj.id] }))}
+                                      className="p-1 rounded hover:bg-slate-200/70 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer shrink-0"
+                                      title={isExpanded ? 'Sembunyikan checklist tugas' : `Tampilkan ${proj.tasks.length} checklist tugas`}
+                                    >
+                                      {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                    </button>
+                                  ) : (
+                                    <span className="w-5 shrink-0" />
+                                  )}
+                                  <span className={`w-2 h-2 rounded-full ${stDot} shrink-0`} />
+                                  <div
+                                    onClick={() => handleOpenAddProject(proj)}
+                                    className="min-w-0 flex-1 cursor-pointer group"
+                                  >
+                                    <div className="text-xs font-bold text-slate-800 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 truncate">
+                                      {proj.title}
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 flex items-center gap-1.5 truncate">
+                                      <span>{proj.pic || 'Tim Gudang'}</span>
+                                      {hasTasks && (
+                                        <span className="font-mono tabular-nums text-slate-400">
+                                          • {proj.tasks.filter(t => t.is_completed).length}/{proj.tasks.length} task
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                                <span className="text-xs font-mono tabular-nums font-black text-indigo-600 dark:text-indigo-400 shrink-0">
+                                  {proj.progress}%
+                                </span>
+                              </div>
+
+                              {/* Sub-task rows on Left */}
+                              {isExpanded && proj.tasks.map((task) => (
+                                <div
+                                  key={task.id}
+                                  onClick={() => handleToggleTask(proj, task.id)}
+                                  className="h-[36px] pl-9 pr-3 bg-slate-50/70 dark:bg-[#131c2b]/70 flex items-center justify-between gap-2 text-[11px] hover:bg-slate-100/80 dark:hover:bg-slate-800/60 cursor-pointer transition-colors"
+                                >
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    {task.is_completed ? (
+                                      <CheckSquare className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                                    ) : (
+                                      <Square className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                    )}
+                                    <span className={`truncate ${task.is_completed ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-300 font-medium'}`}>
+                                      {task.title}
+                                    </span>
+                                  </div>
+                                  <span className={`text-[10px] font-mono tabular-nums shrink-0 ${task.is_completed ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-slate-400'}`}>
+                                    {task.is_completed ? 'Selesai' : 'Pending'}
+                                  </span>
+                                </div>
+                              ))}
+                            </React.Fragment>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Right Scrollable Timeline Area */}
+                    <div className="flex-1 overflow-x-auto relative">
+                      <div
+                        className="relative"
+                        style={{ width: `${timelineDays.length * dayWidth}px`, minWidth: '100%' }}
+                      >
+                        {/* Timeline 2-Tier Header (60px total height) */}
+                        <div className="h-[60px] border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#131c2b] select-none">
+                          {/* Tier 1: Month & Year */}
+                          <div className="flex h-[28px] border-b border-slate-200/70 dark:border-slate-800">
+                            {monthGroups.map((mg, idx) => (
+                              <div
+                                key={idx}
+                                style={{ width: `${mg.count * dayWidth}px` }}
+                                className="px-2 flex items-center text-[10px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-300 border-r border-slate-200/70 dark:border-slate-800 truncate"
+                              >
+                                {mg.label}
+                              </div>
+                            ))}
+                          </div>
+                          {/* Tier 2: Day cells */}
+                          <div className="flex h-[32px]">
+                            {timelineDays.map((td) => (
+                              <div
+                                key={td.dateStr}
+                                style={{ width: `${dayWidth}px` }}
+                                className={`shrink-0 border-r border-slate-200/50 dark:border-slate-800/70 flex flex-col items-center justify-center font-mono tabular-nums ${
+                                  td.isToday
+                                    ? 'bg-indigo-600 text-white font-black'
+                                    : td.isWeekend
+                                    ? 'bg-slate-100/80 dark:bg-slate-900/50 text-slate-400'
+                                    : 'text-slate-600 dark:text-slate-400'
+                                }`}
+                                title={`${td.dayName}, ${td.dateStr}`}
+                              >
+                                <span className="text-[10px] leading-none font-bold">{td.dayNum}</span>
+                                {ganttScale === 'day' && (
+                                  <span className={`text-[8px] leading-none mt-0.5 ${td.isToday ? 'text-indigo-100' : 'opacity-70'}`}>
+                                    {td.dayName.slice(0, 2)}
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Vertical Today Marker Line */}
+                        {todayColIdx >= 0 && (
+                          <div
+                            style={{ left: `${todayColIdx * dayWidth + dayWidth / 2}px` }}
+                            className="absolute top-[60px] bottom-0 w-0.5 bg-rose-500/80 z-20 pointer-events-none"
+                          >
+                            <div className="w-2 h-2 rounded-full bg-rose-500 -ml-[3px] -mt-1" />
+                          </div>
+                        )}
+
+                        {/* Timeline Body Rows */}
+                        <div className="divide-y divide-slate-100 dark:divide-slate-800/80 relative">
+                          {filteredProjects.map((proj) => {
+                            const rawStart = proj.start_date || (proj.created_at ? proj.created_at.slice(0, 10) : todayStr);
+                            const startDateObj = parseDateSafe(rawStart, todayObj);
+                            const defaultEnd = new Date(startDateObj);
+                            defaultEnd.setDate(startDateObj.getDate() + 7);
+                            const endDateObj = proj.deadline ? parseDateSafe(proj.deadline, defaultEnd) : defaultEnd;
+
+                            const actualStart = startDateObj <= endDateObj ? startDateObj : endDateObj;
+                            const actualEnd = startDateObj <= endDateObj ? endDateObj : startDateObj;
+
+                            const startOffsetDays = diffDaysBetween(windowStart, actualStart);
+                            const durationDays = Math.max(1, diffDaysBetween(actualStart, actualEnd) + 1);
+
+                            const barLeft = startOffsetDays * dayWidth;
+                            const barWidth = Math.max(dayWidth, durationDays * dayWidth);
+                            const barStyle = statusBarStyles[proj.status] || statusBarStyles.in_progress;
+                            const isExpanded = !!expandedGanttProjects[proj.id];
+
+                            return (
+                              <React.Fragment key={proj.id}>
+                                {/* Main Project Timeline Row (52px height) */}
+                                <div className="h-[52px] relative flex items-center hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors">
+                                  {/* Background Grid Columns */}
+                                  <div className="absolute inset-0 flex pointer-events-none">
+                                    {timelineDays.map((td) => (
+                                      <div
+                                        key={td.dateStr}
+                                        style={{ width: `${dayWidth}px` }}
+                                        className={`shrink-0 border-r border-slate-100 dark:border-slate-800/50 h-full ${
+                                          td.isWeekend ? 'bg-slate-50/60 dark:bg-slate-900/25' : ''
+                                        }`}
+                                      />
+                                    ))}
+                                  </div>
+
+                                  {/* Gantt Bar */}
+                                  <div
+                                    onClick={() => handleOpenAddProject(proj)}
+                                    style={{
+                                      left: `${barLeft + 2}px`,
+                                      width: `${Math.max(24, barWidth - 4)}px`
+                                    }}
+                                    className={`absolute h-[30px] rounded-lg border ${barStyle.track} ${barStyle.border} shadow-2xs hover:shadow-md transition-all cursor-pointer overflow-hidden flex items-center z-10 group`}
+                                    title={`${proj.title} (${ formatIsoDate(actualStart) } s/d ${ formatIsoDate(actualEnd) } • ${durationDays} hari • Progres ${proj.progress}%)`}
+                                  >
+                                    {/* Inner Progress Fill */}
+                                    <div
+                                      style={{ width: `${Math.min(100, Math.max(0, proj.progress))}%` }}
+                                      className={`absolute inset-y-0 left-0 ${barStyle.fill} opacity-30 dark:opacity-45 transition-all duration-300`}
+                                    />
+                                    {/* Left Accent Strip */}
+                                    <div className={`w-1.5 h-full ${barStyle.fill} shrink-0`} />
+                                    {/* Bar Label */}
+                                    <div className={`px-2 flex items-center justify-between gap-2 w-full text-[11px] font-bold ${barStyle.text} relative z-10 truncate`}>
+                                      <span className="truncate">{proj.title}</span>
+                                      <span className="font-mono tabular-nums text-[10px] font-black shrink-0">
+                                        {proj.progress}% ({durationDays}h)
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Sub-task Milestone Rows (36px height each) */}
+                                {isExpanded && proj.tasks.map((task, tIdx) => {
+                                  const taskCount = Math.max(1, proj.tasks.length);
+                                  const sliceDays = Math.max(1, Math.floor(durationDays / taskCount));
+                                  const tStartOffset = startOffsetDays + Math.min(durationDays - 1, tIdx * sliceDays);
+                                  const tDuration = tIdx === taskCount - 1
+                                    ? Math.max(1, durationDays - tIdx * sliceDays)
+                                    : sliceDays;
+
+                                  return (
+                                    <div
+                                      key={task.id}
+                                      onClick={() => handleToggleTask(proj, task.id)}
+                                      className="h-[36px] relative flex items-center bg-slate-50/40 dark:bg-[#131c2b]/40 hover:bg-slate-100/50 dark:hover:bg-slate-800/40 cursor-pointer"
+                                    >
+                                      <div className="absolute inset-0 flex pointer-events-none">
+                                        {timelineDays.map((td) => (
+                                          <div
+                                            key={td.dateStr}
+                                            style={{ width: `${dayWidth}px` }}
+                                            className="shrink-0 border-r border-slate-100/80 dark:border-slate-800/40 h-full"
+                                          />
+                                        ))}
+                                      </div>
+
+                                      <div
+                                        style={{
+                                          left: `${tStartOffset * dayWidth + 4}px`,
+                                          width: `${Math.max(20, tDuration * dayWidth - 8)}px`
+                                        }}
+                                        className={`absolute h-[20px] rounded-md px-2 flex items-center gap-1.5 text-[10px] font-semibold z-10 truncate border ${
+                                          task.is_completed
+                                            ? 'bg-emerald-100/90 dark:bg-emerald-950/70 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200'
+                                            : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                                        }`}
+                                        title={`Sub-task: ${task.title} (${task.is_completed ? 'Selesai' : 'Belum selesai'})`}
+                                      >
+                                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${task.is_completed ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                                        <span className="truncate">{task.title}</span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </React.Fragment>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -3578,15 +4493,24 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                 </div>
               </div>
 
-              {/* Deadline & Progres manual */}
-              <div className="grid grid-cols-2 gap-3">
+              {/* Tanggal Mulai, Tenggat Waktu & Progres manual */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Tanggal Mulai</label>
+                  <input
+                    type="date"
+                    value={editingProject.start_date || ''}
+                    onChange={e => setEditingProject({ ...editingProject, start_date: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono"
+                  />
+                </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Tenggat Waktu</label>
                   <input
                     type="date"
                     value={editingProject.deadline || ''}
                     onChange={e => setEditingProject({ ...editingProject, deadline: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-xs"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono"
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -3597,7 +4521,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                     max="100"
                     value={editingProject.progress ?? 0}
                     onChange={e => setEditingProject({ ...editingProject, progress: parseInt(e.target.value, 10) || 0 })}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-xs"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono tabular-nums"
                   />
                 </div>
               </div>

@@ -46,6 +46,7 @@ import {
   computeAllRackSlots,
   getRecommendedNearbyRacks,
   getDefaultRackCapacityConfig,
+  normalizeAndMigrateRackConfig,
   isExcludedFromWarehouseRelocation,
   getKoliToAbcdRefillSummary,
   generateConsolidatedKoliRefillMoves,
@@ -1870,7 +1871,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 : 'bg-slate-50 dark:bg-[#0E1420] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
             }`}
           >
-            🏢 Semua Warehouse (Rak + Koli) ({summaryStats.warehouseTotal.rackCount} lokasi)
+            🏢 Semua Warehouse (Rak + Koli) ({summaryStats.warehouseTotal.totalRacks} lokasi)
           </button>
 
           <button
