@@ -180,3 +180,7 @@ Whenever designing, modifying, or tidying up any frontend component, table, card
 - **Aktivasi Alami & Aman (Safe Menu Transition)**: Pembaruan kode baru hanya boleh diaktifkan saat transisi alami: ketika pengguna berpindah menu/halaman via sidebar (`handleSelectPage` di `App.tsx`) dan tidak ada sesi barcode scan staging yang belum tersimpan (`wms_active_staging_scans`).
 - **Reload Eksplisit Hanya Atas Izin User**: Reload seketika HANYA diperbolehkan jika pengguna secara eksplisit menekan tombol **"Muat Ulang Sekarang"** di dalam modal rincian update.
 - **Proteksi Pekerjaan Aktif (Zero Data Loss)**: Dilarang membuat fitur atau alur di modul manapun (Gudang, Produksi, Store, Packing, Resolusi, dll.) yang mengeksekusi `window.location.reload()` secara mendadak saat form, scanner, atau tabel sedang aktif dioperasikan.
+
+
+## 12. Live Chat Guardrails
+Setiap perubahan pada Live Chat (liveChatService.ts, LiveChatWorkspace.tsx, LiveChatFloatingWidget.tsx, public/pwa-extras.js, direktori user/role Customer Service) WAJIB membaca dan mematuhi `.agents/skills/wms-live-chat-guardrails/SKILL.md` (invarian + checklist regresi). Tambahkan bug baru yang ditemukan ke skill tersebut.
