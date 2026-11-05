@@ -15,18 +15,30 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.56",
-  "versionCode": 316,
+  "version": "v2.6.57",
+  "versionCode": 317,
   "buildDate": "5 November 2026",
-  "buildHash": "wms-261105-v316-1028",
-  "releaseTitle": "WMS v2.6.56 — Fix import useCallback pada RackCapacityDashboard",
+  "buildHash": "wms-261105-v317-1138",
+  "releaseTitle": "WMS v2.6.57 — Perbaikan Setup Kapasitas & Sinkronisasi IGLive Blok F",
   "releaseNotes": [
-    "Memperbaiki impor useCallback dari React pada komponen RackCapacityDashboard di modul Inventory"
+    "Memulihkan konfigurasi lengkap rack_capacity_config_v1 di Supabase wms_system_docs termasuk zona IGLive Blok F",
+    "Memastikan modal Setup Kapasitas Rak dan pemisahan utilitas Gudang, Koli, dan Blok F berjalan normal tanpa kendala memuat halaman"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.56",
+    "versionCode": 316,
+    "buildDate": "5 November 2026",
+    "buildHash": "wms-261105-v316-1028",
+    "releaseTitle": "WMS v2.6.56 — Fix import useCallback pada RackCapacityDashboard",
+    "releaseNotes": [
+      "Memperbaiki impor useCallback dari React pada komponen RackCapacityDashboard di modul Inventory"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.55",
     "versionCode": 315,
@@ -128,18 +140,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Tambahkan search filter & tab role filter di Manajemen Pengguna",
       "Tambahkan delta polling background untuk antrean picking_list agar operator tetap dapat notifikasi saat WebSocket suspend",
       "Perjelas tombol Notifikasi Perangkat untuk semua pengguna"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.46",
-    "versionCode": 306,
-    "buildDate": "2 November 2026",
-    "buildHash": "wms-261102-v306-1827",
-    "releaseTitle": "WMS v2.6.46 — Optimasi Loading Riwayat Pengecekan Surat Jalan & SWR Fast Cache",
-    "releaseNotes": [
-      "Optimasi query pengecekan_sj Supabase dari 45 detik menjadi di bawah 1 detik",
-      "Menerapkan Stale-While-Revalidate agar riwayat surat jalan langsung tampil instan tanpa spinner macet"
     ],
     "minSupportedVersion": "v2.0.0"
   }

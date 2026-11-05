@@ -1,11 +1,12 @@
 {
-  "version": "v2.6.56",
-  "versionCode": 316,
+  "version": "v2.6.57",
+  "versionCode": 317,
   "buildDate": "5 November 2026",
-  "buildHash": "wms-261105-v316-1028",
-  "releaseTitle": "WMS v2.6.56 — Fix import useCallback pada RackCapacityDashboard",
+  "buildHash": "wms-261105-v317-1138",
+  "releaseTitle": "WMS v2.6.57 — Perbaikan Setup Kapasitas & Sinkronisasi IGLive Blok F",
   "releaseNotes": [
-    "Memperbaiki impor useCallback dari React pada komponen RackCapacityDashboard di modul Inventory"
+    "Memulihkan konfigurasi lengkap rack_capacity_config_v1 di Supabase wms_system_docs termasuk zona IGLive Blok F",
+    "Memastikan modal Setup Kapasitas Rak dan pemisahan utilitas Gudang, Koli, dan Blok F berjalan normal tanpa kendala memuat halaman"
   ],
   "minSupportedVersion": "v2.0.0"
 }
