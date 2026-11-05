@@ -1202,11 +1202,19 @@ export interface ProjectTask {
 
 export type NoteColor = 'yellow' | 'blue' | 'green' | 'pink' | 'purple' | 'orange';
 
+export interface NoteChecklistItem {
+  id: string;
+  text: string;
+  is_completed: boolean;
+}
+
 export interface NoteItem {
   id: string;
   title: string;
   content: string;
   color: NoteColor;
+  checklist?: NoteChecklistItem[];
+  sort_order?: number;
   created_by?: string;
   created_at?: string;
   updated_at?: string;

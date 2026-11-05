@@ -10,7 +10,7 @@ import {
 import { compressImage } from '../utils/imageCompressor';
 import { 
   getAgendaEvents, saveAgendaEvent, deleteAgendaEvent, 
-  getProjects, saveProject, deleteProject, getNotes, saveNote, deleteNote,
+  getProjects, saveProject, deleteProject, getNotes, saveNote, deleteNote, reorderNotes,
   getSupabaseClient } from '../services/supabase';
 import { fetchWmsSettings, saveWmsSettings } from '../services/settings';
 import { AgendaCategoryModal } from './AgendaCategoryModal';
@@ -21,7 +21,7 @@ import {
 } from '../services/googleCalendarService';
 import { 
   AgendaEvent, ProjectItem, AgendaCategory, ProjectStatus, 
-  ProjectPriority, AgendaAttachment, ProjectTask, NoteItem, NoteColor } from '../types';
+  ProjectPriority, AgendaAttachment, ProjectTask, NoteItem, NoteColor, NoteChecklistItem } from '../types';
 
 interface AgendaViewProps {
   session?: any;
@@ -566,6 +566,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
 
   const [isNoteModalOpen, setNoteModalOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<Partial<NoteItem> | null>(null);
+  const [draggedNoteId, setDraggedNoteId] = useState<string | null>(null);
+  const [dragOverNoteId, setDragOverNoteId] = useState<string | null>(null);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   const [showCalendarSidebar, setShowCalendarSidebar] = useState<boolean>(() => {
     try {
@@ -956,7 +958,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
         const q = searchQuery.toLowerCase();
         const matchTitle = (n.title || '').toLowerCase().includes(q);
         const matchContent = (n.content || '').toLowerCase().includes(q);
-        if (!matchTitle && !matchContent) return false;
+        const matchChecklist = (n.checklist || []).some(item => (item.text || '').toLowerCase().includes(q));
+        if (!matchTitle && !matchContent && !matchChecklist) return false;
       }
       return true;
     });
@@ -1167,15 +1170,21 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
     }
   };
 
-  // Open Add Project Modal
-  const handleOpenAddNote = (existing?: NoteItem) => {
+  // Open Add/Edit Note Modal
+  const handleOpenAddNote = (existing?: NoteItem, startWithChecklist = false) => {
     if (existing) {
-      setEditingNote({ ...existing });
+      setEditingNote({
+        ...existing,
+        checklist: Array.isArray(existing.checklist) ? existing.checklist.map(c => ({ ...c })) : []
+      });
     } else {
       setEditingNote({
         title: '',
         content: '',
         color: 'yellow',
+        checklist: startWithChecklist
+          ? [{ id: `chk-${Date.now()}`, text: '', is_completed: false }]
+          : [],
         created_by: session?.name || session?.username || 'Warehouse'
       });
     }
@@ -1184,13 +1193,19 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
 
   const handleSaveNote = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingNote?.content?.trim()) {
-      onShowToast?.('Isi catatan wajib diisi', 'error');
+    const cleanChecklist = (editingNote?.checklist || []).filter(item => item.text.trim().length > 0);
+    const hasContent = Boolean(editingNote?.content?.trim());
+    const hasTitle = Boolean(editingNote?.title?.trim());
+    if (!hasContent && cleanChecklist.length === 0 && !hasTitle) {
+      onShowToast?.('Isi catatan atau minimal 1 item checklist wajib diisi', 'error');
       return;
     }
     setIsSyncing(true);
     try {
-      await saveNote(editingNote);
+      await saveNote({
+        ...editingNote,
+        checklist: cleanChecklist
+      });
       onShowToast?.('Catatan berhasil disimpan!', 'success');
       setNoteModalOpen(false);
       loadData();
@@ -1198,6 +1213,43 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
       onShowToast?.('Gagal menyimpan catatan', 'error');
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  // Toggle checkbox langsung dari kartu Sticky Note
+  const handleToggleNoteChecklistItem = async (note: NoteItem, itemId: string) => {
+    const updatedChecklist = (note.checklist || []).map(item =>
+      item.id === itemId ? { ...item, is_completed: !item.is_completed } : item
+    );
+    const updatedNote: NoteItem = {
+      ...note,
+      checklist: updatedChecklist,
+    };
+    setNotes(prev => prev.map(n => n.id === note.id ? updatedNote : n));
+    try {
+      await saveNote(updatedNote, true);
+    } catch (err) {
+      console.error('Gagal update checklist catatan:', err);
+    }
+  };
+
+  // Drag & Drop atau Geser Urutan Catatan
+  const handleMoveNoteOrder = async (sourceId: string, targetId: string) => {
+    if (!sourceId || !targetId || sourceId === targetId) return;
+    const oldIndex = notes.findIndex(n => n.id === sourceId);
+    const newIndex = notes.findIndex(n => n.id === targetId);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = [...notes];
+    const [moved] = reordered.splice(oldIndex, 1);
+    reordered.splice(newIndex, 0, moved);
+    const withSortOrder = reordered.map((n, idx) => ({ ...n, sort_order: idx }));
+
+    setNotes(withSortOrder);
+    try {
+      await reorderNotes(withSortOrder);
+    } catch (err) {
+      console.error('Gagal mengurutkan catatan:', err);
     }
   };
 
@@ -2179,20 +2231,17 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                       {monthWeeks.map((weekDays, weekIdx) => {
                         const weekStartStr = weekDays[0].dateStr;
                         const weekEndStr = weekDays[6].dateStr;
-                        const { segments, maxSlot, overflowByDay } = computeWeekEventSegments(
+                        const { segments } = computeWeekEventSegments(
                           filteredEvents,
                           weekDays,
                           weekStartStr,
                           weekEndStr
                         );
 
-                        const visibleSlotsCount = Math.min(maxSlot + 1, 3);
-                        const minHeightClass = visibleSlotsCount > 2 ? 'min-h-[140px]' : 'min-h-[115px]';
-
                         return (
                           <div
                             key={weekIdx}
-                            className={`relative ${minHeightClass} flex flex-col justify-start select-none`}
+                            className="relative min-h-[115px] h-auto flex flex-col justify-start select-none"
                           >
                             {/* Layer 1: Background Day Cells (Grid 7 Cols with Borders) */}
                             <div className="grid grid-cols-7 divide-x divide-slate-100 dark:divide-slate-800/60 absolute inset-0">
@@ -2273,100 +2322,67 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                               })}
                             </div>
 
-                            {/* Layer 3: Continuous Event Bars (CSS Grid) */}
+                            {/* Layer 3: Continuous Event Bars (Flexible Full Height - Menampilkan seluruh agenda tanpa tersembunyi) */}
                             <div
-                              className="grid grid-cols-7 gap-y-1 relative z-10 px-0.5 pb-2 flex-1"
+                              className="grid grid-cols-7 gap-y-1 relative z-10 px-0.5 pb-2.5 flex-1"
                               style={{
                                 gridAutoRows: '24px',
                                 alignContent: 'start'
                               }}
                             >
-                              {segments
-                                .filter(seg => seg.slot < 3)
-                                .map((seg, sIdx) => {
-                                  const colorStyle = resolveEventColorStyle(seg.event, categoryConfig);
-                                  
-                                  const borderRounding = 
-                                    seg.continuesFromPrev && seg.continuesToNext
-                                      ? 'rounded-none mx-0'
-                                      : seg.continuesFromPrev
-                                      ? 'rounded-r-md rounded-l-none ml-0 mr-1'
-                                      : seg.continuesToNext
-                                      ? 'rounded-l-md rounded-r-none mr-0 ml-1'
-                                      : 'rounded-md mx-1';
-
-                                  return (
-                                    <div
-                                      key={`${seg.event.id}-${weekIdx}-${sIdx}`}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setDetailEvent(seg.event);
-                                      }}
-                                      onDoubleClick={(e) => {
-                                        e.stopPropagation();
-                                        handleEditEvent(seg.event);
-                                      }}
-                                      style={{
-                                        gridColumnStart: seg.startCol,
-                                        gridColumnEnd: seg.endCol + 1,
-                                        gridRowStart: seg.slot + 1,
-                                        ...(colorStyle.barBgStyle || {})
-                                      }}
-                                      className={`h-6 text-[11px] font-bold text-white flex items-center px-2 shadow-2xs cursor-pointer truncate transition-all hover:brightness-110 active:scale-[0.99] select-none ${colorStyle.barBgClass} ${borderRounding}`}
-                                      title={`${seg.event.title} (${seg.event.start_date}${seg.event.end_date ? ' s/d ' + seg.event.end_date : ''}) - Klik untuk lihat, klik 2x untuk edit`}
-                                    >
-                                      {seg.continuesFromPrev && (
-                                        <span className="text-[9px] mr-1 opacity-85 shrink-0 font-mono">◀</span>
-                                      )}
-
-                                      {!seg.isAllDayOrMultiDay && seg.event.start_time && (
-                                        <span className="font-mono text-[10px] mr-1 font-semibold opacity-95 shrink-0">
-                                          {seg.event.start_time}
-                                        </span>
-                                      )}
-
-                                      <span className="truncate">
-                                        {seg.event.title}
-                                      </span>
-
-                                      {seg.event.google_event_id && (
-                                        <span className="ml-1 shrink-0 text-[10px] opacity-80" title="Tersinkron Google Calendar">📅</span>
-                                      )}
-
-                                      {seg.continuesToNext && (
-                                        <span className="text-[9px] ml-auto pl-1 opacity-85 shrink-0 font-mono">▶</span>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-
-                              {/* Layer 4: "+X lagi" overflow indicator per day */}
-                              {weekDays.map((item, dIdx) => {
-                                const overflow = overflowByDay[dIdx] || 0;
-                                if (overflow <= 0) return null;
+                              {segments.map((seg, sIdx) => {
+                                const colorStyle = resolveEventColorStyle(seg.event, categoryConfig);
+                                
+                                const borderRounding = 
+                                  seg.continuesFromPrev && seg.continuesToNext
+                                    ? 'rounded-none mx-0'
+                                    : seg.continuesFromPrev
+                                    ? 'rounded-r-md rounded-l-none ml-0 mr-1'
+                                    : seg.continuesToNext
+                                    ? 'rounded-l-md rounded-r-none mr-0 ml-1'
+                                    : 'rounded-md mx-1';
 
                                 return (
                                   <div
-                                    key={`ovf-${dIdx}`}
-                                    style={{
-                                      gridColumnStart: dIdx + 1,
-                                      gridColumnEnd: dIdx + 2,
-                                      gridRowStart: 4,
+                                    key={`${seg.event.id}-${weekIdx}-${sIdx}`}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setDetailEvent(seg.event);
                                     }}
-                                    className="px-1 text-left"
+                                    onDoubleClick={(e) => {
+                                      e.stopPropagation();
+                                      handleEditEvent(seg.event);
+                                    }}
+                                    style={{
+                                      gridColumnStart: seg.startCol,
+                                      gridColumnEnd: seg.endCol + 1,
+                                      gridRowStart: seg.slot + 1,
+                                      ...(colorStyle.barBgStyle || {})
+                                    }}
+                                    className={`h-6 text-[11px] font-bold text-white flex items-center px-2 shadow-2xs cursor-pointer truncate transition-all hover:brightness-110 active:scale-[0.99] select-none ${colorStyle.barBgClass} ${borderRounding}`}
+                                    title={`${seg.event.title} (${seg.event.start_date}${seg.event.end_date ? ' s/d ' + seg.event.end_date : ''}) - Klik untuk lihat, klik 2x untuk edit`}
                                   >
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSelectedDate(item.date);
-                                        setCurrentDate(item.date);
-                                        setCalendarView('day');
-                                      }}
-                                      className="text-[10px] font-bold text-slate-500 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-slate-100 dark:hover:bg-slate-800 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
-                                    >
-                                      +{overflow} lagi
-                                    </button>
+                                    {seg.continuesFromPrev && (
+                                      <span className="text-[9px] mr-1 opacity-85 shrink-0 font-mono">◀</span>
+                                    )}
+
+                                    {!seg.isAllDayOrMultiDay && seg.event.start_time && (
+                                      <span className="font-mono text-[10px] mr-1 font-semibold opacity-95 shrink-0">
+                                        {seg.event.start_time}
+                                      </span>
+                                    )}
+
+                                    <span className="truncate">
+                                      {seg.event.title}
+                                    </span>
+
+                                    {seg.event.google_event_id && (
+                                      <span className="ml-1 shrink-0 text-[10px] opacity-80" title="Tersinkron Google Calendar">📅</span>
+                                    )}
+
+                                    {seg.continuesToNext && (
+                                      <span className="text-[9px] ml-auto pl-1 opacity-85 shrink-0 font-mono">▶</span>
+                                    )}
                                   </div>
                                 );
                               })}
@@ -3783,16 +3799,31 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
       )}
 
       {activeTab === 'notes' && (
-        <div className="space-y-6">
+        <div className="space-y-5">
           <div className="bg-white dark:bg-[#1a2332] p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3">
-            <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-              <StickyNote className="w-6 h-6 text-primary-500" />
-              Kumpulan Catatan
-            </h2>
+            <div>
+              <h2 className="text-base sm:text-lg font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <StickyNote className="w-5 h-5 text-amber-500" />
+                <span>Kumpulan Catatan &amp; Checklist</span>
+              </h2>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5">
+                <GripVertical className="w-3.5 h-3.5 text-slate-400" />
+                <span>Tarik &amp; geser kartu (<strong>Drag &amp; Drop</strong>) untuk mengatur posisi catatan, atau klik kotak centang untuk menandai selesai.</span>
+              </p>
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <button
-                onClick={() => handleOpenAddNote()}
-                className="px-3.5 py-2 bg-gradient-to-r from-primary-500 to-amber-500 hover:from-primary-600 hover:to-amber-600 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer"
+                type="button"
+                onClick={() => handleOpenAddNote(undefined, true)}
+                className="px-3.5 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 text-slate-700 dark:text-slate-200 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
+              >
+                <CheckSquare className="w-4 h-4 text-emerald-500" />
+                <span>+ Buat Checklist</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOpenAddNote(undefined, false)}
+                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer"
               >
                 <Plus className="w-4 h-4 stroke-[2.5]" />
                 <span>+ Buat Catatan Baru</span>
@@ -3800,7 +3831,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
               <select
                 value={creatorFilter}
                 onChange={(e) => setCreatorFilter(e.target.value)}
-                className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500/50 outline-none min-w-[150px] bg-slate-50 dark:bg-[#0f172a] text-slate-700 dark:text-slate-300 font-bold"
+                className="px-3.5 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-primary-500/50 outline-none min-w-[140px] bg-slate-50 dark:bg-[#0f172a] text-slate-700 dark:text-slate-300 font-bold"
               >
                 <option value="all">Semua Pembuat</option>
                 {[...new Set(notes.map(n => n.created_by).filter(Boolean))].map(c => (
@@ -3813,15 +3844,27 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
           {/* Quick Note Input Bar (Google Keep Style) */}
           <div className="max-w-xl mx-auto w-full px-2">
             <div 
-              onClick={() => handleOpenAddNote()}
+              onClick={() => handleOpenAddNote(undefined, false)}
               className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md p-3.5 flex items-center justify-between gap-3 cursor-pointer hover:border-amber-400 dark:hover:border-amber-500 transition-all group"
             >
               <div className="flex items-center gap-3 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-200">
                 <StickyNote className="w-5 h-5 text-amber-500 shrink-0" />
-                <span className="text-sm font-medium">Tulis catatan atau memo cepat...</span>
+                <span className="text-xs sm:text-sm font-medium">Tulis catatan atau daftar checklist cepat...</span>
               </div>
-              <div className="flex items-center gap-1.5 text-slate-400">
-                <span className="p-1.5 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-500 hover:text-amber-600 font-bold text-xs flex items-center gap-1">
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOpenAddNote(undefined, true);
+                  }}
+                  className="px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Buat catatan dengan daftar kotak centang (Checklist)"
+                >
+                  <CheckSquare className="w-3.5 h-3.5" />
+                  <span>Checklist</span>
+                </button>
+                <span className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 group-hover:text-amber-600 font-bold text-xs flex items-center gap-1">
                   <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
                   <span>Catat</span>
                 </span>
@@ -3829,52 +3872,169 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
             </div>
           </div>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 pb-6">
             {filteredNotes.length === 0 ? (
               <div className="col-span-full py-16 text-center text-slate-400 bg-white dark:bg-[#1a2332] rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800">
                 <StickyNote className="w-16 h-16 mx-auto mb-4 opacity-20" />
                 <p className="font-bold text-lg mb-1">Belum ada catatan.</p>
-                <p className="text-sm">Klik tombol + untuk menambah sticky note baru.</p>
+                <p className="text-sm">Klik tombol + Buat Catatan Baru atau + Buat Checklist di atas.</p>
               </div>
             ) : (
-              filteredNotes.map(note => (
-                <div 
-                  key={note.id}
-                  onClick={() => handleOpenAddNote(note)}
-                  className={`relative p-6 rounded-2xl shadow-sm border-2 group hover:-translate-y-1 hover:shadow-xl transition-all cursor-pointer flex flex-col min-h-[200px] ${
-                    note.color === 'yellow' ? 'bg-[#fef9c3] border-[#fef08a] text-[#854d0e]' :
-                    note.color === 'blue' ? 'bg-[#e0f2fe] border-[#bae6fd] text-[#075985]' :
-                    note.color === 'green' ? 'bg-[#dcfce7] border-[#bbf7d0] text-[#166534]' :
-                    note.color === 'pink' ? 'bg-[#fce7f3] border-[#fbcfe8] text-[#9d174d]' :
-                    note.color === 'purple' ? 'bg-[#f3e8ff] border-[#e9d5ff] text-[#6b21a8]' :
-                    'bg-[#ffedd5] border-[#fed7aa] text-[#9a3412]'
-                  }`}
-                >
-                  {/* Pin/Clip Graphic */}
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-10 h-3 rounded-full bg-black/10 shadow-inner border border-black/5" />
-                  
-                  <div className="flex justify-between items-start mb-3 gap-2">
-                    <h3 className="font-black text-lg line-clamp-2 leading-tight">{note.title || 'Tanpa Judul'}</h3>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleDeleteNote(note.id); }}
-                      className="shrink-0 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-black/10 text-black/40 hover:text-red-600 transition-all"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+              filteredNotes.map((note, noteIdx) => {
+                const checklist = note.checklist || [];
+                const completedCount = checklist.filter(c => c.is_completed).length;
+                const isDragging = draggedNoteId === note.id;
+                const isDragOver = dragOverNoteId === note.id && draggedNoteId !== note.id;
+                const prevNote = noteIdx > 0 ? filteredNotes[noteIdx - 1] : null;
+                const nextNote = noteIdx < filteredNotes.length - 1 ? filteredNotes[noteIdx + 1] : null;
+
+                return (
+                  <div 
+                    key={note.id}
+                    draggable
+                    onDragStart={(e) => {
+                      setDraggedNoteId(note.id);
+                      e.dataTransfer.setData('text/plain', note.id);
+                      e.dataTransfer.effectAllowed = 'move';
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      if (dragOverNoteId !== note.id) setDragOverNoteId(note.id);
+                    }}
+                    onDragLeave={() => {
+                      if (dragOverNoteId === note.id) setDragOverNoteId(null);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const sourceId = e.dataTransfer.getData('text/plain') || draggedNoteId;
+                      setDraggedNoteId(null);
+                      setDragOverNoteId(null);
+                      if (sourceId && sourceId !== note.id) {
+                        handleMoveNoteOrder(sourceId, note.id);
+                      }
+                    }}
+                    onDragEnd={() => {
+                      setDraggedNoteId(null);
+                      setDragOverNoteId(null);
+                    }}
+                    onClick={() => handleOpenAddNote(note)}
+                    className={`relative p-5 rounded-2xl shadow-sm border-2 group hover:-translate-y-0.5 hover:shadow-xl transition-all cursor-grab active:cursor-grabbing flex flex-col min-h-[210px] ${
+                      note.color === 'yellow' ? 'bg-[#fef9c3] border-[#fef08a] text-[#854d0e]' :
+                      note.color === 'blue' ? 'bg-[#e0f2fe] border-[#bae6fd] text-[#075985]' :
+                      note.color === 'green' ? 'bg-[#dcfce7] border-[#bbf7d0] text-[#166534]' :
+                      note.color === 'pink' ? 'bg-[#fce7f3] border-[#fbcfe8] text-[#9d174d]' :
+                      note.color === 'purple' ? 'bg-[#f3e8ff] border-[#e9d5ff] text-[#6b21a8]' :
+                      'bg-[#ffedd5] border-[#fed7aa] text-[#9a3412]'
+                    } ${isDragging ? 'opacity-40 scale-95 ring-2 ring-indigo-500' : ''} ${
+                      isDragOver ? 'ring-4 ring-indigo-500 scale-[1.02]' : ''
+                    }`}
+                  >
+                    {/* Pin/Clip Graphic */}
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-10 h-3 rounded-full bg-black/10 shadow-inner border border-black/5" />
+                    
+                    <div className="flex justify-between items-start mb-2.5 gap-2">
+                      <div className="flex items-start gap-1.5 min-w-0 flex-1" title="Tarik untuk menggeser posisi catatan">
+                        <GripVertical
+                          className="w-4 h-4 mt-1 shrink-0 opacity-35 group-hover:opacity-80 cursor-grab"
+                        />
+                        <h3 className="font-black text-base sm:text-lg line-clamp-2 leading-tight">
+                          {note.title || 'Tanpa Judul'}
+                        </h3>
+                      </div>
+
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        {prevNote && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleMoveNoteOrder(note.id, prevNote.id);
+                            }}
+                            className="p-1 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-black/10 text-black/50 hover:text-black transition-all cursor-pointer"
+                            title="Geser maju / ke kiri"
+                          >
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {nextNote && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleMoveNoteOrder(note.id, nextNote.id);
+                            }}
+                            className="p-1 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-black/10 text-black/50 hover:text-black transition-all cursor-pointer"
+                            title="Geser mundur / ke kanan"
+                          >
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleDeleteNote(note.id); }}
+                          className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-black/10 text-black/40 hover:text-red-600 transition-all cursor-pointer"
+                          title="Hapus Catatan"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {/* Text Body */}
+                    {note.content && (
+                      <div className="text-xs sm:text-sm whitespace-pre-wrap mb-3 opacity-90 font-medium leading-relaxed">
+                        {note.content}
+                      </div>
+                    )}
+
+                    {/* Interactive Checklist Items on Sticky Note */}
+                    {checklist.length > 0 && (
+                      <div className="space-y-1.5 mb-4 flex-1">
+                        <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider opacity-75 mb-1">
+                          <span>Checklist</span>
+                          <span className="font-mono tabular-nums">{completedCount}/{checklist.length} selesai</span>
+                        </div>
+                        <div className="w-full h-1.5 bg-black/10 rounded-full overflow-hidden mb-2">
+                          <div
+                            className="h-full bg-current opacity-60 transition-all duration-300"
+                            style={{ width: `${Math.round((completedCount / checklist.length) * 100)}%` }}
+                          />
+                        </div>
+                        <div className="space-y-1 max-h-44 overflow-y-auto pr-1">
+                          {checklist.map((item) => (
+                            <div
+                              key={item.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleNoteChecklistItem(note, item.id);
+                              }}
+                              className="flex items-start gap-2 p-1.5 rounded-lg bg-black/5 hover:bg-black/10 transition-colors cursor-pointer text-xs"
+                            >
+                              {item.is_completed ? (
+                                <CheckSquare className="w-4 h-4 shrink-0 mt-0.5 opacity-80" />
+                              ) : (
+                                <Square className="w-4 h-4 shrink-0 mt-0.5 opacity-60" />
+                              )}
+                              <span className={`leading-snug break-words ${item.is_completed ? 'line-through opacity-55' : 'font-semibold'}`}>
+                                {item.text}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div className="mt-auto pt-3 border-t border-black/10 flex justify-between items-center text-xs font-bold opacity-70">
+                      <span className="flex items-center gap-1.5 bg-black/5 px-2 py-1 rounded-md">
+                        <User className="w-3.5 h-3.5" /> {note.created_by}
+                      </span>
+                      <span className="font-mono tabular-nums">
+                        {note.created_at ? new Date(note.created_at).toLocaleDateString('id-ID', {day: 'numeric', month: 'short'}) : ''}
+                      </span>
+                    </div>
                   </div>
-                  
-                  <div className="text-sm whitespace-pre-wrap flex-1 mb-6 opacity-90 font-medium">
-                    {note.content}
-                  </div>
-                  
-                  <div className="mt-auto pt-4 border-t border-black/10 flex justify-between items-center text-xs font-bold opacity-70">
-                    <span className="flex items-center gap-1.5 bg-black/5 px-2 py-1 rounded-md">
-                      <User className="w-3.5 h-3.5" /> {note.created_by}
-                    </span>
-                    <span>{note.created_at ? new Date(note.created_at).toLocaleDateString('id-ID', {day: 'numeric', month: 'short'}) : ''}</span>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -4332,7 +4492,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
             <form onSubmit={handleSaveNote} className="flex-1 min-h-0 flex flex-col overflow-hidden">
               <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6 space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Judul (Opsional)</label>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Judul Catatan (Opsional)</label>
                   <input
                     type="text"
                     value={editingNote.title || ''}
@@ -4343,15 +4503,110 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                 </div>
                 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Isi Catatan <span className="text-rose-500">*</span></label>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Isi Catatan / Memo Teks
+                  </label>
                   <textarea
-                    required
-                    rows={4}
+                    rows={3}
                     value={editingNote.content || ''}
                     onChange={e => setEditingNote({...editingNote, content: e.target.value})}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm outline-none focus:ring-2 focus:ring-primary-500 text-slate-900 dark:text-white resize-none"
-                    placeholder="Tulis sesuatu..."
+                    placeholder="Tulis catatan teks di sini (opsional jika menggunakan checklist di bawah)..."
                   />
+                </div>
+
+                {/* Checklist / Checkboxes Section */}
+                <div className="space-y-2 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/80">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <CheckSquare className="w-4 h-4 text-emerald-500" />
+                      <span>Daftar Kotak Centang (Checklist)</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newItem: NoteChecklistItem = {
+                          id: `chk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                          text: '',
+                          is_completed: false,
+                        };
+                        setEditingNote({
+                          ...editingNote,
+                          checklist: [...(editingNote.checklist || []), newItem],
+                        });
+                      }}
+                      className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Tambah Checkbox</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    {(editingNote.checklist || []).map((item, idx) => (
+                      <div key={item.id || idx} className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = (editingNote.checklist || []).map((c, i) =>
+                              i === idx ? { ...c, is_completed: !c.is_completed } : c
+                            );
+                            setEditingNote({ ...editingNote, checklist: updated });
+                          }}
+                          className="text-slate-400 hover:text-emerald-500 cursor-pointer shrink-0"
+                        >
+                          {item.is_completed ? (
+                            <CheckSquare className="w-4 h-4 text-emerald-500" />
+                          ) : (
+                            <Square className="w-4 h-4" />
+                          )}
+                        </button>
+                        <input
+                          type="text"
+                          value={item.text}
+                          placeholder={`Item checklist #${idx + 1}... (Tekan Enter untuk baris baru)`}
+                          onChange={(e) => {
+                            const updated = (editingNote.checklist || []).map((c, i) =>
+                              i === idx ? { ...c, text: e.target.value } : c
+                            );
+                            setEditingNote({ ...editingNote, checklist: updated });
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const newItem: NoteChecklistItem = {
+                                id: `chk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                                text: '',
+                                is_completed: false,
+                              };
+                              const currentList = [...(editingNote.checklist || [])];
+                              currentList.splice(idx + 1, 0, newItem);
+                              setEditingNote({ ...editingNote, checklist: currentList });
+                            }
+                          }}
+                          className={`flex-1 px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs outline-none focus:ring-2 focus:ring-primary-500 ${
+                            item.is_completed ? 'line-through text-slate-400' : 'text-slate-800 dark:text-slate-100'
+                          }`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = (editingNote.checklist || []).filter((_, i) => i !== idx);
+                            setEditingNote({ ...editingNote, checklist: updated });
+                          }}
+                          className="p-1.5 text-slate-400 hover:text-rose-500 cursor-pointer shrink-0"
+                          title="Hapus baris"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                    {(!editingNote.checklist || editingNote.checklist.length === 0) && (
+                      <p className="text-[11px] text-slate-400 italic py-1">
+                        Belum ada kotak centang. Klik &quot;+ Tambah Checkbox&quot; untuk membuat daftar tugas di catatan ini.
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 <div>
@@ -4362,7 +4617,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                         key={color}
                         type="button"
                         onClick={() => setEditingNote({...editingNote, color})}
-                        className={`w-8 h-8 rounded-full border-2 transition-transform ${
+                        className={`w-8 h-8 rounded-full border-2 transition-transform cursor-pointer ${
                           editingNote.color === color ? 'scale-110 border-primary-500 ring-2 ring-primary-500/30' : 'border-transparent hover:scale-105'
                         } ${
                           color === 'yellow' ? 'bg-yellow-200' :

@@ -46,7 +46,6 @@ import {
   computeAllRackSlots,
   getRecommendedNearbyRacks,
   getDefaultRackCapacityConfig,
-  normalizeAndMigrateRackConfig,
   isExcludedFromWarehouseRelocation,
   getKoliToAbcdRefillSummary,
   generateConsolidatedKoliRefillMoves,

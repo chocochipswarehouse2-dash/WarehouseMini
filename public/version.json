@@ -1,14 +1,13 @@
 {
-  "version": "v2.6.60",
-  "versionCode": 320,
+  "version": "v2.6.61",
+  "versionCode": 321,
   "buildDate": "5 November 2026",
-  "buildHash": "wms-261105-v320-1726",
-  "releaseTitle": "WMS v2.6.60 — Live Chat Ala WhatsApp: Kamera, Enter HP, iPhone & Badge",
+  "buildHash": "wms-261105-v321-1108",
+  "releaseTitle": "WMS v2.6.61 — Checklist & Drag-Drop pada Catatan serta Tinggi Baris Fleksibel Kalender",
   "releaseNotes": [
-    "Tombol Kamera langsung (Android/iPhone) selain Galeri untuk lampiran foto chat.",
-    "Perbaikan iPhone: tidak zoom saat mengetik, composer aman dari bar Safari, instruksi aktivasi notifikasi via Layar Utama.",
-    "Enter di HP membuat baris baru (kirim lewat tombol), textarea auto-grow, tombol Balas/Edit/Hapus lebih mudah diketuk.",
-    "Badge angka pesan belum dibaca pada ikon aplikasi (PWA)."
+    "Tambah fitur Checkbox / Checklist interaktif pada Sticky Notes (bisa dicentang langsung di kartu maupun di modal)",
+    "Dukungan Drag & Drop (geser posisi kartu) untuk mengurutkan Catatan sesuai keinginan",
+    "Baris minggu pada Kalender Bulanan kini otomatis memanjang fleksibel menampilkan seluruh agenda tanpa disembunyikan di balik +1 lagi"
   ],
   "minSupportedVersion": "v2.0.0"
 }

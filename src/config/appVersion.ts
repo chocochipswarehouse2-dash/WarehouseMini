@@ -15,21 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.60",
-  "versionCode": 320,
+  "version": "v2.6.61",
+  "versionCode": 321,
   "buildDate": "5 November 2026",
-  "buildHash": "wms-261105-v320-1726",
-  "releaseTitle": "WMS v2.6.60 — Live Chat Ala WhatsApp: Kamera, Enter HP, iPhone & Badge",
+  "buildHash": "wms-261105-v321-1108",
+  "releaseTitle": "WMS v2.6.61 — Checklist & Drag-Drop pada Catatan serta Tinggi Baris Fleksibel Kalender",
   "releaseNotes": [
-    "Tombol Kamera langsung (Android/iPhone) selain Galeri untuk lampiran foto chat.",
-    "Perbaikan iPhone: tidak zoom saat mengetik, composer aman dari bar Safari, instruksi aktivasi notifikasi via Layar Utama.",
-    "Enter di HP membuat baris baru (kirim lewat tombol), textarea auto-grow, tombol Balas/Edit/Hapus lebih mudah diketuk.",
-    "Badge angka pesan belum dibaca pada ikon aplikasi (PWA)."
+    "Tambah fitur Checkbox / Checklist interaktif pada Sticky Notes (bisa dicentang langsung di kartu maupun di modal)",
+    "Dukungan Drag & Drop (geser posisi kartu) untuk mengurutkan Catatan sesuai keinginan",
+    "Baris minggu pada Kalender Bulanan kini otomatis memanjang fleksibel menampilkan seluruh agenda tanpa disembunyikan di balik +1 lagi"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.60",
+    "versionCode": 320,
+    "buildDate": "5 November 2026",
+    "buildHash": "wms-261105-v320-1726",
+    "releaseTitle": "WMS v2.6.60 — Live Chat Ala WhatsApp: Kamera, Enter HP, iPhone & Badge",
+    "releaseNotes": [
+      "Tombol Kamera langsung (Android/iPhone) selain Galeri untuk lampiran foto chat.",
+      "Perbaikan iPhone: tidak zoom saat mengetik, composer aman dari bar Safari, instruksi aktivasi notifikasi via Layar Utama.",
+      "Enter di HP membuat baris baru (kirim lewat tombol), textarea auto-grow, tombol Balas/Edit/Hapus lebih mudah diketuk.",
+      "Badge angka pesan belum dibaca pada ikon aplikasi (PWA)."
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.59",
     "versionCode": 319,
@@ -119,20 +132,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Grid kalender otomatis melebar penuh 100% saat panel samping disembunyikan",
       "Tambah tombol collapse/expand independen pada kartu Mini Kalender dan Filter Kategori",
       "Menyimpan preferensi tampilan panel samping di localStorage"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.52",
-    "versionCode": 312,
-    "buildDate": "3 November 2026",
-    "buildHash": "wms-261103-v312-1420",
-    "releaseTitle": "WMS v2.6.52 — Hide/Unhide Panel Editor pada Fullscreen 3D Warehouse",
-    "releaseNotes": [
-      "Tambah fitur toggle sembunyikan/buka panel editor 3D gudang saat layar penuh maupun normal",
-      "Tombol toggle interaktif di chips lantai, toolbar fullscreen, dan kontrol kamera",
-      "Shortcut keyboard H untuk sembunyikan/buka panel desain secara instan",
-      "Canvas Three.js otomatis melebar penuh 100% tanpa distorsi saat panel disembunyikan"
     ],
     "minSupportedVersion": "v2.0.0"
   }

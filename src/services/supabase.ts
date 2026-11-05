@@ -42,6 +42,7 @@ import {
   AgendaEvent,
   ProjectItem,
   NoteItem,
+  NoteChecklistItem,
 } from '../types';
 export type { StockRealtimeItem };
 import { extractSizeFromSku, formatProductNameWithSize, cleanProductName } from '../utils/sortUtils';
@@ -11070,13 +11071,84 @@ export async function deleteProject(id: string): Promise<void> {
 }
 
 const LOCAL_NOTES_KEY = 'wms_local_notes_v1';
+const NOTE_META_REGEX = /\n?<!--WMS_NOTE_META:([\s\S]*?)-->$/;
+
+function encodeNoteContentWithMeta(
+  cleanContent: string,
+  checklist?: NoteChecklistItem[],
+  sortOrder?: number
+): string {
+  const clean = (cleanContent || '').replace(NOTE_META_REGEX, '');
+  const hasChecklist = Array.isArray(checklist) && checklist.length > 0;
+  const hasSortOrder = typeof sortOrder === 'number';
+  if (!hasChecklist && !hasSortOrder) {
+    return clean;
+  }
+  const metaJson = JSON.stringify({
+    checklist: hasChecklist ? checklist : undefined,
+    sort_order: hasSortOrder ? sortOrder : undefined,
+  });
+  return `${clean}\n<!--WMS_NOTE_META:${metaJson}-->`;
+}
+
+function decodeNoteRow(raw: any): NoteItem {
+  const rawContent = typeof raw?.content === 'string' ? raw.content : '';
+  const match = rawContent.match(NOTE_META_REGEX);
+  let cleanContent = rawContent;
+  let parsedChecklist: NoteChecklistItem[] | undefined = Array.isArray(raw?.checklist)
+    ? raw.checklist
+    : undefined;
+  let parsedSortOrder: number | undefined =
+    typeof raw?.sort_order === 'number' ? raw.sort_order : undefined;
+
+  if (match && match[1]) {
+    cleanContent = rawContent.replace(NOTE_META_REGEX, '');
+    try {
+      const meta = JSON.parse(match[1]);
+      if (!parsedChecklist && Array.isArray(meta.checklist)) {
+        parsedChecklist = meta.checklist;
+      }
+      if (parsedSortOrder === undefined && typeof meta.sort_order === 'number') {
+        parsedSortOrder = meta.sort_order;
+      }
+    } catch {}
+  }
+
+  return {
+    id: raw.id,
+    title: raw.title || '',
+    content: cleanContent,
+    color: raw.color || 'yellow',
+    checklist: parsedChecklist || [],
+    sort_order: parsedSortOrder,
+    created_by: raw.created_by || 'Warehouse',
+    created_at: raw.created_at,
+    updated_at: raw.updated_at,
+  };
+}
+
+function sortNoteItems(items: NoteItem[]): NoteItem[] {
+  return [...items].sort((a, b) => {
+    const aHasOrder = typeof a.sort_order === 'number';
+    const bHasOrder = typeof b.sort_order === 'number';
+    if (aHasOrder && bHasOrder && a.sort_order !== b.sort_order) {
+      return a.sort_order! - b.sort_order!;
+    }
+    if (aHasOrder && !bHasOrder) return -1;
+    if (!aHasOrder && bHasOrder) return 1;
+    const tA = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const tB = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return tB - tA;
+  });
+}
 
 export async function getNotes(): Promise<NoteItem[]> {
   try {
-    const data = await supabaseFetch<NoteItem[]>('wms_notes', 'GET', null, 'order=created_at.desc');
+    const data = await supabaseFetch< any[] >('wms_notes', 'GET', null, 'order=created_at.desc');
     if (Array.isArray(data)) {
-      safeSetLocalStorage(LOCAL_NOTES_KEY, data);
-      return data;
+      const decoded = sortNoteItems(data.map(decodeNoteRow));
+      safeSetLocalStorage(LOCAL_NOTES_KEY, decoded);
+      return decoded;
     }
   } catch (err) {
     console.info('Supabase wms_notes offline/not yet migrated, using local cache:', err);
@@ -11088,33 +11160,51 @@ export async function getNotes(): Promise<NoteItem[]> {
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return sortNoteItems(parsed.map(decodeNoteRow));
+        }
       } catch {}
     }
   }
   return [];
 }
 
-export async function saveNote(item: Partial<NoteItem>): Promise<NoteItem> {
+export async function saveNote(item: Partial<NoteItem>, silentEvent = false): Promise<NoteItem> {
   const isNew = !item.id;
   const id = item.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `note-${Date.now()}`);
   const now = new Date().toISOString();
-  
+  const cleanContent = (item.content || '').replace(NOTE_META_REGEX, '');
+  const cleanChecklist = Array.isArray(item.checklist)
+    ? item.checklist.filter(c => c && typeof c.text === 'string')
+    : [];
+
   const payload: NoteItem = {
     id,
     title: item.title || '',
-    content: item.content || '',
+    content: cleanContent,
     color: item.color || 'yellow',
+    checklist: cleanChecklist,
+    sort_order: item.sort_order,
     created_by: item.created_by || 'Warehouse',
     created_at: isNew ? now : item.created_at || now,
     updated_at: now
   };
 
+  const dbRow = {
+    id: payload.id,
+    title: payload.title,
+    content: encodeNoteContentWithMeta(payload.content, payload.checklist, payload.sort_order),
+    color: payload.color,
+    created_by: payload.created_by,
+    created_at: payload.created_at,
+    updated_at: payload.updated_at,
+  };
+
   try {
     if (isNew) {
-      await supabaseFetch('wms_notes', 'POST', [payload]);
+      await supabaseFetch('wms_notes', 'POST', [dbRow]);
     } else {
-      const { id: _id, ...updateData } = payload;
+      const { id: _id, ...updateData } = dbRow;
       await supabaseFetch('wms_notes', 'PATCH', updateData, `id=eq.${encodeURIComponent(id)}`);
     }
   } catch (err) {
@@ -11126,7 +11216,7 @@ export async function saveNote(item: Partial<NoteItem>): Promise<NoteItem> {
       const cached = localStorage.getItem(LOCAL_NOTES_KEY);
       let list: NoteItem[] = [];
       if (cached) {
-        list = JSON.parse(cached);
+        list = JSON.parse(cached).map(decodeNoteRow);
       }
       
       if (isNew) {
@@ -11135,12 +11225,34 @@ export async function saveNote(item: Partial<NoteItem>): Promise<NoteItem> {
         list = list.map(n => n.id === payload.id ? payload : n);
       }
       
-      safeSetLocalStorage(LOCAL_NOTES_KEY, list);
-      window.dispatchEvent(new CustomEvent('wms_notes_updated', { detail: { item: payload } }));
+      const sorted = sortNoteItems(list);
+      safeSetLocalStorage(LOCAL_NOTES_KEY, sorted);
+      if (!silentEvent) {
+        window.dispatchEvent(new CustomEvent('wms_notes_updated', { detail: { item: payload } }));
+      }
     } catch {}
   }
   
   return payload;
+}
+
+export async function reorderNotes(orderedNotes: NoteItem[]): Promise<void> {
+  const updatedList = orderedNotes.map((note, idx) => ({
+    ...note,
+    sort_order: idx,
+  }));
+
+  if (typeof window !== 'undefined') {
+    safeSetLocalStorage(LOCAL_NOTES_KEY, updatedList);
+  }
+
+  try {
+    await Promise.all(
+      updatedList.map(n => saveNote(n, true))
+    );
+  } catch (err) {
+    console.warn('Gagal menyimpan urutan catatan ke Supabase:', err);
+  }
 }
 
 export async function deleteNote(id: string): Promise<void> {
