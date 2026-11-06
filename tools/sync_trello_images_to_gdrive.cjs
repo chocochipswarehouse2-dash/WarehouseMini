@@ -46,7 +46,7 @@ for (let i = 0; i < args.length; i++) {
 }
 
 /**
- * Unduh gambar dari Trello menggunakan OAuth Authorization header
+ * Unduh gambar dari Trello menggunakan OAuth Authorization header dengan retry
  */
 async function downloadTrelloImage(url) {
   return new Promise((resolve, reject) => {
@@ -76,6 +76,17 @@ async function downloadTrelloImage(url) {
     req.on('error', reject);
     req.end();
   });
+}
+
+async function downloadTrelloImageWithRetry(url, retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await downloadTrelloImage(url);
+    } catch (err) {
+      if (attempt === retries) throw err;
+      await new Promise(r => setTimeout(r, attempt * 1500));
+    }
+  }
 }
 
 /**
@@ -174,9 +185,12 @@ async function main() {
     const fileName = `${cleanUpCode}_${cleanItemCode}_${cleanCardId}.webp`;
 
     try {
-      // 1. Unduh dari Trello
-      const { buffer, contentType } = await downloadTrelloImage(item.trello_image_url);
+      // 1. Unduh dari Trello (dengan auto-retry)
+      const { buffer, contentType } = await downloadTrelloImageWithRetry(item.trello_image_url);
       const base64 = `data:${contentType};base64,${buffer.toString('base64')}`;
+
+      // Pacing ringan agar koneksi stabil
+      await new Promise(r => setTimeout(r, 150));
 
       // 2. Upload ke Google Drive via GAS
       const gdriveRes = await uploadToGdrive(base64, fileName, item.up_code);
@@ -229,3 +243,4 @@ main().catch(err => {
   console.error('Fatal error:', err);
   process.exit(1);
 });
+
