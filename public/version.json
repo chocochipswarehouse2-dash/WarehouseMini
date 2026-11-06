@@ -1,13 +1,13 @@
 {
-  "version": "v2.6.71",
-  "versionCode": 331,
+  "version": "v2.6.72",
+  "versionCode": 332,
   "buildDate": "6 November 2026",
-  "buildHash": "wms-261106-v331-1933",
-  "releaseTitle": "WMS v2.6.71 — Tampilan Papan Kanban Mirip Trello Asli",
+  "buildHash": "wms-261106-v332-2128",
+  "releaseTitle": "WMS v2.6.72 — Tampilan Kanban 3 Baris & Sinkronisasi Cover Trello Asli",
   "releaseNotes": [
-    "Opsi tampilan Papan Kanban interaktif dengan kolom per koleksi UP",
-    "Kartu artikel cover foto GDrive sequence dan info artikel",
-    "Dukungan multi-kolom horizontal scroll dan cetak per kolom"
+    "Tampilan Papan Kanban kompak menampilkan 3 baris gambar vertikal per kolom",
+    "Pilihan kerapatan kartu (3 Baris, Standar, Besar)",
+    "Perbaikan seleksi cover foto resmi Trello dan auto-replace foto 'Belum Ada Sample'"
   ],
   "minSupportedVersion": "v2.0.0"
 }

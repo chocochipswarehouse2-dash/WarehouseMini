@@ -58,6 +58,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const deferredSearch = useDeferredValue(searchQuery);
   const [viewMode, setViewMode] = useState<'kanban' | 'card' | 'table'>('kanban');
+  const [kanbanDensity, setKanbanDensity] = useState<'compact' | 'normal' | 'large'>('compact');
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
   const [activePhotoModal, setActivePhotoModal] = useState<TrelloUpItem | null>(null);
 
@@ -420,47 +421,94 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
           )}
         </div>
 
-        {/* View Mode Switcher */}
-        <div className="flex items-center gap-1 self-end sm:self-auto shrink-0 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
-          <button
-            type="button"
-            onClick={() => setViewMode('kanban')}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-              viewMode === 'kanban'
-                ? 'bg-white dark:bg-[#131d31] text-indigo-600 dark:text-indigo-400 shadow-xs'
-                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
-            title="Tampilan Papan Kanban (Mirip Trello Asli)"
-          >
-            <Kanban className="w-3.5 h-3.5" />
-            <span>Kanban</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('card')}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-              viewMode === 'card'
-                ? 'bg-white dark:bg-[#131d31] text-indigo-600 dark:text-indigo-400 shadow-xs'
-                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
-            title="Tampilan Grid Kartu Visual"
-          >
-            <Grid className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Kartu</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('table')}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-              viewMode === 'table'
-                ? 'bg-white dark:bg-[#131d31] text-indigo-600 dark:text-indigo-400 shadow-xs'
-                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
-            title="Tampilan Tabel Rapi"
-          >
-            <List className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Tabel</span>
-          </button>
+        <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 flex-wrap">
+          {/* Density Switcher (Khusus Mode Kanban) */}
+          {viewMode === 'kanban' && (
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+              <span className="text-[10px] font-bold text-slate-400 pl-1.5 pr-0.5 hidden md:inline">
+                Ukuran:
+              </span>
+              <button
+                type="button"
+                onClick={() => setKanbanDensity('compact')}
+                className={`px-2 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                  kanbanDensity === 'compact'
+                    ? 'bg-white dark:bg-[#131d31] text-indigo-600 dark:text-indigo-400 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+                title="Tampilkan 3 baris gambar vertikal per kolom"
+              >
+                <span>3 Baris</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setKanbanDensity('normal')}
+                className={`px-2 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                  kanbanDensity === 'normal'
+                    ? 'bg-white dark:bg-[#131d31] text-indigo-600 dark:text-indigo-400 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+                title="Tampilkan ukuran standar (~2 baris)"
+              >
+                <span>Standar</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setKanbanDensity('large')}
+                className={`px-2 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                  kanbanDensity === 'large'
+                    ? 'bg-white dark:bg-[#131d31] text-indigo-600 dark:text-indigo-400 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+                title="Tampilkan foto kotak besar (~1.5 baris)"
+              >
+                <span>Besar</span>
+              </button>
+            </div>
+          )}
+
+          {/* View Mode Switcher */}
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+            <button
+              type="button"
+              onClick={() => setViewMode('kanban')}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                viewMode === 'kanban'
+                  ? 'bg-white dark:bg-[#131d31] text-indigo-600 dark:text-indigo-400 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+              title="Tampilan Papan Kanban (Mirip Trello Asli)"
+            >
+              <Kanban className="w-3.5 h-3.5" />
+              <span>Kanban</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('card')}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                viewMode === 'card'
+                  ? 'bg-white dark:bg-[#131d31] text-indigo-600 dark:text-indigo-400 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+              title="Tampilan Grid Kartu Visual"
+            >
+              <Grid className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Kartu</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                viewMode === 'table'
+                  ? 'bg-white dark:bg-[#131d31] text-indigo-600 dark:text-indigo-400 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+              title="Tampilan Tabel Rapi"
+            >
+              <List className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Tabel</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -492,14 +540,20 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
       ) : viewMode === 'kanban' ? (
         /* Versi Papan Kanban (Mirip Trello Asli) */
         <div className="w-full overflow-x-auto pb-6 pt-1 no-scrollbar">
-          <div className="flex items-start gap-4 min-w-max pb-2">
+          <div className="flex items-start gap-3.5 sm:gap-4 min-w-max pb-2">
             {kanbanColumns.map((col) => (
               <div
                 key={col.listName}
-                className="w-[285px] sm:w-[320px] shrink-0 bg-slate-100/90 dark:bg-[#0f172a] border border-slate-200/90 dark:border-slate-800 rounded-2xl flex flex-col max-h-[calc(100vh-250px)] shadow-xs transition-all"
+                className={`${
+                  kanbanDensity === 'compact'
+                    ? 'w-[235px] sm:w-[265px]'
+                    : kanbanDensity === 'normal'
+                    ? 'w-[275px] sm:w-[310px]'
+                    : 'w-[295px] sm:w-[335px]'
+                } shrink-0 bg-slate-100/90 dark:bg-[#0f172a] border border-slate-200/90 dark:border-slate-800 rounded-2xl flex flex-col h-[calc(100vh-210px)] min-h-[560px] max-h-[880px] shadow-xs transition-all`}
               >
                 {/* Column Lane Header */}
-                <div className="p-3 border-b border-slate-200/80 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 rounded-t-2xl flex items-center justify-between gap-2 shrink-0">
+                <div className="p-2.5 sm:p-3 border-b border-slate-200/80 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 rounded-t-2xl flex items-center justify-between gap-2 shrink-0">
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
                       <h3
@@ -535,15 +589,31 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                 </div>
 
                 {/* Column Scrollable Cards Stack */}
-                <div className="flex-1 overflow-y-auto p-2.5 space-y-2.5 no-scrollbar">
+                <div
+                  className={`flex-1 overflow-y-auto ${
+                    kanbanDensity === 'compact'
+                      ? 'p-2 space-y-1.5'
+                      : 'p-2.5 space-y-2'
+                  } no-scrollbar`}
+                >
                   {col.items.map((item) => (
                     <div
                       key={item.id}
                       onClick={() => setActivePhotoModal(item)}
-                      className="group bg-white dark:bg-[#151f33] border border-slate-200/90 dark:border-slate-750 rounded-xl p-2.5 shadow-2xs hover:shadow-md hover:border-indigo-400 dark:hover:border-indigo-500/60 transition-all cursor-pointer relative"
+                      className={`group bg-white dark:bg-[#151f33] border border-slate-200/90 dark:border-slate-750 rounded-xl ${
+                        kanbanDensity === 'compact' ? 'p-2' : 'p-2.5'
+                      } shadow-2xs hover:shadow-md hover:border-indigo-400 dark:hover:border-indigo-500/60 transition-all cursor-pointer relative`}
                     >
                       {/* Card Cover Image */}
-                      <div className="aspect-square w-full rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/60 overflow-hidden relative mb-2">
+                      <div
+                        className={`${
+                          kanbanDensity === 'compact'
+                            ? 'h-[105px] sm:h-[115px] mb-1.5'
+                            : kanbanDensity === 'normal'
+                            ? 'h-[160px] sm:h-[175px] mb-2'
+                            : 'aspect-square mb-2'
+                        } w-full rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/60 overflow-hidden relative shrink-0`}
+                      >
                         <TrelloImage
                           src={item.gdrive_image_url || item.trello_image_url}
                           alt={item.card_name}
@@ -556,12 +626,22 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                       </div>
 
                       {/* Header Badge: Sequence & Code */}
-                      <div className="flex items-center justify-between gap-1 mb-1">
+                      <div className="flex items-center justify-between gap-1 mb-0.5">
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="w-5 h-5 rounded-md bg-indigo-600 text-white font-mono font-black text-[10px] flex items-center justify-center shrink-0">
+                          <span
+                            className={`${
+                              kanbanDensity === 'compact'
+                                ? 'w-4 h-4 text-[9px]'
+                                : 'w-5 h-5 text-[10px]'
+                            } rounded-md bg-indigo-600 text-white font-mono font-black flex items-center justify-center shrink-0`}
+                          >
                             #{item.sequence_order}
                           </span>
-                          <span className="font-mono font-black text-xs text-slate-900 dark:text-white truncate">
+                          <span
+                            className={`font-mono font-black ${
+                              kanbanDensity === 'compact' ? 'text-[11px]' : 'text-xs'
+                            } text-slate-900 dark:text-white truncate`}
+                          >
                             {item.item_code}
                           </span>
                         </div>
@@ -575,7 +655,11 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
 
                       {/* Item Name */}
                       <p
-                        className="text-xs font-semibold text-slate-700 dark:text-slate-200 line-clamp-2 leading-tight"
+                        className={`${
+                          kanbanDensity === 'compact'
+                            ? 'text-[11px] line-clamp-1'
+                            : 'text-xs line-clamp-2'
+                        } font-semibold text-slate-700 dark:text-slate-200 leading-tight`}
                         title={item.item_name}
                       >
                         {item.item_name}
@@ -585,7 +669,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                 </div>
 
                 {/* Column Lane Footer */}
-                <div className="p-2 border-t border-slate-200/70 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/40 rounded-b-2xl text-[10px] font-bold text-slate-400 text-center">
+                <div className="p-2 border-t border-slate-200/70 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/40 rounded-b-2xl text-[10px] font-bold text-slate-400 text-center shrink-0">
                   {col.items.length} Artikel
                 </div>
               </div>

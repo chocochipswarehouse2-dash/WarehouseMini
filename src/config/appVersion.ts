@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.71",
-  "versionCode": 331,
+  "version": "v2.6.72",
+  "versionCode": 332,
   "buildDate": "6 November 2026",
-  "buildHash": "wms-261106-v331-1933",
-  "releaseTitle": "WMS v2.6.71 — Tampilan Papan Kanban Mirip Trello Asli",
+  "buildHash": "wms-261106-v332-2128",
+  "releaseTitle": "WMS v2.6.72 — Tampilan Kanban 3 Baris & Sinkronisasi Cover Trello Asli",
   "releaseNotes": [
-    "Opsi tampilan Papan Kanban interaktif dengan kolom per koleksi UP",
-    "Kartu artikel cover foto GDrive sequence dan info artikel",
-    "Dukungan multi-kolom horizontal scroll dan cetak per kolom"
+    "Tampilan Papan Kanban kompak menampilkan 3 baris gambar vertikal per kolom",
+    "Pilihan kerapatan kartu (3 Baris, Standar, Besar)",
+    "Perbaikan seleksi cover foto resmi Trello dan auto-replace foto 'Belum Ada Sample'"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.71",
+    "versionCode": 331,
+    "buildDate": "6 November 2026",
+    "buildHash": "wms-261106-v331-1933",
+    "releaseTitle": "WMS v2.6.71 — Tampilan Papan Kanban Mirip Trello Asli",
+    "releaseNotes": [
+      "Opsi tampilan Papan Kanban interaktif dengan kolom per koleksi UP",
+      "Kartu artikel cover foto GDrive sequence dan info artikel",
+      "Dukungan multi-kolom horizontal scroll dan cetak per kolom"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.70",
     "versionCode": 330,
@@ -119,19 +132,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Transformasi Dashboard Utama dari dummy data menjadi Bento Box Grid operasional real-time",
       "Implementasi arsitektur Ultra-Lean Zero-Egress dengan HTTP Head-Only count headers dan cache 15 menit melindungi kuota Supabase Free Tier",
       "Pusat antrean kerja gudang dan 5 mutasi live ledger terkini dengan pintasan modul langsung"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.63",
-    "versionCode": 323,
-    "buildDate": "5 November 2026",
-    "buildHash": "wms-261105-v323-2135",
-    "releaseTitle": "WMS v2.6.63 — Integrasi UI/UX Pro Max & Visual Hygiene",
-    "releaseNotes": [
-      "Integrasi skill UI/UX Pro Max dengan 80 visual styles dan design intelligence",
-      "Pembersihan button hierarchy anti-pelangi pada Produksi Spreadsheet View",
-      "Eliminasi container dead-zones pada Packing, Penerimaan, Pengiriman, dan Migration View"
     ],
     "minSupportedVersion": "v2.0.0"
   }

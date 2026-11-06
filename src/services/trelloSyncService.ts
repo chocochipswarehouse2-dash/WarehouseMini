@@ -165,7 +165,7 @@ export async function fetchLiveTrelloBoard(
   boardId: string = DEFAULT_TRELLO_BOARD_ID
 ): Promise<{ lists: any[]; cards: any[] }> {
   const listsUrl = `https://api.trello.com/1/boards/${boardId}/lists?key=${apiKey}&token=${apiToken}&filter=open`;
-  const cardsUrl = `https://api.trello.com/1/boards/${boardId}/cards?key=${apiKey}&token=${apiToken}&attachments=true&fields=name,idList,pos,desc,badges,cover`;
+  const cardsUrl = `https://api.trello.com/1/boards/${boardId}/cards?key=${apiKey}&token=${apiToken}&attachments=true&fields=name,idList,pos,desc,badges,cover,idAttachmentCover`;
 
   const [listsRes, cardsRes] = await Promise.all([
     fetch(listsUrl),
@@ -227,19 +227,46 @@ export function transformTrelloData(lists: any[], cards: any[]): TrelloUpItem[] 
       let attachmentId: string | undefined;
 
       if (c.attachments && c.attachments.length > 0) {
-        const imgAtt = c.attachments.find((att: any) =>
+        const isImageAttachment = (att: any) =>
           att.mimeType?.startsWith('image/') ||
-          /\.(jpg|jpeg|png|webp|gif)$/i.test(att.name || att.url)
-        ) || c.attachments[0];
+          /\.(jpg|jpeg|png|webp|gif)$/i.test(att.name || att.url || '');
 
-        if (imgAtt) {
-          attachmentId = imgAtt.id;
+        const coverId = c.idAttachmentCover || c.cover?.idAttachment;
+        let chosenAtt: any = null;
+
+        // 1. Prioritas Utama: Cover resmi Trello jika merupakan gambar
+        if (coverId) {
+          const matched = c.attachments.find((att: any) => att.id === coverId);
+          if (matched && isImageAttachment(matched)) {
+            chosenAtt = matched;
+          }
+        }
+
+        // 2. Prioritas Kedua: Attachment gambar yang BUKAN "BELUM ADA SAMPLE" (ambil yang paling baru)
+        if (!chosenAtt) {
+          const realImageAtts = c.attachments.filter((att: any) =>
+            isImageAttachment(att) && !/BELUM.*SAMPLE/i.test(att.name || '')
+          );
+          if (realImageAtts.length > 0) {
+            chosenAtt = realImageAtts[realImageAtts.length - 1];
+          }
+        }
+
+        // 3. Prioritas Ketiga: Attachment gambar apapun
+        if (!chosenAtt) {
+          chosenAtt = c.attachments.find(isImageAttachment) || c.attachments[c.attachments.length - 1];
+        }
+
+        if (chosenAtt) {
+          attachmentId = chosenAtt.id;
           // Gunakan preview berukuran optimal (600x600 atau 1200x1200) jika ada agar loading cepat
-          if (imgAtt.previews && imgAtt.previews.length > 0) {
-            const goodPreview = imgAtt.previews.find((p: any) => p.width >= 600) || imgAtt.previews[imgAtt.previews.length - 1];
-            photoUrl = goodPreview ? goodPreview.url : imgAtt.url;
+          if (chosenAtt.previews && chosenAtt.previews.length > 0) {
+            const goodPreview =
+              chosenAtt.previews.find((p: any) => p.width >= 600) ||
+              chosenAtt.previews[chosenAtt.previews.length - 1];
+            photoUrl = goodPreview ? goodPreview.url : chosenAtt.url;
           } else {
-            photoUrl = imgAtt.url;
+            photoUrl = chosenAtt.url;
           }
         }
       }
