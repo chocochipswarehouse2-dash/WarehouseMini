@@ -15,20 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.66",
-  "versionCode": 326,
+  "version": "v2.6.67",
+  "versionCode": 327,
   "buildDate": "6 November 2026",
-  "buildHash": "wms-261106-v326-0608",
-  "releaseTitle": "WMS v2.6.66 — Penyempurnaan Responsif Mobile Multi-Modul & Sticky App Bar",
+  "buildHash": "wms-261106-v327-1159",
+  "releaseTitle": "WMS v2.6.67 — Modul Baru Koleksi UP (Trello) & Cetak A4",
   "releaseNotes": [
-    "Header Sticky Mobile App Bar dengan hamburger, brand dan status aktif",
-    "Navigasi tab horizontal swipeable di modul Produksi",
-    "Wadah fluid elastis tanpa limit margin di modul Picking"
+    "Halaman baru Koleksi UP Trello dengan Live Sync",
+    "Cetak Susunan Koleksi UP Format A4",
+    "Ekspor CSV dan Lightbox Foto",
+    "Skema Tabel Supabase trello_up_catalog"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.66",
+    "versionCode": 326,
+    "buildDate": "6 November 2026",
+    "buildHash": "wms-261106-v326-0608",
+    "releaseTitle": "WMS v2.6.66 — Penyempurnaan Responsif Mobile Multi-Modul & Sticky App Bar",
+    "releaseNotes": [
+      "Header Sticky Mobile App Bar dengan hamburger, brand dan status aktif",
+      "Navigasi tab horizontal swipeable di modul Produksi",
+      "Wadah fluid elastis tanpa limit margin di modul Picking"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.65",
     "versionCode": 325,
@@ -119,19 +133,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Perbaikan race condition pembukaan chat 1-on-1 baru (0ms aktivasi instan & proteksi grace window 20 detik dari background sync).",
       "Perbaikan bug Service Worker (pwa-extras.js) yang sebelumnya mengosongkan riwayat pesan saat klik Tandai Dibaca / Balas Cepat dari notifikasi.",
       "Penambahan template hak akses default role Customer Service dan normalisasi profil CS 1 & CS 2."
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.58",
-    "versionCode": 318,
-    "buildDate": "5 November 2026",
-    "buildHash": "wms-261105-v318-1314",
-    "releaseTitle": "WMS v2.6.58 — Pulihkan Konfigurasi Kapasitas Rak & Perbaikan Tombol Setup",
-    "releaseNotes": [
-      "Perbaikan tombol Setup Kapasitas & Lokasi yang tidak merespons saat diklik (import normalizeAndMigrateRackConfig)",
-      "Pemulihan konfigurasi kapasitas rak custom (Lokasi A-D: 75/75/80/75 pcs, Transit X & Koli R/V/Z: 40 pcs, Shopee: 400, TikTok: 250, IGLive: 250, Studio: 500, Perbaikan CC/PMK/DF: 50 pcs)",
-      "Perbaikan label jumlah lokasi pada tombol filter Semua Warehouse (Rak + Koli)"
     ],
     "minSupportedVersion": "v2.0.0"
   }

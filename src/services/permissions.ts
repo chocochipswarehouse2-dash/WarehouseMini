@@ -160,6 +160,7 @@ export const PERMISSION_GROUPS = [
       { key: 'menu_ops_roadmap', label: 'Menu Roadmap', description: 'Lihat daftar fitur baru', isSuperadminOnly: false },
       { key: 'menu_ops_cetak_barcode', label: 'Menu Cetak Barcode Produk', description: 'Akses cetak barcode thermal 50x20 mm', isSuperadminOnly: false },
       { key: 'menu_ops_bbk', label: 'Menu Form BBK', description: 'Akses formulir Bukti Bank Keluar', isSuperadminOnly: false },
+      { key: 'menu_ops_trello', label: 'Menu Koleksi UP (Trello)', description: 'Akses susunan upload koleksi UP dan cetak A4', isSuperadminOnly: false },
     ]
   },
   {
@@ -543,6 +544,7 @@ export const canAccessPage = (session: UserSession | null, page: ActivePage): bo
     case 'katalog_produk': return hasPermission(session, 'menu_ops_katalog_produk');
     case 'roadmap': return hasPermission(session, 'menu_ops_roadmap');
     case 'pusat_resolusi': return hasPermission(session, 'menu_ops_resolusi') || hasPermission(session, 'tab_ops_resolusi_retur') || hasPermission(session, 'tab_ops_resolusi_refund') || hasPermission(session, 'tab_ops_resolusi_gagal') || hasPermission(session, 'tab_ops_resolusi_komplain') || hasPermission(session, 'tab_ops_resolusi_rating');
+    case 'trello_up': return isSuperadmin(session) || hasPermission(session, 'menu_ops_trello') || hasPermission(session, 'menu_ops_dashboard') || hasPermission(session, 'menu_ops_produksi');
     case 'rekap_tagihan_jne': return canAccessJneRekap(session);
     case 'live_chat': return canAccessLiveChat(session);
     case 'supabase_migration': return false;

@@ -9,6 +9,7 @@ import {
   Sun,
   Palette,
   Layers,
+  LayoutGrid,
   Smartphone,
   Monitor,
   Bell,
@@ -149,6 +150,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     hasPermission(session, 'tab_ops_resolusi_rating');
   const canProduksi = userIsAdmin || hasPermission(session, 'menu_ops_produksi') ||
     hasPermission(session, 'tab_ops_loading_produksi');
+  const canTrello = userIsAdmin || hasPermission(session, 'menu_ops_trello') || canProduksi || canViewDashboard;
   const canPicking = userIsAdmin || hasPermission(session, 'menu_ops_picking');
   const canLoadingDock = userIsAdmin || hasPermission(session, 'menu_ops_loading_dock') ||
     hasPermission(session, 'tab_ops_loading_penerimaan') ||
@@ -234,6 +236,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Factory,
       description: 'Penerimaan Hasil Produksi CMT',
       access: canProduksi,
+    },
+    {
+      id: 'trello_up' as ActivePage,
+      label: 'Koleksi UP (Trello)',
+      shortLabel: 'Trello UP',
+      icon: LayoutGrid,
+      description: 'Susunan artikel upload & cetak A4',
+      access: canTrello,
     },
     {
       id: 'loading_dock' as ActivePage,

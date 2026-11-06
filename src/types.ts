@@ -34,6 +34,7 @@ export type ActivePage =
   | 'pusat_resolusi'
   | 'supabase_migration'
   | 'rekap_tagihan_jne'
+  | 'trello_up'
   | 'live_chat';
 
 export interface KatalogVariant {
@@ -1487,3 +1488,31 @@ export interface StoreHelpTicket {
 
 
 
+
+export interface TrelloUpItem {
+  id: string;
+  board_id: string;
+  list_id: string;
+  list_name: string;
+  up_code: string;
+  publish_date_raw?: string;
+  publish_date?: string;
+  card_name: string;
+  item_code: string;
+  item_name: string;
+  qty_note?: string;
+  description?: string;
+  sequence_order: number;
+  pos: number;
+  trello_attachment_id?: string;
+  trello_image_url?: string;
+  gdrive_file_id?: string;
+  gdrive_image_url?: string;
+  gdrive_folder_id?: string;
+  gdrive_folder_name?: string;
+  status: 'ACTIVE' | 'ARCHIVED' | 'DELETED';
+  raw_json?: any;
+  last_synced_at?: string;
+  created_at?: string;
+  updated_at?: string;
+}

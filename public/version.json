@@ -1,13 +1,14 @@
 {
-  "version": "v2.6.66",
-  "versionCode": 326,
+  "version": "v2.6.67",
+  "versionCode": 327,
   "buildDate": "6 November 2026",
-  "buildHash": "wms-261106-v326-0608",
-  "releaseTitle": "WMS v2.6.66 — Penyempurnaan Responsif Mobile Multi-Modul & Sticky App Bar",
+  "buildHash": "wms-261106-v327-1159",
+  "releaseTitle": "WMS v2.6.67 — Modul Baru Koleksi UP (Trello) & Cetak A4",
   "releaseNotes": [
-    "Header Sticky Mobile App Bar dengan hamburger, brand dan status aktif",
-    "Navigasi tab horizontal swipeable di modul Produksi",
-    "Wadah fluid elastis tanpa limit margin di modul Picking"
+    "Halaman baru Koleksi UP Trello dengan Live Sync",
+    "Cetak Susunan Koleksi UP Format A4",
+    "Ekspor CSV dan Lightbox Foto",
+    "Skema Tabel Supabase trello_up_catalog"
   ],
   "minSupportedVersion": "v2.0.0"
 }
