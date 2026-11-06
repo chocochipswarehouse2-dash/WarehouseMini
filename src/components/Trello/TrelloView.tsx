@@ -19,6 +19,7 @@ import {
   Eye,
   X,
   Loader2,
+  Filter,
 } from 'lucide-react';
 import { TrelloUpItem, UserSession, ProductItem } from '../../types';
 import {
@@ -59,6 +60,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
   const deferredSearch = useDeferredValue(searchQuery);
   const [viewMode, setViewMode] = useState<'kanban' | 'card' | 'table'>('kanban');
   const [kanbanDensity, setKanbanDensity] = useState<'compact' | 'normal' | 'large'>('compact');
+  const [isFilterOpen, setIsFilterOpen] = useState<boolean>(true);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
   const [activePhotoModal, setActivePhotoModal] = useState<TrelloUpItem | null>(null);
 
@@ -337,7 +339,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
       </div>
 
       {/* 2. UP Multi-Choice Dropsearch & Quick Shortcut Bar */}
-      {upLists.length > 0 && (
+      {isFilterOpen && upLists.length > 0 && (
         <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-2xs space-y-3">
           {/* Main Dropsearch Multi-Select Dropdown */}
           <TrelloMultiSelectDropdown
@@ -400,23 +402,42 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
 
       {/* 3. Search & View Mode Switcher */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        {/* Search Bar */}
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari kode barang (25289) atau nama artikel..."
-            className="w-full pl-9 pr-8 py-2 text-xs bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 shadow-2xs"
-          />
-          {searchQuery && (
+        {/* Search Bar & Filter Toggle */}
+        <div className="flex items-center gap-2 flex-1 max-w-lg">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cari kode barang (25289) atau nama artikel..."
+              className="w-full pl-9 pr-8 py-2 text-xs bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 shadow-2xs"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Quick Filter Toggle Button */}
+          {upLists.length > 0 && (
             <button
               type="button"
-              onClick={() => setSearchQuery('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              onClick={() => setIsFilterOpen(!isFilterOpen)}
+              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer border shrink-0 ${
+                isFilterOpen
+                  ? 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
+                  : 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800/60 text-indigo-600 dark:text-indigo-400 font-black'
+              }`}
+              title={isFilterOpen ? 'Sembunyikan panel filter UP di atas' : 'Buka panel filter UP'}
             >
-              <X className="w-3.5 h-3.5" />
+              <Filter className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{isFilterOpen ? 'Sembunyikan Filter' : 'Filter UP'}</span>
             </button>
           )}
         </div>
@@ -436,7 +457,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                     ? 'bg-white dark:bg-[#131d31] text-indigo-600 dark:text-indigo-400 shadow-xs'
                     : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
-                title="Tampilkan 3 baris gambar vertikal per kolom"
+                title="Tampilkan 3 baris gambar utuh tanpa kepotong"
               >
                 <span>3 Baris</span>
               </button>
@@ -448,9 +469,9 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                     ? 'bg-white dark:bg-[#131d31] text-indigo-600 dark:text-indigo-400 shadow-xs'
                     : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
-                title="Tampilkan ukuran standar (~2 baris)"
+                title="Tampilkan ukuran sedang (~2 baris)"
               >
-                <span>Standar</span>
+                <span>Sedang</span>
               </button>
               <button
                 type="button"
@@ -460,7 +481,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                     ? 'bg-white dark:bg-[#131d31] text-indigo-600 dark:text-indigo-400 shadow-xs'
                     : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
-                title="Tampilkan foto kotak besar (~1.5 baris)"
+                title="Tampilkan foto kotak besar"
               >
                 <span>Besar</span>
               </button>
@@ -540,35 +561,35 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
       ) : viewMode === 'kanban' ? (
         /* Versi Papan Kanban (Mirip Trello Asli) */
         <div className="w-full overflow-x-auto pb-6 pt-1 no-scrollbar">
-          <div className="flex items-start gap-3.5 sm:gap-4 min-w-max pb-2">
+          <div className="flex items-start gap-3 sm:gap-3.5 min-w-max pb-2">
             {kanbanColumns.map((col) => (
               <div
                 key={col.listName}
                 className={`${
                   kanbanDensity === 'compact'
-                    ? 'w-[235px] sm:w-[265px]'
+                    ? 'w-[200px] sm:w-[225px]'
                     : kanbanDensity === 'normal'
-                    ? 'w-[275px] sm:w-[310px]'
-                    : 'w-[295px] sm:w-[335px]'
-                } shrink-0 bg-slate-100/90 dark:bg-[#0f172a] border border-slate-200/90 dark:border-slate-800 rounded-2xl flex flex-col h-[calc(100vh-210px)] min-h-[560px] max-h-[880px] shadow-xs transition-all`}
+                    ? 'w-[250px] sm:w-[280px]'
+                    : 'w-[290px] sm:w-[330px]'
+                } shrink-0 bg-slate-100/90 dark:bg-[#0f172a] border border-slate-200/90 dark:border-slate-800 rounded-2xl flex flex-col h-[calc(100vh-210px)] min-h-[440px] max-h-[820px] shadow-xs transition-all`}
               >
                 {/* Column Lane Header */}
-                <div className="p-2.5 sm:p-3 border-b border-slate-200/80 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 rounded-t-2xl flex items-center justify-between gap-2 shrink-0">
+                <div className="p-2 sm:p-2.5 border-b border-slate-200/80 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 rounded-t-2xl flex items-center justify-between gap-1.5 shrink-0">
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
                       <h3
-                        className="font-black text-xs sm:text-sm text-slate-900 dark:text-white truncate"
+                        className="font-black text-xs text-slate-900 dark:text-white truncate"
                         title={col.listName}
                       >
                         {col.listName}
                       </h3>
-                      <span className="px-1.5 py-0.2 rounded-full font-mono font-black text-[10px] bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 shrink-0">
+                      <span className="px-1.5 py-0.2 rounded-full font-mono font-black text-[9px] bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 shrink-0">
                         {col.items.length}
                       </span>
                     </div>
                     {col.publishDate && (
-                      <div className="flex items-center gap-1 text-[10px] text-slate-500 font-semibold mt-0.5">
-                        <Calendar className="w-3 h-3 text-slate-400" />
+                      <div className="flex items-center gap-1 text-[9px] text-slate-500 font-semibold mt-0.5">
+                        <Calendar className="w-2.5 h-2.5 text-slate-400" />
                         <span>Publish: {col.publishDate}</span>
                       </div>
                     )}
@@ -581,7 +602,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                       setSelectedListNames([col.listName]);
                       setIsPrintModalOpen(true);
                     }}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-slate-800 transition cursor-pointer"
+                    className="p-1 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-slate-800 transition cursor-pointer"
                     title={`Cetak Susunan A4 ${col.listName}`}
                   >
                     <Printer className="w-3.5 h-3.5" />
@@ -592,6 +613,8 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                 <div
                   className={`flex-1 overflow-y-auto ${
                     kanbanDensity === 'compact'
+                      ? 'p-1.5 space-y-1'
+                      : kanbanDensity === 'normal'
                       ? 'p-2 space-y-1.5'
                       : 'p-2.5 space-y-2'
                   } no-scrollbar`}
@@ -601,18 +624,22 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                       key={item.id}
                       onClick={() => setActivePhotoModal(item)}
                       className={`group bg-white dark:bg-[#151f33] border border-slate-200/90 dark:border-slate-750 rounded-xl ${
-                        kanbanDensity === 'compact' ? 'p-2' : 'p-2.5'
+                        kanbanDensity === 'compact'
+                          ? 'p-1.5'
+                          : kanbanDensity === 'normal'
+                          ? 'p-2'
+                          : 'p-2.5'
                       } shadow-2xs hover:shadow-md hover:border-indigo-400 dark:hover:border-indigo-500/60 transition-all cursor-pointer relative`}
                     >
                       {/* Card Cover Image */}
                       <div
                         className={`${
                           kanbanDensity === 'compact'
-                            ? 'h-[105px] sm:h-[115px] mb-1.5'
+                            ? 'h-[74px] sm:h-[80px] mb-1'
                             : kanbanDensity === 'normal'
-                            ? 'h-[160px] sm:h-[175px] mb-2'
+                            ? 'h-[130px] sm:h-[145px] mb-1.5'
                             : 'aspect-square mb-2'
-                        } w-full rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/60 overflow-hidden relative shrink-0`}
+                        } w-full rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/60 overflow-hidden relative shrink-0`}
                       >
                         <TrelloImage
                           src={item.gdrive_image_url || item.trello_image_url}
@@ -621,25 +648,25 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                           fallbackText="No Photo"
                         />
                         <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white pointer-events-none">
-                          <Eye className="w-4 h-4 drop-shadow-md" />
+                          <Eye className="w-3.5 h-3.5 drop-shadow-md" />
                         </div>
                       </div>
 
                       {/* Header Badge: Sequence & Code */}
                       <div className="flex items-center justify-between gap-1 mb-0.5">
-                        <div className="flex items-center gap-1.5 min-w-0">
+                        <div className="flex items-center gap-1 min-w-0">
                           <span
                             className={`${
                               kanbanDensity === 'compact'
-                                ? 'w-4 h-4 text-[9px]'
-                                : 'w-5 h-5 text-[10px]'
-                            } rounded-md bg-indigo-600 text-white font-mono font-black flex items-center justify-center shrink-0`}
+                                ? 'w-3.5 h-3.5 text-[8.5px]'
+                                : 'w-4 h-4 text-[9px]'
+                            } rounded bg-indigo-600 text-white font-mono font-black flex items-center justify-center shrink-0`}
                           >
                             #{item.sequence_order}
                           </span>
                           <span
                             className={`font-mono font-black ${
-                              kanbanDensity === 'compact' ? 'text-[11px]' : 'text-xs'
+                              kanbanDensity === 'compact' ? 'text-[10.5px]' : 'text-xs'
                             } text-slate-900 dark:text-white truncate`}
                           >
                             {item.item_code}
@@ -647,7 +674,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                         </div>
 
                         {item.qty_note && (
-                          <span className="px-1.5 py-0.2 rounded font-mono font-bold text-[9px] bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200/40 dark:border-indigo-800/40 shrink-0">
+                          <span className="px-1 py-0.2 rounded font-mono font-bold text-[8px] bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200/40 dark:border-indigo-800/40 shrink-0">
                             {item.qty_note}
                           </span>
                         )}
@@ -657,7 +684,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                       <p
                         className={`${
                           kanbanDensity === 'compact'
-                            ? 'text-[11px] line-clamp-1'
+                            ? 'text-[10px] truncate'
                             : 'text-xs line-clamp-2'
                         } font-semibold text-slate-700 dark:text-slate-200 leading-tight`}
                         title={item.item_name}
@@ -669,7 +696,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                 </div>
 
                 {/* Column Lane Footer */}
-                <div className="p-2 border-t border-slate-200/70 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/40 rounded-b-2xl text-[10px] font-bold text-slate-400 text-center shrink-0">
+                <div className="py-1 px-2 border-t border-slate-200/70 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/40 rounded-b-2xl text-[9px] font-bold text-slate-400 text-center shrink-0">
                   {col.items.length} Artikel
                 </div>
               </div>

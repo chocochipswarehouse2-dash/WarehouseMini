@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.72",
-  "versionCode": 332,
+  "version": "v2.6.73",
+  "versionCode": 333,
   "buildDate": "6 November 2026",
-  "buildHash": "wms-261106-v332-2128",
-  "releaseTitle": "WMS v2.6.72 — Tampilan Kanban 3 Baris & Sinkronisasi Cover Trello Asli",
+  "buildHash": "wms-261106-v333-2142",
+  "releaseTitle": "WMS v2.6.73 — Optimasi Ukuran Kartu Kanban 3 Baris & Toggle Filter",
   "releaseNotes": [
-    "Tampilan Papan Kanban kompak menampilkan 3 baris gambar vertikal per kolom",
-    "Pilihan kerapatan kartu (3 Baris, Standar, Besar)",
-    "Perbaikan seleksi cover foto resmi Trello dan auto-replace foto 'Belum Ada Sample'"
+    "Kartu foto Kanban diperkecil proporsional agar 3 baris tampil penuh tanpa terpotong",
+    "Tombol toggle sembunyikan filter UP untuk memaksimalkan ruang vertikal",
+    "Tersedia opsi ukuran 3 Baris, Sedang, dan Besar"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.72",
+    "versionCode": 332,
+    "buildDate": "6 November 2026",
+    "buildHash": "wms-261106-v332-2128",
+    "releaseTitle": "WMS v2.6.72 — Tampilan Kanban 3 Baris & Sinkronisasi Cover Trello Asli",
+    "releaseNotes": [
+      "Tampilan Papan Kanban kompak menampilkan 3 baris gambar vertikal per kolom",
+      "Pilihan kerapatan kartu (3 Baris, Standar, Besar)",
+      "Perbaikan seleksi cover foto resmi Trello dan auto-replace foto 'Belum Ada Sample'"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.71",
     "versionCode": 331,
@@ -119,19 +132,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Audit menyeluruh antarmuka seluler (HP) dengan grid 2x2 rapi, zero text overflow, dan header ramping",
       "Menggantikan indikator SO dengan integrasi Proyek Berjalan dan Jadwal Kerja Hari Ini/Terdekat",
       "Navigasi instan dari dashboard langsung ke tab Kalendar Kerja & Proyek Milestone"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.64",
-    "versionCode": 324,
-    "buildDate": "5 November 2026",
-    "buildHash": "wms-261105-v324-2252",
-    "releaseTitle": "WMS v2.6.64 — Renovasi Dashboard Utama Bento Grid & Zero-Egress Protection",
-    "releaseNotes": [
-      "Transformasi Dashboard Utama dari dummy data menjadi Bento Box Grid operasional real-time",
-      "Implementasi arsitektur Ultra-Lean Zero-Egress dengan HTTP Head-Only count headers dan cache 15 menit melindungi kuota Supabase Free Tier",
-      "Pusat antrean kerja gudang dan 5 mutasi live ledger terkini dengan pintasan modul langsung"
     ],
     "minSupportedVersion": "v2.0.0"
   }
