@@ -1,14 +1,13 @@
 {
-  "version": "v2.6.70",
-  "versionCode": 330,
+  "version": "v2.6.71",
+  "versionCode": 331,
   "buildDate": "6 November 2026",
-  "buildHash": "wms-261106-v330-1852",
-  "releaseTitle": "WMS v2.6.70 — Sinkronisasi Foto Trello ke Google Drive CDN & Prioritas GDrive Image",
+  "buildHash": "wms-261106-v331-1933",
+  "releaseTitle": "WMS v2.6.71 — Tampilan Papan Kanban Mirip Trello Asli",
   "releaseNotes": [
-    "Script otomatis download foto Trello dan simpan ke Google Drive",
-    "Prioritaskan gdrive_image_url pada TrelloView dan Print Modal",
-    "Subfolder otomatis per koleksi UP di Google Drive",
-    "Counter real-time foto Google Drive di info strip"
+    "Opsi tampilan Papan Kanban interaktif dengan kolom per koleksi UP",
+    "Kartu artikel cover foto GDrive sequence dan info artikel",
+    "Dukungan multi-kolom horizontal scroll dan cetak per kolom"
   ],
   "minSupportedVersion": "v2.0.0"
 }
