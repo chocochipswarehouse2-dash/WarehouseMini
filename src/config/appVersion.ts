@@ -15,20 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.69",
-  "versionCode": 329,
+  "version": "v2.6.70",
+  "versionCode": 330,
   "buildDate": "6 November 2026",
-  "buildHash": "wms-261106-v329-1425",
-  "releaseTitle": "WMS v2.6.69 — Dropsearch Multi-Choice & Trello Authenticated Image Loader",
+  "buildHash": "wms-261106-v330-1852",
+  "releaseTitle": "WMS v2.6.70 — Sinkronisasi Foto Trello ke Google Drive CDN & Prioritas GDrive Image",
   "releaseNotes": [
-    "Opsi dropsearch multi choice untuk koleksi UP dengan live filter",
-    "Komponen TrelloImage dengan OAuth blob cache menyelesaikan foto tidak terload",
-    "Dukungan cetak A4 multi koleksi UP dengan label badge"
+    "Script otomatis download foto Trello dan simpan ke Google Drive",
+    "Prioritaskan gdrive_image_url pada TrelloView dan Print Modal",
+    "Subfolder otomatis per koleksi UP di Google Drive",
+    "Counter real-time foto Google Drive di info strip"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.69",
+    "versionCode": 329,
+    "buildDate": "6 November 2026",
+    "buildHash": "wms-261106-v329-1425",
+    "releaseTitle": "WMS v2.6.69 — Dropsearch Multi-Choice & Trello Authenticated Image Loader",
+    "releaseNotes": [
+      "Opsi dropsearch multi choice untuk koleksi UP dengan live filter",
+      "Komponen TrelloImage dengan OAuth blob cache menyelesaikan foto tidak terload",
+      "Dukungan cetak A4 multi koleksi UP dengan label badge"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.68",
     "versionCode": 328,
@@ -118,19 +132,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Perbaikan modal Riwayat Audit Fisik yang kosong pada kode produksi yang sudah dihitung ulang (mis. 251061, 1027, 2430) akibat log sebelumnya hanya tersimpan di LocalStorage perangkat pembuat",
       "Sinkronisasi otomatis riwayat log hitung ulang ke Cloud Supabase (wms_system_docs: recount_history_logs_v1) agar tampil di semua perangkat",
       "Auto-Synthesize & Backfill riwayat log lengkap per varian (Warna, Size, Hitung Awal, Fisik, Selisih vs Awal, Selisih vs Nota Buyer, Putaran, & Petugas) dari hasil audit cloud & tabel penerimaan_produksi"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.61",
-    "versionCode": 321,
-    "buildDate": "5 November 2026",
-    "buildHash": "wms-261105-v321-1108",
-    "releaseTitle": "WMS v2.6.61 — Checklist & Drag-Drop pada Catatan serta Tinggi Baris Fleksibel Kalender",
-    "releaseNotes": [
-      "Tambah fitur Checkbox / Checklist interaktif pada Sticky Notes (bisa dicentang langsung di kartu maupun di modal)",
-      "Dukungan Drag & Drop (geser posisi kartu) untuk mengurutkan Catatan sesuai keinginan",
-      "Baris minggu pada Kalender Bulanan kini otomatis memanjang fleksibel menampilkan seluruh agenda tanpa disembunyikan di balik +1 lagi"
     ],
     "minSupportedVersion": "v2.0.0"
   }

@@ -177,7 +177,7 @@ export const TrelloPrintA4Modal: React.FC<TrelloPrintA4ModalProps> = ({
                   {/* Foto Produk */}
                   <div className="my-2 aspect-square w-full rounded-lg bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center relative">
                     <TrelloImage
-                      src={item.trello_image_url || item.gdrive_image_url}
+                      src={item.gdrive_image_url || item.trello_image_url}
                       alt={item.card_name}
                       className="w-full h-full object-cover"
                       fallbackText="Foto tidak tersedia"

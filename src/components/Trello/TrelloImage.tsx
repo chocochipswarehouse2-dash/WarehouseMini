@@ -127,3 +127,4 @@ export const TrelloImage: React.FC<TrelloImageProps> = ({
 
   return <img src={resolvedUrl} alt={alt} className={className} />;
 };
+

@@ -132,6 +132,11 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
     });
   }, [items]);
 
+  // Jumlah foto yang sudah tersimpan di Google Drive
+  const gdriveSyncedCount = useMemo(() => {
+    return items.filter((i) => !!i.gdrive_image_url).length;
+  }, [items]);
+
   // Set default selectedListNames ke UP pertama yang aktif jika belum pernah diatur
   useEffect(() => {
     if (!hasInitializedDefaultUp && upLists.length > 0) {
@@ -187,7 +192,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
       item.item_code,
       `"${item.item_name.replace(/"/g, '""')}"`,
       item.qty_note || '',
-      item.trello_image_url || item.gdrive_image_url || '',
+      item.gdrive_image_url || item.trello_image_url || '',
     ]);
 
     const csvContent =
@@ -278,10 +283,14 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
 
         {/* Info Strip */}
         <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span>
-              Total Koleksi: <b>{upLists.length} UP</b> • Total Artikel Tersimpan:{' '}
-              <b>{items.length} Pcs</b>
+              Total Koleksi: <b>{upLists.length} UP</b> • Total Artikel: <b>{items.length} Pcs</b>
+            </span>
+            <span className="text-slate-300 dark:text-slate-700">•</span>
+            <span className="inline-flex items-center gap-1 font-bold text-emerald-600 dark:text-emerald-400">
+              <span>Foto Google Drive:</span>
+              <span className="font-mono font-black">{gdriveSyncedCount} Pcs</span>
             </span>
             {lastSynced && (
               <span className="text-slate-400">
@@ -466,7 +475,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                 className="aspect-square w-full rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/60 overflow-hidden relative cursor-pointer group-hover:opacity-95 transition"
               >
                 <TrelloImage
-                  src={item.trello_image_url || item.gdrive_image_url}
+                  src={item.gdrive_image_url || item.trello_image_url}
                   alt={item.card_name}
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   fallbackText="No Photo"
@@ -531,7 +540,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                         className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 overflow-hidden mx-auto cursor-pointer"
                       >
                         <TrelloImage
-                          src={item.trello_image_url || item.gdrive_image_url}
+                          src={item.gdrive_image_url || item.trello_image_url}
                           alt={item.card_name}
                           className="w-full h-full object-cover"
                           fallbackText="-"
@@ -598,7 +607,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
             </div>
             <div className="aspect-square w-full bg-slate-950 flex items-center justify-center overflow-hidden">
               <TrelloImage
-                src={activePhotoModal.trello_image_url || activePhotoModal.gdrive_image_url}
+                src={activePhotoModal.gdrive_image_url || activePhotoModal.trello_image_url}
                 alt={activePhotoModal.card_name}
                 className="w-full h-full object-contain"
                 fallbackText="Foto tidak tersedia"

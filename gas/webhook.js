@@ -79,6 +79,23 @@ function handleGDriveUpload(payload) {
       folder = DriveApp.getRootFolder();
     }
     
+    // Support subfolder otomatis jika diberikan (misal nama koleksi: "UP 306")
+    if (payload.subFolderName) {
+      try {
+        var subFolders = folder.getFoldersByName(String(payload.subFolderName).trim());
+        if (subFolders.hasNext()) {
+          folder = subFolders.next();
+        } else {
+          folder = folder.createFolder(String(payload.subFolderName).trim());
+          try {
+            folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+          } catch (shareErr) {}
+        }
+      } catch (subErr) {
+        Logger.log('Warning create subFolder: ' + subErr.toString());
+      }
+    }
+
     var data = payload.base64File || payload.base64 || '';
     if (!data) {
       return jsonResponse({ success: false, error: 'Tidak ada data file base64 yang dikirim.' });

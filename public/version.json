@@ -1,13 +1,14 @@
 {
-  "version": "v2.6.69",
-  "versionCode": 329,
+  "version": "v2.6.70",
+  "versionCode": 330,
   "buildDate": "6 November 2026",
-  "buildHash": "wms-261106-v329-1425",
-  "releaseTitle": "WMS v2.6.69 — Dropsearch Multi-Choice & Trello Authenticated Image Loader",
+  "buildHash": "wms-261106-v330-1852",
+  "releaseTitle": "WMS v2.6.70 — Sinkronisasi Foto Trello ke Google Drive CDN & Prioritas GDrive Image",
   "releaseNotes": [
-    "Opsi dropsearch multi choice untuk koleksi UP dengan live filter",
-    "Komponen TrelloImage dengan OAuth blob cache menyelesaikan foto tidak terload",
-    "Dukungan cetak A4 multi koleksi UP dengan label badge"
+    "Script otomatis download foto Trello dan simpan ke Google Drive",
+    "Prioritaskan gdrive_image_url pada TrelloView dan Print Modal",
+    "Subfolder otomatis per koleksi UP di Google Drive",
+    "Counter real-time foto Google Drive di info strip"
   ],
   "minSupportedVersion": "v2.0.0"
 }
