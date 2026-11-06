@@ -1,13 +1,13 @@
 {
-  "version": "v2.6.68",
-  "versionCode": 328,
+  "version": "v2.6.69",
+  "versionCode": 329,
   "buildDate": "6 November 2026",
-  "buildHash": "wms-261106-v328-1351",
-  "releaseTitle": "WMS v2.6.68 — Sinkronisasi Otomatis Trello ke Supabase & Resolusi Foto",
+  "buildHash": "wms-261106-v329-1425",
+  "releaseTitle": "WMS v2.6.69 — Dropsearch Multi-Choice & Trello Authenticated Image Loader",
   "releaseNotes": [
-    "Muat langsung 727 artikel dari tabel Supabase trello_up_catalog saat halaman dibuka",
-    "Perbaikan ekstraksi attachment foto Trello",
-    "Optimasi local cache tanpa batas 5MB"
+    "Opsi dropsearch multi choice untuk koleksi UP dengan live filter",
+    "Komponen TrelloImage dengan OAuth blob cache menyelesaikan foto tidak terload",
+    "Dukungan cetak A4 multi koleksi UP dengan label badge"
   ],
   "minSupportedVersion": "v2.0.0"
 }

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Printer, CheckSquare, Calendar, Layers, Hash } from 'lucide-react';
 import { TrelloUpItem } from '../../types';
+import { TrelloImage } from './TrelloImage';
 
 interface TrelloPrintA4ModalProps {
   isOpen: boolean;
@@ -156,12 +157,15 @@ export const TrelloPrintA4Modal: React.FC<TrelloPrintA4ModalProps> = ({
                 >
                   {/* Card Header: Urutan & Kode */}
                   <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 min-w-0">
                       <span className="w-6 h-6 rounded-lg bg-slate-900 text-white font-mono font-black text-xs flex items-center justify-center shrink-0">
                         {item.sequence_order}
                       </span>
                       <span className="font-mono font-black text-sm text-slate-900">
                         {item.item_code}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-500 truncate">
+                        ({item.up_code})
                       </span>
                     </div>
 
@@ -172,19 +176,12 @@ export const TrelloPrintA4Modal: React.FC<TrelloPrintA4ModalProps> = ({
 
                   {/* Foto Produk */}
                   <div className="my-2 aspect-square w-full rounded-lg bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center relative">
-                    {item.trello_image_url || item.gdrive_image_url ? (
-                      <img
-                        src={item.trello_image_url || item.gdrive_image_url}
-                        alt={item.card_name}
-                        className="w-full h-full object-cover"
-                        crossOrigin="anonymous"
-                        loading="eager"
-                      />
-                    ) : (
-                      <div className="text-slate-400 text-xs font-semibold text-center p-2">
-                        Foto tidak tersedia
-                      </div>
-                    )}
+                    <TrelloImage
+                      src={item.trello_image_url || item.gdrive_image_url}
+                      alt={item.card_name}
+                      className="w-full h-full object-cover"
+                      fallbackText="Foto tidak tersedia"
+                    />
                   </div>
 
                   {/* Card Footer: Nama & Note */}

@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.68",
-  "versionCode": 328,
+  "version": "v2.6.69",
+  "versionCode": 329,
   "buildDate": "6 November 2026",
-  "buildHash": "wms-261106-v328-1351",
-  "releaseTitle": "WMS v2.6.68 — Sinkronisasi Otomatis Trello ke Supabase & Resolusi Foto",
+  "buildHash": "wms-261106-v329-1425",
+  "releaseTitle": "WMS v2.6.69 — Dropsearch Multi-Choice & Trello Authenticated Image Loader",
   "releaseNotes": [
-    "Muat langsung 727 artikel dari tabel Supabase trello_up_catalog saat halaman dibuka",
-    "Perbaikan ekstraksi attachment foto Trello",
-    "Optimasi local cache tanpa batas 5MB"
+    "Opsi dropsearch multi choice untuk koleksi UP dengan live filter",
+    "Komponen TrelloImage dengan OAuth blob cache menyelesaikan foto tidak terload",
+    "Dukungan cetak A4 multi koleksi UP dengan label badge"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.68",
+    "versionCode": 328,
+    "buildDate": "6 November 2026",
+    "buildHash": "wms-261106-v328-1351",
+    "releaseTitle": "WMS v2.6.68 — Sinkronisasi Otomatis Trello ke Supabase & Resolusi Foto",
+    "releaseNotes": [
+      "Muat langsung 727 artikel dari tabel Supabase trello_up_catalog saat halaman dibuka",
+      "Perbaikan ekstraksi attachment foto Trello",
+      "Optimasi local cache tanpa batas 5MB"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.67",
     "versionCode": 327,
@@ -118,20 +131,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Tambah fitur Checkbox / Checklist interaktif pada Sticky Notes (bisa dicentang langsung di kartu maupun di modal)",
       "Dukungan Drag & Drop (geser posisi kartu) untuk mengurutkan Catatan sesuai keinginan",
       "Baris minggu pada Kalender Bulanan kini otomatis memanjang fleksibel menampilkan seluruh agenda tanpa disembunyikan di balik +1 lagi"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.60",
-    "versionCode": 320,
-    "buildDate": "5 November 2026",
-    "buildHash": "wms-261105-v320-1726",
-    "releaseTitle": "WMS v2.6.60 — Live Chat Ala WhatsApp: Kamera, Enter HP, iPhone & Badge",
-    "releaseNotes": [
-      "Tombol Kamera langsung (Android/iPhone) selain Galeri untuk lampiran foto chat.",
-      "Perbaikan iPhone: tidak zoom saat mengetik, composer aman dari bar Safari, instruksi aktivasi notifikasi via Layar Utama.",
-      "Enter di HP membuat baris baru (kirim lewat tombol), textarea auto-grow, tombol Balas/Edit/Hapus lebih mudah diketuk.",
-      "Badge angka pesan belum dibaca pada ikon aplikasi (PWA)."
     ],
     "minSupportedVersion": "v2.0.0"
   }

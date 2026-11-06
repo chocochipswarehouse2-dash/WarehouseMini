@@ -28,6 +28,8 @@ import {
   DEFAULT_TRELLO_BOARD_ID,
 } from '../../services/trelloSyncService';
 import { TrelloPrintA4Modal } from './TrelloPrintA4Modal';
+import { TrelloMultiSelectDropdown, UpListOption } from './TrelloMultiSelectDropdown';
+import { TrelloImage } from './TrelloImage';
 
 interface TrelloViewProps {
   session?: UserSession | null;
@@ -50,7 +52,8 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
   });
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [selectedUp, setSelectedUp] = useState<string>('ALL');
+  const [selectedListNames, setSelectedListNames] = useState<string[]>([]);
+  const [hasInitializedDefaultUp, setHasInitializedDefaultUp] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const deferredSearch = useDeferredValue(searchQuery);
   const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
@@ -111,7 +114,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
   }, []);
 
   // Ambil daftar unik UP / List
-  const upLists = useMemo(() => {
+  const upLists: UpListOption[] = useMemo(() => {
     const map = new Map<string, { listName: string; upCode: string; count: number }>();
     items.forEach((item) => {
       const key = item.list_name || item.up_code;
@@ -129,18 +132,22 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
     });
   }, [items]);
 
-  // Set default selectedUp ke UP pertama yang aktif jika masih 'ALL'
+  // Set default selectedListNames ke UP pertama yang aktif jika belum pernah diatur
   useEffect(() => {
-    if (selectedUp === 'ALL' && upLists.length > 0) {
-      setSelectedUp(upLists[0].listName);
+    if (!hasInitializedDefaultUp && upLists.length > 0) {
+      setSelectedListNames([upLists[0].listName]);
+      setHasInitializedDefaultUp(true);
     }
-  }, [upLists, selectedUp]);
+  }, [upLists, hasInitializedDefaultUp]);
 
   // Filter items sesuai UP & pencarian
   const filteredItems = useMemo(() => {
     let list = items;
-    if (selectedUp !== 'ALL') {
-      list = list.filter((i) => i.list_name === selectedUp || i.up_code === selectedUp);
+    if (selectedListNames.length > 0 && !selectedListNames.includes('__NONE__')) {
+      const set = new Set(selectedListNames);
+      list = list.filter((i) => set.has(i.list_name) || set.has(i.up_code));
+    } else if (selectedListNames.includes('__NONE__')) {
+      return [];
     }
 
     if (deferredSearch.trim()) {
@@ -155,7 +162,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
     }
 
     return [...list].sort((a, b) => a.sequence_order - b.sequence_order);
-  }, [items, selectedUp, deferredSearch]);
+  }, [items, selectedListNames, deferredSearch]);
 
   // Ekspor CSV
   const handleExportCsv = () => {
@@ -189,9 +196,15 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
+    const exportName =
+      selectedListNames.length === 0
+        ? 'Semua_UP'
+        : selectedListNames.length === 1
+        ? selectedListNames[0].replace(/[^a-zA-Z0-9_-]/g, '_')
+        : `${selectedListNames.length}_Koleksi_UP`;
     link.setAttribute(
       'download',
-      `Susunan_${selectedUp.replace(/[^a-zA-Z0-9_-]/g, '_')}_${Date.now()}.csv`
+      `Susunan_${exportName}_${Date.now()}.csv`
     );
     document.body.appendChild(link);
     link.click();
@@ -288,15 +301,27 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
         </div>
       </div>
 
-      {/* 2. UP List Selector (Horizontal Swipeable Tab Bar) */}
+      {/* 2. UP Multi-Choice Dropsearch & Quick Shortcut Bar */}
       {upLists.length > 0 && (
-        <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl p-2 shadow-2xs">
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth py-1 px-1 -mx-1 sm:mx-0 w-full flex-nowrap">
+        <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-2xs space-y-3">
+          {/* Main Dropsearch Multi-Select Dropdown */}
+          <TrelloMultiSelectDropdown
+            options={upLists}
+            selectedListNames={selectedListNames}
+            onChange={(selected) => setSelectedListNames(selected)}
+            totalAllItemsCount={items.length}
+          />
+
+          {/* Quick 1-Click Shortcut Chips for Latest UPs */}
+          <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+            <span className="text-[11px] font-bold text-slate-400 shrink-0 mr-1">
+              Shortcut Cepat:
+            </span>
             <button
               type="button"
-              onClick={() => setSelectedUp('ALL')}
-              className={`px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 whitespace-nowrap flex items-center gap-1.5 ${
-                selectedUp === 'ALL'
+              onClick={() => setSelectedListNames([])}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 whitespace-nowrap flex items-center gap-1.5 ${
+                selectedListNames.length === 0
                   ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
@@ -307,15 +332,16 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
               </span>
             </button>
 
-            {upLists.map((up) => {
-              const isSelected = selectedUp === up.listName;
+            {upLists.slice(0, 8).map((up) => {
+              const isOnlyThisSelected =
+                selectedListNames.length === 1 && selectedListNames[0] === up.listName;
               return (
                 <button
                   key={up.listName}
                   type="button"
-                  onClick={() => setSelectedUp(up.listName)}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 whitespace-nowrap flex items-center gap-1.5 ${
-                    isSelected
+                  onClick={() => setSelectedListNames([up.listName])}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 whitespace-nowrap flex items-center gap-1.5 ${
+                    isOnlyThisSelected
                       ? 'bg-indigo-600 text-white shadow-xs'
                       : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                   }`}
@@ -323,7 +349,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                   <span>{up.listName}</span>
                   <span
                     className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
-                      isSelected
+                      isOnlyThisSelected
                         ? 'bg-white/20 text-white'
                         : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200/60 dark:border-slate-700/60'
                     }`}
@@ -439,19 +465,13 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                 onClick={() => setActivePhotoModal(item)}
                 className="aspect-square w-full rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/60 overflow-hidden relative cursor-pointer group-hover:opacity-95 transition"
               >
-                {item.trello_image_url || item.gdrive_image_url ? (
-                  <img
-                    src={item.trello_image_url || item.gdrive_image_url}
-                    alt={item.card_name}
-                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    loading="lazy"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs font-semibold">
-                    No Photo
-                  </div>
-                )}
-                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                <TrelloImage
+                  src={item.trello_image_url || item.gdrive_image_url}
+                  alt={item.card_name}
+                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  fallbackText="No Photo"
+                />
+                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white pointer-events-none">
                   <Eye className="w-5 h-5 drop-shadow-md" />
                 </div>
               </div>
@@ -510,18 +530,12 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                         onClick={() => setActivePhotoModal(item)}
                         className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 overflow-hidden mx-auto cursor-pointer"
                       >
-                        {item.trello_image_url || item.gdrive_image_url ? (
-                          <img
-                            src={item.trello_image_url || item.gdrive_image_url}
-                            alt={item.card_name}
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-[9px] text-slate-400">
-                            -
-                          </div>
-                        )}
+                        <TrelloImage
+                          src={item.trello_image_url || item.gdrive_image_url}
+                          alt={item.card_name}
+                          className="w-full h-full object-cover"
+                          fallbackText="-"
+                        />
                       </div>
                     </td>
                     <td className="py-2.5 px-4 font-bold text-slate-700 dark:text-slate-300">
@@ -583,10 +597,11 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
               </button>
             </div>
             <div className="aspect-square w-full bg-slate-950 flex items-center justify-center overflow-hidden">
-              <img
+              <TrelloImage
                 src={activePhotoModal.trello_image_url || activePhotoModal.gdrive_image_url}
                 alt={activePhotoModal.card_name}
                 className="w-full h-full object-contain"
+                fallbackText="Foto tidak tersedia"
               />
             </div>
             <div className="p-3 bg-slate-50 dark:bg-slate-850 flex items-center justify-between text-xs">
@@ -611,7 +626,13 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
       <TrelloPrintA4Modal
         isOpen={isPrintModalOpen}
         onClose={() => setIsPrintModalOpen(false)}
-        selectedUp={selectedUp === 'ALL' ? 'SEMUA UP' : selectedUp}
+        selectedUp={
+          selectedListNames.length === 0
+            ? 'SEMUA KOLEKSI UP'
+            : selectedListNames.length === 1
+            ? selectedListNames[0]
+            : `${selectedListNames.length} KOLEKSI TERPILIH`
+        }
         items={filteredItems}
       />
     </div>
