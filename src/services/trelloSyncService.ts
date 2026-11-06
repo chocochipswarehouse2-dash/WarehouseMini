@@ -67,9 +67,6 @@ export function parseListName(listName: string): { upCode: string; publishDateRa
   if (!listName) return { upCode: '', publishDateRaw: '' };
 
   const clean = listName.trim();
-  // Regex mencari UP [angka]
-  const upMatch = clean.match(/(UP\s*\d+[a-zA-Z0-9_\-\s]*?)(?:\s*-\s*|\s+)(\d+\s+[a-zA-Z]+|\d+\/\d+|\w+.*)?$/i);
-
   if (clean.includes('-')) {
     const parts = clean.split('-').map(p => p.trim());
     return {
@@ -93,7 +90,7 @@ export function getLocalCachedTrelloItems(): { items: TrelloUpItem[]; lastSynced
     const lastSynced = localStorage.getItem(LOCAL_STORAGE_LAST_SYNC_KEY);
     if (raw) {
       const items = JSON.parse(raw);
-      if (Array.isArray(items)) {
+      if (Array.isArray(items) && items.length > 0) {
         return { items, lastSynced };
       }
     }
@@ -104,11 +101,29 @@ export function getLocalCachedTrelloItems(): { items: TrelloUpItem[]; lastSynced
 }
 
 /**
- * Simpan data ke cache lokal
+ * Simpan data ke cache lokal (hanya metadata ringan agar tidak melebihi kuota 5MB)
  */
 export function setLocalCachedTrelloItems(items: TrelloUpItem[]): void {
   try {
-    localStorage.setItem(LOCAL_STORAGE_CACHE_KEY, JSON.stringify(items));
+    // Simpan data bersih tanpa raw_json besar agar muat di localStorage
+    const leanItems = items.map(i => ({
+      id: i.id,
+      board_id: i.board_id,
+      list_id: i.list_id,
+      list_name: i.list_name,
+      up_code: i.up_code,
+      publish_date_raw: i.publish_date_raw,
+      card_name: i.card_name,
+      item_code: i.item_code,
+      item_name: i.item_name,
+      qty_note: i.qty_note,
+      sequence_order: i.sequence_order,
+      trello_image_url: i.trello_image_url,
+      gdrive_image_url: i.gdrive_image_url,
+      status: i.status,
+      last_synced_at: i.last_synced_at
+    }));
+    localStorage.setItem(LOCAL_STORAGE_CACHE_KEY, JSON.stringify(leanItems));
     localStorage.setItem(LOCAL_STORAGE_LAST_SYNC_KEY, new Date().toISOString());
   } catch (err) {
     console.warn('Gagal menyimpan cache lokal Trello:', err);
@@ -116,25 +131,64 @@ export function setLocalCachedTrelloItems(items: TrelloUpItem[]): void {
 }
 
 /**
- * Tarik data live dari Trello API (Mengambil lists & cards dengan attachment gambar)
+ * Ambil seluruh data dari database Supabase (trello_up_catalog)
+ */
+export async function fetchTrelloUpFromSupabase(): Promise<TrelloUpItem[]> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return [];
+
+  try {
+    const { data, error } = await supabase
+      .from('trello_up_catalog')
+      .select('*')
+      .eq('status', 'ACTIVE')
+      .order('sequence_order', { ascending: true });
+
+    if (error) {
+      console.warn('Gagal memuat trello_up_catalog dari Supabase:', error.message);
+      return [];
+    }
+
+    return (data || []) as TrelloUpItem[];
+  } catch (err) {
+    console.warn('Exception fetch trello_up_catalog:', err);
+    return [];
+  }
+}
+
+/**
+ * Tarik data live dari Trello API (Mengambil lists & cards dengan attachment gambar lengkap)
  */
 export async function fetchLiveTrelloBoard(
   apiKey: string = DEFAULT_TRELLO_KEY,
   apiToken: string = DEFAULT_TRELLO_TOKEN,
   boardId: string = DEFAULT_TRELLO_BOARD_ID
 ): Promise<{ lists: any[]; cards: any[] }> {
-  const url = `https://api.trello.com/1/boards/${boardId}?key=${apiKey}&token=${apiToken}&lists=open&cards=open&attachments=true`;
+  const listsUrl = `https://api.trello.com/1/boards/${boardId}/lists?key=${apiKey}&token=${apiToken}&filter=open`;
+  const cardsUrl = `https://api.trello.com/1/boards/${boardId}/cards?key=${apiKey}&token=${apiToken}&attachments=true&fields=name,idList,pos,desc,badges,cover`;
 
-  const response = await fetch(url);
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Gagal menghubungi Trello API (Status ${response.status}): ${errText}`);
+  const [listsRes, cardsRes] = await Promise.all([
+    fetch(listsUrl),
+    fetch(cardsUrl)
+  ]);
+
+  if (!listsRes.ok) {
+    const errText = await listsRes.text();
+    throw new Error(`Gagal mengambil lists Trello (Status ${listsRes.status}): ${errText}`);
+  }
+  if (!cardsRes.ok) {
+    const errText = await cardsRes.text();
+    throw new Error(`Gagal mengambil cards Trello (Status ${cardsRes.status}): ${errText}`);
   }
 
-  const json = await response.json();
+  const [lists, cards] = await Promise.all([
+    listsRes.json(),
+    cardsRes.json()
+  ]);
+
   return {
-    lists: json.lists || [],
-    cards: json.cards || []
+    lists: lists || [],
+    cards: cards || []
   };
 }
 
@@ -164,20 +218,15 @@ export function transformTrelloData(lists: any[], cards: any[]): TrelloUpItem[] 
     const listName = listInfo.name || '';
     const { upCode, publishDateRaw } = parseListName(listName);
 
-    // Filter: Abaikan list arsip / list yang jelas bukan UP jika ada
-    const isUpList = /UP\s*\d+/i.test(listName) || /SEPT|OKT|NOV|DES|JAN|FEB|MAR|APR|MEI|JUN|JUL|AGUS/i.test(listName);
-
     listCards.sort((a, b) => a.pos - b.pos);
 
     listCards.forEach((c, idx) => {
       const { itemCode, itemName, qtyNote } = parseCardName(c.name);
 
-      // Cari attachment foto utama (cover atau attachment pertama bertipe gambar)
       let photoUrl: string | undefined;
       let attachmentId: string | undefined;
 
       if (c.attachments && c.attachments.length > 0) {
-        // Cari gambar terbesar / cover
         const imgAtt = c.attachments.find((att: any) =>
           att.mimeType?.startsWith('image/') ||
           /\.(jpg|jpeg|png|webp|gif)$/i.test(att.name || att.url)
@@ -185,7 +234,7 @@ export function transformTrelloData(lists: any[], cards: any[]): TrelloUpItem[] 
 
         if (imgAtt) {
           attachmentId = imgAtt.id;
-          // Gunakan preview berukuran optimal (600x600 atau 1200x1200) jika ada agar loading cepat dan hemat bandwidth
+          // Gunakan preview berukuran optimal (600x600 atau 1200x1200) jika ada agar loading cepat
           if (imgAtt.previews && imgAtt.previews.length > 0) {
             const goodPreview = imgAtt.previews.find((p: any) => p.width >= 600) || imgAtt.previews[imgAtt.previews.length - 1];
             photoUrl = goodPreview ? goodPreview.url : imgAtt.url;
@@ -226,13 +275,13 @@ export function transformTrelloData(lists: any[], cards: any[]): TrelloUpItem[] 
 }
 
 /**
- * Sinkronisasi penuh: Tarik dari Trello, simpan ke Supabase (jika tabel ada), dan perbarui cache lokal
+ * Sinkronisasi penuh: Tarik dari Trello, simpan ke Supabase, dan perbarui cache lokal
  */
 export async function syncTrelloUpCatalog(
   apiKey: string = DEFAULT_TRELLO_KEY,
   apiToken: string = DEFAULT_TRELLO_TOKEN,
   boardId: string = DEFAULT_TRELLO_BOARD_ID
-): Promise<{ success: boolean; totalItems: number; supabaseSaved: boolean; error?: string }> {
+): Promise<{ success: boolean; totalItems: number; supabaseSaved: boolean; items: TrelloUpItem[]; error?: string }> {
   try {
     const { lists, cards } = await fetchLiveTrelloBoard(apiKey, apiToken, boardId);
     const transformedItems = transformTrelloData(lists, cards);
@@ -240,12 +289,11 @@ export async function syncTrelloUpCatalog(
     // Simpan ke Cache Lokal
     setLocalCachedTrelloItems(transformedItems);
 
-    // Coba simpan / upsert ke Supabase
+    // Simpan / upsert ke Supabase
     let supabaseSaved = false;
     const supabase = getSupabaseClient();
     if (supabase && transformedItems.length > 0) {
       try {
-        // Chunk per 100 baris untuk efisiensi
         const chunkSize = 100;
         for (let i = 0; i < transformedItems.length; i += chunkSize) {
           const chunk = transformedItems.slice(i, i + chunkSize).map(item => ({
@@ -274,21 +322,22 @@ export async function syncTrelloUpCatalog(
             .upsert(chunk, { onConflict: 'id' });
 
           if (upsertError) {
-            console.warn('Supabase upsert warning (tabel mungkin belum dibuat):', upsertError.message);
+            console.warn('Supabase upsert warning:', upsertError.message);
             break;
           } else {
             supabaseSaved = true;
           }
         }
       } catch (sbErr) {
-        console.warn('Supabase trello_up_catalog belum dibuat / error:', sbErr);
+        console.warn('Supabase trello_up_catalog error:', sbErr);
       }
     }
 
     return {
       success: true,
       totalItems: transformedItems.length,
-      supabaseSaved
+      supabaseSaved,
+      items: transformedItems
     };
   } catch (err: any) {
     console.error('Error saat sinkronisasi Trello:', err);
@@ -296,8 +345,8 @@ export async function syncTrelloUpCatalog(
       success: false,
       totalItems: 0,
       supabaseSaved: false,
+      items: [],
       error: err.message || 'Gagal sinkronisasi data Trello'
     };
   }
 }
-

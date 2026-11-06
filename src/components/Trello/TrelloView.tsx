@@ -17,10 +17,13 @@ import {
   ArrowRight,
   Eye,
   X,
+  Loader2,
 } from 'lucide-react';
 import { TrelloUpItem, UserSession, ProductItem } from '../../types';
 import {
   getLocalCachedTrelloItems,
+  setLocalCachedTrelloItems,
+  fetchTrelloUpFromSupabase,
   syncTrelloUpCatalog,
   DEFAULT_TRELLO_BOARD_ID,
 } from '../../services/trelloSyncService';
@@ -54,6 +57,59 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
   const [activePhotoModal, setActivePhotoModal] = useState<TrelloUpItem | null>(null);
 
+  // Ambil data dari Supabase / Trello
+  const loadData = async (forceSync = false) => {
+    setIsLoading(true);
+    try {
+      if (!forceSync) {
+        // 1. Prioritaskan load dari Supabase
+        const sbItems = await fetchTrelloUpFromSupabase();
+        if (sbItems && sbItems.length > 0) {
+          setItems(sbItems);
+          setLocalCachedTrelloItems(sbItems);
+          const syncTime = sbItems[0]?.last_synced_at || new Date().toISOString();
+          setLastSynced(syncTime);
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      // 2. Jika Supabase masih kosong atau tombol Sync ditekan eksplisit
+      const result = await syncTrelloUpCatalog();
+      if (result.success) {
+        if (result.items && result.items.length > 0) {
+          setItems(result.items);
+        } else {
+          const reloaded = await fetchTrelloUpFromSupabase();
+          setItems(reloaded);
+        }
+        setLastSynced(new Date().toISOString());
+        if (forceSync) {
+          onNotify?.(
+            `Berhasil sinkronisasi ${result.totalItems} artikel dari Trello!${
+              result.supabaseSaved ? ' (Tersimpan ke Supabase)' : ''
+            }`,
+            'success'
+          );
+        }
+      } else if (forceSync) {
+        onNotify?.(result.error || 'Gagal sinkronisasi dari Trello', 'error');
+      }
+    } catch (err: any) {
+      console.error('Error load Trello data:', err);
+      if (forceSync) {
+        onNotify?.(err.message || 'Terjadi kesalahan saat memuat data', 'error');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Muat data saat halaman dibuka
+  useEffect(() => {
+    loadData(false);
+  }, []);
+
   // Ambil daftar unik UP / List
   const upLists = useMemo(() => {
     const map = new Map<string, { listName: string; upCode: string; count: number }>();
@@ -66,7 +122,6 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
     });
 
     return Array.from(map.values()).sort((a, b) => {
-      // Sort UP number descending jika memungkinkan
       const numA = parseInt(a.upCode.replace(/\D/g, '') || '0', 10);
       const numB = parseInt(b.upCode.replace(/\D/g, '') || '0', 10);
       if (numA && numB) return numB - numA;
@@ -74,43 +129,12 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
     });
   }, [items]);
 
-  // Set default selectedUp ke UP pertama yang aktif jika belum ada
+  // Set default selectedUp ke UP pertama yang aktif jika masih 'ALL'
   useEffect(() => {
     if (selectedUp === 'ALL' && upLists.length > 0) {
       setSelectedUp(upLists[0].listName);
     }
   }, [upLists, selectedUp]);
-
-  // Auto-sync jika data lokal masih kosong
-  useEffect(() => {
-    if (items.length === 0) {
-      handleSync();
-    }
-  }, []);
-
-  const handleSync = async () => {
-    setIsLoading(true);
-    try {
-      const result = await syncTrelloUpCatalog();
-      if (result.success) {
-        const cached = getLocalCachedTrelloItems();
-        setItems(cached.items);
-        setLastSynced(cached.lastSynced);
-        onNotify?.(
-          `Berhasil sinkronisasi ${result.totalItems} artikel dari Trello!${
-            result.supabaseSaved ? ' (Tersimpan ke Supabase)' : ''
-          }`,
-          'success'
-        );
-      } else {
-        onNotify?.(result.error || 'Gagal sinkronisasi dari Trello', 'error');
-      }
-    } catch (err: any) {
-      onNotify?.(err.message || 'Terjadi kesalahan saat sinkronisasi', 'error');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   // Filter items sesuai UP & pencarian
   const filteredItems = useMemo(() => {
@@ -190,7 +214,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                   Koleksi Upload (Trello UP)
                 </h1>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60 shrink-0">
-                  Live Sync
+                  Live Database
                 </span>
               </div>
               <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
@@ -199,7 +223,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
             </div>
           </div>
 
-          {/* Action Toolbar (Strictly adhering to Anti-Pelangi 1 Solid Button standard) */}
+          {/* Action Toolbar */}
           <div className="flex items-center gap-2 flex-wrap shrink-0">
             {/* Secondary Ghost: Cetak A4 */}
             <button
@@ -228,7 +252,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
             {/* Primary Solid: Sinkronkan Trello */}
             <button
               type="button"
-              onClick={handleSync}
+              onClick={() => loadData(true)}
               disabled={isLoading}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-600/25 transition cursor-pointer active:scale-95 disabled:opacity-50"
               title="Tarik Perubahan Terbaru dari Trello"
@@ -239,7 +263,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
           </div>
         </div>
 
-        {/* Info Strip: Sync status & Board link */}
+        {/* Info Strip */}
         <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
           <div className="flex items-center gap-2">
             <span>
@@ -264,52 +288,54 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
         </div>
       </div>
 
-      {/* 2. UP List Selector (Horizontal Swipeable Tab Bar for Mobile & Desktop) */}
-      <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl p-2 shadow-2xs">
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth py-1 px-1 -mx-1 sm:mx-0 w-full flex-nowrap">
-          <button
-            type="button"
-            onClick={() => setSelectedUp('ALL')}
-            className={`px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 whitespace-nowrap flex items-center gap-1.5 ${
-              selectedUp === 'ALL'
-                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <span>Semua UP</span>
-            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
-              {items.length}
-            </span>
-          </button>
+      {/* 2. UP List Selector (Horizontal Swipeable Tab Bar) */}
+      {upLists.length > 0 && (
+        <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl p-2 shadow-2xs">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth py-1 px-1 -mx-1 sm:mx-0 w-full flex-nowrap">
+            <button
+              type="button"
+              onClick={() => setSelectedUp('ALL')}
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 whitespace-nowrap flex items-center gap-1.5 ${
+                selectedUp === 'ALL'
+                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <span>Semua UP</span>
+              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                {items.length}
+              </span>
+            </button>
 
-          {upLists.map((up) => {
-            const isSelected = selectedUp === up.listName;
-            return (
-              <button
-                key={up.listName}
-                type="button"
-                onClick={() => setSelectedUp(up.listName)}
-                className={`px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 whitespace-nowrap flex items-center gap-1.5 ${
-                  isSelected
-                    ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                <span>{up.listName}</span>
-                <span
-                  className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
+            {upLists.map((up) => {
+              const isSelected = selectedUp === up.listName;
+              return (
+                <button
+                  key={up.listName}
+                  type="button"
+                  onClick={() => setSelectedUp(up.listName)}
+                  className={`px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 whitespace-nowrap flex items-center gap-1.5 ${
                     isSelected
-                      ? 'bg-white/20 text-white'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200/60 dark:border-slate-700/60'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                   }`}
                 >
-                  {up.count}
-                </span>
-              </button>
-            );
-          })}
+                  <span>{up.listName}</span>
+                  <span
+                    className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
+                      isSelected
+                        ? 'bg-white/20 text-white'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200/60 dark:border-slate-700/60'
+                    }`}
+                  >
+                    {up.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 3. Search & View Mode Switcher */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -327,7 +353,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
             <button
               type="button"
               onClick={() => setSearchQuery('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -365,8 +391,18 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
         </div>
       </div>
 
-      {/* 4. Main Content: Card Grid View or Table View */}
-      {filteredItems.length === 0 ? (
+      {/* 4. Main Content Area */}
+      {isLoading && items.length === 0 ? (
+        <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl p-12 text-center space-y-3 shadow-2xs">
+          <Loader2 className="w-8 h-8 text-indigo-600 dark:text-indigo-400 animate-spin mx-auto" />
+          <h3 className="font-bold text-slate-800 dark:text-white text-sm">
+            Memuat Koleksi UP dari Database...
+          </h3>
+          <p className="text-xs text-slate-500">
+            Sedang mengambil susunan artikel dan foto terbaru.
+          </p>
+        </div>
+      ) : filteredItems.length === 0 ? (
         <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl p-10 text-center space-y-3">
           <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto">
             <Layers className="w-6 h-6" />
@@ -541,7 +577,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
               <button
                 type="button"
                 onClick={() => setActivePhotoModal(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg"
+                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -581,4 +617,3 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
     </div>
   );
 };
-

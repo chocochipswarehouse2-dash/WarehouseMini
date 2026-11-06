@@ -15,21 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.67",
-  "versionCode": 327,
+  "version": "v2.6.68",
+  "versionCode": 328,
   "buildDate": "6 November 2026",
-  "buildHash": "wms-261106-v327-1159",
-  "releaseTitle": "WMS v2.6.67 — Modul Baru Koleksi UP (Trello) & Cetak A4",
+  "buildHash": "wms-261106-v328-1351",
+  "releaseTitle": "WMS v2.6.68 — Sinkronisasi Otomatis Trello ke Supabase & Resolusi Foto",
   "releaseNotes": [
-    "Halaman baru Koleksi UP Trello dengan Live Sync",
-    "Cetak Susunan Koleksi UP Format A4",
-    "Ekspor CSV dan Lightbox Foto",
-    "Skema Tabel Supabase trello_up_catalog"
+    "Muat langsung 727 artikel dari tabel Supabase trello_up_catalog saat halaman dibuka",
+    "Perbaikan ekstraksi attachment foto Trello",
+    "Optimasi local cache tanpa batas 5MB"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.67",
+    "versionCode": 327,
+    "buildDate": "6 November 2026",
+    "buildHash": "wms-261106-v327-1159",
+    "releaseTitle": "WMS v2.6.67 — Modul Baru Koleksi UP (Trello) & Cetak A4",
+    "releaseNotes": [
+      "Halaman baru Koleksi UP Trello dengan Live Sync",
+      "Cetak Susunan Koleksi UP Format A4",
+      "Ekspor CSV dan Lightbox Foto",
+      "Skema Tabel Supabase trello_up_catalog"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.66",
     "versionCode": 326,
@@ -119,20 +132,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Perbaikan iPhone: tidak zoom saat mengetik, composer aman dari bar Safari, instruksi aktivasi notifikasi via Layar Utama.",
       "Enter di HP membuat baris baru (kirim lewat tombol), textarea auto-grow, tombol Balas/Edit/Hapus lebih mudah diketuk.",
       "Badge angka pesan belum dibaca pada ikon aplikasi (PWA)."
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.59",
-    "versionCode": 319,
-    "buildDate": "5 November 2026",
-    "buildHash": "wms-261105-v319-1633",
-    "releaseTitle": "WMS v2.6.59 — Audit & Perbaikan Total Live Chat (Chat CS1/CS2, Anti-Hilang Room & SW Sync)",
-    "releaseNotes": [
-      "Perbaikan pencarian rekan chat (CS1/CS2/chococs2) langsung dari tab Semua Chat maupun tab Rekan meskipun user sedang offline.",
-      "Perbaikan race condition pembukaan chat 1-on-1 baru (0ms aktivasi instan & proteksi grace window 20 detik dari background sync).",
-      "Perbaikan bug Service Worker (pwa-extras.js) yang sebelumnya mengosongkan riwayat pesan saat klik Tandai Dibaca / Balas Cepat dari notifikasi.",
-      "Penambahan template hak akses default role Customer Service dan normalisasi profil CS 1 & CS 2."
     ],
     "minSupportedVersion": "v2.0.0"
   }

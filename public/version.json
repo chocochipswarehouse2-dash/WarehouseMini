@@ -1,14 +1,13 @@
 {
-  "version": "v2.6.67",
-  "versionCode": 327,
+  "version": "v2.6.68",
+  "versionCode": 328,
   "buildDate": "6 November 2026",
-  "buildHash": "wms-261106-v327-1159",
-  "releaseTitle": "WMS v2.6.67 — Modul Baru Koleksi UP (Trello) & Cetak A4",
+  "buildHash": "wms-261106-v328-1351",
+  "releaseTitle": "WMS v2.6.68 — Sinkronisasi Otomatis Trello ke Supabase & Resolusi Foto",
   "releaseNotes": [
-    "Halaman baru Koleksi UP Trello dengan Live Sync",
-    "Cetak Susunan Koleksi UP Format A4",
-    "Ekspor CSV dan Lightbox Foto",
-    "Skema Tabel Supabase trello_up_catalog"
+    "Muat langsung 727 artikel dari tabel Supabase trello_up_catalog saat halaman dibuka",
+    "Perbaikan ekstraksi attachment foto Trello",
+    "Optimasi local cache tanpa batas 5MB"
   ],
   "minSupportedVersion": "v2.0.0"
 }
