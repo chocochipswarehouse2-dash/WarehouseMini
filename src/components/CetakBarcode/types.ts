@@ -73,28 +73,7 @@ export const formatProductPriceWithTag = (
   return formatted;
 };
 
-export const isRealSize = (sz?: unknown): boolean => {
-  if (sz === undefined || sz === null) return false;
-  const clean = String(sz).trim();
-  if (
-    !clean ||
-    clean === '-' ||
-    clean.toLowerCase() === 'default' ||
-    clean.toLowerCase() === 'none' ||
-    clean.toLowerCase() === 'null' ||
-    clean.toLowerCase() === 'undefined'
-  ) {
-    return false;
-  }
-  // Check if it's erroneously set to a full product/variant title (e.g. "Wintour Skirt Blue")
-  if (
-    /\b(skirt|top|dress|pants|pant|blouse|shirt|cardigan|knit|outer|jacket|shorts|culotte|jeans|vest|tunic|tee|kaos|celana|rok)\b/i.test(clean) ||
-    clean.split(/\s+/).length > 2
-  ) {
-    return false;
-  }
-  return true;
-};
+export { isRealSize } from '../../utils/sortUtils';
 
 export const getProductMasterPrice = (product?: ProductItem | null): number => {
   if (!product) return 0;

@@ -301,6 +301,34 @@ export function extractCleanSizeToken(str?: string): string {
   return trimmed;
 }
 
+/**
+ * Validates whether a value is a legitimate clothing size (e.g. S, M, L, XL, XXL, 28, 30, etc.)
+ * Returns false if value is null, undefined, '-', 'Default', or if it's erroneously set to a
+ * full product/variant title (e.g. "Wintour Skirt Blue").
+ */
+export function isRealSize(sz?: unknown): boolean {
+  if (sz === undefined || sz === null) return false;
+  const clean = String(sz).trim();
+  if (
+    !clean ||
+    clean === '-' ||
+    clean.toLowerCase() === 'default' ||
+    clean.toLowerCase() === 'none' ||
+    clean.toLowerCase() === 'null' ||
+    clean.toLowerCase() === 'undefined'
+  ) {
+    return false;
+  }
+  // Check if it's erroneously set to a full product/variant title (e.g. "Wintour Skirt Blue")
+  if (
+    /\b(skirt|top|dress|pants|pant|blouse|shirt|cardigan|knit|outer|jacket|shorts|culotte|jeans|vest|tunic|tee|kaos|celana|rok)\b/i.test(clean) ||
+    clean.split(/\s+/).length > 2
+  ) {
+    return false;
+  }
+  return true;
+}
+
 interface CachedMasterEntry {
   name: string;
   size: string;
@@ -371,6 +399,11 @@ export function resolveProductName(
 ): string {
   const cleanSku = (sku || '').trim().toUpperCase();
 
+  // 1. Authoritative hard-coded overrides for known SKU corrections
+  if (cleanSku && /^DF26KBF03/i.test(cleanSku)) {
+    return 'Taylor Pants Dark Denim';
+  }
+
   if (catalogItem) {
     const catName = cleanProductName(
       (catalogItem.p || catalogItem.nama_produk || catalogItem.n || (catalogItem as any).nama || '').trim()
@@ -431,7 +464,7 @@ export function resolveProductDisplaySize(
   // 1. Master catalog size (authoritative standard from master product)
   if (catalogSize) {
     const cleanCatSize = extractCleanSizeToken(catalogSize);
-    if (cleanCatSize && cleanCatSize !== '-') {
+    if (cleanCatSize && cleanCatSize !== '-' && isRealSize(cleanCatSize)) {
       return cleanCatSize;
     }
   }
@@ -442,7 +475,7 @@ export function resolveProductDisplaySize(
     const found = exact.get(cleanSku);
     if (found && found.size) {
       const mSize = extractCleanSizeToken(found.size);
-      if (mSize && mSize !== '-') {
+      if (mSize && mSize !== '-' && isRealSize(mSize)) {
         return mSize;
       }
     }
@@ -450,16 +483,16 @@ export function resolveProductDisplaySize(
 
   // 3. Fallback only if not in master product: record size or extracted suffix
   const rawSize = extractCleanSizeToken(recordSize || '');
-  if (rawSize && rawSize !== '-' && rawSize.toUpperCase() !== 'DEFAULT') {
+  if (rawSize && rawSize !== '-' && rawSize.toUpperCase() !== 'DEFAULT' && isRealSize(rawSize)) {
     return rawSize;
   }
 
   const fromSku = extractSizeFromSku(cleanSku);
-  if (fromSku && fromSku !== '-' && fromSku !== 'DEFAULT') {
+  if (fromSku && fromSku !== '-' && fromSku !== 'DEFAULT' && isRealSize(fromSku)) {
     return fromSku;
   }
 
-  if (recordSize && (recordSize.toUpperCase() === 'DEFAULT' || recordSize.toUpperCase() === 'ALL SIZE')) {
+  if (recordSize && (recordSize.toUpperCase() === 'DEFAULT' || recordSize.toUpperCase() === 'ALL SIZE' || fromSku === 'Default')) {
     return 'Default';
   }
 

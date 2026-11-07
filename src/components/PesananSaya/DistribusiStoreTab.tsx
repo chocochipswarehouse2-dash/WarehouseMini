@@ -36,7 +36,7 @@ import {
 import { fetchWithDeltaSync, clearDeltaSyncCache } from '../../services/gasSync';
 import { playSuccessBeep, playErrorBeep } from '../../services/audio';
 import { SuratJalanSelisihMessageParams, generateSuratJalanSelisihMessage, getWhatsAppWebUrl } from '../../services/whatsapp';
-import { extractSizeFromSku, formatProductNameWithSize, resolveProductName, resolveProductDisplaySize, cleanProductName, extractCleanSizeToken } from '../../utils/sortUtils';
+import { extractSizeFromSku, formatProductNameWithSize, resolveProductName, resolveProductDisplaySize, cleanProductName, extractCleanSizeToken, isRealSize } from '../../utils/sortUtils';
 import { isWarehouseLocation } from '../../services/supabase';
 import { DistribusiPickingModal } from './DistribusiPickingModal';
 import { DistribusiSelisihWaModal } from './DistribusiSelisihWaModal';
@@ -172,14 +172,14 @@ function parseCsvContent(content: string, fileName: string, productCatalog?: Pro
       }
     }
     if (!nama) nama = sku;
-    nama = cleanProductName(nama);
+    nama = resolveProductName(cleanSku, nama, catProd);
 
     // Detect size from variant column, catalog item, or SKU pattern
     const detectedSize = resolveProductDisplaySize(
       cleanSku,
       rawVar,
       catProd?.s ? String(catProd.s) : ((catProd as any)?.size ? String((catProd as any).size) : undefined)
-    ) || (rawVar ? extractCleanSizeToken(rawVar) : extractSizeFromSku(cleanSku));
+    ) || (rawVar && isRealSize(rawVar) ? extractCleanSizeToken(rawVar) : extractSizeFromSku(cleanSku));
     const effectiveSize = (detectedSize && detectedSize !== '-') ? detectedSize : '';
 
     const category = get(col.category);
@@ -465,7 +465,19 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         item.size,
         prod?.s ? String(prod.s) : ((prod as any)?.size ? String((prod as any).size) : undefined)
       ) || extractSizeFromSku(cleanSku);
-      const effectiveSize = (resolvedSize && resolvedSize !== '-') ? resolvedSize : (item.size || '');
+
+      let effectiveSize = (resolvedSize && resolvedSize !== '-' && isRealSize(resolvedSize))
+        ? resolvedSize
+        : (isRealSize(item.size) ? String(item.size).trim() : '');
+
+      if (!effectiveSize) {
+        const fromSku = extractSizeFromSku(cleanSku);
+        if (fromSku && fromSku !== '-' && isRealSize(fromSku)) {
+          effectiveSize = fromSku;
+        } else {
+          effectiveSize = (resolvedSize === 'Default' || item.size === 'Default' || fromSku === 'Default') ? 'Default' : '-';
+        }
+      }
 
       const baseName = resolveProductName(cleanSku, item.nama_produk, prod);
 
@@ -697,16 +709,14 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
              (p.sku && String(p.sku).toUpperCase() === cleanSku)
       );
 
-      const baseName = masterProduct
-        ? (masterProduct.p || masterProduct.n || (masterProduct as any).nama_produk || sku)
-        : 'SKU tidak terdaftar';
+      const baseName = resolveProductName(cleanSku, undefined, masterProduct);
 
       const detectedSize = resolveProductDisplaySize(
         cleanSku,
         undefined,
         masterProduct?.s ? String(masterProduct.s) : ((masterProduct as any)?.size ? String((masterProduct as any).size) : undefined)
       ) || extractSizeFromSku(cleanSku);
-      const effectiveSize = (detectedSize && detectedSize !== '-') ? detectedSize : '';
+      const effectiveSize = (detectedSize && detectedSize !== '-' && isRealSize(detectedSize)) ? detectedSize : '';
 
       const resolvedName = (effectiveSize && !baseName.toUpperCase().includes(effectiveSize.toUpperCase()) && baseName !== 'SKU tidak terdaftar')
         ? `${baseName} (Size: ${effectiveSize})`
@@ -834,8 +844,8 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         destination: activeDraft.destination,
         tanggal_sj: cleanDate,
         sku,
-        nama_produk: val.nama || sku,
-        size: (val as any).size,
+        nama_produk: resolveProductName(sku, val.nama),
+        size: isRealSize((val as any).size) ? (val as any).size : (extractSizeFromSku(sku) !== '-' ? extractSizeFromSku(sku) : 'Default'),
         category: val.category || 'Lebih',
         qty_sj: 0,
         qty_scan: val.qty,
@@ -2019,7 +2029,11 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                             {/* 2. Size */}
                             <td className="px-2 py-3 text-center align-middle w-16">
                               <span className="inline-block px-2 py-0.5 rounded-md font-mono text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                                {item.size || '-'}
+                                {isRealSize(item.size)
+                                  ? item.size
+                                  : (extractSizeFromSku(item.sku) !== '-'
+                                      ? extractSizeFromSku(item.sku)
+                                      : (item.size === 'Default' || resolveProductDisplaySize(item.sku, item.size) === 'Default' ? 'Default' : '-'))}
                               </span>
                             </td>
 
@@ -2175,8 +2189,8 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
 
                                 const unexpectedLebih = Object.entries(activeDraft.unexpected || {}).map(([sku, val]) => ({
                                   sku,
-                                  nama_produk: val.nama || sku,
-                                  size: (val as any).size,
+                                  nama_produk: resolveProductName(sku, val.nama),
+                                  size: isRealSize((val as any).size) ? (val as any).size : (extractSizeFromSku(sku) !== '-' ? extractSizeFromSku(sku) : 'Default'),
                                   qty_sj: 0,
                                   qty_scan: val.qty,
                                   selisih: val.qty,
@@ -2852,7 +2866,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                         {/* 1. Nama Produk */}
                                         <td className="px-3 py-2 text-slate-900 dark:text-slate-100 min-w-[200px] align-middle">
                                           <div className="font-bold text-xs leading-snug break-words">
-                                            {item.nama_produk}
+                                            {resolveProductName(item.sku, item.nama_produk)}
                                           </div>
                                           {item.category && (
                                             <div className="text-[9.5px] text-slate-400 font-normal truncate mt-0.5">{item.category}</div>
@@ -2861,7 +2875,11 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                         {/* 2. Size */}
                                         <td className="px-2 py-2 text-center align-middle w-16">
                                           <span className="inline-block px-1.5 py-0.5 rounded font-mono text-[11px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
-                                            {item.size || '-'}
+                                            {isRealSize(item.size)
+                                              ? item.size
+                                              : (extractSizeFromSku(item.sku) !== '-'
+                                                  ? extractSizeFromSku(item.sku)
+                                                  : (item.size === 'Default' || resolveProductDisplaySize(item.sku, item.size) === 'Default' ? 'Default' : '-'))}
                                           </span>
                                         </td>
                                         {/* 3. SKU */}

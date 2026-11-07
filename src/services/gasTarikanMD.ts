@@ -2,6 +2,7 @@ import { PengecekanSJRecord, PengecekanSJItem, PengecekanSJDraft, TarikanMDRecor
 import { supabaseFetch } from './supabase';
 import { fetchWithDeltaSync } from './gasSync';
 import { saveSJDraftsToDb, loadSJDraftsFromDb, deleteSJDraftFromDb } from './localDb';
+import { resolveProductName, extractSizeFromSku, isRealSize } from '../utils/sortUtils';
 
 const CACHE_KEY_RECORDS = 'wms_cached_pengecekan_sj_records';
 const CACHE_KEY_LEGACY = 'wms_cached_tarikan_md';
@@ -257,14 +258,26 @@ function normalizeRecords(rawData: any[]): PengecekanSJRecord[] {
         existing.selisih = existing.qty_scan - existing.qty_sj;
         existing.status_item = existing.qty_scan === existing.qty_sj ? 'COCOK' : (existing.qty_scan < existing.qty_sj ? 'KURANG' : 'LEBIH');
       } else {
+        const cleanSku = sku.toUpperCase().trim();
+        const resolvedName = resolveProductName(cleanSku, String(it.nama_produk || it.nama_barang || it.nama || ''));
+        let rawSize = it.size ? String(it.size).trim() : undefined;
+        if (rawSize && !isRealSize(rawSize)) {
+          const fromSku = extractSizeFromSku(cleanSku);
+          rawSize = (fromSku && fromSku !== '-') ? fromSku : 'Default';
+        } else if (!rawSize) {
+          const fromSku = extractSizeFromSku(cleanSku);
+          if (fromSku && fromSku !== '-') {
+            rawSize = fromSku;
+          }
+        }
         group.itemsMap.set(sku, {
           no_sj: row.no_sj,
           source: row.source,
           destination: row.destination,
           tanggal_sj: row.tanggal_sj,
           sku: sku,
-          nama_produk: String(it.nama_produk || it.nama_barang || it.nama || ''),
-          size: it.size ? String(it.size) : undefined,
+          nama_produk: resolvedName,
+          size: rawSize,
           qty_sj: Number(it.qty_sj || 0),
           qty_scan: Number(it.qty_scan || it.qty_terima || 0),
           selisih: Number(it.qty_scan || it.qty_terima || 0) - Number(it.qty_sj || 0),
@@ -344,6 +357,63 @@ export async function submitPengecekanSJ(payload: PengecekanSJRecord): Promise<{
   }
 }
 
+export function sanitizeSJDraft(draft: PengecekanSJDraft): { draft: PengecekanSJDraft; changed: boolean } {
+  if (!draft) return { draft, changed: false };
+  let changed = false;
+  const newItems = (draft.items || []).map(it => {
+    const clean = (it.sku || '').trim().toUpperCase();
+    let name = it.nama_produk;
+    let size = it.size;
+    const resName = resolveProductName(clean, it.nama_produk);
+    if (resName && resName !== it.nama_produk) {
+      name = resName;
+      changed = true;
+    }
+    if (size && !isRealSize(size)) {
+      const fromSku = extractSizeFromSku(clean);
+      size = (fromSku && fromSku !== '-') ? fromSku : 'Default';
+      changed = true;
+    }
+    if (name !== it.nama_produk || size !== it.size) {
+      return { ...it, nama_produk: name, size };
+    }
+    return it;
+  });
+
+  let newUnexpected = draft.unexpected;
+  if (draft.unexpected) {
+    let unexpChanged = false;
+    const copy = { ...draft.unexpected };
+    Object.entries(copy).forEach(([sku, val]) => {
+      const clean = sku.trim().toUpperCase();
+      let name = val.nama;
+      let size = (val as any).size;
+      const resName = resolveProductName(clean, val.nama);
+      if (resName && resName !== val.nama) {
+        name = resName;
+        unexpChanged = true;
+      }
+      if (size && !isRealSize(size)) {
+        const fromSku = extractSizeFromSku(clean);
+        size = (fromSku && fromSku !== '-') ? fromSku : 'Default';
+        unexpChanged = true;
+      }
+      if (name !== val.nama || size !== (val as any).size) {
+        copy[sku] = { ...val, nama: name, size };
+      }
+    });
+    if (unexpChanged) {
+      newUnexpected = copy;
+      changed = true;
+    }
+  }
+
+  return {
+    draft: changed ? { ...draft, items: newItems, unexpected: newUnexpected } : draft,
+    changed,
+  };
+}
+
 export function saveSJDrafts(drafts: PengecekanSJDraft[]): void {
   // Always persist to IndexedDB (safe from quota limits)
   saveSJDraftsToDb(drafts).catch(err => {
@@ -359,7 +429,20 @@ export function saveSJDrafts(drafts: PengecekanSJDraft[]): void {
 
 export function loadSJDrafts(): PengecekanSJDraft[] {
   try {
-    return JSON.parse(localStorage.getItem(CACHE_KEY_DRAFTS) || '[]');
+    const raw = JSON.parse(localStorage.getItem(CACHE_KEY_DRAFTS) || '[]');
+    if (Array.isArray(raw) && raw.length > 0) {
+      let anyChanged = false;
+      const sanitized = raw.map(d => {
+        const res = sanitizeSJDraft(d);
+        if (res.changed) anyChanged = true;
+        return res.draft;
+      });
+      if (anyChanged) {
+        saveSJDrafts(sanitized);
+      }
+      return sanitized;
+    }
+    return raw;
   } catch { return []; }
 }
 
@@ -367,7 +450,16 @@ export async function loadSJDraftsAsync(): Promise<PengecekanSJDraft[]> {
   try {
     const fromDb = await loadSJDraftsFromDb();
     if (fromDb && fromDb.length > 0) {
-      return fromDb;
+      let anyChanged = false;
+      const sanitized = fromDb.map(d => {
+        const res = sanitizeSJDraft(d);
+        if (res.changed) anyChanged = true;
+        return res.draft;
+      });
+      if (anyChanged) {
+        saveSJDrafts(sanitized);
+      }
+      return sanitized;
     }
   } catch (err) {
     console.warn('loadSJDraftsAsync IndexedDB error:', err);

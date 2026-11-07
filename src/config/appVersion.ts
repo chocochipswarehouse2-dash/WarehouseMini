@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.74",
-  "versionCode": 334,
+  "version": "v2.6.75",
+  "versionCode": 335,
   "buildDate": "7 November 2026",
-  "buildHash": "wms-261107-v334-1053",
-  "releaseTitle": "WMS v2.6.74 — Koreksi Master Data Taylor Pants & Sanitasi Size Produk",
+  "buildHash": "wms-261107-v335-1143",
+  "releaseTitle": "WMS v2.6.75 — Auto-Migrasi Taylor Pants & Sanitasi Ukuran Pengecekan Surat Jalan",
   "releaseNotes": [
-    "Koreksi master produk SKU DF26KBF03DD (S-XL) dari Femima Pants menjadi Taylor Pants Dark Denim",
-    "Perbaikan sanitasi parsing size produk agar nama varian DealPOS/Katalog (seperti Wintour Skirt Blue) tidak bocor ke badge size",
-    "Dukungan ekstraksi size huruf standar DF26 (A=Default, C=S, D=M, E=L, F=XL, G=XXL) di sortUtils"
+    "Auto-migrasi data draft antrean dan riwayat Pengecekan Surat Jalan agar SKU DF26KBF03 otomatis menjadi Taylor Pants Dark Denim",
+    "Perbaikan data lampau di Supabase pengecekan_sj dan pencegahan tampilan nama produk pada kolom ukuran",
+    "Sanitasi ukuran otomatis ke All Size/Default jika tidak memiliki varian S-XL"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.74",
+    "versionCode": 334,
+    "buildDate": "7 November 2026",
+    "buildHash": "wms-261107-v334-1053",
+    "releaseTitle": "WMS v2.6.74 — Koreksi Master Data Taylor Pants & Sanitasi Size Produk",
+    "releaseNotes": [
+      "Koreksi master produk SKU DF26KBF03DD (S-XL) dari Femima Pants menjadi Taylor Pants Dark Denim",
+      "Perbaikan sanitasi parsing size produk agar nama varian DealPOS/Katalog (seperti Wintour Skirt Blue) tidak bocor ke badge size",
+      "Dukungan ekstraksi size huruf standar DF26 (A=Default, C=S, D=M, E=L, F=XL, G=XXL) di sortUtils"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.73",
     "versionCode": 333,
@@ -119,19 +132,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Cetak Susunan Koleksi UP Format A4",
       "Ekspor CSV dan Lightbox Foto",
       "Skema Tabel Supabase trello_up_catalog"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.66",
-    "versionCode": 326,
-    "buildDate": "6 November 2026",
-    "buildHash": "wms-261106-v326-0608",
-    "releaseTitle": "WMS v2.6.66 — Penyempurnaan Responsif Mobile Multi-Modul & Sticky App Bar",
-    "releaseNotes": [
-      "Header Sticky Mobile App Bar dengan hamburger, brand dan status aktif",
-      "Navigasi tab horizontal swipeable di modul Produksi",
-      "Wadah fluid elastis tanpa limit margin di modul Picking"
     ],
     "minSupportedVersion": "v2.0.0"
   }
