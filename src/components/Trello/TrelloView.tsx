@@ -60,6 +60,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
   const deferredSearch = useDeferredValue(searchQuery);
   const [viewMode, setViewMode] = useState<'kanban' | 'card' | 'table'>('kanban');
   const [kanbanDensity, setKanbanDensity] = useState<'compact' | 'normal' | 'large'>('compact');
+  const [sortMode, setSortMode] = useState<'trello' | 'newest'>('trello');
   const [isFilterOpen, setIsFilterOpen] = useState<boolean>(true);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
   const [activePhotoModal, setActivePhotoModal] = useState<TrelloUpItem | null>(null);
@@ -119,22 +120,40 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
 
   // Ambil daftar unik UP / List
   const upLists: UpListOption[] = useMemo(() => {
-    const map = new Map<string, { listName: string; upCode: string; count: number }>();
+    const map = new Map<string, { listName: string; upCode: string; count: number; listPos?: number; listIndex?: number }>();
     items.forEach((item) => {
       const key = item.list_name || item.up_code;
       if (!map.has(key)) {
-        map.set(key, { listName: item.list_name, upCode: item.up_code, count: 0 });
+        const itemPos = item.list_pos ?? item.raw_json?.list_pos;
+        const itemIdx = item.list_index ?? item.raw_json?.list_index;
+        map.set(key, { listName: item.list_name, upCode: item.up_code, count: 0, listPos: itemPos, listIndex: itemIdx });
       }
       map.get(key)!.count += 1;
     });
 
     return Array.from(map.values()).sort((a, b) => {
-      const numA = parseInt(a.upCode.replace(/\D/g, '') || '0', 10);
-      const numB = parseInt(b.upCode.replace(/\D/g, '') || '0', 10);
-      if (numA && numB) return numB - numA;
-      return a.listName.localeCompare(b.listName);
+      if (sortMode === 'trello') {
+        // Mode 'trello': Prioritaskan persis posisi board Trello asli (Kiri ke Kanan)
+        if (a.listPos !== undefined && b.listPos !== undefined && a.listPos !== b.listPos) {
+          return a.listPos - b.listPos;
+        }
+        if (a.listIndex !== undefined && b.listIndex !== undefined && a.listIndex !== b.listIndex) {
+          return a.listIndex - b.listIndex;
+        }
+        // Fallback kronologis alami (UP 279, UP 280, ... UP 343)
+        const numA = parseInt(a.upCode.replace(/\D/g, '') || '0', 10);
+        const numB = parseInt(b.upCode.replace(/\D/g, '') || '0', 10);
+        if (numA && numB && numA !== numB) return numA - numB;
+        return a.listName.localeCompare(b.listName);
+      } else {
+        // Mode 'newest': UP nomor terbesar ditaruh paling depan
+        const numA = parseInt(a.upCode.replace(/\D/g, '') || '0', 10);
+        const numB = parseInt(b.upCode.replace(/\D/g, '') || '0', 10);
+        if (numA && numB && numA !== numB) return numB - numA;
+        return a.listName.localeCompare(b.listName);
+      }
     });
-  }, [items]);
+  }, [items, sortMode]);
 
   // Jumlah foto yang sudah tersimpan di Google Drive
   const gdriveSyncedCount = useMemo(() => {
@@ -487,6 +506,37 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
               </button>
             </div>
           )}
+
+          {/* Urutan Kolom Switcher */}
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+            <span className="text-[10px] font-bold text-slate-400 pl-1.5 pr-0.5 hidden lg:inline">
+              Urutan:
+            </span>
+            <button
+              type="button"
+              onClick={() => setSortMode('trello')}
+              className={`px-2 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                sortMode === 'trello'
+                  ? 'bg-white dark:bg-[#131d31] text-indigo-600 dark:text-indigo-400 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+              title="Urutan sesuai posisi board Trello asli (Kiri ke Kanan)"
+            >
+              <span>Trello Asli</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortMode('newest')}
+              className={`px-2 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                sortMode === 'newest'
+                  ? 'bg-white dark:bg-[#131d31] text-indigo-600 dark:text-indigo-400 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+              title="Urutan dari nomor UP terbesar ke terkecil"
+            >
+              <span>UP Terbaru</span>
+            </button>
+          </div>
 
           {/* View Mode Switcher */}
           <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700">

@@ -15,20 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.75",
-  "versionCode": 335,
+  "version": "v2.6.76",
+  "versionCode": 336,
   "buildDate": "7 November 2026",
-  "buildHash": "wms-261107-v335-1143",
-  "releaseTitle": "WMS v2.6.75 — Auto-Migrasi Taylor Pants & Sanitasi Ukuran Pengecekan Surat Jalan",
+  "buildHash": "wms-261107-v336-1640",
+  "releaseTitle": "WMS v2.6.76 — Fix Master Product Size Sanitizer & Trello Kanban Order",
   "releaseNotes": [
-    "Auto-migrasi data draft antrean dan riwayat Pengecekan Surat Jalan agar SKU DF26KBF03 otomatis menjadi Taylor Pants Dark Denim",
-    "Perbaikan data lampau di Supabase pengecekan_sj dan pencegahan tampilan nama produk pada kolom ukuran",
-    "Sanitasi ukuran otomatis ke All Size/Default jika tidak memiliki varian S-XL"
+    "Fix fatal bug in UpdateDatabaseModal that wiped valid S and L sizes to Default",
+    "Optimize Pure O(1) Lookup and expand letter-size detection for all 2026 SKU collections",
+    "Add authentic Trello board left-to-right order toggle in Trello UP Kanban",
+    "Restore 213 corrupted Default sizes in master_produk Supabase"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.75",
+    "versionCode": 335,
+    "buildDate": "7 November 2026",
+    "buildHash": "wms-261107-v335-1143",
+    "releaseTitle": "WMS v2.6.75 — Auto-Migrasi Taylor Pants & Sanitasi Ukuran Pengecekan Surat Jalan",
+    "releaseNotes": [
+      "Auto-migrasi data draft antrean dan riwayat Pengecekan Surat Jalan agar SKU DF26KBF03 otomatis menjadi Taylor Pants Dark Denim",
+      "Perbaikan data lampau di Supabase pengecekan_sj dan pencegahan tampilan nama produk pada kolom ukuran",
+      "Sanitasi ukuran otomatis ke All Size/Default jika tidak memiliki varian S-XL"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.74",
     "versionCode": 334,
@@ -118,20 +132,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Muat langsung 727 artikel dari tabel Supabase trello_up_catalog saat halaman dibuka",
       "Perbaikan ekstraksi attachment foto Trello",
       "Optimasi local cache tanpa batas 5MB"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.67",
-    "versionCode": 327,
-    "buildDate": "6 November 2026",
-    "buildHash": "wms-261106-v327-1159",
-    "releaseTitle": "WMS v2.6.67 — Modul Baru Koleksi UP (Trello) & Cetak A4",
-    "releaseNotes": [
-      "Halaman baru Koleksi UP Trello dengan Live Sync",
-      "Cetak Susunan Koleksi UP Format A4",
-      "Ekspor CSV dan Lightbox Foto",
-      "Skema Tabel Supabase trello_up_catalog"
     ],
     "minSupportedVersion": "v2.0.0"
   }

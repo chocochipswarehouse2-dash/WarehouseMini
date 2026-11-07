@@ -196,10 +196,12 @@ export async function fetchLiveTrelloBoard(
  * Transformasi raw Trello response menjadi daftar `TrelloUpItem` terstruktur
  */
 export function transformTrelloData(lists: any[], cards: any[]): TrelloUpItem[] {
+  // Urutkan lists secara ketat sesuai posisi horizontal di papan Trello asli (l.pos ascending)
+  const sortedLists = [...(lists || [])].sort((a, b) => (Number(a.pos) || 0) - (Number(b.pos) || 0));
   const listMap = new Map<string, any>();
-  lists.forEach(l => listMap.set(l.id, l));
+  sortedLists.forEach((l, idx) => listMap.set(l.id, { ...l, index: idx }));
 
-  // Kelompokkan kartu per list dan urutkan berdasarkan pos
+  // Kelompokkan kartu per list dan urutkan berdasarkan pos kartu di dalam list
   const cardsByList = new Map<string, any[]>();
   cards.forEach(c => {
     if (!cardsByList.has(c.idList)) {
@@ -210,11 +212,12 @@ export function transformTrelloData(lists: any[], cards: any[]): TrelloUpItem[] 
 
   const results: TrelloUpItem[] = [];
 
-  // Urutkan setiap list kartu berdasarkan pos
-  for (const [listId, listCards] of cardsByList.entries()) {
-    const listInfo = listMap.get(listId);
-    if (!listInfo) continue;
+  // Iterasi persis sesuai urutan list di papan Trello asli (Kiri ke Kanan)
+  for (const listInfo of sortedLists) {
+    const listCards = cardsByList.get(listInfo.id);
+    if (!listCards || listCards.length === 0) continue;
 
+    const listId = listInfo.id;
     const listName = listInfo.name || '';
     const { upCode, publishDateRaw } = parseListName(listName);
 
@@ -285,13 +288,17 @@ export function transformTrelloData(lists: any[], cards: any[]): TrelloUpItem[] 
         description: c.desc || '',
         sequence_order: idx + 1,
         pos: c.pos,
+        list_pos: listInfo.pos,
+        list_index: listInfo.index,
         trello_attachment_id: attachmentId,
         trello_image_url: photoUrl,
         status: 'ACTIVE',
         raw_json: {
           badges: c.badges,
           labels: c.labels,
-          attachmentsCount: c.attachments?.length || 0
+          attachmentsCount: c.attachments?.length || 0,
+          list_pos: listInfo.pos,
+          list_index: listInfo.index
         },
         last_synced_at: new Date().toISOString()
       });

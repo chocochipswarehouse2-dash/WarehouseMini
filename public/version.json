@@ -1,13 +1,14 @@
 {
-  "version": "v2.6.75",
-  "versionCode": 335,
+  "version": "v2.6.76",
+  "versionCode": 336,
   "buildDate": "7 November 2026",
-  "buildHash": "wms-261107-v335-1143",
-  "releaseTitle": "WMS v2.6.75 — Auto-Migrasi Taylor Pants & Sanitasi Ukuran Pengecekan Surat Jalan",
+  "buildHash": "wms-261107-v336-1640",
+  "releaseTitle": "WMS v2.6.76 — Fix Master Product Size Sanitizer & Trello Kanban Order",
   "releaseNotes": [
-    "Auto-migrasi data draft antrean dan riwayat Pengecekan Surat Jalan agar SKU DF26KBF03 otomatis menjadi Taylor Pants Dark Denim",
-    "Perbaikan data lampau di Supabase pengecekan_sj dan pencegahan tampilan nama produk pada kolom ukuran",
-    "Sanitasi ukuran otomatis ke All Size/Default jika tidak memiliki varian S-XL"
+    "Fix fatal bug in UpdateDatabaseModal that wiped valid S and L sizes to Default",
+    "Optimize Pure O(1) Lookup and expand letter-size detection for all 2026 SKU collections",
+    "Add authentic Trello board left-to-right order toggle in Trello UP Kanban",
+    "Restore 213 corrupted Default sizes in master_produk Supabase"
   ],
   "minSupportedVersion": "v2.0.0"
 }

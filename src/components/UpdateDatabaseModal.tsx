@@ -31,7 +31,7 @@ import {
 } from '../services/supabase';
 import { playSuccessBeep, playErrorBeep, vibrateDevice } from '../services/audio';
 import { globalRealtimeStore } from '../services/store';
-import { extractSizeFromSku } from '../utils/sortUtils';
+import { extractSizeFromSku, extractCleanSizeToken, isRealSize } from '../utils/sortUtils';
 
 interface UpdateDatabaseModalProps {
   isOpen: boolean;
@@ -473,16 +473,28 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
             nama = 'Taylor Pants Dark Denim';
           }
 
-          // Sanitize erroneous size fields (where DealPOS exports variant name containing full product title or apparel words)
-          if (
-            size.toLowerCase() === nama.toLowerCase() ||
-            size.toLowerCase().includes(nama.toLowerCase()) ||
-            nama.toLowerCase().includes(size.toLowerCase()) ||
-            /\b(skirt|top|dress|pants|blouse|shirt|cardigan|knit|outer|jacket|shorts|culotte|jeans|vest|tunic|tee|kaos|celana|rok)\b/i.test(size) ||
-            size.split(/\s+/).length > 2
-          ) {
-            const fromSku = extractSizeFromSku(sku);
-            size = fromSku !== '-' ? fromSku : 'Default';
+          // Clean size: If user explicitly provided a real size (e.g. S, M, L, XL, XXL, XS, 28, 30, ALL, etc.),
+          // RESPECT IT 100%! Never let the sanitizer destroy a legitimate size!
+          const cleanSizeToken = extractCleanSizeToken(size);
+          const isSizeValid = cleanSizeToken && isRealSize(cleanSizeToken) && cleanSizeToken.toLowerCase() !== nama.toLowerCase();
+
+          if (isSizeValid) {
+            size = cleanSizeToken;
+          } else {
+            // Only sanitize when size is genuinely corrupted (e.g. full product title, apparel words, or blank/Default)
+            const isCorrupted =
+              !size ||
+              size === '-' ||
+              size.toLowerCase() === 'default' ||
+              size.toLowerCase() === nama.toLowerCase() ||
+              size.toLowerCase().includes(nama.toLowerCase()) ||
+              /\b(skirt|top|dress|pants|blouse|shirt|cardigan|knit|outer|jacket|shorts|culotte|jeans|vest|tunic|tee|kaos|celana|rok)\b/i.test(size) ||
+              size.split(/\s+/).length > 2;
+
+            if (isCorrupted) {
+              const fromSku = extractSizeFromSku(sku);
+              size = fromSku !== '-' ? fromSku : 'Default';
+            }
           }
           const rawPrice = String((idxPrice !== -1 ? r[idxPrice] : '') || '0').replace(/[^0-9.-]+/g, '');
           const priceNum = Number(rawPrice) || 0;

@@ -10,6 +10,7 @@
  * 6. Only negative physical rack stock (sisa_stok < 0) is a quantity anomaly.
  */
 import { ProductItem } from '../types';
+import { extractSizeFromSku } from './sortUtils';
 
 export interface ProductLookupResult {
   found: boolean;
@@ -161,9 +162,17 @@ export function lookupProductBySku(
     master.p || master.n || (master as any).nama_produk || ''
   ).trim();
 
-  const officialSize = String(
+  let officialSize = String(
     master.s || (master as any).size || '-'
   ).trim();
+
+  // If master data recorded "Default" or empty, try extracting legitimate size from SKU
+  if (!officialSize || officialSize === '-' || officialSize.toUpperCase() === 'DEFAULT') {
+    const fromSku = extractSizeFromSku(cleanSku);
+    if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT') {
+      officialSize = fromSku;
+    }
+  }
 
   const dealposQty = Number(master.q) || 0;
   const category = (master.c || master.category || '') as string;

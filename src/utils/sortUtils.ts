@@ -154,12 +154,12 @@ export function extractSizeFromSku(sku: string): string {
     if (singleMatch) return singleMatch[1].toUpperCase();
   }
 
-  // 4. DF26 letter-based size standard:
-  // DF26... ends with:
-  // C -> S, D -> M, E -> L, F -> XL, G -> XXL, A -> Default (ALL SIZE)
-  if (/^DF26[A-Z0-9]{4,}/i.test(clean)) {
+  // 4. Letter-based size standard (Chococips 2026/season collections, e.g. DF26, ZF26, BF26, AF26, CF26):
+  // Format: [Prefix 4][Type 3][Model 2][Color 2][Letter Size 1] (e.g. ZF26KBH01NVC)
+  // Ends with: C -> S, D -> M, E -> L, F -> XL, G -> XXL, A -> ALL, B -> XS
+  if (/^[A-Z]{1,3}\d{2}[A-Z0-9]{4,}[A-G]$/i.test(clean) || /^DF26[A-Z0-9]{4,}/i.test(clean)) {
     const lastChar = clean.slice(-1);
-    if (lastChar === 'A') return 'Default';
+    if (lastChar === 'A') return 'ALL';
     if (lastChar === 'B') return 'XS';
     if (lastChar === 'C') return 'S';
     if (lastChar === 'D') return 'M';

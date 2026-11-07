@@ -1505,6 +1505,8 @@ export interface TrelloUpItem {
   description?: string;
   sequence_order: number;
   pos: number;
+  list_pos?: number;
+  list_index?: number;
   trello_attachment_id?: string;
   trello_image_url?: string;
   gdrive_file_id?: string;

@@ -184,7 +184,12 @@ function parseCatalogItem(item: ProductItem): CatalogBase | null {
 
   // Size: ukuran master -> akhiran SKU -> '-'
   let size = extractCleanSizeToken(String(item.s || (item as any).size || ''));
-  if (!size || size === '-') size = extractSizeFromSku(sku);
+  if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') {
+    const fromSku = extractSizeFromSku(sku);
+    if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT') {
+      size = fromSku;
+    }
+  }
   if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = 'ALL';
 
   const dpRaw = isObj(item.dealpos_channels) ? (item.dealpos_channels as Record<string, any>) : {};
@@ -918,8 +923,11 @@ export function composeAreaRows(
     const base = catalogMap.get(cleanSku);
     const rawProduk = base?.produk || stockRows[0]?.nama_produk || cleanSku;
     const produk = cleanProductName(rawProduk) || rawProduk;
-    let size = base?.size || extractCleanSizeToken(stockRows[0]?.size || '');
-    if (!size || size === '-') size = extractSizeFromSku(sku);
+    const physicalSize = extractCleanSizeToken(stockRows[0]?.size || '');
+    let size = (base?.size && base.size !== 'ALL' && base.size !== 'Default' && base.size !== '-')
+      ? base.size
+      : (physicalSize && physicalSize !== '-' && physicalSize !== 'Default' ? physicalSize : (base?.size || ''));
+    if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = extractSizeFromSku(sku);
     if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = 'ALL';
 
     const kategori = base?.kategori || (stockRows[0] as any)?.kategori || (stockRows[0] as any)?.category || 'CLOTHING';
