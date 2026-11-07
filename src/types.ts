@@ -739,6 +739,7 @@ export interface PenerimaanRecountLogDetailItem {
 
 export interface PenerimaanRecountLogItem {
   id: string;
+  round?: number;
   tanggal_audit: string;
   auditor: string;
   kode_produksi: string;

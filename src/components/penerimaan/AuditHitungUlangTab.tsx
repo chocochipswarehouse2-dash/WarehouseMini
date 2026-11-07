@@ -936,6 +936,15 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
 
       // 3. Catat ke riwayat log audit (History Logs)
       try {
+        // Jika kode ini sebelumnya sudah pernah dihitung (mis. Putaran 1 dari sistem lama),
+        // pastikan snapshot putaran sebelumnya tersimpan lebih dulu agar tidak hilang saat masuk Putaran ke-2 dst.
+        if (activeGroup.is_counted) {
+          const prevSynth = synthesizeHistoryLogForCode(activeGroup.kode_produksi);
+          if (prevSynth && Number(prevSynth.round || 1) < nextRound) {
+            await savePenerimaanRecountLog(prevSynth);
+          }
+        }
+
         const detailRecords = activeVariants.map((v) => {
           const key = `${v.warna}_${v.size}`;
           const sv = variantInputs[key];
@@ -954,6 +963,8 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         });
 
         await savePenerimaanRecountLog({
+          id: `recount_${normalizeProductCode(activeGroup.kode_produksi)}_r${nextRound}_${Date.now()}`,
+          round: nextRound,
           tanggal_audit: auditDate,
           auditor: auditorName || 'Auditor Fisik',
           kode_produksi: activeGroup.kode_produksi,
@@ -969,6 +980,23 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
 
       // Simpan ke Cloud Settings agar persisten & langsung terbaca di seluruh user / HP
       try {
+        const prevRec = recountAuditMap[activeGroup.kode_produksi];
+        const prevHistory = Array.isArray(prevRec?.history) ? [...prevRec.history] : [];
+        if (prevRec && prevRec.total_fisik !== undefined && Number(prevRec.round || 1) !== nextRound) {
+          prevHistory.push({
+            round: prevRec.round || 1,
+            tanggal_audit: prevRec.tanggal_audit,
+            total_asli: prevRec.total_asli,
+            total_fisik: prevRec.total_fisik,
+            total_selisih: prevRec.total_selisih,
+            status: prevRec.status,
+            auditor: prevRec.auditor,
+            catatan: prevRec.catatan,
+            updated_at: prevRec.updated_at,
+            variants: prevRec.variants,
+          });
+        }
+
         const newRecord = {
           kode_produksi: activeGroup.kode_produksi,
           tanggal_audit: auditDate,
@@ -980,6 +1008,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
           auditor: auditorName || 'Auditor Fisik',
           catatan: generalNotes,
           updated_at: nowIso,
+          history: prevHistory,
           variants: activeVariants.map((v) => {
             const key = `${v.warna}_${v.size}`;
             const sv = variantInputs[key];
@@ -1201,6 +1230,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
 
     return {
       id: `recount_sync_${normCode}_r${roundNum}`,
+      round: roundNum,
       tanggal_audit: String(rawDate).slice(0, 10),
       auditor: auditorStr,
       kode_produksi: normCode,
@@ -1215,46 +1245,104 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
     };
   };
 
+  // Helper to synthesize all rounds (including archived rounds in auditRec.history)
+  const synthesizeAllHistoryLogsForCode = (rawCode: string): PenerimaanRecountLogItem[] => {
+    const normCode = normalizeProductCode(rawCode);
+    const latest = synthesizeHistoryLogForCode(rawCode);
+    if (!latest) return [];
+
+    const auditRec =
+      recountAuditMap[normCode] ||
+      recountAuditMap[rawCode] ||
+      Object.values(recountAuditMap).find(
+        (v: any) => normalizeProductCode(v?.kode_produksi || '') === normCode
+      );
+
+    const results: PenerimaanRecountLogItem[] = [latest];
+    if (auditRec && Array.isArray(auditRec.history) && auditRec.history.length > 0) {
+      auditRec.history.forEach((h: any, hIdx: number) => {
+        const rNum = Number(h.round || hIdx + 1);
+        const hDetails: PenerimaanRecountLogDetailItem[] = Array.isArray(h.variants)
+          ? h.variants.map((v: any) => {
+              const qAsli = Number(v.qty_asli) || 0;
+              const qFisik = v.qty_fisik !== undefined && v.qty_fisik !== null ? Number(v.qty_fisik) : qAsli;
+              return {
+                kode_produksi: normCode,
+                warna: v.warna || '-',
+                size: v.size || '-',
+                qty_sebelumnya: qAsli,
+                qty_fisik: qFisik,
+                selisih: v.selisih !== undefined && v.selisih !== null ? Number(v.selisih) : qFisik - qAsli,
+                catatan: v.note || v.catatan || '',
+              };
+            })
+          : [];
+        const rawDate = h.tanggal_audit || h.updated_at || latest.tanggal_audit;
+        results.push({
+          id: `recount_sync_${normCode}_r${rNum}`,
+          round: rNum,
+          tanggal_audit: String(rawDate).slice(0, 10),
+          auditor: h.auditor || latest.auditor,
+          kode_produksi: normCode,
+          total_sebelumnya: Number(h.total_asli ?? latest.total_sebelumnya),
+          total_fisik: Number(h.total_fisik ?? 0),
+          total_selisih: Number(h.total_selisih ?? (Number(h.total_fisik ?? 0) - Number(h.total_asli ?? latest.total_sebelumnya))),
+          general_notes: h.catatan || '',
+          details: hDetails,
+          created_at: String(rawDate).includes('T')
+            ? String(rawDate)
+            : `${String(rawDate).slice(0, 10)}T07:00:00.000Z`,
+        });
+      });
+    }
+
+    return results.sort((a, b) => Number(b.round || 1) - Number(a.round || 1));
+  };
+
   // Open History Logs Modal for a code
   const handleOpenHistoryModal = async (code: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setHistoryTargetCode(code);
     setIsHistoryModalOpen(true);
 
-    const synthLog = synthesizeHistoryLogForCode(code);
-    if (synthLog) {
-      setHistoryLogs([synthLog]);
-    } else {
-      setHistoryLogs([]);
-    }
+    const synthLogs = synthesizeAllHistoryLogsForCode(code);
+    setHistoryLogs(synthLogs);
 
     setIsLoadingHistory(true);
     try {
       const logs = await fetchPenerimaanRecountLogs(code);
       if (logs && logs.length > 0) {
-        if (synthLog) {
-          const hasSameIdOrTotals = logs.some(
+        const combined = [...logs];
+        synthLogs.forEach((sLog) => {
+          const exists = combined.some(
             (l) =>
-              l.id === synthLog.id ||
-              (Number(l.total_fisik) === Number(synthLog.total_fisik) &&
-                String(l.tanggal_audit).slice(0, 10) === String(synthLog.tanggal_audit).slice(0, 10) &&
-                (l.auditor || '').toLowerCase() === (synthLog.auditor || '').toLowerCase())
+              l.id === sLog.id ||
+              (sLog.round && l.round && Number(l.round) === Number(sLog.round)) ||
+              (Number(l.total_fisik) === Number(sLog.total_fisik) &&
+                String(l.tanggal_audit).slice(0, 10) === String(sLog.tanggal_audit).slice(0, 10) &&
+                (l.auditor || '').toLowerCase() === (sLog.auditor || '').toLowerCase())
           );
-          const merged = hasSameIdOrTotals ? logs : [synthLog, ...logs];
-          setHistoryLogs(merged);
-        } else {
-          setHistoryLogs(logs);
-        }
-      } else if (synthLog) {
-        setHistoryLogs([synthLog]);
+          if (!exists) {
+            combined.push(sLog);
+          }
+        });
+        combined.sort((a, b) => {
+          if (a.round && b.round && a.round !== b.round) return b.round - a.round;
+          return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+        });
+        setHistoryLogs(combined);
+      } else if (synthLogs.length > 0) {
+        setHistoryLogs(synthLogs);
         // Backfill ke cloud history agar sesi ini tersimpan permanen lintas perangkat
-        savePenerimaanRecountLog(synthLog).catch(() => {});
+        synthLogs.forEach((sLog) => {
+          savePenerimaanRecountLog(sLog).catch(() => {});
+        });
       } else {
         setHistoryLogs([]);
       }
     } catch (err) {
       console.warn('Error loading recount logs:', err);
-      if (synthLog) setHistoryLogs([synthLog]);
+      if (synthLogs.length > 0) setHistoryLogs(synthLogs);
     } finally {
       setIsLoadingHistory(false);
     }
@@ -2658,7 +2746,19 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                   <p className="text-xs">Belum ada riwayat audit fisik yang tercatat untuk kode ini.</p>
                 </div>
               ) : (
-                historyLogs.map((log, idx) => {
+                <>
+                  {historyLogs.length > 1 && (
+                    <div className="p-3 rounded-xl bg-indigo-50/80 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/50 flex items-center justify-between flex-wrap gap-2">
+                      <div className="text-xs font-bold text-indigo-900 dark:text-indigo-200">
+                        🔄 Riwayat Multi-Putaran: Kode ini telah dihitung ulang sebanyak{' '}
+                        <span className="font-black underline">{historyLogs.length}x Putaran</span>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold text-indigo-700 dark:text-indigo-300 bg-white dark:bg-slate-900 px-2 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-800">
+                        Urutan: Putaran Terbaru (Atas) → Putaran Awal (Bawah)
+                      </span>
+                    </div>
+                  )}
+                  {historyLogs.map((log, idx) => {
                   // Resolve complete details list with robust multi-layer fallback
                   let detailsList = Array.isArray(log.details) && log.details.length > 0 ? log.details : [];
 
@@ -2718,10 +2818,29 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                     recountAuditMap[normalizeProductCode(historyTargetCode)] ||
                     recountAuditMap[historyTargetCode];
                   const roundNumber =
-                    (log as any).round ||
-                    auditRecForCode?.round ||
-                    targetGroup?.last_round ||
-                    historyLogs.length - idx;
+                    log.round ||
+                    (historyLogs.length === 1
+                      ? auditRecForCode?.round || targetGroup?.last_round || 1
+                      : historyLogs.length - idx);
+                  const prevRoundLog = idx < historyLogs.length - 1 ? historyLogs[idx + 1] : null;
+                  const prevRoundNumber = prevRoundLog
+                    ? prevRoundLog.round || historyLogs.length - (idx + 1)
+                    : null;
+                  const deltaVsPrevRound = prevRoundLog
+                    ? Number(log.total_fisik) - Number(prevRoundLog.total_fisik)
+                    : null;
+
+                  // Map varian putaran sebelumnya untuk mendeteksi varian mana yang berubah di putaran ini
+                  const prevVariantFisikMap = new Map<string, number>();
+                  if (prevRoundLog && Array.isArray(prevRoundLog.details)) {
+                    prevRoundLog.details.forEach((pd) => {
+                      prevVariantFisikMap.set(
+                        `${(pd.warna || '-').trim().toUpperCase()}_${(pd.size || '-').trim().toUpperCase()}`,
+                        Number(pd.qty_fisik) || 0
+                      );
+                    });
+                  }
+
                   const qtyNota =
                     targetGroup?.qty_nota !== undefined && targetGroup?.qty_nota !== null
                       ? Number(targetGroup.qty_nota)
@@ -2733,7 +2852,11 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                   return (
                     <div
                       key={log.id || idx}
-                      className="p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3"
+                      className={`p-4 rounded-2xl border space-y-3 ${
+                        idx === 0
+                          ? 'bg-slate-50 dark:bg-slate-850 border-indigo-200 dark:border-indigo-800/70'
+                          : 'bg-slate-50/60 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700'
+                      }`}
                     >
                       <div className="flex items-center justify-between flex-wrap gap-2">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -2743,6 +2866,15 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                           <span className="px-2 py-0.5 rounded-md bg-rose-100 dark:bg-rose-950/60 font-mono text-[10px] font-black text-rose-700 dark:text-rose-300">
                             Putaran {roundNumber}
                           </span>
+                          {idx === 0 ? (
+                            <span className="px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/60 font-sans text-[10px] font-black text-emerald-700 dark:text-emerald-300">
+                              TERBARU (AKTIF)
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-md bg-slate-200/70 dark:bg-slate-800 font-sans text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                              ARSIP PUTARAN {roundNumber}
+                            </span>
+                          )}
                           <span className="text-xs font-bold text-slate-900 dark:text-white">
                             Tgl Audit: <strong>{log.tanggal_audit}</strong> &bull; Petugas: <strong className="text-rose-600">{log.auditor}</strong>
                           </span>
@@ -2800,7 +2932,30 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                         )}
                       </div>
 
-                      {targetGroup?.catatan_petunjuk ? (
+                      {prevRoundLog && deltaVsPrevRound !== null && (
+                        <div className="px-3 py-1.5 rounded-lg bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/70 dark:border-blue-800/40 flex items-center justify-between flex-wrap gap-2 text-[11px]">
+                          <span className="text-slate-700 dark:text-slate-300 font-medium">
+                            🔍 Perbandingan dengan <strong>Putaran {prevRoundNumber}</strong> ({prevRoundLog.auditor}:{' '}
+                            <strong className="font-mono">{prevRoundLog.total_fisik} pcs</strong> → Putaran {roundNumber}:{' '}
+                            <strong className="font-mono">{log.total_fisik} pcs</strong>)
+                          </span>
+                          <span
+                            className={`font-mono font-black px-2 py-0.5 rounded ${
+                              deltaVsPrevRound === 0
+                                ? 'bg-slate-200/70 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                : deltaVsPrevRound > 0
+                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
+                                : 'bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300'
+                            }`}
+                          >
+                            {deltaVsPrevRound === 0
+                              ? 'Tetap (0 pcs)'
+                              : `Δ ${deltaVsPrevRound > 0 ? `+${deltaVsPrevRound}` : deltaVsPrevRound} pcs dari Putaran ${prevRoundNumber}`}
+                          </span>
+                        </div>
+                      )}
+
+                      {targetGroup?.catatan_petunjuk && idx === 0 ? (
                         <p className="text-[11px] text-amber-800 dark:text-amber-200 bg-amber-50/80 dark:bg-amber-950/30 p-2 rounded-lg border border-amber-200/70 dark:border-amber-800/40 font-medium">
                           📌 <strong>Petunjuk:</strong> {targetGroup.catatan_petunjuk}
                         </p>
@@ -2827,7 +2982,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                                   <th className="py-2 px-2.5">Warna</th>
                                   <th className="py-2 px-2.5 text-center w-14">Size</th>
                                   <th className="py-2 px-2.5 text-center w-20 text-slate-700 dark:text-slate-300">Dokumen</th>
-                                  <th className="py-2 px-2.5 text-center w-20 font-black text-blue-600 dark:text-blue-400 bg-blue-50/30 dark:bg-blue-950/20">Fisik</th>
+                                  <th className="py-2 px-2.5 text-center w-24 font-black text-blue-600 dark:text-blue-400 bg-blue-50/30 dark:bg-blue-950/20">Fisik</th>
                                   <th className="py-2 px-2.5 text-center w-16">Selisih</th>
                                   <th className="py-2 px-2.5 text-center w-20">Status</th>
                                   <th className="py-2 px-2.5 min-w-[100px]">Catatan</th>
@@ -2836,6 +2991,13 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono text-[11px]">
                                 {sortedDetails.map((d, dIdx) => {
                                   const isMatch = d.selisih === 0;
+                                  const vKey = `${(d.warna || '-').trim().toUpperCase()}_${(d.size || '-').trim().toUpperCase()}`;
+                                  const prevVarFisik = prevVariantFisikMap.has(vKey)
+                                    ? prevVariantFisikMap.get(vKey)!
+                                    : null;
+                                  const varDeltaPrev =
+                                    prevVarFisik !== null ? Number(d.qty_fisik) - prevVarFisik : null;
+
                                   return (
                                     <tr key={dIdx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                                       <td className="py-1.5 px-2.5 text-center text-slate-400 font-sans text-[10px]">{dIdx + 1}</td>
@@ -2843,7 +3005,19 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                                       <td className="py-1.5 px-2.5 text-center font-bold">{d.size}</td>
                                       <td className="py-1.5 px-2.5 text-center text-slate-600 dark:text-slate-400">{d.qty_sebelumnya}</td>
                                       <td className="py-1.5 px-2.5 text-center font-black text-blue-600 dark:text-blue-400 bg-blue-50/20 dark:bg-blue-950/10">
-                                        {d.qty_fisik}
+                                        <span>{d.qty_fisik}</span>
+                                        {varDeltaPrev !== null && varDeltaPrev !== 0 && (
+                                          <span
+                                            className={`ml-1 px-1 py-0.2 rounded text-[9px] font-bold ${
+                                              varDeltaPrev > 0
+                                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300'
+                                                : 'bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300'
+                                            }`}
+                                            title={`Berubah dari Putaran ${prevRoundNumber} (${prevVarFisik} pcs → ${d.qty_fisik} pcs)`}
+                                          >
+                                            {varDeltaPrev > 0 ? `+${varDeltaPrev}` : varDeltaPrev}
+                                          </span>
+                                        )}
                                       </td>
                                       <td className="py-1.5 px-2.5 text-center font-black">
                                         <span className={isMatch ? 'text-emerald-600' : d.selisih < 0 ? 'text-rose-600' : 'text-blue-600'}>
@@ -2874,7 +3048,8 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                       ) : null}
                     </div>
                   );
-                })
+                })}
+                </>
               )}
             </div>
           </div>

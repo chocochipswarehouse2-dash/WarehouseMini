@@ -536,11 +536,35 @@ export async function saveRecountAuditRecord(record: {
   }>;
 }): Promise<boolean> {
   const currentMap = getRecountAuditMap();
+  const prevRec = currentMap[record.kode_produksi];
+  const prevHistory: any[] = Array.isArray(prevRec?.history) ? [...prevRec.history] : [];
+  if (prevRec && prevRec.total_fisik !== undefined) {
+    const prevSnapshot = {
+      round: prevRec.round || 1,
+      tanggal_audit: prevRec.tanggal_audit || (prevRec.updated_at ? String(prevRec.updated_at).slice(0, 10) : ''),
+      total_asli: prevRec.total_asli,
+      total_fisik: prevRec.total_fisik,
+      total_selisih: prevRec.total_selisih,
+      status: prevRec.status,
+      auditor: prevRec.auditor,
+      catatan: prevRec.catatan,
+      updated_at: prevRec.updated_at,
+      variants: prevRec.variants,
+    };
+    const alreadyExists = prevHistory.some(
+      (h) => Number(h.round) === Number(prevSnapshot.round) && Number(h.total_fisik) === Number(prevSnapshot.total_fisik)
+    );
+    if (!alreadyExists && Number(prevSnapshot.round) !== Number(record.round)) {
+      prevHistory.push(prevSnapshot);
+    }
+  }
+
   const updatedMap = {
     ...currentMap,
     [record.kode_produksi]: {
       ...record,
       updated_at: record.updated_at || new Date().toISOString(),
+      history: prevHistory,
     },
   };
 
