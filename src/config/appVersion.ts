@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.73",
-  "versionCode": 333,
-  "buildDate": "6 November 2026",
-  "buildHash": "wms-261106-v333-2142",
-  "releaseTitle": "WMS v2.6.73 — Optimasi Ukuran Kartu Kanban 3 Baris & Toggle Filter",
+  "version": "v2.6.74",
+  "versionCode": 334,
+  "buildDate": "7 November 2026",
+  "buildHash": "wms-261107-v334-1053",
+  "releaseTitle": "WMS v2.6.74 — Koreksi Master Data Taylor Pants & Sanitasi Size Produk",
   "releaseNotes": [
-    "Kartu foto Kanban diperkecil proporsional agar 3 baris tampil penuh tanpa terpotong",
-    "Tombol toggle sembunyikan filter UP untuk memaksimalkan ruang vertikal",
-    "Tersedia opsi ukuran 3 Baris, Sedang, dan Besar"
+    "Koreksi master produk SKU DF26KBF03DD (S-XL) dari Femima Pants menjadi Taylor Pants Dark Denim",
+    "Perbaikan sanitasi parsing size produk agar nama varian DealPOS/Katalog (seperti Wintour Skirt Blue) tidak bocor ke badge size",
+    "Dukungan ekstraksi size huruf standar DF26 (A=Default, C=S, D=M, E=L, F=XL, G=XXL) di sortUtils"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.73",
+    "versionCode": 333,
+    "buildDate": "6 November 2026",
+    "buildHash": "wms-261106-v333-2142",
+    "releaseTitle": "WMS v2.6.73 — Optimasi Ukuran Kartu Kanban 3 Baris & Toggle Filter",
+    "releaseNotes": [
+      "Kartu foto Kanban diperkecil proporsional agar 3 baris tampil penuh tanpa terpotong",
+      "Tombol toggle sembunyikan filter UP untuk memaksimalkan ruang vertikal",
+      "Tersedia opsi ukuran 3 Baris, Sedang, dan Besar"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.72",
     "versionCode": 332,
@@ -119,19 +132,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Header Sticky Mobile App Bar dengan hamburger, brand dan status aktif",
       "Navigasi tab horizontal swipeable di modul Produksi",
       "Wadah fluid elastis tanpa limit margin di modul Picking"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.65",
-    "versionCode": 325,
-    "buildDate": "6 November 2026",
-    "buildHash": "wms-261106-v325-0551",
-    "releaseTitle": "WMS v2.6.65 — Audit Seluler & Integrasi Agenda Project pada Dashboard",
-    "releaseNotes": [
-      "Audit menyeluruh antarmuka seluler (HP) dengan grid 2x2 rapi, zero text overflow, dan header ramping",
-      "Menggantikan indikator SO dengan integrasi Proyek Berjalan dan Jadwal Kerja Hari Ini/Terdekat",
-      "Navigasi instan dari dashboard langsung ke tab Kalendar Kerja & Proyek Milestone"
     ],
     "minSupportedVersion": "v2.0.0"
   }

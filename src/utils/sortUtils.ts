@@ -154,6 +154,20 @@ export function extractSizeFromSku(sku: string): string {
     if (singleMatch) return singleMatch[1].toUpperCase();
   }
 
+  // 4. DF26 letter-based size standard:
+  // DF26... ends with:
+  // C -> S, D -> M, E -> L, F -> XL, G -> XXL, A -> Default (ALL SIZE)
+  if (/^DF26[A-Z0-9]{4,}/i.test(clean)) {
+    const lastChar = clean.slice(-1);
+    if (lastChar === 'A') return 'Default';
+    if (lastChar === 'B') return 'XS';
+    if (lastChar === 'C') return 'S';
+    if (lastChar === 'D') return 'M';
+    if (lastChar === 'E') return 'L';
+    if (lastChar === 'F') return 'XL';
+    if (lastChar === 'G') return 'XXL';
+  }
+
   return '-';
 }
 
@@ -275,6 +289,15 @@ export function extractCleanSizeToken(str?: string): string {
   if (endSize && endSize[1]) {
     return endSize[1].toUpperCase();
   }
+
+  // If the input is actually a full product title / variant name (e.g. "Wintour Skirt Blue")
+  if (
+    /\b(skirt|top|dress|pants|blouse|shirt|cardigan|knit|outer|jacket|shorts|culotte|jeans|vest|tunic|tee|kaos|celana|rok)\b/i.test(trimmed) ||
+    trimmed.split(/\s+/).length > 2
+  ) {
+    return 'Default';
+  }
+
   return trimmed;
 }
 

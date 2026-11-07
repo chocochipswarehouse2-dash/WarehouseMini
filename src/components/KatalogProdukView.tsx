@@ -60,6 +60,7 @@ import {
   cleanBaseProductName,
 } from './katalog/katalogStorage';
 import { cleanProductName } from '../utils/sortUtils';
+import { isRealSize } from './CetakBarcode/types';
 import { getAllProductsFromLocalDb } from '../services/localDb';
 import { getSupabaseClient } from '../services/supabase';
 import { KatalogUploadModal } from './katalog/KatalogUploadModal';
@@ -750,9 +751,14 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                 (v) => v.sku && finalSku && v.sku.toUpperCase() === finalSku.toUpperCase() && v.size.toUpperCase() === (size || 'Default').toUpperCase()
               );
               if (!isDuplicate) {
+                // Sanitize size if it was erroneously mapped from variant name containing product title
+                let effectiveSize = size || 'Default';
+                if (!isRealSize(effectiveSize)) {
+                  effectiveSize = 'Default';
+                }
                 currentItem.variants.push({
                   warna: warna || '-',
-                  size: size || 'Default',
+                  size: effectiveSize,
                   sku: finalSku,
                   qty: qty,
                 });
@@ -2276,7 +2282,9 @@ const ProductCardItem: React.FC<ProductCardItemProps> = ({
                         <td className="py-1.5 px-2.5 font-semibold text-slate-800 dark:text-slate-200">
                           {v.warna || '-'}
                         </td>
-                        <td className="py-1.5 px-2 text-slate-600 dark:text-slate-400">{v.size || 'Default'}</td>
+                        <td className="py-1.5 px-2 text-slate-600 dark:text-slate-400">
+                          {isRealSize(v.size) ? v.size : 'Default'}
+                        </td>
                         <td className="py-1.5 px-2 font-mono text-[11px] text-violet-700 dark:text-violet-400 font-semibold">
                           {v.sku || '-'}
                         </td>

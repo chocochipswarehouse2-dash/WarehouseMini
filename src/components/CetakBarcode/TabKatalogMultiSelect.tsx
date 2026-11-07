@@ -13,6 +13,7 @@ import {
   formatProductPriceWithTag,
   isRealSize,
 } from './types';
+import { extractSizeFromSku } from '../../utils/sortUtils';
 
 interface TabKatalogMultiSelectProps {
   productCatalog: ProductItem[];
@@ -532,13 +533,21 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
                         {prod.n || prod.p || '-'}
                       </td>
                       <td className="py-2.5 px-2.5 text-center">
-                        {isRealSize(prod.s || prod.size) ? (
-                          <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-bold">
-                            {String(prod.s || prod.size || '')}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">-</span>
-                        )}
+                        {(() => {
+                          const rawSize = prod.s || prod.size;
+                          const effectiveSize = isRealSize(rawSize)
+                            ? String(rawSize)
+                            : extractSizeFromSku(sku) !== '-' && extractSizeFromSku(sku) !== 'Default'
+                            ? extractSizeFromSku(sku)
+                            : '';
+                          return effectiveSize ? (
+                            <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-bold">
+                              {effectiveSize}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">-</span>
+                          );
+                        })()}
                       </td>
                       <td className="py-2.5 px-3 font-bold text-purple-700 dark:text-purple-300">
                         {masterPrice > 0 ? `Rp ${new Intl.NumberFormat('id-ID').format(masterPrice)}` : '-'}

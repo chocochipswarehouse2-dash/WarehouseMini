@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Printer, QrCode, Check, Copy, SlidersHorizontal, Plus, Minus, Layers } from 'lucide-react';
 import QRCode from 'qrcode';
 import { KatalogItem, KatalogVariant } from '../../types';
+import { isRealSize } from '../CetakBarcode/types';
 
 interface KatalogBarcodeModalProps {
   isOpen: boolean;
@@ -123,7 +124,7 @@ export const KatalogBarcodeModal: React.FC<KatalogBarcodeModalProps> = ({
           displayPrice = rawPrice.startsWith('Rp') ? rawPrice : `Rp ${rawPrice}`;
         }
 
-        const variantText = [entry.warna, entry.size && entry.size !== 'Default' ? entry.size : ''].filter(Boolean).join(' | ') || 'Default';
+        const variantText = [entry.warna, isRealSize(entry.size) ? entry.size : ''].filter(Boolean).join(' | ') || 'Default';
 
         return Array.from({ length: copies }).map(
           () => `
@@ -404,7 +405,7 @@ export const KatalogBarcodeModal: React.FC<KatalogBarcodeModalProps> = ({
                     </div>
                     <div className="text-xs text-slate-600 dark:text-slate-400 mt-0.5 flex flex-wrap items-center gap-2">
                       <span className="font-semibold text-slate-800 dark:text-slate-200">
-                        {ent.warna} / {ent.size}
+                        {ent.warna} {isRealSize(ent.size) ? `/ ${ent.size}` : ''}
                       </span>
                       <span>•</span>
                       <span className="font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-violet-700 dark:text-violet-300 font-semibold">

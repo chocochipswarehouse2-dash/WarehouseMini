@@ -21,6 +21,7 @@ import {
   parseBarcodeProductInfo,
   isRealSize,
 } from './CetakBarcode/types';
+import { extractSizeFromSku } from '../utils/sortUtils';
 import { TabInputManual } from './CetakBarcode/TabInputManual';
 import { TabKatalogMultiSelect } from './CetakBarcode/TabKatalogMultiSelect';
 import { TabImportCsv } from './CetakBarcode/TabImportCsv';
@@ -971,13 +972,20 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                       {item.nama || '-'}
                     </td>
                     <td className="py-3 px-3">
-                      {isRealSize(item.size) ? (
-                        <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded font-bold">
-                          {item.size}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400">-</span>
-                      )}
+                      {(() => {
+                        const effectiveSize = isRealSize(item.size)
+                          ? item.size
+                          : extractSizeFromSku(item.sku) !== '-' && extractSizeFromSku(item.sku) !== 'Default'
+                          ? extractSizeFromSku(item.sku)
+                          : '';
+                        return effectiveSize ? (
+                          <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded font-bold">
+                            {effectiveSize}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        );
+                      })()}
                     </td>
                     <td className="py-3 px-3">
                       {(() => {

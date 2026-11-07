@@ -31,6 +31,7 @@ import {
 } from '../services/supabase';
 import { playSuccessBeep, playErrorBeep, vibrateDevice } from '../services/audio';
 import { globalRealtimeStore } from '../services/store';
+import { extractSizeFromSku } from '../utils/sortUtils';
 
 interface UpdateDatabaseModalProps {
   isOpen: boolean;
@@ -463,9 +464,26 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
             continue;
           }
 
-          const nama = String((idxNama !== -1 ? r[idxNama] : '') || '').trim() || sku;
+          let nama = String((idxNama !== -1 ? r[idxNama] : '') || '').trim() || sku;
           const kategori = String((idxKat !== -1 ? r[idxKat] : '') || '').trim() || 'Apparel';
-          const size = String((idxSize !== -1 ? r[idxSize] : '') || '').trim() || 'Default';
+          let size = String((idxSize !== -1 ? r[idxSize] : '') || '').trim() || 'Default';
+
+          // Sanitize erroneous DealPOS names (DF26KBF03 is Taylor Pants, not Femima Pants)
+          if (/^DF26KBF03/i.test(sku)) {
+            nama = 'Taylor Pants Dark Denim';
+          }
+
+          // Sanitize erroneous size fields (where DealPOS exports variant name containing full product title or apparel words)
+          if (
+            size.toLowerCase() === nama.toLowerCase() ||
+            size.toLowerCase().includes(nama.toLowerCase()) ||
+            nama.toLowerCase().includes(size.toLowerCase()) ||
+            /\b(skirt|top|dress|pants|blouse|shirt|cardigan|knit|outer|jacket|shorts|culotte|jeans|vest|tunic|tee|kaos|celana|rok)\b/i.test(size) ||
+            size.split(/\s+/).length > 2
+          ) {
+            const fromSku = extractSizeFromSku(sku);
+            size = fromSku !== '-' ? fromSku : 'Default';
+          }
           const rawPrice = String((idxPrice !== -1 ? r[idxPrice] : '') || '0').replace(/[^0-9.-]+/g, '');
           const priceNum = Number(rawPrice) || 0;
 
