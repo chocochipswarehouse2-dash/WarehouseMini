@@ -116,10 +116,11 @@ import {
   playNewTaskChime,
   vibrateDevice,
 } from '../services/audio';
+import { SupabaseMigrationView } from './SupabaseMigrationView';
 
-interface SettingsModalProps {
-  isOpen: boolean;
-  onClose: () => void;
+export interface SettingsModalProps {
+  isOpen?: boolean;
+  onClose?: () => void;
   session: UserSession | null;
   onUpdateSession: (newSession: UserSession) => void;
   onRefreshCatalog: (endpoint?: string, token?: string) => Promise<void>;
@@ -145,9 +146,11 @@ interface SettingsModalProps {
   setThemeFontSize?: (size: string) => void;
   themeIconStyle?: string;
   setThemeIconStyle?: (style: string) => void;
+  mode?: 'modal' | 'page';
+  initialTab?: SettingsTab;
 }
 
-type SettingsTab = 'theme' | 'device' | 'database' | 'supabase' | 'users' | 'roles' | 'deploy_apk' | 'whatsapp' | 'outlets' | 'opname';
+export type SettingsTab = 'theme' | 'device' | 'database' | 'supabase' | 'supabase_migration' | 'users' | 'roles' | 'deploy_apk' | 'whatsapp' | 'outlets' | 'opname';
 
 interface LocalRole {
   name: string;
@@ -157,8 +160,8 @@ interface LocalRole {
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
-  isOpen,
-  onClose,
+  isOpen = true,
+  onClose = () => {},
   session,
   onUpdateSession,
   onRefreshCatalog,
@@ -183,6 +186,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   setThemeFontSize = () => {},
   themeIconStyle = 'regular',
   setThemeIconStyle = () => {},
+  mode = 'modal',
+  initialTab,
 }) => {
   const userIsSuperadmin = isSuperadmin(session);
   const userRoleLower = (session?.role || '').toLowerCase().replace(/[\s_-]/g, '');
@@ -192,6 +197,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   // Default tab: Superadmin/Admin/Manager defaults to 'database' or 'users', User Lain defaults to 'theme'!
   const [activeTab, setActiveTab] = useState<SettingsTab>(() => {
+    if (initialTab) return initialTab;
     if (userIsSuperadmin || canManageSettings) return 'database';
     if (canManageUsers) return 'users';
     return 'theme';
@@ -200,6 +206,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Guard: non-authorized users are kept on allowed tabs
   useEffect(() => {
     if (activeTab === 'opname' && !userIsSuperadmin) {
+      setActiveTab('theme');
+      return;
+    }
+    if (activeTab === 'supabase_migration' && !canManageSettings) {
       setActiveTab('theme');
       return;
     }
@@ -1057,72 +1067,67 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     playCategoryBeep();
   };
 
-  if (!isOpen) return null;
+  if (mode !== 'page' && !isOpen) return null;
 
-  return (
-    <>
+  const innerContent = (
     <div
-      id="settingsModalOverlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
-      }}
-      className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
+      id={mode === 'page' ? 'settingsPageContent' : 'settingsModalContent'}
+      onClick={(e) => e.stopPropagation()}
+      className={
+        mode === 'page'
+          ? 'bg-white dark:bg-[#131d31] rounded-2xl shadow-xs border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col w-full'
+          : `bg-white dark:bg-[#131d31] rounded-2xl shadow-2xl w-full ${
+              activeTab === 'opname' ? 'max-w-[96vw] xl:max-w-7xl' : 'max-w-4xl'
+            } border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh] transition-all duration-200 animate-in fade-in zoom-in-95`
+      }
     >
-      <div
-        id="settingsModalContent"
-        onClick={(e) => e.stopPropagation()}
-        className={`bg-white dark:bg-[#131d31] rounded-2xl shadow-2xl w-full ${
-          activeTab === 'opname' ? 'max-w-[96vw] xl:max-w-7xl' : 'max-w-4xl'
-        } border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh] transition-all duration-200 animate-in fade-in zoom-in-95`}
-      >
-        {/* Header */}
-        <div className="px-5 py-4 shrink-0 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/70 dark:bg-[#0f172a]/70">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary-500/10 border border-primary-500/30 flex items-center justify-center text-primary-500">
-              {userIsSuperadmin ? <Settings className="w-5 h-5" /> : <Palette className="w-5 h-5" />}
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white tracking-tight">
-                  {userIsSuperadmin ? 'Pengaturan & Preferensi WMS' : 'Tema & Tampilan WMS'}
-                </h2>
-                {userIsSuperadmin ? (
-                  <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded text-[10px] font-black tracking-wider uppercase border border-purple-300 dark:border-purple-800">
-                    SUPERADMIN
-                  </span>
-                ) : (
-                  <span className="px-2 py-0.5 bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300 rounded text-[10px] font-bold border border-primary-200 dark:border-primary-800">
-                    TEMA & PREFERENSI
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {userIsSuperadmin
-                  ? 'Stock Opname (SO), Cloud Database, Pengguna, Role & Tema Tampilan'
-                  : 'Kustomisasi Warna Aksen, Font, Ukuran Huruf, Gaya Ikon & Mode Gelap/Terang'}
-              </p>
-            </div>
+      {/* Header */}
+      <div className="px-5 py-4 shrink-0 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/70 dark:bg-[#0f172a]/70">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary-500/10 border border-primary-500/30 flex items-center justify-center text-primary-500">
+            {userIsSuperadmin ? <Settings className="w-5 h-5" /> : <Palette className="w-5 h-5" />}
           </div>
-          <div className="flex items-center gap-2">
-            {onOpenUpdateModal && (
-              <button
-                type="button"
-                onClick={() => {
-                  onOpenUpdateModal();
-                  onClose();
-                }}
-                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-primary-50 dark:bg-slate-800 dark:hover:bg-primary-950/40 text-slate-700 dark:text-slate-300 hover:text-primary-600 dark:hover:text-primary-400 text-xs font-mono font-bold transition-all border border-slate-200 dark:border-slate-700 cursor-pointer"
-                title="Pusat Pembaruan Sistem WMS"
-              >
-                <Smartphone className="w-3.5 h-3.5 text-primary-500" />
-                <span>{CURRENT_APP_VERSION}</span>
-                <span className="text-[10px] text-primary-500 font-sans font-bold hover:underline ml-0.5">
-                  • Cek Update
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white tracking-tight">
+                {userIsSuperadmin ? 'Pengaturan Sistem & Database WMS' : 'Tema & Tampilan WMS'}
+              </h2>
+              {userIsSuperadmin ? (
+                <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded text-[10px] font-black tracking-wider uppercase border border-purple-300 dark:border-purple-800">
+                  SUPERADMIN
                 </span>
-              </button>
-            )}
+              ) : (
+                <span className="px-2 py-0.5 bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300 rounded text-[10px] font-bold border border-primary-200 dark:border-primary-800">
+                  TEMA & PREFERENSI
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {userIsSuperadmin
+                ? 'Stock Opname (SO), Cloud Database, Pengguna, Role & Tema Tampilan'
+                : 'Kustomisasi Warna Aksen, Font, Ukuran Huruf, Gaya Ikon & Mode Gelap/Terang'}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {onOpenUpdateModal && (
+            <button
+              type="button"
+              onClick={() => {
+                onOpenUpdateModal();
+                if (mode !== 'page' && onClose) onClose();
+              }}
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-primary-50 dark:bg-slate-800 dark:hover:bg-primary-950/40 text-slate-700 dark:text-slate-300 hover:text-primary-600 dark:hover:text-primary-400 text-xs font-mono font-bold transition-all border border-slate-200 dark:border-slate-700 cursor-pointer"
+              title="Pusat Pembaruan Sistem WMS"
+            >
+              <Smartphone className="w-3.5 h-3.5 text-primary-500" />
+              <span>{CURRENT_APP_VERSION}</span>
+              <span className="text-[10px] text-primary-500 font-sans font-bold hover:underline ml-0.5">
+                • Cek Update
+              </span>
+            </button>
+          )}
+          {mode !== 'page' && onClose && (
             <button
               type="button"
               onClick={onClose}
@@ -1130,8 +1135,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             >
               <X className="w-5 h-5" />
             </button>
-          </div>
+          )}
         </div>
+      </div>
 
         {/* Tab Navigation */}
         <div className="shrink-0 flex border-b border-slate-200 dark:border-slate-800 px-4 gap-1 bg-slate-100/50 dark:bg-[#0b1324] overflow-x-auto no-scrollbar">
@@ -1200,6 +1206,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {isRealtimeConnected && (
                 <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_#10b981]"></span>
               )}
+            </button>
+          )}
+
+          {canManageSettings && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('supabase_migration')}
+              className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'supabase_migration'
+                  ? 'border-amber-500 text-amber-600 dark:text-amber-400 bg-white dark:bg-[#131d31]'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Database className="w-4 h-4 text-amber-500" />
+              <span>Migrasi Supabase</span>
+              <span className="text-[9px] px-1.5 py-0.2 bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 rounded font-black border border-amber-200 dark:border-amber-800">
+                MIGRASI
+              </span>
             </button>
           )}
 
@@ -1279,7 +1303,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Tab Content Body */}
-        <div className="p-3 sm:p-5 overflow-y-auto flex-1 space-y-6">
+        <div className={`p-4 sm:p-6 space-y-6 ${mode === 'page' ? '' : 'overflow-y-auto flex-1'}`}>
           {/* ========================================================================= */}
           {/* TAB: STOCK OPNAME & PENYESUAIAN STOK (KHUSUS SUPERADMIN) */}
           {/* ========================================================================= */}
@@ -2866,6 +2890,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* ========================================================================= */}
 
           {/* ========================================================================= */}
+          {/* TAB: MIGRASI SUPABASE (KHUSUS SUPERADMIN / PEMILIK) */}
+          {/* ========================================================================= */}
+          {activeTab === 'supabase_migration' && canManageSettings && (
+            <div className="space-y-4 animate-in fade-in duration-200">
+              <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <Database className="w-5 h-5 text-amber-600 shrink-0" />
+                  <div>
+                    <span className="font-black text-sm">Alat Migrasi Akun Supabase (Transfer & Kloning Data)</span>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                      Pindahkan atau kloning seluruh tabel database ke akun Supabase baru untuk bypass batas limit egress 5GB gratis.
+                    </p>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded font-black text-[10px] bg-amber-200 dark:bg-amber-900/80 text-amber-900 dark:text-amber-100 uppercase shrink-0 w-fit">
+                  MIGRASI DB
+                </span>
+              </div>
+              <SupabaseMigrationView />
+            </div>
+          )}
+
+          {/* ========================================================================= */}
           {/* TAB: ROLE TEMPLATES */}
           {/* ========================================================================= */}
           {activeTab === 'roles' && (
@@ -3649,18 +3696,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0f172a] flex justify-between items-center text-xs text-slate-500">
           <div className="flex items-center gap-1.5">
             <Smartphone className="w-3.5 h-3.5 text-primary-500" />
-            <span className="font-mono">WMS v2.4 Chocochips • RBAC Engine</span>
+            <span className="font-mono">{CURRENT_APP_VERSION} • RBAC Engine</span>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl font-bold transition-all cursor-pointer"
-          >
-            Tutup
-          </button>
+          {mode !== 'page' && onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl font-bold transition-all cursor-pointer"
+            >
+              Tutup
+            </button>
+          )}
         </div>
       </div>
-    </div>
+  );
+
+  return (
+    <>
+      {mode === 'page' ? (
+        <div className="w-full max-w-full space-y-4 pb-20 animate-in fade-in duration-200">
+          {innerContent}
+        </div>
+      ) : (
+        <div
+          id="settingsModalOverlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && onClose) {
+              onClose();
+            }
+          }}
+          className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
+        >
+          {innerContent}
+        </div>
+      )}
 
     {/* Custom Confirm Dialog for Settings */}
     {settingsConfirmDialog.isOpen && (

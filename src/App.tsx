@@ -128,6 +128,7 @@ import { LiveChatFloatingWidget } from './components/LiveChat/LiveChatFloatingWi
 import { liveChatManager } from './services/liveChatService';
 
 const SupabaseMigrationView = lazyWithRetry(() => import('./components/SupabaseMigrationView').then(m => ({ default: m.SupabaseMigrationView })));
+const SettingsView = lazyWithRetry(() => import('./components/SettingsView').then(m => ({ default: m.SettingsView })));
 
 import {
   DEFAULT_SUPABASE_URL,
@@ -226,9 +227,14 @@ const PAGE_TO_PATH: Record<ActivePage, string> = {
   rekap_tagihan_jne: 'rekap-tagihan-jne',
   live_chat: 'live-chat',
   trello_up: 'trello-up',
+  pengaturan_sistem: 'pengaturan-sistem',
 };
 
 const PATH_TO_PAGE: Record<string, ActivePage> = {
+  'pengaturan-sistem': 'pengaturan_sistem',
+  'pengaturan': 'pengaturan_sistem',
+  'settings': 'pengaturan_sistem',
+  'setting': 'pengaturan_sistem',
   'live-chat': 'live_chat',
   'chat': 'live_chat',
   'diskusi': 'live_chat',
@@ -291,6 +297,9 @@ const PATH_TO_PAGE: Record<string, ActivePage> = {
 };
 
 function normalizeConsolidatedPage(page: ActivePage): ActivePage {
+  if (page === 'supabase_migration') {
+    return 'pengaturan_sistem';
+  }
   if (page === 'operasi_stok' || page === 'scanner' || page === 'mutasi_log' || page === 'stock_opname') {
     return 'inventory';
   }
@@ -737,8 +746,8 @@ export default function App() {
       showToast('Akses ditolak: Menu Pengaturan Sistem hanya dapat diakses oleh akun @warehouse (Pemilik Sistem).', 'warning');
       return;
     }
-    setIsSettingsOpen(true);
-  }, [session]);
+    handleSelectPage('pengaturan_sistem');
+  }, [session, handleSelectPage, showToast]);
 
   useEffect(() => {
     setVisitedPages((prev) => {
@@ -3424,6 +3433,54 @@ export default function App() {
                         {pageKey === 'supabase_migration' && (
                           <SupabaseMigrationView session={session} onNotify={showToast} />
                         )}
+                        {pageKey === 'pengaturan_sistem' && (
+                          <SettingsView
+                            session={session}
+                            onUpdateSession={(updated) => {
+                              setSession(updated);
+                              localStorage.setItem('wms_session_username', updated.username);
+                              localStorage.setItem('wms_user_role', updated.role);
+                              localStorage.setItem('wms_endpoint_url', updated.endpointUrl);
+                              if (updated.store_code) {
+                                localStorage.setItem('wms_user_store_code', updated.store_code);
+                              } else {
+                                localStorage.removeItem('wms_user_store_code');
+                              }
+                              if (updated.store_name) {
+                                localStorage.setItem('wms_user_store_name', updated.store_name);
+                              } else {
+                                localStorage.removeItem('wms_user_store_name');
+                              }
+                              if (updated.permissions) {
+                                localStorage.setItem('wms_user_permissions', JSON.stringify(updated.permissions));
+                              } else {
+                                localStorage.removeItem('wms_user_permissions');
+                              }
+                            }}
+                            onRefreshCatalog={() => loadProducts(true)}
+                            notificationPermission={notificationPermission}
+                            onRequestNotification={handleRequestNotification}
+                            isRealtimeConnected={isRealtimeConnected}
+                            onOpenUpdateDatabase={() => setIsUpdateDatabaseOpen(true)}
+                            onOpenLocationPurge={() => setIsLocationPurgeOpen(true)}
+                            onOpenUpdateModal={() => setIsAppUpdateModalOpen(true)}
+                            onNotify={showToast}
+                            productCatalog={productDatabase}
+                            themeColor={themeColor}
+                            setThemeColor={setThemeColor}
+                            darkMode={darkMode}
+                            setDarkMode={setDarkMode}
+                            onToggleDarkMode={handleToggleDarkMode}
+                            darkVariant={darkVariant}
+                            setDarkVariant={setDarkVariant}
+                            themeFont={themeFont}
+                            setThemeFont={setThemeFont}
+                            themeFontSize={themeFontSize}
+                            setThemeFontSize={setThemeFontSize}
+                            themeIconStyle={themeIconStyle}
+                            setThemeIconStyle={setThemeIconStyle}
+                          />
+                        )}
                       </div>
                     );
                   })}
@@ -3543,6 +3600,54 @@ export default function App() {
                   )}
                   {companionPage === 'supabase_migration' && (
                     <SupabaseMigrationView session={session} onNotify={showToast} />
+                  )}
+                  {companionPage === 'pengaturan_sistem' && (
+                    <SettingsView
+                      session={session}
+                      onUpdateSession={(updated) => {
+                        setSession(updated);
+                        localStorage.setItem('wms_session_username', updated.username);
+                        localStorage.setItem('wms_user_role', updated.role);
+                        localStorage.setItem('wms_endpoint_url', updated.endpointUrl);
+                        if (updated.store_code) {
+                          localStorage.setItem('wms_user_store_code', updated.store_code);
+                        } else {
+                          localStorage.removeItem('wms_user_store_code');
+                        }
+                        if (updated.store_name) {
+                          localStorage.setItem('wms_user_store_name', updated.store_name);
+                        } else {
+                          localStorage.removeItem('wms_user_store_name');
+                        }
+                        if (updated.permissions) {
+                          localStorage.setItem('wms_user_permissions', JSON.stringify(updated.permissions));
+                        } else {
+                          localStorage.removeItem('wms_user_permissions');
+                        }
+                      }}
+                      onRefreshCatalog={() => loadProducts(true)}
+                      notificationPermission={notificationPermission}
+                      onRequestNotification={handleRequestNotification}
+                      isRealtimeConnected={isRealtimeConnected}
+                      onOpenUpdateDatabase={() => setIsUpdateDatabaseOpen(true)}
+                      onOpenLocationPurge={() => setIsLocationPurgeOpen(true)}
+                      onOpenUpdateModal={() => setIsAppUpdateModalOpen(true)}
+                      onNotify={showToast}
+                      productCatalog={productDatabase}
+                      themeColor={themeColor}
+                      setThemeColor={setThemeColor}
+                      darkMode={darkMode}
+                      setDarkMode={setDarkMode}
+                      onToggleDarkMode={handleToggleDarkMode}
+                      darkVariant={darkVariant}
+                      setDarkVariant={setDarkVariant}
+                      themeFont={themeFont}
+                      setThemeFont={setThemeFont}
+                      themeFontSize={themeFontSize}
+                      setThemeFontSize={setThemeFontSize}
+                      themeIconStyle={themeIconStyle}
+                      setThemeIconStyle={setThemeIconStyle}
+                    />
                   )}
                 </React.Suspense>
               </ErrorBoundary>

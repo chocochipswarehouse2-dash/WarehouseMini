@@ -550,114 +550,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
 
-      {/* Unduh Dokumen PDF Matriks Hak Akses (Admin Only) */}
-      {userIsAdmin && (
-        <a
-          href="/DOKUMEN_HIERARKI_HAK_AKSES_WMS.pdf"
-          download="DOKUMEN_HIERARKI_HAK_AKSES_WMS.pdf"
-          target="_blank"
-          rel="noopener noreferrer"
-          title="Unduh Dokumen PDF Matriks 4 Hierarki Hak Akses WMS"
-          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
-            collapsed ? 'justify-center px-2' : ''
-          }`}
-        >
-          <div className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 shrink-0">
-            <FileText className="w-4 h-4" />
-          </div>
-          {!collapsed && <span className="truncate">Unduh PDF Hak Akses</span>}
-        </a>
-      )}
-
-      {/* Settings Modal - Khusus Akun @warehouse / Pemilik Sistem */}
+      {/* Pengaturan Sistem (Halaman Utama) - Khusus Akun @warehouse / Pemilik Sistem */}
       {userCanAccessSettings && (
         <button
           type="button"
           onClick={() => {
-            onOpenSettings();
+            handleNavClick('pengaturan_sistem');
             onCloseMobile();
           }}
           title="Pengaturan Sistem, Database & User Role (Khusus Pemilik @warehouse)"
-          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
-            collapsed ? 'justify-center px-2' : ''
-          }`}
-        >
-          <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">
-            <Settings className="w-4 h-4 text-slate-500" />
-          </div>
-          {!collapsed && (
-            <div className="flex-1 text-left truncate flex items-center justify-between">
-              <span className="truncate">Pengaturan Sistem</span>
-              <span className="text-[9px] px-1.5 py-0.2 bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 rounded font-black">
-                ADMIN
-              </span>
-            </div>
-          )}
-        </button>
-      )}
-
-      {/* Update Database (Khusus Pemilik @warehouse) */}
-      {userCanAccessSettings && onOpenUpdateDatabase && (
-        <button
-          type="button"
-          onClick={() => {
-            onOpenUpdateDatabase();
-            onCloseMobile();
-          }}
-          title="Update Database Master Produk (Import 2 CSV ke Supabase)"
-          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-primary-700 dark:text-primary-300 hover:bg-primary-50 dark:hover:bg-primary-950/50 transition-colors cursor-pointer ${
-            collapsed ? 'justify-center px-2' : ''
-          }`}
-        >
-          <div className="p-1.5 rounded-lg bg-primary-100 dark:bg-primary-950 text-primary-600 dark:text-primary-400 shrink-0">
-            <Database className="w-4 h-4 text-primary-600 dark:text-primary-400" />
-          </div>
-          {!collapsed && (
-            <div className="flex-1 text-left truncate flex items-center justify-between">
-              <span className="truncate font-extrabold">Update Database</span>
-              <span className="text-[9px] px-1.5 py-0.2 bg-primary-200 dark:bg-primary-900 text-primary-800 dark:text-primary-200 rounded font-black">
-                SUPERADMIN
-              </span>
-            </div>
-          )}
-        </button>
-      )}
-
-      {/* Migrasi Akun Supabase (Khusus Pemilik @warehouse) */}
-      {userCanAccessSettings && (
-        <button
-          type="button"
-          onClick={() => {
-            handleNavClick('supabase_migration');
-            onCloseMobile();
-          }}
-          title="Migrasi & Kloning Data ke Akun Supabase Baru (Bypass Egress 5GB Limit)"
           className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activePage === 'supabase_migration'
-              ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
-              : 'text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40'
+            activePage === 'pengaturan_sistem'
+              ? 'bg-primary-600 text-white shadow-md shadow-primary-600/20'
+              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
           } ${collapsed ? 'justify-center px-2' : ''}`}
         >
           <div
             className={`p-1.5 rounded-lg shrink-0 ${
-              activePage === 'supabase_migration'
+              activePage === 'pengaturan_sistem'
                 ? 'bg-white/20 text-white'
-                : 'bg-amber-100 dark:bg-amber-950/70 text-amber-600 dark:text-amber-400'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
             }`}
           >
-            <Database className="w-4 h-4" />
+            <Settings className="w-4 h-4" />
           </div>
           {!collapsed && (
             <div className="flex-1 text-left truncate flex items-center justify-between">
-              <span className="truncate font-extrabold">Migrasi Supabase</span>
+              <span className="truncate">Pengaturan Sistem</span>
               <span
                 className={`text-[9px] px-1.5 py-0.2 rounded font-black ${
-                  activePage === 'supabase_migration'
-                    ? 'bg-black/20 text-white'
-                    : 'bg-amber-200 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200'
+                  activePage === 'pengaturan_sistem'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300'
                 }`}
               >
-                MIGRASI
+                ADMIN
               </span>
             </div>
           )}

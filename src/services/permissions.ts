@@ -548,6 +548,7 @@ export const canAccessPage = (session: UserSession | null, page: ActivePage): bo
     case 'rekap_tagihan_jne': return canAccessJneRekap(session);
     case 'live_chat': return canAccessLiveChat(session);
     case 'supabase_migration': return false;
+    case 'pengaturan_sistem': return canAccessSettings(session);
     default:
       return false;
   }

@@ -35,7 +35,8 @@ export type ActivePage =
   | 'supabase_migration'
   | 'rekap_tagihan_jne'
   | 'trello_up'
-  | 'live_chat';
+  | 'live_chat'
+  | 'pengaturan_sistem';
 
 export interface KatalogVariant {
   warna: string;

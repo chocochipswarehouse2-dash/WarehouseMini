@@ -19,6 +19,7 @@ import {
   Zap,
   Map,
   Database,
+  Settings,
   X,
   PanelRightOpen,
   PanelRightClose,
@@ -62,6 +63,7 @@ export const WORKSPACE_PAGE_META: Record<string, WorkspacePageMeta> = {
   roadmap: { id: 'roadmap', label: 'Roadmap Sistem', shortLabel: 'Roadmap', icon: Map },
   supabase_migration: { id: 'supabase_migration', label: 'Migrasi Database', shortLabel: 'Migrasi DB', icon: Database },
   packing: { id: 'packing', label: 'Meja Packing', shortLabel: 'Packing', icon: Package },
+  pengaturan_sistem: { id: 'pengaturan_sistem', label: 'Pengaturan Sistem', shortLabel: 'Pengaturan', icon: Settings },
 };
 
 export function getWorkspacePageMeta(page: ActivePage): WorkspacePageMeta {

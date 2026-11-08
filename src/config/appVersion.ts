@@ -15,19 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.88",
-  "versionCode": 348,
+  "version": "v2.6.89",
+  "versionCode": 349,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v348-1254",
-  "releaseTitle": "WMS v2.6.88 — Perbaikan Scroll Halaman Utama & Penghapusan Default Sandingkan",
+  "buildHash": "wms-261108-v349-1418",
+  "releaseTitle": "WMS v2.6.89 — Pengaturan Sistem Menjadi Halaman Penuh Terpadu",
   "releaseNotes": [
-    "Hapus saran hardcoded Sandingkan Trello/Produksi menjadi tombol universal Buka Panel Samping (bebas pilih menu apa saja)",
-    "Perbaikan CSS scroll container (overflow-x: clip & penghapusan backdrop-blur berat) agar scroll vertikal halaman utama lancar dan responsif"
+    "Penyatuan menu pengaturan sistem, database, hak akses, dan migrasi",
+    "Pengaturan sistem kini menjadi halaman utama (page) bukan popup modal",
+    "Pembersihan duplikasi menu di sidebar dan integrasi tab Migrasi Supabase"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.88",
+    "versionCode": 348,
+    "buildDate": "8 November 2026",
+    "buildHash": "wms-261108-v348-1254",
+    "releaseTitle": "WMS v2.6.88 — Perbaikan Scroll Halaman Utama & Penghapusan Default Sandingkan",
+    "releaseNotes": [
+      "Hapus saran hardcoded Sandingkan Trello/Produksi menjadi tombol universal Buka Panel Samping (bebas pilih menu apa saja)",
+      "Perbaikan CSS scroll container (overflow-x: clip & penghapusan backdrop-blur berat) agar scroll vertikal halaman utama lancar dan responsif"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.87",
     "versionCode": 347,
@@ -111,20 +124,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Setelah password diganti, user otomatis logout dalam 3 detik dan wajib login ulang",
       "Simpan profil & password diverifikasi benar-benar tersimpan di Supabase wms_users"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.80",
-    "versionCode": 340,
-    "buildDate": "8 November 2026",
-    "buildHash": "wms-261108-v340-1048",
-    "releaseTitle": "WMS v2.6.80 — Profil Pengguna",
-    "releaseNotes": [
-      "Klik kartu user di sidebar membuka popup Profil",
-      "Edit nama, No. HP & email",
-      "Ganti password (verifikasi password lama, SHA-256)",
-      "Upload foto profil atau pilih avatar"
     ],
     "minSupportedVersion": "v2.0.0"
   }
