@@ -119,13 +119,117 @@ html.dark {
   --border-main: #e5e7eb;
 }
 
+/* ============================================================
+ * DARK MODE VARIANTS (Lighter, Softer, Non-Navy Palettes)
+ * ============================================================ */
+/* 1. Soft Charcoal (Default Baru: Abu-abu Terang Lembut & Bebas Navy) */
+html.dark,
+html[data-theme="dark"],
+html.dark[data-dark-variant="soft"] {
+  --dm-canvas: #22252a;
+  --dm-surface: #282c33;
+  --dm-card: #30353e;
+  --dm-elevated: #393f4a;
+  --dm-border: #4a5260;
+  --dm-muted: #a6b0c0;
+}
+
+/* 2. Twilight Dim (Versi Dark Paling Light / Redup Terang) */
+html.dark[data-dark-variant="dim"] {
+  --dm-canvas: #2a3038;
+  --dm-surface: #313842;
+  --dm-card: #3a424e;
+  --dm-elevated: #444d5b;
+  --dm-border: #566173;
+  --dm-muted: #b3bdcc;
+}
+
+/* 3. Warm Stone (Hangat & Kalem / Mocha Bebas Biru) */
+html.dark[data-dark-variant="warm"] {
+  --dm-canvas: #252220;
+  --dm-surface: #2d2926;
+  --dm-card: #36312d;
+  --dm-elevated: #403a35;
+  --dm-border: #544c46;
+  --dm-muted: #b5aba3;
+}
+
+/* 4. Sage Mist (Hijau Abu Eucalyptus Sejuk) */
+html.dark[data-dark-variant="sage"] {
+  --dm-canvas: #212826;
+  --dm-surface: #28312e;
+  --dm-card: #303b37;
+  --dm-elevated: #394642;
+  --dm-border: #4b5c56;
+  --dm-muted: #a3b8b0;
+}
+
+/* 5. Modern Zinc (Abu Monokrom Modern Netral) */
+html.dark[data-dark-variant="zinc"] {
+  --dm-canvas: #18181b;
+  --dm-surface: #202024;
+  --dm-card: #27272a;
+  --dm-elevated: #303036;
+  --dm-border: #3f3f46;
+  --dm-muted: #a1a1aa;
+}
+
+html.dark,
 [data-theme="dark"] {
-  --bg-app: #0f172a;
-  --bg-card: #1e293b;
-  --bg-card-alt: #0f172a;
+  --bg-app: var(--dm-canvas);
+  --bg-card: var(--dm-card);
+  --bg-card-alt: var(--dm-surface);
   --text-main: #f8fafc;
-  --text-muted: #94a3b8;
-  --border-main: #334155;
+  --text-muted: var(--dm-muted);
+  --border-main: var(--dm-border);
+
+  /* Sinkronisasi palet slate Tailwind di mode gelap agar seluruh komponen tidak lagi navy pekat */
+  --color-slate-950: var(--dm-canvas);
+  --color-slate-900: var(--dm-surface);
+  --color-slate-850: var(--dm-card);
+  --color-slate-800: var(--dm-elevated);
+  --color-slate-700: var(--dm-border);
+  --color-slate-400: var(--dm-muted);
+}
+
+/* Sinkronisasi seluruh kelas hex navy gelap menjadi varian dark mode yang dipilih */
+html.dark .dark\:bg-\[\#09090b\],
+html.dark .dark\:bg-\[\#09090B\],
+html.dark .dark\:bg-\[\#0A0F18\],
+html.dark .dark\:bg-\[\#0a0f1c\],
+html.dark .dark\:bg-\[\#0b1324\],
+html.dark .dark\:bg-\[\#0c1322\],
+html.dark .dark\:bg-\[\#0E1420\],
+html.dark .dark\:bg-\[\#0F0F12\],
+html.dark .dark\:bg-\[\#0f172a\] {
+  background-color: var(--dm-canvas) !important;
+}
+
+html.dark .dark\:bg-\[\#0f1523\],
+html.dark .dark\:bg-\[\#101726\],
+html.dark .dark\:bg-\[\#111827\],
+html.dark .dark\:bg-\[\#121216\],
+html.dark .dark\:bg-\[\#121824\],
+html.dark .dark\:bg-\[\#121927\],
+html.dark .dark\:bg-\[\#131b2a\],
+html.dark .dark\:bg-\[\#131c2b\],
+html.dark .dark\:bg-\[\#131d31\],
+html.dark .dark\:bg-\[\#151f33\],
+html.dark .dark\:bg-\[\#161F30\] {
+  background-color: var(--dm-surface) !important;
+}
+
+html.dark .dark\:bg-\[\#1a2332\],
+html.dark .dark\:bg-\[\#1a2333\],
+html.dark .dark\:bg-\[\#1A2333\],
+html.dark .dark\:bg-\[\#1a233a\],
+html.dark .dark\:bg-\[\#1e293b\],
+html.dark .dark\:bg-\[\#1E293B\] {
+  background-color: var(--dm-card) !important;
+}
+
+html.dark .dark\:border-\[\#0f1523\] {
+  border-color: var(--dm-surface) !important;
 }
 
 /* Sleek minimalist scrollbar */
@@ -386,6 +490,10 @@ html.dark {
   #root,
   #root * {
     color-scheme: light !important;
+    --dm-canvas: #ffffff !important;
+    --dm-surface: #ffffff !important;
+    --dm-card: #ffffff !important;
+    --dm-elevated: #ffffff !important;
   }
 
   html,

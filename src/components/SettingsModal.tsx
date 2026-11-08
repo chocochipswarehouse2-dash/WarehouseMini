@@ -137,6 +137,8 @@ interface SettingsModalProps {
   darkMode?: boolean;
   setDarkMode?: (dark: boolean) => void;
   onToggleDarkMode?: () => void;
+  darkVariant?: string;
+  setDarkVariant?: (variant: string) => void;
   themeFont?: string;
   setThemeFont?: (font: string) => void;
   themeFontSize?: string;
@@ -173,6 +175,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   darkMode = false,
   setDarkMode,
   onToggleDarkMode = () => {},
+  darkVariant = 'soft',
+  setDarkVariant = () => {},
   themeFont = 'sans',
   setThemeFont = () => {},
   themeFontSize = 'normal',
@@ -1383,6 +1387,65 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <span>Mode Gelap (Dark)</span>
                     {darkMode && <Check className="w-4 h-4 text-primary-500 ml-1" />}
                   </button>
+                </div>
+
+                {/* Pilihan 5 Varian Mode Gelap (Lebih Light & Bebas Navy) */}
+                <div className="pt-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300">
+                      1B. Varian Mode Gelap (Lebih Terang & Bebas Navy)
+                    </span>
+                    <span className="text-[10px] font-bold text-primary-600 dark:text-primary-400">
+                      {darkVariant === 'dim'
+                        ? 'Twilight Dim (Paling Terang)'
+                        : darkVariant === 'warm'
+                        ? 'Warm Stone (Hangat)'
+                        : darkVariant === 'sage'
+                        ? 'Sage Mist (Hijau Abu)'
+                        : darkVariant === 'zinc'
+                        ? 'Modern Zinc (Netral)'
+                        : 'Soft Charcoal (Abu Lembut)'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
+                    {[
+                      { id: 'soft', name: 'Soft Charcoal', desc: 'Abu Lembut (Default)', canvas: '#22252a', card: '#30353e' },
+                      { id: 'dim', name: 'Twilight Dim', desc: 'Paling Terang & Kalem', canvas: '#2a3038', card: '#3a424e' },
+                      { id: 'warm', name: 'Warm Stone', desc: 'Hangat Bebas Biru', canvas: '#252220', card: '#36312d' },
+                      { id: 'sage', name: 'Sage Mist', desc: 'Hijau Abu Sejuk', canvas: '#212826', card: '#303b37' },
+                      { id: 'zinc', name: 'Modern Zinc', desc: 'Monokrom Netral', canvas: '#18181b', card: '#27272a' },
+                    ].map((dv) => {
+                      const isSelected = darkMode && darkVariant === dv.id;
+                      return (
+                        <button
+                          key={dv.id}
+                          type="button"
+                          onClick={() => {
+                            setDarkVariant(dv.id);
+                            if (!darkMode) {
+                              if (setDarkMode) setDarkMode(true);
+                              else onToggleDarkMode();
+                            }
+                            onNotify(`Mode Gelap beralih ke: ${dv.name}`, 'info');
+                          }}
+                          className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                            isSelected
+                              ? 'border-primary-500 bg-primary-50/70 dark:bg-primary-950/40 text-primary-700 dark:text-primary-300 shadow-sm ring-2 ring-primary-500/20'
+                              : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
+                          }`}
+                        >
+                          <span className="w-7 h-7 rounded-lg shrink-0 border border-white/15 shadow-inner flex overflow-hidden">
+                            <span className="flex-1 h-full" style={{ backgroundColor: dv.canvas }} />
+                            <span className="flex-1 h-full" style={{ backgroundColor: dv.card }} />
+                          </span>
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold leading-tight truncate">{dv.name}</div>
+                            <div className="text-[10px] text-slate-400 font-normal leading-tight truncate mt-0.5">{dv.desc}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 

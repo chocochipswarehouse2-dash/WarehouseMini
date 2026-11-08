@@ -7,6 +7,8 @@ interface ThemePickerModalProps {
   darkMode: boolean;
   setDarkMode?: (dark: boolean) => void;
   onToggleDarkMode?: () => void;
+  darkVariant?: string;
+  setDarkVariant?: (variant: string) => void;
   themeColor: string;
   setThemeColor: (color: string) => void;
   themeFont?: string;
@@ -17,12 +19,57 @@ interface ThemePickerModalProps {
   setThemeIconStyle?: (style: string) => void;
 }
 
+export const DARK_MODE_VARIANTS = [
+  {
+    id: 'soft',
+    name: 'Soft Charcoal',
+    desc: 'Abu Lembut (Default)',
+    canvas: '#22252a',
+    surface: '#282c33',
+    card: '#30353e',
+  },
+  {
+    id: 'dim',
+    name: 'Twilight Dim',
+    desc: 'Paling Terang & Kalem',
+    canvas: '#2a3038',
+    surface: '#313842',
+    card: '#3a424e',
+  },
+  {
+    id: 'warm',
+    name: 'Warm Stone',
+    desc: 'Hangat (Bebas Biru)',
+    canvas: '#252220',
+    surface: '#2d2926',
+    card: '#36312d',
+  },
+  {
+    id: 'sage',
+    name: 'Sage Mist',
+    desc: 'Hijau Abu Sejuk',
+    canvas: '#212826',
+    surface: '#28312e',
+    card: '#303b37',
+  },
+  {
+    id: 'zinc',
+    name: 'Modern Zinc',
+    desc: 'Monokrom Netral',
+    canvas: '#18181b',
+    surface: '#202024',
+    card: '#27272a',
+  },
+];
+
 export const ThemePickerModal: React.FC<ThemePickerModalProps> = ({
   isOpen,
   onClose,
   darkMode,
   setDarkMode,
   onToggleDarkMode = () => {},
+  darkVariant = 'soft',
+  setDarkVariant = () => {},
   themeColor,
   setThemeColor,
   themeFont = 'sans',
@@ -120,6 +167,53 @@ export const ThemePickerModal: React.FC<ThemePickerModalProps> = ({
                 <Moon className={`w-4 h-4 ${darkMode ? 'text-primary-500' : ''}`} />
                 <span>Gelap (Dark)</span>
               </button>
+            </div>
+
+            {/* Varian Dark Mode (5 Versi Lebih Light & Bebas Navy) */}
+            <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                  Varian Mode Gelap (Lebih Terang & Kalem)
+                </span>
+                <span className="text-[10px] font-bold text-primary-600 dark:text-primary-400">
+                  {DARK_MODE_VARIANTS.find((v) => v.id === darkVariant)?.name || 'Soft Charcoal'}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {DARK_MODE_VARIANTS.map((v) => {
+                  const isSelected = darkMode && darkVariant === v.id;
+                  return (
+                    <button
+                      key={v.id}
+                      type="button"
+                      onClick={() => {
+                        setDarkVariant(v.id);
+                        if (!darkMode) {
+                          if (setDarkMode) setDarkMode(true);
+                          else onToggleDarkMode();
+                        }
+                      }}
+                      className={`flex items-center gap-2.5 p-2 rounded-xl text-left border transition-all cursor-pointer ${
+                        isSelected
+                          ? 'border-primary-500 bg-primary-50/80 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 ring-2 ring-primary-500/20 shadow-xs'
+                          : 'border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 hover:border-slate-300'
+                      }`}
+                    >
+                      <span
+                        className="w-7 h-7 rounded-lg shrink-0 border border-white/15 shadow-inner flex overflow-hidden"
+                        title={`${v.name} — ${v.desc}`}
+                      >
+                        <span className="flex-1 h-full" style={{ backgroundColor: v.canvas }} />
+                        <span className="flex-1 h-full" style={{ backgroundColor: v.card }} />
+                      </span>
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-bold leading-tight truncate">{v.name}</div>
+                        <div className="text-[9px] text-slate-400 font-normal leading-tight truncate mt-0.5">{v.desc}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 

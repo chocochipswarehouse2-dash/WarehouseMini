@@ -104,6 +104,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSessionUpdate,
 }) => {
   const [isProfileOpen, setIsProfileOpen] = React.useState(false);
+  const [isDesktopHovered, setIsDesktopHovered] = React.useState(false);
+  const effectiveCollapsed = isCollapsed && !isDesktopHovered;
   React.useEffect(() => {
     if (session?.username) syncAvatarFromDb(session.username);
   }, [session?.username]);
@@ -922,165 +924,196 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* 2. DESKTOP PERMANENT / COLLAPSIBLE SIDEBAR */}
+      {/* 2. DESKTOP AUTO-HIDE / HOVER-UNHIDE & PINNABLE SIDEBAR */}
       {/* ========================================================================= */}
-      <aside
-        className={`hidden lg:flex print:hidden flex-col justify-between bg-white dark:bg-[#131d31] border-r border-slate-200 dark:border-slate-800 sticky top-0 h-screen transition-all duration-300 z-30 shrink-0 select-none shadow-xs ${
+      <div
+        className={`hidden lg:block print:hidden shrink-0 transition-all duration-300 ${
           isCollapsed ? 'w-[70px]' : 'w-64'
         }`}
       >
-        {/* Top Brand Header */}
-        <div
-          className={`p-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center ${
-            isCollapsed ? 'justify-center' : 'justify-between'
+        <aside
+          onMouseEnter={() => setIsDesktopHovered(true)}
+          onMouseLeave={() => setIsDesktopHovered(false)}
+          className={`fixed top-0 bottom-0 left-0 h-screen flex flex-col justify-between bg-white dark:bg-[#131d31] border-r border-slate-200 dark:border-slate-800 transition-all duration-200 ease-out z-40 select-none ${
+            effectiveCollapsed
+              ? 'w-[70px] shadow-xs'
+              : isCollapsed
+              ? 'w-64 shadow-2xl ring-1 ring-black/10 dark:ring-white/10'
+              : 'w-64 shadow-xs'
           }`}
         >
-          <div className="flex items-center gap-2.5 min-w-0">
-            <AppLogo size={32} />
-            {!isCollapsed && (
-              <div className="min-w-0">
-                <h2 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-tight truncate">
-                  WMS
-                </h2>
-                <div className="flex items-center gap-1.5 text-[9px] text-slate-400 font-bold">
-                  <div
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      isRealtimeConnected ? 'bg-primary-500 shadow-[0_0_6px_var(--theme-500)]' : 'bg-amber-500'
-                    }`}
-                  />
-                  <span>{isRealtimeConnected ? 'Live Database' : 'Syncing...'}</span>
+          {/* Top Brand Header */}
+          <div
+            className={`p-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center ${
+              effectiveCollapsed ? 'justify-center' : 'justify-between'
+            }`}
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <AppLogo size={32} />
+              {!effectiveCollapsed && (
+                <div className="min-w-0">
+                  <h2 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-tight truncate">
+                    WMS
+                  </h2>
+                  <div className="flex items-center gap-1.5 text-[9px] text-slate-400 font-bold">
+                    <div
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        isRealtimeConnected ? 'bg-primary-500 shadow-[0_0_6px_var(--theme-500)]' : 'bg-amber-500'
+                      }`}
+                    />
+                    <span>{isRealtimeConnected ? 'Live Database' : 'Syncing...'}</span>
+                  </div>
                 </div>
-              </div>
+              )}
+            </div>
+
+            {/* Sidebar Pin / Auto-Hide Toggle Button */}
+            {!effectiveCollapsed && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isCollapsed) {
+                    setIsDesktopHovered(false);
+                  }
+                  onToggleCollapse();
+                }}
+                title={
+                  isCollapsed
+                    ? 'Mode Auto-Hide Aktif — Klik untuk mengunci (Pin) sidebar tetap terbuka'
+                    : 'Sidebar Terkunci Terbuka — Klik untuk mengaktifkan Auto-Hide (otomatis sembunyi saat kursor keluar)'
+                }
+                className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer ${
+                  isCollapsed
+                    ? 'bg-primary-50 dark:bg-primary-950/40 text-primary-600 dark:text-primary-400 border border-primary-200/70 dark:border-primary-800/60 hover:bg-primary-100'
+                    : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                {isCollapsed ? (
+                  <>
+                    <span>Auto</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </>
+                ) : (
+                  <>
+                    <span>Pin</span>
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </>
+                )}
+              </button>
             )}
           </div>
 
-          {/* Sidebar Collapse Toggle Button */}
-          {!isCollapsed && (
-            <button
-              type="button"
-              onClick={onToggleCollapse}
-              title="Perkecil Sidebar"
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-          )}
-        </div>
+          {/* Scrollable Navigation & Tools */}
+          <div className="flex-1 overflow-y-auto py-3 space-y-4 no-scrollbar">
+            {renderNavList(effectiveCollapsed)}
+            {renderQuickTools(effectiveCollapsed)}
+          </div>
 
-        {/* Scrollable Navigation & Tools */}
-        <div className="flex-1 overflow-y-auto py-3 space-y-4 no-scrollbar">
-          {renderNavList(isCollapsed)}
-          {renderQuickTools(isCollapsed)}
-        </div>
-
-        {/* Bottom User Card & Expand Button (When Collapsed) */}
-        <div className="p-2.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30">
-          {isCollapsed ? (
-            <div className="flex flex-col items-center gap-2">
-              <button
-                type="button"
-                onClick={onToggleCollapse}
-                title="Buka / Perlebar Sidebar"
-                className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300 flex items-center justify-center transition-colors cursor-pointer"
-              >
-                <ChevronRight className="w-4 h-4 text-primary-500" />
-              </button>
-
-              {session && (
-                <button type="button" onClick={() => setIsProfileOpen(true)} title={`Profil (${session.username})`} className="cursor-pointer rounded-xl hover:ring-2 hover:ring-primary-500/40 transition">
-                  <UserAvatar username={session.username} name={session.name} className="w-10 h-10 rounded-xl" />
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={onLogout}
-                title={`Logout (${session?.username || 'User'})`}
-                className="w-10 h-10 rounded-xl hover:bg-primary-50 dark:hover:bg-primary-950/40 text-slate-400 hover:text-primary-500 flex items-center justify-center transition-colors cursor-pointer"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
-
-              {/* Collapsed Version / Update Icon */}
-              {onOpenUpdateModal && (
-                <button
-                  type="button"
-                  onClick={onOpenUpdateModal}
-                  title={`Pembaruan Sistem WMS (${CURRENT_APP_VERSION})${hasUpdatePending ? ` — Ada Update ${latestVersion}` : ''}`}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors cursor-pointer relative ${
-                    hasUpdatePending
-                      ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/40 shadow-sm'
-                      : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
-                  }`}
-                >
-                  <Smartphone className="w-4 h-4" />
-                  {hasUpdatePending && (
-                    <span className="absolute top-2 right-2 w-2 h-2 bg-amber-500 rounded-full animate-ping" />
-                  )}
-                </button>
-              )}
-            </div>
-          ) : (
-            session && (
-              <div>
-                <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800">
+          {/* Bottom User Card & Expand Button */}
+          <div className="p-2.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30">
+            {effectiveCollapsed ? (
+              <div className="flex flex-col items-center gap-2">
+                {session && (
                   <button
                     type="button"
                     onClick={() => setIsProfileOpen(true)}
-                    title="Lihat & edit profil"
-                    className="flex items-center gap-2 min-w-0 flex-1 text-left rounded-lg -m-1 p-1 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
+                    title={`Profil (${session.username})`}
+                    className="cursor-pointer rounded-xl hover:ring-2 hover:ring-primary-500/40 transition"
                   >
-                    <UserAvatar username={session.username} name={session.name} />
-                    <div className="min-w-0">
-                      <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                        {session.name || getUserPersonName(session.username) || session.username}
-                      </div>
-                      <div className="text-[9px] font-semibold text-slate-500 dark:text-slate-400 truncate">
-                        @{session.username} • <span className="text-primary-500 font-bold uppercase">{session.role}</span>
-                      </div>
-                    </div>
+                    <UserAvatar username={session.username} name={session.name} className="w-10 h-10 rounded-xl" />
                   </button>
+                )}
 
-                  <button
-                    type="button"
-                    onClick={onLogout}
-                    title="Logout"
-                    className="p-1.5 text-slate-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-950/30 rounded-lg transition-colors cursor-pointer"
-                  >
-                    <LogOut className="w-4 h-4" />
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  title={`Logout (${session?.username || 'User'})`}
+                  className="w-10 h-10 rounded-xl hover:bg-primary-50 dark:hover:bg-primary-950/40 text-slate-400 hover:text-primary-500 flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
 
-                {/* Version & Update Indicator Desktop Expanded */}
-                <div className="mt-2 pt-2 border-t border-slate-200/70 dark:border-slate-800/70 flex items-center justify-between text-[10px] text-slate-400">
+                {/* Collapsed Version / Update Icon */}
+                {onOpenUpdateModal && (
                   <button
                     type="button"
                     onClick={onOpenUpdateModal}
-                    className="flex items-center gap-1.5 hover:text-primary-500 font-mono font-bold transition-colors cursor-pointer"
-                    title="Buka Pusat Pembaruan Sistem"
+                    title={`Pembaruan Sistem WMS (${CURRENT_APP_VERSION})${hasUpdatePending ? ` — Ada Update ${latestVersion}` : ''}`}
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors cursor-pointer relative ${
+                      hasUpdatePending
+                        ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/40 shadow-sm'
+                        : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                    }`}
                   >
-                    <span className={`w-1.5 h-1.5 rounded-full ${hasUpdatePending ? 'bg-amber-500 animate-ping' : 'bg-emerald-500'}`} />
-                    <span>WMS {CURRENT_APP_VERSION}</span>
+                    <Smartphone className="w-4 h-4" />
+                    {hasUpdatePending && (
+                      <span className="absolute top-2 right-2 w-2 h-2 bg-amber-500 rounded-full animate-ping" />
+                    )}
                   </button>
-                  {onOpenUpdateModal && (
+                )}
+              </div>
+            ) : (
+              session && (
+                <div>
+                  <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setIsProfileOpen(true)}
+                      title="Lihat & edit profil"
+                      className="flex items-center gap-2 min-w-0 flex-1 text-left rounded-lg -m-1 p-1 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
+                    >
+                      <UserAvatar username={session.username} name={session.name} />
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                          {session.name || getUserPersonName(session.username) || session.username}
+                        </div>
+                        <div className="text-[9px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+                          @{session.username} • <span className="text-primary-500 font-bold uppercase">{session.role}</span>
+                        </div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={onLogout}
+                      title="Logout"
+                      className="p-1.5 text-slate-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-950/30 rounded-lg transition-colors cursor-pointer"
+                    >
+                      <LogOut className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Version & Update Indicator Desktop Expanded */}
+                  <div className="mt-2 pt-2 border-t border-slate-200/70 dark:border-slate-800/70 flex items-center justify-between text-[10px] text-slate-400">
                     <button
                       type="button"
                       onClick={onOpenUpdateModal}
-                      className={`px-2 py-0.5 rounded-md font-bold text-[9px] transition-colors cursor-pointer ${
-                        hasUpdatePending
-                          ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 animate-pulse'
-                          : 'text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-950/40'
-                      }`}
+                      className="flex items-center gap-1.5 hover:text-primary-500 font-mono font-bold transition-colors cursor-pointer"
+                      title="Buka Pusat Pembaruan Sistem"
                     >
-                      {hasUpdatePending ? 'Update Baru' : 'Cek Update'}
+                      <span className={`w-1.5 h-1.5 rounded-full ${hasUpdatePending ? 'bg-amber-500 animate-ping' : 'bg-emerald-500'}`} />
+                      <span>WMS {CURRENT_APP_VERSION}</span>
                     </button>
-                  )}
+                    {onOpenUpdateModal && (
+                      <button
+                        type="button"
+                        onClick={onOpenUpdateModal}
+                        className={`px-2 py-0.5 rounded-md font-bold text-[9px] transition-colors cursor-pointer ${
+                          hasUpdatePending
+                            ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 animate-pulse'
+                            : 'text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-950/40'
+                        }`}
+                      >
+                        {hasUpdatePending ? 'Update Baru' : 'Cek Update'}
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )
-          )}
-        </div>
-      </aside>
+              )
+            )}
+          </div>
+        </aside>
+      </div>
       {session && (
         <UserProfileModal
           isOpen={isProfileOpen}

@@ -373,6 +373,7 @@ export default function App() {
     if (saved !== null) return saved === 'true';
     return false; // Default to Light Mode as requested by user
   });
+  const [darkVariant, setDarkVariant] = useState<string>(() => localStorage.getItem('wms_dark_variant') || 'soft');
 
   // Notifications
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(() =>
@@ -817,7 +818,9 @@ export default function App() {
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState<boolean>(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
-    return localStorage.getItem('wms_sidebar_collapsed') === 'true';
+    const saved = localStorage.getItem('wms_sidebar_autohide_v2');
+    if (saved !== null) return saved === 'true';
+    return true; // Default: Auto-Hide active on desktop (unhides automatically on cursor hover)
   });
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [gmpQuotaExceeded, setGmpQuotaExceeded] = useState<boolean>(false);
@@ -870,7 +873,7 @@ export default function App() {
   const toggleSidebarCollapse = () => {
     setIsSidebarCollapsed((prev) => {
       const next = !prev;
-      localStorage.setItem('wms_sidebar_collapsed', String(next));
+      localStorage.setItem('wms_sidebar_autohide_v2', String(next));
       return next;
     });
   };
@@ -878,11 +881,18 @@ export default function App() {
   // Apply dark mode class to html element
   useEffect(() => {
     const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    const darkMetaColors: Record<string, string> = {
+      soft: '#22252a',
+      dim: '#2a3038',
+      warm: '#252220',
+      sage: '#212826',
+      zinc: '#18181b',
+    };
     if (darkMode) {
       document.documentElement.classList.add('dark');
       document.documentElement.setAttribute('data-theme', 'dark');
       document.documentElement.style.colorScheme = 'dark';
-      if (metaThemeColor) metaThemeColor.setAttribute('content', '#0f172a');
+      if (metaThemeColor) metaThemeColor.setAttribute('content', darkMetaColors[darkVariant] || '#22252a');
     } else {
       document.documentElement.classList.remove('dark');
       document.documentElement.setAttribute('data-theme', 'light');
@@ -890,6 +900,8 @@ export default function App() {
       if (metaThemeColor) metaThemeColor.setAttribute('content', '#ffffff');
     }
     localStorage.setItem('wms_dark_mode', String(darkMode));
+    document.documentElement.setAttribute('data-dark-variant', darkVariant);
+    localStorage.setItem('wms_dark_variant', darkVariant);
     document.documentElement.setAttribute('data-theme-color', themeColor);
     localStorage.setItem('wms_theme_color', themeColor);
     document.documentElement.setAttribute('data-theme-font', themeFont);
@@ -903,7 +915,7 @@ export default function App() {
     
     document.documentElement.setAttribute('data-theme-icon', themeIconStyle);
     localStorage.setItem('wms_theme_icon', themeIconStyle);
-  }, [darkMode, themeColor, themeFont, themeFontSize, themeIconStyle]);
+  }, [darkMode, darkVariant, themeColor, themeFont, themeFontSize, themeIconStyle]);
 
   const toggleDarkMode = () => {
     setDarkMode((prev) => !prev);
@@ -3590,6 +3602,8 @@ export default function App() {
         darkMode={darkMode}
         setDarkMode={setDarkMode}
         onToggleDarkMode={toggleDarkMode}
+        darkVariant={darkVariant}
+        setDarkVariant={setDarkVariant}
         themeColor={themeColor}
         setThemeColor={setThemeColor}
         themeFont={themeFont}
@@ -3646,6 +3660,8 @@ export default function App() {
         darkMode={darkMode}
         setDarkMode={setDarkMode}
         onToggleDarkMode={toggleDarkMode}
+        darkVariant={darkVariant}
+        setDarkVariant={setDarkVariant}
         themeFont={themeFont}
         setThemeFont={setThemeFont}
         themeFontSize={themeFontSize}
