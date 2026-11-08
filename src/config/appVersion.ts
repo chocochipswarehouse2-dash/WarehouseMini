@@ -15,21 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.80",
-  "versionCode": 340,
+  "version": "v2.6.81",
+  "versionCode": 341,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v340-1048",
-  "releaseTitle": "WMS v2.6.80 — Profil Pengguna",
+  "buildHash": "wms-261108-v341-1053",
+  "releaseTitle": "WMS v2.6.81 — Profil: Auto Logout setelah Ganti Password",
   "releaseNotes": [
-    "Klik kartu user di sidebar membuka popup Profil",
-    "Edit nama, No. HP & email",
-    "Ganti password (verifikasi password lama, SHA-256)",
-    "Upload foto profil atau pilih avatar"
+    "Setelah password diganti, user otomatis logout dalam 3 detik dan wajib login ulang",
+    "Simpan profil & password diverifikasi benar-benar tersimpan di Supabase wms_users"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.80",
+    "versionCode": 340,
+    "buildDate": "8 November 2026",
+    "buildHash": "wms-261108-v340-1048",
+    "releaseTitle": "WMS v2.6.80 — Profil Pengguna",
+    "releaseNotes": [
+      "Klik kartu user di sidebar membuka popup Profil",
+      "Edit nama, No. HP & email",
+      "Ganti password (verifikasi password lama, SHA-256)",
+      "Upload foto profil atau pilih avatar"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.79",
     "versionCode": 339,
@@ -119,19 +131,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Kartu foto Kanban diperkecil proporsional agar 3 baris tampil penuh tanpa terpotong",
       "Tombol toggle sembunyikan filter UP untuk memaksimalkan ruang vertikal",
       "Tersedia opsi ukuran 3 Baris, Sedang, dan Besar"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.72",
-    "versionCode": 332,
-    "buildDate": "6 November 2026",
-    "buildHash": "wms-261106-v332-2128",
-    "releaseTitle": "WMS v2.6.72 — Tampilan Kanban 3 Baris & Sinkronisasi Cover Trello Asli",
-    "releaseNotes": [
-      "Tampilan Papan Kanban kompak menampilkan 3 baris gambar vertikal per kolom",
-      "Pilihan kerapatan kartu (3 Baris, Standar, Besar)",
-      "Perbaikan seleksi cover foto resmi Trello dan auto-replace foto 'Belum Ada Sample'"
     ],
     "minSupportedVersion": "v2.0.0"
   }

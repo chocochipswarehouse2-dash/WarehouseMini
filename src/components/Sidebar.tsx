@@ -1053,6 +1053,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onClose={() => setIsProfileOpen(false)}
           session={session}
           onSessionUpdate={onSessionUpdate}
+          onLogout={onLogout}
         />
       )}
     </>

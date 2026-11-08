@@ -1,14 +1,12 @@
 {
-  "version": "v2.6.80",
-  "versionCode": 340,
+  "version": "v2.6.81",
+  "versionCode": 341,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v340-1048",
-  "releaseTitle": "WMS v2.6.80 — Profil Pengguna",
+  "buildHash": "wms-261108-v341-1053",
+  "releaseTitle": "WMS v2.6.81 — Profil: Auto Logout setelah Ganti Password",
   "releaseNotes": [
-    "Klik kartu user di sidebar membuka popup Profil",
-    "Edit nama, No. HP & email",
-    "Ganti password (verifikasi password lama, SHA-256)",
-    "Upload foto profil atau pilih avatar"
+    "Setelah password diganti, user otomatis logout dalam 3 detik dan wajib login ulang",
+    "Simpan profil & password diverifikasi benar-benar tersimpan di Supabase wms_users"
   ],
   "minSupportedVersion": "v2.0.0"
 }

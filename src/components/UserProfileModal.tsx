@@ -105,6 +105,7 @@ interface Props {
   onClose: () => void;
   session: UserSession;
   onSessionUpdate?: (patch: Partial<UserSession>) => void;
+  onLogout?: () => void;
 }
 
 type Tab = 'profil' | 'password';
@@ -112,7 +113,7 @@ type Tab = 'profil' | 'password';
 const inputCls =
   'w-full h-9 pl-9 pr-3 rounded-lg text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500/40 focus:border-primary-500 disabled:opacity-60';
 
-export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, onSessionUpdate }) => {
+export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, onSessionUpdate, onLogout }) => {
   const [tab, setTab] = React.useState<Tab>('profil');
   const [name, setName] = React.useState('');
   const [phone, setPhone] = React.useState('');
@@ -128,6 +129,20 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
   const [confirmPass, setConfirmPass] = React.useState('');
   const [showPass, setShowPass] = React.useState(false);
   const fileRef = React.useRef<HTMLInputElement>(null);
+  const [logoutCountdown, setLogoutCountdown] = React.useState<number | null>(null);
+
+  // Auto-logout after successful password change (forces re-login with new password)
+  React.useEffect(() => {
+    if (logoutCountdown === null) return;
+    if (logoutCountdown <= 0) {
+      setLogoutCountdown(null);
+      onClose();
+      onLogout?.();
+      return;
+    }
+    const t = setTimeout(() => setLogoutCountdown((c) => (c === null ? null : c - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [logoutCountdown, onClose, onLogout]);
 
   const displayName = session.name || getUserPersonName(session.username) || session.username;
 
@@ -174,13 +189,22 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
     catch (err: any) { setMsg({ ok: false, text: err.message }); }
   };
 
-  const patchUser = async (payload: Record<string, any>, fallback: Record<string, any>) => {
+  /** PATCH wms_users and verify at least 1 row was actually updated in Supabase. */
+  const patchRow = async (payload: Record<string, any>) => {
     const q = `username=eq.${encodeURIComponent(session.username)}`;
+    const res = await supabaseFetch<any[]>('wms_users', 'PATCH', payload, q, true);
+    if (Array.isArray(res) && res.length === 0) {
+      throw new Error('Akun tidak ditemukan di database Supabase (wms_users). Hubungi Superadmin.');
+    }
+  };
+
+  const patchUser = async (payload: Record<string, any>, fallback: Record<string, any>) => {
     try {
-      await supabaseFetch('wms_users', 'PATCH', payload, q, true);
-    } catch {
+      await patchRow(payload);
+    } catch (err: any) {
+      if (String(err?.message || '').includes('tidak ditemukan')) throw err;
       // Older schema without no_hp/email columns → store in permissions JSON only
-      await supabaseFetch('wms_users', 'PATCH', fallback, q, true);
+      await patchRow(fallback);
     }
   };
 
@@ -221,9 +245,10 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
       const valid = stored ? stored === oldPass || stored === oldHash : oldPass === '123456';
       if (!valid) { setMsg({ ok: false, text: 'Password lama salah.' }); return; }
       const newHash = await computeSha256(newPass);
-      await supabaseFetch('wms_users', 'PATCH', { password: newHash }, `username=eq.${encodeURIComponent(session.username)}`, true);
+      await patchRow({ password: newHash, updated_at: new Date().toISOString() });
       setOldPass(''); setNewPass(''); setConfirmPass('');
-      setMsg({ ok: true, text: 'Password berhasil diganti. Gunakan password baru saat login berikutnya.' });
+      setMsg({ ok: true, text: 'Password berhasil diganti & tersimpan di Supabase. Anda akan logout otomatis dalam 3 detik, silakan login ulang dengan password baru.' });
+      setLogoutCountdown(3);
     } catch (err: any) {
       setMsg({ ok: false, text: `Gagal mengganti password: ${err?.message || 'koneksi bermasalah'}` });
     } finally { setSaving(false); }
@@ -355,7 +380,7 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
         {/* Footer */}
         <div className="p-3 border-t border-slate-200 dark:border-slate-800 flex gap-2 bg-slate-50/60 dark:bg-slate-900/40">
           <button type="button" onClick={onClose} className="h-9 px-4 rounded-lg text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer">Tutup</button>
-          <button type="button" disabled={saving || loading} onClick={tab === 'profil' ? saveProfile : savePassword} className="flex-1 h-9 rounded-lg text-xs font-bold bg-primary-600 hover:bg-primary-700 text-white flex items-center justify-center gap-1.5 disabled:opacity-60 cursor-pointer">
+          <button type="button" disabled={saving || loading || logoutCountdown !== null} onClick={tab === 'profil' ? saveProfile : savePassword} className="flex-1 h-9 rounded-lg text-xs font-bold bg-primary-600 hover:bg-primary-700 text-white flex items-center justify-center gap-1.5 disabled:opacity-60 cursor-pointer">
             {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : tab === 'profil' ? <Save className="w-3.5 h-3.5" /> : <KeyRound className="w-3.5 h-3.5" />}
             {tab === 'profil' ? 'Simpan Profil' : 'Ganti Password'}
           </button>
@@ -365,3 +390,4 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
     document.body
   );
 };
+
