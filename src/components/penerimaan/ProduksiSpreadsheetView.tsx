@@ -117,6 +117,9 @@ export interface MatrixProductBlock {
   ongkirPerKg: number;
   totalOngkir: number;
   ongkirPerPcs: number;
+  // Trello Candidate Tracking
+  matchedItem?: any;
+  alternateCandidates?: any[];
 }
 
 const STORAGE_KEY_METRICS = 'wms_produksi_matrix_metrics_cache';
@@ -673,6 +676,8 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         kategori: targetCategory,
         photoUrl,
         catatan,
+        matchedItem: trelloMatch?.matchedItem,
+        alternateCandidates: trelloMatch?.alternateCandidates,
         distinctSjs,
         dateToSjMap,
         colorGroups,
@@ -1127,6 +1132,39 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     } finally {
       setIsPushingSheet(false);
     }
+  };
+
+  // Switch to an alternate Trello candidate card (instant toggle/swap between couple cards like Logan Top vs Kailea Set)
+  const handleSwitchTrelloCandidate = (blockId: string, candidate: any) => {
+    setBlocks((prev) =>
+      prev.map((b) => {
+        if (b.id !== blockId) return b;
+        const currentAsCandidate = b.matchedItem || {
+          id: b.id,
+          card_name: b.productName,
+          item_name: b.productName,
+          up_code: b.upVendor,
+          gdrive_image_url: b.photoUrl,
+          trello_image_url: b.photoUrl,
+        };
+        const remainingAlts = (b.alternateCandidates || []).filter((c: any) => c.id !== candidate.id);
+        remainingAlts.push(currentAsCandidate);
+
+        const newName = candidate.item_name || candidate.card_name || '';
+        const newUp = candidate.up_code || candidate.list_name || b.upVendor;
+        const newPhoto = candidate.gdrive_image_url || candidate.trello_image_url || b.photoUrl;
+
+        return {
+          ...b,
+          productName: newName,
+          upVendor: newUp,
+          photoUrl: newPhoto,
+          matchedItem: candidate,
+          alternateCandidates: remainingAlts,
+        };
+      })
+    );
+    onShowToast(`Produk diganti ke "${candidate.item_name || candidate.card_name}"!`, 'success');
   };
 
   // Start Edit Mode
@@ -2654,7 +2692,25 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                                       className="w-full text-center bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded px-1.5 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-rose-500"
                                     />
                                   ) : (
-                                    <span>{block.productName || ''}</span>
+                                    <div className="flex flex-col items-center gap-1.5">
+                                      <span className="font-medium">{block.productName || ''}</span>
+                                      {block.alternateCandidates && block.alternateCandidates.length > 0 && (
+                                        <div className="flex flex-wrap justify-center gap-1 mt-0.5">
+                                          {block.alternateCandidates.map((alt: any) => (
+                                            <button
+                                              key={alt.id}
+                                              type="button"
+                                              onClick={() => handleSwitchTrelloCandidate(block.id, alt)}
+                                              title={`Tukar dengan "${alt.item_name || alt.card_name}"`}
+                                              className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 rounded text-[10px] font-bold flex items-center gap-1 transition shadow-2xs cursor-pointer active:scale-95"
+                                            >
+                                              <RefreshCw className="w-2.5 h-2.5" />
+                                              <span>⇄ Ganti: {(alt.item_name || alt.card_name).replace(/SAMPLE/i, '').trim()}</span>
+                                            </button>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
                                   )}
                                 </td>
                               )}

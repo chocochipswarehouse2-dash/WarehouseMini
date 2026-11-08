@@ -1,12 +1,12 @@
 {
-  "version": "v2.6.98",
-  "versionCode": 358,
-  "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v358-2137",
-  "releaseTitle": "WMS v2.6.98 — Fix Produksi Trello Match Ambiguity & Sheet Push Product Name/UP",
+  "version": "v2.6.99",
+  "versionCode": 359,
+  "buildDate": "9 November 2026",
+  "buildHash": "wms-261109-v359-0526",
+  "releaseTitle": "WMS v2.6.99 — Refine Produksi Couple Match Scoring & Instant Trello Swap Button",
   "releaseNotes": [
-    "Sistem scoring ranking multi-faktor untuk pencocokan Trello dengan gender/single-code hint (memastikan 25762 - WOMAN cocok ke Viorica Top bukan Cedric Top)",
-    "Enrichment otomatis nama produk dan UP Vendor saat push ke Google Sheets Master & Tanggal (menjamin kolom C dan D tidak kosong/default KARGO)"
+    "Koreksi gender scoring pada kode kembar busana couple (25751 MAN -> Logan Top SAMPLE, 25751 WOMAN -> Kailea Set)",
+    "Tombol interaktif 1-klik 'Ganti Produk' di tabel Produksi untuk menukar kartu Trello alternatif secara instan tanpa ketik manual"
   ],
   "minSupportedVersion": "v2.0.0"
 }

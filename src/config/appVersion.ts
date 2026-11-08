@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.98",
-  "versionCode": 358,
-  "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v358-2137",
-  "releaseTitle": "WMS v2.6.98 — Fix Produksi Trello Match Ambiguity & Sheet Push Product Name/UP",
+  "version": "v2.6.99",
+  "versionCode": 359,
+  "buildDate": "9 November 2026",
+  "buildHash": "wms-261109-v359-0526",
+  "releaseTitle": "WMS v2.6.99 — Refine Produksi Couple Match Scoring & Instant Trello Swap Button",
   "releaseNotes": [
-    "Sistem scoring ranking multi-faktor untuk pencocokan Trello dengan gender/single-code hint (memastikan 25762 - WOMAN cocok ke Viorica Top bukan Cedric Top)",
-    "Enrichment otomatis nama produk dan UP Vendor saat push ke Google Sheets Master & Tanggal (menjamin kolom C dan D tidak kosong/default KARGO)"
+    "Koreksi gender scoring pada kode kembar busana couple (25751 MAN -> Logan Top SAMPLE, 25751 WOMAN -> Kailea Set)",
+    "Tombol interaktif 1-klik 'Ganti Produk' di tabel Produksi untuk menukar kartu Trello alternatif secara instan tanpa ketik manual"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.98",
+    "versionCode": 358,
+    "buildDate": "8 November 2026",
+    "buildHash": "wms-261108-v358-2137",
+    "releaseTitle": "WMS v2.6.98 — Fix Produksi Trello Match Ambiguity & Sheet Push Product Name/UP",
+    "releaseNotes": [
+      "Sistem scoring ranking multi-faktor untuk pencocokan Trello dengan gender/single-code hint (memastikan 25762 - WOMAN cocok ke Viorica Top bukan Cedric Top)",
+      "Enrichment otomatis nama produk dan UP Vendor saat push ke Google Sheets Master & Tanggal (menjamin kolom C dan D tidak kosong/default KARGO)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.97",
     "versionCode": 357,
@@ -114,18 +126,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Reset otomatis seluruh Multi-Tab Keep-Alive, Panel Samping, dan halaman aktif saat Logout atau Login akun baru",
       "Filter ketat tab berdasarkan hak akses canAccessPage agar tab akun sebelumnya tidak pernah bocor ke akun lain",
       "Tampilan sapaan nama lengkap operator di Dashboard"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.90",
-    "versionCode": 350,
-    "buildDate": "8 November 2026",
-    "buildHash": "wms-261108-v350-1435",
-    "releaseTitle": "WMS v2.6.90 — Hotfix Pengaturan Sistem & Inisialisasi Halaman",
-    "releaseNotes": [
-      "Perbaikan inisialisasi variabel showToast, toggleDarkMode, dan updateModal pada halaman Pengaturan Sistem",
-      "Sinkronisasi judul dan ikon halaman Pengaturan Sistem di Navbar"
     ],
     "minSupportedVersion": "v2.0.0"
   }

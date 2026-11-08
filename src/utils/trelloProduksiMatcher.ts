@@ -184,12 +184,14 @@ export function scoreCandidateMatch(
   const isWomanInput = /\b(WOMAN|WANITA|LADIES|LADY|FEMALE|CEWEK|GIRL)\b/i.test(normInput);
   const isManInput = /\b(MAN|PRIA|MALE|COWOK|BOY|MEN)\b/i.test(normInput);
 
-  const isWomanCandidate = /\b(WOMAN|WANITA|LADIES|LADY|FEMALE|GIRL|DRESS|SKIRT|ROK|GAMIS|TOP|BLOUSE|CULOTTE|VIORICA)\b/i.test(combinedText);
-  const isManCandidate = /\b(MAN|PRIA|MALE|COWOK|BOY|MEN|CEDRIC|KEMEJA|SHIRT|POLO)\b/i.test(combinedText);
+  // Kata khusus busana & nama wanita di Chocochips (SET = setelan rok/wanita, DRESS, SKIRT, dll. Catatan: TOP dikeluarkan karena kemeja pria sampel sering dinamai Top)
+  const isWomanCandidate = /\b(WOMAN|WANITA|LADIES|LADY|FEMALE|GIRL|DRESS|SKIRT|ROK|GAMIS|SET|BLOUSE|CULOTTE|KULOT|PEPLUM|TUNIC|CHEONGSAM|VIORICA|KAILEA|CLARA|BELLA|CHLOE|MIA|EMMA)\b/i.test(combinedText);
+  // Kata khusus busana & nama pria di Chocochips
+  const isManCandidate = /\b(MAN|PRIA|MALE|COWOK|BOY|MEN|KEMEJA|SHIRT|POLO|KOKO|CEDRIC|LOGAN|KENNETH|KENZO|ARKA|LIAM|NATHAN|LUCAS|MAX|ALEX|PAPA|DAD)\b/i.test(combinedText);
 
   if (isWomanInput) {
     if (isWomanCandidate && !isManCandidate) {
-      score += 40;
+      score += 50;
     } else if (isManCandidate && !isWomanCandidate) {
       score -= 50;
     } else if (isWomanCandidate && isManCandidate) {
@@ -200,7 +202,7 @@ export function scoreCandidateMatch(
 
   if (isManInput) {
     if (isManCandidate && !isWomanCandidate) {
-      score += 40;
+      score += 50;
     } else if (isWomanCandidate && !isManCandidate) {
       score -= 50;
     }
