@@ -38,6 +38,7 @@ import {
   OFFLINE_COLS,
   ONLINE_COLS,
   STORE_COLS,
+  aggregateSku,
   isAreaOn,
   isPerbaikanArea,
   type AreaFilterType,
@@ -321,12 +322,15 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
 
   const activeLocs = useMemo(() => {
     if (liveStockRows !== null) {
-      return liveStockRows.map((r) => ({
-        name: r.lokasi,
-        qty: Number(r.sisa_stok) || 0,
-        area: r.area || getAreaFromLokasi(r.lokasi),
-        neg: (Number(r.sisa_stok) || 0) < 0,
-      }));
+      return liveStockRows
+        .map((r) => ({
+          name: String(r.lokasi || '').trim().toUpperCase(),
+          qty: Number(r.sisa_stok) || 0,
+          area: r.area || getAreaFromLokasi(r.lokasi),
+          neg: (Number(r.sisa_stok) || 0) < 0,
+        }))
+        .filter((r) => r.name && r.name !== '-' && r.qty !== 0)
+        .sort((a, b) => (b.qty !== a.qty ? b.qty - a.qty : a.name.localeCompare(b.name)));
     }
     return row?.locs || [];
   }, [liveStockRows, row?.locs]);
@@ -344,29 +348,10 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
 
   const activeFisik = useMemo(() => {
     if (liveStockRows !== null) {
-      const res: Record<string, number> = {
-        WAREHOUSE: 0,
-        AKSESORIS: 0,
-        TRANSIT: 0,
-        KOLIAN: 0,
-        BLOK_F: 0,
-        PERBAIKAN: 0,
-        ANOMALI: 0,
-      };
-      liveStockRows.forEach((r) => {
-        const area = (r.area || getAreaFromLokasi(r.lokasi)).toUpperCase().trim();
-        const qty = Number(r.sisa_stok) || 0;
-        if (area.includes('WAREHOUSE')) res.WAREHOUSE = (res.WAREHOUSE || 0) + qty;
-        else if (area.includes('AKSESORIS')) res.AKSESORIS = (res.AKSESORIS || 0) + qty;
-        else if (area.includes('TRANSIT')) res.TRANSIT = (res.TRANSIT || 0) + qty;
-        else if (area.includes('KOLIAN')) res.KOLIAN = (res.KOLIAN || 0) + qty;
-        else if (area.includes('BLOK F') || area.includes('BLOK_F')) res.BLOK_F = (res.BLOK_F || 0) + qty;
-        else if (area.includes('PERBAIKAN')) res.PERBAIKAN = (res.PERBAIKAN || 0) + qty;
-        else res.ANOMALI = (res.ANOMALI || 0) + qty;
-      });
-      return res;
+      const agg = aggregateSku(liveStockRows);
+      if (agg) return agg.fisik;
     }
-    return row?.fisik || {};
+    return row?.fisik || { MAP: 0, LIVE: 0, STUDIO: 0, PERMAK: 0, DEFECT: 0 };
   }, [liveStockRows, row?.fisik]);
 
   // Summary counts for logs

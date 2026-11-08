@@ -220,6 +220,7 @@ const PAGE_TO_PATH: Record<ActivePage, string> = {
   pusat_resolusi: 'pusat-resolusi',
   rekap_tagihan_jne: 'rekap-tagihan-jne',
   live_chat: 'live-chat',
+  trello_up: 'trello-up',
 };
 
 const PATH_TO_PAGE: Record<string, ActivePage> = {
@@ -1385,7 +1386,7 @@ export default function App() {
               const oldRow = (payload.old || {}) as any;
               // Jika resi baru saja diinput oleh Admin, beri notifikasi ke akun Store pengirim
               if (row.no_resi && row.no_resi !== oldRow.no_resi && !isSuperadmin(session)) {
-                const orderId = row.no_transaksi_customer || row.no_pesanan || 'Pesanan';
+                const orderId = row.no_pesanan || row.no_transaksi_customer || 'Pesanan';
                 const storeName = row.nama_pengirim || 'Store';
                 const userStore = (session.store_name || session.name || '').toLowerCase();
                 if (userStore && storeName.toLowerCase().includes(userStore)) {
@@ -1487,7 +1488,7 @@ export default function App() {
       setLastOrderCheckTimestamp(Date.now());
       syncNotifiedOrdersToServiceWorker(Array.from(notifiedOrderIdsRef.current));
 
-      const orderId = String(row.no_transaksi_customer || row.no_pesanan || 'Pesanan Baru').trim();
+      const orderId = String(row.no_pesanan || row.no_transaksi_customer || 'Pesanan Baru').trim();
       const storeName = String(row.nama_pengirim || 'Store').trim();
       const picStore = String(row.pic_store || row.submitted_by || '').trim();
       const customerName = String(row.nama_tujuan || 'Customer').trim();

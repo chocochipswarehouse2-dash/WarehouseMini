@@ -324,7 +324,7 @@ export const SuratJalanAlterReceiptModal: React.FC<SuratJalanAlterReceiptModalPr
 Rincian Alokasi Produk dari Stok Gudang Utama (DealPOS Marketplace):
 
 📋 *Rincian Pesanan:*
-• *Order ID / No. Pesanan:* ${ord.no_transaksi_customer || ord.no_pesanan}
+• *Order ID / No. Pesanan:* ${ord.no_pesanan || ord.no_transaksi_customer}
 • *Store Pemohon:* ${requesterStore} (PIC: ${ord.pic_store || arData?.pic_pemohon || '-'})
 • *Store Penyedia Barang:* Gudang Utama (DealPOS Marketplace)
 • *Customer Tujuan Akhir:* ${ord.nama_tujuan || '-'}
@@ -343,7 +343,7 @@ Halo Tim *${storeName}*,
 Terdapat pesanan di mana produk diambil dari Store Anda dan wajib dikirimkan ke Gudang Pusat Chocochips:
 
 📋 *Rincian Pesanan:*
-• *Order ID / No. Pesanan:* ${ord.no_transaksi_customer || ord.no_pesanan}
+• *Order ID / No. Pesanan:* ${ord.no_pesanan || ord.no_transaksi_customer}
 • *Store Pemohon:* ${requesterStore} (PIC: ${ord.pic_store || arData?.pic_pemohon || '-'})
 • *Store Penyedia Barang:* ${storeName}
 • *Customer Tujuan Akhir:* ${ord.nama_tujuan || '-'}

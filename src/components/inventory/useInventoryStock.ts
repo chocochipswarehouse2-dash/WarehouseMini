@@ -211,10 +211,14 @@ export function useInventoryStock(): UseInventoryStock {
 
     window.addEventListener('wms_full_locations_refreshed', handleCatalogOrLocationUpdate);
     window.addEventListener('wms_catalog_updated', handleCatalogOrLocationUpdate);
+    window.addEventListener('wms_inventory_updated', handleCatalogOrLocationUpdate);
+    window.addEventListener('wms_stock_updated', handleCatalogOrLocationUpdate);
     return () => {
       if (timer) clearTimeout(timer);
       window.removeEventListener('wms_full_locations_refreshed', handleCatalogOrLocationUpdate);
       window.removeEventListener('wms_catalog_updated', handleCatalogOrLocationUpdate);
+      window.removeEventListener('wms_inventory_updated', handleCatalogOrLocationUpdate);
+      window.removeEventListener('wms_stock_updated', handleCatalogOrLocationUpdate);
     };
   }, [reload]);
 

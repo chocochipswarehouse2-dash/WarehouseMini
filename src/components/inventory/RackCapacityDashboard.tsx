@@ -30,7 +30,13 @@ import {
 } from 'lucide-react';
 import type { StockRealtimeItem, UserSession, LogProdukItem, ProductItem } from '../../types';
 import { supabaseFetch } from '../../services/supabase';
-import { cleanProductName, extractCleanSizeToken, extractSizeFromSku } from '../../utils/sortUtils';
+import {
+  cleanProductName,
+  extractCleanSizeToken,
+  extractSizeFromSku,
+  resolveProductName,
+  resolveProductDisplaySize,
+} from '../../utils/sortUtils';
 import {
   type RackCapacityConfig,
   type RackZoneRule,
@@ -256,11 +262,10 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       const rawName = String(
         item.n || item.p || (item as Record<string, unknown>).nama_produk || sku
       ).trim();
-      const nama_produk = cleanProductName(rawName) || rawName || sku;
-      let size = extractCleanSizeToken(
-        String(item.s || (item as Record<string, unknown>).size || '')
-      );
-      if (!size || size === '-') size = extractSizeFromSku(sku);
+      const nama_produk = resolveProductName(sku, rawName, item as any) || cleanProductName(rawName) || rawName || sku;
+      const rawMasterSize = String(item.s || (item as Record<string, unknown>).size || '');
+      let size = resolveProductDisplaySize(sku, rawMasterSize, rawMasterSize);
+      if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = extractSizeFromSku(sku);
       if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = 'ALL';
       const kategori = String(
         (item as Record<string, unknown>).kategori ||

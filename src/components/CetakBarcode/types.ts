@@ -73,7 +73,8 @@ export const formatProductPriceWithTag = (
   return formatted;
 };
 
-export { isRealSize } from '../../utils/sortUtils';
+import { isRealSize } from '../../utils/sortUtils';
+export { isRealSize };
 
 export const getProductMasterPrice = (product?: ProductItem | null): number => {
   if (!product) return 0;

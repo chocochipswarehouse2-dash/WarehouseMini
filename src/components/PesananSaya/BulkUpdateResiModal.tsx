@@ -245,7 +245,7 @@ export const BulkUpdateResiModal: React.FC<BulkUpdateResiModalProps> = ({
 
       return [
         escapeCsv(o.no_pesanan),
-        escapeCsv(o.no_transaksi_customer || o.no_pesanan),
+        escapeCsv(o.no_pesanan || o.no_transaksi_customer),
         escapeCsv(o.created_at ? new Date(o.created_at).toLocaleDateString('id-ID') : ''),
         escapeCsv(o.nama_pengirim || ''),
         escapeCsv(getValidPersonPicName(o.pic_store || o.alteration_repair_data?.pic_pemohon, o.nama_pengirim)),
@@ -697,8 +697,8 @@ export const BulkUpdateResiModal: React.FC<BulkUpdateResiModalProps> = ({
                               </td>
                               
                               <td className="py-2 px-3">
-                                <div className="font-mono font-bold text-slate-900 dark:text-white flex items-center gap-1">
-                                  {order.no_transaksi_customer || order.no_pesanan}
+                                <div className="font-mono font-bold text-[#00a8e8] dark:text-sky-400 flex items-center gap-1">
+                                  #{order.no_pesanan || order.no_transaksi_customer}
                                 </div>
                                 <div className="text-[10px] text-slate-400">
                                   {order.created_at ? new Date(order.created_at).toLocaleDateString('id-ID') : '-'}

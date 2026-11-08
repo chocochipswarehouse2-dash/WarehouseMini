@@ -4476,11 +4476,11 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
       
       {/* Note Modal */}
       {isNoteModalOpen && editingNote && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-xs overflow-y-auto">
-          <div className="bg-white dark:bg-[#1a2332] rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border border-slate-200 dark:border-slate-800">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/60 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white dark:bg-[#1a2332] rounded-3xl w-full max-w-2xl lg:max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] border border-slate-200 dark:border-slate-800">
             {/* Modal Header */}
-            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/80 dark:bg-slate-800/50 shrink-0">
-              <div className="flex items-center gap-2">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/80 dark:bg-slate-800/50 shrink-0">
+              <div className="flex items-center gap-2.5">
                 <StickyNote className="w-5 h-5 text-primary-500" />
                 <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
                   {editingNote.id ? 'Edit Catatan' : 'Buat Catatan Baru'}
@@ -4488,44 +4488,54 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
               </div>
               <button 
                 onClick={() => setNoteModalOpen(false)} 
-                className="p-1.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 transition-colors"
+                className="p-1.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
             
             <form onSubmit={handleSaveNote} className="flex-1 min-h-0 flex flex-col overflow-hidden">
-              <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6 space-y-4">
+              <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6 space-y-5">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Judul Catatan (Opsional)</label>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">Judul Catatan (Opsional)</label>
                   <input
                     type="text"
                     value={editingNote.title || ''}
                     onChange={e => setEditingNote({...editingNote, title: e.target.value})}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm outline-none focus:ring-2 focus:ring-primary-500 text-slate-900 dark:text-white"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-primary-500 text-slate-900 dark:text-white"
                     placeholder="Judul catatan..."
                   />
                 </div>
                 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Isi Catatan / Memo Teks
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Isi Catatan / Memo Teks
+                    </label>
+                    <span className="text-[11px] text-slate-400">
+                      Bisa ditarik sudut kanan bawah untuk memperbesar
+                    </span>
+                  </div>
                   <textarea
-                    rows={3}
+                    rows={Math.max(6, Math.min(16, (editingNote.content || '').split('\n').length + 2))}
                     value={editingNote.content || ''}
                     onChange={e => setEditingNote({...editingNote, content: e.target.value})}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm outline-none focus:ring-2 focus:ring-primary-500 text-slate-900 dark:text-white resize-none"
-                    placeholder="Tulis catatan teks di sini (opsional jika menggunakan checklist di bawah)..."
+                    className="w-full min-h-[150px] sm:min-h-[180px] px-4 py-3 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-sm leading-relaxed outline-none focus:ring-2 focus:ring-primary-500 text-slate-900 dark:text-white resize-y"
+                    placeholder="Tulis catatan atau memo lengkap di sini (opsional jika menggunakan checklist di bawah)..."
                   />
                 </div>
 
                 {/* Checklist / Checkboxes Section */}
-                <div className="space-y-2 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/80">
+                <div className="space-y-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/80">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                       <CheckSquare className="w-4 h-4 text-emerald-500" />
                       <span>Daftar Kotak Centang (Checklist)</span>
+                      {editingNote.checklist && editingNote.checklist.length > 0 && (
+                        <span className="ml-1 px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-mono text-[10px]">
+                          {editingNote.checklist.filter(c => c.is_completed).length}/{editingNote.checklist.length}
+                        </span>
+                      )}
                     </label>
                     <button
                       type="button"
@@ -4540,16 +4550,16 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                           checklist: [...(editingNote.checklist || []), newItem],
                         });
                       }}
-                      className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                      className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 flex items-center gap-1 cursor-pointer transition-colors"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>Tambah Checkbox</span>
                     </button>
                   </div>
 
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  <div className="space-y-2">
                     {(editingNote.checklist || []).map((item, idx) => (
-                      <div key={item.id || idx} className="flex items-center gap-2">
+                      <div key={item.id || idx} className="flex items-center gap-2.5">
                         <button
                           type="button"
                           onClick={() => {
@@ -4558,7 +4568,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                             );
                             setEditingNote({ ...editingNote, checklist: updated });
                           }}
-                          className="text-slate-400 hover:text-emerald-500 cursor-pointer shrink-0"
+                          className="text-slate-400 hover:text-emerald-500 cursor-pointer shrink-0 p-0.5"
                         >
                           {item.is_completed ? (
                             <CheckSquare className="w-4 h-4 text-emerald-500" />
@@ -4589,7 +4599,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                               setEditingNote({ ...editingNote, checklist: currentList });
                             }
                           }}
-                          className={`flex-1 px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs outline-none focus:ring-2 focus:ring-primary-500 ${
+                          className={`flex-1 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm outline-none focus:ring-2 focus:ring-primary-500 ${
                             item.is_completed ? 'line-through text-slate-400' : 'text-slate-800 dark:text-slate-100'
                           }`}
                         />
@@ -4599,15 +4609,15 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                             const updated = (editingNote.checklist || []).filter((_, i) => i !== idx);
                             setEditingNote({ ...editingNote, checklist: updated });
                           }}
-                          className="p-1.5 text-slate-400 hover:text-rose-500 cursor-pointer shrink-0"
+                          className="p-1.5 text-slate-400 hover:text-rose-500 cursor-pointer shrink-0 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
                           title="Hapus baris"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     ))}
                     {(!editingNote.checklist || editingNote.checklist.length === 0) && (
-                      <p className="text-[11px] text-slate-400 italic py-1">
+                      <p className="text-xs text-slate-400 italic py-1.5">
                         Belum ada kotak centang. Klik &quot;+ Tambah Checkbox&quot; untuk membuat daftar tugas di catatan ini.
                       </p>
                     )}
@@ -4638,18 +4648,18 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                 </div>
               </div>
               
-              <div className="shrink-0 px-5 py-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/60 flex justify-end gap-2">
+              <div className="shrink-0 px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/60 flex justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => setNoteModalOpen(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors"
+                  className="px-4 py-2.5 text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={isSyncing}
-                  className="px-5 py-2 text-xs font-bold text-white bg-primary-500 hover:bg-primary-600 rounded-xl flex items-center gap-1.5 shadow-md shadow-primary-500/20 transition-all"
+                  className="px-5 py-2.5 text-xs font-bold text-white bg-primary-500 hover:bg-primary-600 rounded-xl flex items-center gap-1.5 shadow-md shadow-primary-500/20 transition-all cursor-pointer"
                 >
                   {isSyncing ? <RefreshCw className="w-4 h-4 mr-1 animate-spin" /> : <Check className="w-4 h-4 mr-1" />}
                   Simpan Catatan

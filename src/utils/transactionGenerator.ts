@@ -175,60 +175,15 @@ function saveRecentGenerated(code: string) {
 }
 
 /**
- * Generate No. Transaksi Customer otomatis yang ringkas dan memuat unsur store:
- * Misal:
- * - Store "Lippo Mall Puri" -> "MSLMP-koderandom" (contoh: MSLMP-7K4X2)
- * - Store "central park jakarta" -> "MSCPJ-koderandom" (contoh: MSCPJ-9N2A8)
- * - Belum pilih store -> "MS-koderandom"
+ * Generate Order ID Manual Shipment tunggal yang konsisten di seluruh sistem:
+ * Format: MS[STORE]-YYMMDD-XXXX (contoh: MSLMP-261107-CSRK)
  *
- * Murni dibuat oleh sistem, tidak panjang, dan kebal bentrokan multi-user.
+ * Satu pesanan wajib hanya memiliki 1 Order ID unik yang sama di Form Input,
+ * Rekap Pesanan, Update Resi Massal, Label A6, Picking List, dan Notifikasi WA/Email.
  */
 export function generateCustomerTransactionNumber(
   existingOrders: ManualShipmentOrder[] = [],
   storeName?: string
-): string {
-  const storeCode = getStoreCode(storeName);
-  const prefix = storeCode ? `MS${storeCode}` : 'MS';
-
-  const recent = getRecentGeneratedSet();
-  const existingSet = new Set<string>();
-
-  for (const o of existingOrders) {
-    if (o.no_transaksi_customer) {
-      existingSet.add(o.no_transaksi_customer.trim().toUpperCase());
-    }
-  }
-
-  let candidate = '';
-  let attempts = 0;
-  const maxAttempts = 30;
-
-  // 5 karakter random = 33.554.432 kombinasi per kode store
-  while (attempts < maxAttempts) {
-    attempts++;
-    const randomPart = getRandomCryptoString(5);
-    candidate = `${prefix}-${randomPart}`;
-
-    if (!existingSet.has(candidate.toUpperCase()) && !recent.has(candidate.toUpperCase())) {
-      break;
-    }
-  }
-
-  if (existingSet.has(candidate.toUpperCase()) || recent.has(candidate.toUpperCase())) {
-    candidate = `${prefix}-${getRandomCryptoString(6)}`;
-  }
-
-  saveRecentGenerated(candidate);
-  return candidate;
-}
-
-/**
- * Generate No Pesanan internal yang ringkas (tidak terlalu panjang)
- * Format: MS[STORE]-YYMMDD-XXXX (contoh: MSLMP-260911-8K3N)
- */
-export function generateShortOrderId(
-  storeName?: string,
-  existingOrders: ManualShipmentOrder[] = []
 ): string {
   const storeCode = getStoreCode(storeName);
   const prefix = storeCode ? `MS${storeCode}` : 'MS';
@@ -239,24 +194,53 @@ export function generateShortOrderId(
   const dd = String(now.getDate()).padStart(2, '0');
   const dateStr = `${yy}${mm}${dd}`;
 
-  const existingSet = new Set(existingOrders.map(o => o.no_pesanan?.trim().toUpperCase()));
+  const recent = getRecentGeneratedSet();
+  const existingSet = new Set<string>();
 
-  let candidate = '';
-  let attempts = 0;
-  while (attempts < 20) {
-    attempts++;
-    const rand = getRandomCryptoString(4);
-    candidate = `${prefix}-${dateStr}-${rand}`;
-    if (!existingSet.has(candidate.toUpperCase())) {
-      return candidate;
+  for (const o of existingOrders) {
+    if (o.no_pesanan) {
+      existingSet.add(o.no_pesanan.trim().toUpperCase());
+    }
+    if (o.no_transaksi_customer) {
+      existingSet.add(o.no_transaksi_customer.trim().toUpperCase());
     }
   }
 
-  return `${prefix}-${dateStr}-${getRandomCryptoString(5)}`;
+  let candidate = '';
+  let attempts = 0;
+  const maxAttempts = 30;
+
+  while (attempts < maxAttempts) {
+    attempts++;
+    const randomPart = getRandomCryptoString(4);
+    candidate = `${prefix}-${dateStr}-${randomPart}`;
+
+    if (!existingSet.has(candidate.toUpperCase()) && !recent.has(candidate.toUpperCase())) {
+      break;
+    }
+  }
+
+  if (existingSet.has(candidate.toUpperCase()) || recent.has(candidate.toUpperCase())) {
+    candidate = `${prefix}-${dateStr}-${getRandomCryptoString(5)}`;
+  }
+
+  saveRecentGenerated(candidate);
+  return candidate;
 }
 
 /**
- * Cek apakah nomor transaksi customer sudah pernah dipakai sebelumnya
+ * Generate No Pesanan internal (identik dengan format Order ID Manual Shipment)
+ * Format: MS[STORE]-YYMMDD-XXXX (contoh: MSLMP-261107-CSRK)
+ */
+export function generateShortOrderId(
+  storeName?: string,
+  existingOrders: ManualShipmentOrder[] = []
+): string {
+  return generateCustomerTransactionNumber(existingOrders, storeName);
+}
+
+/**
+ * Cek apakah Order ID sudah pernah dipakai di no_pesanan maupun no_transaksi_customer
  */
 export function isTransactionNumberUnique(
   code: string,
@@ -265,7 +249,9 @@ export function isTransactionNumberUnique(
   if (!code || !code.trim()) return false;
   const target = code.trim().toUpperCase();
   return !existingOrders.some(
-    (o) => o.no_transaksi_customer && o.no_transaksi_customer.trim().toUpperCase() === target
+    (o) =>
+      (o.no_pesanan && o.no_pesanan.trim().toUpperCase() === target) ||
+      (o.no_transaksi_customer && o.no_transaksi_customer.trim().toUpperCase() === target)
   );
 }
 

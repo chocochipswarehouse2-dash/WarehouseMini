@@ -76,7 +76,7 @@ export const CancelOrderModal: React.FC<CancelOrderModalProps> = ({
                 Batalkan Pesanan
               </h3>
               <p className="text-xs text-red-700 dark:text-red-400 font-mono mt-0.5">
-                {order.no_transaksi_customer || order.no_pesanan}
+                #{order.no_pesanan || order.no_transaksi_customer}
               </p>
             </div>
           </div>

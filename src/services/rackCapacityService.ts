@@ -1,4 +1,5 @@
 import { getSystemDocs, saveSystemDoc, getAreaFromLokasi } from './supabase';
+import { resolveProductName, resolveProductDisplaySize } from '../utils/sortUtils';
 import type { StockRealtimeItem } from '../types';
 
 export const RACK_CAPACITY_DOC_ID = 'rack_capacity_config_v1';
@@ -791,16 +792,18 @@ export function computeAllRackSlots(
     }
 
     const catInfo = catalogMap?.get(sku);
-    const resolvedName =
+    const rawCandidateName =
       (catInfo?.nama_produk && catInfo.nama_produk !== sku ? catInfo.nama_produk : '') ||
       (row.nama_produk && row.nama_produk !== sku ? row.nama_produk : '') ||
       catInfo?.nama_produk ||
       row.nama_produk ||
       sku;
-    const resolvedSize =
-      (catInfo?.size && catInfo.size !== '-' ? catInfo.size : '') ||
-      (row.size && row.size !== '-' ? row.size : '') ||
-      'ALL';
+    const resolvedName = resolveProductName(sku, rawCandidateName) || rawCandidateName;
+    const resolvedSize = resolveProductDisplaySize(
+      sku,
+      row.size,
+      catInfo?.size && catInfo.size !== '-' ? catInfo.size : undefined
+    );
 
     const existing = skuMap.get(sku);
     if (existing) {

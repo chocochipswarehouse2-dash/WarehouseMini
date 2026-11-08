@@ -399,7 +399,7 @@ export function sanitizeSJDraft(draft: PengecekanSJDraft): { draft: PengecekanSJ
         unexpChanged = true;
       }
       if (name !== val.nama || size !== (val as any).size) {
-        copy[sku] = { ...val, nama: name, size };
+        (copy as any)[sku] = { ...val, nama: name, size };
       }
     });
     if (unexpChanged) {

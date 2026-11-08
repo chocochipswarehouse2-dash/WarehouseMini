@@ -10,7 +10,7 @@
  * 6. Only negative physical rack stock (sisa_stok < 0) is a quantity anomaly.
  */
 import { ProductItem } from '../types';
-import { extractSizeFromSku } from './sortUtils';
+import { cleanProductName, extractCleanSizeToken, extractSizeFromSku } from './sortUtils';
 
 export interface ProductLookupResult {
   found: boolean;
@@ -149,28 +149,38 @@ export function lookupProductBySku(
   }
 
   if (!master) {
+    const fallbackName = currentName ? cleanProductName(String(currentName).trim()) : '';
+    const rawCurSize = extractCleanSizeToken(currentSize ? String(currentSize).trim() : '');
+    const skuSize = extractSizeFromSku(cleanSku);
+    const fallbackSize =
+      (rawCurSize && rawCurSize !== '-' && rawCurSize.toUpperCase() !== 'DEFAULT' ? rawCurSize : '') ||
+      (skuSize && skuSize !== '-' && skuSize.toUpperCase() !== 'DEFAULT' ? skuSize : '') ||
+      'ALL';
     return {
       found: false,
       sku: cleanSku,
-      nama_produk: currentName ? String(currentName).trim() : cleanSku,
-      size: currentSize ? String(currentSize).trim() : '-',
+      nama_produk: fallbackName && fallbackName.toUpperCase() !== cleanSku ? fallbackName : cleanSku,
+      size: fallbackSize,
       dealposQty: 0,
     };
   }
 
-  const officialName = String(
+  const rawMasterName = String(
     master.p || master.n || (master as any).nama_produk || ''
   ).trim();
+  const officialName = cleanProductName(rawMasterName) || rawMasterName;
 
-  let officialSize = String(
-    master.s || (master as any).size || '-'
-  ).trim();
+  let officialSize = extractCleanSizeToken(
+    String(master.s || (master as any).size || '')
+  );
 
   // If master data recorded "Default" or empty, try extracting legitimate size from SKU
   if (!officialSize || officialSize === '-' || officialSize.toUpperCase() === 'DEFAULT') {
     const fromSku = extractSizeFromSku(cleanSku);
     if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT') {
       officialSize = fromSku;
+    } else {
+      officialSize = 'ALL';
     }
   }
 
@@ -181,7 +191,7 @@ export function lookupProductBySku(
   // "Nama produk dan size hasil kalkulasi/input data yang tidak sesuai dengan master produk = anomali"
   let hasNameMismatch = false;
   if (currentName !== undefined && currentName !== null) {
-    const cleanCurName = String(currentName).trim();
+    const cleanCurName = cleanProductName(String(currentName).trim()) || String(currentName).trim();
     if (cleanCurName) {
       if (
         cleanCurName.toLowerCase() !== officialName.toLowerCase() ||
@@ -194,15 +204,21 @@ export function lookupProductBySku(
     }
   }
 
+  const normalizeComparableSize = (val: string): string => {
+    const token = extractCleanSizeToken(val).toUpperCase();
+    if (!token || token === '-' || token === 'DEFAULT' || token === 'ALL SIZE' || token === 'ALLSIZE') {
+      return 'ALL';
+    }
+    return token;
+  };
+
   let hasSizeMismatch = false;
   if (currentSize !== undefined && currentSize !== null) {
     const cleanCurSize = String(currentSize).trim();
     if (officialSize && officialSize !== '-') {
-      if (
-        !cleanCurSize ||
-        cleanCurSize === '-' ||
-        cleanCurSize.toUpperCase() !== officialSize.toUpperCase()
-      ) {
+      const normCur = normalizeComparableSize(cleanCurSize);
+      const normOff = normalizeComparableSize(officialSize);
+      if (!cleanCurSize || cleanCurSize === '-' || normCur !== normOff) {
         hasSizeMismatch = true;
       }
     }
@@ -212,7 +228,7 @@ export function lookupProductBySku(
     found: true,
     sku: cleanSku,
     nama_produk: officialName || cleanSku,
-    size: officialSize || '-',
+    size: officialSize || 'ALL',
     dealposQty,
     category,
     masterItem: master,

@@ -15,21 +15,47 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.76",
-  "versionCode": 336,
+  "version": "v2.6.78",
+  "versionCode": 338,
   "buildDate": "7 November 2026",
-  "buildHash": "wms-261107-v336-1640",
-  "releaseTitle": "WMS v2.6.76 — Fix Master Product Size Sanitizer & Trello Kanban Order",
+  "buildHash": "wms-261107-v338-2302",
+  "releaseTitle": "WMS v2.6.78 — Audit & Optimasi Halaman Inventory, Lookup Master SKU & Drawer Komparasi",
   "releaseNotes": [
-    "Fix fatal bug in UpdateDatabaseModal that wiped valid S and L sizes to Default",
-    "Optimize Pure O(1) Lookup and expand letter-size detection for all 2026 SKU collections",
-    "Add authentic Trello board left-to-right order toggle in Trello UP Kanban",
-    "Restore 213 corrupted Default sizes in master_produk Supabase"
+    "Perbaikan tabel Komparasi Fisik vs DealPOS per Area (MAP, LIVE, STUDIO, PERMAK, DEFECT) di Drawer Rincian Inventory agar kuantitas fisik live tidak berubah menjadi 0",
+    "Standarisasi 100% lookup Nama Produk dan Size via Master Produk (resolveProductName & resolveProductDisplaySize) di Tabel Stok, Kapasitas Rak & 3D Gudang tanpa anomali Default/SKU",
+    "Penambahan fungsi pengurutan kolom Area (AREA_ASC & AREA_DESC) pada Tabel Stok Inventory",
+    "Sinkronisasi otomatis realtime store Inventory saat perbaikan anomali atau update stok (wms_inventory_updated & wms_stock_updated)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.77",
+    "versionCode": 337,
+    "buildDate": "7 November 2026",
+    "buildHash": "wms-261107-v337-1407",
+    "releaseTitle": "WMS v2.6.77 — Standarisasi Order ID Tunggal di Seluruh Modul Pesanan & Input Resi",
+    "releaseNotes": [
+      "Penyatuan generator Order ID Manual Shipment (MS[STORE]-YYMMDD-XXXX) sehingga no_pesanan dan no_transaksi_customer menggunakan 1 kode unik yang 100% identik",
+      "Perbaikan modal Update No. Resi Massal, Batalkan Pesanan, Notifikasi WA, dan Email agar selalu menampilkan Order ID utama (#no_pesanan) yang sama persis dengan Rekap Pesanan",
+      "Penghapusan tampilan ID Ref ganda hasil auto-generate lama pada kartu/tabel Rekap Pesanan"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
+  {
+    "version": "v2.6.76",
+    "versionCode": 336,
+    "buildDate": "7 November 2026",
+    "buildHash": "wms-261107-v336-0942",
+    "releaseTitle": "WMS v2.6.76 — Perlebar & Perluas Form Input Modal Catatan",
+    "releaseNotes": [
+      "Perlebar ukuran modal Edit/Buat Catatan dari max-w-lg ke max-w-2xl / lg:max-w-3xl agar lebih lega",
+      "Perbesar textarea Isi Catatan (minimal 6 baris / 180px, otomatis bertambah mengikuti jumlah baris teks, dan mendukung resize-y manual)",
+      "Hapus batasan scroll sempit (max-h-48) pada daftar Checklist sehingga seluruh item checkbox tampil penuh dan leluasa"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.75",
     "versionCode": 335,
@@ -106,32 +132,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Prioritaskan gdrive_image_url pada TrelloView dan Print Modal",
       "Subfolder otomatis per koleksi UP di Google Drive",
       "Counter real-time foto Google Drive di info strip"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.69",
-    "versionCode": 329,
-    "buildDate": "6 November 2026",
-    "buildHash": "wms-261106-v329-1425",
-    "releaseTitle": "WMS v2.6.69 — Dropsearch Multi-Choice & Trello Authenticated Image Loader",
-    "releaseNotes": [
-      "Opsi dropsearch multi choice untuk koleksi UP dengan live filter",
-      "Komponen TrelloImage dengan OAuth blob cache menyelesaikan foto tidak terload",
-      "Dukungan cetak A4 multi koleksi UP dengan label badge"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.68",
-    "versionCode": 328,
-    "buildDate": "6 November 2026",
-    "buildHash": "wms-261106-v328-1351",
-    "releaseTitle": "WMS v2.6.68 — Sinkronisasi Otomatis Trello ke Supabase & Resolusi Foto",
-    "releaseNotes": [
-      "Muat langsung 727 artikel dari tabel Supabase trello_up_catalog saat halaman dibuka",
-      "Perbaikan ekstraksi attachment foto Trello",
-      "Optimasi local cache tanpa batas 5MB"
     ],
     "minSupportedVersion": "v2.0.0"
   }

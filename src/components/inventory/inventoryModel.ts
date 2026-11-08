@@ -15,7 +15,13 @@
 import type { ProductItem, StockRealtimeItem } from '../../types';
 import { isCorruptedSku } from '../../utils/anomalyUtils';
 import { isDummyProduct, getAreaFromLokasi } from '../../services/supabase';
-import { cleanProductName, extractCleanSizeToken, extractSizeFromSku } from '../../utils/sortUtils';
+import {
+  cleanProductName,
+  extractCleanSizeToken,
+  extractSizeFromSku,
+  resolveProductName,
+  resolveProductDisplaySize,
+} from '../../utils/sortUtils';
 
 // ========================================================
 // CONSTANTS (kolom area sesuai spesifikasi WMS / DealPOS)
@@ -174,16 +180,17 @@ function parseCatalogItem(item: ProductItem): CatalogBase | null {
   if (!isListableSku(sku)) return null;
 
   // Master Produk murni DealPOS: abaikan placeholder tanpa nama produk resmi
-  const rawName = String(item.p || (item as any).nama_produk || '').trim();
+  const rawName = String(item.p || item.n || (item as any).nama_produk || '').trim();
   if (!rawName) return null;
-  const produk = cleanProductName(rawName) || rawName;
+  const produk = resolveProductName(sku, rawName, item as any) || cleanProductName(rawName) || rawName;
 
   // Kategori: dari master produk DealPOS
   const rawCat = String(item.kategori || item.category || (item as any).c || (item as any).jenis || '').trim();
   const kategori = rawCat && rawCat !== '-' && rawCat !== 'Apparel' ? rawCat : (rawCat || 'CLOTHING');
 
-  // Size: ukuran master -> akhiran SKU -> '-'
-  let size = extractCleanSizeToken(String(item.s || (item as any).size || ''));
+  // Size: ukuran master -> akhiran SKU -> 'ALL'
+  const rawMasterSize = String(item.s || (item as any).size || '');
+  let size = resolveProductDisplaySize(sku, rawMasterSize, rawMasterSize);
   if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') {
     const fromSku = extractSizeFromSku(sku);
     if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT') {
@@ -412,10 +419,9 @@ export function composeRows(bases: CatalogBase[], stockBySku: Map<string, StockR
     const agg = aggregateSku(stockRows);
     if (!agg || agg.total === 0) return;
     const first = stockRows[0];
-    const rawProduk = first?.nama_produk || sku;
-    const produk = cleanProductName(rawProduk) || rawProduk;
-    let size = extractCleanSizeToken(first?.size || '');
-    if (!size || size === '-') size = extractSizeFromSku(sku);
+    const produk = resolveProductName(sku, first?.nama_produk) || cleanProductName(first?.nama_produk || sku) || sku;
+    let size = resolveProductDisplaySize(sku, first?.size);
+    if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = extractSizeFromSku(sku);
     if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = 'ALL';
 
     const pLower = produk.toLowerCase();
@@ -921,13 +927,13 @@ export function composeAreaRows(
     seenSkus.add(cleanSku);
 
     const base = catalogMap.get(cleanSku);
-    const rawProduk = base?.produk || stockRows[0]?.nama_produk || cleanSku;
-    const produk = cleanProductName(rawProduk) || rawProduk;
-    const physicalSize = extractCleanSizeToken(stockRows[0]?.size || '');
-    let size = (base?.size && base.size !== 'ALL' && base.size !== 'Default' && base.size !== '-')
-      ? base.size
-      : (physicalSize && physicalSize !== '-' && physicalSize !== 'Default' ? physicalSize : (base?.size || ''));
-    if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = extractSizeFromSku(sku);
+    const produk =
+      (base?.produk && base.produk.toUpperCase() !== cleanSku ? base.produk : '') ||
+      resolveProductName(cleanSku, stockRows[0]?.nama_produk) ||
+      base?.produk ||
+      cleanSku;
+    let size = resolveProductDisplaySize(cleanSku, stockRows[0]?.size, base?.size);
+    if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = extractSizeFromSku(cleanSku);
     if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = 'ALL';
 
     const kategori = base?.kategori || (stockRows[0] as any)?.kategori || (stockRows[0] as any)?.category || 'CLOTHING';
@@ -1235,6 +1241,12 @@ export function sortAreaRows(rows: InventoryAreaRow[], option: InventorySortOpti
       break;
     case 'DP_ASC':
       groups.sort((a, b) => a.totalDp - b.totalDp || byName(a, b));
+      break;
+    case 'AREA_ASC':
+      groups.sort((a, b) => cmpStr(a.rows[0]?.areaLower || '', b.rows[0]?.areaLower || '') || byName(a, b));
+      break;
+    case 'AREA_DESC':
+      groups.sort((a, b) => cmpStr(b.rows[0]?.areaLower || '', a.rows[0]?.areaLower || '') || byName(a, b));
       break;
     default:
       groups.sort(byName);

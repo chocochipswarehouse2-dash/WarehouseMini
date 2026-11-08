@@ -73,7 +73,7 @@ export const WaStoreNoticeModal: React.FC<WaStoreNoticeModalProps> = ({
 Rincian Alokasi Produk dari Stok Gudang Utama (DealPOS Marketplace):
 
 📋 *Rincian Pesanan:*
-• *Order ID / No. Pesanan:* ${order.no_transaksi_customer || order.no_pesanan}
+• *Order ID / No. Pesanan:* ${order.no_pesanan || order.no_transaksi_customer}
 • *Store Pemohon:* ${requesterStore} (PIC: ${order.pic_store || '-'})
 • *Store Penyedia Barang:* Gudang Utama (DealPOS Marketplace)
 • *Customer Tujuan Akhir:* ${order.nama_tujuan || '-'}
@@ -92,7 +92,7 @@ ${isInterStore
   : `Terdapat pesanan manual shipment dari Store Anda yang wajib dikirimkan ke Gudang Pusat Chocochips:`}
 
 📋 *Rincian Pesanan:*
-• *Order ID / No. Pesanan:* ${order.no_transaksi_customer || order.no_pesanan}
+• *Order ID / No. Pesanan:* ${order.no_pesanan || order.no_transaksi_customer}
 • *Store Pemohon:* ${requesterStore} (PIC: ${order.pic_store || '-'})
 • *Store Penyedia Barang:* ${targetStore}
 • *Customer Tujuan Akhir:* ${order.nama_tujuan || '-'}
@@ -199,7 +199,7 @@ ${group.isInterStore
   : `Terdapat pesanan manual shipment dari Store Anda yang wajib dikirimkan ke Gudang Pusat Chocochips:`}
 
 📋 *Rincian Pesanan:*
-• *Order ID / No. Pesanan:* ${order.no_transaksi_customer || order.no_pesanan}
+• *Order ID / No. Pesanan:* ${order.no_pesanan || order.no_transaksi_customer}
 • *Store Pemohon:* ${requesterStore} (PIC: ${order.pic_store || '-'})
 • *Store Penyedia Barang:* ${group.storeName}
 • *Customer Tujuan Akhir:* ${order.nama_tujuan || '-'}

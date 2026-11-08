@@ -439,7 +439,7 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
       : (order.no_transaksi_pengirim ? [order.no_transaksi_pengirim] : []);
     const noTrans = dealposArr.length > 0
       ? dealposArr.join(', ')
-      : (order.no_transaksi_customer || order.no_pesanan || '-');
+      : (order.no_pesanan || order.no_transaksi_customer || '-');
 
     const alterItems = (order.items || []).filter(isRealAlterItem);
 
@@ -510,7 +510,7 @@ Jika Kakak memiliki pertanyaan atau membutuhkan bantuan seputar pesanan maupun a
 Halo Tim Gudang & Penjahit, terdapat permintaan alterasi pakaian dari store:
 
 📋 *Informasi Pesanan:*
-• *Order ID / No. Pesanan:* ${order.no_transaksi_customer || order.no_pesanan}
+• *Order ID / No. Pesanan:* ${order.no_pesanan || order.no_transaksi_customer}
 • *Store Pengirim:* ${order.nama_pengirim} (PIC: ${order.pic_store || '-'})
 • *No. HP Store:* ${order.no_telp_store || '-'}
 • *No. DealPOS:* ${dealposStr}
@@ -757,7 +757,7 @@ _WMS Warehouse & Tailor Management System_`;
       : (newOrder.no_transaksi_pengirim || '-');
 
     const totalQty = (newOrder.items || []).reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
-    const orderId = newOrder.no_transaksi_customer || newOrder.no_pesanan || '-';
+    const orderId = newOrder.no_pesanan || newOrder.no_transaksi_customer || '-';
 
     const itemsListStr = (newOrder.items || [])
       .map((it, idx) => {
@@ -811,7 +811,7 @@ _WMS Warehouse System_`;
       : (order.no_transaksi_pengirim || '-');
 
     const totalQty = (order.items || []).reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
-    const orderId = order.no_transaksi_customer || order.no_pesanan || '-';
+    const orderId = order.no_pesanan || order.no_transaksi_customer || '-';
 
     const itemsListStr = (order.items || [])
       .map((it, idx) => {
@@ -1296,22 +1296,25 @@ _WMS Warehouse System_`;
 
     setLoading(true);
 
-    // 1. Validasi & pastikan no_transaksi_customer memuat kode store dan 100% unik
-    let finalTransCustomer = transCustomer.trim();
+    // 1. Satu Order ID Tunggal yang 100% Konsisten di seluruh sistem (Form, Rekap, Input Resi, Label, WA)
+    let finalOrderId = editingOrder
+      ? (editingOrder.no_pesanan || editingOrder.no_transaksi_customer || '').trim()
+      : transCustomer.trim();
     const expectedPrefix = pengirim ? `MS${getStoreCode(pengirim)}-` : 'MS-';
     
     if (!editingOrder) {
-      if (!finalTransCustomer || !finalTransCustomer.startsWith(expectedPrefix) || !isTransactionNumberUnique(finalTransCustomer, orders)) {
-        finalTransCustomer = generateCustomerTransactionNumber(orders, pengirim);
-        setTransCustomer(finalTransCustomer);
+      if (!finalOrderId || !finalOrderId.startsWith(expectedPrefix) || !isTransactionNumberUnique(finalOrderId, orders)) {
+        finalOrderId = generateCustomerTransactionNumber(orders, pengirim);
+        setTransCustomer(finalOrderId);
       }
     }
 
     // 2. Ambil nilai jasa kirim
     const finalJasaKirim = (isCustomJasaKirim ? customJasaKirim : jasaKirim).trim();
 
-    // 3. Cegah bentrokan ID pesanan internal dengan format ringkas yang rapi
-    const uniquePesananId = editingOrder ? editingOrder.no_pesanan! : generateShortOrderId(pengirim, orders);
+    // 3. Gunakan Order ID tunggal yang sama persis untuk no_pesanan & no_transaksi_customer
+    const uniquePesananId = finalOrderId;
+    const finalTransCustomer = finalOrderId;
 
     const orderData: ManualShipmentOrder = {
       ...(editingOrder || {}),
@@ -1442,7 +1445,7 @@ _WMS Warehouse System_`;
 Halo Tim *${orderData.nama_pengirim}*, pesanan manual shipment Anda telah berhasil disubmit ke sistem WMS Gudang.
 
 📋 *Rincian Pesanan:*
-• *Order ID / No. Pesanan:* ${orderData.no_transaksi_customer || orderData.no_pesanan}
+• *Order ID / No. Pesanan:* ${orderData.no_pesanan || orderData.no_transaksi_customer}
 • *Store Pengirim:* ${orderData.nama_pengirim}
 • *PIC Store:* ${orderData.pic_store || '-'}
 • *No. DealPOS:* ${dealposStr}
@@ -1472,7 +1475,7 @@ _WMS Warehouse System_`;
 
             // Kirim juga ke Grup Gudang / Admin agar Admin menerima notifikasi WA instan meski aplikasi/browser ditutup
             if (fonnteCfg.groupTarget && fonnteCfg.groupTarget.trim() && fonnteCfg.groupTarget.trim() !== orderData.no_telp_store.trim()) {
-              const adminGroupMsg = `🛍️ *PESANAN MANUAL SHIPMENT BARU MASUK*\n--------------------------------------------\n• *Order ID:* ${orderData.no_transaksi_customer || orderData.no_pesanan}\n• *Store Pengirim:* ${orderData.nama_pengirim} (PIC: ${orderData.pic_store || '-'})\n• *No. DealPOS:* ${dealposStr}\n• *Customer:* ${orderData.nama_tujuan} (${orderData.no_telp_tujuan || '-'})\n• *Jasa Kirim:* ${orderData.jasa_kirim || '-'}\n\n📦 *Daftar Produk (${totalQty} Pcs):*\n${itemsListStr}\n${orderData.notes_paket ? `\n📝 *Catatan Paket:* ${orderData.notes_paket}\n` : ''}\n_Silakan buka menu Pesanan Saya di WMS untuk cetak Label & Picking List._`;
+              const adminGroupMsg = `🛍️ *PESANAN MANUAL SHIPMENT BARU MASUK*\n--------------------------------------------\n• *Order ID:* ${orderData.no_pesanan || orderData.no_transaksi_customer}\n• *Store Pengirim:* ${orderData.nama_pengirim} (PIC: ${orderData.pic_store || '-'})\n• *No. DealPOS:* ${dealposStr}\n• *Customer:* ${orderData.nama_tujuan} (${orderData.no_telp_tujuan || '-'})\n• *Jasa Kirim:* ${orderData.jasa_kirim || '-'}\n\n📦 *Daftar Produk (${totalQty} Pcs):*\n${itemsListStr}\n${orderData.notes_paket ? `\n📝 *Catatan Paket:* ${orderData.notes_paket}\n` : ''}\n_Silakan buka menu Pesanan Saya di WMS untuk cetak Label & Picking List._`;
               sendFonnteMessage(fonnteCfg.groupTarget, adminGroupMsg, fonnteCfg.token).catch((err) =>
                 console.warn('WA group submit notice error:', err)
               );
@@ -1501,7 +1504,7 @@ Halo Tim *${group.storeName}*,
 Terdapat pesanan penarikan barang dari Store Anda yang diajukan oleh *${fulfillmentData.requesterStoreName}* untuk dikirimkan ke Gudang Pusat Chocochips:
 
 📋 *Rincian Pesanan:*
-• *Order ID / No. Pesanan:* ${orderData.no_transaksi_customer || orderData.no_pesanan}
+• *Order ID / No. Pesanan:* ${orderData.no_pesanan || orderData.no_transaksi_customer}
 • *Store Pemohon:* ${fulfillmentData.requesterStoreName} (PIC: ${orderData.pic_store || '-'})
 • *Store Penyedia Barang:* ${group.storeName}
 • *Customer Tujuan Akhir:* ${orderData.nama_tujuan || '-'}
@@ -2986,7 +2989,7 @@ Halo Tim *${order.nama_pengirim || 'Store'}* (PIC: ${order.pic_store || '-'}),
 Ada produk pesanan manual shipment yang stoknya *KOSONG / SOLD OUT* di alokasi DealPOS Marketplace:
 
 📋 *Rincian Pesanan:*
-• *Order ID:* ${order.no_transaksi_customer || order.no_pesanan}
+• *Order ID:* ${order.no_pesanan || order.no_transaksi_customer}
 • *Nama Customer:* ${order.nama_tujuan} (${order.no_telp_tujuan || '-'})
 • *Jasa Kirim:* ${order.jasa_kirim || '-'}
 
@@ -4138,9 +4141,9 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                   <div className="mt-6 text-sm text-slate-600 dark:text-slate-300">
                     <span className="font-medium text-slate-800 dark:text-slate-200">Jasa Kirim:</span> {order.jasa_kirim || '-'}
                   </div>
-                  {order.no_transaksi_customer && (
+                  {(order.no_pesanan || order.no_transaksi_customer) && (
                      <div className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                       <span className="font-medium text-slate-800 dark:text-slate-200">Order ID:</span> {order.no_transaksi_customer}
+                       <span className="font-medium text-slate-800 dark:text-slate-200">Order ID:</span> {order.no_pesanan || order.no_transaksi_customer}
                      </div>
                   )}
                   {order.notes_paket && (
@@ -4383,7 +4386,7 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
 Halo Tim *${resiModalOrder.nama_pengirim || 'Store'}*, nomor resi pengiriman untuk pesanan Anda telah diperbarui di sistem WMS Gudang:
 
 📋 *Rincian Pesanan:*
-• *Order ID / No. Pesanan:* ${resiModalOrder.no_transaksi_customer || resiModalOrder.no_pesanan}
+• *Order ID / No. Pesanan:* ${resiModalOrder.no_pesanan || resiModalOrder.no_transaksi_customer}
 • *Store Pengirim:* ${resiModalOrder.nama_pengirim || '-'} (PIC: ${resiModalOrder.pic_store || '-'})
 • *Jasa Kirim:* ${resiModalOrder.jasa_kirim || '-'}
 • *Nama Customer:* ${resiModalOrder.nama_tujuan || '-'}
@@ -4457,7 +4460,7 @@ _WMS Warehouse System_`;
     setEmailCustomer(order.email_customer || '');
     setAlamatTujuan(order.alamat_tujuan || '');
     setNotesPaket(order.notes_paket || '');
-    setTransCustomer(order.no_transaksi_customer || '');
+    setTransCustomer(order.no_pesanan || order.no_transaksi_customer || '');
     setItems(order.items || []);
     
     setActiveTab('form');
@@ -4544,7 +4547,7 @@ _WMS Warehouse System_`;
         if (sendWa && order.no_telp_store && order.no_telp_store.trim()) {
           const fonnteCfg = getFonnteConfig();
           if (fonnteCfg.token) {
-            const waCancelMsg = `🚫 *PEMBATALAN PESANAN MANUAL SHIPMENT*\n--------------------------------------------\nHalo Tim *${order.nama_pengirim || 'Store'}*, pesanan berikut telah dibatalkan di sistem WMS Gudang:\n\n📋 *Rincian Pesanan:*\n• *Order ID / No. Pesanan:* ${order.no_transaksi_customer || order.no_pesanan}\n• *Store Pengirim:* ${order.nama_pengirim || '-'} (PIC: ${order.pic_store || '-'})\n• *Customer Tujuan:* ${order.nama_tujuan || '-'} (${order.no_telp_tujuan || '-'})\n• *Alamat:* ${order.alamat_tujuan || '-'}\n• *Total Produk:* ${order.items?.length || 0} item\n\n⚠️ *Alasan Pembatalan:*\n👉 *${reasonText}*\n• *Dibatalkan Oleh:* ${actor} (${dateIdStr})\n\nHistori pesanan ini tetap disimpan di sistem rekap WMS untuk kebutuhan pelacakan & audit.\nTerima kasih!\n_WMS Warehouse System_`;
+            const waCancelMsg = `🚫 *PEMBATALAN PESANAN MANUAL SHIPMENT*\n--------------------------------------------\nHalo Tim *${order.nama_pengirim || 'Store'}*, pesanan berikut telah dibatalkan di sistem WMS Gudang:\n\n📋 *Rincian Pesanan:*\n• *Order ID / No. Pesanan:* ${order.no_pesanan || order.no_transaksi_customer}\n• *Store Pengirim:* ${order.nama_pengirim || '-'} (PIC: ${order.pic_store || '-'})\n• *Customer Tujuan:* ${order.nama_tujuan || '-'} (${order.no_telp_tujuan || '-'})\n• *Alamat:* ${order.alamat_tujuan || '-'}\n• *Total Produk:* ${order.items?.length || 0} item\n\n⚠️ *Alasan Pembatalan:*\n👉 *${reasonText}*\n• *Dibatalkan Oleh:* ${actor} (${dateIdStr})\n\nHistori pesanan ini tetap disimpan di sistem rekap WMS untuk kebutuhan pelacakan & audit.\nTerima kasih!\n_WMS Warehouse System_`;
 
             sendFonnteMessage(order.no_telp_store, waCancelMsg, fonnteCfg.token)
               .then((r) => {
@@ -7629,9 +7632,9 @@ _WMS Warehouse System_`;
                               </span>
                             </div>
                             <div className="grid grid-cols-12 gap-2">
-                              <span className="col-span-4 text-slate-500 dark:text-slate-400">Ref</span>
-                              <span className="col-span-8 font-mono font-medium text-slate-900 dark:text-white break-all">
-                                {activeOrder.no_transaksi_customer || '-'}
+                              <span className="col-span-4 text-slate-500 dark:text-slate-400">Order ID</span>
+                              <span className="col-span-8 font-mono font-bold text-slate-900 dark:text-white break-all">
+                                #{activeOrder.no_pesanan || activeOrder.no_transaksi_customer || '-'}
                               </span>
                             </div>
                             <div className="grid grid-cols-12 gap-2">
@@ -8134,9 +8137,14 @@ _WMS Warehouse System_`;
                             );
                           })()}
                         </div>
-                        {(order.no_transaksi_customer || (order.no_transaksi_pengirim && order.no_transaksi_pengirim.length > 0)) && (
+                        {((order.no_transaksi_customer &&
+                          order.no_transaksi_customer !== order.no_pesanan &&
+                          !/^MS[A-Z0-9]*-[A-Z0-9]{4,6}$/i.test(order.no_transaksi_customer)) ||
+                          (order.no_transaksi_pengirim && order.no_transaksi_pengirim.length > 0)) && (
                           <div className="flex flex-col gap-0.5 pt-0.5 border-t border-slate-200/60 dark:border-slate-700/50 text-[9px]">
-                            {order.no_transaksi_customer && (
+                            {order.no_transaksi_customer &&
+                              order.no_transaksi_customer !== order.no_pesanan &&
+                              !/^MS[A-Z0-9]*-[A-Z0-9]{4,6}$/i.test(order.no_transaksi_customer) && (
                               <div className="flex items-center justify-between gap-1 truncate" title={`ID Ref: ${order.no_transaksi_customer}`}>
                                 <span className="text-slate-400 dark:text-slate-500 shrink-0">ID Ref:</span>
                                 <span className="font-mono font-semibold text-slate-700 dark:text-slate-300 truncate">{order.no_transaksi_customer}</span>
@@ -10297,13 +10305,8 @@ _WMS Warehouse System_`;
                               />
                             )}
                             <div className="text-[10px] font-black text-center break-all mb-0.5 text-black leading-tight">
-                              ID: {order.no_pesanan || ''}
+                              ID: {order.no_pesanan || order.no_transaksi_customer || ''}
                             </div>
-                            {order.no_transaksi_customer && (
-                              <div className="text-[9px] font-bold text-center break-all text-neutral-600 leading-tight mt-0.5">
-                                Ref: {order.no_transaksi_customer}
-                              </div>
-                            )}
                           </div>
                        </div>
                   
@@ -10594,7 +10597,7 @@ _WMS Warehouse System_`;
                         Jasa Kirim: <span className="text-indigo-600 font-extrabold">{order.jasa_kirim || '-'}</span>
                       </div>
                       <div className="text-slate-600 mt-0.5">
-                        Order ID Ref: <strong>{order.no_transaksi_customer || order.no_pesanan}</strong>
+                        Order ID: <strong>{order.no_pesanan || order.no_transaksi_customer}</strong>
                       </div>
                       {order.notes_paket && (
                         <div className="text-slate-700 text-[11px] mt-1 bg-white p-1.5 rounded border border-slate-200">

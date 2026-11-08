@@ -1,14 +1,14 @@
 {
-  "version": "v2.6.76",
-  "versionCode": 336,
+  "version": "v2.6.78",
+  "versionCode": 338,
   "buildDate": "7 November 2026",
-  "buildHash": "wms-261107-v336-1640",
-  "releaseTitle": "WMS v2.6.76 — Fix Master Product Size Sanitizer & Trello Kanban Order",
+  "buildHash": "wms-261107-v338-2302",
+  "releaseTitle": "WMS v2.6.78 — Audit & Optimasi Halaman Inventory, Lookup Master SKU & Drawer Komparasi",
   "releaseNotes": [
-    "Fix fatal bug in UpdateDatabaseModal that wiped valid S and L sizes to Default",
-    "Optimize Pure O(1) Lookup and expand letter-size detection for all 2026 SKU collections",
-    "Add authentic Trello board left-to-right order toggle in Trello UP Kanban",
-    "Restore 213 corrupted Default sizes in master_produk Supabase"
+    "Perbaikan tabel Komparasi Fisik vs DealPOS per Area (MAP, LIVE, STUDIO, PERMAK, DEFECT) di Drawer Rincian Inventory agar kuantitas fisik live tidak berubah menjadi 0",
+    "Standarisasi 100% lookup Nama Produk dan Size via Master Produk (resolveProductName & resolveProductDisplaySize) di Tabel Stok, Kapasitas Rak & 3D Gudang tanpa anomali Default/SKU",
+    "Penambahan fungsi pengurutan kolom Area (AREA_ASC & AREA_DESC) pada Tabel Stok Inventory",
+    "Sinkronisasi otomatis realtime store Inventory saat perbaikan anomali atau update stok (wms_inventory_updated & wms_stock_updated)"
   ],
   "minSupportedVersion": "v2.0.0"
 }

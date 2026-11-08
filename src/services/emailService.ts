@@ -198,7 +198,7 @@ function getProductTableHtml(order: ManualShipmentOrder): string {
 export function buildCustomerEmailHtml(order: ManualShipmentOrder, event: EmailNotificationEvent, extraNotes?: string): { subject: string; html: string; fromName: string } {
   const brandName = getFormalStoreBrandName(order.nama_pengirim);
   const customerName = order.nama_tujuan || 'Pelanggan Terhormat';
-  const orderId = order.no_transaksi_customer || order.no_pesanan || '-';
+  const orderId = order.no_pesanan || order.no_transaksi_customer || '-';
 
   let eventTitle = 'Informasi Pesanan';
   let eventText = 'Pesanan Anda sedang kami tangani.';
@@ -293,7 +293,7 @@ export function buildCustomerEmailHtml(order: ManualShipmentOrder, event: EmailN
 export function buildStoreEmailHtml(order: ManualShipmentOrder, event: EmailNotificationEvent, extraNotes?: string): { subject: string; html: string; fromName: string } {
   const brandName = getFormalStoreBrandName(order.nama_pengirim);
   const pic = order.pic_store || 'PIC Store';
-  const orderId = order.no_transaksi_customer || order.no_pesanan || '-';
+  const orderId = order.no_pesanan || order.no_transaksi_customer || '-';
 
   let eventTitle = 'Update Status Pesanan';
   let eventText = `Terdapat pembaruan status pesanan.`;
