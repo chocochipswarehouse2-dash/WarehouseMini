@@ -652,12 +652,12 @@ export async function postUpdateResiToGas(
       status.toLowerCase().includes('kirim')
         ? 'dikirim'
         : status.toLowerCase().includes('selesai')
-        ? 'selesai'
-        : status.toLowerCase().includes('batal')
-        ? 'batal'
-        : status.toLowerCase().includes('proses') && !status.toLowerCase().includes('siap')
-        ? 'diproses'
-        : 'siap_diproses';
+          ? 'selesai'
+          : status.toLowerCase().includes('batal')
+            ? 'batal'
+            : status.toLowerCase().includes('proses') && !status.toLowerCase().includes('siap')
+              ? 'diproses'
+              : 'siap_diproses';
 
     const patchBody: Record<string, any> = {
       no_resi: cleanResi,
@@ -671,7 +671,7 @@ export async function postUpdateResiToGas(
       `ig_live_orders?no_pesanan=eq.${encodeURIComponent(cleanOrderId)}`,
       'PATCH',
       patchBody
-    ).catch(() => {});
+    ).catch(() => { });
   }
 
   if (!url) return { success: false, message: 'URL GAS belum diatur' };
@@ -771,12 +771,12 @@ export async function postUpdateStatusToGas(
       status.toLowerCase().includes('kirim')
         ? 'dikirim'
         : status.toLowerCase().includes('selesai')
-        ? 'selesai'
-        : status.toLowerCase().includes('batal')
-        ? 'batal'
-        : status.toLowerCase().includes('proses') && !status.toLowerCase().includes('siap')
-        ? 'diproses'
-        : 'siap_diproses';
+          ? 'selesai'
+          : status.toLowerCase().includes('batal')
+            ? 'batal'
+            : status.toLowerCase().includes('proses') && !status.toLowerCase().includes('siap')
+              ? 'diproses'
+              : 'siap_diproses';
 
     const patchBody: Record<string, any> = {
       status: wmsStatus,
@@ -790,7 +790,7 @@ export async function postUpdateStatusToGas(
       `ig_live_orders?no_pesanan=eq.${encodeURIComponent(cleanOrderId)}`,
       'PATCH',
       patchBody
-    ).catch(() => {});
+    ).catch(() => { });
   }
 
   if (!url) return { success: false, message: 'URL GAS belum diatur' };
@@ -837,7 +837,7 @@ export async function postUpdateCourierToGas(
         layanan: layanan || 'REG',
         updated_at: new Date().toISOString(),
       }
-    ).catch(() => {});
+    ).catch(() => { });
   }
 
   if (!url) return { success: false, message: 'URL GAS belum diatur' };
@@ -961,11 +961,11 @@ export async function fetchOrdersFromGas(
       // 1. Ekstrak ID dan GID dari link Google Sheets
       const idMatch = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
       const gidMatch = url.match(/[#&?]gid=([0-9]+)/);
-      
+
       if (!idMatch) {
         throw new Error('Link Google Sheets tidak valid (ID dokumen tidak ditemukan)');
       }
-      
+
       const sheetId = idMatch[1];
       let csvText = '';
       let fetchSuccess = false;
@@ -1021,22 +1021,22 @@ export async function fetchOrdersFromGas(
         }
         csvText = await resp.text();
       }
-      
+
       // 5. Parsing CSV menggunakan PapaParse
       const parsed = Papa.parse(csvText, {
         header: false,
         skipEmptyLines: true,
       });
-      
+
       if (parsed.errors && parsed.errors.length > 0) {
         console.warn('[IGLIVE] PapaParse errors:', parsed.errors);
       }
-      
+
       const rows = (parsed.data || []) as string[][];
       if (rows.length === 0) {
         return { success: false, message: `Sheet "${targetSheet}" kosong atau tidak memiliki baris data.` };
       }
-      
+
       // 6. Deteksi baris header dan pemetaan kolom secara dinamis
       let headerRowIndex = -1;
       const colMap: Record<string, number> = {};
@@ -1045,7 +1045,7 @@ export async function fetchOrdersFromGas(
         const rowCells = rows[r].map((c) => String(c || '').toUpperCase().trim());
         const hasNama = rowCells.some((c) => c.includes('NAMA') || c.includes('PEMESAN') || c.includes('CUSTOMER'));
         const hasItem = rowCells.some((c) => c.includes('SKU') || c.includes('PRODUCT') || c.includes('PRODUK') || c.includes('KODE') || c.includes('BARANG'));
-        
+
         if (hasNama || hasItem) {
           headerRowIndex = r;
           rowCells.forEach((c, idx) => {
@@ -1106,7 +1106,7 @@ export async function fetchOrdersFromGas(
       }
 
       const dataStartRow = headerRowIndex !== -1 ? headerRowIndex + 1 : 1;
-      
+
       const cleanNumber = (str: any) => {
         if (!str) return 0;
         return Number(String(str).replace(/[^0-9.-]+/g, '')) || 0;
@@ -1115,7 +1115,7 @@ export async function fetchOrdersFromGas(
       for (let i = dataStartRow; i < rows.length; i++) {
         const r = rows[i];
         if (!r || r.length === 0) continue;
-        
+
         // Ambil data berdasarkan deteksi kolom dinamis, fallback ke indeks standar
         const namaPembeli = (colMap['nama'] !== undefined ? r[colMap['nama']] : r[0]) || '';
         const noHp = (colMap['hp'] !== undefined ? r[colMap['hp']] : r[1]) || '';
@@ -1129,7 +1129,7 @@ export async function fetchOrdersFromGas(
         const total = cleanNumber(colMap['total'] !== undefined ? r[colMap['total']] : r[11]);
         const rawStatus = String((colMap['status'] !== undefined ? r[colMap['status']] : r[12]) || '').toLowerCase().trim();
         const catatan = (colMap['ket'] !== undefined ? r[colMap['ket']] : r[13]) || '';
-        
+
         // Prioritaskan Resi dari Kolom AQ (index 42) dan Ekspedisi dari Kolom AR (index 43)
         const resiAQ = String((colMap['resi_aq'] !== undefined ? r[colMap['resi_aq']] : r[42]) || '').trim();
         const ekspAR = String((colMap['ekspedisi_ar'] !== undefined ? r[colMap['ekspedisi_ar']] : r[43]) || '').trim();
@@ -1140,14 +1140,31 @@ export async function fetchOrdersFromGas(
 
         // Skip baris yang tidak memiliki informasi pembeli dan SKU
         if (!namaPembeli && !noHp && !sku && !productName) continue;
-        
+
+        // Filter pengaman: lewati jika baris CSV ini adalah baris header tabel
+        const nUpper = namaPembeli.toUpperCase().trim();
+        const sUpper = sku.toUpperCase().trim();
+        const hUpper = noHp.toUpperCase().trim();
+        if (
+          (nUpper.includes('NAMA') && nUpper.includes('PEMESAN')) ||
+          nUpper === 'NAMA PEMESAN' ||
+          nUpper === 'CUSTOMER' ||
+          nUpper === 'PEMESAN' ||
+          sUpper === 'SKU' ||
+          sUpper === 'KODE' ||
+          hUpper === 'NO HP' ||
+          hUpper === 'NO. HP'
+        ) {
+          continue;
+        }
+
         let status: IGLiveOrderStatus = 'siap_diproses';
         if (rawStatus.includes('cancel') || rawStatus.includes('batal')) status = 'batal';
         else if (rawStatus.includes('selesai') || rawStatus.includes('done')) status = 'selesai';
         else if (rawStatus.includes('dikirim') || rawStatus.includes('kirim') || (resi && resi !== '-')) status = 'dikirim';
         else if (rawStatus.includes('proses') || rawStatus.includes('packing')) status = 'diproses';
         else if (rawStatus.includes('tunggu') || rawStatus.includes('belum bayar')) status = 'menunggu_pembayaran';
-        
+
         const finalOrderNo = explicitOrderNo || `IGL-GS-${Date.now()}-${i}`;
         const parsedAR = parseCourierFromColAR(ekspAR);
 
@@ -1265,100 +1282,120 @@ export async function fetchOrdersFromGas(
     }[] = [];
 
     // Mapping raw data into standardized IGLiveOrder
-    const mapped: IGLiveOrder[] = rawList.map((row, idx) => {
-      const orderNo = String(
-        row.no_pesanan || row.order_id || row.id || `IGL-${Date.now()}-${idx + 1}`
-      ).trim();
+    const mapped: IGLiveOrder[] = rawList
+      .filter((row) => {
+        // Filter pengaman ganda: Abaikan baris jika merupakan template/header tabel
+        const nUpper = String(row.nama_pembeli || row.customer_name || row.pembeli || row.nama || '').toUpperCase().trim();
+        const sUpper = String(row.sku || row.items?.[0]?.sku || '').toUpperCase().trim();
+        const hUpper = String(row.no_telp || row.phone || row.hp || '').toUpperCase().trim();
+        if (
+          (nUpper.includes('NAMA') && nUpper.includes('PEMESAN')) ||
+          nUpper === 'NAMA PEMESAN' ||
+          nUpper === 'CUSTOMER' ||
+          nUpper === 'PEMESAN' ||
+          sUpper === 'SKU' ||
+          sUpper === 'KODE' ||
+          hUpper === 'NO HP' ||
+          hUpper === 'NO. HP'
+        ) {
+          return false;
+        }
+        return true;
+      })
+      .map((row, idx) => {
+        const orderNo = String(
+          row.no_pesanan || row.order_id || row.id || `IGL-${Date.now()}-${idx + 1}`
+        ).trim();
 
-      const existing = existingMap.get(orderNo);
+        const existing = existingMap.get(orderNo);
 
-      // Normalize items
-      const rawItems = Array.isArray(row.items)
-        ? row.items
-        : [
+        // Normalize items
+        const rawItems = Array.isArray(row.items)
+          ? row.items
+          : [
             {
               sku: row.sku || row.kode || row.item_code || '',
               qty: Number(row.qty || row.jumlah || 1),
             },
           ];
 
-      const items: IGLiveItem[] = rawItems.map((rawIt: any) => {
-        const sku = String(rawIt.sku || rawIt.kode || rawIt.item_code || '').trim();
-        const master = lookupMasterProduct(sku, catalog);
-        return {
-          sku: master.sku || sku,
-          nama_produk: master.nama_produk || rawIt.nama_produk || sku,
-          size: master.size !== '-' ? master.size : (rawIt.size || '-'),
-          qty: Number(rawIt.qty || 1) || 1,
-          harga: Number(rawIt.harga || rawIt.price || master.harga || 0),
-          lokasi: master.lokasi,
-          area: master.area,
-          priority: master.priority,
-          picked: !!rawIt.picked,
-        };
-      });
+        const items: IGLiveItem[] = rawItems.map((rawIt: any) => {
+          const sku = String(rawIt.sku || rawIt.kode || rawIt.item_code || '').trim();
+          const master = lookupMasterProduct(sku, catalog);
+          return {
+            sku: master.sku || sku,
+            nama_produk: master.nama_produk || rawIt.nama_produk || sku,
+            size: master.size !== '-' ? master.size : (rawIt.size || '-'),
+            qty: Number(rawIt.qty || 1) || 1,
+            harga: Number(rawIt.harga || rawIt.price || master.harga || 0),
+            lokasi: master.lokasi,
+            area: master.area,
+            priority: master.priority,
+            picked: !!rawIt.picked,
+          };
+        });
 
-      // Prioritaskan resi dari Kolom AQ (resi_aq) -> no_resi sheet -> Supabase/lokal
-      const rawSheetResi = String(row.resi_aq || row.no_resi || row.resi || '').trim();
-      const sheetHasResi = !!(rawSheetResi && rawSheetResi !== '-');
-      const existingHasResi = !!(existing?.no_resi && existing.no_resi !== '-' && String(existing.no_resi).trim() !== '');
+        // Prioritaskan resi dari Kolom AQ (resi_aq) -> no_resi sheet -> Supabase/lokal
+        const rawSheetResi = String(row.resi_aq || row.no_resi || row.resi || '').trim();
+        const sheetHasResi = !!(rawSheetResi && rawSheetResi !== '-');
+        const existingHasResi = !!(existing?.no_resi && existing.no_resi !== '-' && String(existing.no_resi).trim() !== '');
 
-      const finalResi = sheetHasResi
-        ? rawSheetResi
-        : (existingHasResi ? String(existing!.no_resi).trim() : (row.tracking_no || '-'));
+        const finalResi = sheetHasResi
+          ? rawSheetResi
+          : (existingHasResi ? String(existing!.no_resi).trim() : (row.tracking_no || '-'));
 
-      // Prioritaskan ekspedisi dari Kolom AR (ekspedisi_ar) -> Supabase/lokal -> sheet default
-      const parsedFromAR = parseCourierFromColAR(row.ekspedisi_ar);
-      const finalEkspedisi = parsedFromAR?.ekspedisi || existing?.ekspedisi || row.ekspedisi || row.courier || row.kurir || 'JNE';
-      const finalLayanan = parsedFromAR?.layanan || existing?.layanan || row.layanan || row.service || 'REG';
+        // Prioritaskan ekspedisi dari Kolom AR (ekspedisi_ar) -> Supabase/lokal -> sheet default
+        const parsedFromAR = parseCourierFromColAR(row.ekspedisi_ar);
+        const finalEkspedisi = parsedFromAR?.ekspedisi || existing?.ekspedisi || row.ekspedisi || row.courier || row.kurir || 'JNE';
+        const finalLayanan = parsedFromAR?.layanan || existing?.layanan || row.layanan || row.service || 'REG';
 
-      let finalStatus: IGLiveOrderStatus = (row.status && row.status !== '')
-        ? (row.status as IGLiveOrderStatus)
-        : (existing?.status || 'siap_diproses');
+        let finalStatus: IGLiveOrderStatus = (row.status && row.status !== '')
+          ? (row.status as IGLiveOrderStatus)
+          : (existing?.status || 'siap_diproses');
 
-      if (!sheetHasResi && existingHasResi) {
-        if (finalStatus === 'siap_diproses') {
-          finalStatus = (existing?.status && existing.status !== 'siap_diproses')
-            ? existing.status
-            : 'dikirim';
+        if (!sheetHasResi && existingHasResi) {
+          if (finalStatus === 'siap_diproses') {
+            finalStatus = (existing?.status && existing.status !== 'siap_diproses')
+              ? existing.status
+              : 'dikirim';
+          }
+          pendingGasResiHealing.push({
+            orderNo,
+            resi: finalResi,
+            status: finalStatus === 'dikirim' ? 'Dikirim' : finalStatus === 'selesai' ? 'Selesai' : 'Siap Diproses',
+            ekspedisi: finalEkspedisi,
+            layanan: finalLayanan,
+          });
+        } else if (finalStatus === 'siap_diproses' && existing?.status && existing.status !== 'siap_diproses') {
+          finalStatus = existing.status;
         }
-        pendingGasResiHealing.push({
-          orderNo,
-          resi: finalResi,
-          status: finalStatus === 'dikirim' ? 'Dikirim' : finalStatus === 'selesai' ? 'Selesai' : 'Siap Diproses',
+
+        return {
+          id: orderNo,
+          no_pesanan: orderNo,
+          tanggal: row.tanggal || row.created_at || new Date().toISOString().substring(0, 19).replace('T', ' '),
+          session_live: row.session_live || row.live_session || 'IG Live Session',
+          username_ig: row.username_ig || row.ig_handle || row.username || '@customer',
+          nama_pembeli: row.nama_pembeli || row.customer_name || row.pembeli || 'Customer IG',
+          no_telp: row.no_telp || row.phone || row.whatsapp || '',
+          alamat_lengkap: row.alamat_lengkap || row.alamat || row.address || '',
+          kota_kabupaten: row.kota || row.kota_kabupaten || '',
+          provinsi: row.provinsi || '',
+          kode_pos: row.kode_pos || '',
           ekspedisi: finalEkspedisi,
           layanan: finalLayanan,
-        });
-      } else if (finalStatus === 'siap_diproses' && existing?.status && existing.status !== 'siap_diproses') {
-        finalStatus = existing.status;
-      }
-
-      return {
-        id: orderNo,
-        no_pesanan: orderNo,
-        tanggal: row.tanggal || row.created_at || new Date().toISOString().substring(0, 19).replace('T', ' '),
-        session_live: row.session_live || row.live_session || 'IG Live Session',
-        username_ig: row.username_ig || row.ig_handle || row.username || '@customer',
-        nama_pembeli: row.nama_pembeli || row.customer_name || row.pembeli || 'Customer IG',
-        no_telp: row.no_telp || row.phone || row.whatsapp || '',
-        alamat_lengkap: row.alamat_lengkap || row.alamat || row.address || '',
-        kota_kabupaten: row.kota || row.kota_kabupaten || '',
-        provinsi: row.provinsi || '',
-        kode_pos: row.kode_pos || '',
-        ekspedisi: finalEkspedisi,
-        layanan: finalLayanan,
-        no_resi: finalResi,
-        biaya_ongkir: Number(row.biaya_ongkir || row.ongkir || 0),
-        total_bayar: Number(row.total_bayar || row.total || 0),
-        status: finalStatus as IGLiveOrderStatus,
-        alasan_batal: row.alasan_batal || '',
-        catatan: row.catatan || row.notes || '',
-        items,
-        is_picked: !!row.is_picked || !!existing?.is_picked,
-        waktu_picking: row.waktu_picking,
-        petugas_picking: row.petugas_picking,
-      };
-    });
+          no_resi: finalResi,
+          biaya_ongkir: Number(row.biaya_ongkir || row.ongkir || 0),
+          total_bayar: Number(row.total_bayar || row.total || 0),
+          status: finalStatus as IGLiveOrderStatus,
+          alasan_batal: row.alasan_batal || '',
+          catatan: row.catatan || row.notes || '',
+          items,
+          is_picked: !!row.is_picked || !!existing?.is_picked,
+          waktu_picking: row.waktu_picking,
+          petugas_picking: row.petugas_picking,
+        };
+      });
 
     // Save to local cache & Supabase
     saveStoredIgLiveOrders(mapped);
@@ -1369,7 +1406,7 @@ export async function fetchOrdersFromGas(
         pendingGasResiHealing.map((item) =>
           postUpdateResiToGas(url, item.orderNo, item.resi, item.status, item.ekspedisi, item.layanan)
         )
-      ).catch(() => {});
+      ).catch(() => { });
     }
 
     return {

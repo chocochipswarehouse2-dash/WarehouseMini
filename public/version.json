@@ -1,13 +1,12 @@
 {
-  "version": "v2.6.96",
-  "versionCode": 356,
+  "version": "v2.6.97",
+  "versionCode": 357,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v356-2002",
-  "releaseTitle": "WMS v2.6.96 — Auto-Lookup Trello UP pada Penerimaan Produksi",
+  "buildHash": "wms-261108-v357-2052",
+  "releaseTitle": "WMS v2.6.97 — Filter Pengaman Header Tabel pada Modul IG Live",
   "releaseNotes": [
-    "Auto-lookup Nama Produk, UP, dan Foto dari data Trello UP board pada Form Penerimaan dan Spreadsheet Produksi (CMT & Kargo)",
-    "Chip preview match Trello real-time saat ketik kode produk",
-    "Tombol 1-klik Lengkapi Trello pada toolbar Spreadsheet Produksi"
+    "Pembersihan dan filter pencegah baris header template gsheet (NAMA PEMESAN / SKU) terbaca sebagai pesanan valid",
+    "Deploy Google Apps Script IG Live v28"
   ],
   "minSupportedVersion": "v2.0.0"
 }

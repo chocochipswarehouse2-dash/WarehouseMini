@@ -106,6 +106,24 @@ function doGet(e) {
 
       // Lewati baris kosong
       if (!nama && !hp && !sku && !namaProduk && !kode) continue;
+
+      // Filter pengaman: Lewati jika baris ini adalah baris header tabel (misal "NAMA PEMESAN", "SKU", dll)
+      const namaUpper = nama.toUpperCase();
+      const skuUpper = sku.toUpperCase();
+      const kodeUpper = kode.toUpperCase();
+      const hpUpper = hp.toUpperCase();
+      if (
+        (namaUpper.includes("NAMA") && namaUpper.includes("PEMESAN")) ||
+        namaUpper === "NAMA PEMESAN" ||
+        namaUpper === "CUSTOMER" ||
+        namaUpper === "PEMESAN" ||
+        skuUpper === "SKU" ||
+        kodeUpper === "KODE" ||
+        hpUpper === "NO HP" ||
+        hpUpper === "NO. HP"
+      ) {
+        continue;
+      }
       
       // Order ID di Kolom AM (indeks 38 / kolom 39)
       let orderId = String(r[38] || "").trim();
@@ -640,6 +658,24 @@ function sinkronisasiPesananLiveDenganLog() {
     for (let i = 0; i < sourceData.length; i++) {
       const sRow = sourceData[i];
       if (!sRow[0] && !sRow[1] && !sRow[4] && !sRow[7]) continue;
+
+      // Filter pengaman: Lewati jika baris sumber adalah baris header tabel
+      const sNamaUpper = String(sRow[1] || "").toUpperCase().trim();
+      const sSkuUpper = String(sRow[7] || "").toUpperCase().trim();
+      const sKodeUpper = String(sRow[4] || "").toUpperCase().trim();
+      const sHpUpper = String(sRow[2] || "").toUpperCase().trim();
+      if (
+        (sNamaUpper.includes("NAMA") && sNamaUpper.includes("PEMESAN")) ||
+        sNamaUpper === "NAMA PEMESAN" ||
+        sNamaUpper === "CUSTOMER" ||
+        sNamaUpper === "PEMESAN" ||
+        sSkuUpper === "SKU" ||
+        sKodeUpper === "KODE" ||
+        sHpUpper === "NO HP" ||
+        sHpUpper === "NO. HP"
+      ) {
+        continue;
+      }
 
       const tRow = (i < targetData.length) ? targetData[i] : null;
       const currentKey = normalisasiKunci(sRow[0], sRow[1], sRow[2]);

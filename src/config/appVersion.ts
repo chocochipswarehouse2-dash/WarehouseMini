@@ -15,20 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.96",
-  "versionCode": 356,
+  "version": "v2.6.97",
+  "versionCode": 357,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v356-2002",
-  "releaseTitle": "WMS v2.6.96 — Auto-Lookup Trello UP pada Penerimaan Produksi",
+  "buildHash": "wms-261108-v357-2052",
+  "releaseTitle": "WMS v2.6.97 — Filter Pengaman Header Tabel pada Modul IG Live",
   "releaseNotes": [
-    "Auto-lookup Nama Produk, UP, dan Foto dari data Trello UP board pada Form Penerimaan dan Spreadsheet Produksi (CMT & Kargo)",
-    "Chip preview match Trello real-time saat ketik kode produk",
-    "Tombol 1-klik Lengkapi Trello pada toolbar Spreadsheet Produksi"
+    "Pembersihan dan filter pencegah baris header template gsheet (NAMA PEMESAN / SKU) terbaca sebagai pesanan valid",
+    "Deploy Google Apps Script IG Live v28"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.96",
+    "versionCode": 356,
+    "buildDate": "8 November 2026",
+    "buildHash": "wms-261108-v356-2002",
+    "releaseTitle": "WMS v2.6.96 — Auto-Lookup Trello UP pada Penerimaan Produksi",
+    "releaseNotes": [
+      "Auto-lookup Nama Produk, UP, dan Foto dari data Trello UP board pada Form Penerimaan dan Spreadsheet Produksi (CMT & Kargo)",
+      "Chip preview match Trello real-time saat ketik kode produk",
+      "Tombol 1-klik Lengkapi Trello pada toolbar Spreadsheet Produksi"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.95",
     "versionCode": 355,
@@ -115,18 +127,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Penyatuan menu pengaturan sistem, database, hak akses, dan migrasi",
       "Pengaturan sistem kini menjadi halaman utama (page) bukan popup modal",
       "Pembersihan duplikasi menu di sidebar dan integrasi tab Migrasi Supabase"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.88",
-    "versionCode": 348,
-    "buildDate": "8 November 2026",
-    "buildHash": "wms-261108-v348-1254",
-    "releaseTitle": "WMS v2.6.88 — Perbaikan Scroll Halaman Utama & Penghapusan Default Sandingkan",
-    "releaseNotes": [
-      "Hapus saran hardcoded Sandingkan Trello/Produksi menjadi tombol universal Buka Panel Samping (bebas pilih menu apa saja)",
-      "Perbaikan CSS scroll container (overflow-x: clip & penghapusan backdrop-blur berat) agar scroll vertikal halaman utama lancar dan responsif"
     ],
     "minSupportedVersion": "v2.0.0"
   }
