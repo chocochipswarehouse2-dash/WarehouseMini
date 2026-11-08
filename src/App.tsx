@@ -797,6 +797,8 @@ export default function App() {
       orderId?: string;
       isAlter?: boolean;
       hrSection?: string;
+      produksiTab?: string;
+      kodeProduksi?: string;
       roomId?: string;
       tag?: string;
     }) => {
@@ -859,7 +861,27 @@ export default function App() {
         }
       }
 
-      // 4. Deep-target Live Chat -> Buka Room Spesifik
+      // 4. Deep-target Produksi -> Audit Hitung Ulang (+ pilih Kode Produksi)
+      if (
+        rawPage === 'produksi' ||
+        rawPage === 'penerimaan' ||
+        target.produksiTab ||
+        target.kodeProduksi
+      ) {
+        const prodTarget = {
+          tab: target.produksiTab || 'audit_hitung_ulang',
+          kodeProduksi: target.kodeProduksi ? String(target.kodeProduksi).trim().toUpperCase() : undefined,
+        };
+        if (typeof window !== 'undefined') {
+          (window as any).__wms_pending_produksi_target = prodTarget;
+          window.dispatchEvent(new CustomEvent('wms_open_produksi_tab', { detail: prodTarget }));
+          setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('wms_open_produksi_tab', { detail: prodTarget }));
+          }, 150);
+        }
+      }
+
+      // 5. Deep-target Live Chat -> Buka Room Spesifik
       if (rawPage === 'live_chat' || target.roomId) {
         const rid = target.roomId ? String(target.roomId).trim() : '';
         if (rid) {
@@ -1652,11 +1674,22 @@ export default function App() {
 
               if (pickingDebounceTimer) clearTimeout(pickingDebounceTimer);
               pickingDebounceTimer = setTimeout(() => {
-                const totalItems = incomingPickingRows.length;
-                const uniqueSjs = Array.from(new Set(incomingPickingRows.map((r) => r.no_sj))).filter(Boolean);
-                const firstSj = uniqueSjs[0] || 'Surat Jalan';
-                const firstTujuan = incomingPickingRows[0]?.tujuan || 'Gudang';
+                const rowsSnapshot = [...incomingPickingRows];
                 incomingPickingRows = [];
+                const uniqueSjs = Array.from(
+                  new Set(rowsSnapshot.map((r) => String(r.no_sj || '').trim().toUpperCase()))
+                ).filter(Boolean);
+                const unnotifiedSjs = uniqueSjs.filter((sj) => !notifiedOrderIdsRef.current.has(sj));
+                if (unnotifiedSjs.length === 0) return;
+
+                unnotifiedSjs.forEach((sj) => notifiedOrderIdsRef.current.add(sj));
+                savePersistedNotifiedOrderIds(notifiedOrderIdsRef.current);
+                setLastOrderCheckTimestamp(Date.now());
+                syncNotifiedOrdersToServiceWorker(Array.from(notifiedOrderIdsRef.current));
+
+                const totalItems = rowsSnapshot.length;
+                const firstSj = unnotifiedSjs[0] || uniqueSjs[0] || 'Surat Jalan';
+                const firstTujuan = rowsSnapshot[0]?.tujuan || 'Gudang';
 
                 // 1. Putar nada lonceng tugas baru (jelas & nyaring di gudang)
                 playNewTaskChime();
@@ -1667,8 +1700,8 @@ export default function App() {
                 // 3. Web Push / System Notification (muncul di status bar HP / Chrome)
                 const notifTitle = '📋 Tugas Picking Baru Masuk!';
                 const notifBody =
-                  uniqueSjs.length > 1
-                    ? `${uniqueSjs.length} Surat Jalan baru masuk (${totalItems} SKU). Buka untuk mulai picking.`
+                  unnotifiedSjs.length > 1
+                    ? `${unnotifiedSjs.length} Surat Jalan baru masuk (${totalItems} SKU). Buka untuk mulai picking.`
                     : `SJ #${firstSj} (${totalItems} item) - Tujuan: ${firstTujuan}. Buka untuk mulai picking.`;
 
                 showPushNotification(notifTitle, {
@@ -1680,8 +1713,8 @@ export default function App() {
 
                 // 4. In-App Toast (Klik langsung menuju Tugas Picking)
                 showToast(
-                  uniqueSjs.length > 1
-                    ? `📋 ${uniqueSjs.length} Tugas Picking Baru Masuk (${totalItems} item)!`
+                  unnotifiedSjs.length > 1
+                    ? `📋 ${unnotifiedSjs.length} Tugas Picking Baru Masuk (${totalItems} item)!`
                     : `📋 Tugas Picking Baru Masuk: SJ #${firstSj} (${totalItems} item) - Tujuan: ${firstTujuan}`,
                   'info',
                   {
@@ -1703,6 +1736,78 @@ export default function App() {
                 });
               }, 650);
             }
+          }
+        )
+        .on(
+          'broadcast',
+          { event: 'new_picking_task' },
+          ({ payload }) => {
+            invalidatePickingListCache();
+            globalRealtimeStore.notify('picking_list', { eventType: 'INSERT', new: payload });
+            const rows: any[] = Array.isArray(payload?.rows) ? payload.rows : [];
+            if (rows.length === 0) return;
+            rows.forEach((row) => {
+              incomingPickingRows.push({
+                no_sj: row.no_sj || 'Tugas Baru',
+                tujuan: row.tujuan || 'Gudang',
+                nama_produk: row.nama_produk,
+                sku: row.sku,
+              });
+            });
+            if (pickingDebounceTimer) clearTimeout(pickingDebounceTimer);
+            pickingDebounceTimer = setTimeout(() => {
+              const rowsSnapshot = [...incomingPickingRows];
+              incomingPickingRows = [];
+              const uniqueSjs = Array.from(
+                new Set(rowsSnapshot.map((r) => String(r.no_sj || '').trim().toUpperCase()))
+              ).filter(Boolean);
+              const unnotifiedSjs = uniqueSjs.filter((sj) => !notifiedOrderIdsRef.current.has(sj));
+              if (unnotifiedSjs.length === 0) return;
+
+              unnotifiedSjs.forEach((sj) => notifiedOrderIdsRef.current.add(sj));
+              savePersistedNotifiedOrderIds(notifiedOrderIdsRef.current);
+              setLastOrderCheckTimestamp(Date.now());
+              syncNotifiedOrdersToServiceWorker(Array.from(notifiedOrderIdsRef.current));
+
+              const totalItems = rowsSnapshot.length;
+              const firstSj = unnotifiedSjs[0] || uniqueSjs[0] || 'Surat Jalan';
+              const firstTujuan = rowsSnapshot[0]?.tujuan || 'Gudang';
+
+              playNewTaskChime();
+              vibrateDevice([250, 100, 250, 100, 450]);
+
+              showPushNotification('📋 Tugas Picking Baru Masuk!', {
+                body:
+                  unnotifiedSjs.length > 1
+                    ? `${unnotifiedSjs.length} Surat Jalan baru masuk (${totalItems} SKU). Buka untuk mulai picking.`
+                    : `SJ #${firstSj} (${totalItems} item) - Tujuan: ${firstTujuan}. Buka untuk mulai picking.`,
+                tag: `picking-task-${firstSj}`,
+                page: 'picking_tasks',
+                subTab: 'picking_tasks',
+              });
+
+              showToast(
+                unnotifiedSjs.length > 1
+                  ? `📋 ${unnotifiedSjs.length} Tugas Picking Baru Masuk (${totalItems} item)!`
+                  : `📋 Tugas Picking Baru Masuk: SJ #${firstSj} (${totalItems} item) - Tujuan: ${firstTujuan}`,
+                'info',
+                {
+                  actionLabel: 'Buka Picking →',
+                  onClick: () =>
+                    navigateToNotificationTargetRef.current({
+                      page: 'picking_tasks',
+                      subTab: 'picking_tasks',
+                    }),
+                }
+              );
+
+              setNewPickingTaskAlert({
+                no_sj: firstSj,
+                count: totalItems,
+                tujuan: firstTujuan,
+                timestamp: Date.now(),
+              });
+            }, 350);
           }
         )
         .on(
@@ -1799,6 +1904,15 @@ export default function App() {
           }
         )
         .on(
+          'broadcast',
+          { event: 'new_hr_request' },
+          ({ payload }) => {
+            if (payload && payload.sourceTable && payload.record) {
+              handleIncomingHrRequestRef.current(payload.sourceTable, payload.record);
+            }
+          }
+        )
+        .on(
           'postgres_changes',
           { event: 'INSERT', schema: 'public', table: 'lembur' },
           (payload) => {
@@ -1825,6 +1939,26 @@ export default function App() {
             }
           }
         )
+        .on(
+          'broadcast',
+          { event: 'new_recount_queue' },
+          ({ payload }) => {
+            if (payload && Array.isArray(payload.items)) {
+              payload.items.forEach((item: any) => {
+                handleIncomingRecountRef.current(item);
+              });
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'penerimaan_recount_queue' },
+          (payload) => {
+            if (payload.new) {
+              handleIncomingRecountRef.current(payload.new);
+            }
+          }
+        )
         .subscribe((status) => {
           setIsRealtimeConnected(status === 'SUBSCRIBED');
           if (status === 'SUBSCRIBED') {
@@ -1842,6 +1976,68 @@ export default function App() {
       console.warn('Supabase realtime subscription error:', err);
     }
   }, [session, loadProducts]);
+
+  // Handler terpusat saat ada tugas Antrian Hitung Ulang Fisik baru (dari Buyer Qty Nota selisih / input manual)
+  const handleIncomingRecountNotification = useCallback(
+    (row: any) => {
+      if (!row || !session) return;
+
+      const userCanProduksi =
+        isSuperadmin(session) ||
+        canAccessPage(session, 'produksi') ||
+        canAccessPage(session, 'penerimaan');
+      if (!userCanProduksi) return;
+
+      const kode = String(row.kode_produksi || row.kode || '').trim().toUpperCase();
+      if (!kode || kode === 'DUMMY') return;
+
+      // Jangan bunyikan dua kali di tab yang baru saja meng-submit antrian hitung ulang secara lokal
+      if (globalRealtimeStore.isOrderSubmittedLocally(`RECOUNT_${kode}`)) {
+        return;
+      }
+
+      const dedupKey = `RECOUNT_${kode}`;
+      if (notifiedOrderIdsRef.current.has(dedupKey)) return;
+
+      notifiedOrderIdsRef.current.add(dedupKey);
+      savePersistedNotifiedOrderIds(notifiedOrderIdsRef.current);
+      setLastOrderCheckTimestamp(Date.now());
+      syncNotifiedOrdersToServiceWorker(Array.from(notifiedOrderIdsRef.current));
+
+      const addedBy = String(row.added_by || 'Buyer / Auditor').trim();
+      const catatan = String(row.catatan_petunjuk || 'Perlu verifikasi hitung ulang fisik').trim();
+
+      playNewTaskChime();
+      vibrateDevice([250, 100, 250, 100, 400]);
+
+      showPushNotification(`🔄 Tugas Hitung Ulang Fisik — Kode ${kode}`, {
+        body: `Oleh: ${addedBy} • ${catatan}`,
+        tag: `recount-queue-${kode}`,
+        page: 'produksi',
+        produksiTab: 'audit_hitung_ulang',
+        kodeProduksi: kode,
+        requireInteraction: true,
+      });
+
+      showToast(
+        `🔄 Tugas Hitung Ulang Baru: Kode ${kode} (${catatan.slice(0, 65)}${catatan.length > 65 ? '...' : ''})`,
+        'warning',
+        {
+          actionLabel: 'Buka Hitung Ulang →',
+          onClick: () =>
+            navigateToNotificationTargetRef.current({
+              page: 'produksi',
+              produksiTab: 'audit_hitung_ulang',
+              kodeProduksi: kode,
+            }),
+        }
+      );
+    },
+    [session, showToast]
+  );
+
+  const handleIncomingRecountRef = useRef(handleIncomingRecountNotification);
+  handleIncomingRecountRef.current = handleIncomingRecountNotification;
 
   // Handler terpusat KHUSUS AKUN `warehouse` ONLY saat ada pengajuan Lembur, Ijin/Cuti, atau Ijin Pulang Cepat
   const handleIncomingHrRequestNotification = useCallback(
@@ -1867,7 +2063,7 @@ export default function App() {
         const empName = String(row.nama || row.nik || 'Karyawan').trim();
         const tgl = String(row.tanggal || '').slice(0, 10);
         const jam = `${String(row.jam_mulai || '--:--').slice(0, 5)} - ${String(row.jam_selesai || '--:--').slice(0, 5)}`;
-        const alasan = String(row.alasan_lembur || '-').trim();
+        const alasan = String(row.alasan_lembur || row.deskripsi || '-').trim();
 
         playNewTaskChime();
         vibrateDevice([250, 100, 250, 100, 400]);
@@ -1888,7 +2084,9 @@ export default function App() {
         });
       } else if (sourceTable === 'perijinan_cuti') {
         const key = `HR_CUTI_${rawId}`;
-        const ipcDedupKey = `HR_IPC_${String(row.nik || '').trim().toUpperCase()}_${String(row.tanggal_mulai || '').slice(0, 10)}`;
+        const rawTglMulai = String(row.tgl_mulai || row.tanggal_mulai || '').slice(0, 10);
+        const rawTglSelesai = String(row.tgl_selesai || row.tanggal_selesai || '').slice(0, 10);
+        const ipcDedupKey = `HR_IPC_${String(row.nik || '').trim().toUpperCase()}_${rawTglMulai}`;
         if (notifiedOrderIdsRef.current.has(key)) return;
         notifiedOrderIdsRef.current.add(key);
         if (String(row.jenis || '').toLowerCase().includes('pulang')) {
@@ -1900,10 +2098,8 @@ export default function App() {
 
         const empName = String(row.nama || row.nik || 'Karyawan').trim();
         const jenis = String(row.jenis || 'Ijin/Cuti').trim();
-        const tglMulai = String(row.tanggal_mulai || '').slice(0, 10);
-        const tglSelesai = String(row.tanggal_selesai || '').slice(0, 10);
-        const tglLabel = tglSelesai && tglSelesai !== tglMulai ? `${tglMulai} s/d ${tglSelesai}` : tglMulai;
-        const ket = String(row.keterangan || '-').trim();
+        const tglLabel = rawTglSelesai && rawTglSelesai !== rawTglMulai ? `${rawTglMulai} s/d ${rawTglSelesai}` : rawTglMulai;
+        const ket = String(row.alasan || row.keterangan || '-').trim();
 
         playNewTaskChime();
         vibrateDevice([250, 100, 250, 100, 400]);
@@ -1934,7 +2130,7 @@ export default function App() {
 
         const empName = String(row.nama || row.nik || 'Karyawan').trim();
         const tgl = String(row.tanggal || '').slice(0, 10);
-        const jamPulang = String(row.jam_pulang_awal || '--:--').slice(0, 5);
+        const jamPulang = String(row.jam_pulang_rencana || row.jam_pulang_awal || '--:--').slice(0, 5);
         const alasan = String(row.alasan || '-').trim();
 
         playNewTaskChime();
@@ -2188,11 +2384,17 @@ export default function App() {
     });
   }, [session, notificationPermission]);
 
-  // Background, Service Worker & Screen-Wake Delta Poller (Unified: Live Chat untuk Semua User + Pesanan/SPS/Retur untuk Admin & Picker + HR untuk Warehouse Only)
+  // Background, Service Worker & Screen-Wake Delta Poller (Unified: Live Chat untuk Semua User + Pesanan/SPS/Retur untuk Admin & Picker + Hitung Ulang untuk Produksi + HR untuk Warehouse Only)
   useEffect(() => {
     const userIsAdmin = Boolean(session && isSuperadmin(session));
     const userIsPicker = Boolean(session && canAccessPage(session, 'picking_tasks'));
     const userIsWarehouseOnly = Boolean(session && isWarehouseAccountOnly(session));
+    const userCanProduksi = Boolean(
+      session &&
+        (isSuperadmin(session) ||
+          canAccessPage(session, 'produksi') ||
+          canAccessPage(session, 'penerimaan'))
+    );
 
     if (!session) {
       configureServiceWorkerOrderWatcher({
@@ -2251,7 +2453,7 @@ export default function App() {
     }
     window.addEventListener('wms_inapp_notification_click', handleInAppNotifClick);
 
-    // Cek parameter ?room=..., ?page=..., ?order=..., ?subTab=..., ?manualSubTab=..., ?hrSection=... jika dibuka dari klik notifikasi saat aplikasi sebelumnya tertutup
+    // Cek parameter ?room=..., ?page=..., ?order=..., ?subTab=..., ?manualSubTab=..., ?hrSection=..., ?produksiTab=..., ?kodeProduksi=... jika dibuka dari klik notifikasi saat aplikasi sebelumnya tertutup
     try {
       const urlParams = new URLSearchParams(window.location.search);
       const roomParam = urlParams.get('room');
@@ -2260,15 +2462,28 @@ export default function App() {
       const manualSubTabParam = urlParams.get('manualSubTab');
       const orderParam = urlParams.get('order');
       const hrSectionParam = urlParams.get('hrSection');
+      const produksiTabParam = urlParams.get('produksiTab');
+      const kodeProduksiParam = urlParams.get('kodeProduksi');
 
-      if (roomParam || pageParam || subTabParam || manualSubTabParam || orderParam || hrSectionParam) {
+      if (
+        roomParam ||
+        pageParam ||
+        subTabParam ||
+        manualSubTabParam ||
+        orderParam ||
+        hrSectionParam ||
+        produksiTabParam ||
+        kodeProduksiParam
+      ) {
         setTimeout(() => {
           navigateToNotificationTargetRef.current({
-            page: pageParam || (roomParam ? 'live_chat' : 'pesanan_saya'),
+            page: pageParam || (roomParam ? 'live_chat' : kodeProduksiParam ? 'produksi' : 'pesanan_saya'),
             subTab: subTabParam || undefined,
             manualSubTab: manualSubTabParam || undefined,
             orderId: orderParam || undefined,
             hrSection: hrSectionParam || undefined,
+            produksiTab: produksiTabParam || undefined,
+            kodeProduksi: kodeProduksiParam || undefined,
             roomId: roomParam || undefined,
           });
         }, 250);
@@ -2288,7 +2503,7 @@ export default function App() {
       window.addEventListener('pointerdown', handleFirstGesturePermission, { once: true });
     }
 
-    if (!userIsAdmin && !userIsPicker && !userIsWarehouseOnly) {
+    if (!userIsAdmin && !userIsPicker && !userIsWarehouseOnly && !userCanProduksi) {
       const swChatKeepAlive = setInterval(() => {
         if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
           void triggerServiceWorkerCheckNow();
@@ -2316,7 +2531,7 @@ export default function App() {
       if (k3) notifiedOrderIdsRef.current.add(k3);
     };
 
-    // 2. Cek pesanan baru, Retur baru, SPS baru & HR baru (khusus warehouse) secara responsif
+    // 2. Cek pesanan baru, Retur baru, SPS baru, Tugas Picking, Hitung Ulang & HR baru (khusus warehouse) secara responsif
     const checkNewStoreOrdersDelta = async () => {
       if (!isSeeded) return;
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
@@ -2408,8 +2623,8 @@ export default function App() {
         if (userIsWarehouseOnly) {
           try {
             const lmbQuery = deltaSinceIso
-              ? `select=id,tanggal,nik,nama,jam_mulai,jam_selesai,alasan_lembur,status,created_at&created_at=gt.${encodeURIComponent(deltaSinceIso)}&order=created_at.desc&limit=10`
-              : 'select=id,tanggal,nik,nama,jam_mulai,jam_selesai,alasan_lembur,status,created_at&order=created_at.desc&limit=8';
+              ? `select=*&created_at=gt.${encodeURIComponent(deltaSinceIso)}&order=created_at.desc&limit=10`
+              : 'select=*&order=created_at.desc&limit=8';
             const latestLembur = await supabaseFetch<any[]>('lembur', 'GET', null, lmbQuery);
             if (isMounted && Array.isArray(latestLembur)) {
               for (const r of [...latestLembur].reverse()) {
@@ -2428,8 +2643,8 @@ export default function App() {
 
           try {
             const cutiQuery = deltaSinceIso
-              ? `select=id,tanggal_mulai,tanggal_selesai,nik,nama,jenis,keterangan,status,created_at&created_at=gt.${encodeURIComponent(deltaSinceIso)}&order=created_at.desc&limit=10`
-              : 'select=id,tanggal_mulai,tanggal_selesai,nik,nama,jenis,keterangan,status,created_at&order=created_at.desc&limit=8';
+              ? `select=*&created_at=gt.${encodeURIComponent(deltaSinceIso)}&order=created_at.desc&limit=10`
+              : 'select=*&order=created_at.desc&limit=8';
             const latestCuti = await supabaseFetch<any[]>('perijinan_cuti', 'GET', null, cutiQuery);
             if (isMounted && Array.isArray(latestCuti)) {
               for (const r of [...latestCuti].reverse()) {
@@ -2448,8 +2663,8 @@ export default function App() {
 
           try {
             const ipcQuery = deltaSinceIso
-              ? `select=id,tanggal,nik,nama,jam_pulang_awal,alasan,status,created_at&created_at=gt.${encodeURIComponent(deltaSinceIso)}&order=created_at.desc&limit=8`
-              : 'select=id,tanggal,nik,nama,jam_pulang_awal,alasan,status,created_at&order=created_at.desc&limit=6';
+              ? `select=*&created_at=gt.${encodeURIComponent(deltaSinceIso)}&order=created_at.desc&limit=8`
+              : 'select=*&order=created_at.desc&limit=6';
             const latestIpc = await supabaseFetch<any[]>('izin_pulang_cepat', 'GET', null, ipcQuery);
             if (isMounted && Array.isArray(latestIpc)) {
               for (const r of [...latestIpc].reverse()) {
@@ -2463,6 +2678,48 @@ export default function App() {
                 } else {
                   notifiedOrderIdsRef.current.add(key);
                   notifiedOrderIdsRef.current.add(ipcDedupKey);
+                }
+              }
+            }
+          } catch {}
+        }
+
+        // Cek Antrian Hitung Ulang Fisik baru untuk Admin & Produksi
+        if (userCanProduksi) {
+          try {
+            const docRows = await supabaseFetch<any[]>(
+              'wms_system_docs',
+              'GET',
+              null,
+              'select=content,updated_at&section_id=eq.recount_active_queue&limit=1'
+            );
+            if (isMounted && Array.isArray(docRows) && docRows.length > 0 && docRows[0]?.content) {
+              let parsedMap = docRows[0].content;
+              if (typeof parsedMap === 'string') {
+                try {
+                  parsedMap = JSON.parse(parsedMap);
+                } catch {
+                  parsedMap = {};
+                }
+              }
+              if (parsedMap && typeof parsedMap === 'object') {
+                for (const [code, val] of Object.entries(parsedMap)) {
+                  const cleanCode = String(code || '').trim().toUpperCase();
+                  if (!cleanCode || cleanCode === 'DUMMY') continue;
+                  const dedupKey = `RECOUNT_${cleanCode}`;
+                  if (notifiedOrderIdsRef.current.has(dedupKey)) continue;
+                  const meta = typeof val === 'object' && val !== null ? (val as any) : {};
+                  const addedTs = meta.added_at ? new Date(meta.added_at).getTime() : nowMs;
+                  if (isNaN(addedTs) || Math.abs(nowMs - addedTs) <= MAX_AGE_MS) {
+                    handleIncomingRecountRef.current({
+                      kode_produksi: cleanCode,
+                      catatan_petunjuk: meta.catatan_petunjuk || (typeof val === 'string' ? val : ''),
+                      added_by: meta.added_by || 'Buyer / Auditor',
+                      created_at: meta.added_at,
+                    });
+                  } else {
+                    notifiedOrderIdsRef.current.add(dedupKey);
+                  }
                 }
               }
             }
@@ -2631,12 +2888,44 @@ export default function App() {
           }
         }
 
+        if (userCanProduksi) {
+          try {
+            const docRows = await supabaseFetch<any[]>(
+              'wms_system_docs',
+              'GET',
+              null,
+              'select=content,updated_at&section_id=eq.recount_active_queue&limit=1'
+            );
+            if (Array.isArray(docRows) && docRows.length > 0 && docRows[0]?.content) {
+              let parsedMap = docRows[0].content;
+              if (typeof parsedMap === 'string') {
+                try {
+                  parsedMap = JSON.parse(parsedMap);
+                } catch {
+                  parsedMap = {};
+                }
+              }
+              if (parsedMap && typeof parsedMap === 'object') {
+                for (const [code, val] of Object.entries(parsedMap)) {
+                  const cleanCode = String(code || '').trim().toUpperCase();
+                  if (!cleanCode) continue;
+                  const meta = typeof val === 'object' && val !== null ? (val as any) : {};
+                  const rowTs = meta.added_at ? new Date(meta.added_at).getTime() : 0;
+                  if (!hasPersistedHistory || (rowTs > 0 && prevLastCheckTs && rowTs < prevLastCheckTs)) {
+                    notifiedOrderIdsRef.current.add(`RECOUNT_${cleanCode}`);
+                  }
+                }
+              }
+            }
+          } catch {}
+        }
+
         if (userIsWarehouseOnly) {
           try {
             const [recentLembur, recentCuti, recentIpc] = await Promise.all([
-              supabaseFetch<any[]>('lembur', 'GET', null, 'select=id,created_at&order=created_at.desc&limit=25').catch(() => []),
-              supabaseFetch<any[]>('perijinan_cuti', 'GET', null, 'select=id,nik,tanggal_mulai,jenis,created_at&order=created_at.desc&limit=25').catch(() => []),
-              supabaseFetch<any[]>('izin_pulang_cepat', 'GET', null, 'select=id,nik,tanggal,created_at&order=created_at.desc&limit=20').catch(() => []),
+              supabaseFetch<any[]>('lembur', 'GET', null, 'select=*&order=created_at.desc&limit=25').catch(() => []),
+              supabaseFetch<any[]>('perijinan_cuti', 'GET', null, 'select=*&order=created_at.desc&limit=25').catch(() => []),
+              supabaseFetch<any[]>('izin_pulang_cepat', 'GET', null, 'select=*&order=created_at.desc&limit=20').catch(() => []),
             ]);
 
             if (Array.isArray(recentLembur)) {
@@ -2651,7 +2940,8 @@ export default function App() {
             if (Array.isArray(recentCuti)) {
               for (const r of recentCuti) {
                 const key = `HR_CUTI_${String(r.id || '').trim().toUpperCase()}`;
-                const ipcDedupKey = `HR_IPC_${String(r.nik || '').trim().toUpperCase()}_${String(r.tanggal_mulai || '').slice(0, 10)}`;
+                const rawTglMulai = String(r.tgl_mulai || r.tanggal_mulai || '').slice(0, 10);
+                const ipcDedupKey = `HR_IPC_${String(r.nik || '').trim().toUpperCase()}_${rawTglMulai}`;
                 const rowTs = r.created_at ? new Date(r.created_at).getTime() : 0;
                 if (!hasPersistedHistory || (rowTs > 0 && prevLastCheckTs && rowTs < prevLastCheckTs)) {
                   if (r.id) notifiedOrderIdsRef.current.add(key);

@@ -226,6 +226,8 @@ export async function showPushNotification(
     orderId?: string;
     isAlter?: boolean;
     hrSection?: string;
+    produksiTab?: string;
+    kodeProduksi?: string;
     roomId?: string;
     roomName?: string;
     actions?: Array<{
@@ -252,6 +254,8 @@ export async function showPushNotification(
     orderId: options?.orderId || '',
     isAlter: Boolean(options?.isAlter),
     hrSection: options?.hrSection || '',
+    produksiTab: options?.produksiTab || '',
+    kodeProduksi: options?.kodeProduksi || '',
     roomId: options?.roomId || '',
     roomName: options?.roomName || '',
     ...(options?.data && typeof options.data === 'object' ? options.data : {}),

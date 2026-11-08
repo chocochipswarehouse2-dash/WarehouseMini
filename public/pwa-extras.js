@@ -245,8 +245,9 @@ async function checkNewOrdersInBackground() {
     } catch {}
   }
 
-  // 2. Jika Admin/Superadmin ATAU Picker: Cek Permintaan Peminjaman Sementara (SPS) baru
+  // 2. Jika Admin/Superadmin ATAU Picker: Cek Permintaan SPS baru & Tugas Picking (picking_list) baru
   if (cfg.isAdmin || cfg.isPicker) {
+    // 2A-1. Cek Permintaan Peminjaman Sementara (SPS) baru
     try {
       const spsUrl = `${cfg.supabaseUrl}/rest/v1/peminjaman?select=id,no_peminjaman,pic,keperluan,sku,nama_produk,qty,created_at&order=created_at.desc&limit=15`;
       const resSps = await fetch(spsUrl, { method: 'GET', headers });
@@ -288,8 +289,108 @@ async function checkNewOrdersInBackground() {
                 tag: `sps-new-${g.noSps}`,
                 renotify: true,
                 requireInteraction: true,
-                data: { url: '/', page: 'picking_tasks' },
+                data: { url: '/', page: 'picking_tasks', subTab: 'picking_tasks' },
               });
+            }
+          }
+        }
+      }
+    } catch {}
+
+    // 2A-2. Cek Tugas Picking Baru (picking_list)
+    try {
+      const pckUrl = `${cfg.supabaseUrl}/rest/v1/picking_list?select=id,no_sj,tujuan,nama_produk,sku,created_at&order=created_at.desc&limit=20`;
+      const resPck = await fetch(pckUrl, { method: 'GET', headers });
+      if (resPck.ok) {
+        const rowsPck = await resPck.json();
+        if (Array.isArray(rowsPck) && rowsPck.length > 0) {
+          const pckGroups = new Map();
+          for (const r of rowsPck) {
+            const noSj = String(r.no_sj || '').trim().toUpperCase();
+            if (!noSj) continue;
+            if (!pckGroups.has(noSj)) {
+              pckGroups.set(noSj, {
+                noSj,
+                tujuan: String(r.tujuan || 'Gudang').trim(),
+                created_at: r.created_at,
+                skuCount: 0,
+              });
+            }
+            const g = pckGroups.get(noSj);
+            g.skuCount += 1;
+          }
+
+          for (const g of Array.from(pckGroups.values()).reverse()) {
+            if (notifiedSet.has(g.noSj)) continue;
+            const rowTs = g.created_at ? new Date(g.created_at).getTime() : nowMs;
+            if (rowTs >= lastCheckMs - 60000 && Math.abs(nowMs - rowTs) <= MAX_AGE_MS) {
+              notifiedSet.add(g.noSj);
+              newlyNotifiedIds.push(g.noSj);
+              updated = true;
+
+              await safeShowNotification('📋 Tugas Picking Baru Masuk!', {
+                body: `SJ #${g.noSj} (${g.skuCount} item) - Tujuan: ${g.tujuan}. Buka untuk mulai picking.`,
+                icon: '/icon-192.png',
+                badge: '/icon-192.png',
+                vibrate: [250, 100, 250, 100, 450],
+                tag: `picking-task-${g.noSj}`,
+                renotify: true,
+                requireInteraction: true,
+                data: { url: '/', page: 'picking_tasks', subTab: 'picking_tasks' },
+              });
+            }
+          }
+        }
+      }
+    } catch {}
+
+    // 2A-3. Cek Antrian Hitung Ulang Fisik Baru (recount_active_queue)
+    try {
+      const recUrl = `${cfg.supabaseUrl}/rest/v1/wms_system_docs?select=content,updated_at&section_id=eq.recount_active_queue&limit=1`;
+      const resRec = await fetch(recUrl, { method: 'GET', headers });
+      if (resRec.ok) {
+        const rowsRec = await resRec.json();
+        if (Array.isArray(rowsRec) && rowsRec.length > 0 && rowsRec[0] && rowsRec[0].content) {
+          let parsedMap = rowsRec[0].content;
+          if (typeof parsedMap === 'string') {
+            try {
+              parsedMap = JSON.parse(parsedMap);
+            } catch {
+              parsedMap = {};
+            }
+          }
+          if (parsedMap && typeof parsedMap === 'object') {
+            for (const [code, val] of Object.entries(parsedMap)) {
+              const cleanCode = String(code || '').trim().toUpperCase();
+              if (!cleanCode || cleanCode === 'DUMMY') continue;
+              const dedupKey = `RECOUNT_${cleanCode}`;
+              if (notifiedSet.has(dedupKey)) continue;
+              const meta = typeof val === 'object' && val !== null ? val : {};
+              const rowTs = meta.added_at ? new Date(meta.added_at).getTime() : nowMs;
+              if (rowTs >= lastCheckMs - 60000 && Math.abs(nowMs - rowTs) <= MAX_AGE_MS) {
+                notifiedSet.add(dedupKey);
+                newlyNotifiedIds.push(dedupKey);
+                updated = true;
+
+                const addedBy = String(meta.added_by || 'Buyer / Auditor').trim();
+                const catatan = String(meta.catatan_petunjuk || (typeof val === 'string' ? val : 'Perlu verifikasi hitung ulang fisik')).trim();
+
+                await safeShowNotification(`🔄 Tugas Hitung Ulang Fisik — Kode ${cleanCode}`, {
+                  body: `Oleh: ${addedBy} • ${catatan}`,
+                  icon: '/icon-192.png',
+                  badge: '/icon-192.png',
+                  vibrate: [250, 100, 250, 100, 400],
+                  tag: `recount-queue-${cleanCode}`,
+                  renotify: true,
+                  requireInteraction: true,
+                  data: {
+                    url: '/',
+                    page: 'produksi',
+                    produksiTab: 'audit_hitung_ulang',
+                    kodeProduksi: cleanCode,
+                  },
+                });
+              }
             }
           }
         }
@@ -306,7 +407,7 @@ async function checkNewOrdersInBackground() {
   if (isWarehouseUser) {
     // a) Cek Pengajuan Lembur Baru
     try {
-      const lmbUrl = `${cfg.supabaseUrl}/rest/v1/lembur?select=id,tanggal,nik,nama,jam_mulai,jam_selesai,alasan_lembur,status,created_at&order=created_at.desc&limit=8`;
+      const lmbUrl = `${cfg.supabaseUrl}/rest/v1/lembur?select=*&order=created_at.desc&limit=8`;
       const resLmb = await fetch(lmbUrl, { method: 'GET', headers });
       if (resLmb.ok) {
         const rowsLmb = await resLmb.json();
@@ -323,7 +424,7 @@ async function checkNewOrdersInBackground() {
               const empName = String(r.nama || r.nik || 'Karyawan').trim();
               const tgl = String(r.tanggal || '').slice(0, 10);
               const jam = `${String(r.jam_mulai || '--:--').slice(0, 5)} - ${String(r.jam_selesai || '--:--').slice(0, 5)}`;
-              const alasan = String(r.alasan_lembur || '-').trim();
+              const alasan = String(r.alasan_lembur || r.deskripsi || '-').trim();
 
               await safeShowNotification(`⚡ Pengajuan Lembur Baru — ${empName}`, {
                 body: `Tanggal: ${tgl} (${jam}) • Alasan: ${alasan}`,
@@ -343,14 +444,16 @@ async function checkNewOrdersInBackground() {
 
     // b) Cek Pengajuan Ijin / Cuti / Sakit / Ijin Pulang Cepat Baru
     try {
-      const cutiUrl = `${cfg.supabaseUrl}/rest/v1/perijinan_cuti?select=id,tanggal_mulai,tanggal_selesai,nik,nama,jenis,keterangan,status,created_at&order=created_at.desc&limit=8`;
+      const cutiUrl = `${cfg.supabaseUrl}/rest/v1/perijinan_cuti?select=*&order=created_at.desc&limit=8`;
       const resCuti = await fetch(cutiUrl, { method: 'GET', headers });
       if (resCuti.ok) {
         const rowsCuti = await resCuti.json();
         if (Array.isArray(rowsCuti)) {
           for (const r of rowsCuti.reverse()) {
             const key = `HR_CUTI_${String(r.id || '').trim().toUpperCase()}`;
-            const ipcDedupKey = `HR_IPC_${String(r.nik || '').trim().toUpperCase()}_${String(r.tanggal_mulai || '').slice(0, 10)}`;
+            const rawTglMulai = String(r.tgl_mulai || r.tanggal_mulai || '').slice(0, 10);
+            const rawTglSelesai = String(r.tgl_selesai || r.tanggal_selesai || '').slice(0, 10);
+            const ipcDedupKey = `HR_IPC_${String(r.nik || '').trim().toUpperCase()}_${rawTglMulai}`;
             if (!r.id || notifiedSet.has(key)) continue;
             const rowTs = r.created_at ? new Date(r.created_at).getTime() : nowMs;
             if (rowTs >= lastCheckMs - 60000 && Math.abs(nowMs - rowTs) <= MAX_AGE_MS) {
@@ -364,10 +467,8 @@ async function checkNewOrdersInBackground() {
 
               const empName = String(r.nama || r.nik || 'Karyawan').trim();
               const jenis = String(r.jenis || 'Ijin/Cuti').trim();
-              const tglMulai = String(r.tanggal_mulai || '').slice(0, 10);
-              const tglSelesai = String(r.tanggal_selesai || '').slice(0, 10);
-              const tglLabel = tglSelesai && tglSelesai !== tglMulai ? `${tglMulai} s/d ${tglSelesai}` : tglMulai;
-              const ket = String(r.keterangan || '-').trim();
+              const tglLabel = rawTglSelesai && rawTglSelesai !== rawTglMulai ? `${rawTglMulai} s/d ${rawTglSelesai}` : rawTglMulai;
+              const ket = String(r.alasan || r.keterangan || '-').trim();
 
               await safeShowNotification(`🌴 Pengajuan ${jenis} Baru — ${empName}`, {
                 body: `Tanggal: ${tglLabel} • Ket: ${ket}`,
@@ -387,7 +488,7 @@ async function checkNewOrdersInBackground() {
 
     // c) Cek Izin Pulang Cepat (jika diajukan langsung dari halaman Presensi)
     try {
-      const ipcUrl = `${cfg.supabaseUrl}/rest/v1/izin_pulang_cepat?select=id,tanggal,nik,nama,jam_pulang_awal,alasan,status,created_at&order=created_at.desc&limit=6`;
+      const ipcUrl = `${cfg.supabaseUrl}/rest/v1/izin_pulang_cepat?select=*&order=created_at.desc&limit=6`;
       const resIpc = await fetch(ipcUrl, { method: 'GET', headers });
       if (resIpc.ok) {
         const rowsIpc = await resIpc.json();
@@ -405,7 +506,7 @@ async function checkNewOrdersInBackground() {
 
               const empName = String(r.nama || r.nik || 'Karyawan').trim();
               const tgl = String(r.tanggal || '').slice(0, 10);
-              const jamPulang = String(r.jam_pulang_awal || '--:--').slice(0, 5);
+              const jamPulang = String(r.jam_pulang_rencana || r.jam_pulang_awal || '--:--').slice(0, 5);
               const alasan = String(r.alasan || '-').trim();
 
               await safeShowNotification(`🏃 Pengajuan Ijin Pulang Cepat — ${empName}`, {
@@ -830,6 +931,8 @@ self.addEventListener('notificationclick', (event) => {
   const targetOrderId = notifData.orderId || '';
   const targetIsAlter = Boolean(notifData.isAlter);
   const targetHrSection = notifData.hrSection || '';
+  const targetProduksiTab = notifData.produksiTab || '';
+  const targetKodeProduksi = notifData.kodeProduksi || '';
   const targetRoomId = notifData.roomId || '';
   const action = event.action || '';
   const inlineReplyText = typeof event.reply === 'string' ? event.reply.trim() : '';
@@ -869,6 +972,8 @@ self.addEventListener('notificationclick', (event) => {
     orderId: targetOrderId,
     isAlter: targetIsAlter,
     hrSection: targetHrSection,
+    produksiTab: targetProduksiTab,
+    kodeProduksi: targetKodeProduksi,
     roomId: targetRoomId,
     timestamp: Date.now(),
   };
@@ -908,6 +1013,8 @@ self.addEventListener('notificationclick', (event) => {
         if (targetManualSubTab) params.push(`manualSubTab=${encodeURIComponent(targetManualSubTab)}`);
         if (targetOrderId) params.push(`order=${encodeURIComponent(targetOrderId)}`);
         if (targetHrSection) params.push(`hrSection=${encodeURIComponent(targetHrSection)}`);
+        if (targetProduksiTab) params.push(`produksiTab=${encodeURIComponent(targetProduksiTab)}`);
+        if (targetKodeProduksi) params.push(`kodeProduksi=${encodeURIComponent(targetKodeProduksi)}`);
         if (targetRoomId) params.push(`room=${encodeURIComponent(targetRoomId)}`);
         const openUrl = params.length > 0 ? `${targetUrl}${targetUrl.includes('?') ? '&' : '?'}${params.join('&')}` : targetUrl;
         return clients.openWindow(openUrl);

@@ -12,6 +12,7 @@ import {
   replaceAllProductLocationsInLocalDb,
 } from './localDb';
 import { fetchWithDeltaSync } from './gasSync';
+import { globalRealtimeStore } from './store';
 import {
   LogProdukItem,
   StockOpnameQueueItem,
@@ -5844,6 +5845,7 @@ export async function insertPickingListRowsToSupabase(
   // Attempt 1: Schema-compliant payload with explicit safe BIGINT IDs (Avoids sequence desync 23505)
   try {
     await supabaseFetch('picking_list', 'POST', schemaCompliantRows);
+    globalRealtimeStore.broadcastEvent('new_picking_task', { rows: schemaCompliantRows }).catch(() => {});
     return true;
   } catch (err: any) {
     console.warn('insertPickingListRowsToSupabase: Attempt 1 failed, trying fallback with fresh unique IDs:', err?.message);
@@ -5864,6 +5866,7 @@ export async function insertPickingListRowsToSupabase(
 
     try {
       await supabaseFetch('picking_list', 'POST', minimalRows);
+      globalRealtimeStore.broadcastEvent('new_picking_task', { rows: minimalRows }).catch(() => {});
       return true;
     } catch (err2: any) {
       console.warn('insertPickingListRowsToSupabase: Attempt 2 failed, trying row-by-row fallback:', err2?.message);
@@ -7551,6 +7554,9 @@ export async function submitLemburRecord(record: Partial<LemburRecord>): Promise
   if (error) {
     throw new Error(error.message);
   }
+  if (data) {
+    globalRealtimeStore.broadcastEvent('new_hr_request', { sourceTable: 'lembur', record: data }).catch(() => {});
+  }
   return data;
 }
 
@@ -7655,6 +7661,9 @@ export async function submitCutiRecord(record: Partial<PerijinanCutiRecord>): Pr
 
   if (error) {
     throw new Error(error.message);
+  }
+  if (data) {
+    globalRealtimeStore.broadcastEvent('new_hr_request', { sourceTable: 'perijinan_cuti', record: data }).catch(() => {});
   }
   return data;
 }
@@ -7866,6 +7875,7 @@ export async function submitIzinPulangAwalRecord(
         try {
           localStorage.setItem(LOCAL_STORAGE_IZIN_PULANG_KEY, JSON.stringify(updated));
         } catch {}
+        globalRealtimeStore.broadcastEvent('new_hr_request', { sourceTable: 'izin_pulang_cepat', record: data }).catch(() => {});
         return data;
       }
     } catch {}
@@ -11737,6 +11747,20 @@ export async function fetchPenerimaanRecountQueueFromSupabase(): Promise<Record<
 export async function savePenerimaanRecountQueueToSupabase(
   queueMap: Record<string, RecountQueueItemMeta>
 ): Promise<void> {
+  // Deteksi kode produksi baru yang baru saja dimasukkan ke antrian hitung ulang
+  let previousCodes = new Set<string>();
+  if (typeof window !== 'undefined') {
+    try {
+      const prevRaw = localStorage.getItem(LOCAL_STORAGE_RECOUNT_QUEUE_KEY);
+      if (prevRaw) {
+        const prevParsed = JSON.parse(prevRaw);
+        if (prevParsed && typeof prevParsed === 'object') {
+          Object.keys(prevParsed).forEach((k) => previousCodes.add(k.trim().toUpperCase()));
+        }
+      }
+    } catch {}
+  }
+
   // Update local cache & dispatch local event
   if (typeof window !== 'undefined') {
     try {
@@ -11757,6 +11781,19 @@ export async function savePenerimaanRecountQueueToSupabase(
     created_at: queueMap[code]?.added_at || nowIso,
     updated_at: nowIso,
   }));
+
+  const newlyAddedItems = queueArray.filter((item) => !previousCodes.has(item.kode_produksi));
+  if (newlyAddedItems.length > 0) {
+    newlyAddedItems.forEach((item) => {
+      globalRealtimeStore.markOrderSubmittedLocally(`RECOUNT_${item.kode_produksi}`);
+    });
+    globalRealtimeStore
+      .broadcastEvent('new_recount_queue', {
+        items: newlyAddedItems,
+        queueMap,
+      })
+      .catch(() => {});
+  }
 
   // 1. Simpan ke tabel khusus `penerimaan_recount_queue`
   let savedToDedicatedTable = false;

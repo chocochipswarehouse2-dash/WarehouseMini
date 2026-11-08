@@ -515,6 +515,34 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     setActiveTab('audit_hitung_ulang');
   };
 
+  useEffect(() => {
+    const applyTarget = (detail?: { tab?: TabMode; kodeProduksi?: string }) => {
+      if (!detail) return;
+      if (detail.kodeProduksi) {
+        setSelectedAuditTargetCode(String(detail.kodeProduksi).trim().toUpperCase());
+      }
+      if (detail.tab) {
+        setActiveTab(detail.tab);
+      } else if (detail.kodeProduksi) {
+        setActiveTab('audit_hitung_ulang');
+      }
+    };
+
+    if (typeof window !== 'undefined' && (window as any).__wms_pending_produksi_target) {
+      const pending = (window as any).__wms_pending_produksi_target;
+      delete (window as any).__wms_pending_produksi_target;
+      applyTarget(pending);
+    }
+
+    const onOpenProduksiTab = (ev: Event) => {
+      const detail = (ev as CustomEvent)?.detail;
+      applyTarget(detail);
+    };
+
+    window.addEventListener('wms_open_produksi_tab', onOpenProduksiTab);
+    return () => window.removeEventListener('wms_open_produksi_tab', onOpenProduksiTab);
+  }, []);
+
   // View Mode: 'matrix' (Spreadsheet Excel Matrix), 'card' (1 Kartu = 1 No. Surat Jalan), atau 'table' (1 Baris = 1 Varian)
   const [viewMode, setViewMode] = useState<'matrix' | 'card' | 'table'>(() => {
     try {
