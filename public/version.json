@@ -1,14 +1,13 @@
 {
-  "version": "v2.6.78",
-  "versionCode": 338,
-  "buildDate": "7 November 2026",
-  "buildHash": "wms-261107-v338-2302",
-  "releaseTitle": "WMS v2.6.78 — Audit & Optimasi Halaman Inventory, Lookup Master SKU & Drawer Komparasi",
+  "version": "v2.6.79",
+  "versionCode": 339,
+  "buildDate": "8 November 2026",
+  "buildHash": "wms-261108-v339-0957",
+  "releaseTitle": "WMS v2.6.79 — Presisi Urutan Kolom Kanban Trello Asli",
   "releaseNotes": [
-    "Perbaikan tabel Komparasi Fisik vs DealPOS per Area (MAP, LIVE, STUDIO, PERMAK, DEFECT) di Drawer Rincian Inventory agar kuantitas fisik live tidak berubah menjadi 0",
-    "Standarisasi 100% lookup Nama Produk dan Size via Master Produk (resolveProductName & resolveProductDisplaySize) di Tabel Stok, Kapasitas Rak & 3D Gudang tanpa anomali Default/SKU",
-    "Penambahan fungsi pengurutan kolom Area (AREA_ASC & AREA_DESC) pada Tabel Stok Inventory",
-    "Sinkronisasi otomatis realtime store Inventory saat perbaikan anomali atau update stok (wms_inventory_updated & wms_stock_updated)"
+    "Sinkronisasi posisi list horizontal papan Trello asli ke Kanban WMS",
+    "Penyelarasan urutan UP batch dari kiri ke kanan (September ke April)",
+    "Pencegahan salah parse judul tanggal menjadi nomor batch"
   ],
   "minSupportedVersion": "v2.0.0"
 }

@@ -27,6 +27,7 @@ import {
   setLocalCachedTrelloItems,
   fetchTrelloUpFromSupabase,
   syncTrelloUpCatalog,
+  resolveTrelloListMeta,
   DEFAULT_TRELLO_BOARD_ID,
 } from '../../services/trelloSyncService';
 import { TrelloPrintA4Modal } from './TrelloPrintA4Modal';
@@ -118,15 +119,37 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
     loadData(false);
   }, []);
 
+  // Helper ekstraksi nomor batch UP yang aman (hanya angka setelah 'UP')
+  // Mencegah judul tanggal seperti '2 MEI' atau '13 FEB' disalahartikan sebagai nomor UP
+  const extractUpNumber = (text?: string): number => {
+    if (!text) return 0;
+    const match = text.match(/\bUP\s*(\d+)/i);
+    return match ? parseInt(match[1], 10) : 0;
+  };
+
   // Ambil daftar unik UP / List
   const upLists: UpListOption[] = useMemo(() => {
-    const map = new Map<string, { listName: string; upCode: string; count: number; listPos?: number; listIndex?: number }>();
+    const map = new Map<string, { listName: string; upCode: string; count: number; listPos?: number; listIndex?: number; listId?: string }>();
     items.forEach((item) => {
       const key = item.list_name || item.up_code;
       if (!map.has(key)) {
-        const itemPos = item.list_pos ?? item.raw_json?.list_pos;
-        const itemIdx = item.list_index ?? item.raw_json?.list_index;
-        map.set(key, { listName: item.list_name, upCode: item.up_code, count: 0, listPos: itemPos, listIndex: itemIdx });
+        let itemPos = item.list_pos ?? item.raw_json?.list_pos;
+        let itemIdx = item.list_index ?? item.raw_json?.list_index;
+        if (itemPos === undefined || itemIdx === undefined) {
+          const meta = resolveTrelloListMeta(item.list_id, item.list_name);
+          if (meta) {
+            if (itemPos === undefined) itemPos = meta.pos;
+            if (itemIdx === undefined) itemIdx = meta.index;
+          }
+        }
+        map.set(key, {
+          listName: item.list_name,
+          upCode: item.up_code,
+          count: 0,
+          listPos: itemPos,
+          listIndex: itemIdx,
+          listId: item.list_id
+        });
       }
       map.get(key)!.count += 1;
     });
@@ -140,15 +163,21 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
         if (a.listIndex !== undefined && b.listIndex !== undefined && a.listIndex !== b.listIndex) {
           return a.listIndex - b.listIndex;
         }
-        // Fallback kronologis alami (UP 279, UP 280, ... UP 343)
-        const numA = parseInt(a.upCode.replace(/\D/g, '') || '0', 10);
-        const numB = parseInt(b.upCode.replace(/\D/g, '') || '0', 10);
+        // Fallback jika tidak ada pos (jarang terjadi):
+        const numA = extractUpNumber(a.upCode) || extractUpNumber(a.listName);
+        const numB = extractUpNumber(b.upCode) || extractUpNumber(b.listName);
         if (numA && numB && numA !== numB) return numA - numB;
         return a.listName.localeCompare(b.listName);
       } else {
-        // Mode 'newest': UP nomor terbesar ditaruh paling depan
-        const numA = parseInt(a.upCode.replace(/\D/g, '') || '0', 10);
-        const numB = parseInt(b.upCode.replace(/\D/g, '') || '0', 10);
+        // Mode 'newest': Balik urutan Trello (Kanan ke Kiri / Pos terbesar ke terkecil)
+        if (a.listPos !== undefined && b.listPos !== undefined && a.listPos !== b.listPos) {
+          return b.listPos - a.listPos;
+        }
+        if (a.listIndex !== undefined && b.listIndex !== undefined && a.listIndex !== b.listIndex) {
+          return b.listIndex - a.listIndex;
+        }
+        const numA = extractUpNumber(a.upCode) || extractUpNumber(a.listName);
+        const numB = extractUpNumber(b.upCode) || extractUpNumber(b.listName);
         if (numA && numB && numA !== numB) return numB - numA;
         return a.listName.localeCompare(b.listName);
       }

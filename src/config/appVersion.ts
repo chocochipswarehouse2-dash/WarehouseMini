@@ -15,21 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.78",
-  "versionCode": 338,
-  "buildDate": "7 November 2026",
-  "buildHash": "wms-261107-v338-2302",
-  "releaseTitle": "WMS v2.6.78 — Audit & Optimasi Halaman Inventory, Lookup Master SKU & Drawer Komparasi",
+  "version": "v2.6.79",
+  "versionCode": 339,
+  "buildDate": "8 November 2026",
+  "buildHash": "wms-261108-v339-0957",
+  "releaseTitle": "WMS v2.6.79 — Presisi Urutan Kolom Kanban Trello Asli",
   "releaseNotes": [
-    "Perbaikan tabel Komparasi Fisik vs DealPOS per Area (MAP, LIVE, STUDIO, PERMAK, DEFECT) di Drawer Rincian Inventory agar kuantitas fisik live tidak berubah menjadi 0",
-    "Standarisasi 100% lookup Nama Produk dan Size via Master Produk (resolveProductName & resolveProductDisplaySize) di Tabel Stok, Kapasitas Rak & 3D Gudang tanpa anomali Default/SKU",
-    "Penambahan fungsi pengurutan kolom Area (AREA_ASC & AREA_DESC) pada Tabel Stok Inventory",
-    "Sinkronisasi otomatis realtime store Inventory saat perbaikan anomali atau update stok (wms_inventory_updated & wms_stock_updated)"
+    "Sinkronisasi posisi list horizontal papan Trello asli ke Kanban WMS",
+    "Penyelarasan urutan UP batch dari kiri ke kanan (September ke April)",
+    "Pencegahan salah parse judul tanggal menjadi nomor batch"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.78",
+    "versionCode": 338,
+    "buildDate": "7 November 2026",
+    "buildHash": "wms-261107-v338-2302",
+    "releaseTitle": "WMS v2.6.78 — Audit & Optimasi Halaman Inventory, Lookup Master SKU & Drawer Komparasi",
+    "releaseNotes": [
+      "Perbaikan tabel Komparasi Fisik vs DealPOS per Area (MAP, LIVE, STUDIO, PERMAK, DEFECT) di Drawer Rincian Inventory agar kuantitas fisik live tidak berubah menjadi 0",
+      "Standarisasi 100% lookup Nama Produk dan Size via Master Produk (resolveProductName & resolveProductDisplaySize) di Tabel Stok, Kapasitas Rak & 3D Gudang tanpa anomali Default/SKU",
+      "Penambahan fungsi pengurutan kolom Area (AREA_ASC & AREA_DESC) pada Tabel Stok Inventory",
+      "Sinkronisasi otomatis realtime store Inventory saat perbaikan anomali atau update stok (wms_inventory_updated & wms_stock_updated)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.77",
     "versionCode": 337,
@@ -118,20 +131,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Opsi tampilan Papan Kanban interaktif dengan kolom per koleksi UP",
       "Kartu artikel cover foto GDrive sequence dan info artikel",
       "Dukungan multi-kolom horizontal scroll dan cetak per kolom"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.70",
-    "versionCode": 330,
-    "buildDate": "6 November 2026",
-    "buildHash": "wms-261106-v330-1852",
-    "releaseTitle": "WMS v2.6.70 — Sinkronisasi Foto Trello ke Google Drive CDN & Prioritas GDrive Image",
-    "releaseNotes": [
-      "Script otomatis download foto Trello dan simpan ke Google Drive",
-      "Prioritaskan gdrive_image_url pada TrelloView dan Print Modal",
-      "Subfolder otomatis per koleksi UP di Google Drive",
-      "Counter real-time foto Google Drive di info strip"
     ],
     "minSupportedVersion": "v2.0.0"
   }

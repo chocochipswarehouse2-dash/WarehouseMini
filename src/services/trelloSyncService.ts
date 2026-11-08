@@ -9,6 +9,7 @@
 
 import { getSupabaseClient } from './supabase';
 import { TrelloUpItem } from '../types';
+import baselineBoardLists from '../data/trelloBoardLists.json';
 
 export const DEFAULT_TRELLO_BOARD_ID = 'zCN7H9VD';
 export const DEFAULT_TRELLO_KEY = 'd4d21774e001c525d41aabbbb9b9940a';
@@ -16,6 +17,72 @@ export const DEFAULT_TRELLO_TOKEN = 'ATTA24c8656d86fe6a0499a0e81d8c8f2f0f200ec6e
 
 const LOCAL_STORAGE_CACHE_KEY = 'wms_trello_up_catalog_cache';
 const LOCAL_STORAGE_LAST_SYNC_KEY = 'wms_trello_up_last_sync';
+const LOCAL_STORAGE_LISTS_KEY = 'wms_trello_board_lists_map';
+
+export interface TrelloListMeta {
+  pos: number;
+  index: number;
+  name: string;
+}
+
+/**
+ * Membaca kamus posisi list Trello (urutan horizontal kiri ke kanan).
+ * Menggabungkan baseline kompilasi dengan cache dinamis live dari browser.
+ */
+export function getTrelloListPositionsMap(): Record<string, TrelloListMeta> {
+  const map: Record<string, TrelloListMeta> = { ...(baselineBoardLists as Record<string, TrelloListMeta>) };
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_LISTS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        Object.assign(map, parsed);
+      }
+    }
+  } catch (err) {
+    console.warn('Gagal membaca cache list positions Trello:', err);
+  }
+  return map;
+}
+
+/**
+ * Menyimpan pemetaan posisi list Trello live ke localStorage
+ */
+export function saveTrelloListPositionsMap(lists: any[]): void {
+  try {
+    const sorted = [...(lists || [])].sort((a, b) => (Number(a.pos) || 0) - (Number(b.pos) || 0));
+    const map: Record<string, TrelloListMeta> = {};
+    sorted.forEach((l, idx) => {
+      map[l.id] = {
+        pos: Number(l.pos) || 0,
+        index: idx,
+        name: l.name || ''
+      };
+    });
+    localStorage.setItem(LOCAL_STORAGE_LISTS_KEY, JSON.stringify(map));
+  } catch (err) {
+    console.warn('Gagal menyimpan cache list positions Trello:', err);
+  }
+}
+
+/**
+ * Resolusi posisi dan indeks list Trello berdasarkan listId atau nama list
+ */
+export function resolveTrelloListMeta(listId?: string, listName?: string): TrelloListMeta | null {
+  const map = getTrelloListPositionsMap();
+  if (listId && map[listId]) {
+    return map[listId];
+  }
+  if (listName) {
+    const cleanName = listName.trim().toLowerCase();
+    for (const id in map) {
+      if (map[id].name && map[id].name.trim().toLowerCase() === cleanName) {
+        return map[id];
+      }
+    }
+  }
+  return null;
+}
 
 /**
  * Parsing nama kartu Trello (misal "25289 // Ravelia Top" atau "958 // Quincy Skirt")
@@ -105,24 +172,33 @@ export function getLocalCachedTrelloItems(): { items: TrelloUpItem[]; lastSynced
  */
 export function setLocalCachedTrelloItems(items: TrelloUpItem[]): void {
   try {
-    // Simpan data bersih tanpa raw_json besar agar muat di localStorage
-    const leanItems = items.map(i => ({
-      id: i.id,
-      board_id: i.board_id,
-      list_id: i.list_id,
-      list_name: i.list_name,
-      up_code: i.up_code,
-      publish_date_raw: i.publish_date_raw,
-      card_name: i.card_name,
-      item_code: i.item_code,
-      item_name: i.item_name,
-      qty_note: i.qty_note,
-      sequence_order: i.sequence_order,
-      trello_image_url: i.trello_image_url,
-      gdrive_image_url: i.gdrive_image_url,
-      status: i.status,
-      last_synced_at: i.last_synced_at
-    }));
+    // Simpan data bersih termasuk list_pos dan list_index agar pengurutan selalu stabil
+    const leanItems = items.map(i => {
+      const meta = (i.list_pos === undefined || i.list_index === undefined)
+        ? resolveTrelloListMeta(i.list_id, i.list_name)
+        : null;
+
+      return {
+        id: i.id,
+        board_id: i.board_id,
+        list_id: i.list_id,
+        list_name: i.list_name,
+        up_code: i.up_code,
+        publish_date_raw: i.publish_date_raw,
+        card_name: i.card_name,
+        item_code: i.item_code,
+        item_name: i.item_name,
+        qty_note: i.qty_note,
+        sequence_order: i.sequence_order,
+        pos: i.pos,
+        list_pos: i.list_pos ?? i.raw_json?.list_pos ?? meta?.pos,
+        list_index: i.list_index ?? i.raw_json?.list_index ?? meta?.index,
+        trello_image_url: i.trello_image_url,
+        gdrive_image_url: i.gdrive_image_url,
+        status: i.status,
+        last_synced_at: i.last_synced_at
+      };
+    });
     localStorage.setItem(LOCAL_STORAGE_CACHE_KEY, JSON.stringify(leanItems));
     localStorage.setItem(LOCAL_STORAGE_LAST_SYNC_KEY, new Date().toISOString());
   } catch (err) {
@@ -149,7 +225,16 @@ export async function fetchTrelloUpFromSupabase(): Promise<TrelloUpItem[]> {
       return [];
     }
 
-    return (data || []) as TrelloUpItem[];
+    const items = (data || []).map((row: any) => {
+      const meta = resolveTrelloListMeta(row.list_id, row.list_name);
+      return {
+        ...row,
+        list_pos: row.list_pos ?? row.raw_json?.list_pos ?? meta?.pos,
+        list_index: row.list_index ?? row.raw_json?.list_index ?? meta?.index,
+      };
+    }) as TrelloUpItem[];
+
+    return items;
   } catch (err) {
     console.warn('Exception fetch trello_up_catalog:', err);
     return [];
@@ -318,6 +403,8 @@ export async function syncTrelloUpCatalog(
 ): Promise<{ success: boolean; totalItems: number; supabaseSaved: boolean; items: TrelloUpItem[]; error?: string }> {
   try {
     const { lists, cards } = await fetchLiveTrelloBoard(apiKey, apiToken, boardId);
+    // Simpan posisi live lists Trello ke memory & localStorage
+    saveTrelloListPositionsMap(lists);
     const transformedItems = transformTrelloData(lists, cards);
 
     // Simpan ke Cache Lokal
