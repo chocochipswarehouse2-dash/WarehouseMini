@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.84",
-  "versionCode": 344,
+  "version": "v2.6.85",
+  "versionCode": 345,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v344-1148",
-  "releaseTitle": "WMS v2.6.84 — Gaya Ikon (Icon Pack): Minimalist, Duotone, Sharp & Bold",
+  "buildHash": "wms-261108-v345-1209",
+  "releaseTitle": "WMS v2.6.85 — Fix: Anti-Freeze Ketebalan Ikon & Penjelasan Icon Pack",
   "releaseNotes": [
-    "Pembaruan Icon Pack tema dengan 4 karakter visual nyata: Minimalist Line, Duotone Semi-Fill, Sharp Industrial, dan Bold Stamp",
-    "Pilihan gaya ikon tersedia di Pengaturan & Sesuaikan Tampilan"
+    "Optimalisasi anti-freeze instan 0ms pada ketebalan ikon",
+    "Penyesuaian label akurat Ketebalan Ikon (Light, Regular, Bold)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.84",
+    "versionCode": 344,
+    "buildDate": "8 November 2026",
+    "buildHash": "wms-261108-v344-1148",
+    "releaseTitle": "WMS v2.6.84 — Gaya Ikon (Icon Pack): Minimalist, Duotone, Sharp & Bold",
+    "releaseNotes": [
+      "Pembaruan Icon Pack tema dengan 4 karakter visual nyata: Minimalist Line, Duotone Semi-Fill, Sharp Industrial, dan Bold Stamp",
+      "Pilihan gaya ikon tersedia di Pengaturan & Sesuaikan Tampilan"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.83",
     "versionCode": 343,
@@ -117,19 +129,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Penyatuan generator Order ID Manual Shipment (MS[STORE]-YYMMDD-XXXX) sehingga no_pesanan dan no_transaksi_customer menggunakan 1 kode unik yang 100% identik",
       "Perbaikan modal Update No. Resi Massal, Batalkan Pesanan, Notifikasi WA, dan Email agar selalu menampilkan Order ID utama (#no_pesanan) yang sama persis dengan Rekap Pesanan",
       "Penghapusan tampilan ID Ref ganda hasil auto-generate lama pada kartu/tabel Rekap Pesanan"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.76",
-    "versionCode": 336,
-    "buildDate": "7 November 2026",
-    "buildHash": "wms-261107-v336-0942",
-    "releaseTitle": "WMS v2.6.76 — Perlebar & Perluas Form Input Modal Catatan",
-    "releaseNotes": [
-      "Perlebar ukuran modal Edit/Buat Catatan dari max-w-lg ke max-w-2xl / lg:max-w-3xl agar lebih lega",
-      "Perbesar textarea Isi Catatan (minimal 6 baris / 180px, otomatis bertambah mengikuti jumlah baris teks, dan mendukung resize-y manual)",
-      "Hapus batasan scroll sempit (max-h-48) pada daftar Checklist sehingga seluruh item checkbox tampil penuh dan leluasa"
     ],
     "minSupportedVersion": "v2.0.0"
   }

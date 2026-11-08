@@ -1,12 +1,12 @@
 {
-  "version": "v2.6.84",
-  "versionCode": 344,
+  "version": "v2.6.85",
+  "versionCode": 345,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v344-1148",
-  "releaseTitle": "WMS v2.6.84 — Gaya Ikon (Icon Pack): Minimalist, Duotone, Sharp & Bold",
+  "buildHash": "wms-261108-v345-1209",
+  "releaseTitle": "WMS v2.6.85 — Fix: Anti-Freeze Ketebalan Ikon & Penjelasan Icon Pack",
   "releaseNotes": [
-    "Pembaruan Icon Pack tema dengan 4 karakter visual nyata: Minimalist Line, Duotone Semi-Fill, Sharp Industrial, dan Bold Stamp",
-    "Pilihan gaya ikon tersedia di Pengaturan & Sesuaikan Tampilan"
+    "Optimalisasi anti-freeze instan 0ms pada ketebalan ikon",
+    "Penyesuaian label akurat Ketebalan Ikon (Light, Regular, Bold)"
   ],
   "minSupportedVersion": "v2.0.0"
 }

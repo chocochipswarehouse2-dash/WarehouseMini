@@ -1492,32 +1492,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-extrabold text-slate-700 dark:text-slate-300">
-                      5. Gaya Ikon (Icon Pack)
+                      5. Ketebalan Ikon (Icon Weight)
                     </label>
                     <span className="text-[10px] text-primary-600 dark:text-primary-400 font-bold">
-                      {themeIconStyle === 'duotone'
-                        ? 'Duotone (Dua Warna)'
-                        : themeIconStyle === 'sharp'
-                        ? 'Sharp (Industrial)'
-                        : themeIconStyle === 'light'
-                        ? 'Minimalist (Tipis)'
+                      {themeIconStyle === 'light'
+                        ? 'Light (Tipis 1.25px)'
                         : themeIconStyle === 'bold'
-                        ? 'Bold (Tebal)'
-                        : 'Regular (Default)'}
+                        ? 'Bold (Tebal 2.75px)'
+                        : 'Regular (Standar 2.0px)'}
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     {[
-                      { id: 'light', label: 'Minimalist', desc: 'Tipis & Halus' },
-                      { id: 'regular', label: 'Regular', desc: 'Klasik' },
-                      { id: 'duotone', label: 'Duotone', desc: 'Dua Warna' },
-                      { id: 'sharp', label: 'Sharp', desc: 'Sudut Tegas' },
-                      { id: 'bold', label: 'Bold', desc: 'Tebal Pekat' },
+                      { id: 'light', label: 'Light', desc: 'Tipis (1.25px)' },
+                      { id: 'regular', label: 'Regular', desc: 'Standar (2.0px)' },
+                      { id: 'bold', label: 'Bold', desc: 'Tebal (2.75px)' },
                     ].map((ic) => (
                       <button
                         key={ic.id}
                         type="button"
-                        onClick={() => setThemeIconStyle(ic.id)}
+                        onClick={() => {
+                          document.documentElement.setAttribute('data-theme-icon', ic.id);
+                          try { localStorage.setItem('wms_theme_icon', ic.id); } catch {}
+                          setThemeIconStyle(ic.id);
+                        }}
                         className={`py-2 px-1 text-xs font-bold rounded-xl border transition-all cursor-pointer text-center ${
                           themeIconStyle === ic.id
                             ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 ring-2 ring-primary-500/20'
