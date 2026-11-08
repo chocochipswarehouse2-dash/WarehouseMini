@@ -127,6 +127,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         return { title: 'Roadmap & Fitur', subtitle: 'Pantau & Request Fitur', icon: Map };
       case 'supabase_migration':
         return { title: 'Setup Migrasi Supabase', subtitle: 'Kloning Data & Pindah Database Baru (Bypass Egress)', icon: Database };
+      case 'pengaturan_sistem':
+        return { title: 'Pengaturan Sistem', subtitle: 'Konfigurasi Sistem, Database, Pengguna, Hak Akses & Integrasi', icon: Settings };
       case 'cetak_label':
         return { title: 'Cetak Label', subtitle: 'Label Paket & Label Custom (QR Code Rak)', icon: Printer };
       case 'cetak_barcode':

@@ -747,7 +747,7 @@ export default function App() {
       return;
     }
     handleSelectPage('pengaturan_sistem');
-  }, [session, handleSelectPage, showToast]);
+  }, [session, handleSelectPage]);
 
   useEffect(() => {
     setVisitedPages((prev) => {
@@ -3463,14 +3463,14 @@ export default function App() {
                             isRealtimeConnected={isRealtimeConnected}
                             onOpenUpdateDatabase={() => setIsUpdateDatabaseOpen(true)}
                             onOpenLocationPurge={() => setIsLocationPurgeOpen(true)}
-                            onOpenUpdateModal={() => setIsAppUpdateModalOpen(true)}
+                            onOpenUpdateModal={() => setIsUpdateModalOpen(true)}
                             onNotify={showToast}
                             productCatalog={productDatabase}
                             themeColor={themeColor}
                             setThemeColor={setThemeColor}
                             darkMode={darkMode}
                             setDarkMode={setDarkMode}
-                            onToggleDarkMode={handleToggleDarkMode}
+                            onToggleDarkMode={toggleDarkMode}
                             darkVariant={darkVariant}
                             setDarkVariant={setDarkVariant}
                             themeFont={themeFont}
@@ -3631,14 +3631,14 @@ export default function App() {
                       isRealtimeConnected={isRealtimeConnected}
                       onOpenUpdateDatabase={() => setIsUpdateDatabaseOpen(true)}
                       onOpenLocationPurge={() => setIsLocationPurgeOpen(true)}
-                      onOpenUpdateModal={() => setIsAppUpdateModalOpen(true)}
+                      onOpenUpdateModal={() => setIsUpdateModalOpen(true)}
                       onNotify={showToast}
                       productCatalog={productDatabase}
                       themeColor={themeColor}
                       setThemeColor={setThemeColor}
                       darkMode={darkMode}
                       setDarkMode={setDarkMode}
-                      onToggleDarkMode={handleToggleDarkMode}
+                      onToggleDarkMode={toggleDarkMode}
                       darkVariant={darkVariant}
                       setDarkVariant={setDarkVariant}
                       themeFont={themeFont}

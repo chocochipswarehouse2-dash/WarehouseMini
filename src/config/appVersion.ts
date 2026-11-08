@@ -15,20 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.89",
-  "versionCode": 349,
+  "version": "v2.6.90",
+  "versionCode": 350,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v349-1418",
-  "releaseTitle": "WMS v2.6.89 — Pengaturan Sistem Menjadi Halaman Penuh Terpadu",
+  "buildHash": "wms-261108-v350-1435",
+  "releaseTitle": "WMS v2.6.90 — Hotfix Pengaturan Sistem & Inisialisasi Halaman",
   "releaseNotes": [
-    "Penyatuan menu pengaturan sistem, database, hak akses, dan migrasi",
-    "Pengaturan sistem kini menjadi halaman utama (page) bukan popup modal",
-    "Pembersihan duplikasi menu di sidebar dan integrasi tab Migrasi Supabase"
+    "Perbaikan inisialisasi variabel showToast, toggleDarkMode, dan updateModal pada halaman Pengaturan Sistem",
+    "Sinkronisasi judul dan ikon halaman Pengaturan Sistem di Navbar"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.89",
+    "versionCode": 349,
+    "buildDate": "8 November 2026",
+    "buildHash": "wms-261108-v349-1418",
+    "releaseTitle": "WMS v2.6.89 — Pengaturan Sistem Menjadi Halaman Penuh Terpadu",
+    "releaseNotes": [
+      "Penyatuan menu pengaturan sistem, database, hak akses, dan migrasi",
+      "Pengaturan sistem kini menjadi halaman utama (page) bukan popup modal",
+      "Pembersihan duplikasi menu di sidebar dan integrasi tab Migrasi Supabase"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.88",
     "versionCode": 348,
@@ -112,18 +124,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Kartu yang dihapus/diarsip di Trello asli ikut hilang di WMS",
       "Tombol Sinkronkan Trello manual tetap tersedia",
       "Halaman Trello dibuka tanpa filter UP default"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.81",
-    "versionCode": 341,
-    "buildDate": "8 November 2026",
-    "buildHash": "wms-261108-v341-1053",
-    "releaseTitle": "WMS v2.6.81 — Profil: Auto Logout setelah Ganti Password",
-    "releaseNotes": [
-      "Setelah password diganti, user otomatis logout dalam 3 detik dan wajib login ulang",
-      "Simpan profil & password diverifikasi benar-benar tersimpan di Supabase wms_users"
     ],
     "minSupportedVersion": "v2.0.0"
   }

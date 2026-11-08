@@ -1,13 +1,12 @@
 {
-  "version": "v2.6.89",
-  "versionCode": 349,
+  "version": "v2.6.90",
+  "versionCode": 350,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v349-1418",
-  "releaseTitle": "WMS v2.6.89 — Pengaturan Sistem Menjadi Halaman Penuh Terpadu",
+  "buildHash": "wms-261108-v350-1435",
+  "releaseTitle": "WMS v2.6.90 — Hotfix Pengaturan Sistem & Inisialisasi Halaman",
   "releaseNotes": [
-    "Penyatuan menu pengaturan sistem, database, hak akses, dan migrasi",
-    "Pengaturan sistem kini menjadi halaman utama (page) bukan popup modal",
-    "Pembersihan duplikasi menu di sidebar dan integrasi tab Migrasi Supabase"
+    "Perbaikan inisialisasi variabel showToast, toggleDarkMode, dan updateModal pada halaman Pengaturan Sistem",
+    "Sinkronisasi judul dan ikon halaman Pengaturan Sistem di Navbar"
   ],
   "minSupportedVersion": "v2.0.0"
 }
