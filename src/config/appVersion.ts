@@ -15,19 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.94",
-  "versionCode": 354,
+  "version": "v2.6.95",
+  "versionCode": 355,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v354-1043",
-  "releaseTitle": "WMS v2.6.94 — Hapus Tombol Menu Mengambang Ganda di Seluler & Bubble Live Chat Draggable Saat Ada Pesan Baru",
+  "buildHash": "wms-261108-v355-1204",
+  "releaseTitle": "WMS v2.6.95 — Perbaikan Foto Koleksi UP (Trello) & Auto-Recovery GDrive",
   "releaseNotes": [
-    "Menghapus tombol hamburger mengambang di kanan bawah pada tampilan seluler karena sudah ada tombol menu sticky di bagian atas layar",
-    "Bubble Live Chat kini hanya muncul saat ada pesan baru/belum dibaca dan dapat digeser bebas (draggable) ke posisi mana saja di layar"
+    "Perbaikan bug auto-sync Trello 60 detik yang sebelumnya menimpa cache lokal tanpa gdrive_image_url sehingga foto berubah menjadi No Photo",
+    "Penambahan pewarisan foto lintas UP otomatis untuk kode barang yang sama (misal artikel 251052 & 622289 yang belum dilampiri foto di salah satu UP otomatis mewarisi foto dari UP lain / Katalog Produk)",
+    "Peningkatan komponen TrelloImage dengan lazy loading, referrerPolicy no-referrer, antrean batas request (mencegah error 429 Too Many Requests saat memuat 727 kartu), serta 3-tahap fallback otomatis (Google Drive CDN -> GDrive Thumbnail -> Trello OAuth Blob)",
+    "Penambahan filter cepat Belum Ada Foto dan tombol Pasang/Ganti Foto manual langsung ke Google Drive pada modal detail kartu Trello"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.94",
+    "versionCode": 354,
+    "buildDate": "8 November 2026",
+    "buildHash": "wms-261108-v354-1043",
+    "releaseTitle": "WMS v2.6.94 — Hapus Tombol Menu Mengambang Ganda di Seluler & Bubble Live Chat Draggable Saat Ada Pesan Baru",
+    "releaseNotes": [
+      "Menghapus tombol hamburger mengambang di kanan bawah pada tampilan seluler karena sudah ada tombol menu sticky di bagian atas layar",
+      "Bubble Live Chat kini hanya muncul saat ada pesan baru/belum dibaca dan dapat digeser bebas (draggable) ke posisi mana saja di layar"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.93",
     "versionCode": 353,
@@ -111,19 +125,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseTitle": "WMS v2.6.87 — Hotfix Layar Blank / TDZ showToast pada Inisialisasi App",
     "releaseNotes": [
       "Perbaikan urutan deklarasi hook useCallback showToast di App.tsx yang sempat menyebabkan ReferenceError (layar gelap/blank) saat aplikasi dimuat"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.86",
-    "versionCode": 346,
-    "buildDate": "8 November 2026",
-    "buildHash": "wms-261108-v346-1215",
-    "releaseTitle": "WMS v2.6.86 — Multitasking Multi-Tab & Panel Samping (Khusus Laptop/PC) + Proteksi Operasional HP",
-    "releaseNotes": [
-      "Fitur Multi-Tab Keep-Alive & Panel Samping (Slide-Over / Split) khusus Laptop/PC (>= 1024px) untuk membuka 2 halaman sekaligus (misal Produksi berdampingan dengan Trello UP) tanpa me-reset form/filter",
-      "Proteksi Ketat Operasional HP Seluler (< 1024px): Fitur multi-tab otomatis nonaktif di HP agar layar dan RAM HP 100% aman untuk operasional scanner & lapangan",
-      "Penetapan Rule Permanen #13 di GEMINI.md dan Skill Agent agar seluruh agen mematuhi isolasi Desktop vs Mobile"
     ],
     "minSupportedVersion": "v2.0.0"
   }

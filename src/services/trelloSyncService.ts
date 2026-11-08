@@ -4,11 +4,13 @@
  * =============================================================================
  * Menghubungkan Trello Board (UPLOAD 2026 NEW) ke WMS dan Supabase.
  * Menangani ekstraksi data susunan artikel, kode barang, foto, tanggal tayang,
- * serta sinkronisasi dinamis (reorder, edit, delete, move folder).
+ * pewarisan foto lintas UP untuk kode barang yang sama, serta sinkronisasi dinamis
+ * ke Google Drive & Supabase.
  */
 
 import { getSupabaseClient } from './supabase';
 import { TrelloUpItem } from '../types';
+import { uploadImageToGdrive } from './gdriveUpload';
 import baselineBoardLists from '../data/trelloBoardLists.json';
 
 export const DEFAULT_TRELLO_BOARD_ID = 'zCN7H9VD';
@@ -107,7 +109,21 @@ export function resolveTrelloListMeta(listId?: string, listName?: string): Trell
 }
 
 /**
- * Parsing nama kartu Trello (misal "25289 // Ravelia Top" atau "958 // Quincy Skirt")
+ * Ekstrak kode artikel dasar (misal "622289 (foto hanya ilustrasi)" -> "622289")
+ * Digunakan untuk pencocokan foto lintas UP atau dari Katalog Produk.
+ */
+export function extractBaseItemCode(raw?: string): string {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  const codeMatch = trimmed.match(/^(\d{3,8}[A-Za-z]?)\b/);
+  if (codeMatch) {
+    return codeMatch[1].toUpperCase();
+  }
+  return trimmed.toUpperCase();
+}
+
+/**
+ * Parsing nama kartu Trello (misal "25289 // Ravelia Top", "958 - Quincy Skirt", atau "622289 (foto hanya ilustrasi)")
  */
 export function parseCardName(cardName: string): { itemCode: string; itemName: string; qtyNote?: string } {
   if (!cardName) return { itemCode: '', itemName: '' };
@@ -142,6 +158,16 @@ export function parseCardName(cardName: string): { itemCode: string; itemName: s
     };
   }
 
+  // Jika dimulai dengan kode angka diikuti spasi/kurung (misal "622289 (foto hanya ilustrasi)")
+  const leadingCodeMatch = cleanRaw.match(/^(\d{4,8}[A-Za-z]?)\s+(.+)$/);
+  if (leadingCodeMatch) {
+    return {
+      itemCode: leadingCodeMatch[1].trim(),
+      itemName: leadingCodeMatch[2].trim(),
+      qtyNote
+    };
+  }
+
   return {
     itemCode: cleanRaw,
     itemName: cleanRaw,
@@ -171,6 +197,148 @@ export function parseListName(listName: string): { upCode: string; publishDateRa
 }
 
 /**
+ * Ambil kamus foto manual dari Katalog Produk lokal bila ada
+ */
+function getManualCatalogPhotosByCode(): Map<string, string> {
+  const map = new Map<string, string>();
+  try {
+    const raw = localStorage.getItem('wms_katalog_manual_data');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        for (const [key, val] of Object.entries(parsed as Record<string, any>)) {
+          const photo = val?.imageUrl || val?.photoUrl || val?.foto;
+          if (photo && typeof photo === 'string') {
+            const base = extractBaseItemCode(key);
+            if (base) map.set(base, photo);
+          }
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return map;
+}
+
+/**
+ * Perkaya daftar TrelloUpItem dengan:
+ * 1. Mempertahankan `gdrive_image_url` yang sudah ada di Supabase / cache lokal untuk kartu yang sama
+ *    (kecuali cover attachment di Trello berubah ke ID baru).
+ * 2. Pewarisan foto lintas UP berdasarkan `item_code` yang sama (jika sebuah kartu di UP lain lupa diberi foto,
+ *    otomatis mewarisi foto dari artikel berkode sama di UP lain atau Katalog Produk).
+ */
+export function enrichTrelloItemsWithPhotos(
+  items: TrelloUpItem[],
+  referenceItems: TrelloUpItem[] = []
+): TrelloUpItem[] {
+  const refById = new Map<string, TrelloUpItem>();
+  const donorByCode = new Map<string, { gdrive_image_url?: string; gdrive_file_id?: string; gdrive_folder_name?: string; trello_image_url?: string }>();
+
+  const registerDonor = (row: TrelloUpItem) => {
+    const code = extractBaseItemCode(row.item_code || row.card_name);
+    if (!code || code.length < 3) return;
+    const existing = donorByCode.get(code);
+    if (row.gdrive_image_url) {
+      donorByCode.set(code, {
+        gdrive_image_url: row.gdrive_image_url,
+        gdrive_file_id: row.gdrive_file_id || existing?.gdrive_file_id,
+        gdrive_folder_name: row.gdrive_folder_name || existing?.gdrive_folder_name,
+        trello_image_url: row.trello_image_url || existing?.trello_image_url,
+      });
+    } else if (row.trello_image_url && !existing?.gdrive_image_url && !existing?.trello_image_url) {
+      donorByCode.set(code, {
+        trello_image_url: row.trello_image_url,
+      });
+    }
+  };
+
+  for (const ref of referenceItems) {
+    if (ref?.id) refById.set(ref.id, ref);
+    registerDonor(ref);
+  }
+  for (const item of items) {
+    registerDonor(item);
+  }
+
+  const manualCatalogMap = getManualCatalogPhotosByCode();
+
+  // Pass 1: Pertahankan GDrive URL per ID kartu (selama attachment cover tidak diganti ke file berbeda)
+  const pass1 = items.map((item) => {
+    const prev = refById.get(item.id);
+    let gdriveUrl = item.gdrive_image_url;
+    let gdriveFileId = item.gdrive_file_id;
+    let gdriveFolder = item.gdrive_folder_name;
+    let trelloUrl = item.trello_image_url;
+
+    if (!gdriveUrl && prev?.gdrive_image_url) {
+      const attachmentChanged =
+        item.trello_attachment_id &&
+        prev.trello_attachment_id &&
+        item.trello_attachment_id !== prev.trello_attachment_id;
+      if (!attachmentChanged) {
+        gdriveUrl = prev.gdrive_image_url;
+        gdriveFileId = prev.gdrive_file_id;
+        gdriveFolder = prev.gdrive_folder_name;
+      }
+    }
+    if (!trelloUrl && prev?.trello_image_url) {
+      trelloUrl = prev.trello_image_url;
+    }
+
+    const updated: TrelloUpItem = {
+      ...item,
+      gdrive_image_url: gdriveUrl,
+      gdrive_file_id: gdriveFileId,
+      gdrive_folder_name: gdriveFolder,
+      trello_image_url: trelloUrl,
+    };
+    registerDonor(updated);
+    return updated;
+  });
+
+  // Pass 2: Wariskan foto lintas UP untuk kode artikel yang sama jika kartu ini tidak punya foto
+  return pass1.map((item) => {
+    if (item.gdrive_image_url) return item;
+    const code = extractBaseItemCode(item.item_code || item.card_name);
+    if (!code) return item;
+
+    const donor = donorByCode.get(code);
+    if (donor) {
+      // Jika kartu ini sendiri tidak punya attachment di Trello, atau belum punya gdrive_image_url tapi donor punya:
+      // Catatan: jika kartu punya trello_image_url sendiri yang berbeda, jangan timpa dengan foto kode lain kecuali memang kode barangnya identik
+      if (!item.trello_image_url && (donor.gdrive_image_url || donor.trello_image_url)) {
+        return {
+          ...item,
+          gdrive_image_url: donor.gdrive_image_url || item.gdrive_image_url,
+          gdrive_file_id: donor.gdrive_file_id || item.gdrive_file_id,
+          gdrive_folder_name: donor.gdrive_folder_name || item.gdrive_folder_name,
+          trello_image_url: item.trello_image_url || donor.trello_image_url,
+        };
+      }
+      if (!item.gdrive_image_url && donor.gdrive_image_url && (!item.trello_image_url || item.trello_image_url === donor.trello_image_url)) {
+        return {
+          ...item,
+          gdrive_image_url: donor.gdrive_image_url,
+          gdrive_file_id: donor.gdrive_file_id || item.gdrive_file_id,
+          gdrive_folder_name: donor.gdrive_folder_name || item.gdrive_folder_name,
+        };
+      }
+    }
+
+    const catalogPhoto = manualCatalogMap.get(code);
+    if (!item.gdrive_image_url && !item.trello_image_url && catalogPhoto) {
+      return {
+        ...item,
+        gdrive_image_url: catalogPhoto,
+      };
+    }
+
+    return item;
+  });
+}
+
+/**
  * Ambil data dari cache lokal (cepat saat pertama kali render)
  */
 export function getLocalCachedTrelloItems(): { items: TrelloUpItem[]; lastSynced: string | null } {
@@ -180,7 +348,7 @@ export function getLocalCachedTrelloItems(): { items: TrelloUpItem[]; lastSynced
     if (raw) {
       const items = JSON.parse(raw);
       if (Array.isArray(items) && items.length > 0) {
-        return { items, lastSynced };
+        return { items: enrichTrelloItemsWithPhotos(items, items), lastSynced };
       }
     }
   } catch (err) {
@@ -194,8 +362,11 @@ export function getLocalCachedTrelloItems(): { items: TrelloUpItem[]; lastSynced
  */
 export function setLocalCachedTrelloItems(items: TrelloUpItem[]): void {
   try {
-    // Simpan data bersih termasuk list_pos dan list_index agar pengurutan selalu stabil
-    const leanItems = items.map(i => {
+    const existing = getLocalCachedTrelloItems().items;
+    const enriched = enrichTrelloItemsWithPhotos(items, existing);
+
+    // Simpan data bersih termasuk list_pos, list_index, dan gdrive_image_url agar foto & urutan selalu stabil
+    const leanItems = enriched.map(i => {
       const meta = (i.list_pos === undefined || i.list_index === undefined)
         ? resolveTrelloListMeta(i.list_id, i.list_name)
         : null;
@@ -215,8 +386,11 @@ export function setLocalCachedTrelloItems(items: TrelloUpItem[]): void {
         pos: i.pos,
         list_pos: i.list_pos ?? i.raw_json?.list_pos ?? meta?.pos,
         list_index: i.list_index ?? i.raw_json?.list_index ?? meta?.index,
+        trello_attachment_id: i.trello_attachment_id,
         trello_image_url: i.trello_image_url,
+        gdrive_file_id: i.gdrive_file_id,
         gdrive_image_url: i.gdrive_image_url,
+        gdrive_folder_name: i.gdrive_folder_name,
         status: i.status,
         last_synced_at: i.last_synced_at
       };
@@ -247,16 +421,19 @@ export async function fetchTrelloUpFromSupabase(): Promise<TrelloUpItem[]> {
       return [];
     }
 
-    const items = (data || []).map((row: any) => {
+    const rawItems = (data || []).map((row: any) => {
       const meta = resolveTrelloListMeta(row.list_id, row.list_name);
+      const parsed = parseCardName(row.card_name || '');
       return {
         ...row,
+        item_code: parsed.itemCode || row.item_code,
+        item_name: parsed.itemName || row.item_name,
         list_pos: row.list_pos ?? row.raw_json?.list_pos ?? meta?.pos,
         list_index: row.list_index ?? row.raw_json?.list_index ?? meta?.index,
       };
     }) as TrelloUpItem[];
 
-    return items;
+    return enrichTrelloItemsWithPhotos(rawItems, rawItems);
   } catch (err) {
     console.warn('Exception fetch trello_up_catalog:', err);
     return [];
@@ -305,8 +482,6 @@ export async function fetchLiveTrelloBoard(
 export function transformTrelloData(lists: any[], cards: any[]): TrelloUpItem[] {
   // Urutkan lists secara ketat sesuai posisi horizontal di papan Trello asli (l.pos ascending)
   const sortedLists = [...(lists || [])].sort((a, b) => (Number(a.pos) || 0) - (Number(b.pos) || 0));
-  const listMap = new Map<string, any>();
-  sortedLists.forEach((l, idx) => listMap.set(l.id, { ...l, index: idx }));
 
   // Kelompokkan kartu per list dan urutkan berdasarkan pos kartu di dalam list
   const cardsByList = new Map<string, any[]>();
@@ -320,7 +495,8 @@ export function transformTrelloData(lists: any[], cards: any[]): TrelloUpItem[] 
   const results: TrelloUpItem[] = [];
 
   // Iterasi persis sesuai urutan list di papan Trello asli (Kiri ke Kanan)
-  for (const listInfo of sortedLists) {
+  for (let listIdx = 0; listIdx < sortedLists.length; listIdx++) {
+    const listInfo = sortedLists[listIdx];
     const listCards = cardsByList.get(listInfo.id);
     if (!listCards || listCards.length === 0) continue;
 
@@ -379,6 +555,12 @@ export function transformTrelloData(lists: any[], cards: any[]): TrelloUpItem[] 
             photoUrl = chosenAtt.url;
           }
         }
+      } else if (c.cover?.scaled && Array.isArray(c.cover.scaled) && c.cover.scaled.length > 0) {
+        // Fallback jika cover diambil dari scaled cover object Trello
+        const bestScaled = c.cover.scaled.find((s: any) => s.width >= 600) || c.cover.scaled[c.cover.scaled.length - 1];
+        if (bestScaled?.url) {
+          photoUrl = bestScaled.url;
+        }
       }
 
       results.push({
@@ -396,7 +578,7 @@ export function transformTrelloData(lists: any[], cards: any[]): TrelloUpItem[] 
         sequence_order: idx + 1,
         pos: c.pos,
         list_pos: listInfo.pos,
-        list_index: listInfo.index,
+        list_index: listIdx,
         trello_attachment_id: attachmentId,
         trello_image_url: photoUrl,
         status: 'ACTIVE',
@@ -405,7 +587,7 @@ export function transformTrelloData(lists: any[], cards: any[]): TrelloUpItem[] 
           labels: c.labels,
           attachmentsCount: c.attachments?.length || 0,
           list_pos: listInfo.pos,
-          list_index: listInfo.index
+          list_index: listIdx
         },
         last_synced_at: new Date().toISOString()
       });
@@ -416,7 +598,8 @@ export function transformTrelloData(lists: any[], cards: any[]): TrelloUpItem[] 
 }
 
 /**
- * Sinkronisasi penuh: Tarik dari Trello, simpan ke Supabase, dan perbarui cache lokal
+ * Sinkronisasi penuh: Tarik dari Trello, gabungkan `gdrive_image_url` dari Supabase/cache,
+ * simpan ke Supabase, dan perbarui cache lokal tanpa menghapus URL Google Drive.
  */
 export async function syncTrelloUpCatalog(
   apiKey: string = DEFAULT_TRELLO_KEY,
@@ -427,7 +610,13 @@ export async function syncTrelloUpCatalog(
     const { lists, cards } = await fetchLiveTrelloBoard(apiKey, apiToken, boardId);
     // Simpan posisi live lists Trello ke memory & localStorage
     saveTrelloListPositionsMap(lists);
-    const transformedItems = transformTrelloData(lists, cards);
+    const rawTransformed = transformTrelloData(lists, cards);
+
+    // Ambil referensi item yang sudah ada (dari cache lokal & Supabase) agar gdrive_image_url tidak pernah hilang!
+    const cachedItems = getLocalCachedTrelloItems().items;
+    const sbExistingItems = await fetchTrelloUpFromSupabase();
+    const combinedRefs = [...sbExistingItems, ...cachedItems];
+    const transformedItems = enrichTrelloItemsWithPhotos(rawTransformed, combinedRefs);
 
     // Deteksi perubahan (edit / tambah / pindah list / geser urutan / ganti cover / hapus)
     const signature = computeTrelloSignature(lists, transformedItems);
@@ -435,7 +624,7 @@ export async function syncTrelloUpCatalog(
     try { previousSignature = localStorage.getItem(LOCAL_STORAGE_SIGNATURE_KEY) || ''; } catch { /* ignore */ }
     const changed = signature !== previousSignature;
 
-    // Simpan ke Cache Lokal
+    // Simpan ke Cache Lokal (dengan gdrive_image_url yang sudah utuh)
     setLocalCachedTrelloItems(transformedItems);
 
     if (!changed) {
@@ -450,26 +639,38 @@ export async function syncTrelloUpCatalog(
       try {
         const chunkSize = 100;
         for (let i = 0; i < transformedItems.length; i += chunkSize) {
-          const chunk = transformedItems.slice(i, i + chunkSize).map(item => ({
-            id: item.id,
-            board_id: item.board_id,
-            list_id: item.list_id,
-            list_name: item.list_name,
-            up_code: item.up_code,
-            publish_date_raw: item.publish_date_raw,
-            card_name: item.card_name,
-            item_code: item.item_code,
-            item_name: item.item_name,
-            qty_note: item.qty_note,
-            description: item.description,
-            sequence_order: item.sequence_order,
-            pos: item.pos,
-            trello_attachment_id: item.trello_attachment_id,
-            trello_image_url: item.trello_image_url,
-            status: item.status,
-            raw_json: item.raw_json,
-            last_synced_at: item.last_synced_at
-          }));
+          const chunk = transformedItems.slice(i, i + chunkSize).map(item => {
+            const payload: Record<string, any> = {
+              id: item.id,
+              board_id: item.board_id,
+              list_id: item.list_id,
+              list_name: item.list_name,
+              up_code: item.up_code,
+              publish_date_raw: item.publish_date_raw,
+              card_name: item.card_name,
+              item_code: item.item_code,
+              item_name: item.item_name,
+              qty_note: item.qty_note,
+              description: item.description,
+              sequence_order: item.sequence_order,
+              pos: item.pos,
+              trello_attachment_id: item.trello_attachment_id,
+              trello_image_url: item.trello_image_url,
+              status: item.status,
+              raw_json: item.raw_json,
+              last_synced_at: item.last_synced_at
+            };
+            if (item.gdrive_image_url) {
+              payload.gdrive_image_url = item.gdrive_image_url;
+            }
+            if (item.gdrive_file_id) {
+              payload.gdrive_file_id = item.gdrive_file_id;
+            }
+            if (item.gdrive_folder_name) {
+              payload.gdrive_folder_name = item.gdrive_folder_name;
+            }
+            return payload;
+          });
 
           const { error: upsertError } = await supabase
             .from('trello_up_catalog')
@@ -532,5 +733,140 @@ export async function syncTrelloUpCatalog(
       archivedCount: 0,
       error: err.message || 'Gagal sinkronisasi data Trello'
     };
+  }
+}
+
+/**
+ * Konversi Blob menjadi Data URL Base64
+ */
+function blobToBase64DataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string') resolve(reader.result);
+      else reject(new Error('Gagal membaca blob sebagai base64'));
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
+ * Sinkronisasi otomatis foto kartu Trello baru yang sudah memiliki `trello_image_url`
+ * tetapi belum diunggah ke Google Drive (`gdrive_image_url` kosong).
+ */
+export async function syncMissingTrelloPhotosToGdrive(
+  items: TrelloUpItem[],
+  onProgress?: (done: number, total: number, updatedItem: TrelloUpItem) => void
+): Promise<{ syncedCount: number; updatedItems: TrelloUpItem[] }> {
+  const candidates = items.filter(
+    (i) => !i.gdrive_image_url && !!i.trello_image_url && i.trello_image_url.includes('trello.com')
+  );
+
+  if (candidates.length === 0) {
+    return { syncedCount: 0, updatedItems: items };
+  }
+
+  const supabase = getSupabaseClient();
+  const updatedMap = new Map<string, Partial<TrelloUpItem>>();
+  let syncedCount = 0;
+
+  for (let idx = 0; idx < candidates.length; idx++) {
+    const item = candidates[idx];
+    try {
+      const authHeader = `OAuth oauth_consumer_key="${DEFAULT_TRELLO_KEY}", oauth_token="${DEFAULT_TRELLO_TOKEN}"`;
+      const response = await fetch(item.trello_image_url!, {
+        headers: { Authorization: authHeader },
+      });
+      if (!response.ok) continue;
+
+      const blob = await response.blob();
+      const base64DataUrl = await blobToBase64DataUrl(blob);
+      const safeName = `${item.up_code}_${item.sequence_order}_${item.item_code}`
+        .replace(/[^a-zA-Z0-9_-]/g, '_')
+        .slice(0, 80);
+
+      const uploadRes = await uploadImageToGdrive(base64DataUrl, `${safeName}.jpg`);
+      if (uploadRes.success && uploadRes.url) {
+        const patch: Partial<TrelloUpItem> = {
+          gdrive_image_url: uploadRes.url,
+          gdrive_file_id: uploadRes.fileId,
+          gdrive_folder_name: item.list_name || item.up_code,
+        };
+        updatedMap.set(item.id, patch);
+        syncedCount++;
+
+        if (supabase) {
+          await supabase
+            .from('trello_up_catalog')
+            .update(patch)
+            .eq('id', item.id);
+        }
+
+        onProgress?.(syncedCount, candidates.length, { ...item, ...patch });
+      }
+    } catch (err) {
+      console.warn('Gagal auto-upload foto Trello ke GDrive:', item.card_name, err);
+    }
+  }
+
+  const merged = enrichTrelloItemsWithPhotos(
+    items.map((i) => (updatedMap.has(i.id) ? { ...i, ...updatedMap.get(i.id)! } : i)),
+    items
+  );
+  setLocalCachedTrelloItems(merged);
+  return { syncedCount, updatedItems: merged };
+}
+
+/**
+ * Upload foto manual dari komputer/HP untuk kartu Trello yang belum memiliki foto di Trello asli
+ * (misal kartu kode barang yang belum dilampiri foto oleh tim desain).
+ * Menyimpan foto ke Google Drive dan mengupdate semua kartu dengan kode artikel yang sama di Supabase.
+ */
+export async function uploadManualPhotoForTrelloItem(
+  targetItem: TrelloUpItem,
+  base64DataUrl: string
+): Promise<{ success: boolean; gdriveUrl?: string; error?: string }> {
+  try {
+    const safeName = `Manual_${targetItem.up_code}_${targetItem.item_code || targetItem.id}`
+      .replace(/[^a-zA-Z0-9_-]/g, '_')
+      .slice(0, 80);
+
+    const res = await uploadImageToGdrive(base64DataUrl, `${safeName}.jpg`);
+    if (!res.success || !res.url) {
+      return { success: false, error: res.error || 'Gagal mengunggah foto ke Google Drive' };
+    }
+
+    const supabase = getSupabaseClient();
+    const baseCode = extractBaseItemCode(targetItem.item_code || targetItem.card_name);
+
+    if (supabase) {
+      // Update kartu ini secara langsung
+      await supabase
+        .from('trello_up_catalog')
+        .update({
+          gdrive_image_url: res.url,
+          gdrive_file_id: res.fileId || null,
+          gdrive_folder_name: targetItem.list_name || targetItem.up_code || null,
+        })
+        .eq('id', targetItem.id);
+
+      // Jika ada kartu lain dengan item_code persis sama yang juga belum punya gdrive_image_url, lengkapi sekaligus
+      if (baseCode && baseCode.length >= 4) {
+        await supabase
+          .from('trello_up_catalog')
+          .update({
+            gdrive_image_url: res.url,
+            gdrive_file_id: res.fileId || null,
+            gdrive_folder_name: targetItem.list_name || targetItem.up_code || null,
+          })
+          .eq('item_code', targetItem.item_code)
+          .is('gdrive_image_url', null);
+      }
+    }
+
+    return { success: true, gdriveUrl: res.url };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Gagal menyimpan foto manual' };
   }
 }

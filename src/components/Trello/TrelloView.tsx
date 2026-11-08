@@ -20,6 +20,8 @@ import {
   X,
   Loader2,
   Filter,
+  Camera,
+  ImageOff,
 } from 'lucide-react';
 import { TrelloUpItem, UserSession, ProductItem } from '../../types';
 import {
@@ -29,6 +31,10 @@ import {
   syncTrelloUpCatalog,
   resolveTrelloListMeta,
   resetTrelloSyncSignature,
+  syncMissingTrelloPhotosToGdrive,
+  uploadManualPhotoForTrelloItem,
+  extractBaseItemCode,
+  enrichTrelloItemsWithPhotos,
   TRELLO_AUTO_SYNC_INTERVAL_MS,
   DEFAULT_TRELLO_BOARD_ID,
 } from '../../services/trelloSyncService';
@@ -64,12 +70,70 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
   const [kanbanDensity, setKanbanDensity] = useState<'compact' | 'normal' | 'large'>('compact');
   const [sortMode, setSortMode] = useState<'trello' | 'newest'>('trello');
   const [isFilterOpen, setIsFilterOpen] = useState<boolean>(true);
+  const [onlyMissingPhoto, setOnlyMissingPhoto] = useState<boolean>(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
   const [activePhotoModal, setActivePhotoModal] = useState<TrelloUpItem | null>(null);
+  const [isUploadingManualPhoto, setIsUploadingManualPhoto] = useState<boolean>(false);
+  const [gdriveBgSyncStatus, setGdriveBgSyncStatus] = useState<{ done: number; total: number } | null>(null);
+  const manualPhotoInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  // Kamus foto dari productCatalog (jika artikel sudah punya foto di Katalog Produk WMS)
+  const catalogPhotoByBaseCode = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of productCatalog) {
+      const rec = p as Record<string, any>;
+      const img = typeof rec.imageUrl === 'string' ? rec.imageUrl : typeof rec.foto === 'string' ? rec.foto : '';
+      const skuStr = typeof rec.sku === 'string' ? rec.sku : typeof rec.kode === 'string' ? rec.kode : '';
+      if (img && skuStr) {
+        const base = extractBaseItemCode(skuStr);
+        if (base) map.set(base, img);
+      }
+    }
+    return map;
+  }, [productCatalog]);
+
+  const applyCatalogFallback = React.useCallback(
+    (list: TrelloUpItem[]): TrelloUpItem[] => {
+      const enriched = enrichTrelloItemsWithPhotos(list, list);
+      if (catalogPhotoByBaseCode.size === 0) return enriched;
+      return enriched.map((item) => {
+        if (item.gdrive_image_url || item.trello_image_url) return item;
+        const base = extractBaseItemCode(item.item_code || item.card_name);
+        const catPhoto = base ? catalogPhotoByBaseCode.get(base) : undefined;
+        return catPhoto ? { ...item, gdrive_image_url: catPhoto } : item;
+      });
+    },
+    [catalogPhotoByBaseCode]
+  );
 
   // Ambil data dari Supabase / Trello
   const syncInFlightRef = React.useRef(false);
+  const gdriveSyncInFlightRef = React.useRef(false);
   const [isAutoSyncing, setIsAutoSyncing] = useState<boolean>(false);
+
+  const triggerBackgroundGdrivePhotoSync = React.useCallback((currentItems: TrelloUpItem[]) => {
+    if (gdriveSyncInFlightRef.current) return;
+    const missingGdriveWithTrello = currentItems.filter(
+      (i) => !i.gdrive_image_url && !!i.trello_image_url && i.trello_image_url.includes('trello.com')
+    );
+    if (missingGdriveWithTrello.length === 0) return;
+
+    gdriveSyncInFlightRef.current = true;
+    setGdriveBgSyncStatus({ done: 0, total: missingGdriveWithTrello.length });
+    syncMissingTrelloPhotosToGdrive(currentItems, (done, total, updatedItem) => {
+      setGdriveBgSyncStatus({ done, total });
+      setItems((prev) =>
+        prev.map((p) => (p.id === updatedItem.id ? { ...p, ...updatedItem } : p))
+      );
+    })
+      .then(({ updatedItems }) => {
+        setItems(applyCatalogFallback(updatedItems));
+      })
+      .finally(() => {
+        gdriveSyncInFlightRef.current = false;
+        setGdriveBgSyncStatus(null);
+      });
+  }, [applyCatalogFallback]);
 
   /** Tarik live Trello → Supabase. silent = auto-sync berkala (tanpa toast kecuali ada perubahan). */
   const runTrelloSync = async (silent: boolean) => {
@@ -80,12 +144,17 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
       if (!silent) resetTrelloSyncSignature();
       const result = await syncTrelloUpCatalog();
       if (result.success) {
-        if (result.changed) {
-          // Muat ulang dari Supabase agar kolom tambahan (gdrive_image_url, dll) tetap utuh
+        if (result.changed || !silent) {
+          // Muat ulang dari Supabase & gabungkan dengan hasil transformasi agar gdrive_image_url selalu utuh
           const reloaded = await fetchTrelloUpFromSupabase();
-          const next = reloaded.length > 0 ? reloaded : result.items;
+          const merged = enrichTrelloItemsWithPhotos(
+            result.items.length > 0 ? result.items : reloaded,
+            reloaded
+          );
+          const next = applyCatalogFallback(merged.length > 0 ? merged : result.items);
           setItems(next);
           setLocalCachedTrelloItems(next);
+          triggerBackgroundGdrivePhotoSync(next);
         }
         setLastSynced(new Date().toISOString());
         if (!silent) {
@@ -113,9 +182,11 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
       // 1. Tampilkan cepat dari Supabase
       const sbItems = await fetchTrelloUpFromSupabase();
       if (sbItems && sbItems.length > 0) {
-        setItems(sbItems);
-        setLocalCachedTrelloItems(sbItems);
-        setLastSynced(sbItems[0]?.last_synced_at || new Date().toISOString());
+        const enriched = applyCatalogFallback(sbItems);
+        setItems(enriched);
+        setLocalCachedTrelloItems(enriched);
+        setLastSynced(enriched[0]?.last_synced_at || new Date().toISOString());
+        triggerBackgroundGdrivePhotoSync(enriched);
       }
     } catch (err) {
       console.warn('Load Supabase Trello gagal:', err);
@@ -208,10 +279,59 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
     });
   }, [items, sortMode]);
 
-  // Jumlah foto yang sudah tersimpan di Google Drive
+  // Jumlah foto yang sudah tersimpan di Google Drive & jumlah kartu tanpa foto sama sekali
   const gdriveSyncedCount = useMemo(() => {
-    return items.filter((i) => !!i.gdrive_image_url).length;
+    return items.filter((i) => !!(i.gdrive_image_url || i.trello_image_url)).length;
   }, [items]);
+
+  const missingPhotoCount = useMemo(() => {
+    return items.filter((i) => !i.gdrive_image_url && !i.trello_image_url).length;
+  }, [items]);
+
+  // Upload foto manual untuk kartu yang belum ada lampiran foto di Trello
+  const handleManualPhotoSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !activePhotoModal) return;
+
+    setIsUploadingManualPhoto(true);
+    try {
+      const reader = new FileReader();
+      const base64DataUrl: string = await new Promise((resolve, reject) => {
+        reader.onloadend = () =>
+          typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Gagal membaca file'));
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const res = await uploadManualPhotoForTrelloItem(activePhotoModal, base64DataUrl);
+      if (res.success && res.gdriveUrl) {
+        const targetBaseCode = extractBaseItemCode(activePhotoModal.item_code || activePhotoModal.card_name);
+        setItems((prev) => {
+          const updated = prev.map((it) => {
+            if (it.id === activePhotoModal.id) {
+              return { ...it, gdrive_image_url: res.gdriveUrl };
+            }
+            const itBase = extractBaseItemCode(it.item_code || it.card_name);
+            if (targetBaseCode && targetBaseCode.length >= 4 && itBase === targetBaseCode && !it.gdrive_image_url) {
+              return { ...it, gdrive_image_url: res.gdriveUrl };
+            }
+            return it;
+          });
+          setLocalCachedTrelloItems(updated);
+          return updated;
+        });
+        setActivePhotoModal((prev) => (prev ? { ...prev, gdrive_image_url: res.gdriveUrl } : null));
+        onNotify?.(`Foto untuk artikel ${activePhotoModal.item_code} berhasil disimpan ke Google Drive & Supabase!`, 'success');
+      } else {
+        onNotify?.(res.error || 'Gagal mengunggah foto ke Google Drive', 'error');
+      }
+    } catch (err: any) {
+      onNotify?.(err?.message || 'Gagal membaca file foto', 'error');
+    } finally {
+      setIsUploadingManualPhoto(false);
+    }
+  };
 
   // Default: tampilkan SEMUA UP tanpa filter (user memilih filter sendiri bila perlu)
 
@@ -223,6 +343,10 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
       list = list.filter((i) => set.has(i.list_name) || set.has(i.up_code));
     } else if (selectedListNames.includes('__NONE__')) {
       return [];
+    }
+
+    if (onlyMissingPhoto) {
+      list = list.filter((i) => !i.gdrive_image_url && !i.trello_image_url);
     }
 
     if (deferredSearch.trim()) {
@@ -237,7 +361,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
     }
 
     return [...list].sort((a, b) => a.sequence_order - b.sequence_order);
-  }, [items, selectedListNames, deferredSearch]);
+  }, [items, selectedListNames, onlyMissingPhoto, deferredSearch]);
 
   // Kelompokkan items untuk Papan Kanban
   const kanbanColumns = useMemo(() => {
@@ -383,9 +507,30 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
             </span>
             <span className="text-slate-300 dark:text-slate-700">•</span>
             <span className="inline-flex items-center gap-1 font-bold text-emerald-600 dark:text-emerald-400">
-              <span>Foto Google Drive:</span>
-              <span className="font-mono font-black">{gdriveSyncedCount} Pcs</span>
+              <span>Foto Tersedia:</span>
+              <span className="font-mono font-black">{gdriveSyncedCount}/{items.length} Pcs</span>
             </span>
+            {gdriveBgSyncStatus && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <span>Backup GDrive ({gdriveBgSyncStatus.done}/{gdriveBgSyncStatus.total})</span>
+              </span>
+            )}
+            {missingPhotoCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setOnlyMissingPhoto((v) => !v)}
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold transition cursor-pointer border ${
+                  onlyMissingPhoto
+                    ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
+                    : 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60 hover:bg-amber-100'
+                }`}
+                title="Klik untuk memfilter kartu yang belum memiliki foto di Trello"
+              >
+                <ImageOff className="w-3 h-3" />
+                <span>{onlyMissingPhoto ? `Filter Aktif: Tanpa Foto (${missingPhotoCount})` : `${missingPhotoCount} Belum Ada Foto di Trello`}</span>
+              </button>
+            )}
             {lastSynced && (
               <span className="text-slate-400">
                 (Update: {new Date(lastSynced).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })})
@@ -747,6 +892,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                       >
                         <TrelloImage
                           src={item.gdrive_image_url || item.trello_image_url}
+                          fallbackSrc={item.trello_image_url}
                           alt={item.card_name}
                           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                           fallbackText="No Photo"
@@ -832,6 +978,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
               >
                 <TrelloImage
                   src={item.gdrive_image_url || item.trello_image_url}
+                  fallbackSrc={item.trello_image_url}
                   alt={item.card_name}
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   fallbackText="No Photo"
@@ -897,6 +1044,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                       >
                         <TrelloImage
                           src={item.gdrive_image_url || item.trello_image_url}
+                          fallbackSrc={item.trello_image_url}
                           alt={item.card_name}
                           className="w-full h-full object-cover"
                           fallbackText="-"
@@ -936,6 +1084,15 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
         </div>
       )}
 
+      {/* Hidden File Input for Manual Photo Upload */}
+      <input
+        ref={manualPhotoInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleManualPhotoSelected}
+      />
+
       {/* 5. Modal Lightbox Foto Detail */}
       {activePhotoModal && (
         <div
@@ -946,42 +1103,62 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
             onClick={(e) => e.stopPropagation()}
             className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200 dark:border-slate-800"
           >
-            <div className="p-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+            <div className="p-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <span className="font-mono font-black text-sm text-slate-900 dark:text-white">
                   #{activePhotoModal.sequence_order} • {activePhotoModal.item_code}
                 </span>
                 <p className="text-xs text-slate-500 truncate">{activePhotoModal.item_name}</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setActivePhotoModal(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  disabled={isUploadingManualPhoto}
+                  onClick={() => manualPhotoInputRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-indigo-50 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-800/60 hover:bg-indigo-100 transition cursor-pointer disabled:opacity-50"
+                  title="Unggah / Pasang Foto Produk ke Google Drive"
+                >
+                  {isUploadingManualPhoto ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Camera className="w-3.5 h-3.5" />
+                  )}
+                  <span>{isUploadingManualPhoto ? 'Mengunggah...' : activePhotoModal.gdrive_image_url || activePhotoModal.trello_image_url ? 'Ganti Foto' : 'Pasang Foto'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActivePhotoModal(null)}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
-            <div className="aspect-square w-full bg-slate-950 flex items-center justify-center overflow-hidden">
+            <div className="aspect-square w-full bg-slate-950 flex items-center justify-center overflow-hidden relative">
               <TrelloImage
                 src={activePhotoModal.gdrive_image_url || activePhotoModal.trello_image_url}
+                fallbackSrc={activePhotoModal.trello_image_url}
+                eager={true}
                 alt={activePhotoModal.card_name}
                 className="w-full h-full object-contain"
-                fallbackText="Foto tidak tersedia"
+                fallbackText="Kartu ini belum memiliki lampiran foto di Trello"
               />
             </div>
-            <div className="p-3 bg-slate-50 dark:bg-slate-850 flex items-center justify-between text-xs">
-              <span className="text-slate-500 font-semibold">{activePhotoModal.list_name}</span>
-              {activePhotoModal.trello_image_url && (
-                <a
-                  href={activePhotoModal.trello_image_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
-                >
-                  <span>Buka Foto Asli</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-              )}
+            <div className="p-3 bg-slate-50 dark:bg-slate-850 flex items-center justify-between gap-2 text-xs">
+              <span className="text-slate-500 font-semibold truncate">{activePhotoModal.list_name}</span>
+              <div className="flex items-center gap-3 shrink-0">
+                {(activePhotoModal.gdrive_image_url || activePhotoModal.trello_image_url) && (
+                  <a
+                    href={activePhotoModal.gdrive_image_url || activePhotoModal.trello_image_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                  >
+                    <span>Buka Foto Asli</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                )}
+              </div>
             </div>
           </div>
         </div>

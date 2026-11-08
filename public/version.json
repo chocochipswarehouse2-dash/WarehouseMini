@@ -1,12 +1,14 @@
 {
-  "version": "v2.6.94",
-  "versionCode": 354,
+  "version": "v2.6.95",
+  "versionCode": 355,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v354-1043",
-  "releaseTitle": "WMS v2.6.94 — Hapus Tombol Menu Mengambang Ganda di Seluler & Bubble Live Chat Draggable Saat Ada Pesan Baru",
+  "buildHash": "wms-261108-v355-1204",
+  "releaseTitle": "WMS v2.6.95 — Perbaikan Foto Koleksi UP (Trello) & Auto-Recovery GDrive",
   "releaseNotes": [
-    "Menghapus tombol hamburger mengambang di kanan bawah pada tampilan seluler karena sudah ada tombol menu sticky di bagian atas layar",
-    "Bubble Live Chat kini hanya muncul saat ada pesan baru/belum dibaca dan dapat digeser bebas (draggable) ke posisi mana saja di layar"
+    "Perbaikan bug auto-sync Trello 60 detik yang sebelumnya menimpa cache lokal tanpa gdrive_image_url sehingga foto berubah menjadi No Photo",
+    "Penambahan pewarisan foto lintas UP otomatis untuk kode barang yang sama (misal artikel 251052 & 622289 yang belum dilampiri foto di salah satu UP otomatis mewarisi foto dari UP lain / Katalog Produk)",
+    "Peningkatan komponen TrelloImage dengan lazy loading, referrerPolicy no-referrer, antrean batas request (mencegah error 429 Too Many Requests saat memuat 727 kartu), serta 3-tahap fallback otomatis (Google Drive CDN -> GDrive Thumbnail -> Trello OAuth Blob)",
+    "Penambahan filter cepat Belum Ada Foto dan tombol Pasang/Ganti Foto manual langsung ke Google Drive pada modal detail kartu Trello"
   ],
   "minSupportedVersion": "v2.0.0"
 }
