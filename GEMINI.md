@@ -200,3 +200,31 @@ Fitur **Multitasking / Multi-Tab Keep-Alive & Slide-Over Companion Drawer** (mis
    - Di Laptop/PC (`>= 1024px`), jumlah tab halaman yang ditahan tetap hidup (*Keep-Alive*) di latar belakang dibatasi maksimal **4 tab aktif** (LRU eviction otomatis jika membuka tab ke-5, atau dapat ditutup manual dengan tombol `×` pada tab).
    - Setiap penambahan halaman/modul baru di `App.tsx` wajib mengikuti pola render tunggal terpusat (`renderPageContent(pageId)`) agar otomatis kompatibel dengan Single-View di HP maupun Multi-Tab Keep-Alive & Slide-Over Drawer di Laptop/PC.
 
+## 14. Dokumentasi Terstruktur, Pending Plans Persistence & Proactive Reminder Standard
+1. **Struktur Penyimpanan Dokumen (`docs/`)**:
+   Seluruh dokumen penting proyek wajib disimpan secara rapi sesuai fungsinya di dalam folder [`docs/`](file:///d:/Antigravity/WMS%20Inventory/docs/README.md) (dengan indeks utama di [`docs/README.md`](file:///d:/Antigravity/WMS%20Inventory/docs/README.md)):
+   - [`docs/PENDING_PLANS.md`](file:///d:/Antigravity/WMS%20Inventory/docs/PENDING_PLANS.md): Daftar indeks rencana fitur (*Plans* & PRD) yang masih menunggu review/eksekusi.
+   - [`docs/plans/`](file:///d:/Antigravity/WMS%20Inventory/docs/plans): Tempat seluruh dokumen *Implementation Plan* dan *PRD* (contoh: `docs/plans/PLAN_<NAMA_FITUR>.md`).
+   - [`docs/blueprints/`](file:///d:/Antigravity/WMS%20Inventory/docs/blueprints): Blueprint arsitektur modul dan standar sistem permanen.
+   - [`docs/guides/`](file:///d:/Antigravity/WMS%20Inventory/docs/guides): Panduan setup teknis, migrasi, dan operasional.
+   - [`docs/sql/`](file:///d:/Antigravity/WMS%20Inventory/docs/sql): Seluruh skema SQL database Supabase, migrasi, dan webhook.
+2. **Penyimpanan Dokumen Plan & Auto-Remind jika User Skip / Pindah Task**:
+   - Setiap kali agen membuat *Implementation Plan* atas permintaan user, selain menyimpannya di direktori artifact sesi, agen WAJIB menyimpan salinan permanennya di `docs/plans/` dan mencatatnya di [`docs/PENDING_PLANS.md`](file:///d:/Antigravity/WMS%20Inventory/docs/PENDING_PLANS.md) dengan status `⏳ PENDING REVIEW`.
+   - Apabila user belum mereview atau belum memproses plan tersebut dan tiba-tiba meminta mengerjakan hal/fitur lain terlebih dahulu, agen WAJIB tetap memprioritaskan permintaan baru user sampai tuntas, lalu **menyertakan pengingat singkat (*gentle reminder*)** di bagian akhir respons bahwa masih ada plan berstatus `⏳ PENDING REVIEW` di [`docs/PENDING_PLANS.md`](file:///d:/Antigravity/WMS%20Inventory/docs/PENDING_PLANS.md) yang siap dieksekusi kapan saja.
+3. **Update Status Saat Selesai**: Setelah plan tersebut disetujui dan selesai diimplementasikan, agen wajib memperbarui statusnya di `docs/PENDING_PLANS.md` menjadi `✅ SELESAI`.
+
+
+## 14. Dokumentasi Terstruktur, Pending Plans Persistence & Proactive Reminder Standard
+1. **Struktur Penyimpanan Dokumen (`docs/`)**:
+   Seluruh dokumen penting proyek wajib disimpan secara rapi sesuai fungsinya di dalam folder [`docs/`](file:///d:/Antigravity/WMS%20Inventory/docs/README.md) (dengan indeks utama di [`docs/README.md`](file:///d:/Antigravity/WMS%20Inventory/docs/README.md)):
+   - [`docs/PENDING_PLANS.md`](file:///d:/Antigravity/WMS%20Inventory/docs/PENDING_PLANS.md): Daftar indeks rencana fitur (*Plans* & PRD) yang masih menunggu review/eksekusi.
+   - [`docs/plans/`](file:///d:/Antigravity/WMS%20Inventory/docs/plans): Tempat seluruh dokumen *Implementation Plan* dan *PRD* (contoh: `docs/plans/PLAN_<NAMA_FITUR>.md`).
+   - [`docs/blueprints/`](file:///d:/Antigravity/WMS%20Inventory/docs/blueprints): Blueprint arsitektur modul dan standar sistem permanen.
+   - [`docs/guides/`](file:///d:/Antigravity/WMS%20Inventory/docs/guides): Panduan setup teknis, migrasi, dan operasional.
+   - [`docs/sql/`](file:///d:/Antigravity/WMS%20Inventory/docs/sql): Seluruh skema SQL database Supabase, migrasi, dan webhook.
+2. **Penyimpanan Dokumen Plan & Auto-Remind jika User Skip / Pindah Task**:
+   - Setiap kali agen membuat *Implementation Plan* atas permintaan user, selain menyimpannya di direktori artifact sesi, agen WAJIB menyimpan salinan permanennya di `docs/plans/` dan mencatatnya di [`docs/PENDING_PLANS.md`](file:///d:/Antigravity/WMS%20Inventory/docs/PENDING_PLANS.md) dengan status `⏳ PENDING REVIEW`.
+   - Apabila user belum mereview atau belum memproses plan tersebut dan tiba-tiba meminta mengerjakan hal/fitur lain terlebih dahulu, agen WAJIB tetap memprioritaskan permintaan baru user sampai tuntas, lalu **menyertakan pengingat singkat (*gentle reminder*)** di bagian akhir respons bahwa masih ada plan berstatus `⏳ PENDING REVIEW` di [`docs/PENDING_PLANS.md`](file:///d:/Antigravity/WMS%20Inventory/docs/PENDING_PLANS.md) yang siap dieksekusi kapan saja.
+3. **Update Status Saat Selesai**: Setelah plan tersebut disetujui dan selesai diimplementasikan, agen wajib memperbarui statusnya di `docs/PENDING_PLANS.md` menjadi `✅ SELESAI`.
+
+
