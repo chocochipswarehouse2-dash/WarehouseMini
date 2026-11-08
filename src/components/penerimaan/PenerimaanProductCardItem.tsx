@@ -15,6 +15,7 @@ import {
   PenerimaanProduksiItem,
 } from '../../types';
 import { buildProductLookupMap } from '../../utils/productLookup';
+import { matchTrelloByCode, extractTrelloMetadataFromItem } from '../../utils/trelloProduksiMatcher';
 
 export interface ProductCardGroup {
   kode_produksi: string;
@@ -67,12 +68,40 @@ export const PenerimaanProductCardItem: React.FC<PenerimaanProductCardItemProps>
     return map.get(cleanCode);
   }, [productCatalog, prod.kode_produksi]);
 
+  // Fallback metadata Trello UP jika tidak ada di katalog produk
+  const trelloMeta = useMemo(() => {
+    // 1. Cek dari keterangan item jika sudah tersimpan tag UP:xxx
+    const fromItem = prod.items.map(it => extractTrelloMetadataFromItem(it)).find(x => x.upCode || x.productName);
+    if (fromItem && (fromItem.upCode || fromItem.productName)) {
+      return {
+        upCode: fromItem.upCode || '',
+        productName: fromItem.productName || '',
+        photoUrl: '',
+      };
+    }
+    // 2. Lookup langsung ke kamus Trello
+    const match = matchTrelloByCode(prod.kode_produksi);
+    if (match) {
+      return {
+        upCode: match.upCode || '',
+        productName: match.productName || '',
+        photoUrl: match.photoUrl || '',
+      };
+    }
+    return null;
+  }, [prod.kode_produksi, prod.items]);
+
   const productName: string =
     matchedProduct && typeof matchedProduct.nama_produk === 'string'
       ? matchedProduct.nama_produk
       : matchedProduct && typeof matchedProduct.n === 'string'
       ? matchedProduct.n
+      : trelloMeta?.productName
+      ? trelloMeta.productName
       : prod.kode_produksi;
+
+  // Fallback foto dari Trello jika produk penerimaan belum memiliki foto
+  const activePhotoUrl = prod.foto_url || trelloMeta?.photoUrl || '';
 
   const productPrice =
     matchedProduct && typeof matchedProduct.harga_jual === 'number'
@@ -131,9 +160,9 @@ export const PenerimaanProductCardItem: React.FC<PenerimaanProductCardItemProps>
           className="relative h-44 w-full bg-slate-100 dark:bg-slate-800/60 overflow-hidden border-b border-slate-100 dark:border-slate-800 flex items-center justify-center cursor-zoom-in group/img shrink-0"
           title="Klik foto untuk melihat tampilan penuh"
         >
-          {prod.foto_url ? (
+          {activePhotoUrl ? (
             <img
-              src={prod.foto_url}
+              src={activePhotoUrl}
               alt={prod.kode_produksi}
               className="w-full h-full object-cover object-top transition-transform duration-300 group-hover/img:scale-105"
               crossOrigin="anonymous"
@@ -203,6 +232,11 @@ export const PenerimaanProductCardItem: React.FC<PenerimaanProductCardItemProps>
             >
               {group.kategori}
             </span>
+            {trelloMeta?.upCode && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300 border border-violet-200 dark:border-violet-800">
+                UP: {trelloMeta.upCode}
+              </span>
+            )}
             <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
               {group.tanggal_penerimaan}
             </span>

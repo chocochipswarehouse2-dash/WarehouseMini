@@ -15,21 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.95",
-  "versionCode": 355,
+  "version": "v2.6.96",
+  "versionCode": 356,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v355-1204",
-  "releaseTitle": "WMS v2.6.95 — Perbaikan Foto Koleksi UP (Trello) & Auto-Recovery GDrive",
+  "buildHash": "wms-261108-v356-2002",
+  "releaseTitle": "WMS v2.6.96 — Auto-Lookup Trello UP pada Penerimaan Produksi",
   "releaseNotes": [
-    "Perbaikan bug auto-sync Trello 60 detik yang sebelumnya menimpa cache lokal tanpa gdrive_image_url sehingga foto berubah menjadi No Photo",
-    "Penambahan pewarisan foto lintas UP otomatis untuk kode barang yang sama (misal artikel 251052 & 622289 yang belum dilampiri foto di salah satu UP otomatis mewarisi foto dari UP lain / Katalog Produk)",
-    "Peningkatan komponen TrelloImage dengan lazy loading, referrerPolicy no-referrer, antrean batas request (mencegah error 429 Too Many Requests saat memuat 727 kartu), serta 3-tahap fallback otomatis (Google Drive CDN -> GDrive Thumbnail -> Trello OAuth Blob)",
-    "Penambahan filter cepat Belum Ada Foto dan tombol Pasang/Ganti Foto manual langsung ke Google Drive pada modal detail kartu Trello"
+    "Auto-lookup Nama Produk, UP, dan Foto dari data Trello UP board pada Form Penerimaan dan Spreadsheet Produksi (CMT & Kargo)",
+    "Chip preview match Trello real-time saat ketik kode produk",
+    "Tombol 1-klik Lengkapi Trello pada toolbar Spreadsheet Produksi"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.95",
+    "versionCode": 355,
+    "buildDate": "8 November 2026",
+    "buildHash": "wms-261108-v355-1204",
+    "releaseTitle": "WMS v2.6.95 — Perbaikan Foto Koleksi UP (Trello) & Auto-Recovery GDrive",
+    "releaseNotes": [
+      "Perbaikan bug auto-sync Trello 60 detik yang sebelumnya menimpa cache lokal tanpa gdrive_image_url sehingga foto berubah menjadi No Photo",
+      "Penambahan pewarisan foto lintas UP otomatis untuk kode barang yang sama (misal artikel 251052 & 622289 yang belum dilampiri foto di salah satu UP otomatis mewarisi foto dari UP lain / Katalog Produk)",
+      "Peningkatan komponen TrelloImage dengan lazy loading, referrerPolicy no-referrer, antrean batas request (mencegah error 429 Too Many Requests saat memuat 727 kartu), serta 3-tahap fallback otomatis (Google Drive CDN -> GDrive Thumbnail -> Trello OAuth Blob)",
+      "Penambahan filter cepat Belum Ada Foto dan tombol Pasang/Ganti Foto manual langsung ke Google Drive pada modal detail kartu Trello"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.94",
     "versionCode": 354,
@@ -114,17 +127,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Hapus saran hardcoded Sandingkan Trello/Produksi menjadi tombol universal Buka Panel Samping (bebas pilih menu apa saja)",
       "Perbaikan CSS scroll container (overflow-x: clip & penghapusan backdrop-blur berat) agar scroll vertikal halaman utama lancar dan responsif"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.87",
-    "versionCode": 347,
-    "buildDate": "8 November 2026",
-    "buildHash": "wms-261108-v347-1230",
-    "releaseTitle": "WMS v2.6.87 — Hotfix Layar Blank / TDZ showToast pada Inisialisasi App",
-    "releaseNotes": [
-      "Perbaikan urutan deklarasi hook useCallback showToast di App.tsx yang sempat menyebabkan ReferenceError (layar gelap/blank) saat aplikasi dimuat"
     ],
     "minSupportedVersion": "v2.0.0"
   }

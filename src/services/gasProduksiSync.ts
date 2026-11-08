@@ -9,6 +9,10 @@ import {
   getRecountAuditMap,
   fetchRecountAuditMapFromCloud,
 } from './supabase';
+import {
+  matchTrelloByCode,
+  extractTrelloMetadataFromItem,
+} from '../utils/trelloProduksiMatcher';
 
 export const PRODUKSI_SPREADSHEET_ID = '1fnW49pCI8X8-lYtmXljxB0GsZWKkQtKshV2R5-mlodk';
 export const PRODUKSI_SCRIPT_ID = '1vYGP1u5mCAvjFYbJQHbc7mLruxrtwUmlKh27djBJ6oBlomuOCCKy-scb';
@@ -344,15 +348,36 @@ export function buildBlocksFromRawItems(
     });
     const distinctSjs = Array.from(sjMap.values()).sort((a, b) => b.qty - a.qty);
 
+    // Auto-lookup Trello UP jika nama_produk atau keterangan/UP masih kosong
+    const trelloMatch = matchTrelloByCode(code);
+    const trelloExtracted = items.map(it => extractTrelloMetadataFromItem(it)).find(x => x.upCode || x.productName);
+
+    const resolvedProductName =
+      firstItem.nama_produk ||
+      trelloExtracted?.productName ||
+      trelloMatch?.productName ||
+      '';
+
+    const resolvedUpVendor =
+      firstItem.keterangan ||
+      trelloExtracted?.upCode ||
+      trelloMatch?.upCode ||
+      (activeTab === 'CMT' ? 'CMT' : '');
+
+    const resolvedPhotoUrl =
+      firstItem.foto_url ||
+      trelloMatch?.photoUrl ||
+      '';
+
     resultBlocks.push({
       id: code,
       rowNumber: rowNum++,
       code,
-      productName: firstItem.nama_produk || '',
-      upVendor: firstItem.keterangan || '',
+      productName: resolvedProductName,
+      upVendor: resolvedUpVendor,
       kategori: activeTab === 'Kargo' ? 'Kargo' : 'Lokal CMT',
-      photoUrl: formatImageUrlForSheets(firstItem.foto_url),
-      catatan: firstItem.keterangan || '',
+      photoUrl: formatImageUrlForSheets(resolvedPhotoUrl),
+      catatan: firstItem.keterangan || resolvedUpVendor || '',
       distinctSjs,
       colorGroups,
       dateSlots: finalDateSlots,
@@ -628,9 +653,25 @@ export function buildMatrixBlocksFromItems(items: PenerimaanProduksiItem[], isCM
 
   for (const [code, codeItems] of codeMap.entries()) {
     const first = codeItems[0];
-    const productName = first?.nama_produk || '';
-    const upVendor = first?.keterangan || (isCMT ? 'CMT' : 'KARGO');
-    const photoUrl = first?.foto_url || '';
+    const trelloMatch = matchTrelloByCode(code);
+    const trelloExtracted = codeItems.map(it => extractTrelloMetadataFromItem(it)).find(x => x.upCode || x.productName);
+
+    const productName =
+      first?.nama_produk ||
+      trelloExtracted?.productName ||
+      trelloMatch?.productName ||
+      '';
+
+    const upVendor =
+      first?.keterangan ||
+      trelloExtracted?.upCode ||
+      trelloMatch?.upCode ||
+      (isCMT ? 'CMT' : 'KARGO');
+
+    const photoUrl =
+      first?.foto_url ||
+      trelloMatch?.photoUrl ||
+      '';
 
     const dateSet = new Set<string>();
     codeItems.forEach((it) => {

@@ -84,6 +84,11 @@ import {
   pushProduksiPerTanggalToGoogleSheet,
   PRODUKSI_SPREADSHEET_ID,
 } from '../services/gasProduksiSync';
+import {
+  matchTrelloByCode,
+  embedTrelloMetadataIntoKeterangan,
+  refreshTrelloLookupDictionaryFromCloud,
+} from '../utils/trelloProduksiMatcher';
 
 interface PenerimaanProduksiViewProps {
   session: UserSession | null;
@@ -744,6 +749,9 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     };
 
     const unsub = globalRealtimeStore.subscribe('penerimaan_produksi', triggerDebouncedSync);
+
+    // Muat / refresh kamus Trello UP di background saat modul dibuka
+    refreshTrelloLookupDictionaryFromCloud().catch(() => {});
 
     return () => {
       window.removeEventListener('wms_penerimaan_produksi_updated', handleUpdateEvent);
@@ -1440,11 +1448,29 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
         return;
       }
 
+      // Auto-lookup data Trello UP (Nama Produk, UP Vendor, dan Foto)
+      const trelloMatch = matchTrelloByCode(kode);
+      let finalCatatan = b.catatan || '';
+      let finalFotoUrl = b.foto_url;
+
+      if (trelloMatch) {
+        // Sematkan metadata UP ke catatan jika belum ada
+        finalCatatan = embedTrelloMetadataIntoKeterangan(
+          finalCatatan,
+          trelloMatch.upCode,
+          trelloMatch.productName
+        );
+        // Fallback foto dari Trello jika operator belum mengunggah foto
+        if (!finalFotoUrl && trelloMatch.photoUrl) {
+          finalFotoUrl = trelloMatch.photoUrl;
+        }
+      }
+
       cleanedBlocks.push({
         id: b.id,
         kode_produksi: kode.toUpperCase(),
-        catatan: b.catatan,
-        foto_url: b.foto_url,
+        catatan: finalCatatan,
+        foto_url: finalFotoUrl,
         variants: flattenedVariants,
       });
     }
@@ -2284,6 +2310,37 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                           required
                           className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-mono font-extrabold text-slate-900 dark:text-white uppercase placeholder:font-sans placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         />
+                        {/* Auto-match Trello Chip Preview */}
+                        {(() => {
+                          const tMatch = matchTrelloByCode(block.kode_produksi);
+                          if (!tMatch) return null;
+                          return (
+                            <div className="mt-1.5 p-1.5 bg-violet-50/80 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800 rounded-md text-[11px] text-violet-800 dark:text-violet-200 flex flex-wrap items-center gap-1.5">
+                              <span className="font-bold flex items-center gap-1 text-violet-700 dark:text-violet-300">
+                                <Sparkles className="w-3 h-3 text-violet-500" />
+                                Trello:
+                              </span>
+                              <span className="font-medium text-slate-800 dark:text-slate-200 truncate max-w-[170px]" title={tMatch.productName}>
+                                {tMatch.productName}
+                              </span>
+                              {tMatch.upCode && (
+                                <span className="px-1.5 py-0.2 bg-violet-200/70 dark:bg-violet-800/60 rounded text-[10px] font-mono font-bold text-violet-900 dark:text-violet-100">
+                                  UP: {tMatch.upCode}
+                                </span>
+                              )}
+                              {tMatch.photoUrl && !block.foto_url && (
+                                <button
+                                  type="button"
+                                  onClick={() => updateProductBlockPhoto(blockIdx, tMatch.photoUrl!)}
+                                  className="ml-auto px-1.5 py-0.5 bg-violet-600 hover:bg-violet-700 text-white rounded text-[10px] font-bold cursor-pointer transition shadow-2xs"
+                                  title="Pakai foto dari kartu Trello"
+                                >
+                                  + Foto Trello
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {/* Kolom 2: CATATAN PRODUK */}
