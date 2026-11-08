@@ -49,6 +49,7 @@ import { getUserPersonName } from '../utils/userResolver';
 import { CURRENT_APP_VERSION, CURRENT_APP_VERSION_INFO, isNewerVersion } from '../config/appVersion';
 import { useAppUpdate } from '../hooks/useAppUpdate';
 import { liveChatManager } from '../services/liveChatService';
+import { UserProfileModal, UserAvatar, syncAvatarFromDb } from './UserProfileModal';
 
 interface SidebarProps {
   session: UserSession | null;
@@ -70,6 +71,7 @@ interface SidebarProps {
   totalScannedCount: number;
   hasNewPickingAlert?: boolean;
   hasNewPesananAlert?: boolean;
+  onSessionUpdate?: (patch: Partial<UserSession>) => void;
 }
 
 import { AppLogo } from './Logo';
@@ -94,7 +96,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   totalScannedCount,
   hasNewPickingAlert = false,
   hasNewPesananAlert = false,
+  onSessionUpdate,
 }) => {
+  const [isProfileOpen, setIsProfileOpen] = React.useState(false);
+  React.useEffect(() => {
+    if (session?.username) syncAvatarFromDb(session.username);
+  }, [session?.username]);
   const { status: updateStatus, latestVersion, currentVersion, releaseInfo } = useAppUpdate();
   const hasUpdatePending =
     updateStatus === 'available' ||
@@ -812,10 +819,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30">
             {session ? (
               <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded-lg bg-primary-500/10 border border-primary-500/20 flex items-center justify-center text-primary-500 shrink-0 font-extrabold text-xs">
-                    <User className="w-4 h-4" />
-                  </div>
+                <button
+                  type="button"
+                  onClick={() => setIsProfileOpen(true)}
+                  title="Lihat & edit profil"
+                  className="flex items-center gap-2.5 min-w-0 flex-1 text-left rounded-lg -m-1 p-1 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
+                >
+                  <UserAvatar username={session.username} name={session.name} />
                   <div className="min-w-0">
                     <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
                       {session.name || getUserPersonName(session.username) || session.username}
@@ -824,7 +834,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       @{session.username} • <span className="text-primary-500 font-bold uppercase">{session.role}</span>
                     </div>
                   </div>
-                </div>
+                </button>
 
                 <button
                   type="button"
@@ -942,6 +952,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <ChevronRight className="w-4 h-4 text-primary-500" />
               </button>
 
+              {session && (
+                <button type="button" onClick={() => setIsProfileOpen(true)} title={`Profil (${session.username})`} className="cursor-pointer rounded-xl hover:ring-2 hover:ring-primary-500/40 transition">
+                  <UserAvatar username={session.username} name={session.name} className="w-10 h-10 rounded-xl" />
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={onLogout}
@@ -974,10 +990,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
             session && (
               <div>
                 <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-8 h-8 rounded-lg bg-primary-500/10 border border-primary-500/20 flex items-center justify-center text-primary-500 shrink-0 font-extrabold text-xs">
-                      <ShieldCheck className="w-4 h-4" />
-                    </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsProfileOpen(true)}
+                    title="Lihat & edit profil"
+                    className="flex items-center gap-2 min-w-0 flex-1 text-left rounded-lg -m-1 p-1 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
+                  >
+                    <UserAvatar username={session.username} name={session.name} />
                     <div className="min-w-0">
                       <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
                         {session.name || getUserPersonName(session.username) || session.username}
@@ -986,7 +1005,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         @{session.username} • <span className="text-primary-500 font-bold uppercase">{session.role}</span>
                       </div>
                     </div>
-                  </div>
+                  </button>
 
                   <button
                     type="button"
@@ -1028,6 +1047,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
       </aside>
+      {session && (
+        <UserProfileModal
+          isOpen={isProfileOpen}
+          onClose={() => setIsProfileOpen(false)}
+          session={session}
+          onSessionUpdate={onSessionUpdate}
+        />
+      )}
     </>
   );
 };

@@ -15,20 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.79",
-  "versionCode": 339,
+  "version": "v2.6.80",
+  "versionCode": 340,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v339-0957",
-  "releaseTitle": "WMS v2.6.79 — Presisi Urutan Kolom Kanban Trello Asli",
+  "buildHash": "wms-261108-v340-1048",
+  "releaseTitle": "WMS v2.6.80 — Profil Pengguna",
   "releaseNotes": [
-    "Sinkronisasi posisi list horizontal papan Trello asli ke Kanban WMS",
-    "Penyelarasan urutan UP batch dari kiri ke kanan (September ke April)",
-    "Pencegahan salah parse judul tanggal menjadi nomor batch"
+    "Klik kartu user di sidebar membuka popup Profil",
+    "Edit nama, No. HP & email",
+    "Ganti password (verifikasi password lama, SHA-256)",
+    "Upload foto profil atau pilih avatar"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.79",
+    "versionCode": 339,
+    "buildDate": "8 November 2026",
+    "buildHash": "wms-261108-v339-0957",
+    "releaseTitle": "WMS v2.6.79 — Presisi Urutan Kolom Kanban Trello Asli",
+    "releaseNotes": [
+      "Sinkronisasi posisi list horizontal papan Trello asli ke Kanban WMS",
+      "Penyelarasan urutan UP batch dari kiri ke kanan (September ke April)",
+      "Pencegahan salah parse judul tanggal menjadi nomor batch"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.78",
     "versionCode": 338,
@@ -118,19 +132,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Tampilan Papan Kanban kompak menampilkan 3 baris gambar vertikal per kolom",
       "Pilihan kerapatan kartu (3 Baris, Standar, Besar)",
       "Perbaikan seleksi cover foto resmi Trello dan auto-replace foto 'Belum Ada Sample'"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.71",
-    "versionCode": 331,
-    "buildDate": "6 November 2026",
-    "buildHash": "wms-261106-v331-1933",
-    "releaseTitle": "WMS v2.6.71 — Tampilan Papan Kanban Mirip Trello Asli",
-    "releaseNotes": [
-      "Opsi tampilan Papan Kanban interaktif dengan kolom per koleksi UP",
-      "Kartu artikel cover foto GDrive sequence dan info artikel",
-      "Dukungan multi-kolom horizontal scroll dan cetak per kolom"
     ],
     "minSupportedVersion": "v2.0.0"
   }

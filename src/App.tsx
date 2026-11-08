@@ -2872,6 +2872,7 @@ export default function App() {
 
       {/* Modern Collapsible Sidebar (Mobile Drawer + Desktop Sidebar) */}
       <Sidebar
+        onSessionUpdate={(patch) => setSession((prev) => (prev ? { ...prev, ...patch } : prev))}
         onOpenThemePicker={() => setIsThemePickerOpen(true)}
         session={session}
         activePage={activePage}
