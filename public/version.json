@@ -1,12 +1,12 @@
 {
-  "version": "v2.6.97",
-  "versionCode": 357,
+  "version": "v2.6.98",
+  "versionCode": 358,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v357-2052",
-  "releaseTitle": "WMS v2.6.97 — Filter Pengaman Header Tabel pada Modul IG Live",
+  "buildHash": "wms-261108-v358-2137",
+  "releaseTitle": "WMS v2.6.98 — Fix Produksi Trello Match Ambiguity & Sheet Push Product Name/UP",
   "releaseNotes": [
-    "Pembersihan dan filter pencegah baris header template gsheet (NAMA PEMESAN / SKU) terbaca sebagai pesanan valid",
-    "Deploy Google Apps Script IG Live v28"
+    "Sistem scoring ranking multi-faktor untuk pencocokan Trello dengan gender/single-code hint (memastikan 25762 - WOMAN cocok ke Viorica Top bukan Cedric Top)",
+    "Enrichment otomatis nama produk dan UP Vendor saat push ke Google Sheets Master & Tanggal (menjamin kolom C dan D tidak kosong/default KARGO)"
   ],
   "minSupportedVersion": "v2.0.0"
 }

@@ -354,15 +354,15 @@ export function buildBlocksFromRawItems(
 
     const resolvedProductName =
       firstItem.nama_produk ||
-      trelloExtracted?.productName ||
       trelloMatch?.productName ||
+      trelloExtracted?.productName ||
       '';
 
     const resolvedUpVendor =
-      firstItem.keterangan ||
-      trelloExtracted?.upCode ||
       trelloMatch?.upCode ||
-      (activeTab === 'CMT' ? 'CMT' : '');
+      trelloExtracted?.upCode ||
+      (firstItem.keterangan && firstItem.keterangan !== 'KARGO' && firstItem.keterangan !== 'CMT' ? firstItem.keterangan : '') ||
+      (activeTab === 'CMT' ? 'CMT' : 'KARGO');
 
     const resolvedPhotoUrl =
       firstItem.foto_url ||
@@ -561,9 +561,19 @@ export async function pushProduksiPerTanggalToGoogleSheet(
       const ds = dateSheets[i];
       onProgress?.(i + 1, dateSheets.length, ds.sheetName);
 
-      const effectiveBlocks = ds.blocks && ds.blocks.length > 0
+      const effectiveBlocks = (ds.blocks && ds.blocks.length > 0
         ? ds.blocks
-        : buildBlocksFromRawItems(ds.items, [ds.tanggal], activeTab);
+        : buildBlocksFromRawItems(ds.items, [ds.tanggal], activeTab)
+      ).map((b) => {
+        const trelloMatch = matchTrelloByCode(b.code);
+        return {
+          ...b,
+          productName: b.productName || trelloMatch?.productName || '',
+          upVendor: (b.upVendor && b.upVendor !== 'KARGO' && b.upVendor !== 'CMT')
+            ? b.upVendor
+            : (trelloMatch?.upCode || b.upVendor || (activeTab === 'CMT' ? 'CMT' : 'KARGO')),
+        };
+      });
 
       const singlePayload = {
         action: 'pushPenerimaanProduksi',
@@ -658,14 +668,14 @@ export function buildMatrixBlocksFromItems(items: PenerimaanProduksiItem[], isCM
 
     const productName =
       first?.nama_produk ||
-      trelloExtracted?.productName ||
       trelloMatch?.productName ||
+      trelloExtracted?.productName ||
       '';
 
     const upVendor =
-      first?.keterangan ||
-      trelloExtracted?.upCode ||
       trelloMatch?.upCode ||
+      trelloExtracted?.upCode ||
+      (first?.keterangan && first.keterangan !== 'KARGO' && first.keterangan !== 'CMT' ? first.keterangan : '') ||
       (isCMT ? 'CMT' : 'KARGO');
 
     const photoUrl =
@@ -796,7 +806,7 @@ export async function pushPenerimaanProduksiToGoogleSheet(
     ? blocks
     : buildMatrixBlocksFromItems(items, activeTab === 'CMT');
 
-  // Format blocks jika ada
+  // Format blocks jika ada dengan auto-lookup nama produk dan UP Trello jika kosong
   const cachedNotaMapMaster = getCachedProduksiQtyNotaMapSync();
   const formattedBlocks = effectiveBlocks.map((b) => {
     const normCode = (b.code || '').trim().toUpperCase();
@@ -804,28 +814,56 @@ export async function pushPenerimaanProduksiToGoogleSheet(
     const effectiveFisik = (b.hasRecount && b.totalRecountFisik !== null && b.totalRecountFisik !== undefined)
       ? b.totalRecountFisik
       : b.totalNet;
+
+    const trelloMatch = matchTrelloByCode(b.code);
+    const resolvedProductName = b.productName || trelloMatch?.productName || '';
+    const resolvedUpVendor = (b.upVendor && b.upVendor !== 'KARGO' && b.upVendor !== 'CMT')
+      ? b.upVendor
+      : (trelloMatch?.upCode || b.upVendor || (activeTab === 'CMT' ? 'CMT' : 'KARGO'));
+
     return {
       ...b,
-      photoUrl: formatImageUrlForSheets(b.photoUrl),
+      productName: resolvedProductName,
+      upVendor: resolvedUpVendor,
+      photoUrl: formatImageUrlForSheets(b.photoUrl || trelloMatch?.photoUrl),
       qtyNota: resolvedQtyNota,
       selisihNota: resolvedQtyNota !== null && resolvedQtyNota !== undefined ? effectiveFisik - Number(resolvedQtyNota) : null,
     };
   });
 
-  // Format flat items
-  const formattedItems = items && Array.isArray(items) ? items.map((it) => ({
-    tanggal_penerimaan: it.tanggal_penerimaan || '',
-    kategori: it.kategori || 'Lokal CMT',
-    no_surat_jalan: it.no_surat_jalan || '',
-    kode_produksi: it.kode_produksi || '',
-    warna: it.warna || '',
-    size: it.size || '',
-    qty: Number(it.qty) || 0,
-    foto_url: formatImageUrlForSheets(it.foto_url),
-    keterangan: it.keterangan || '',
-    operator: it.operator || 'Operator',
-    created_at: it.created_at || new Date().toISOString(),
-  })) : [];
+  // Map untuk lookup cepat ke formattedItems
+  const blockMap = new Map<string, { productName: string; upVendor: string }>();
+  formattedBlocks.forEach((fb) => {
+    const norm = (fb.code || '').trim().toUpperCase();
+    if (norm) blockMap.set(norm, { productName: fb.productName, upVendor: fb.upVendor });
+  });
+
+  // Format flat items dengan enriquishment metadata nama_produk dan up_vendor
+  const formattedItems = items && Array.isArray(items) ? items.map((it) => {
+    const codeKey = (it.kode_produksi || '').trim().toUpperCase();
+    const bInfo = blockMap.get(codeKey);
+    const trelloMatch = !bInfo?.productName ? matchTrelloByCode(codeKey) : null;
+    const finalName = it.nama_produk || bInfo?.productName || trelloMatch?.productName || '';
+    const finalUp = (it.keterangan && it.keterangan !== 'KARGO' && it.keterangan !== 'CMT')
+      ? it.keterangan
+      : (bInfo?.upVendor || trelloMatch?.upCode || it.keterangan || (activeTab === 'CMT' ? 'CMT' : 'KARGO'));
+
+    return {
+      tanggal_penerimaan: it.tanggal_penerimaan || '',
+      kategori: it.kategori || (activeTab === 'CMT' ? 'Lokal CMT' : 'Kargo'),
+      no_surat_jalan: it.no_surat_jalan || '',
+      kode_produksi: it.kode_produksi || '',
+      nama_produk: finalName,
+      up_vendor: finalUp,
+      warna: it.warna || '',
+      size: it.size || '',
+      qty: Number(it.qty) || 0,
+      foto_url: formatImageUrlForSheets(it.foto_url),
+      keterangan: finalUp,
+      operator: it.operator || 'Operator',
+      created_at: it.created_at || new Date().toISOString(),
+    };
+  }) : [];
 
   const payload = {
     action: 'pushPenerimaanProduksi',

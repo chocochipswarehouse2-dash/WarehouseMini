@@ -872,8 +872,8 @@ function buildBlocksFromItemsGAS(items, isCMT, specificDateStr) {
   for (var codeKey in codeMap) {
     var codeItems = codeMap[codeKey];
     var first = codeItems[0];
-    var productName = first.nama_produk || '';
-    var upVendor = first.up_vendor || first.keterangan || (isCMT ? 'CMT' : 'KARGO');
+    var productName = first.nama_produk || first.product_name || first.productName || '';
+    var upVendor = first.up_vendor || first.upVendor || (first.keterangan && first.keterangan !== 'KARGO' && first.keterangan !== 'CMT' ? first.keterangan : '') || (isCMT ? 'CMT' : '');
     var photoUrl = first.foto_url || '';
     var catatan = first.catatan || '';
     var qtyNota = (first.qty_nota !== undefined && first.qty_nota !== null && first.qty_nota !== '') ? Number(first.qty_nota) : undefined;
@@ -1384,8 +1384,8 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
         var dataRowVals = [
           (b + 1),
           "'" + (block.code || block.productCode || ''),
-          block.productName || '',
-          block.upVendor || '',
+          block.productName || block.nama_produk || '',
+          block.upVendor || block.up_vendor || '',
           '',
           cg.color || cg.colorName || '',
           "'" + (sz.size || sz.sizeName || '')

@@ -145,6 +145,85 @@ function calculateSimilarity(str1: string, str2: string): number {
 }
 
 /**
+ * Menghitung skor kecocokan antara raw input code dengan kandidat kartu Trello.
+ * Mempertimbangkan:
+ * 1. Ketepatan kode (single exact vs compound / slash)
+ * 2. Gender hint (WOMAN/LADIES/FEMALE vs MAN/MEN/MALE/COUPLE)
+ * 3. Kesesuaian nama artikel / tipe pakaian
+ * 4. Urutan list & posisi
+ */
+export function scoreCandidateMatch(
+  rawInput: string,
+  candidate: TrelloUpItem,
+  baseCode: string
+): number {
+  let score = 50; // base score untuk base-code match
+
+  const normInput = (rawInput || '').trim().toUpperCase();
+  const cardNameUpper = (candidate.card_name || '').toUpperCase();
+  const itemNameUpper = (candidate.item_name || '').toUpperCase();
+  const itemCodeUpper = (candidate.item_code || '').toUpperCase();
+  const combinedText = `${cardNameUpper} ${itemNameUpper} ${itemCodeUpper}`;
+
+  // 1. Single exact code match vs compound (misal "25762" vs "25762 / 26762")
+  const isInputCompound = normInput.includes('/') || normInput.includes('&');
+  const isCandidateCompound = itemCodeUpper.includes('/') || itemCodeUpper.includes('&') || cardNameUpper.includes(' / ');
+
+  if (!isInputCompound && !isCandidateCompound) {
+    // Input tunggal dan kartu tunggal -> sangat kuat
+    score += 40;
+  } else if (!isInputCompound && isCandidateCompound) {
+    // Input tunggal tapi kartu compound -> berikan penalti
+    score -= 20;
+  } else if (isInputCompound && isCandidateCompound) {
+    // Keduanya compound -> bonus
+    score += 30;
+  }
+
+  // 2. Gender hint detection
+  const isWomanInput = /\b(WOMAN|WANITA|LADIES|LADY|FEMALE|CEWEK|GIRL)\b/i.test(normInput);
+  const isManInput = /\b(MAN|PRIA|MALE|COWOK|BOY|MEN)\b/i.test(normInput);
+
+  const isWomanCandidate = /\b(WOMAN|WANITA|LADIES|LADY|FEMALE|GIRL|DRESS|SKIRT|ROK|GAMIS|TOP|BLOUSE|CULOTTE|VIORICA)\b/i.test(combinedText);
+  const isManCandidate = /\b(MAN|PRIA|MALE|COWOK|BOY|MEN|CEDRIC|KEMEJA|SHIRT|POLO)\b/i.test(combinedText);
+
+  if (isWomanInput) {
+    if (isWomanCandidate && !isManCandidate) {
+      score += 40;
+    } else if (isManCandidate && !isWomanCandidate) {
+      score -= 50;
+    } else if (isWomanCandidate && isManCandidate) {
+      // Ada keduanya (misal couple card)
+      score -= 10;
+    }
+  }
+
+  if (isManInput) {
+    if (isManCandidate && !isWomanCandidate) {
+      score += 40;
+    } else if (isWomanCandidate && !isManCandidate) {
+      score -= 50;
+    }
+  }
+
+  // 3. Exact Substring Match in Item Name
+  const words = normInput.split(/[^A-Z0-9]+/).filter((w) => w.length >= 3 && w !== baseCode);
+  for (const w of words) {
+    if (combinedText.includes(w)) {
+      score += 25;
+    }
+  }
+
+  // 4. Posisi / Recency (list_pos atau pos)
+  const pos = Number(candidate.list_pos ?? candidate.pos ?? 0);
+  if (pos > 0) {
+    score += Math.min(10, Math.log10(pos));
+  }
+
+  return score;
+}
+
+/**
  * Mencocokkan Kode Produksi dengan data Trello UP Catalog
  */
 export function matchTrelloByCode(rawCode?: string): TrelloMatchResult | null {
@@ -157,7 +236,10 @@ export function matchTrelloByCode(rawCode?: string): TrelloMatchResult | null {
   // 1. Tier 1: Exact Match (100% confidence)
   const exactMatches = dict.byExactCode.get(norm);
   if (exactMatches && exactMatches.length > 0) {
-    const primary = exactMatches[0];
+    const sortedExact = exactMatches.length > 1
+      ? [...exactMatches].sort((a, b) => scoreCandidateMatch(norm, b, norm) - scoreCandidateMatch(norm, a, norm))
+      : exactMatches;
+    const primary = sortedExact[0];
     return {
       matchedItem: primary,
       tier: 'EXACT',
@@ -165,16 +247,19 @@ export function matchTrelloByCode(rawCode?: string): TrelloMatchResult | null {
       productName: primary.item_name || primary.card_name,
       upCode: primary.up_code || primary.list_name,
       photoUrl: primary.gdrive_image_url || primary.trello_image_url,
-      alternateCandidates: exactMatches.length > 1 ? exactMatches.slice(1) : undefined,
+      alternateCandidates: sortedExact.length > 1 ? sortedExact.slice(1) : undefined,
     };
   }
 
-  // 2. Tier 2: Base Code Match (misal "25289-A", "CHN25289", "25289 (REPEAT)") -> "25289"
+  // 2. Tier 2: Base Code Match (misal "25289-A", "CHN25289", "25762 - WOMAN") -> "25762"
   const baseCode = extractBaseItemCode(norm);
   if (baseCode && baseCode.length >= 3) {
     const baseMatches = dict.byBaseCode.get(baseCode);
     if (baseMatches && baseMatches.length > 0) {
-      const primary = baseMatches[0];
+      const sortedBase = baseMatches.length > 1
+        ? [...baseMatches].sort((a, b) => scoreCandidateMatch(norm, b, baseCode) - scoreCandidateMatch(norm, a, baseCode))
+        : baseMatches;
+      const primary = sortedBase[0];
       return {
         matchedItem: primary,
         tier: 'BASE_CODE',
@@ -182,7 +267,7 @@ export function matchTrelloByCode(rawCode?: string): TrelloMatchResult | null {
         productName: primary.item_name || primary.card_name,
         upCode: primary.up_code || primary.list_name,
         photoUrl: primary.gdrive_image_url || primary.trello_image_url,
-        alternateCandidates: baseMatches.length > 1 ? baseMatches.slice(1) : undefined,
+        alternateCandidates: sortedBase.length > 1 ? sortedBase.slice(1) : undefined,
       };
     }
   }
@@ -191,7 +276,7 @@ export function matchTrelloByCode(rawCode?: string): TrelloMatchResult | null {
   // Cari di antara semua kode Trello dengan similarity >= 0.75
   let bestItem: TrelloUpItem | null = null;
   let bestSim = 0;
-  const candidates: TrelloUpItem[] = [];
+  const candidates: { item: TrelloUpItem; sim: number; score: number }[] = [];
 
   for (const item of dict.allItems) {
     const targetCode = normalizeLookupCode(item.item_code);
@@ -199,15 +284,17 @@ export function matchTrelloByCode(rawCode?: string): TrelloMatchResult | null {
 
     const sim = calculateSimilarity(norm, targetCode);
     if (sim >= 0.75) {
-      if (sim > bestSim) {
-        bestSim = sim;
-        bestItem = item;
-      }
-      candidates.push(item);
+      const cScore = scoreCandidateMatch(norm, item, baseCode || norm);
+      candidates.push({ item, sim, score: sim * 100 + cScore });
     }
   }
 
-  if (bestItem && bestSim >= 0.75) {
+  if (candidates.length > 0) {
+    candidates.sort((a, b) => b.score - a.score);
+    const bestCandidate = candidates[0];
+    bestItem = bestCandidate.item;
+    bestSim = bestCandidate.sim;
+
     return {
       matchedItem: bestItem,
       tier: 'FUZZY',
@@ -215,7 +302,7 @@ export function matchTrelloByCode(rawCode?: string): TrelloMatchResult | null {
       productName: bestItem.item_name || bestItem.card_name,
       upCode: bestItem.up_code || bestItem.list_name,
       photoUrl: bestItem.gdrive_image_url || bestItem.trello_image_url,
-      alternateCandidates: candidates.filter((c) => c.id !== bestItem!.id),
+      alternateCandidates: candidates.slice(1).map((c) => c.item),
     };
   }
 

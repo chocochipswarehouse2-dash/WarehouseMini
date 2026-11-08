@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.97",
-  "versionCode": 357,
+  "version": "v2.6.98",
+  "versionCode": 358,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v357-2052",
-  "releaseTitle": "WMS v2.6.97 — Filter Pengaman Header Tabel pada Modul IG Live",
+  "buildHash": "wms-261108-v358-2137",
+  "releaseTitle": "WMS v2.6.98 — Fix Produksi Trello Match Ambiguity & Sheet Push Product Name/UP",
   "releaseNotes": [
-    "Pembersihan dan filter pencegah baris header template gsheet (NAMA PEMESAN / SKU) terbaca sebagai pesanan valid",
-    "Deploy Google Apps Script IG Live v28"
+    "Sistem scoring ranking multi-faktor untuk pencocokan Trello dengan gender/single-code hint (memastikan 25762 - WOMAN cocok ke Viorica Top bukan Cedric Top)",
+    "Enrichment otomatis nama produk dan UP Vendor saat push ke Google Sheets Master & Tanggal (menjamin kolom C dan D tidak kosong/default KARGO)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.97",
+    "versionCode": 357,
+    "buildDate": "8 November 2026",
+    "buildHash": "wms-261108-v357-2052",
+    "releaseTitle": "WMS v2.6.97 — Filter Pengaman Header Tabel pada Modul IG Live",
+    "releaseNotes": [
+      "Pembersihan dan filter pencegah baris header template gsheet (NAMA PEMESAN / SKU) terbaca sebagai pesanan valid",
+      "Deploy Google Apps Script IG Live v28"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.96",
     "versionCode": 356,
@@ -114,19 +126,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Perbaikan inisialisasi variabel showToast, toggleDarkMode, dan updateModal pada halaman Pengaturan Sistem",
       "Sinkronisasi judul dan ikon halaman Pengaturan Sistem di Navbar"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.89",
-    "versionCode": 349,
-    "buildDate": "8 November 2026",
-    "buildHash": "wms-261108-v349-1418",
-    "releaseTitle": "WMS v2.6.89 — Pengaturan Sistem Menjadi Halaman Penuh Terpadu",
-    "releaseNotes": [
-      "Penyatuan menu pengaturan sistem, database, hak akses, dan migrasi",
-      "Pengaturan sistem kini menjadi halaman utama (page) bukan popup modal",
-      "Pembersihan duplikasi menu di sidebar dan integrasi tab Migrasi Supabase"
     ],
     "minSupportedVersion": "v2.0.0"
   }

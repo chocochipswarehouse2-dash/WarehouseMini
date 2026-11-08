@@ -19,12 +19,14 @@ import {
   pushProduksiPerTanggalToGoogleSheet,
   pushPenerimaanProduksiToGoogleSheet,
   refreshProduksiSpreadsheetIndex,
+  buildMatrixBlocksFromItems,
   PRODUKSI_SPREADSHEET_ID,
   formatDateTabName,
   formatDateIndo,
 } from '../../services/gasProduksiSync';
 import { MatrixProductBlock } from './ProduksiSpreadsheetView';
 import { alignItemWithMasterProduct, buildProductLookupMap } from '../../utils/productLookup';
+import { matchTrelloByCode } from '../../utils/trelloProduksiMatcher';
 
 interface PushDateSheetsModalProps {
   isOpen: boolean;
@@ -227,15 +229,31 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
       setIsPushing(true);
 
       // Ensure blocks strictly match currentTab (prevent cross-contamination between CMT and Kargo)
-      const effectiveBlocks = (currentTab === initialActiveTab && blocks && blocks.length > 0)
+      const baseBlocks = (currentTab === initialActiveTab && blocks && blocks.length > 0)
         ? blocks.filter((b) => (currentTab === 'CMT' ? (!b.kategori || b.kategori === 'Lokal CMT') : b.kategori === 'Kargo'))
         : undefined;
+
+      const effectiveBlocks = (baseBlocks && baseBlocks.length > 0)
+        ? baseBlocks
+        : buildMatrixBlocksFromItems(categoryItems, currentTab === 'CMT');
+
+      // Pastikan productName dan upVendor selalu ter-enrich dari Trello Matcher
+      const enrichedBlocks = effectiveBlocks.map((b) => {
+        const trelloMatch = matchTrelloByCode(b.code);
+        return {
+          ...b,
+          productName: b.productName || trelloMatch?.productName || '',
+          upVendor: (b.upVendor && b.upVendor !== 'KARGO' && b.upVendor !== 'CMT')
+            ? b.upVendor
+            : (trelloMatch?.upCode || b.upVendor || (currentTab === 'CMT' ? 'CMT' : 'KARGO')),
+        };
+      });
 
       if (mode === 'master') {
         setProgressMsg(`Menulis Master Matrix ${currentTab} ke Google Spreadsheet...`);
         const res = await pushPenerimaanProduksiToGoogleSheet({
           items: categoryItems,
-          blocks: effectiveBlocks,
+          blocks: enrichedBlocks,
           activeTab: currentTab,
         });
 
@@ -253,7 +271,7 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
 
         const res = await pushProduksiPerTanggalToGoogleSheet({
           items: categoryItems,
-          blocks: effectiveBlocks,
+          blocks: enrichedBlocks,
           activeTab: currentTab,
           targetDate: target,
           onProgress: (cur, tot, sheetName) => {
