@@ -151,6 +151,65 @@ function buildMessages(body) {
         },
       });
     }
+  } else if (table === 'lembur') {
+    for (const r of body.records || []) {
+      const id = clean(r.id);
+      if (!id) continue;
+      const empName = clean(r.nama || r.nik) || 'Karyawan';
+      const tgl = clean(r.tanggal).slice(0, 10);
+      const jam = `${clean(r.jam_mulai || '--:--').slice(0, 5)} - ${clean(r.jam_selesai || '--:--').slice(0, 5)}`;
+      const alasan = clean(r.alasan_lembur) || '-';
+      messages.push({
+        audience: { users: ['warehouse', 'chocochips.warehouse2@gmail.com'] },
+        payload: {
+          title: `⚡ Pengajuan Lembur Baru — ${empName}`,
+          body: `Tanggal: ${tgl} (${jam}) • Alasan: ${alasan}`,
+          tag: `hr-lembur-${id}`,
+          page: 'hr_approval',
+          url: '/hr-approval',
+        },
+      });
+    }
+  } else if (table === 'perijinan_cuti') {
+    for (const r of body.records || []) {
+      const id = clean(r.id);
+      if (!id) continue;
+      const empName = clean(r.nama || r.nik) || 'Karyawan';
+      const jenis = clean(r.jenis) || 'Ijin/Cuti';
+      const tglMulai = clean(r.tanggal_mulai).slice(0, 10);
+      const tglSelesai = clean(r.tanggal_selesai).slice(0, 10);
+      const tglLabel = tglSelesai && tglSelesai !== tglMulai ? `${tglMulai} s/d ${tglSelesai}` : tglMulai;
+      const ket = clean(r.keterangan) || '-';
+      messages.push({
+        audience: { users: ['warehouse', 'chocochips.warehouse2@gmail.com'] },
+        payload: {
+          title: `🌴 Pengajuan ${jenis} Baru — ${empName}`,
+          body: `Tanggal: ${tglLabel} • Ket: ${ket}`,
+          tag: `hr-cuti-${id}`,
+          page: 'hr_approval',
+          url: '/hr-approval',
+        },
+      });
+    }
+  } else if (table === 'izin_pulang_cepat') {
+    for (const r of body.records || []) {
+      const id = clean(r.id);
+      if (!id) continue;
+      const empName = clean(r.nama || r.nik) || 'Karyawan';
+      const tgl = clean(r.tanggal).slice(0, 10);
+      const jamPulang = clean(r.jam_pulang_awal || '--:--').slice(0, 5);
+      const alasan = clean(r.alasan) || '-';
+      messages.push({
+        audience: { users: ['warehouse', 'chocochips.warehouse2@gmail.com'] },
+        payload: {
+          title: `🏃 Pengajuan Ijin Pulang Cepat — ${empName}`,
+          body: `Tanggal: ${tgl} (Pulang Jam ${jamPulang}) • Ket: ${alasan}`,
+          tag: `hr-ipa-${id}`,
+          page: 'hr_approval',
+          url: '/hr-approval',
+        },
+      });
+    }
   }
   return messages;
 }

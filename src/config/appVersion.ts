@@ -15,19 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.92",
-  "versionCode": 352,
+  "version": "v2.6.93",
+  "versionCode": 353,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v352-1514",
-  "releaseTitle": "WMS v2.6.92 — Matriks Input Penerimaan Produksi & Mode Ukuran (Multi-Size / All Size)",
+  "buildHash": "wms-261108-v353-1030",
+  "releaseTitle": "WMS v2.6.93 — Data Shift & Absensi di Approval Lembur, Ijin Pulang Cepat & Notifikasi Khusus Warehouse",
   "releaseNotes": [
-    "Desain kartu Input Penerimaan Produksi disesuaikan dengan referensi matriks ukuran (Banyak Ukuran S-3XL yang judul kolomnya dapat diedit & All Size / Free Size)",
-    "Penyesuaian tampilan responsif HP Seluler (Grid 3 kolom ukuran, tanpa scroll horizontal)"
+    "Penambahan informasi Shift dan Jam Absen Datang/Pulang pada Daftar Approval Lembur, Cuti, dan Riwayat",
+    "Penambahan opsi Ijin Pulang Cepat pada Form Ijin/Cuti lengkap dengan input Jam Pulang, Keterangan, serta info Shift & Absensi",
+    "Notifikasi real-time & background khusus ke akun warehouse setiap ada pengajuan Ijin, Cuti, atau Lembur baru"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.92",
+    "versionCode": 352,
+    "buildDate": "8 November 2026",
+    "buildHash": "wms-261108-v352-1514",
+    "releaseTitle": "WMS v2.6.92 — Matriks Input Penerimaan Produksi & Mode Ukuran (Multi-Size / All Size)",
+    "releaseNotes": [
+      "Desain kartu Input Penerimaan Produksi disesuaikan dengan referensi matriks ukuran (Banyak Ukuran S-3XL yang judul kolomnya dapat diedit & All Size / Free Size)",
+      "Penyesuaian tampilan responsif HP Seluler (Grid 3 kolom ukuran, tanpa scroll horizontal)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.91",
     "versionCode": 351,
@@ -111,18 +124,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Optimalisasi anti-freeze instan 0ms pada ketebalan ikon",
       "Penyesuaian label akurat Ketebalan Ikon (Light, Regular, Bold)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.84",
-    "versionCode": 344,
-    "buildDate": "8 November 2026",
-    "buildHash": "wms-261108-v344-1148",
-    "releaseTitle": "WMS v2.6.84 — Gaya Ikon (Icon Pack): Minimalist, Duotone, Sharp & Bold",
-    "releaseNotes": [
-      "Pembaruan Icon Pack tema dengan 4 karakter visual nyata: Minimalist Line, Duotone Semi-Fill, Sharp Industrial, dan Bold Stamp",
-      "Pilihan gaya ikon tersedia di Pengaturan & Sesuaikan Tampilan"
     ],
     "minSupportedVersion": "v2.0.0"
   }

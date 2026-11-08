@@ -27,6 +27,26 @@ export const isSuperadmin = (session: UserSession | null): boolean => {
   );
 };
 
+/**
+ * Mengecek apakah sesi yang sedang login adalah khusus akun utama `warehouse`
+ * (digunakan untuk pengiriman notifikasi eksklusif seperti pengajuan Ijin/Cuti/Lembur).
+ */
+export const isWarehouseAccountOnly = (session: UserSession | null): boolean => {
+  if (!session) return false;
+  const user = String(session.username || '').trim().toLowerCase();
+  const nik = String(session.nik || '').trim().toLowerCase();
+  const email = String(session.email || '').trim().toLowerCase();
+
+  return (
+    user === 'warehouse' ||
+    user === 'chocochips.warehouse2@gmail.com' ||
+    email === 'chocochips.warehouse2@gmail.com' ||
+    email.includes('warehouse2@gmail.com') ||
+    nik === 'wh0001'
+  );
+};
+
+
 export const PERMISSION_GROUPS = [
   {
     id: 'g_ops_dashboard',

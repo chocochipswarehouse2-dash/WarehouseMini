@@ -26,6 +26,9 @@ import {
   PerijinanCutiRecord,
   TukarShiftRecord,
   IzinPulangAwalRecord,
+  PresensiRecord,
+  RosterShiftRecord,
+  MasterShiftRecord,
 } from '../../types';
 import {
   fetchLemburRecords,
@@ -45,6 +48,9 @@ import {
   fetchIzinPulangAwalList,
   updateIzinPulangAwalStatus,
   deleteIzinPulangAwalRecord,
+  fetchPresensiRange,
+  fetchRosterShiftList,
+  fetchMasterShiftList,
 } from '../../services/supabase';
 import { playSuccessBeep, playErrorBeep } from '../../services/audio';
 
@@ -72,6 +78,9 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
   const [cutiList, setCutiList] = useState<PerijinanCutiRecord[]>([]);
   const [tukarShiftList, setTukarShiftList] = useState<TukarShiftRecord[]>([]);
   const [izinPulangList, setIzinPulangList] = useState<IzinPulangAwalRecord[]>([]);
+  const [presensiList, setPresensiList] = useState<PresensiRecord[]>([]);
+  const [rosterList, setRosterList] = useState<RosterShiftRecord[]>([]);
+  const [masterShifts, setMasterShifts] = useState<MasterShiftRecord[]>([]);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   // Modal Edit State
@@ -94,16 +103,26 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
   const loadData = async () => {
     setLoading(true);
     try {
-      const [lList, cList, tsList, ipList] = await Promise.all([
+      const now = new Date();
+      const startRange = new Date(now.getFullYear(), now.getMonth() - 3, 1).toISOString().slice(0, 10);
+      const endRange = new Date(now.getFullYear(), now.getMonth() + 2, 0).toISOString().slice(0, 10);
+
+      const [lList, cList, tsList, ipList, pList, rList, mList] = await Promise.all([
         fetchLemburRecords(),
         fetchCutiRecords(),
         fetchTukarShiftList(),
         fetchIzinPulangAwalList(),
+        fetchPresensiRange(startRange, endRange),
+        fetchRosterShiftList(undefined, startRange, endRange),
+        fetchMasterShiftList(),
       ]);
       setLemburList(lList);
       setCutiList(cList);
       setTukarShiftList(tsList);
       setIzinPulangList(ipList);
+      setPresensiList(pList);
+      setRosterList(rList);
+      setMasterShifts(mList);
     } catch (err) {
       console.warn('Gagal memuat data persetujuan:', err);
       onShowToast('Gagal memuat data persetujuan', 'error');
@@ -115,6 +134,86 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
   useEffect(() => {
     loadData();
   }, []);
+
+  // O(1) Lookup Maps for Shift & Presensi
+  const masterShiftMap = React.useMemo(() => {
+    const map = new Map<string, MasterShiftRecord>();
+    for (const ms of masterShifts) {
+      if (ms.nama_shift) {
+        map.set(ms.nama_shift.trim().toUpperCase(), ms);
+      }
+    }
+    return map;
+  }, [masterShifts]);
+
+  const presensiLookupMap = React.useMemo(() => {
+    const map = new Map<string, PresensiRecord>();
+    for (const p of presensiList) {
+      if (p.nik && p.tanggal) {
+        map.set(`${p.nik.trim().toUpperCase()}_${p.tanggal.trim()}`, p);
+      }
+      if (p.nama && p.tanggal) {
+        map.set(`NAME_${p.nama.trim().toUpperCase()}_${p.tanggal.trim()}`, p);
+      }
+    }
+    return map;
+  }, [presensiList]);
+
+  const rosterLookupMap = React.useMemo(() => {
+    const map = new Map<string, RosterShiftRecord>();
+    for (const r of rosterList) {
+      if (r.nik && r.tanggal) {
+        map.set(`${r.nik.trim().toUpperCase()}_${r.tanggal.trim()}`, r);
+      }
+      if (r.nama && r.tanggal) {
+        map.set(`NAME_${r.nama.trim().toUpperCase()}_${r.tanggal.trim()}`, r);
+      }
+    }
+    return map;
+  }, [rosterList]);
+
+  const getEmployeeShiftAndAttendance = React.useCallback(
+    (nik?: string, nama?: string, tanggal?: string) => {
+      const cleanNik = (nik || '').trim().toUpperCase();
+      const cleanNama = (nama || '').trim().toUpperCase();
+      const cleanDate = (tanggal || '').trim();
+
+      const presensi =
+        (cleanNik && presensiLookupMap.get(`${cleanNik}_${cleanDate}`)) ||
+        (cleanNama && presensiLookupMap.get(`NAME_${cleanNama}_${cleanDate}`)) ||
+        null;
+
+      const roster =
+        (cleanNik && rosterLookupMap.get(`${cleanNik}_${cleanDate}`)) ||
+        (cleanNama && rosterLookupMap.get(`NAME_${cleanNama}_${cleanDate}`)) ||
+        null;
+
+      const shiftName = roster?.shift || presensi?.shift || 'Belum Dijadwalkan';
+      const ms = masterShiftMap.get(shiftName.trim().toUpperCase());
+
+      const jamMasukShift = (roster?.jam_masuk || ms?.jam_masuk || '').slice(0, 5);
+      const jamPulangShift = (roster?.jam_pulang || ms?.jam_pulang || '').slice(0, 5);
+      const shiftHoursLabel =
+        jamMasukShift && jamPulangShift ? `${jamMasukShift} - ${jamPulangShift}` : '';
+
+      const jamAbsenDatang = presensi?.jam_masuk ? presensi.jam_masuk.slice(0, 5) : null;
+      const jamAbsenPulang = presensi?.jam_pulang ? presensi.jam_pulang.slice(0, 5) : null;
+      const statusPresensi = presensi?.status || (jamAbsenDatang ? 'Hadir' : 'Belum Absen');
+
+      return {
+        shiftName,
+        shiftHoursLabel,
+        jamMasukShift,
+        jamPulangShift,
+        jamAbsenDatang,
+        jamAbsenPulang,
+        statusPresensi,
+        presensi,
+        roster,
+      };
+    },
+    [presensiLookupMap, rosterLookupMap, masterShiftMap]
+  );
 
   const pendingLembur = lemburList.filter((l) => l.status === 'Diajukan');
   const pendingCuti = cutiList.filter((c) => c.status === 'Diajukan');
@@ -372,14 +471,32 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
     try {
       const approver = session?.name || session?.username || 'Admin';
       await updateCutiStatus(item.id, 'Disetujui', approver);
+      if (item.jenis === 'Ijin Pulang Cepat') {
+        const matchingIpa = izinPulangList.find(
+          (ip) =>
+            (ip.nik || '').toUpperCase() === (item.nik || '').toUpperCase() &&
+            ip.tanggal === item.tgl_mulai &&
+            ip.status === 'Diajukan'
+        );
+        if (matchingIpa) {
+          await updateIzinPulangAwalStatus(matchingIpa.id, 'Disetujui', approver);
+          setIzinPulangList((prev) =>
+            prev.map((ip) =>
+              ip.id === matchingIpa.id ? { ...ip, status: 'Disetujui', approved_by: approver } : ip
+            )
+          );
+        }
+      } else {
+        await upsertRosterShiftForCuti({ ...item, status: 'Disetujui', approved_by: approver });
+      }
       setCutiList((prev) =>
         prev.map((c) => (c.id === item.id ? { ...c, status: 'Disetujui', approved_by: approver } : c))
       );
       playSuccessBeep();
-      onShowToast(`Pengajuan cuti ${item.nama} (${item.jumlah_hari} hari) berhasil disetujui!`, 'success');
+      onShowToast(`Pengajuan ${item.jenis} ${item.nama} berhasil disetujui!`, 'success');
     } catch (err) {
       playErrorBeep();
-      onShowToast('Gagal menyetujui cuti.', 'error');
+      onShowToast('Gagal menyetujui cuti/ijin.', 'error');
     } finally {
       setProcessingId(null);
     }
@@ -392,14 +509,32 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
     try {
       const approver = session?.name || session?.username || 'Admin';
       await updateCutiStatus(item.id, 'Ditolak', approver, reason);
+      if (item.jenis === 'Ijin Pulang Cepat') {
+        const matchingIpa = izinPulangList.find(
+          (ip) =>
+            (ip.nik || '').toUpperCase() === (item.nik || '').toUpperCase() &&
+            ip.tanggal === item.tgl_mulai &&
+            ip.status === 'Diajukan'
+        );
+        if (matchingIpa) {
+          await updateIzinPulangAwalStatus(matchingIpa.id, 'Ditolak', approver, reason);
+          setIzinPulangList((prev) =>
+            prev.map((ip) =>
+              ip.id === matchingIpa.id
+                ? { ...ip, status: 'Ditolak', approved_by: approver, catatan: reason }
+                : ip
+            )
+          );
+        }
+      }
       setCutiList((prev) =>
         prev.map((c) => (c.id === item.id ? { ...c, status: 'Ditolak', approved_by: approver, catatan: reason } : c))
       );
       playSuccessBeep();
-      onShowToast(`Pengajuan cuti ${item.nama} telah ditolak.`, 'info');
+      onShowToast(`Pengajuan ${item.jenis} ${item.nama} telah ditolak.`, 'info');
     } catch (err) {
       playErrorBeep();
-      onShowToast('Gagal menolak cuti.', 'error');
+      onShowToast('Gagal menolak cuti/ijin.', 'error');
     } finally {
       setProcessingId(null);
     }
@@ -410,7 +545,7 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
     setProcessingId(item.id);
     try {
       await updateCutiStatus(item.id, 'Diajukan', session?.name || 'Admin', null);
-      if (item.status === 'Disetujui') {
+      if (item.status === 'Disetujui' && item.jenis !== 'Ijin Pulang Cepat') {
         await removeRosterShiftForCuti(item);
       }
       setCutiList((prev) =>
@@ -436,7 +571,7 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
     setProcessingId(item.id);
     try {
       await deleteCutiRecord(item.id);
-      if (item.status === 'Disetujui') {
+      if (item.status === 'Disetujui' && item.jenis !== 'Ijin Pulang Cepat') {
         await removeRosterShiftForCuti(item);
       }
       setCutiList((prev) => prev.filter((r) => r.id !== item.id));
@@ -502,6 +637,21 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
       setIzinPulangList((prev) =>
         prev.map((i) => (i.id === item.id ? { ...i, status: 'Disetujui', approved_by: approver } : i))
       );
+      const matchingCuti = cutiList.find(
+        (c) =>
+          c.jenis === 'Ijin Pulang Cepat' &&
+          (c.nik || '').toUpperCase() === (item.nik || '').toUpperCase() &&
+          c.tgl_mulai === item.tanggal &&
+          c.status === 'Diajukan'
+      );
+      if (matchingCuti) {
+        await updateCutiStatus(matchingCuti.id, 'Disetujui', approver);
+        setCutiList((prev) =>
+          prev.map((c) =>
+            c.id === matchingCuti.id ? { ...c, status: 'Disetujui', approved_by: approver } : c
+          )
+        );
+      }
       playSuccessBeep();
       onShowToast(`Izin pulang awal ${item.nama} jam ${item.jam_pulang_rencana} berhasil disetujui!`, 'success');
     } catch (err: any) {
@@ -522,6 +672,23 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
       setIzinPulangList((prev) =>
         prev.map((i) => (i.id === item.id ? { ...i, status: 'Ditolak', approved_by: approver, catatan: reason } : i))
       );
+      const matchingCuti = cutiList.find(
+        (c) =>
+          c.jenis === 'Ijin Pulang Cepat' &&
+          (c.nik || '').toUpperCase() === (item.nik || '').toUpperCase() &&
+          c.tgl_mulai === item.tanggal &&
+          c.status === 'Diajukan'
+      );
+      if (matchingCuti) {
+        await updateCutiStatus(matchingCuti.id, 'Ditolak', approver, reason);
+        setCutiList((prev) =>
+          prev.map((c) =>
+            c.id === matchingCuti.id
+              ? { ...c, status: 'Ditolak', approved_by: approver, catatan: reason }
+              : c
+          )
+        );
+      }
       playSuccessBeep();
       onShowToast(`Izin pulang awal ${item.nama} telah ditolak.`, 'info');
     } catch (err: any) {
@@ -530,6 +697,50 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
     } finally {
       setProcessingId(null);
     }
+  };
+
+  const renderShiftAndAttendanceBar = (nik?: string, nama?: string, tanggal?: string) => {
+    const info = getEmployeeShiftAndAttendance(nik, nama, tanggal);
+    return (
+      <div className="mt-2 p-2.5 rounded-xl bg-white/80 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px]">
+        <div className="flex items-center gap-1.5">
+          <Clock className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+          <span className="text-slate-500 dark:text-slate-400">Shift:</span>
+          <span className="font-extrabold text-indigo-700 dark:text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-md border border-indigo-500/20">
+            {info.shiftName}
+            {info.shiftHoursLabel ? ` (${info.shiftHoursLabel})` : ''}
+          </span>
+        </div>
+
+        <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">|</span>
+
+        <div className="flex items-center gap-1.5">
+          <span className="text-slate-500 dark:text-slate-400">Absen Datang:</span>
+          {info.jamAbsenDatang ? (
+            <span className="font-mono font-black text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+              {info.jamAbsenDatang}
+            </span>
+          ) : (
+            <span className="font-mono font-bold text-rose-600 dark:text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-md border border-rose-500/20">
+              Belum Absen
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <span className="text-slate-500 dark:text-slate-400">Absen Pulang:</span>
+          {info.jamAbsenPulang ? (
+            <span className="font-mono font-black text-teal-700 dark:text-teal-300 bg-teal-500/10 px-2 py-0.5 rounded-md border border-teal-500/20">
+              {info.jamAbsenPulang}
+            </span>
+          ) : (
+            <span className="font-mono font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+              Belum Absen
+            </span>
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -711,8 +922,8 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
                   key={item.id}
                   className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
                 >
-                  <div>
-                    <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="font-extrabold text-slate-900 dark:text-white text-sm">
                         {item.nama}
                       </span>
@@ -723,9 +934,10 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
                     </div>
 
                     <div className="font-mono text-slate-500 mt-1">
-                      Tanggal: <b>{item.tanggal}</b> • Jam: {item.jam_mulai?.slice(0, 5)} s/d {item.jam_selesai?.slice(0, 5)}
+                      Tanggal: <b>{item.tanggal}</b> • Jam Lembur: <b>{item.jam_mulai?.slice(0, 5)} s/d {item.jam_selesai?.slice(0, 5)}</b>
                     </div>
-                    <p className="text-slate-700 dark:text-slate-300 mt-1">{item.deskripsi}</p>
+                    {renderShiftAndAttendanceBar(item.nik, item.nama, item.tanggal)}
+                    <p className="text-slate-700 dark:text-slate-300 mt-1.5">{item.deskripsi}</p>
                   </div>
 
                   <div className="flex items-center gap-1.5 shrink-0">
@@ -806,13 +1018,17 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
                   key={item.id}
                   className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
                 >
-                  <div>
-                    <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="font-extrabold text-slate-900 dark:text-white text-sm">
                         {item.nama}
                       </span>
                       <span className="text-slate-400 font-mono">({item.nik})</span>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-teal-500/10 text-teal-600 dark:text-teal-400">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                        item.jenis === 'Ijin Pulang Cepat'
+                          ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30'
+                          : 'bg-teal-500/10 text-teal-600 dark:text-teal-400'
+                      }`}>
                         {item.jenis} ({item.jumlah_hari} Hari)
                       </span>
                     </div>
@@ -820,7 +1036,8 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
                     <div className="font-mono text-slate-500 mt-1">
                       Periode: <b>{item.tgl_mulai}</b> s/d <b>{item.tgl_selesai}</b>
                     </div>
-                    <p className="text-slate-700 dark:text-slate-300 mt-1">Alasan: "{item.alasan}"</p>
+                    {renderShiftAndAttendanceBar(item.nik, item.nama, item.tgl_mulai)}
+                    <p className="text-slate-700 dark:text-slate-300 mt-1.5">Alasan: "{item.alasan}"</p>
                   </div>
 
                   <div className="flex items-center gap-1.5 shrink-0">
@@ -974,13 +1191,13 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
                   key={item.id}
                   className="p-4 rounded-2xl bg-amber-50/40 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
                 >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
+                  <div className="space-y-1 flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="font-extrabold text-slate-900 dark:text-white text-sm">
                         {item.nama}
                       </span>
                       <span className="text-slate-400 font-mono">({item.nik})</span>
-                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-amber-500/20 text-amber-700 dark:text-amber-300 font-mono">
                         Pulang Jam: {item.jam_pulang_rencana} (Normal: {item.jam_pulang_standar || '17:00'})
                       </span>
                     </div>
@@ -988,7 +1205,8 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
                     <div className="font-mono text-slate-500">
                       Tanggal: <b>{item.tanggal}</b> • Shift: <b>{item.shift}</b>
                     </div>
-                    <p className="text-slate-700 dark:text-slate-300">Alasan: "{item.alasan}"</p>
+                    {renderShiftAndAttendanceBar(item.nik, item.nama, item.tanggal)}
+                    <p className="text-slate-700 dark:text-slate-300 pt-0.5">Alasan: "{item.alasan}"</p>
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
@@ -1070,8 +1288,8 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
                         key={item.id}
                         className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
                       >
-                        <div>
-                          <div className="flex items-center gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="font-extrabold text-slate-900 dark:text-white">{item.nama}</span>
                             <span className="text-slate-400 font-mono">({item.nik})</span>
                             <span
@@ -1090,8 +1308,9 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
                           <div className="text-[11px] text-slate-500 mt-1">
                             Tanggal: <b>{item.tanggal}</b> ({item.jam_mulai?.slice(0, 5)} - {item.jam_selesai?.slice(0, 5)}) — {item.deskripsi}
                           </div>
+                          {renderShiftAndAttendanceBar(item.nik, item.nama, item.tanggal)}
                           {item.approved_by && (
-                            <div className="text-[10px] text-slate-400 mt-0.5 italic">
+                            <div className="text-[10px] text-slate-400 mt-1 italic">
                               Diproses oleh: <b>{item.approved_by}</b> {item.catatan && `• Catatan: "${item.catatan}"`}
                             </div>
                           )}
@@ -1170,8 +1389,8 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
                         key={item.id}
                         className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
                       >
-                        <div>
-                          <div className="flex items-center gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="font-extrabold text-slate-900 dark:text-white">{item.nama}</span>
                             <span className="text-slate-400 font-mono">({item.nik})</span>
                             <span
@@ -1192,8 +1411,9 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
                           <div className="text-[11px] text-slate-500 mt-1">
                             Periode: <b>{item.tgl_mulai}</b> s/d <b>{item.tgl_selesai}</b> — Alasan: "{item.alasan}"
                           </div>
+                          {renderShiftAndAttendanceBar(item.nik, item.nama, item.tgl_mulai)}
                           {item.approved_by && (
-                            <div className="text-[10px] text-slate-400 mt-0.5 italic">
+                            <div className="text-[10px] text-slate-400 mt-1 italic">
                               Diproses oleh: <b>{item.approved_by}</b> {item.catatan && `• Catatan: "${item.catatan}"`}
                             </div>
                           )}

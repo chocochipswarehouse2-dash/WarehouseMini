@@ -19,7 +19,15 @@ import {
   Check,
   X,
 } from 'lucide-react';
-import { UserSession, LemburRecord, PerijinanCutiRecord } from '../../types';
+import {
+  UserSession,
+  LemburRecord,
+  PerijinanCutiRecord,
+  PresensiRecord,
+  RosterShiftRecord,
+  MasterShiftRecord,
+  IzinPulangAwalRecord,
+} from '../../types';
 import { HrApprovalView } from './HrApprovalView';
 import { ShieldCheck, History } from 'lucide-react';
 import { hasPermission, isSuperadmin } from '../../services/permissions';
@@ -35,6 +43,12 @@ import {
   updateCutiRecord,
   upsertRosterShiftForCuti,
   removeRosterShiftForCuti,
+  fetchPresensiRange,
+  fetchRosterShiftList,
+  fetchMasterShiftList,
+  fetchIzinPulangAwalList,
+  submitIzinPulangAwalRecord,
+  updateIzinPulangAwalStatus,
 } from '../../services/supabase';
 import { playSuccessBeep, playErrorBeep } from '../../services/audio';
 import { getUserPersonName, getUserNik } from '../../utils/userResolver';
@@ -51,6 +65,10 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
 
   const [lemburList, setLemburList] = useState<LemburRecord[]>([]);
   const [cutiList, setCutiList] = useState<PerijinanCutiRecord[]>([]);
+  const [presensiList, setPresensiList] = useState<PresensiRecord[]>([]);
+  const [rosterList, setRosterList] = useState<RosterShiftRecord[]>([]);
+  const [masterShifts, setMasterShifts] = useState<MasterShiftRecord[]>([]);
+  const [izinPulangList, setIzinPulangList] = useState<IzinPulangAwalRecord[]>([]);
 
   // Form Lembur State
   const [lemburDate, setLemburDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
@@ -79,10 +97,11 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
   const [editingCutiItem, setEditingCutiItem] = useState<PerijinanCutiRecord | null>(null);
   const [savingEditCuti, setSavingEditCuti] = useState<boolean>(false);
 
-  // Form Cuti State
+  // Form Cuti / Ijin State
   const [cutiType, setCutiType] = useState<string>('Cuti Tahunan');
   const [cutiStart, setCutiStart] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [cutiEnd, setCutiEnd] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [jamPulangCepat, setJamPulangCepat] = useState<string>('14:00');
   const [cutiReason, setCutiReason] = useState<string>('');
   const [submittingCuti, setSubmittingCuti] = useState<boolean>(false);
 
@@ -94,13 +113,25 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
   const loadData = async () => {
     setLoading(true);
     try {
+      const now = new Date();
+      const startRange = new Date(now.getFullYear(), now.getMonth() - 3, 1).toISOString().slice(0, 10);
+      const endRange = new Date(now.getFullYear(), now.getMonth() + 2, 0).toISOString().slice(0, 10);
+
       const lemburPromise = (isAdmin || canApprove) ? fetchLemburRecords() : fetchLemburRecords(userNik);
-      const [lList, cList] = await Promise.all([
+      const [lList, cList, pList, rList, mList, ipList] = await Promise.all([
         lemburPromise,
         fetchCutiRecords(),
+        fetchPresensiRange(startRange, endRange),
+        fetchRosterShiftList(undefined, startRange, endRange),
+        fetchMasterShiftList(),
+        fetchIzinPulangAwalList(),
       ]);
       setLemburList(lList);
       setCutiList(cList);
+      setPresensiList(pList);
+      setRosterList(rList);
+      setMasterShifts(mList);
+      setIzinPulangList(ipList);
     } catch (err) {
       console.warn('Gagal memuat data lembur & cuti:', err);
       onShowToast('Gagal memuat data lembur & cuti', 'error');
@@ -112,6 +143,86 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
   useEffect(() => {
     loadData();
   }, []);
+
+  // O(1) Lookup Maps for Shift & Presensi
+  const masterShiftMap = React.useMemo(() => {
+    const map = new Map<string, MasterShiftRecord>();
+    for (const ms of masterShifts) {
+      if (ms.nama_shift) {
+        map.set(ms.nama_shift.trim().toUpperCase(), ms);
+      }
+    }
+    return map;
+  }, [masterShifts]);
+
+  const presensiLookupMap = React.useMemo(() => {
+    const map = new Map<string, PresensiRecord>();
+    for (const p of presensiList) {
+      if (p.nik && p.tanggal) {
+        map.set(`${p.nik.trim().toUpperCase()}_${p.tanggal.trim()}`, p);
+      }
+      if (p.nama && p.tanggal) {
+        map.set(`NAME_${p.nama.trim().toUpperCase()}_${p.tanggal.trim()}`, p);
+      }
+    }
+    return map;
+  }, [presensiList]);
+
+  const rosterLookupMap = React.useMemo(() => {
+    const map = new Map<string, RosterShiftRecord>();
+    for (const r of rosterList) {
+      if (r.nik && r.tanggal) {
+        map.set(`${r.nik.trim().toUpperCase()}_${r.tanggal.trim()}`, r);
+      }
+      if (r.nama && r.tanggal) {
+        map.set(`NAME_${r.nama.trim().toUpperCase()}_${r.tanggal.trim()}`, r);
+      }
+    }
+    return map;
+  }, [rosterList]);
+
+  const getEmployeeShiftAndAttendance = React.useCallback(
+    (nik?: string, nama?: string, tanggal?: string) => {
+      const cleanNik = (nik || '').trim().toUpperCase();
+      const cleanNama = (nama || '').trim().toUpperCase();
+      const cleanDate = (tanggal || '').trim();
+
+      const presensi =
+        (cleanNik && presensiLookupMap.get(`${cleanNik}_${cleanDate}`)) ||
+        (cleanNama && presensiLookupMap.get(`NAME_${cleanNama}_${cleanDate}`)) ||
+        null;
+
+      const roster =
+        (cleanNik && rosterLookupMap.get(`${cleanNik}_${cleanDate}`)) ||
+        (cleanNama && rosterLookupMap.get(`NAME_${cleanNama}_${cleanDate}`)) ||
+        null;
+
+      const shiftName = roster?.shift || presensi?.shift || 'Belum Dijadwalkan';
+      const ms = masterShiftMap.get(shiftName.trim().toUpperCase());
+
+      const jamMasukShift = (roster?.jam_masuk || ms?.jam_masuk || '').slice(0, 5);
+      const jamPulangShift = (roster?.jam_pulang || ms?.jam_pulang || '').slice(0, 5);
+      const shiftHoursLabel =
+        jamMasukShift && jamPulangShift ? `${jamMasukShift} - ${jamPulangShift}` : '';
+
+      const jamAbsenDatang = presensi?.jam_masuk ? presensi.jam_masuk.slice(0, 5) : null;
+      const jamAbsenPulang = presensi?.jam_pulang ? presensi.jam_pulang.slice(0, 5) : null;
+      const statusPresensi = presensi?.status || (jamAbsenDatang ? 'Hadir' : 'Belum Absen');
+
+      return {
+        shiftName,
+        shiftHoursLabel,
+        jamMasukShift,
+        jamPulangShift,
+        jamAbsenDatang,
+        jamAbsenPulang,
+        statusPresensi,
+        presensi,
+        roster,
+      };
+    },
+    [presensiLookupMap, rosterLookupMap, masterShiftMap]
+  );
 
   // Calculate Lembur Duration in Hours
   const calculateDuration = (start: string, end: string): number => {
@@ -207,26 +318,56 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
     }
   };
 
-  // Submit Cuti
+  // Submit Cuti / Ijin / Ijin Pulang Cepat
   const handleSubmitCuti = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!cutiReason.trim()) {
-      onShowToast('Mohon tulis alasan pengajuan cuti/ijin!', 'warning');
+      onShowToast('Mohon tulis keterangan / alasan pengajuan cuti/ijin!', 'warning');
       return;
     }
 
-    const days = calculateCutiDays(cutiStart, cutiEnd);
+    const isPulangCepat = cutiType === 'Ijin Pulang Cepat';
+    if (isPulangCepat && !jamPulangCepat.trim()) {
+      onShowToast('Mohon isi Jam Pulang untuk Ijin Pulang Cepat!', 'warning');
+      return;
+    }
+
+    const effectiveEnd = isPulangCepat ? cutiStart : cutiEnd;
+    const days = isPulangCepat ? 1 : calculateCutiDays(cutiStart, effectiveEnd);
+    const shiftInfo = getEmployeeShiftAndAttendance(userNik, userName, cutiStart);
+
     setSubmittingCuti(true);
     try {
+      const shiftSummary = `${shiftInfo.shiftName}${shiftInfo.shiftHoursLabel ? ` (${shiftInfo.shiftHoursLabel})` : ''}`;
+      const absenDatangSummary = shiftInfo.jamAbsenDatang || 'Belum Absen';
+      const formattedReason = isPulangCepat
+        ? `[Pulang Jam ${jamPulangCepat} • Shift: ${shiftSummary} • Absen Datang: ${absenDatangSummary}] ${cutiReason.trim()}`
+        : cutiReason.trim();
+
+      if (isPulangCepat) {
+        const ipaRes = await submitIzinPulangAwalRecord({
+          nik: userNik,
+          nama: userName,
+          divisi: session?.divisi || 'Warehouse',
+          tanggal: cutiStart,
+          jam_pulang_rencana: jamPulangCepat,
+          jam_pulang_standar: shiftInfo.jamPulangShift || '17:00',
+          shift: shiftInfo.shiftName !== 'Belum Dijadwalkan' ? shiftInfo.shiftName : 'Shift 1',
+          alasan: cutiReason.trim(),
+          status: 'Diajukan',
+        });
+        setIzinPulangList((prev) => [ipaRes, ...prev]);
+      }
+
       const payload: Partial<PerijinanCutiRecord> = {
         nik: userNik,
         nama: userName,
         divisi: session?.divisi || 'Warehouse',
         jenis: cutiType,
         tgl_mulai: cutiStart,
-        tgl_selesai: cutiEnd,
+        tgl_selesai: effectiveEnd,
         jumlah_hari: days,
-        alasan: cutiReason.trim(),
+        alasan: formattedReason,
         status: 'Diajukan',
       };
 
@@ -234,10 +375,15 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
       setCutiList((prev) => [res, ...prev]);
       setCutiReason('');
       playSuccessBeep();
-      onShowToast(`Pengajuan ${cutiType} (${days} hari) berhasil dikirim ke Admin!`, 'success');
+      onShowToast(
+        isPulangCepat
+          ? `Pengajuan Ijin Pulang Cepat (Jam ${jamPulangCepat}) berhasil dikirim ke Admin!`
+          : `Pengajuan ${cutiType} (${days} hari) berhasil dikirim ke Admin!`,
+        'success'
+      );
     } catch (err) {
       playErrorBeep();
-      const msg = err instanceof Error ? err.message : 'Gagal mengajukan cuti.';
+      const msg = err instanceof Error ? err.message : 'Gagal mengajukan cuti/ijin.';
       onShowToast(msg, 'error');
     } finally {
       setSubmittingCuti(false);
@@ -250,12 +396,34 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
     try {
       const approver = session?.name || session?.username || "Admin";
       await updateCutiStatus(item.id, "Disetujui", approver);
-      await upsertRosterShiftForCuti({ ...item, status: "Disetujui", approved_by: approver });
+      if (item.jenis === 'Ijin Pulang Cepat') {
+        const matchingIpa = izinPulangList.find(
+          (ip) =>
+            (ip.nik || '').toUpperCase() === (item.nik || '').toUpperCase() &&
+            ip.tanggal === item.tgl_mulai &&
+            ip.status === 'Diajukan'
+        );
+        if (matchingIpa) {
+          await updateIzinPulangAwalStatus(matchingIpa.id, 'Disetujui', approver);
+          setIzinPulangList((prev) =>
+            prev.map((ip) =>
+              ip.id === matchingIpa.id ? { ...ip, status: 'Disetujui', approved_by: approver } : ip
+            )
+          );
+        }
+      } else {
+        await upsertRosterShiftForCuti({ ...item, status: "Disetujui", approved_by: approver });
+      }
       setCutiList((prev) =>
         prev.map((c) => (c.id === item.id ? { ...c, status: "Disetujui", approved_by: approver } : c))
       );
       playSuccessBeep();
-      onShowToast(`Cuti ${item.nama} (${item.jumlah_hari} hari) berhasil disetujui & masuk ke jadwal roster!`, "success");
+      onShowToast(
+        item.jenis === 'Ijin Pulang Cepat'
+          ? `Ijin Pulang Cepat ${item.nama} berhasil disetujui!`
+          : `Cuti ${item.nama} (${item.jumlah_hari} hari) berhasil disetujui & masuk ke jadwal roster!`,
+        "success"
+      );
     } catch (err: any) {
       playErrorBeep();
       onShowToast(`Gagal menyetujui cuti: ${err?.message || "Error"}`, "error");
@@ -270,14 +438,33 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
     try {
       const approver = session?.name || session?.username || "Admin";
       await updateCutiStatus(item.id, "Ditolak", approver, reason);
-      await removeRosterShiftForCuti(item);
+      if (item.jenis === 'Ijin Pulang Cepat') {
+        const matchingIpa = izinPulangList.find(
+          (ip) =>
+            (ip.nik || '').toUpperCase() === (item.nik || '').toUpperCase() &&
+            ip.tanggal === item.tgl_mulai &&
+            ip.status === 'Diajukan'
+        );
+        if (matchingIpa) {
+          await updateIzinPulangAwalStatus(matchingIpa.id, 'Ditolak', approver, reason);
+          setIzinPulangList((prev) =>
+            prev.map((ip) =>
+              ip.id === matchingIpa.id
+                ? { ...ip, status: 'Ditolak', approved_by: approver, catatan: reason }
+                : ip
+            )
+          );
+        }
+      } else {
+        await removeRosterShiftForCuti(item);
+      }
       setCutiList((prev) =>
         prev.map((c) =>
           c.id === item.id ? { ...c, status: "Ditolak", approved_by: approver, catatan: reason } : c
         )
       );
       playSuccessBeep();
-      onShowToast(`Pengajuan cuti ${item.nama} telah ditolak.`, "info");
+      onShowToast(`Pengajuan ${item.jenis} ${item.nama} telah ditolak.`, "info");
     } catch (err: any) {
       playErrorBeep();
       onShowToast(`Gagal menolak cuti: ${err?.message || "Error"}`, "error");
@@ -449,6 +636,53 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
   const myLembur = lemburList.filter((l) => l.nik === userNik);
   const myCuti = cutiList.filter((c) => c.nik === userNik);
 
+  const selectedLemburDateInfo = getEmployeeShiftAndAttendance(userNik, userName, lemburDate);
+  const selectedCutiDateInfo = getEmployeeShiftAndAttendance(userNik, userName, cutiStart);
+
+  const renderShiftAndAttendanceBar = (nik?: string, nama?: string, tanggal?: string) => {
+    const info = getEmployeeShiftAndAttendance(nik, nama, tanggal);
+    return (
+      <div className="mt-2 p-2.5 rounded-xl bg-white/80 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px]">
+        <div className="flex items-center gap-1.5">
+          <Clock className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+          <span className="text-slate-500 dark:text-slate-400">Shift:</span>
+          <span className="font-extrabold text-indigo-700 dark:text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-md border border-indigo-500/20">
+            {info.shiftName}
+            {info.shiftHoursLabel ? ` (${info.shiftHoursLabel})` : ''}
+          </span>
+        </div>
+
+        <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">|</span>
+
+        <div className="flex items-center gap-1.5">
+          <span className="text-slate-500 dark:text-slate-400">Absen Datang:</span>
+          {info.jamAbsenDatang ? (
+            <span className="font-mono font-black text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+              {info.jamAbsenDatang}
+            </span>
+          ) : (
+            <span className="font-mono font-bold text-rose-600 dark:text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-md border border-rose-500/20">
+              Belum Absen
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <span className="text-slate-500 dark:text-slate-400">Absen Pulang:</span>
+          {info.jamAbsenPulang ? (
+            <span className="font-mono font-black text-teal-700 dark:text-teal-300 bg-teal-500/10 px-2 py-0.5 rounded-md border border-teal-500/20">
+              {info.jamAbsenPulang}
+            </span>
+          ) : (
+            <span className="font-mono font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+              Belum Absen
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-3 animate-in fade-in duration-200">
       {/* TOP TAB NAVIGATION */}
@@ -546,7 +780,7 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
               </div>
             </div>
 
-            <form onSubmit={handleSubmitLembur} className="space-y-2 text-xs">
+            <form onSubmit={handleSubmitLembur} className="space-y-2.5 text-xs">
               <div>
                 <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1">
                   Tanggal Lembur
@@ -558,6 +792,34 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 dark:text-white font-mono"
                   required
                 />
+              </div>
+
+              {/* INFO SHIFT & ABSENSI TANGGAL LEMBUR */}
+              <div className="p-3 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200/70 dark:border-indigo-800/60 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    <span>Data Shift &amp; Absensi ({lemburDate})</span>
+                  </span>
+                  <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20">
+                    {selectedLemburDateInfo.shiftName}
+                    {selectedLemburDateInfo.shiftHoursLabel ? ` (${selectedLemburDateInfo.shiftHoursLabel})` : ''}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 pt-0.5 text-[11px]">
+                  <div className="p-2 rounded-xl bg-white dark:bg-slate-900/80 border border-slate-200/70 dark:border-slate-800 flex items-center justify-between">
+                    <span className="text-slate-500">Jam Datang:</span>
+                    <span className={`font-mono font-black ${selectedLemburDateInfo.jamAbsenDatang ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'}`}>
+                      {selectedLemburDateInfo.jamAbsenDatang || 'Belum Absen'}
+                    </span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-white dark:bg-slate-900/80 border border-slate-200/70 dark:border-slate-800 flex items-center justify-between">
+                    <span className="text-slate-500">Jam Pulang:</span>
+                    <span className={`font-mono font-black ${selectedLemburDateInfo.jamAbsenPulang ? 'text-teal-600 dark:text-teal-400' : 'text-amber-500'}`}>
+                      {selectedLemburDateInfo.jamAbsenPulang || 'Belum Absen'}
+                    </span>
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -648,8 +910,8 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
                     key={l.id}
                     className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-800/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
                   >
-                    <div>
-                      <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
                           {l.tanggal}
                         </span>
@@ -660,7 +922,8 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
                           {l.durasi_jam} Jam
                         </span>
                       </div>
-                      <p className="text-slate-600 dark:text-slate-400 mt-1">{l.deskripsi}</p>
+                      {renderShiftAndAttendanceBar(l.nik, l.nama, l.tanggal)}
+                      <p className="text-slate-600 dark:text-slate-400 mt-1.5">{l.deskripsi}</p>
                       {l.catatan && (
                         <div className="text-[11px] text-slate-500 mt-0.5 italic">
                           Catatan Admin: {l.catatan}
@@ -696,7 +959,7 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
       {/* ========================================================================= */}
       {activeTab === 'cuti' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-          {/* FORM INPUT CUTI */}
+          {/* FORM INPUT CUTI / IJIN / PULANG CEPAT */}
           <div className="bg-white dark:bg-[#131d31] rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
             <div className="flex items-center gap-2.5 mb-2">
               <div className="w-9 h-9 rounded-xl bg-teal-500/10 flex items-center justify-center text-teal-500">
@@ -706,69 +969,152 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
                 <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
                   Form Pengajuan Ijin / Cuti
                 </h3>
-                <p className="text-[11px] text-slate-400">Cuti tahunan, sakit, atau ijin</p>
+                <p className="text-[11px] text-slate-400">Cuti tahunan, sakit, ijin, atau ijin pulang cepat</p>
               </div>
             </div>
 
-            <form onSubmit={handleSubmitCuti} className="space-y-2 text-xs">
+            <form onSubmit={handleSubmitCuti} className="space-y-2.5 text-xs">
               <div>
                 <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1">
                   Jenis Perijinan
                 </label>
                 <select
                   value={cutiType}
-                  onChange={(e) => setCutiType(e.target.value)}
+                  onChange={(e) => {
+                    const nextType = e.target.value;
+                    setCutiType(nextType);
+                    if (nextType === 'Ijin Pulang Cepat') {
+                      setCutiEnd(cutiStart);
+                    }
+                  }}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 dark:text-white font-extrabold"
                 >
                   <option value="Cuti Tahunan">Cuti Tahunan</option>
                   <option value="Sakit">Sakit</option>
                   <option value="Ijin">Ijin Keperluan Lain</option>
+                  <option value="Ijin Pulang Cepat">Ijin Pulang Cepat</option>
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1">
-                    Tanggal Mulai
-                  </label>
-                  <input
-                    type="date"
-                    value={cutiStart}
-                    onChange={(e) => setCutiStart(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 dark:text-white font-mono"
-                    required
-                  />
+              {cutiType === 'Ijin Pulang Cepat' ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1">
+                      Tanggal Ijin
+                    </label>
+                    <input
+                      type="date"
+                      value={cutiStart}
+                      onChange={(e) => {
+                        setCutiStart(e.target.value);
+                        setCutiEnd(e.target.value);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 dark:text-white font-mono"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-amber-600 dark:text-amber-400 font-bold mb-1">
+                      Jam Pulang Cepat *
+                    </label>
+                    <input
+                      type="time"
+                      value={jamPulangCepat}
+                      onChange={(e) => setJamPulangCepat(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 text-slate-900 dark:text-white font-mono font-bold"
+                      required
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1">
-                    Tanggal Selesai
-                  </label>
-                  <input
-                    type="date"
-                    value={cutiEnd}
-                    onChange={(e) => setCutiEnd(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 dark:text-white font-mono"
-                    required
-                  />
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1">
+                      Tanggal Mulai
+                    </label>
+                    <input
+                      type="date"
+                      value={cutiStart}
+                      onChange={(e) => setCutiStart(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 dark:text-white font-mono"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1">
+                      Tanggal Selesai
+                    </label>
+                    <input
+                      type="date"
+                      value={cutiEnd}
+                      onChange={(e) => setCutiEnd(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 dark:text-white font-mono"
+                      required
+                    />
+                  </div>
                 </div>
+              )}
+
+              {/* DATA SHIFT & ABSENSI KARYAWAN */}
+              <div className="p-3 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200/70 dark:border-indigo-800/60 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    <span>Data Shift &amp; Absensi ({cutiStart})</span>
+                  </span>
+                  <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20">
+                    {selectedCutiDateInfo.shiftName}
+                    {selectedCutiDateInfo.shiftHoursLabel ? ` (${selectedCutiDateInfo.shiftHoursLabel})` : ''}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 pt-0.5 text-[11px]">
+                  <div className="p-2 rounded-xl bg-white dark:bg-slate-900/80 border border-slate-200/70 dark:border-slate-800 flex items-center justify-between">
+                    <span className="text-slate-500">Absen Datang:</span>
+                    <span className={`font-mono font-black ${selectedCutiDateInfo.jamAbsenDatang ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'}`}>
+                      {selectedCutiDateInfo.jamAbsenDatang || 'Belum Absen'}
+                    </span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-white dark:bg-slate-900/80 border border-slate-200/70 dark:border-slate-800 flex items-center justify-between">
+                    <span className="text-slate-500">Absen Pulang:</span>
+                    <span className={`font-mono font-black ${selectedCutiDateInfo.jamAbsenPulang ? 'text-teal-600 dark:text-teal-400' : 'text-amber-500'}`}>
+                      {selectedCutiDateInfo.jamAbsenPulang || 'Belum Absen'}
+                    </span>
+                  </div>
+                </div>
+                {cutiType === 'Ijin Pulang Cepat' && (
+                  <div className="pt-1 flex items-center justify-between text-[11px] font-bold text-amber-700 dark:text-amber-300 border-t border-indigo-200/50 dark:border-indigo-800/50">
+                    <span>Rencana Pulang Cepat:</span>
+                    <span className="font-mono font-black">
+                      Jam {jamPulangCepat || '--:--'} (Normal: {selectedCutiDateInfo.jamPulangShift || '17:00'})
+                    </span>
+                  </div>
+                )}
               </div>
 
-              <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl flex items-center justify-between font-bold">
-                <span className="text-slate-500">Jumlah Hari:</span>
-                <span className="text-teal-600 dark:text-teal-400 font-black text-sm">
-                  {calculateCutiDays(cutiStart, cutiEnd)} Hari
-                </span>
-              </div>
+              {cutiType !== 'Ijin Pulang Cepat' && (
+                <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl flex items-center justify-between font-bold">
+                  <span className="text-slate-500">Jumlah Hari:</span>
+                  <span className="text-teal-600 dark:text-teal-400 font-black text-sm">
+                    {calculateCutiDays(cutiStart, cutiEnd)} Hari
+                  </span>
+                </div>
+              )}
 
               <div>
                 <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1">
-                  Alasan / Keterangan
+                  {cutiType === 'Ijin Pulang Cepat'
+                    ? 'Keterangan / Deskripsi Ijin Pulang Cepat *'
+                    : 'Alasan / Keterangan / Deskripsi Ijin *'}
                 </label>
                 <textarea
                   rows={3}
                   value={cutiReason}
                   onChange={(e) => setCutiReason(e.target.value)}
-                  placeholder="Tuliskan alasan perijinan atau cuti secara jelas..."
+                  placeholder={
+                    cutiType === 'Ijin Pulang Cepat'
+                      ? 'Tuliskan alasan / keperluan ijin pulang cepat secara jelas...'
+                      : 'Tuliskan alasan perijinan atau cuti secara jelas...'
+                  }
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 dark:text-white"
                   required
                 ></textarea>
@@ -780,7 +1126,13 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
                 className="w-full py-3 px-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold flex items-center justify-center gap-2 shadow-lg shadow-teal-600/20 cursor-pointer disabled:opacity-50"
               >
                 <Send className="w-4 h-4" />
-                <span>{submittingCuti ? 'Mengirim...' : 'Kirim Pengajuan Ijin / Cuti'}</span>
+                <span>
+                  {submittingCuti
+                    ? 'Mengirim...'
+                    : cutiType === 'Ijin Pulang Cepat'
+                    ? 'Kirim Ijin Pulang Cepat'
+                    : 'Kirim Pengajuan Ijin / Cuti'}
+                </span>
               </button>
             </form>
           </div>
@@ -802,19 +1154,24 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
                     key={c.id}
                     className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-800/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
                   >
-                    <div>
-                      <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="font-extrabold text-slate-800 dark:text-slate-200">
                           {c.jenis}
                         </span>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-teal-500/10 text-teal-600 dark:text-teal-400">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                          c.jenis === 'Ijin Pulang Cepat'
+                            ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30'
+                            : 'bg-teal-500/10 text-teal-600 dark:text-teal-400'
+                        }`}>
                           {c.jumlah_hari} Hari
                         </span>
                       </div>
                       <div className="font-mono text-slate-500 mt-1">
                         {c.tgl_mulai} s/d {c.tgl_selesai}
                       </div>
-                      <p className="text-slate-600 dark:text-slate-400 mt-1">{c.alasan}</p>
+                      {renderShiftAndAttendanceBar(c.nik, c.nama, c.tgl_mulai)}
+                      <p className="text-slate-600 dark:text-slate-400 mt-1.5">{c.alasan}</p>
                     </div>
 
                     <div className="shrink-0">
@@ -1041,11 +1398,13 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
                         </div>
                       </div>
 
+                      {renderShiftAndAttendanceBar(c.nik, c.nama, c.tgl_mulai)}
+
                       {/* Alasan Pengajuan */}
                       {c.alasan && (
                         <div className="mt-2.5 text-xs text-slate-600 dark:text-slate-300 bg-slate-50/50 dark:bg-slate-900/40 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">
-                            Alasan:
+                            Alasan / Keterangan:
                           </span>
                           <p className="italic text-[11px] leading-relaxed">"{c.alasan}"</p>
                         </div>
@@ -1193,6 +1552,7 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
                   <option value="Cuti Tahunan">Cuti Tahunan</option>
                   <option value="Sakit">Sakit</option>
                   <option value="Ijin">Ijin Keperluan Lain</option>
+                  <option value="Ijin Pulang Cepat">Ijin Pulang Cepat</option>
                 </select>
               </div>
 

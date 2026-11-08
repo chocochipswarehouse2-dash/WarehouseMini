@@ -87,6 +87,29 @@ DROP TRIGGER IF EXISTS wms_push_peminjaman ON public.peminjaman;
 CREATE TRIGGER wms_push_peminjaman AFTER INSERT ON public.peminjaman
   REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.wms_push_on_insert_sps();
 
+-- 5B. Trigger khusus Pengajuan Lembur & Ijin/Cuti (dikirim khusus ke akun warehouse)
+CREATE OR REPLACE FUNCTION public.wms_push_on_insert_lembur() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  PERFORM public.wms_push_notify(jsonb_build_object('table','lembur','records',
+    (SELECT COALESCE(jsonb_agg(to_jsonb(n)),'[]'::jsonb) FROM new_rows n)));
+  RETURN NULL;
+END; $$;
+
+CREATE OR REPLACE FUNCTION public.wms_push_on_insert_cuti() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  PERFORM public.wms_push_notify(jsonb_build_object('table','perijinan_cuti','records',
+    (SELECT COALESCE(jsonb_agg(to_jsonb(n)),'[]'::jsonb) FROM new_rows n)));
+  RETURN NULL;
+END; $$;
+
+DROP TRIGGER IF EXISTS wms_push_lembur ON public.lembur;
+CREATE TRIGGER wms_push_lembur AFTER INSERT ON public.lembur
+  REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.wms_push_on_insert_lembur();
+
+DROP TRIGGER IF EXISTS wms_push_perijinan_cuti ON public.perijinan_cuti;
+CREATE TRIGGER wms_push_perijinan_cuti AFTER INSERT ON public.perijinan_cuti
+  REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.wms_push_on_insert_cuti();
+
 -- 6. Trigger Live Chat: perubahan index ruang chat (wms_chat_rooms_index_v1)
 CREATE OR REPLACE FUNCTION public.wms_push_on_chat_index() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN

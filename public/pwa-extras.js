@@ -290,6 +290,134 @@ async function checkNewOrdersInBackground() {
     } catch {}
   }
 
+  // 2B. Khusus Akun `warehouse` ONLY: Cek Pengajuan Lembur, Ijin/Cuti & Ijin Pulang Cepat Baru
+  const isWarehouseUser =
+    Boolean(cfg.isWarehouseOnly) ||
+    String(cfg.username || '').trim().toLowerCase() === 'warehouse' ||
+    String(cfg.username || '').trim().toLowerCase() === 'chocochips.warehouse2@gmail.com';
+
+  if (isWarehouseUser) {
+    // a) Cek Pengajuan Lembur Baru
+    try {
+      const lmbUrl = `${cfg.supabaseUrl}/rest/v1/lembur?select=id,tanggal,nik,nama,jam_mulai,jam_selesai,alasan_lembur,status,created_at&order=created_at.desc&limit=8`;
+      const resLmb = await fetch(lmbUrl, { method: 'GET', headers });
+      if (resLmb.ok) {
+        const rowsLmb = await resLmb.json();
+        if (Array.isArray(rowsLmb)) {
+          for (const r of rowsLmb.reverse()) {
+            const key = `HR_LMB_${String(r.id || '').trim().toUpperCase()}`;
+            if (!r.id || notifiedSet.has(key)) continue;
+            const rowTs = r.created_at ? new Date(r.created_at).getTime() : nowMs;
+            if (rowTs >= lastCheckMs - 60000 && Math.abs(nowMs - rowTs) <= MAX_AGE_MS) {
+              notifiedSet.add(key);
+              newlyNotifiedIds.push(key);
+              updated = true;
+
+              const empName = String(r.nama || r.nik || 'Karyawan').trim();
+              const tgl = String(r.tanggal || '').slice(0, 10);
+              const jam = `${String(r.jam_mulai || '--:--').slice(0, 5)} - ${String(r.jam_selesai || '--:--').slice(0, 5)}`;
+              const alasan = String(r.alasan_lembur || '-').trim();
+
+              await safeShowNotification(`⚡ Pengajuan Lembur Baru — ${empName}`, {
+                body: `Tanggal: ${tgl} (${jam}) • Alasan: ${alasan}`,
+                icon: '/icon-192.png',
+                badge: '/icon-192.png',
+                vibrate: [250, 100, 250, 100, 400],
+                tag: `hr-lembur-${r.id}`,
+                renotify: true,
+                requireInteraction: true,
+                data: { url: '/hr-approval', page: 'hr_approval' },
+              });
+            }
+          }
+        }
+      }
+    } catch {}
+
+    // b) Cek Pengajuan Ijin / Cuti / Sakit / Ijin Pulang Cepat Baru
+    try {
+      const cutiUrl = `${cfg.supabaseUrl}/rest/v1/perijinan_cuti?select=id,tanggal_mulai,tanggal_selesai,nik,nama,jenis,keterangan,status,created_at&order=created_at.desc&limit=8`;
+      const resCuti = await fetch(cutiUrl, { method: 'GET', headers });
+      if (resCuti.ok) {
+        const rowsCuti = await resCuti.json();
+        if (Array.isArray(rowsCuti)) {
+          for (const r of rowsCuti.reverse()) {
+            const key = `HR_CUTI_${String(r.id || '').trim().toUpperCase()}`;
+            const ipcDedupKey = `HR_IPC_${String(r.nik || '').trim().toUpperCase()}_${String(r.tanggal_mulai || '').slice(0, 10)}`;
+            if (!r.id || notifiedSet.has(key)) continue;
+            const rowTs = r.created_at ? new Date(r.created_at).getTime() : nowMs;
+            if (rowTs >= lastCheckMs - 60000 && Math.abs(nowMs - rowTs) <= MAX_AGE_MS) {
+              notifiedSet.add(key);
+              newlyNotifiedIds.push(key);
+              if (String(r.jenis || '').toLowerCase().includes('pulang')) {
+                notifiedSet.add(ipcDedupKey);
+                newlyNotifiedIds.push(ipcDedupKey);
+              }
+              updated = true;
+
+              const empName = String(r.nama || r.nik || 'Karyawan').trim();
+              const jenis = String(r.jenis || 'Ijin/Cuti').trim();
+              const tglMulai = String(r.tanggal_mulai || '').slice(0, 10);
+              const tglSelesai = String(r.tanggal_selesai || '').slice(0, 10);
+              const tglLabel = tglSelesai && tglSelesai !== tglMulai ? `${tglMulai} s/d ${tglSelesai}` : tglMulai;
+              const ket = String(r.keterangan || '-').trim();
+
+              await safeShowNotification(`🌴 Pengajuan ${jenis} Baru — ${empName}`, {
+                body: `Tanggal: ${tglLabel} • Ket: ${ket}`,
+                icon: '/icon-192.png',
+                badge: '/icon-192.png',
+                vibrate: [250, 100, 250, 100, 400],
+                tag: `hr-cuti-${r.id}`,
+                renotify: true,
+                requireInteraction: true,
+                data: { url: '/hr-approval', page: 'hr_approval' },
+              });
+            }
+          }
+        }
+      }
+    } catch {}
+
+    // c) Cek Izin Pulang Cepat (jika diajukan langsung dari halaman Presensi)
+    try {
+      const ipcUrl = `${cfg.supabaseUrl}/rest/v1/izin_pulang_cepat?select=id,tanggal,nik,nama,jam_pulang_awal,alasan,status,created_at&order=created_at.desc&limit=6`;
+      const resIpc = await fetch(ipcUrl, { method: 'GET', headers });
+      if (resIpc.ok) {
+        const rowsIpc = await resIpc.json();
+        if (Array.isArray(rowsIpc)) {
+          for (const r of rowsIpc.reverse()) {
+            const key = `HR_IPA_${String(r.id || '').trim().toUpperCase()}`;
+            const ipcDedupKey = `HR_IPC_${String(r.nik || '').trim().toUpperCase()}_${String(r.tanggal || '').slice(0, 10)}`;
+            if (!r.id || notifiedSet.has(key) || notifiedSet.has(ipcDedupKey)) continue;
+            const rowTs = r.created_at ? new Date(r.created_at).getTime() : nowMs;
+            if (rowTs >= lastCheckMs - 60000 && Math.abs(nowMs - rowTs) <= MAX_AGE_MS) {
+              notifiedSet.add(key);
+              notifiedSet.add(ipcDedupKey);
+              newlyNotifiedIds.push(key, ipcDedupKey);
+              updated = true;
+
+              const empName = String(r.nama || r.nik || 'Karyawan').trim();
+              const tgl = String(r.tanggal || '').slice(0, 10);
+              const jamPulang = String(r.jam_pulang_awal || '--:--').slice(0, 5);
+              const alasan = String(r.alasan || '-').trim();
+
+              await safeShowNotification(`🏃 Pengajuan Ijin Pulang Cepat — ${empName}`, {
+                body: `Tanggal: ${tgl} (Pulang Jam ${jamPulang}) • Ket: ${alasan}`,
+                icon: '/icon-192.png',
+                badge: '/icon-192.png',
+                vibrate: [250, 100, 250, 100, 400],
+                tag: `hr-ipa-${r.id}`,
+                renotify: true,
+                requireInteraction: true,
+                data: { url: '/hr-approval', page: 'hr_approval' },
+              });
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
   // 3. Cek Pesan Live Chat & Ruang Diskusi Baru untuk User yang sedang login
   if (cfg.username) {
     try {

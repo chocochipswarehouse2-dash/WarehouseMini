@@ -161,6 +161,7 @@ import {
   canAccessPage,
   canAccessSettings,
   isSuperadmin,
+  isWarehouseAccountOnly,
   ALL_PERMISSIONS,
   ROLE_DEFAULT_PERMISSIONS,
 } from './services/permissions';
@@ -1612,6 +1613,33 @@ export default function App() {
             }
           }
         )
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'lembur' },
+          (payload) => {
+            if (payload.new) {
+              handleIncomingHrRequestRef.current('lembur', payload.new);
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'perijinan_cuti' },
+          (payload) => {
+            if (payload.new) {
+              handleIncomingHrRequestRef.current('perijinan_cuti', payload.new);
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'izin_pulang_cepat' },
+          (payload) => {
+            if (payload.new) {
+              handleIncomingHrRequestRef.current('izin_pulang_cepat', payload.new);
+            }
+          }
+        )
         .subscribe((status) => {
           setIsRealtimeConnected(status === 'SUBSCRIBED');
           if (status === 'SUBSCRIBED') {
@@ -1629,6 +1657,101 @@ export default function App() {
       console.warn('Supabase realtime subscription error:', err);
     }
   }, [session, loadProducts]);
+
+  // Handler terpusat KHUSUS AKUN `warehouse` ONLY saat ada pengajuan Lembur, Ijin/Cuti, atau Ijin Pulang Cepat
+  const handleIncomingHrRequestNotification = useCallback(
+    (sourceTable: 'lembur' | 'perijinan_cuti' | 'izin_pulang_cepat', row: any) => {
+      if (!row || !session) return;
+
+      // WAJIB HANYA untuk akun `warehouse`
+      if (!isWarehouseAccountOnly(session)) {
+        return;
+      }
+
+      const rawId = String(row.id || '').trim().toUpperCase();
+      if (!rawId) return;
+
+      if (sourceTable === 'lembur') {
+        const key = `HR_LMB_${rawId}`;
+        if (notifiedOrderIdsRef.current.has(key)) return;
+        notifiedOrderIdsRef.current.add(key);
+        savePersistedNotifiedOrderIds(notifiedOrderIdsRef.current);
+        setLastOrderCheckTimestamp(Date.now());
+        syncNotifiedOrdersToServiceWorker(Array.from(notifiedOrderIdsRef.current));
+
+        const empName = String(row.nama || row.nik || 'Karyawan').trim();
+        const tgl = String(row.tanggal || '').slice(0, 10);
+        const jam = `${String(row.jam_mulai || '--:--').slice(0, 5)} - ${String(row.jam_selesai || '--:--').slice(0, 5)}`;
+        const alasan = String(row.alasan_lembur || '-').trim();
+
+        playNewTaskChime();
+        vibrateDevice([250, 100, 250, 100, 400]);
+        showPushNotification(`⚡ Pengajuan Lembur Baru — ${empName}`, {
+          body: `Tanggal: ${tgl} (${jam}) • Alasan: ${alasan}`,
+          tag: `hr-lembur-${rawId}`,
+          page: 'hr_approval',
+          requireInteraction: true,
+        });
+        showToast(`⚡ Pengajuan Lembur Baru: ${empName} (${tgl} • ${jam})`, 'info');
+      } else if (sourceTable === 'perijinan_cuti') {
+        const key = `HR_CUTI_${rawId}`;
+        const ipcDedupKey = `HR_IPC_${String(row.nik || '').trim().toUpperCase()}_${String(row.tanggal_mulai || '').slice(0, 10)}`;
+        if (notifiedOrderIdsRef.current.has(key)) return;
+        notifiedOrderIdsRef.current.add(key);
+        if (String(row.jenis || '').toLowerCase().includes('pulang')) {
+          notifiedOrderIdsRef.current.add(ipcDedupKey);
+        }
+        savePersistedNotifiedOrderIds(notifiedOrderIdsRef.current);
+        setLastOrderCheckTimestamp(Date.now());
+        syncNotifiedOrdersToServiceWorker(Array.from(notifiedOrderIdsRef.current));
+
+        const empName = String(row.nama || row.nik || 'Karyawan').trim();
+        const jenis = String(row.jenis || 'Ijin/Cuti').trim();
+        const tglMulai = String(row.tanggal_mulai || '').slice(0, 10);
+        const tglSelesai = String(row.tanggal_selesai || '').slice(0, 10);
+        const tglLabel = tglSelesai && tglSelesai !== tglMulai ? `${tglMulai} s/d ${tglSelesai}` : tglMulai;
+        const ket = String(row.keterangan || '-').trim();
+
+        playNewTaskChime();
+        vibrateDevice([250, 100, 250, 100, 400]);
+        showPushNotification(`🌴 Pengajuan ${jenis} Baru — ${empName}`, {
+          body: `Tanggal: ${tglLabel} • Ket: ${ket}`,
+          tag: `hr-cuti-${rawId}`,
+          page: 'hr_approval',
+          requireInteraction: true,
+        });
+        showToast(`🌴 Pengajuan ${jenis} Baru: ${empName} (${tglLabel})`, 'info');
+      } else if (sourceTable === 'izin_pulang_cepat') {
+        const key = `HR_IPA_${rawId}`;
+        const ipcDedupKey = `HR_IPC_${String(row.nik || '').trim().toUpperCase()}_${String(row.tanggal || '').slice(0, 10)}`;
+        if (notifiedOrderIdsRef.current.has(key) || notifiedOrderIdsRef.current.has(ipcDedupKey)) return;
+        notifiedOrderIdsRef.current.add(key);
+        notifiedOrderIdsRef.current.add(ipcDedupKey);
+        savePersistedNotifiedOrderIds(notifiedOrderIdsRef.current);
+        setLastOrderCheckTimestamp(Date.now());
+        syncNotifiedOrdersToServiceWorker(Array.from(notifiedOrderIdsRef.current));
+
+        const empName = String(row.nama || row.nik || 'Karyawan').trim();
+        const tgl = String(row.tanggal || '').slice(0, 10);
+        const jamPulang = String(row.jam_pulang_awal || '--:--').slice(0, 5);
+        const alasan = String(row.alasan || '-').trim();
+
+        playNewTaskChime();
+        vibrateDevice([250, 100, 250, 100, 400]);
+        showPushNotification(`🏃 Pengajuan Ijin Pulang Cepat — ${empName}`, {
+          body: `Tanggal: ${tgl} (Pulang Jam ${jamPulang}) • Ket: ${alasan}`,
+          tag: `hr-ipa-${rawId}`,
+          page: 'hr_approval',
+          requireInteraction: true,
+        });
+        showToast(`🏃 Pengajuan Ijin Pulang Cepat: ${empName} (${tgl} • Jam ${jamPulang})`, 'info');
+      }
+    },
+    [session, showToast]
+  );
+
+  const handleIncomingHrRequestRef = useRef(handleIncomingHrRequestNotification);
+  handleIncomingHrRequestRef.current = handleIncomingHrRequestNotification;
 
   // Handler terpusat KHUSUS ADMIN (Laptop & HP Admin) saat Toko A submit Pesanan Baru (Manual Shipment / Alter)
   // TIDAK AKAN berbunyi di HP / perangkat PIC Toko yang menginput.
@@ -1832,10 +1955,11 @@ export default function App() {
     });
   }, [session, notificationPermission]);
 
-  // Background, Service Worker & Screen-Wake Delta Poller (Unified: Live Chat untuk Semua User + Pesanan/SPS/Retur untuk Admin & Picker)
+  // Background, Service Worker & Screen-Wake Delta Poller (Unified: Live Chat untuk Semua User + Pesanan/SPS/Retur untuk Admin & Picker + HR untuk Warehouse Only)
   useEffect(() => {
     const userIsAdmin = Boolean(session && isSuperadmin(session));
     const userIsPicker = Boolean(session && canAccessPage(session, 'picking_tasks'));
+    const userIsWarehouseOnly = Boolean(session && isWarehouseAccountOnly(session));
 
     if (!session) {
       configureServiceWorkerOrderWatcher({
@@ -1844,12 +1968,13 @@ export default function App() {
         supabaseAnonKey: DEFAULT_SUPABASE_ANON_KEY,
         isAdmin: false,
         isPicker: false,
+        isWarehouseOnly: false,
       });
       return;
     }
 
     // Sinkronkan konfigurasi ke Service Worker untuk SEMUA user yang login (agar Live Chat Background & Balas Cepat bekerja untuk semua user,
-    // sedangkan pengecekan pesanan/SPS/retur tetap difilter berdasarkan isAdmin & isPicker di Service Worker)
+    // sedangkan pengecekan pesanan/SPS/retur tetap difilter berdasarkan isAdmin & isPicker, dan HR khusus isWarehouseOnly di Service Worker)
     const customUrl = localStorage.getItem('wms_supabase_url') || DEFAULT_SUPABASE_URL;
     const customKey = localStorage.getItem('wms_supabase_key') || DEFAULT_SUPABASE_ANON_KEY;
     configureServiceWorkerOrderWatcher({
@@ -1858,6 +1983,7 @@ export default function App() {
       supabaseAnonKey: customKey,
       isAdmin: userIsAdmin,
       isPicker: userIsPicker,
+      isWarehouseOnly: userIsWarehouseOnly,
       username: session.username,
       displayName: session.name || getUserPersonName(session.username) || session.username,
       userRole: session.role,
@@ -1927,7 +2053,7 @@ export default function App() {
       window.addEventListener('pointerdown', handleFirstGesturePermission, { once: true });
     }
 
-    if (!userIsAdmin && !userIsPicker) {
+    if (!userIsAdmin && !userIsPicker && !userIsWarehouseOnly) {
       const swChatKeepAlive = setInterval(() => {
         if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
           void triggerServiceWorkerCheckNow();
@@ -1955,7 +2081,7 @@ export default function App() {
       if (k3) notifiedOrderIdsRef.current.add(k3);
     };
 
-    // 2. Cek pesanan baru, Retur baru & SPS baru secara responsif (20 detik, tetap jalan walau layar di-minimize agar notif HP berbunyi seperti WhatsApp)
+    // 2. Cek pesanan baru, Retur baru, SPS baru & HR baru (khusus warehouse) secara responsif
     const checkNewStoreOrdersDelta = async () => {
       if (!isSeeded) return;
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
@@ -2031,6 +2157,71 @@ export default function App() {
                     page: 'pusat_resolusi',
                   });
                   showToast(`🔄 Tiket Retur Barang Baru: #${noRetur} (${r.nama_customer || 'Customer'})`, 'info');
+                }
+              }
+            }
+          } catch {}
+        }
+
+        // Cek Pengajuan Lembur, Ijin/Cuti, dan Ijin Pulang Cepat KHUSUS Akun `warehouse` ONLY
+        if (userIsWarehouseOnly) {
+          try {
+            const lmbQuery = deltaSinceIso
+              ? `select=id,tanggal,nik,nama,jam_mulai,jam_selesai,alasan_lembur,status,created_at&created_at=gt.${encodeURIComponent(deltaSinceIso)}&order=created_at.desc&limit=10`
+              : 'select=id,tanggal,nik,nama,jam_mulai,jam_selesai,alasan_lembur,status,created_at&order=created_at.desc&limit=8';
+            const latestLembur = await supabaseFetch<any[]>('lembur', 'GET', null, lmbQuery);
+            if (isMounted && Array.isArray(latestLembur)) {
+              for (const r of [...latestLembur].reverse()) {
+                const rawId = String(r.id || '').trim().toUpperCase();
+                const key = `HR_LMB_${rawId}`;
+                if (!rawId || notifiedOrderIdsRef.current.has(key)) continue;
+                const rowTs = r.created_at ? new Date(r.created_at).getTime() : nowMs;
+                if (isNaN(rowTs) || Math.abs(nowMs - rowTs) <= MAX_AGE_MS) {
+                  handleIncomingHrRequestRef.current('lembur', r);
+                } else {
+                  notifiedOrderIdsRef.current.add(key);
+                }
+              }
+            }
+          } catch {}
+
+          try {
+            const cutiQuery = deltaSinceIso
+              ? `select=id,tanggal_mulai,tanggal_selesai,nik,nama,jenis,keterangan,status,created_at&created_at=gt.${encodeURIComponent(deltaSinceIso)}&order=created_at.desc&limit=10`
+              : 'select=id,tanggal_mulai,tanggal_selesai,nik,nama,jenis,keterangan,status,created_at&order=created_at.desc&limit=8';
+            const latestCuti = await supabaseFetch<any[]>('perijinan_cuti', 'GET', null, cutiQuery);
+            if (isMounted && Array.isArray(latestCuti)) {
+              for (const r of [...latestCuti].reverse()) {
+                const rawId = String(r.id || '').trim().toUpperCase();
+                const key = `HR_CUTI_${rawId}`;
+                if (!rawId || notifiedOrderIdsRef.current.has(key)) continue;
+                const rowTs = r.created_at ? new Date(r.created_at).getTime() : nowMs;
+                if (isNaN(rowTs) || Math.abs(nowMs - rowTs) <= MAX_AGE_MS) {
+                  handleIncomingHrRequestRef.current('perijinan_cuti', r);
+                } else {
+                  notifiedOrderIdsRef.current.add(key);
+                }
+              }
+            }
+          } catch {}
+
+          try {
+            const ipcQuery = deltaSinceIso
+              ? `select=id,tanggal,nik,nama,jam_pulang_awal,alasan,status,created_at&created_at=gt.${encodeURIComponent(deltaSinceIso)}&order=created_at.desc&limit=8`
+              : 'select=id,tanggal,nik,nama,jam_pulang_awal,alasan,status,created_at&order=created_at.desc&limit=6';
+            const latestIpc = await supabaseFetch<any[]>('izin_pulang_cepat', 'GET', null, ipcQuery);
+            if (isMounted && Array.isArray(latestIpc)) {
+              for (const r of [...latestIpc].reverse()) {
+                const rawId = String(r.id || '').trim().toUpperCase();
+                const key = `HR_IPA_${rawId}`;
+                const ipcDedupKey = `HR_IPC_${String(r.nik || '').trim().toUpperCase()}_${String(r.tanggal || '').slice(0, 10)}`;
+                if (!rawId || notifiedOrderIdsRef.current.has(key) || notifiedOrderIdsRef.current.has(ipcDedupKey)) continue;
+                const rowTs = r.created_at ? new Date(r.created_at).getTime() : nowMs;
+                if (isNaN(rowTs) || Math.abs(nowMs - rowTs) <= MAX_AGE_MS) {
+                  handleIncomingHrRequestRef.current('izin_pulang_cepat', r);
+                } else {
+                  notifiedOrderIdsRef.current.add(key);
+                  notifiedOrderIdsRef.current.add(ipcDedupKey);
                 }
               }
             }
@@ -2185,6 +2376,52 @@ export default function App() {
               }
             } catch {}
           }
+        }
+
+        if (userIsWarehouseOnly) {
+          try {
+            const [recentLembur, recentCuti, recentIpc] = await Promise.all([
+              supabaseFetch<any[]>('lembur', 'GET', null, 'select=id,created_at&order=created_at.desc&limit=25').catch(() => []),
+              supabaseFetch<any[]>('perijinan_cuti', 'GET', null, 'select=id,nik,tanggal_mulai,jenis,created_at&order=created_at.desc&limit=25').catch(() => []),
+              supabaseFetch<any[]>('izin_pulang_cepat', 'GET', null, 'select=id,nik,tanggal,created_at&order=created_at.desc&limit=20').catch(() => []),
+            ]);
+
+            if (Array.isArray(recentLembur)) {
+              for (const r of recentLembur) {
+                const key = `HR_LMB_${String(r.id || '').trim().toUpperCase()}`;
+                const rowTs = r.created_at ? new Date(r.created_at).getTime() : 0;
+                if (!hasPersistedHistory || (rowTs > 0 && prevLastCheckTs && rowTs < prevLastCheckTs)) {
+                  if (r.id) notifiedOrderIdsRef.current.add(key);
+                }
+              }
+            }
+            if (Array.isArray(recentCuti)) {
+              for (const r of recentCuti) {
+                const key = `HR_CUTI_${String(r.id || '').trim().toUpperCase()}`;
+                const ipcDedupKey = `HR_IPC_${String(r.nik || '').trim().toUpperCase()}_${String(r.tanggal_mulai || '').slice(0, 10)}`;
+                const rowTs = r.created_at ? new Date(r.created_at).getTime() : 0;
+                if (!hasPersistedHistory || (rowTs > 0 && prevLastCheckTs && rowTs < prevLastCheckTs)) {
+                  if (r.id) notifiedOrderIdsRef.current.add(key);
+                  if (String(r.jenis || '').toLowerCase().includes('pulang')) {
+                    notifiedOrderIdsRef.current.add(ipcDedupKey);
+                  }
+                }
+              }
+            }
+            if (Array.isArray(recentIpc)) {
+              for (const r of recentIpc) {
+                const key = `HR_IPA_${String(r.id || '').trim().toUpperCase()}`;
+                const ipcDedupKey = `HR_IPC_${String(r.nik || '').trim().toUpperCase()}_${String(r.tanggal || '').slice(0, 10)}`;
+                const rowTs = r.created_at ? new Date(r.created_at).getTime() : 0;
+                if (!hasPersistedHistory || (rowTs > 0 && prevLastCheckTs && rowTs < prevLastCheckTs)) {
+                  if (r.id) {
+                    notifiedOrderIdsRef.current.add(key);
+                    notifiedOrderIdsRef.current.add(ipcDedupKey);
+                  }
+                }
+              }
+            }
+          } catch {}
         }
 
         if (userIsAdmin || userIsPicker) {
