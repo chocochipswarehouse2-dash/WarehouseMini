@@ -4,6 +4,7 @@ import { X, Camera, Trash2, User, Phone, Mail, Lock, Eye, EyeOff, Save, Loader2,
 import { UserSession } from '../types';
 import { supabaseFetch, computeSha256 } from '../services/supabase';
 import { getUserPersonName } from '../utils/userResolver';
+import { getStoreContact, saveStoreContact, fetchOutlets } from '../services/gasManualShipment';
 
 /* ============================================================
  * Avatar helpers (stored in localStorage + wms_users.permissions._avatar)
@@ -145,6 +146,7 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
   }, [logoutCountdown, onClose, onLogout]);
 
   const displayName = session.name || getUserPersonName(session.username) || session.username;
+  const storeName = session.role === 'Store' ? session.store_name || '' : '';
 
   React.useEffect(() => {
     if (!isOpen) return;
@@ -155,15 +157,19 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
     setEmail(session.email || '');
     setAvatar(getStoredAvatar(session.username));
     setLoading(true);
-    supabaseFetch<any[]>('wms_users', 'GET', null, `username=eq.${encodeURIComponent(session.username)}&limit=1`)
-      .then((rows) => {
+    Promise.all([
+      supabaseFetch<any[]>('wms_users', 'GET', null, `username=eq.${encodeURIComponent(session.username)}&limit=1`),
+      storeName ? fetchOutlets().catch(() => []) : Promise.resolve([]),
+    ])
+      .then(([rows]) => {
         const u = rows?.[0];
-        if (!u) return;
-        const p = (u.permissions || {}) as Record<string, any>;
+        // Akun Store: No. HP & email resmi diambil dari Master Kontak Store (Pengaturan → Kontak Store)
+        const sc = storeName ? getStoreContact(storeName) : null;
+        const p = ((u && u.permissions) || {}) as Record<string, any>;
         setRowPerms(p);
-        if (u.name) setName(u.name);
-        setPhone(u.no_hp || u.phone || p.no_hp || p.phone || session.no_hp || '');
-        setEmail(u.email || p.email || session.email || '');
+        if (u?.name) setName(u.name);
+        setPhone(u?.no_hp || u?.phone || p.no_hp || p.phone || session.no_hp || sc?.no_wa || '');
+        setEmail(u?.email || p.email || session.email || sc?.email_store || '');
         if (p._avatar !== undefined) setAvatar(p._avatar || '');
       })
       .catch(() => { /* offline: keep session values */ })
@@ -224,6 +230,13 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
       );
       setRowPerms(perms);
       storeAvatar(session.username, avatar);
+      // Akun Store: sinkronkan juga ke Master Kontak Store agar konsisten di Pengaturan & dokumen pengiriman
+      if (storeName) {
+        try {
+          const sc = getStoreContact(storeName);
+          saveStoreContact(storeName, cleanPhone, sc?.alamat_store, cleanEmail, sc?.pic_default, sc?.kode);
+        } catch (e) { console.warn('Sync kontak store gagal:', e); }
+      }
       localStorage.setItem('wms_session_name', cleanName);
       onSessionUpdate?.({ name: cleanName, no_hp: cleanPhone || undefined, email: cleanEmail || undefined });
       setMsg({ ok: true, text: 'Profil berhasil disimpan.' });

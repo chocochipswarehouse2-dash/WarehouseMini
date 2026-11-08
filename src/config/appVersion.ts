@@ -15,21 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.82",
-  "versionCode": 342,
+  "version": "v2.6.83",
+  "versionCode": 343,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v342-1109",
-  "releaseTitle": "WMS v2.6.82 — Trello Auto-Sync & Tanpa Filter Default",
+  "buildHash": "wms-261108-v343-1112",
+  "releaseTitle": "WMS v2.6.83 — Profil Store: No. HP dari Master Kontak",
   "releaseNotes": [
-    "Trello WMS otomatis sinkron dari Trello asli setiap 60 detik + saat halaman dibuka/kembali aktif",
-    "Kartu yang dihapus/diarsip di Trello asli ikut hilang di WMS",
-    "Tombol Sinkronkan Trello manual tetap tersedia",
-    "Halaman Trello dibuka tanpa filter UP default"
+    "Profil akun Store otomatis menampilkan No. HP & email dari Master Kontak Store",
+    "Edit No. HP/email di profil Store ikut memperbarui Master Kontak Store"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.82",
+    "versionCode": 342,
+    "buildDate": "8 November 2026",
+    "buildHash": "wms-261108-v342-1109",
+    "releaseTitle": "WMS v2.6.82 — Trello Auto-Sync & Tanpa Filter Default",
+    "releaseNotes": [
+      "Trello WMS otomatis sinkron dari Trello asli setiap 60 detik + saat halaman dibuka/kembali aktif",
+      "Kartu yang dihapus/diarsip di Trello asli ikut hilang di WMS",
+      "Tombol Sinkronkan Trello manual tetap tersedia",
+      "Halaman Trello dibuka tanpa filter UP default"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.81",
     "versionCode": 341,
@@ -119,19 +131,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Auto-migrasi data draft antrean dan riwayat Pengecekan Surat Jalan agar SKU DF26KBF03 otomatis menjadi Taylor Pants Dark Denim",
       "Perbaikan data lampau di Supabase pengecekan_sj dan pencegahan tampilan nama produk pada kolom ukuran",
       "Sanitasi ukuran otomatis ke All Size/Default jika tidak memiliki varian S-XL"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.74",
-    "versionCode": 334,
-    "buildDate": "7 November 2026",
-    "buildHash": "wms-261107-v334-1053",
-    "releaseTitle": "WMS v2.6.74 — Koreksi Master Data Taylor Pants & Sanitasi Size Produk",
-    "releaseNotes": [
-      "Koreksi master produk SKU DF26KBF03DD (S-XL) dari Femima Pants menjadi Taylor Pants Dark Denim",
-      "Perbaikan sanitasi parsing size produk agar nama varian DealPOS/Katalog (seperti Wintour Skirt Blue) tidak bocor ke badge size",
-      "Dukungan ekstraksi size huruf standar DF26 (A=Default, C=S, D=M, E=L, F=XL, G=XXL) di sortUtils"
     ],
     "minSupportedVersion": "v2.0.0"
   }
