@@ -10,3 +10,4 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
 };
 
 export default SettingsView;
+

@@ -15,20 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.91",
-  "versionCode": 351,
+  "version": "v2.6.92",
+  "versionCode": 352,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v351-1451",
-  "releaseTitle": "WMS v2.6.91 — Isolasi Sesi Multi-Tab & Pembersihan Cache Saat Ganti Akun",
+  "buildHash": "wms-261108-v352-1514",
+  "releaseTitle": "WMS v2.6.92 — Matriks Input Penerimaan Produksi & Mode Ukuran (Multi-Size / All Size)",
   "releaseNotes": [
-    "Reset otomatis seluruh Multi-Tab Keep-Alive, Panel Samping, dan halaman aktif saat Logout atau Login akun baru",
-    "Filter ketat tab berdasarkan hak akses canAccessPage agar tab akun sebelumnya tidak pernah bocor ke akun lain",
-    "Tampilan sapaan nama lengkap operator di Dashboard"
+    "Desain kartu Input Penerimaan Produksi disesuaikan dengan referensi matriks ukuran (Banyak Ukuran S-3XL yang judul kolomnya dapat diedit & All Size / Free Size)",
+    "Penyesuaian tampilan responsif HP Seluler (Grid 3 kolom ukuran, tanpa scroll horizontal)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.91",
+    "versionCode": 351,
+    "buildDate": "8 November 2026",
+    "buildHash": "wms-261108-v351-1451",
+    "releaseTitle": "WMS v2.6.91 — Isolasi Sesi Multi-Tab & Pembersihan Cache Saat Ganti Akun",
+    "releaseNotes": [
+      "Reset otomatis seluruh Multi-Tab Keep-Alive, Panel Samping, dan halaman aktif saat Logout atau Login akun baru",
+      "Filter ketat tab berdasarkan hak akses canAccessPage agar tab akun sebelumnya tidak pernah bocor ke akun lain",
+      "Tampilan sapaan nama lengkap operator di Dashboard"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.90",
     "versionCode": 350,
@@ -111,18 +123,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Pembaruan Icon Pack tema dengan 4 karakter visual nyata: Minimalist Line, Duotone Semi-Fill, Sharp Industrial, dan Bold Stamp",
       "Pilihan gaya ikon tersedia di Pengaturan & Sesuaikan Tampilan"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.83",
-    "versionCode": 343,
-    "buildDate": "8 November 2026",
-    "buildHash": "wms-261108-v343-1112",
-    "releaseTitle": "WMS v2.6.83 — Profil Store: No. HP dari Master Kontak",
-    "releaseNotes": [
-      "Profil akun Store otomatis menampilkan No. HP & email dari Master Kontak Store",
-      "Edit No. HP/email di profil Store ikut memperbarui Master Kontak Store"
     ],
     "minSupportedVersion": "v2.0.0"
   }

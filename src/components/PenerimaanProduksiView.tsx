@@ -143,6 +143,10 @@ export const POPULAR_COLORS = [
   'OLIVE',
 ];
 
+export type ProductSizeMode = 'multi' | 'allsize';
+
+export const DEFAULT_MULTI_SIZE_COLUMNS = ['S', 'M', 'L', 'XL', '2XL', '3XL'];
+
 export interface FormVariantSize {
   id: string;
   size: string;
@@ -160,26 +164,143 @@ export interface FormProductBlock {
   kode_produksi: string;
   catatan?: string;
   foto_url?: string;
+  size_mode?: ProductSizeMode;
+  size_columns?: string[];
   warnas: FormVariantWarna[];
 }
 
-export function createNewProductBlock(): FormProductBlock {
+export function createNewProductBlock(mode: ProductSizeMode = 'multi'): FormProductBlock {
+  const cols = mode === 'allsize' ? ['ALL SIZE'] : [...DEFAULT_MULTI_SIZE_COLUMNS];
   return {
     id: `prod_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     kode_produksi: '',
     catatan: '',
     foto_url: '',
+    size_mode: mode,
+    size_columns: cols,
     warnas: [
       {
         id: `warna_${Date.now()}_0`,
         warna: '',
-        sizes: [
-          { id: `sz_${Date.now()}_0`, size: 'S', qty: 1 },
-          { id: `sz_${Date.now()}_1`, size: 'M', qty: 1 },
-          { id: `sz_${Date.now()}_2`, size: 'L', qty: 1 },
-        ],
+        sizes: cols.map((sz, idx) => ({
+          id: `sz_${Date.now()}_${idx}`,
+          size: sz,
+          qty: 0,
+        })),
       },
     ],
+  };
+}
+
+export function normalizeProductBlockMatrix(rawBlock: FormProductBlock, bIdx = 0): FormProductBlock {
+  const rawWarnas = Array.isArray(rawBlock.warnas) && rawBlock.warnas.length > 0
+    ? rawBlock.warnas
+    : [{ id: `warna_${Date.now()}_0`, warna: '', sizes: [] }];
+
+  // Detect size_mode if not explicitly set
+  let mode: ProductSizeMode = rawBlock.size_mode || 'multi';
+  if (!rawBlock.size_mode) {
+    const allSizeNames: string[] = [];
+    rawWarnas.forEach((w) => {
+      (w.sizes || []).forEach((s) => {
+        if (s.size) allSizeNames.push(s.size.trim().toUpperCase());
+      });
+    });
+    if (
+      allSizeNames.length > 0 &&
+      allSizeNames.every((sz) => sz === 'ALL SIZE' || sz === 'ALLSIZE' || sz === 'FREE SIZE' || sz === 'DEFAULT')
+    ) {
+      mode = 'allsize';
+    }
+  }
+
+  if (mode === 'allsize') {
+    return {
+      id: rawBlock.id || `prod_${Date.now()}_${bIdx}`,
+      kode_produksi: rawBlock.kode_produksi || '',
+      catatan: rawBlock.catatan || '',
+      foto_url: rawBlock.foto_url || '',
+      size_mode: 'allsize',
+      size_columns: ['ALL SIZE'],
+      warnas: rawWarnas.map((w, wIdx) => {
+        const totalQty = (w.sizes || []).reduce((sum, s) => sum + (Number(s.qty) || 0), 0);
+        return {
+          id: w.id || `warna_${Date.now()}_${wIdx}`,
+          warna: w.warna || '',
+          sizes: [
+            {
+              id: w.sizes?.[0]?.id || `sz_${Date.now()}_${wIdx}_0`,
+              size: 'ALL SIZE',
+              qty: totalQty,
+            },
+          ],
+        };
+      }),
+    };
+  }
+
+  // Multi-size matrix normalization
+  const baseColumns: string[] =
+    Array.isArray(rawBlock.size_columns) && rawBlock.size_columns.length > 0
+      ? [...rawBlock.size_columns.map((c) => c.trim().toUpperCase())]
+      : [...DEFAULT_MULTI_SIZE_COLUMNS];
+
+  // Ensure any custom size present in warnas is included in baseColumns
+  rawWarnas.forEach((w) => {
+    (w.sizes || []).forEach((s) => {
+      const cleanSz = (s.size || '').trim().toUpperCase();
+      if (cleanSz && !baseColumns.some((col) => col.toUpperCase() === cleanSz)) {
+        baseColumns.push(cleanSz);
+      }
+    });
+  });
+
+  const normalizedWarnas: FormVariantWarna[] = rawWarnas.map((w, wIdx) => {
+    const existingSizes = Array.isArray(w.sizes) ? w.sizes : [];
+    // If existingSizes already matches baseColumns length & order, keep directly
+    const isAlreadyAligned =
+      existingSizes.length === baseColumns.length &&
+      existingSizes.every((s, idx) => (s.size || '').trim().toUpperCase() === baseColumns[idx].toUpperCase());
+
+    if (isAlreadyAligned) {
+      return {
+        id: w.id || `warna_${Date.now()}_${wIdx}`,
+        warna: w.warna || '',
+        sizes: existingSizes.map((s, sIdx) => ({
+          id: s.id || `sz_${Date.now()}_${wIdx}_${sIdx}`,
+          size: baseColumns[sIdx],
+          qty: s.qty === '' ? '' : Number(s.qty) || 0,
+        })),
+      };
+    }
+
+    const qtyBySize = new Map<string, number>();
+    existingSizes.forEach((s) => {
+      const key = (s.size || '').trim().toUpperCase();
+      if (key) {
+        qtyBySize.set(key, (qtyBySize.get(key) || 0) + (Number(s.qty) || 0));
+      }
+    });
+
+    return {
+      id: w.id || `warna_${Date.now()}_${wIdx}`,
+      warna: w.warna || '',
+      sizes: baseColumns.map((colSz, sIdx) => ({
+        id: `sz_${Date.now()}_${wIdx}_${sIdx}`,
+        size: colSz,
+        qty: qtyBySize.get(colSz.toUpperCase()) ?? 0,
+      })),
+    };
+  });
+
+  return {
+    id: rawBlock.id || `prod_${Date.now()}_${bIdx}`,
+    kode_produksi: rawBlock.kode_produksi || '',
+    catatan: rawBlock.catatan || '',
+    foto_url: rawBlock.foto_url || '',
+    size_mode: 'multi',
+    size_columns: baseColumns,
+    warnas: normalizedWarnas,
   };
 }
 
@@ -189,26 +310,8 @@ export function convertBlocksToHierarchical(rawBlocks: any[]): FormProductBlock[
   }
 
   return rawBlocks.map((b, bIdx) => {
-    // Jika sudah dalam format warnas
     if (Array.isArray(b.warnas) && b.warnas.length > 0) {
-      return {
-        id: b.id || `prod_${Date.now()}_${bIdx}`,
-        kode_produksi: b.kode_produksi || '',
-        catatan: b.catatan || '',
-        foto_url: b.foto_url || '',
-        warnas: b.warnas.map((w: any, wIdx: number) => ({
-          id: w.id || `warna_${Date.now()}_${wIdx}`,
-          warna: w.warna || '',
-          sizes:
-            Array.isArray(w.sizes) && w.sizes.length > 0
-              ? w.sizes.map((s: any, sIdx: number) => ({
-                  id: s.id || `sz_${Date.now()}_${sIdx}`,
-                  size: s.size || 'S',
-                  qty: s.qty ?? 1,
-                }))
-              : [{ id: `sz_${Date.now()}_0`, size: 'S', qty: 1 }],
-        })),
-      };
+      return normalizeProductBlockMatrix(b as FormProductBlock, bIdx);
     }
 
     // Jika dari format legacy flat variants: [{ warna, size, qty }]
@@ -225,31 +328,29 @@ export function convertBlocksToHierarchical(rawBlocks: any[]): FormProductBlock[
         warnaMap.get(wName)!.push({
           id: `sz_${Date.now()}_${vIdx}`,
           size: v.size || 'S',
-          qty: v.qty ?? 1,
+          qty: v.qty ?? 0,
         });
       });
     }
 
     if (warnasOrder.length === 0) {
-      warnasOrder.push('');
-      warnaMap.set('', [
-        { id: `sz_${Date.now()}_0`, size: 'S', qty: 1 },
-        { id: `sz_${Date.now()}_1`, size: 'M', qty: 1 },
-        { id: `sz_${Date.now()}_2`, size: 'L', qty: 1 },
-      ]);
+      return createNewProductBlock();
     }
 
-    return {
-      id: b.id || `prod_${Date.now()}_${bIdx}`,
-      kode_produksi: b.kode_produksi || '',
-      catatan: b.catatan || '',
-      foto_url: b.foto_url || '',
-      warnas: warnasOrder.map((wName, wIdx) => ({
-        id: `warna_${Date.now()}_${wIdx}`,
-        warna: wName,
-        sizes: warnaMap.get(wName) || [{ id: `sz_${Date.now()}_0`, size: 'S', qty: 1 }],
-      })),
-    };
+    return normalizeProductBlockMatrix(
+      {
+        id: b.id || `prod_${Date.now()}_${bIdx}`,
+        kode_produksi: b.kode_produksi || '',
+        catatan: b.catatan || '',
+        foto_url: b.foto_url || '',
+        warnas: warnasOrder.map((wName, wIdx) => ({
+          id: `warna_${Date.now()}_${wIdx}`,
+          warna: wName,
+          sizes: warnaMap.get(wName) || [],
+        })),
+      },
+      bIdx
+    );
   });
 }
 
@@ -378,7 +479,7 @@ export function convertPenerimaanItemsToProductBlocks(items: PenerimaanProduksiI
     });
   });
 
-  const result = Array.from(blocksMap.values());
+  const result = Array.from(blocksMap.values()).map((b, idx) => normalizeProductBlockMatrix(b, idx));
   return result.length > 0 ? result : [createNewProductBlock()];
 }
 
@@ -1001,6 +1102,138 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     });
   };
 
+  // Switch Tipe Ukuran: 'multi' (Banyak Ukuran) vs 'allsize' (All Size / Free Size)
+  const handleChangeSizeMode = (blockIndex: number, newMode: ProductSizeMode) => {
+    setProductBlocks((prev) => {
+      const next = [...prev];
+      const target = next[blockIndex];
+      if (!target) return prev;
+      if ((target.size_mode || 'multi') === newMode) return prev;
+
+      if (newMode === 'allsize') {
+        next[blockIndex] = {
+          ...target,
+          size_mode: 'allsize',
+          size_columns: ['ALL SIZE'],
+          warnas: target.warnas.map((w, wIdx) => {
+            const sumQty = w.sizes.reduce((acc, s) => acc + (Number(s.qty) || 0), 0);
+            return {
+              ...w,
+              sizes: [
+                {
+                  id: `sz_${Date.now()}_${wIdx}_0`,
+                  size: 'ALL SIZE',
+                  qty: sumQty,
+                },
+              ],
+            };
+          }),
+        };
+      } else {
+        const defaultCols = [...DEFAULT_MULTI_SIZE_COLUMNS];
+        next[blockIndex] = {
+          ...target,
+          size_mode: 'multi',
+          size_columns: defaultCols,
+          warnas: target.warnas.map((w, wIdx) => ({
+            ...w,
+            sizes: defaultCols.map((sz, sIdx) => ({
+              id: `sz_${Date.now()}_${wIdx}_${sIdx}`,
+              size: sz,
+              qty: 0,
+            })),
+          })),
+        };
+      }
+      return next;
+    });
+  };
+
+  // Rename Size Column Header across all colors in the product block
+  const handleRenameSizeColumn = (blockIndex: number, colIndex: number, newSizeName: string) => {
+    setProductBlocks((prev) => {
+      const next = [...prev];
+      const target = next[blockIndex];
+      if (!target) return prev;
+
+      const cols = [...(target.size_columns || DEFAULT_MULTI_SIZE_COLUMNS)];
+      const cleanName = newSizeName.toUpperCase();
+      cols[colIndex] = cleanName;
+
+      next[blockIndex] = {
+        ...target,
+        size_columns: cols,
+        warnas: target.warnas.map((w) => {
+          const nextSizes = [...w.sizes];
+          if (nextSizes[colIndex]) {
+            nextSizes[colIndex] = { ...nextSizes[colIndex], size: cleanName };
+          }
+          return { ...w, sizes: nextSizes };
+        }),
+      };
+      return next;
+    });
+  };
+
+  // Add a new Size Column to the product block matrix
+  const handleAddSizeColumn = (blockIndex: number) => {
+    setProductBlocks((prev) => {
+      const next = [...prev];
+      const target = next[blockIndex];
+      if (!target) return prev;
+
+      const cols = [...(target.size_columns || DEFAULT_MULTI_SIZE_COLUMNS)];
+      const existingUpper = new Set(cols.map((c) => c.trim().toUpperCase()));
+      const candidates = ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL', 'XS', 'ALL SIZE', '27', '28', '29', '30', '31', '32', '33', '34'];
+      let nextColName = candidates.find((c) => !existingUpper.has(c)) || `SZ-${cols.length + 1}`;
+
+      const updatedCols = [...cols, nextColName];
+      next[blockIndex] = {
+        ...target,
+        size_mode: 'multi',
+        size_columns: updatedCols,
+        warnas: target.warnas.map((w, wIdx) => ({
+          ...w,
+          sizes: [
+            ...w.sizes,
+            {
+              id: `sz_${Date.now()}_${wIdx}_${w.sizes.length}`,
+              size: nextColName,
+              qty: 0,
+            },
+          ],
+        })),
+      };
+      return next;
+    });
+  };
+
+  // Remove a Size Column from the product block matrix
+  const handleRemoveSizeColumn = (blockIndex: number, colIndex: number) => {
+    setProductBlocks((prev) => {
+      const next = [...prev];
+      const target = next[blockIndex];
+      if (!target) return prev;
+
+      const cols = [...(target.size_columns || DEFAULT_MULTI_SIZE_COLUMNS)];
+      if (cols.length <= 1) {
+        onShowToast('Minimal harus ada 1 kolom ukuran.', 'warning');
+        return prev;
+      }
+
+      const updatedCols = cols.filter((_, idx) => idx !== colIndex);
+      next[blockIndex] = {
+        ...target,
+        size_columns: updatedCols,
+        warnas: target.warnas.map((w) => ({
+          ...w,
+          sizes: w.sizes.filter((_, idx) => idx !== colIndex),
+        })),
+      };
+      return next;
+    });
+  };
+
   // Level 2: Warna Handlers
   const addWarnaToBlock = (blockIndex: number, copyFromWarnaIndex?: number) => {
     setProductBlocks((prev) => {
@@ -1008,27 +1241,38 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       const target = next[blockIndex];
       if (!target) return prev;
 
-      let newSizes: FormVariantSize[] = [
-        { id: `sz_${Date.now()}_0`, size: 'S', qty: 1 },
-        { id: `sz_${Date.now()}_1`, size: 'M', qty: 1 },
-        { id: `sz_${Date.now()}_2`, size: 'L', qty: 1 },
-      ];
+      const isAllSize = target.size_mode === 'allsize';
+      const cols = isAllSize ? ['ALL SIZE'] : (target.size_columns || DEFAULT_MULTI_SIZE_COLUMNS);
+
+      let newSizes: FormVariantSize[] = cols.map((sz, idx) => ({
+        id: `sz_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 5)}`,
+        size: sz,
+        qty: 0,
+      }));
 
       // Jika menduplikat dari warna sebelumnya
       if (typeof copyFromWarnaIndex === 'number' && target.warnas[copyFromWarnaIndex]) {
         const sourceWarna = target.warnas[copyFromWarnaIndex];
-        newSizes = sourceWarna.sizes.map((s, idx) => ({
-          id: `sz_${Date.now()}_${idx}`,
-          size: s.size,
-          qty: s.qty,
+        newSizes = cols.map((sz, idx) => ({
+          id: `sz_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 5)}`,
+          size: sourceWarna.sizes[idx]?.size || sz,
+          qty: sourceWarna.sizes[idx]?.qty ?? 0,
         }));
       }
 
-      target.warnas.push({
-        id: `warna_${Date.now()}_${target.warnas.length}`,
-        warna: '',
-        sizes: newSizes,
-      });
+      const nextWarnas = [
+        ...target.warnas,
+        {
+          id: `warna_${Date.now()}_${target.warnas.length}`,
+          warna: '',
+          sizes: newSizes,
+        },
+      ];
+
+      next[blockIndex] = {
+        ...target,
+        warnas: nextWarnas,
+      };
 
       return next;
     });
@@ -1042,7 +1286,10 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
         onShowToast('Minimal harus ada 1 varian warna untuk setiap kode produk.', 'warning');
         return prev;
       }
-      target.warnas = target.warnas.filter((_, idx) => idx !== warnaIndex);
+      next[blockIndex] = {
+        ...target,
+        warnas: target.warnas.filter((_, idx) => idx !== warnaIndex),
+      };
       return next;
     });
   };
@@ -1052,104 +1299,17 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       const next = [...prev];
       const target = next[blockIndex];
       if (!target || !target.warnas[warnaIndex]) return prev;
-      target.warnas[warnaIndex] = {
-        ...target.warnas[warnaIndex],
+      const nextWarnas = [...target.warnas];
+      nextWarnas[warnaIndex] = {
+        ...nextWarnas[warnaIndex],
         warna: val.toUpperCase(),
       };
+      next[blockIndex] = { ...target, warnas: nextWarnas };
       return next;
     });
   };
 
   // Level 3: Size & Qty Handlers
-  const getNextSuggestedSize = (currentSizes: FormVariantSize[]): string => {
-    if (!currentSizes || currentSizes.length === 0) return 'S';
-    const existing = new Set(currentSizes.map((s) => s.size.toUpperCase()));
-    const lastSize = currentSizes[currentSizes.length - 1]?.size?.toUpperCase() || '';
-
-    // Cari kelanjutan size setelah size terakhir
-    const lastIdx = STANDARD_SIZES.findIndex((s) => s.toUpperCase() === lastSize);
-    if (lastIdx !== -1) {
-      for (let i = lastIdx + 1; i < STANDARD_SIZES.length; i++) {
-        const candidate = STANDARD_SIZES[i];
-        if (!existing.has(candidate.toUpperCase())) {
-          return candidate;
-        }
-      }
-    }
-
-    // Fallback: cari dari awal jika semua size setelah lastSize sudah ada
-    for (const sz of STANDARD_SIZES) {
-      if (!existing.has(sz.toUpperCase())) {
-        return sz;
-      }
-    }
-    return 'XL';
-  };
-
-  const addSizeToWarna = (blockIndex: number, warnaIndex: number, specificSize?: string) => {
-    setProductBlocks((prev) => {
-      const next = [...prev];
-      const target = next[blockIndex];
-      if (!target || !target.warnas[warnaIndex]) return prev;
-
-      const w = target.warnas[warnaIndex];
-      const sizeToAdd = specificSize || getNextSuggestedSize(w.sizes);
-
-      // Cek apakah size sudah ada
-      const existingIdx = w.sizes.findIndex((s) => s.size.toUpperCase() === sizeToAdd.toUpperCase());
-      if (existingIdx !== -1) {
-        onShowToast(`Ukuran ${sizeToAdd} sudah ada pada warna ini.`, 'info');
-        return prev;
-      }
-
-      w.sizes.push({
-        id: `sz_${Date.now()}_${w.sizes.length}`,
-        size: sizeToAdd,
-        qty: 1,
-      });
-
-      return next;
-    });
-  };
-
-  const addSizesPresetToWarna = (blockIndex: number, warnaIndex: number, preset: string[]) => {
-    setProductBlocks((prev) => {
-      const next = [...prev];
-      const target = next[blockIndex];
-      if (!target || !target.warnas[warnaIndex]) return prev;
-
-      const w = target.warnas[warnaIndex];
-      const existing = new Set(w.sizes.map((s) => s.size.toUpperCase()));
-      for (const sz of preset) {
-        if (!existing.has(sz.toUpperCase())) {
-          w.sizes.push({
-            id: `sz_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-            size: sz,
-            qty: 1,
-          });
-        }
-      }
-      return next;
-    });
-  };
-
-  const removeSizeFromWarna = (blockIndex: number, warnaIndex: number, sizeIndex: number) => {
-    setProductBlocks((prev) => {
-      const next = [...prev];
-      const target = next[blockIndex];
-      if (!target || !target.warnas[warnaIndex]) return prev;
-
-      const w = target.warnas[warnaIndex];
-      if (w.sizes.length <= 1) {
-        onShowToast('Minimal harus ada 1 ukuran pada setiap warna.', 'warning');
-        return prev;
-      }
-
-      w.sizes = w.sizes.filter((_, idx) => idx !== sizeIndex);
-      return next;
-    });
-  };
-
   const updateSizeField = (
     blockIndex: number,
     warnaIndex: number,
@@ -1160,34 +1320,26 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     setProductBlocks((prev) => {
       const next = [...prev];
       const target = next[blockIndex];
-      if (!target || !target.warnas[warnaIndex] || !target.warnas[warnaIndex].sizes[sizeIndex]) return prev;
+      if (!target || !target.warnas[warnaIndex]) return prev;
 
-      const s = { ...target.warnas[warnaIndex].sizes[sizeIndex] };
+      const nextWarnas = [...target.warnas];
+      const nextSizes = [...nextWarnas[warnaIndex].sizes];
+      const cols = target.size_mode === 'allsize' ? ['ALL SIZE'] : (target.size_columns || DEFAULT_MULTI_SIZE_COLUMNS);
+      const currentCell = nextSizes[sizeIndex] || {
+        id: `sz_${Date.now()}_${warnaIndex}_${sizeIndex}`,
+        size: cols[sizeIndex] || 'S',
+        qty: 0,
+      };
+
+      const s = { ...currentCell };
       if (field === 'qty') {
         s.qty = val === '' ? ('' as any) : Math.max(0, parseInt(String(val), 10) || 0);
       } else {
-        s.size = String(val).trim();
+        s.size = String(val).trim().toUpperCase();
       }
-      target.warnas[warnaIndex].sizes[sizeIndex] = s;
-      return next;
-    });
-  };
-
-  const adjustSizeQty = (
-    blockIndex: number,
-    warnaIndex: number,
-    sizeIndex: number,
-    delta: number
-  ) => {
-    setProductBlocks((prev) => {
-      const next = [...prev];
-      const target = next[blockIndex];
-      if (!target || !target.warnas[warnaIndex] || !target.warnas[warnaIndex].sizes[sizeIndex]) return prev;
-
-      const s = { ...target.warnas[warnaIndex].sizes[sizeIndex] };
-      const currentQty = Number(s.qty) || 0;
-      s.qty = Math.max(1, currentQty + delta);
-      target.warnas[warnaIndex].sizes[sizeIndex] = s;
+      nextSizes[sizeIndex] = s;
+      nextWarnas[warnaIndex] = { ...nextWarnas[warnaIndex], sizes: nextSizes };
+      next[blockIndex] = { ...target, warnas: nextWarnas };
       return next;
     });
   };
@@ -1202,10 +1354,14 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     for (const b of productBlocks) {
       if (b.kode_produksi.trim()) totalKode++;
       for (const w of b.warnas) {
-        if (w.warna.trim()) totalWarna++;
+        const warnaSum = w.sizes.reduce((acc, s) => acc + (Number(s.qty) || 0), 0);
+        if (w.warna.trim() || warnaSum > 0) totalWarna++;
         for (const s of w.sizes) {
-          totalVariants++;
-          totalPcs += Number(s.qty) || 0;
+          const q = Number(s.qty) || 0;
+          if (q > 0) {
+            totalVariants++;
+            totalPcs += q;
+          }
         }
       }
     }
@@ -1233,7 +1389,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       return;
     }
 
-    // Validate product blocks and flatten to PenerimaanProdukBlock
+    // Validate product blocks and flatten to PenerimaanProdukBlock (only saving cells with qty > 0)
     const cleanedBlocks: PenerimaanProdukBlock[] = [];
     for (let i = 0; i < productBlocks.length; i++) {
       const b = productBlocks[i];
@@ -1247,28 +1403,41 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       for (let wIdx = 0; wIdx < b.warnas.length; wIdx++) {
         const w = b.warnas[wIdx];
         const warnaName = w.warna.trim();
+        const activeSizes = (w.sizes || []).filter((s) => (Number(s.qty) || 0) > 0);
+
+        // Jika baris warna kosong & semua qty 0 tetapi masih ada warna lain di produk ini, lewati baris kosong
+        if (!warnaName && activeSizes.length === 0 && b.warnas.length > 1) {
+          continue;
+        }
+
         if (!warnaName) {
-          onShowToast(`Warna pada ${kode} (Warna #${wIdx + 1}) belum diisi!`, 'warning');
+          onShowToast(`Nama Warna pada ${kode} (Baris Warna #${wIdx + 1}) belum diisi!`, 'warning');
           return;
         }
-        if (!w.sizes || w.sizes.length === 0) {
-          onShowToast(`Warna "${warnaName}" pada ${kode} belum memiliki varian size!`, 'warning');
+
+        if (activeSizes.length === 0) {
+          onShowToast(
+            `Warna "${warnaName}" pada ${kode} masih memiliki Subtotal 0 pcs. Isi minimal 1 ukuran atau hapus baris warna tersebut!`,
+            'warning'
+          );
           return;
         }
-        for (let sIdx = 0; sIdx < w.sizes.length; sIdx++) {
-          const s = w.sizes[sIdx];
-          const sizeName = (s.size || 'Default').trim();
+
+        for (let sIdx = 0; sIdx < activeSizes.length; sIdx++) {
+          const s = activeSizes[sIdx];
+          const sizeName = (s.size || (b.size_mode === 'allsize' ? 'ALL SIZE' : 'S')).trim().toUpperCase() || 'ALL SIZE';
           const qtyNum = Number(s.qty) || 0;
-          if (qtyNum < 1) {
-            onShowToast(`Qty pada ${kode} (${warnaName} / ${sizeName}) minimal 1 pcs!`, 'warning');
-            return;
-          }
           flattenedVariants.push({
             warna: warnaName.toUpperCase(),
             size: sizeName,
             qty: qtyNum,
           });
         }
+      }
+
+      if (flattenedVariants.length === 0) {
+        onShowToast(`Produk ${kode} belum memiliki kuantitas (Subtotal masih 0 pcs)!`, 'warning');
+        return;
       }
 
       cleanedBlocks.push({
@@ -2007,8 +2176,8 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
             </div>
           </div>
 
-          {/* Card 2: Tabel Input Produk & Varian (Excel Spreadsheet Style - Ringkas & Cepat di HP) */}
-          <div className="space-y-3">
+          {/* Card 2: Tabel Input Produk & Varian (Sesuai Referensi Matriks + Responsif HP Seluler) */}
+          <div className="space-y-4">
             {/* Header Ringkas Section */}
             <div className="flex items-center justify-between px-1">
               <div className="flex items-center gap-2">
@@ -2017,7 +2186,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                 </div>
                 <div>
                   <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                    <span>Tabel Varian Produksi (Model Excel)</span>
+                    <span>Daftar Produk & Matriks Ukuran</span>
                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
                       {productBlocks.length} Kode
                     </span>
@@ -2025,12 +2194,19 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                 </div>
               </div>
               <span className="text-[11px] text-slate-500 hidden sm:inline">
-                1 Kode ➔ Banyak Warna ➔ Banyak Size
+                Pilih Tipe Ukuran: Banyak Ukuran (S–3XL bisa diedit) atau All Size / Free Size
               </span>
             </div>
 
-            {/* Loop Setiap Kode Produk (Tampilan Sheet / Tabel Excel Ringkas) */}
+            {/* Loop Setiap Kode Produk */}
             {productBlocks.map((block, blockIdx) => {
+              const isAllSize = block.size_mode === 'allsize';
+              const sizeColumns = isAllSize
+                ? ['ALL SIZE']
+                : block.size_columns && block.size_columns.length > 0
+                ? block.size_columns
+                : DEFAULT_MULTI_SIZE_COLUMNS;
+
               const blockTotalPcs = block.warnas.reduce(
                 (sum, w) => sum + w.sizes.reduce((sSum, s) => sSum + (Number(s.qty) || 0), 0),
                 0
@@ -2067,115 +2243,499 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                       }
                     }
                   }}
-                  className={`bg-white dark:bg-slate-900 border rounded-xl overflow-hidden shadow-2xs transition-all ${
+                  className={`bg-white dark:bg-slate-900 border rounded-xl overflow-hidden shadow-xs transition-all ${
                     draggingBlockIdx === blockIdx
                       ? 'border-emerald-500 ring-2 ring-emerald-500/30 bg-emerald-50/20 dark:bg-emerald-950/20'
                       : focusedBlockIdx === blockIdx
-                      ? 'border-emerald-400/80 dark:border-emerald-700/80'
+                      ? isAllSize
+                        ? 'border-indigo-400/90 dark:border-indigo-700/80'
+                        : 'border-emerald-400/90 dark:border-emerald-700/80'
                       : 'border-slate-300 dark:border-slate-700'
                   }`}
                 >
-                  {/* BARIS 1: Header Kode Produk (Kompak satu baris, hemat tempat) */}
-                  <div className="bg-slate-100 dark:bg-slate-800/90 px-3 py-2 border-b border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 flex-1 min-w-[220px]">
-                      <span className="w-6 h-6 rounded-md bg-emerald-600 text-white flex items-center justify-center text-xs font-black shrink-0">
-                        {blockIdx + 1}
-                      </span>
-                      <div className="flex items-center gap-1.5 flex-1 max-w-xs">
+                  {/* =========================================================
+                      BAGIAN ATAS KARTU: KODE PRODUK | CATATAN PRODUK | TIPE UKURAN
+                     ========================================================= */}
+                  <div className="p-3 sm:p-4 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-start">
+                      {/* Kolom 1: KODE PRODUK * */}
+                      <div className="sm:col-span-4">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+                            KODE PRODUK <span className="text-rose-500">*</span>
+                          </label>
+                          {/* Tombol Hapus Produk di HP */}
+                          {productBlocks.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeProductBlock(blockIdx)}
+                              className="sm:hidden inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold text-rose-600 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 cursor-pointer"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>Hapus Produk</span>
+                            </button>
+                          )}
+                        </div>
                         <input
                           type="text"
-                          placeholder="KODE PRODUKSI *"
+                          placeholder="Contoh: KEMEJA-FLANEL-01"
                           value={block.kode_produksi}
                           onChange={(e) => updateProductBlockField(blockIdx, 'kode_produksi', e.target.value)}
                           required
-                          className="w-full px-2.5 py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-mono font-black text-slate-900 dark:text-white uppercase placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                          className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-mono font-extrabold text-slate-900 dark:text-white uppercase placeholder:font-sans placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         />
                       </div>
-                      <div className="hidden sm:block flex-1 min-w-[140px]">
+
+                      {/* Kolom 2: CATATAN PRODUK */}
+                      <div className="sm:col-span-5">
+                        <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1">
+                          CATATAN PRODUK
+                        </label>
                         <input
                           type="text"
-                          placeholder="Catatan produk (opsional)"
+                          placeholder="Catatan (opsional)..."
                           value={block.catatan || ''}
                           onChange={(e) => updateProductBlockField(blockIdx, 'catatan', e.target.value)}
-                          className="w-full px-2 py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                          className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         />
                       </div>
-                    </div>
 
-                    {/* Quick Foto (Kamera + Upload/Drag & Drop + Copy/Paste) & Action Baris Header */}
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {block.foto_url ? (
-                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700">
-                          <img
-                            src={block.foto_url}
-                            alt="Foto"
-                            className="w-7 h-7 rounded object-cover cursor-pointer hover:opacity-80 border border-emerald-200 dark:border-emerald-800"
-                            onClick={() =>
-                              setLightboxImage({
-                                url: block.foto_url!,
-                                title: block.kode_produksi || `Produk #${blockIdx + 1}`,
-                                subtitle: `Surat Jalan: ${formNoSuratJalan || '-'}`,
-                              })
-                            }
-                            title="Klik untuk perbesar foto"
-                          />
-                          <label
-                            className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 hover:underline cursor-pointer px-1"
-                            title="Klik untuk ganti file, atau langsung Drag & Drop / tekan Ctrl+V pada blok ini"
-                          >
-                            Ganti
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              onChange={(e) => {
-                                if (e.target.files && e.target.files[0]) {
-                                  handleImageUpload(e.target.files[0], blockIdx);
-                                }
-                              }}
-                            />
+                      {/* Kolom 3: TIPE UKURAN */}
+                      <div className="sm:col-span-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+                            TIPE UKURAN
                           </label>
-                          <button
-                            type="button"
-                            onClick={() => handlePastePhotoButton(blockIdx)}
-                            className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer px-0.5"
-                            title="Tempel (Paste) foto baru dari clipboard"
-                          >
-                            Paste
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => updateProductBlockPhoto(blockIdx, '')}
-                            className="text-rose-500 hover:text-rose-700 text-xs font-black px-1 cursor-pointer"
-                            title="Hapus foto"
-                          >
-                            ×
-                          </button>
+                          {productBlocks.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeProductBlock(blockIdx)}
+                              className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition cursor-pointer"
+                              title="Hapus Blok Produk Ini"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Hapus</span>
+                            </button>
+                          )}
                         </div>
-                      ) : (
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => startWebcam(blockIdx, false)}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-300 dark:border-slate-600 cursor-pointer shadow-2xs"
-                            title="Ambil Foto dari Kamera"
-                          >
-                            <Camera className="w-3.5 h-3.5 text-emerald-600" />
-                            <span className="hidden sm:inline">Kamera</span>
-                          </button>
+                        <select
+                          value={isAllSize ? 'allsize' : 'multi'}
+                          onChange={(e) =>
+                            handleChangeSizeMode(blockIdx, e.target.value as ProductSizeMode)
+                          }
+                          className={`w-full px-3 py-2 rounded-lg text-sm border focus:outline-none focus:ring-2 cursor-pointer transition ${
+                            isAllSize
+                              ? 'bg-indigo-50/50 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-semibold focus:ring-indigo-500'
+                              : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100 font-medium focus:ring-emerald-500'
+                          }`}
+                        >
+                          <option value="multi">Banyak Ukuran (Bisa diatur)</option>
+                          <option value="allsize">All Size / Free Size</option>
+                        </select>
+                        {!isAllSize && (
+                          <p className="text-[10px] italic text-slate-500 dark:text-slate-400 mt-1 leading-tight">
+                            *Judul kolom ukuran di bawah bisa diketik/diedit
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
 
-                          {/* Dropzone & Browse File Button */}
-                          <label
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-all shadow-2xs border ${
-                              draggingBlockIdx === blockIdx
-                                ? 'border-emerald-500 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 border-dashed scale-102'
-                                : 'border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 hover:border-emerald-500 hover:text-emerald-600 text-slate-700 dark:text-slate-200'
-                            }`}
-                            title="Klik untuk pilih foto, atau tarik & lepaskan (Drag & Drop) file gambar ke blok ini"
-                          >
-                            <Upload className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                            <span>
-                              {draggingBlockIdx === blockIdx ? 'Lepas Foto!' : 'Upload / Drop Foto'}
+                  {/* =========================================================
+                      TAMPILAN DESKTOP (sm:block): TABEL MATRIKS SESUAI REFERENSI
+                     ========================================================= */}
+                  <div className="hidden sm:block overflow-x-auto">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr
+                          className={
+                            isAllSize
+                              ? 'bg-indigo-50/90 dark:bg-indigo-950/40 border-b border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-200 uppercase'
+                              : 'bg-emerald-50/90 dark:bg-emerald-950/40 border-b border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-200 uppercase'
+                          }
+                        >
+                          <th className="w-36 py-2.5 px-3 text-center border-r border-slate-200 dark:border-slate-700">
+                            FOTO
+                          </th>
+                          <th className="min-w-[180px] py-2.5 px-3.5 text-left border-r border-slate-200 dark:border-slate-700">
+                            NAMA WARNA
+                          </th>
+
+                          {isAllSize ? (
+                            <th className="w-64 py-2.5 px-3 text-center border-r border-slate-200 dark:border-slate-700 text-indigo-900 dark:text-indigo-300">
+                              QTY (ALL SIZE)
+                            </th>
+                          ) : (
+                            <>
+                              {sizeColumns.map((colSize, colIdx) => (
+                                <th
+                                  key={`col_${block.id}_${colIdx}`}
+                                  className="w-16 min-w-[60px] py-1.5 px-1 text-center border-r border-slate-200 dark:border-slate-700 relative group"
+                                >
+                                  <input
+                                    type="text"
+                                    value={colSize}
+                                    onChange={(e) =>
+                                      handleRenameSizeColumn(blockIdx, colIdx, e.target.value)
+                                    }
+                                    title="Klik untuk mengedit nama ukuran kolom ini"
+                                    className="w-full text-center bg-transparent hover:bg-white/80 focus:bg-white dark:hover:bg-slate-800 dark:focus:bg-slate-800 rounded py-1 px-1 text-xs font-extrabold text-slate-800 dark:text-slate-100 uppercase focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                  />
+                                  {sizeColumns.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveSizeColumn(blockIdx, colIdx)}
+                                      className="opacity-0 group-hover:opacity-100 focus:opacity-100 absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-rose-100 dark:bg-rose-900/70 text-rose-600 dark:text-rose-300 hover:bg-rose-200 text-[10px] font-black flex items-center justify-center transition cursor-pointer"
+                                      title={`Hapus kolom ukuran ${colSize}`}
+                                    >
+                                      ×
+                                    </button>
+                                  )}
+                                </th>
+                              ))}
+
+                              {/* Kolom Tombol + Size */}
+                              <th className="w-14 py-1.5 px-1.5 text-center border-r border-slate-200 dark:border-slate-700">
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddSizeColumn(blockIdx)}
+                                  className="w-full py-1 px-1.5 rounded-md bg-emerald-200/80 hover:bg-emerald-300/90 dark:bg-emerald-800/70 dark:hover:bg-emerald-700 text-emerald-900 dark:text-emerald-100 text-[10px] font-bold leading-tight flex flex-col items-center justify-center cursor-pointer transition shadow-2xs"
+                                  title="Tambah Kolom Ukuran Baru"
+                                >
+                                  <span className="text-xs leading-none">+</span>
+                                  <span>Size</span>
+                                </button>
+                              </th>
+                            </>
+                          )}
+
+                          <th className="w-24 py-2.5 px-2 text-center border-r border-slate-200 dark:border-slate-700">
+                            SUBTOTAL
+                          </th>
+                          <th className="w-36 py-2.5 px-3 text-center">
+                            AKSI WARNA
+                          </th>
+                        </tr>
+                      </thead>
+
+                      <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                        {block.warnas.map((w, wIdx) => {
+                          const warnaTotalPcs = w.sizes.reduce(
+                            (sum, s) => sum + (Number(s.qty) || 0),
+                            0
+                          );
+
+                          return (
+                            <tr
+                              key={w.id}
+                              className="bg-white dark:bg-slate-900 hover:bg-slate-50/40 dark:hover:bg-slate-800/30 transition-colors"
+                            >
+                              {/* Kolom FOTO (rowSpan sebanyak jumlah warna) */}
+                              {wIdx === 0 && (
+                                <td
+                                  rowSpan={block.warnas.length}
+                                  className="p-3 align-middle text-center border-r border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+                                >
+                                  {block.foto_url ? (
+                                    <div className="w-32 h-28 mx-auto rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 relative group overflow-hidden flex items-center justify-center">
+                                      <img
+                                        src={block.foto_url}
+                                        alt={block.kode_produksi || 'Foto Produk'}
+                                        className="w-full h-full object-cover cursor-pointer"
+                                        onClick={() =>
+                                          setLightboxImage({
+                                            url: block.foto_url!,
+                                            title: block.kode_produksi || `Produk #${blockIdx + 1}`,
+                                            subtitle: `Surat Jalan: ${formNoSuratJalan || '-'}`,
+                                          })
+                                        }
+                                        title="Klik untuk memperbesar foto"
+                                      />
+                                      <div className="absolute inset-x-0 bottom-0 bg-slate-900/75 backdrop-blur-xs py-1 px-1.5 flex items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <label
+                                          className="text-[10px] font-bold text-white hover:text-emerald-300 cursor-pointer"
+                                          title="Ganti file foto"
+                                        >
+                                          Ganti
+                                          <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                              if (e.target.files && e.target.files[0]) {
+                                                handleImageUpload(e.target.files[0], blockIdx);
+                                              }
+                                            }}
+                                          />
+                                        </label>
+                                        <span className="text-slate-400 text-[9px]">•</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => startWebcam(blockIdx, false)}
+                                          className="text-[10px] font-bold text-white hover:text-emerald-300 cursor-pointer"
+                                          title="Ambil dari kamera"
+                                        >
+                                          Kamera
+                                        </button>
+                                        <span className="text-slate-400 text-[9px]">•</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => updateProductBlockPhoto(blockIdx, '')}
+                                          className="text-[10px] font-bold text-rose-300 hover:text-rose-400 cursor-pointer"
+                                          title="Hapus foto"
+                                        >
+                                          Hapus
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div
+                                      className={`w-32 ${
+                                        block.warnas.length > 1 ? 'h-28' : 'h-20'
+                                      } mx-auto rounded-lg border-2 border-dashed transition flex flex-col items-center justify-center p-2 relative group ${
+                                        draggingBlockIdx === blockIdx
+                                          ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40'
+                                          : 'border-slate-300 dark:border-slate-600 bg-slate-50/70 dark:bg-slate-800/40 hover:border-slate-400 dark:hover:border-slate-500'
+                                      }`}
+                                    >
+                                      <label
+                                        className="w-full h-full flex flex-col items-center justify-center cursor-pointer text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300"
+                                        title="Klik untuk upload foto, atau langsung Drag & Drop / tekan Ctrl+V"
+                                      >
+                                        <Upload className="w-5 h-5 mb-1 stroke-[1.75]" />
+                                        <span className="text-[10px] font-semibold leading-tight text-center">
+                                          Upload
+                                          <br />
+                                          Foto
+                                        </span>
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          className="hidden"
+                                          onChange={(e) => {
+                                            if (e.target.files && e.target.files[0]) {
+                                              handleImageUpload(e.target.files[0], blockIdx);
+                                            }
+                                          }}
+                                        />
+                                      </label>
+                                      {/* Quick Camera / Paste overlay on hover */}
+                                      <div className="absolute inset-x-1 bottom-1 hidden group-hover:flex items-center justify-center gap-1 bg-white/95 dark:bg-slate-900/95 rounded py-0.5 px-1 shadow-2xs border border-slate-200 dark:border-slate-700">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            startWebcam(blockIdx, false);
+                                          }}
+                                          className="text-[9px] font-bold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
+                                          title="Buka Kamera"
+                                        >
+                                          Kamera
+                                        </button>
+                                        <span className="text-slate-300 text-[9px]">|</span>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handlePastePhotoButton(blockIdx);
+                                          }}
+                                          className="text-[9px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                                          title="Paste Foto (Ctrl+V)"
+                                        >
+                                          Paste
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </td>
+                              )}
+
+                              {/* Kolom NAMA WARNA */}
+                              <td className="p-2.5 align-middle border-r border-slate-200 dark:border-slate-700">
+                                <input
+                                  type="text"
+                                  placeholder="NAMA WARNA (cth: BLACK)"
+                                  value={w.warna}
+                                  onChange={(e) => updateWarnaName(blockIdx, wIdx, e.target.value)}
+                                  list={`colors-list-${blockIdx}-${wIdx}`}
+                                  className="w-full px-2.5 py-1.5 rounded-md bg-transparent hover:bg-slate-50 focus:bg-white dark:hover:bg-slate-800 dark:focus:bg-slate-800 border border-transparent focus:border-slate-300 dark:focus:border-slate-600 text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 uppercase placeholder:font-normal placeholder:text-slate-400 focus:outline-none"
+                                />
+                                <datalist id={`colors-list-${blockIdx}-${wIdx}`}>
+                                  {POPULAR_COLORS.map((c) => (
+                                    <option key={c} value={c} />
+                                  ))}
+                                </datalist>
+                              </td>
+
+                              {/* Kolom Kuantitas: All Size vs Multi-Size */}
+                              {isAllSize ? (
+                                <td className="p-2.5 align-middle text-center border-r border-slate-200 dark:border-slate-700">
+                                  <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    min={0}
+                                    value={w.sizes[0]?.qty ?? 0}
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) =>
+                                      updateSizeField(blockIdx, wIdx, 0, 'qty', e.target.value)
+                                    }
+                                    onBlur={() => {
+                                      if (w.sizes[0]?.qty === '') {
+                                        updateSizeField(blockIdx, wIdx, 0, 'qty', 0);
+                                      }
+                                    }}
+                                    className="w-full max-w-[220px] mx-auto py-1.5 px-3 rounded-md bg-indigo-50/40 dark:bg-indigo-950/30 hover:bg-indigo-50/80 focus:bg-white dark:focus:bg-slate-800 border border-transparent focus:border-indigo-400 text-center text-base font-extrabold text-indigo-700 dark:text-indigo-300 focus:outline-none"
+                                  />
+                                </td>
+                              ) : (
+                                <>
+                                  {sizeColumns.map((colSize, colIdx) => {
+                                    const sCell = w.sizes[colIdx];
+                                    const qtyVal = Number(sCell?.qty) || 0;
+                                    return (
+                                      <td
+                                        key={`cell_${w.id}_${colIdx}`}
+                                        className="p-1.5 align-middle text-center border-r border-slate-200 dark:border-slate-700"
+                                      >
+                                        <input
+                                          type="number"
+                                          inputMode="numeric"
+                                          min={0}
+                                          value={sCell?.qty ?? 0}
+                                          onFocus={(e) => e.target.select()}
+                                          onChange={(e) =>
+                                            updateSizeField(
+                                              blockIdx,
+                                              wIdx,
+                                              colIdx,
+                                              'qty',
+                                              e.target.value
+                                            )
+                                          }
+                                          onBlur={() => {
+                                            if (sCell?.qty === '') {
+                                              updateSizeField(blockIdx, wIdx, colIdx, 'qty', 0);
+                                            }
+                                          }}
+                                          className={`w-full py-1.5 px-1 text-center text-sm rounded-md bg-transparent hover:bg-slate-50 focus:bg-white dark:hover:bg-slate-800 dark:focus:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 ${
+                                            qtyVal > 0
+                                              ? 'font-extrabold text-slate-900 dark:text-white'
+                                              : 'font-normal text-slate-400 dark:text-slate-500'
+                                          }`}
+                                        />
+                                      </td>
+                                    );
+                                  })}
+
+                                  {/* Sel kosong di bawah kolom + Size */}
+                                  <td className="border-r border-slate-200 dark:border-slate-700 bg-slate-50/30 dark:bg-slate-800/20" />
+                                </>
+                              )}
+
+                              {/* Kolom SUBTOTAL */}
+                              <td className="p-2.5 align-middle text-center font-extrabold text-sm text-slate-900 dark:text-white border-r border-slate-200 dark:border-slate-700">
+                                {warnaTotalPcs}
+                              </td>
+
+                              {/* Kolom AKSI WARNA */}
+                              <td className="p-2.5 align-middle text-center">
+                                {wIdx === 0 && block.warnas.length === 1 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => addWarnaToBlock(blockIdx, wIdx)}
+                                    className="w-full py-1.5 px-2.5 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 inline-flex items-center justify-center gap-1.5 cursor-pointer transition"
+                                    title="Duplikat baris warna ini"
+                                  >
+                                    <Copy className="w-3.5 h-3.5 text-slate-400" />
+                                    <span>Duplikat</span>
+                                  </button>
+                                ) : wIdx === 0 ? (
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => addWarnaToBlock(blockIdx, wIdx)}
+                                      className="flex-1 py-1.5 px-2 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 inline-flex items-center justify-center gap-1 cursor-pointer transition"
+                                      title="Duplikat baris warna ini"
+                                    >
+                                      <Copy className="w-3.5 h-3.5 text-slate-400" />
+                                      <span>Duplikat</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeWarnaFromBlock(blockIdx, wIdx)}
+                                      className="p-1.5 rounded-md border border-rose-200 dark:border-rose-800/70 bg-rose-50/70 dark:bg-rose-950/30 hover:bg-rose-100 text-rose-600 dark:text-rose-400 cursor-pointer transition"
+                                      title="Hapus baris warna ini"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => removeWarnaFromBlock(blockIdx, wIdx)}
+                                      className="flex-1 py-1.5 px-2.5 rounded-md border border-rose-200 dark:border-rose-800/70 bg-rose-50/70 dark:bg-rose-950/30 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-xs font-semibold text-rose-600 dark:text-rose-400 inline-flex items-center justify-center gap-1.5 cursor-pointer transition"
+                                      title="Hapus baris warna ini"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                      <span>Hapus</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => addWarnaToBlock(blockIdx, wIdx)}
+                                      className="p-1.5 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 text-slate-500 dark:text-slate-400 cursor-pointer transition"
+                                      title="Duplikat baris warna ini"
+                                    >
+                                      <Copy className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* =========================================================
+                      TAMPILAN HP SELULER (sm:hidden): ERGONOMIS & TANPA SCROLL SAMPING
+                     ========================================================= */}
+                  <div className="sm:hidden divide-y divide-slate-200 dark:divide-slate-700">
+                    {/* Baris Foto & Pengaturan Kolom Ukuran di HP */}
+                    <div className="p-3 bg-slate-50/70 dark:bg-slate-800/40 flex items-center gap-3">
+                      {/* Kotak Foto Produk di HP */}
+                      <div className="shrink-0">
+                        {block.foto_url ? (
+                          <div className="w-20 h-20 rounded-lg border-2 border-dashed border-emerald-400 relative overflow-hidden bg-white dark:bg-slate-900">
+                            <img
+                              src={block.foto_url}
+                              alt="Foto Produk"
+                              className="w-full h-full object-cover"
+                              onClick={() =>
+                                setLightboxImage({
+                                  url: block.foto_url!,
+                                  title: block.kode_produksi || `Produk #${blockIdx + 1}`,
+                                  subtitle: `Surat Jalan: ${formNoSuratJalan || '-'}`,
+                                })
+                              }
+                            />
+                            <button
+                              type="button"
+                              onClick={() => updateProductBlockPhoto(blockIdx, '')}
+                              className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-rose-600 text-white text-xs font-black flex items-center justify-center shadow-xs"
+                              title="Hapus Foto"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ) : (
+                          <label className="w-20 h-20 rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 flex flex-col items-center justify-center text-slate-400 cursor-pointer">
+                            <Upload className="w-4 h-4 mb-0.5" />
+                            <span className="text-[9px] font-bold text-center leading-tight">
+                              Upload
+                              <br />
+                              Foto
                             </span>
                             <input
                               type="file"
@@ -2188,228 +2748,221 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                               }}
                             />
                           </label>
+                        )}
+                      </div>
 
-                          {/* 1-Click Copy-Paste (Ctrl+V) Button */}
+                      {/* Tombol Aksi Foto & Kolom Ukuran di HP */}
+                      <div className="flex-1 min-w-0 space-y-2">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => startWebcam(blockIdx, false)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200"
+                          >
+                            <Camera className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Kamera</span>
+                          </button>
                           <button
                             type="button"
                             onClick={() => handlePastePhotoButton(blockIdx)}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50/80 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 cursor-pointer shadow-2xs transition"
-                            title="Tempel gambar dari Clipboard (atau tekan Ctrl+V langsung pada blok produk ini)"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300"
                           >
-                            <Copy className="w-3 h-3 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                            <Copy className="w-3 h-3" />
                             <span>Paste Foto</span>
-                            <span className="hidden lg:inline text-[9px] font-mono opacity-75">(Ctrl+V)</span>
                           </button>
                         </div>
-                      )}
 
-                      {/* Total Pcs Produk */}
-                      <span className="px-2 py-1 rounded-md text-xs font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-emerald-700 dark:text-emerald-400">
-                        {blockTotalPcs} pcs
-                      </span>
-
-                      {/* Hapus Produk (Jika > 1) */}
-                      {productBlocks.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeProductBlock(blockIdx)}
-                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition cursor-pointer"
-                          title="Hapus Kode Produk Ini"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+                        {!isAllSize && (
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[10px] font-bold text-slate-500 uppercase">
+                                Kolom Ukuran (Tap untuk edit):
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleAddSizeColumn(blockIdx)}
+                                className="px-2 py-0.5 rounded bg-emerald-200/80 dark:bg-emerald-800 text-emerald-900 dark:text-emerald-100 text-[10px] font-bold"
+                              >
+                                + Size
+                              </button>
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {sizeColumns.map((colSize, colIdx) => (
+                                <div
+                                  key={`mob_col_${block.id}_${colIdx}`}
+                                  className="inline-flex items-center bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 rounded px-1 py-0.5"
+                                >
+                                  <input
+                                    type="text"
+                                    value={colSize}
+                                    onChange={(e) =>
+                                      handleRenameSizeColumn(blockIdx, colIdx, e.target.value)
+                                    }
+                                    className="w-8 text-center bg-transparent text-[10px] font-extrabold text-emerald-900 dark:text-emerald-200 uppercase focus:outline-none"
+                                  />
+                                  {sizeColumns.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveSizeColumn(blockIdx, colIdx)}
+                                      className="text-[10px] text-rose-500 font-black pl-0.5"
+                                    >
+                                      ×
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Catatan di HP (jika layar kecil) */}
-                  <div className="sm:hidden px-3 py-1.5 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-700">
-                    <input
-                      type="text"
-                      placeholder="Catatan khusus produk (opsional)"
-                      value={block.catatan || ''}
-                      onChange={(e) => updateProductBlockField(blockIdx, 'catatan', e.target.value)}
-                      className="w-full px-2 py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded text-xs text-slate-900 dark:text-white"
-                    />
-                  </div>
-
-                  {/* BARIS 2: Tabel Spreadsheet Varian Warna & Size */}
-                  <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                    {/* Daftar Baris Warna di HP */}
                     {block.warnas.map((w, wIdx) => {
-                      const warnaTotalPcs = w.sizes.reduce((sum, s) => sum + (Number(s.qty) || 0), 0);
+                      const warnaTotalPcs = w.sizes.reduce(
+                        (sum, s) => sum + (Number(s.qty) || 0),
+                        0
+                      );
 
                       return (
-                        <div
-                          key={w.id}
-                          className="p-2 sm:p-2.5 bg-white dark:bg-slate-900 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors"
-                        >
-                          {/* Sub-Baris: Warna & Subtotal */}
-                          <div className="flex flex-wrap items-center justify-between gap-1.5 pb-1.5">
-                            <div className="flex items-center gap-1.5 flex-1 min-w-[200px]">
-                              <span className="w-5 h-5 rounded bg-indigo-600 text-white text-[10px] font-black flex items-center justify-center shrink-0">
+                        <div key={w.id} className="p-3 bg-white dark:bg-slate-900 space-y-2.5">
+                          {/* Baris Nama Warna + Subtotal + Duplikat/Hapus */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                              <span
+                                className={`w-5 h-5 rounded text-[10px] font-black text-white flex items-center justify-center shrink-0 ${
+                                  isAllSize ? 'bg-indigo-600' : 'bg-emerald-600'
+                                }`}
+                              >
                                 {wIdx + 1}
                               </span>
                               <input
                                 type="text"
-                                placeholder="NAMA WARNA (cth: BLACK, NAVY)"
+                                placeholder="NAMA WARNA (cth: BLACK)"
                                 value={w.warna}
                                 onChange={(e) => updateWarnaName(blockIdx, wIdx, e.target.value)}
                                 list={`colors-list-${blockIdx}-${wIdx}`}
-                                required
-                                className="w-full max-w-[200px] sm:max-w-xs px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs font-black text-slate-900 dark:text-white uppercase placeholder:font-normal focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-xs font-extrabold text-slate-900 dark:text-white uppercase placeholder:font-normal focus:outline-none focus:ring-1 focus:ring-emerald-500"
                               />
-                              <datalist id={`colors-list-${blockIdx}-${wIdx}`}>
-                                {POPULAR_COLORS.map((c) => (
-                                  <option key={c} value={c} />
-                                ))}
-                              </datalist>
-
-                              {/* Presets Cepat Ukuran (1 Tap mengisi S, M, L) */}
-                              <div className="hidden md:flex items-center gap-1 text-[10.5px]">
-                                <span className="text-slate-400">Set:</span>
-                                <button
-                                  type="button"
-                                  onClick={() => addSizesPresetToWarna(blockIdx, wIdx, ['S', 'M', 'L'])}
-                                  className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold cursor-pointer"
-                                >
-                                  +S,M,L
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => addSizesPresetToWarna(blockIdx, wIdx, ['S', 'M', 'L', 'XL'])}
-                                  className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold cursor-pointer"
-                                >
-                                  +S,M,L,XL
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => addSizesPresetToWarna(blockIdx, wIdx, ['ALL SIZE'])}
-                                  className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold cursor-pointer"
-                                >
-                                  +ALL SIZE
-                                </button>
-                              </div>
                             </div>
 
-                            {/* Subtotal & Aksi Warna */}
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                            <div className="flex items-center gap-1 shrink-0">
+                              <span className="px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-xs font-extrabold text-slate-800 dark:text-slate-200">
                                 {warnaTotalPcs} pcs
                               </span>
-
                               <button
                                 type="button"
                                 onClick={() => addWarnaToBlock(blockIdx, wIdx)}
-                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 cursor-pointer"
-                                title="Duplikat warna ini beserta semua ukurannya"
+                                className="p-1.5 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                                title="Duplikat Warna"
                               >
-                                <Copy className="w-3 h-3" />
-                                <span className="hidden sm:inline">Duplikat</span>
+                                <Copy className="w-3.5 h-3.5" />
                               </button>
-
                               {block.warnas.length > 1 && (
                                 <button
                                   type="button"
                                   onClick={() => removeWarnaFromBlock(blockIdx, wIdx)}
-                                  className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition cursor-pointer"
-                                  title="Hapus Warna Ini"
+                                  className="p-1.5 rounded-md border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400"
+                                  title="Hapus Warna"
                                 >
-                                  <Trash2 className="w-3 h-3" />
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               )}
                             </div>
                           </div>
 
-                          {/* Deretan Sel Ukuran & Kuantitas (Excel Cells Ringkas) */}
-                          <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                            {w.sizes.map((s, sIdx) => (
-                              <div
-                                key={s.id}
-                                className="inline-flex items-center border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 overflow-hidden shadow-2xs"
-                              >
-                                <select
-                                  value={s.size}
-                                  onChange={(e) =>
-                                    updateSizeField(blockIdx, wIdx, sIdx, 'size', e.target.value)
+                          {/* Input Kuantitas di HP: All Size vs Grid 3 Kolom */}
+                          {isAllSize ? (
+                            <div className="flex items-center justify-between gap-3 bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/80 rounded-lg px-3 py-2">
+                              <span className="text-xs font-bold text-indigo-900 dark:text-indigo-200 uppercase">
+                                QTY (ALL SIZE)
+                              </span>
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                min={0}
+                                value={w.sizes[0]?.qty ?? 0}
+                                onFocus={(e) => e.target.select()}
+                                onChange={(e) =>
+                                  updateSizeField(blockIdx, wIdx, 0, 'qty', e.target.value)
+                                }
+                                onBlur={() => {
+                                  if (w.sizes[0]?.qty === '') {
+                                    updateSizeField(blockIdx, wIdx, 0, 'qty', 0);
                                   }
-                                  className="bg-slate-100 dark:bg-slate-700 font-black text-xs px-1.5 py-1 text-slate-800 dark:text-slate-200 border-r border-slate-300 dark:border-slate-600 focus:outline-none cursor-pointer"
-                                >
-                                  {STANDARD_SIZES.map((sz) => (
-                                    <option key={sz} value={sz}>
-                                      {sz}
-                                    </option>
-                                  ))}
-                                </select>
-                                <input
-                                  type="number"
-                                  inputMode="numeric"
-                                  min={1}
-                                  value={s.qty}
-                                  onFocus={(e) => e.target.select()}
-                                  onChange={(e) =>
-                                    updateSizeField(blockIdx, wIdx, sIdx, 'qty', e.target.value)
-                                  }
-                                  onBlur={() => {
-                                    if (s.qty === '' || Number(s.qty) < 1) {
-                                      updateSizeField(blockIdx, wIdx, sIdx, 'qty', 1);
-                                    }
-                                  }}
-                                  className="w-12 sm:w-14 px-1 py-1 text-center font-black text-xs text-slate-900 dark:text-white bg-transparent focus:outline-none"
-                                />
-                                {w.sizes.length > 1 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => removeSizeFromWarna(blockIdx, wIdx, sIdx)}
-                                    className="px-1 text-slate-400 hover:text-rose-500 font-bold text-xs"
-                                    title="Hapus size"
+                                }}
+                                className="w-28 py-1 px-2 rounded-md bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 text-center text-sm font-extrabold text-indigo-700 dark:text-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                              />
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-3 gap-1.5">
+                              {sizeColumns.map((colSize, colIdx) => {
+                                const sCell = w.sizes[colIdx];
+                                const qtyVal = Number(sCell?.qty) || 0;
+                                return (
+                                  <div
+                                    key={`mob_cell_${w.id}_${colIdx}`}
+                                    className={`flex items-center rounded-lg border overflow-hidden ${
+                                      qtyVal > 0
+                                        ? 'border-emerald-400 dark:border-emerald-700 bg-emerald-50/30 dark:bg-emerald-950/20'
+                                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60'
+                                    }`}
                                   >
-                                    ×
-                                  </button>
-                                )}
-                              </div>
-                            ))}
-
-                            {/* Tombol Tambah Size Tepat di Samping/Bawah Size */}
-                            <button
-                              type="button"
-                              onClick={() => addSizeToWarna(blockIdx, wIdx)}
-                              className="inline-flex items-center gap-0.5 px-2 py-1 rounded-md text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 border border-dashed border-emerald-300 dark:border-emerald-700 transition cursor-pointer"
-                              title="Tambah Ukuran ke Warna Ini"
-                            >
-                              <Plus className="w-3 h-3" />
-                              <span>Size</span>
-                            </button>
-                          </div>
+                                    <span className="px-2 py-1.5 bg-emerald-50 dark:bg-emerald-950/60 border-r border-slate-200 dark:border-slate-700 text-[10px] font-extrabold text-slate-700 dark:text-slate-200 uppercase min-w-[32px] text-center">
+                                      {colSize}
+                                    </span>
+                                    <input
+                                      type="number"
+                                      inputMode="numeric"
+                                      min={0}
+                                      value={sCell?.qty ?? 0}
+                                      onFocus={(e) => e.target.select()}
+                                      onChange={(e) =>
+                                        updateSizeField(blockIdx, wIdx, colIdx, 'qty', e.target.value)
+                                      }
+                                      onBlur={() => {
+                                        if (sCell?.qty === '') {
+                                          updateSizeField(blockIdx, wIdx, colIdx, 'qty', 0);
+                                        }
+                                      }}
+                                      className={`w-full py-1.5 px-1 text-center text-xs bg-transparent focus:outline-none ${
+                                        qtyVal > 0
+                                          ? 'font-extrabold text-slate-900 dark:text-white'
+                                          : 'font-normal text-slate-400 dark:text-slate-500'
+                                      }`}
+                                    />
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
                   </div>
 
-                  {/* FOOTER TABEL WARNA: Tombol Tambah Warna TEPAT DI BAWAH DAFTAR WARNA! */}
-                  <div className="bg-slate-50 dark:bg-slate-800/60 p-2 sm:px-3 sm:py-2 border-t border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => addWarnaToBlock(blockIdx)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-slate-800 border border-indigo-300 dark:border-indigo-700 shadow-2xs transition cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>+ Tambah Warna</span>
-                      </button>
+                  {/* =========================================================
+                      FOOTER KARTU: + Tambah Warna (Kiri) & Subtotal: X pcs (Kanan)
+                     ========================================================= */}
+                  <div className="px-3.5 py-2.5 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => addWarnaToBlock(blockIdx)}
+                      className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        isAllSize
+                          ? 'border border-indigo-400 dark:border-indigo-700 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40'
+                          : 'border border-emerald-500 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
+                      }`}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Tambah Warna</span>
+                    </button>
 
-                      <button
-                        type="button"
-                        onClick={() => addWarnaToBlock(blockIdx, block.warnas.length - 1)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-600 transition cursor-pointer"
-                        title="Salin ukuran dari warna sebelumnya ke warna baru"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">Salin Warna Terakhir</span>
-                      </button>
-                    </div>
-
-                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                      Subtotal: <strong className="text-emerald-600">{blockTotalPcs} pcs</strong> ({block.warnas.length} Warna)
+                    <span className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
+                      Subtotal:{' '}
+                      <strong className="font-extrabold text-slate-900 dark:text-white">
+                        {blockTotalPcs} pcs
+                      </strong>
                     </span>
                   </div>
                 </div>
