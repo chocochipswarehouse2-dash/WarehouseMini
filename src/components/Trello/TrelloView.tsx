@@ -28,6 +28,8 @@ import {
   fetchTrelloUpFromSupabase,
   syncTrelloUpCatalog,
   resolveTrelloListMeta,
+  resetTrelloSyncSignature,
+  TRELLO_AUTO_SYNC_INTERVAL_MS,
   DEFAULT_TRELLO_BOARD_ID,
 } from '../../services/trelloSyncService';
 import { TrelloPrintA4Modal } from './TrelloPrintA4Modal';
@@ -56,7 +58,6 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [selectedListNames, setSelectedListNames] = useState<string[]>([]);
-  const [hasInitializedDefaultUp, setHasInitializedDefaultUp] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const deferredSearch = useDeferredValue(searchQuery);
   const [viewMode, setViewMode] = useState<'kanban' | 'card' | 'table'>('kanban');
@@ -67,56 +68,79 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
   const [activePhotoModal, setActivePhotoModal] = useState<TrelloUpItem | null>(null);
 
   // Ambil data dari Supabase / Trello
-  const loadData = async (forceSync = false) => {
-    setIsLoading(true);
-    try {
-      if (!forceSync) {
-        // 1. Prioritaskan load dari Supabase
-        const sbItems = await fetchTrelloUpFromSupabase();
-        if (sbItems && sbItems.length > 0) {
-          setItems(sbItems);
-          setLocalCachedTrelloItems(sbItems);
-          const syncTime = sbItems[0]?.last_synced_at || new Date().toISOString();
-          setLastSynced(syncTime);
-          setIsLoading(false);
-          return;
-        }
-      }
+  const syncInFlightRef = React.useRef(false);
+  const [isAutoSyncing, setIsAutoSyncing] = useState<boolean>(false);
 
-      // 2. Jika Supabase masih kosong atau tombol Sync ditekan eksplisit
+  /** Tarik live Trello → Supabase. silent = auto-sync berkala (tanpa toast kecuali ada perubahan). */
+  const runTrelloSync = async (silent: boolean) => {
+    if (syncInFlightRef.current) return;
+    syncInFlightRef.current = true;
+    if (silent) setIsAutoSyncing(true); else setIsLoading(true);
+    try {
+      if (!silent) resetTrelloSyncSignature();
       const result = await syncTrelloUpCatalog();
       if (result.success) {
-        if (result.items && result.items.length > 0) {
-          setItems(result.items);
-        } else {
+        if (result.changed) {
+          // Muat ulang dari Supabase agar kolom tambahan (gdrive_image_url, dll) tetap utuh
           const reloaded = await fetchTrelloUpFromSupabase();
-          setItems(reloaded);
+          const next = reloaded.length > 0 ? reloaded : result.items;
+          setItems(next);
+          setLocalCachedTrelloItems(next);
         }
         setLastSynced(new Date().toISOString());
-        if (forceSync) {
+        if (!silent) {
           onNotify?.(
-            `Berhasil sinkronisasi ${result.totalItems} artikel dari Trello!${
-              result.supabaseSaved ? ' (Tersimpan ke Supabase)' : ''
-            }`,
+            `Berhasil sinkronisasi ${result.totalItems} artikel dari Trello!${result.supabaseSaved ? ' (Tersimpan ke Supabase)' : ''}${result.archivedCount ? ` • ${result.archivedCount} kartu terhapus diarsipkan` : ''}`,
             'success'
           );
         }
-      } else if (forceSync) {
+      } else if (!silent) {
         onNotify?.(result.error || 'Gagal sinkronisasi dari Trello', 'error');
       }
     } catch (err: any) {
-      console.error('Error load Trello data:', err);
-      if (forceSync) {
-        onNotify?.(err.message || 'Terjadi kesalahan saat memuat data', 'error');
-      }
+      console.error('Error sync Trello:', err);
+      if (!silent) onNotify?.(err.message || 'Terjadi kesalahan saat memuat data', 'error');
     } finally {
-      setIsLoading(false);
+      syncInFlightRef.current = false;
+      if (silent) setIsAutoSyncing(false); else setIsLoading(false);
     }
   };
 
-  // Muat data saat halaman dibuka
+  const loadData = async (forceSync = false) => {
+    if (forceSync) return runTrelloSync(false);
+    setIsLoading(true);
+    try {
+      // 1. Tampilkan cepat dari Supabase
+      const sbItems = await fetchTrelloUpFromSupabase();
+      if (sbItems && sbItems.length > 0) {
+        setItems(sbItems);
+        setLocalCachedTrelloItems(sbItems);
+        setLastSynced(sbItems[0]?.last_synced_at || new Date().toISOString());
+      }
+    } catch (err) {
+      console.warn('Load Supabase Trello gagal:', err);
+    } finally {
+      setIsLoading(false);
+    }
+    // 2. Lalu langsung cek perubahan live dari Trello asli (background)
+    runTrelloSync(true);
+  };
+
+  // Muat data saat halaman dibuka + auto-sync berkala selama halaman terlihat
   useEffect(() => {
     loadData(false);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') runTrelloSync(true);
+    }, TRELLO_AUTO_SYNC_INTERVAL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') runTrelloSync(true);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Helper ekstraksi nomor batch UP yang aman (hanya angka setelah 'UP')
@@ -189,13 +213,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
     return items.filter((i) => !!i.gdrive_image_url).length;
   }, [items]);
 
-  // Set default selectedListNames ke UP pertama yang aktif jika belum pernah diatur
-  useEffect(() => {
-    if (!hasInitializedDefaultUp && upLists.length > 0) {
-      setSelectedListNames([upLists[0].listName]);
-      setHasInitializedDefaultUp(true);
-    }
-  }, [upLists, hasInitializedDefaultUp]);
+  // Default: tampilkan SEMUA UP tanpa filter (user memilih filter sendiri bila perlu)
 
   // Filter items sesuai UP & pencarian
   const filteredItems = useMemo(() => {
@@ -373,6 +391,13 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                 (Update: {new Date(lastSynced).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })})
               </span>
             )}
+            <span
+              className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400"
+              title={`Otomatis cek perubahan Trello asli setiap ${TRELLO_AUTO_SYNC_INTERVAL_MS / 1000} detik`}
+            >
+              {isAutoSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+              Auto-sync {TRELLO_AUTO_SYNC_INTERVAL_MS / 1000}s
+            </span>
           </div>
           <a
             href={`https://trello.com/b/${DEFAULT_TRELLO_BOARD_ID}`}

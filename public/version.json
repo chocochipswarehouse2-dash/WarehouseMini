@@ -1,12 +1,14 @@
 {
-  "version": "v2.6.81",
-  "versionCode": 341,
+  "version": "v2.6.82",
+  "versionCode": 342,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v341-1053",
-  "releaseTitle": "WMS v2.6.81 — Profil: Auto Logout setelah Ganti Password",
+  "buildHash": "wms-261108-v342-1109",
+  "releaseTitle": "WMS v2.6.82 — Trello Auto-Sync & Tanpa Filter Default",
   "releaseNotes": [
-    "Setelah password diganti, user otomatis logout dalam 3 detik dan wajib login ulang",
-    "Simpan profil & password diverifikasi benar-benar tersimpan di Supabase wms_users"
+    "Trello WMS otomatis sinkron dari Trello asli setiap 60 detik + saat halaman dibuka/kembali aktif",
+    "Kartu yang dihapus/diarsip di Trello asli ikut hilang di WMS",
+    "Tombol Sinkronkan Trello manual tetap tersedia",
+    "Halaman Trello dibuka tanpa filter UP default"
   ],
   "minSupportedVersion": "v2.0.0"
 }

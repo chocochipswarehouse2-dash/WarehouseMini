@@ -15,19 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.81",
-  "versionCode": 341,
+  "version": "v2.6.82",
+  "versionCode": 342,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v341-1053",
-  "releaseTitle": "WMS v2.6.81 — Profil: Auto Logout setelah Ganti Password",
+  "buildHash": "wms-261108-v342-1109",
+  "releaseTitle": "WMS v2.6.82 — Trello Auto-Sync & Tanpa Filter Default",
   "releaseNotes": [
-    "Setelah password diganti, user otomatis logout dalam 3 detik dan wajib login ulang",
-    "Simpan profil & password diverifikasi benar-benar tersimpan di Supabase wms_users"
+    "Trello WMS otomatis sinkron dari Trello asli setiap 60 detik + saat halaman dibuka/kembali aktif",
+    "Kartu yang dihapus/diarsip di Trello asli ikut hilang di WMS",
+    "Tombol Sinkronkan Trello manual tetap tersedia",
+    "Halaman Trello dibuka tanpa filter UP default"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.81",
+    "versionCode": 341,
+    "buildDate": "8 November 2026",
+    "buildHash": "wms-261108-v341-1053",
+    "releaseTitle": "WMS v2.6.81 — Profil: Auto Logout setelah Ganti Password",
+    "releaseNotes": [
+      "Setelah password diganti, user otomatis logout dalam 3 detik dan wajib login ulang",
+      "Simpan profil & password diverifikasi benar-benar tersimpan di Supabase wms_users"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.80",
     "versionCode": 340,
@@ -118,19 +132,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Koreksi master produk SKU DF26KBF03DD (S-XL) dari Femima Pants menjadi Taylor Pants Dark Denim",
       "Perbaikan sanitasi parsing size produk agar nama varian DealPOS/Katalog (seperti Wintour Skirt Blue) tidak bocor ke badge size",
       "Dukungan ekstraksi size huruf standar DF26 (A=Default, C=S, D=M, E=L, F=XL, G=XXL) di sortUtils"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.73",
-    "versionCode": 333,
-    "buildDate": "6 November 2026",
-    "buildHash": "wms-261106-v333-2142",
-    "releaseTitle": "WMS v2.6.73 — Optimasi Ukuran Kartu Kanban 3 Baris & Toggle Filter",
-    "releaseNotes": [
-      "Kartu foto Kanban diperkecil proporsional agar 3 baris tampil penuh tanpa terpotong",
-      "Tombol toggle sembunyikan filter UP untuk memaksimalkan ruang vertikal",
-      "Tersedia opsi ukuran 3 Baris, Sedang, dan Besar"
     ],
     "minSupportedVersion": "v2.0.0"
   }

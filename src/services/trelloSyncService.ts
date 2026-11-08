@@ -18,6 +18,28 @@ export const DEFAULT_TRELLO_TOKEN = 'ATTA24c8656d86fe6a0499a0e81d8c8f2f0f200ec6e
 const LOCAL_STORAGE_CACHE_KEY = 'wms_trello_up_catalog_cache';
 const LOCAL_STORAGE_LAST_SYNC_KEY = 'wms_trello_up_last_sync';
 const LOCAL_STORAGE_LISTS_KEY = 'wms_trello_board_lists_map';
+const LOCAL_STORAGE_SIGNATURE_KEY = 'wms_trello_board_signature';
+
+/** Interval auto-sync berkala dari Trello asli (ms). */
+export const TRELLO_AUTO_SYNC_INTERVAL_MS = 60_000;
+
+/** Paksa sync berikutnya menulis ulang ke Supabase (dipakai tombol Sync manual). */
+export function resetTrelloSyncSignature(): void {
+  try { localStorage.removeItem(LOCAL_STORAGE_SIGNATURE_KEY); } catch { /* ignore */ }
+}
+
+/** Sidik jari ringan seluruh board: berubah bila ada edit/tambah/pindah/geser/hapus kartu atau list. */
+function computeTrelloSignature(lists: any[], items: TrelloUpItem[]): string {
+  const listPart = (lists || []).map((l: any) => `${l.id}:${l.name}:${l.pos}`).join('|');
+  const itemPart = items
+    .map((i) => `${i.id}:${i.list_id}:${i.pos}:${i.card_name}:${i.qty_note || ''}:${i.trello_attachment_id || ''}:${i.trello_image_url || ''}:${(i.description || '').length}`)
+    .sort()
+    .join('|');
+  let h = 5381;
+  const s = `${listPart}#${itemPart}`;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return `${items.length}-${(h >>> 0).toString(36)}`;
+}
 
 export interface TrelloListMeta {
   pos: number;
@@ -400,18 +422,29 @@ export async function syncTrelloUpCatalog(
   apiKey: string = DEFAULT_TRELLO_KEY,
   apiToken: string = DEFAULT_TRELLO_TOKEN,
   boardId: string = DEFAULT_TRELLO_BOARD_ID
-): Promise<{ success: boolean; totalItems: number; supabaseSaved: boolean; items: TrelloUpItem[]; error?: string }> {
+): Promise<{ success: boolean; totalItems: number; supabaseSaved: boolean; items: TrelloUpItem[]; changed: boolean; archivedCount: number; error?: string }> {
   try {
     const { lists, cards } = await fetchLiveTrelloBoard(apiKey, apiToken, boardId);
     // Simpan posisi live lists Trello ke memory & localStorage
     saveTrelloListPositionsMap(lists);
     const transformedItems = transformTrelloData(lists, cards);
 
+    // Deteksi perubahan (edit / tambah / pindah list / geser urutan / ganti cover / hapus)
+    const signature = computeTrelloSignature(lists, transformedItems);
+    let previousSignature = '';
+    try { previousSignature = localStorage.getItem(LOCAL_STORAGE_SIGNATURE_KEY) || ''; } catch { /* ignore */ }
+    const changed = signature !== previousSignature;
+
     // Simpan ke Cache Lokal
     setLocalCachedTrelloItems(transformedItems);
 
+    if (!changed) {
+      return { success: true, totalItems: transformedItems.length, supabaseSaved: true, items: transformedItems, changed: false, archivedCount: 0 };
+    }
+
     // Simpan / upsert ke Supabase
     let supabaseSaved = false;
+    let archivedCount = 0;
     const supabase = getSupabaseClient();
     if (supabase && transformedItems.length > 0) {
       try {
@@ -452,13 +485,41 @@ export async function syncTrelloUpCatalog(
       } catch (sbErr) {
         console.warn('Supabase trello_up_catalog error:', sbErr);
       }
+
+      // Arsipkan kartu yang sudah dihapus / di-archive / pindah board di Trello asli
+      if (supabaseSaved) {
+        try {
+          const liveIds = new Set(transformedItems.map((i) => i.id));
+          const boardKey = transformedItems[0]?.board_id;
+          let q = supabase.from('trello_up_catalog').select('id').eq('status', 'ACTIVE');
+          if (boardKey) q = q.eq('board_id', boardKey);
+          const { data: activeRows } = await q.limit(10000);
+          const staleIds = (activeRows || []).map((r: any) => r.id).filter((id: string) => !liveIds.has(id));
+          for (let i = 0; i < staleIds.length; i += 100) {
+            const { error: archErr } = await supabase
+              .from('trello_up_catalog')
+              .update({ status: 'ARCHIVED', last_synced_at: new Date().toISOString() })
+              .in('id', staleIds.slice(i, i + 100));
+            if (archErr) { console.warn('Archive stale trello cards warning:', archErr.message); break; }
+            archivedCount += Math.min(100, staleIds.length - i);
+          }
+        } catch (archErr) {
+          console.warn('Archive stale trello cards error:', archErr);
+        }
+      }
+    }
+
+    if (supabaseSaved) {
+      try { localStorage.setItem(LOCAL_STORAGE_SIGNATURE_KEY, signature); } catch { /* ignore */ }
     }
 
     return {
       success: true,
       totalItems: transformedItems.length,
       supabaseSaved,
-      items: transformedItems
+      items: transformedItems,
+      changed: true,
+      archivedCount,
     };
   } catch (err: any) {
     console.error('Error saat sinkronisasi Trello:', err);
@@ -467,6 +528,8 @@ export async function syncTrelloUpCatalog(
       totalItems: 0,
       supabaseSaved: false,
       items: [],
+      changed: false,
+      archivedCount: 0,
       error: err.message || 'Gagal sinkronisasi data Trello'
     };
   }
