@@ -15,19 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.90",
-  "versionCode": 350,
+  "version": "v2.6.91",
+  "versionCode": 351,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v350-1435",
-  "releaseTitle": "WMS v2.6.90 — Hotfix Pengaturan Sistem & Inisialisasi Halaman",
+  "buildHash": "wms-261108-v351-1451",
+  "releaseTitle": "WMS v2.6.91 — Isolasi Sesi Multi-Tab & Pembersihan Cache Saat Ganti Akun",
   "releaseNotes": [
-    "Perbaikan inisialisasi variabel showToast, toggleDarkMode, dan updateModal pada halaman Pengaturan Sistem",
-    "Sinkronisasi judul dan ikon halaman Pengaturan Sistem di Navbar"
+    "Reset otomatis seluruh Multi-Tab Keep-Alive, Panel Samping, dan halaman aktif saat Logout atau Login akun baru",
+    "Filter ketat tab berdasarkan hak akses canAccessPage agar tab akun sebelumnya tidak pernah bocor ke akun lain",
+    "Tampilan sapaan nama lengkap operator di Dashboard"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.90",
+    "versionCode": 350,
+    "buildDate": "8 November 2026",
+    "buildHash": "wms-261108-v350-1435",
+    "releaseTitle": "WMS v2.6.90 — Hotfix Pengaturan Sistem & Inisialisasi Halaman",
+    "releaseNotes": [
+      "Perbaikan inisialisasi variabel showToast, toggleDarkMode, dan updateModal pada halaman Pengaturan Sistem",
+      "Sinkronisasi judul dan ikon halaman Pengaturan Sistem di Navbar"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.89",
     "versionCode": 349,
@@ -110,20 +123,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Profil akun Store otomatis menampilkan No. HP & email dari Master Kontak Store",
       "Edit No. HP/email di profil Store ikut memperbarui Master Kontak Store"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.82",
-    "versionCode": 342,
-    "buildDate": "8 November 2026",
-    "buildHash": "wms-261108-v342-1109",
-    "releaseTitle": "WMS v2.6.82 — Trello Auto-Sync & Tanpa Filter Default",
-    "releaseNotes": [
-      "Trello WMS otomatis sinkron dari Trello asli setiap 60 detik + saat halaman dibuka/kembali aktif",
-      "Kartu yang dihapus/diarsip di Trello asli ikut hilang di WMS",
-      "Tombol Sinkronkan Trello manual tetap tersedia",
-      "Halaman Trello dibuka tanpa filter UP default"
     ],
     "minSupportedVersion": "v2.0.0"
   }

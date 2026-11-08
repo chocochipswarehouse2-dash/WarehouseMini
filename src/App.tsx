@@ -444,7 +444,8 @@ export default function App() {
 
   // Sinkronisasi activePage ke browser URL address bar secara transparan (hanya di top-level window, dilewati di iframe agar bebas SecurityError)
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || !session) return;
+    if (!canAccessPage(session, activePage)) return;
     try {
       localStorage.setItem('wms_last_active_page', activePage);
     } catch {}
@@ -461,7 +462,7 @@ export default function App() {
     } catch {
       // In sandboxed iframes (e.g. AI Studio preview), history.pushState may throw SecurityError
     }
-  }, [activePage]);
+  }, [activePage, session]);
 
   // Listener navigasi tombol Back & Forward di browser + klik Notifikasi HP (Service Worker)
   useEffect(() => {
@@ -960,6 +961,41 @@ export default function App() {
   });
   const [openDesktopTabs, setOpenDesktopTabs] = useState<ActivePage[]>(() => [getPageFromUrl(session)]);
   const [companionPage, setCompanionPage] = useState<ActivePage | null>(null);
+  const prevUsernameRef = useRef<string | null>(session?.username || null);
+
+  // Reset multi-tab & companion state saat ganti akun / logout, serta bersihkan tab tanpa izin akses
+  useEffect(() => {
+    const currentUsername = session?.username || null;
+    if (prevUsernameRef.current !== currentUsername) {
+      prevUsernameRef.current = currentUsername;
+      setCompanionPage(null);
+      if (!session) {
+        setOpenDesktopTabs(['dashboard']);
+        setVisitedPages(new Set(['dashboard']));
+        return;
+      }
+      const allowedPage = normalizeConsolidatedPage(
+        canAccessPage(session, activePage) ? activePage : getDefaultPageForSession(session)
+      );
+      setOpenDesktopTabs([allowedPage]);
+      setVisitedPages(new Set([allowedPage]));
+      if (allowedPage !== activePage) {
+        setActivePage(allowedPage);
+      }
+      return;
+    }
+
+    if (!session) return;
+    setCompanionPage((prevComp) =>
+      prevComp && canAccessPage(session, prevComp) ? prevComp : null
+    );
+    setOpenDesktopTabs((prev) => {
+      const allowed = prev.filter((p) => canAccessPage(session, p));
+      if (allowed.length === prev.length && allowed.length > 0) return prev;
+      if (allowed.length > 0) return allowed;
+      return [normalizeConsolidatedPage(getDefaultPageForSession(session))];
+    });
+  }, [session, activePage]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -984,14 +1020,21 @@ export default function App() {
   }, [activePage]);
 
   useEffect(() => {
+    if (!session) return;
     if (!isDesktopViewport) {
       setOpenDesktopTabs((prev) => (prev.length === 1 && prev[0] === activePage ? prev : [activePage]));
       return;
     }
     setOpenDesktopTabs((prev) => {
+      const allowedPrev = prev.filter((p) => canAccessPage(session, p));
       const normalized = normalizeConsolidatedPage(activePage);
-      if (prev.includes(normalized)) return prev;
-      const next = [...prev, normalized];
+      if (!canAccessPage(session, normalized)) {
+        return allowedPrev.length > 0 ? allowedPrev : [normalizeConsolidatedPage(getDefaultPageForSession(session))];
+      }
+      if (allowedPrev.includes(normalized)) {
+        return allowedPrev.length === prev.length ? prev : allowedPrev;
+      }
+      const next = [...allowedPrev, normalized];
       if (next.length > MAX_KEEP_ALIVE_TABS) {
         const evictIdx = next.findIndex((p) => p !== normalized && p !== companionPage);
         if (evictIdx >= 0) {
@@ -1002,8 +1045,10 @@ export default function App() {
       }
       return next;
     });
-    setCompanionPage((prevComp) => (prevComp === activePage ? null : prevComp));
-  }, [activePage, isDesktopViewport, companionPage]);
+    setCompanionPage((prevComp) =>
+      prevComp && prevComp !== activePage && canAccessPage(session, prevComp) ? prevComp : null
+    );
+  }, [activePage, isDesktopViewport, companionPage, session]);
 
   const handleCloseDesktopTab = useCallback(
     (tabToClose: ActivePage) => {
@@ -2296,7 +2341,13 @@ export default function App() {
 
       // Navigate to the user's url page or primary allowed module page
       const pageFromUrl = getPageFromUrl(newSession);
-      const firstPage = canAccessPage(newSession, pageFromUrl) ? pageFromUrl : getDefaultPageForSession(newSession);
+      const firstPage = normalizeConsolidatedPage(
+        canAccessPage(newSession, pageFromUrl) ? pageFromUrl : getDefaultPageForSession(newSession)
+      );
+      prevUsernameRef.current = newSession.username;
+      setCompanionPage(null);
+      setOpenDesktopTabs([firstPage]);
+      setVisitedPages(new Set([firstPage]));
       setActivePage(firstPage);
 
       showToast(`Selamat datang, ${resolvedName} (${res.role || 'Operator'})!`, 'success');
@@ -2322,8 +2373,16 @@ export default function App() {
     localStorage.removeItem('wms_user_store_code');
     localStorage.removeItem('wms_user_store_name');
     localStorage.removeItem('wms_last_active_page');
+    prevUsernameRef.current = null;
     setSession(null);
     setScannedData([]);
+    setCompanionPage(null);
+    setOpenDesktopTabs(['dashboard']);
+    setVisitedPages(new Set(['dashboard']));
+    setActivePage('dashboard');
+    setIsSettingsOpen(false);
+    setNewPickingTaskAlert(null);
+    setNewManualShipmentAlert(null);
     releaseScreenWakeLock();
     if (!isRunningInIframe()) {
       try {
@@ -3174,13 +3233,13 @@ export default function App() {
               <ErrorBoundary fallbackTitle="Kendala Memuat Halaman" onReset={() => window.location.reload()}>
                 <React.Suspense fallback={<div className="flex justify-center p-8"><span className="animate-spin text-3xl">⏳</span></div>}>
                   {(isDesktopViewport
-                    ? openDesktopTabs.filter((p) => p !== companionPage)
+                    ? openDesktopTabs.filter((p) => p !== companionPage && (!session || canAccessPage(session, p)))
                     : [activePage]
                   ).map((pageKey) => {
                     const isVisible = pageKey === activePage;
                     return (
                       <div
-                        key={pageKey}
+                        key={`${session?.username || 'anon'}:${pageKey}`}
                         className={isVisible ? 'block w-full' : 'hidden'}
                         aria-hidden={!isVisible}
                       >

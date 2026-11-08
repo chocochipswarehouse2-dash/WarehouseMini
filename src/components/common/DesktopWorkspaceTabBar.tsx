@@ -118,6 +118,7 @@ export const DesktopWorkspaceTabBar: React.FC<DesktopWorkspaceTabBarProps> = ({
   const allowedPages = Object.values(WORKSPACE_PAGE_META).filter((meta) =>
     canAccessPage(session, meta.id)
   );
+  const visibleTabs = openTabs.filter((tabPage) => canAccessPage(session, tabPage));
 
   return (
     <div className="hidden lg:flex items-center justify-between gap-2 px-4 py-1.5 bg-white dark:bg-[#101726] border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30 print:hidden select-none">
@@ -128,10 +129,10 @@ export const DesktopWorkspaceTabBar: React.FC<DesktopWorkspaceTabBarProps> = ({
           title={`Mode Multitasking Laptop/PC Aktif: Maksimal ${maxKeepAliveTabs} halaman ditahan tetap hidup (Keep-Alive) tanpa reset form/filter.`}
         >
           <Sparkles className="w-3 h-3 text-indigo-500" />
-          <span>Multi-Tab ({openTabs.length}/{maxKeepAliveTabs})</span>
+          <span>Multi-Tab ({visibleTabs.length}/{maxKeepAliveTabs})</span>
         </div>
 
-        {openTabs.map((tabPage) => {
+        {visibleTabs.map((tabPage) => {
           const meta = getWorkspacePageMeta(tabPage);
           const Icon = meta.icon;
           const isActive = tabPage === activePage;
@@ -188,7 +189,7 @@ export const DesktopWorkspaceTabBar: React.FC<DesktopWorkspaceTabBarProps> = ({
               )}
 
               {/* Close Tab Button (if more than 1 tab open) */}
-              {openTabs.length > 1 && (
+              {visibleTabs.length > 1 && (
                 <button
                   type="button"
                   onClick={(e) => {

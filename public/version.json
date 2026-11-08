@@ -1,12 +1,13 @@
 {
-  "version": "v2.6.90",
-  "versionCode": 350,
+  "version": "v2.6.91",
+  "versionCode": 351,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v350-1435",
-  "releaseTitle": "WMS v2.6.90 — Hotfix Pengaturan Sistem & Inisialisasi Halaman",
+  "buildHash": "wms-261108-v351-1451",
+  "releaseTitle": "WMS v2.6.91 — Isolasi Sesi Multi-Tab & Pembersihan Cache Saat Ganti Akun",
   "releaseNotes": [
-    "Perbaikan inisialisasi variabel showToast, toggleDarkMode, dan updateModal pada halaman Pengaturan Sistem",
-    "Sinkronisasi judul dan ikon halaman Pengaturan Sistem di Navbar"
+    "Reset otomatis seluruh Multi-Tab Keep-Alive, Panel Samping, dan halaman aktif saat Logout atau Login akun baru",
+    "Filter ketat tab berdasarkan hak akses canAccessPage agar tab akun sebelumnya tidak pernah bocor ke akun lain",
+    "Tampilan sapaan nama lengkap operator di Dashboard"
   ],
   "minSupportedVersion": "v2.0.0"
 }

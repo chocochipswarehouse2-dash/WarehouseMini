@@ -237,7 +237,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }
   }, []);
 
-  const operatorName = session?.username || 'Operator';
+  const operatorName = session?.name || session?.username || 'Operator';
   const operatorRole = session?.role || 'Staff Gudang';
 
   const handleAction = (page: string, subTab?: string) => {
