@@ -15,20 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.93",
-  "versionCode": 353,
+  "version": "v2.6.94",
+  "versionCode": 354,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v353-1030",
-  "releaseTitle": "WMS v2.6.93 — Data Shift & Absensi di Approval Lembur, Ijin Pulang Cepat & Notifikasi Khusus Warehouse",
+  "buildHash": "wms-261108-v354-1043",
+  "releaseTitle": "WMS v2.6.94 — Hapus Tombol Menu Mengambang Ganda di Seluler & Bubble Live Chat Draggable Saat Ada Pesan Baru",
   "releaseNotes": [
-    "Penambahan informasi Shift dan Jam Absen Datang/Pulang pada Daftar Approval Lembur, Cuti, dan Riwayat",
-    "Penambahan opsi Ijin Pulang Cepat pada Form Ijin/Cuti lengkap dengan input Jam Pulang, Keterangan, serta info Shift & Absensi",
-    "Notifikasi real-time & background khusus ke akun warehouse setiap ada pengajuan Ijin, Cuti, atau Lembur baru"
+    "Menghapus tombol hamburger mengambang di kanan bawah pada tampilan seluler karena sudah ada tombol menu sticky di bagian atas layar",
+    "Bubble Live Chat kini hanya muncul saat ada pesan baru/belum dibaca dan dapat digeser bebas (draggable) ke posisi mana saja di layar"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.93",
+    "versionCode": 353,
+    "buildDate": "8 November 2026",
+    "buildHash": "wms-261108-v353-1030",
+    "releaseTitle": "WMS v2.6.93 — Data Shift & Absensi di Approval Lembur, Ijin Pulang Cepat & Notifikasi Khusus Warehouse",
+    "releaseNotes": [
+      "Penambahan informasi Shift dan Jam Absen Datang/Pulang pada Daftar Approval Lembur, Cuti, dan Riwayat",
+      "Penambahan opsi Ijin Pulang Cepat pada Form Ijin/Cuti lengkap dengan input Jam Pulang, Keterangan, serta info Shift & Absensi",
+      "Notifikasi real-time & background khusus ke akun warehouse setiap ada pengajuan Ijin, Cuti, atau Lembur baru"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.92",
     "versionCode": 352,
@@ -112,18 +124,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Fitur Multi-Tab Keep-Alive & Panel Samping (Slide-Over / Split) khusus Laptop/PC (>= 1024px) untuk membuka 2 halaman sekaligus (misal Produksi berdampingan dengan Trello UP) tanpa me-reset form/filter",
       "Proteksi Ketat Operasional HP Seluler (< 1024px): Fitur multi-tab otomatis nonaktif di HP agar layar dan RAM HP 100% aman untuk operasional scanner & lapangan",
       "Penetapan Rule Permanen #13 di GEMINI.md dan Skill Agent agar seluruh agen mematuhi isolasi Desktop vs Mobile"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.85",
-    "versionCode": 345,
-    "buildDate": "8 November 2026",
-    "buildHash": "wms-261108-v345-1209",
-    "releaseTitle": "WMS v2.6.85 — Fix: Anti-Freeze Ketebalan Ikon & Penjelasan Icon Pack",
-    "releaseNotes": [
-      "Optimalisasi anti-freeze instan 0ms pada ketebalan ikon",
-      "Penyesuaian label akurat Ketebalan Ikon (Light, Regular, Bold)"
     ],
     "minSupportedVersion": "v2.0.0"
   }

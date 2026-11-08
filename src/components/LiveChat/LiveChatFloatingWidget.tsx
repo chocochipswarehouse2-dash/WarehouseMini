@@ -35,12 +35,57 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
   const [onlineUsers, setOnlineUsers] = useState<ChatPresenceUser[]>(() => liveChatManager.getOnlineUsers());
   const [toastMsg, setToastMsg] = useState<{ room: ChatRoom; message: ChatMessage } | null>(null);
 
+  const [fabPos, setFabPos] = useState<{ right: number; bottom: number }>(() => {
+    if (typeof window === 'undefined') return { right: 16, bottom: 20 };
+    try {
+      const saved = localStorage.getItem('wms_live_chat_fab_pos_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed?.right === 'number' && typeof parsed?.bottom === 'number') {
+          return {
+            right: Math.max(8, Math.min(window.innerWidth - 68, parsed.right)),
+            bottom: Math.max(8, Math.min(window.innerHeight - 68, parsed.bottom)),
+          };
+        }
+      }
+    } catch {}
+    return { right: 16, bottom: 20 };
+  });
+
+  const dragRef = useRef<{
+    isDragging: boolean;
+    hasMoved: boolean;
+    startX: number;
+    startY: number;
+    startRight: number;
+    startBottom: number;
+  }>({
+    isDragging: false,
+    hasMoved: false,
+    startX: 0,
+    startY: 0,
+    startRight: 16,
+    startBottom: 20,
+  });
+
   const isOpenRef = useRef(isOpen);
   isOpenRef.current = isOpen;
   const selectedRoomIdRef = useRef(selectedRoomId);
   selectedRoomIdRef.current = selectedRoomId;
 
   const hasAccess = canAccessLiveChat(session);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleResize = () => {
+      setFabPos((prev) => ({
+        right: Math.max(8, Math.min(window.innerWidth - 68, prev.right)),
+        bottom: Math.max(8, Math.min(window.innerHeight - 68, prev.bottom)),
+      }));
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const setFloatingDrawerOpen = (open: boolean) => {
     isOpenRef.current = open;
@@ -115,11 +160,81 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
     u => u.username.toLowerCase() !== session.username.toLowerCase()
   ).length;
 
+  // Bubble Live Chat HANYA muncul ketika ada pesan baru masuk / belum dibaca
+  const shouldShowBubble = !isOpen && (totalUnread > 0 || Boolean(toastMsg));
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    dragRef.current = {
+      isDragging: true,
+      hasMoved: false,
+      startX: e.clientX,
+      startY: e.clientY,
+      startRight: fabPos.right,
+      startBottom: fabPos.bottom,
+    };
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {}
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!dragRef.current.isDragging) return;
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
+    if (Math.abs(dx) > 6 || Math.abs(dy) > 6) {
+      dragRef.current.hasMoved = true;
+    }
+    if (!dragRef.current.hasMoved) return;
+
+    const maxRight = Math.max(16, (typeof window !== 'undefined' ? window.innerWidth : 400) - 64);
+    const maxBottom = Math.max(16, (typeof window !== 'undefined' ? window.innerHeight : 700) - 64);
+
+    const nextRight = Math.max(8, Math.min(maxRight, dragRef.current.startRight - dx));
+    const nextBottom = Math.max(8, Math.min(maxBottom, dragRef.current.startBottom - dy));
+
+    setFabPos({ right: nextRight, bottom: nextBottom });
+  };
+
+  const handlePointerUpOrCancel = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!dragRef.current.isDragging) return;
+    dragRef.current.isDragging = false;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {}
+
+    if (dragRef.current.hasMoved) {
+      try {
+        localStorage.setItem('wms_live_chat_fab_pos_v1', JSON.stringify(fabPos));
+      } catch {}
+    }
+  };
+
+  const handleBubbleClick = () => {
+    if (dragRef.current.hasMoved) {
+      dragRef.current.hasMoved = false;
+      return;
+    }
+    if (toastMsg?.room?.id) {
+      const rid = toastMsg.room.id;
+      setToastMsg(null);
+      selectedRoomIdRef.current = rid;
+      setSelectedRoomId(rid);
+      void liveChatManager.selectRoom(rid);
+    }
+    setFloatingDrawerOpen(true);
+  };
+
   return (
     <>
       {/* Incoming Message Pop-Up Toast */}
       {toastMsg && !isOpen && (
-        <div className="fixed bottom-36 right-4 sm:right-6 lg:bottom-20 z-[85] max-w-sm w-[calc(100vw-2rem)] bg-slate-900/95 dark:bg-slate-800/95 backdrop-blur-md text-white rounded-2xl shadow-2xl border border-indigo-500/40 p-3.5 animate-in slide-in-from-bottom-4 duration-200 print:hidden">
+        <div
+          style={{
+            bottom: `${Math.min((typeof window !== 'undefined' ? window.innerHeight : 700) - 140, fabPos.bottom + 64)}px`,
+            right: `${Math.max(12, Math.min((typeof window !== 'undefined' ? window.innerWidth : 400) - 300, fabPos.right))}px`,
+          }}
+          className="fixed z-[85] max-w-sm w-[calc(100vw-1.5rem)] sm:w-80 bg-slate-900/95 dark:bg-slate-800/95 backdrop-blur-md text-white rounded-2xl shadow-2xl border border-indigo-500/40 p-3.5 animate-in slide-in-from-bottom-4 duration-200 print:hidden"
+        >
           <div className="flex items-start justify-between gap-2.5">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0 font-bold text-xs shadow-inner">
@@ -205,29 +320,40 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
         </div>
       )}
 
-      {/* Floating Action Button (FAB) - Positioned above Mobile Nav Button on <1024px, bottom-right on Desktop lg: */}
-      {!isOpen && (
-        <div className="fixed bottom-[5.25rem] right-5 sm:bottom-24 sm:right-6 lg:bottom-5 lg:right-6 z-40 flex items-center gap-2 print:hidden">
+      {/* Draggable Floating Bubble - ONLY shown when there are unread messages or a new message toast */}
+      {shouldShowBubble && (
+        <div
+          style={{
+            right: `${fabPos.right}px`,
+            bottom: `${fabPos.bottom}px`,
+          }}
+          className="fixed z-40 flex items-center gap-2 print:hidden select-none touch-none"
+        >
           <button
-            onClick={() => setFloatingDrawerOpen(true)}
-            className="group relative flex items-center justify-center gap-2.5 p-3.5 sm:px-3.5 sm:py-2.5 rounded-full sm:rounded-2xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white shadow-lg shadow-indigo-600/30 border border-indigo-400/30 transition-all cursor-pointer"
-            title="Buka Live Chat & Diskusi Tim"
+            type="button"
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUpOrCancel}
+            onPointerCancel={handlePointerUpOrCancel}
+            onClick={handleBubbleClick}
+            className="group relative flex items-center justify-center gap-2.5 p-3.5 sm:px-3.5 sm:py-2.5 rounded-full sm:rounded-2xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white shadow-lg shadow-indigo-600/35 border border-indigo-400/40 transition-transform cursor-grab active:cursor-grabbing touch-none select-none"
+            title="Pesan Baru Masuk — Ketuk untuk buka, tahan & geser untuk memindahkan posisi tombol"
           >
-            <div className="relative flex items-center justify-center">
+            <div className="relative flex items-center justify-center pointer-events-none">
               <MessageSquare className="w-6 h-6 sm:w-5 sm:h-5" />
               {otherOnlineCount > 0 && (
                 <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-indigo-600" />
               )}
             </div>
-            <div className="hidden sm:flex flex-col items-start leading-tight">
-              <span className="text-xs font-bold tracking-tight">Live Chat</span>
+            <div className="hidden sm:flex flex-col items-start leading-tight pointer-events-none">
+              <span className="text-xs font-bold tracking-tight">Pesan Baru</span>
               <span className="text-[10px] text-indigo-200 font-medium">
-                {otherOnlineCount > 0 ? `${otherOnlineCount} rekan online` : 'Diskusi Tim'}
+                {totalUnread > 0 ? `${totalUnread} belum dibaca` : 'Ketuk untuk baca'}
               </span>
             </div>
 
             {totalUnread > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 sm:static sm:ml-0.5 min-w-[20px] h-5 px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-extrabold shadow-sm flex items-center justify-center animate-bounce ring-2 ring-white dark:ring-slate-900 sm:ring-0">
+              <span className="pointer-events-none absolute -top-1.5 -right-1.5 sm:static sm:ml-0.5 min-w-[20px] h-5 px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-extrabold shadow-sm flex items-center justify-center animate-bounce ring-2 ring-white dark:ring-slate-900 sm:ring-0">
                 {totalUnread > 99 ? '99+' : totalUnread}
               </span>
             )}

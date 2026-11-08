@@ -3432,19 +3432,9 @@ export default function App() {
           />
         )}
 
-        {/* Floating Mobile Sidebar Toggle */}
-        <button
-          type="button"
-          onClick={() => setIsMobileSidebarOpen(true)}
-          className="lg:hidden fixed bottom-5 right-5 z-40 p-3.5 bg-primary-500 text-white rounded-full shadow-lg shadow-primary-500/40 hover:bg-primary-600 hover:scale-105 active:scale-95 transition-all cursor-pointer print:hidden"
-          title="Buka Menu Navigasi"
-        >
-          <Menu className="w-6 h-6" />
-        </button>
-
         {/* Main Content Area + Optional Desktop Companion Drawer */}
         <div className="flex-1 flex flex-row min-w-0 w-full max-w-full items-start">
-          <main className="flex-1 min-w-0 pb-24 sm:pb-8 p-2 sm:p-4 lg:p-6 w-full max-w-full">
+          <main className={`flex-1 min-w-0 ${activePage === 'live_chat' ? 'pb-2 sm:pb-4' : 'pb-16 sm:pb-8'} p-2 sm:p-4 lg:p-6 w-full max-w-full`}>
             {session && !canAccessPage(session, activePage) ? (
               <div className="min-h-[60vh] flex items-center justify-center p-4">
                 <div className="max-w-md w-full bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-2xl p-6 text-center shadow-lg space-y-4">
