@@ -61,7 +61,15 @@ interface HrApprovalViewProps {
 
 export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowToast }) => {
   const [loading, setLoading] = useState<boolean>(true);
-  const [activeSection, setActiveSection] = useState<'lembur' | 'cuti' | 'tukar_shift' | 'izin_pulang' | 'riwayat'>('lembur');
+  const [activeSection, setActiveSection] = useState<'lembur' | 'cuti' | 'tukar_shift' | 'izin_pulang' | 'riwayat'>(() => {
+    if (typeof window !== 'undefined') {
+      const pending = (window as any).__wms_pending_hr_tab;
+      if (pending === 'lembur' || pending === 'cuti' || pending === 'tukar_shift' || pending === 'izin_pulang' || pending === 'riwayat') {
+        return pending;
+      }
+    }
+    return 'lembur';
+  });
   const [searchHistory, setSearchHistory] = useState<string>('');
   // Modal konfirmasi tindakan cuti / lembur tanpa window.confirm (anti-block)
   const [confirmActionModal, setConfirmActionModal] = useState<{
@@ -133,6 +141,23 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
 
   useEffect(() => {
     loadData();
+    if (typeof window !== 'undefined' && (window as any).__wms_pending_hr_tab) {
+      const sec = (window as any).__wms_pending_hr_tab;
+      if (sec === 'lembur' || sec === 'cuti' || sec === 'tukar_shift' || sec === 'izin_pulang' || sec === 'riwayat') {
+        setActiveSection(sec);
+      }
+      delete (window as any).__wms_pending_hr_tab;
+    }
+
+    const handleOpenHrTab = (e: Event) => {
+      const sec = (e as CustomEvent)?.detail?.section;
+      if (sec === 'lembur' || sec === 'cuti' || sec === 'tukar_shift' || sec === 'izin_pulang' || sec === 'riwayat') {
+        setActiveSection(sec);
+      }
+      loadData();
+    };
+    window.addEventListener('wms_open_hr_approval_tab', handleOpenHrTab);
+    return () => window.removeEventListener('wms_open_hr_approval_tab', handleOpenHrTab);
   }, []);
 
   // O(1) Lookup Maps for Shift & Presensi

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Package, LayoutDashboard, Truck, Store, ShoppingBag, 
   Globe, ShoppingCart, Tag, Search, Radio 
@@ -54,7 +54,38 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
     userIsAdmin || !tab.permissionKey || hasPermission(session, tab.permissionKey)
   );
 
-  const [activeTab, setActiveTab] = useState<TabType>(tabs.length > 0 ? tabs[0].id : 'dashboard');
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    if (typeof window !== 'undefined') {
+      const pending = (window as any).__wms_pending_pesanan_target;
+      if (pending?.tab && tabs.some(t => t.id === pending.tab)) {
+        return pending.tab as TabType;
+      }
+    }
+    if (tabs.some(t => t.id === 'manual_shipment')) return 'manual_shipment';
+    return tabs.length > 0 ? tabs[0].id : 'dashboard';
+  });
+
+  useEffect(() => {
+    const applyTarget = (detail: any) => {
+      if (!detail) return;
+      const targetTab = (detail.tab || detail.subTab || 'manual_shipment') as TabType;
+      if (tabs.some(t => t.id === targetTab)) {
+        setActiveTab(targetTab);
+      }
+    };
+
+    if (typeof window !== 'undefined' && (window as any).__wms_pending_pesanan_target) {
+      applyTarget((window as any).__wms_pending_pesanan_target);
+    }
+
+    const handleOpenTarget = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      applyTarget(detail);
+    };
+
+    window.addEventListener('wms_open_pesanan_target', handleOpenTarget);
+    return () => window.removeEventListener('wms_open_pesanan_target', handleOpenTarget);
+  }, [tabs]);
 
   const renderDummyTab = (name: string) => (
     <div className="flex flex-col items-center justify-center py-20 px-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-center">

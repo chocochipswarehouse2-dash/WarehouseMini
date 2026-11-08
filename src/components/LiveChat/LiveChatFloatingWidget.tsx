@@ -123,10 +123,12 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
       const custom = e as CustomEvent<{ roomId?: string; openFullPage?: boolean }>;
       const targetRoomId = custom.detail?.roomId;
       if (targetRoomId) {
+        setToastMsg(null);
         selectedRoomIdRef.current = targetRoomId;
         setSelectedRoomId(targetRoomId);
         void liveChatManager.selectRoom(targetRoomId);
         if (custom.detail?.openFullPage) {
+          setFloatingDrawerOpen(false);
           onSelectPage('live_chat');
         } else {
           setFloatingDrawerOpen(true);
@@ -220,6 +222,20 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
       selectedRoomIdRef.current = rid;
       setSelectedRoomId(rid);
       void liveChatManager.selectRoom(rid);
+    } else {
+      const myUname = String(session?.username || '').trim().toLowerCase();
+      const unreadRoom = liveChatManager
+        .getVisibleRooms()
+        .find(
+          (r) =>
+            (r.unread_counts?.[myUname] || 0) > 0 ||
+            (Array.isArray(r.unread_by) && r.unread_by.includes(myUname))
+        );
+      if (unreadRoom?.id) {
+        selectedRoomIdRef.current = unreadRoom.id;
+        setSelectedRoomId(unreadRoom.id);
+        void liveChatManager.selectRoom(unreadRoom.id);
+      }
     }
     setFloatingDrawerOpen(true);
   };
@@ -229,11 +245,19 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
       {/* Incoming Message Pop-Up Toast */}
       {toastMsg && !isOpen && (
         <div
+          onClick={() => {
+            const rid = toastMsg.room.id;
+            setToastMsg(null);
+            selectedRoomIdRef.current = rid;
+            setSelectedRoomId(rid);
+            setFloatingDrawerOpen(true);
+            void liveChatManager.selectRoom(rid);
+          }}
           style={{
             bottom: `${Math.min((typeof window !== 'undefined' ? window.innerHeight : 700) - 140, fabPos.bottom + 64)}px`,
             right: `${Math.max(12, Math.min((typeof window !== 'undefined' ? window.innerWidth : 400) - 300, fabPos.right))}px`,
           }}
-          className="fixed z-[85] max-w-sm w-[calc(100vw-1.5rem)] sm:w-80 bg-slate-900/95 dark:bg-slate-800/95 backdrop-blur-md text-white rounded-2xl shadow-2xl border border-indigo-500/40 p-3.5 animate-in slide-in-from-bottom-4 duration-200 print:hidden"
+          className="fixed z-[85] max-w-sm w-[calc(100vw-1.5rem)] sm:w-80 bg-slate-900/95 dark:bg-slate-800/95 backdrop-blur-md text-white rounded-2xl shadow-2xl border border-indigo-500/40 p-3.5 animate-in slide-in-from-bottom-4 duration-200 print:hidden cursor-pointer"
         >
           <div className="flex items-start justify-between gap-2.5">
             <div className="flex items-center gap-2.5 min-w-0">
@@ -257,7 +281,11 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
               </div>
             </div>
             <button
-              onClick={() => setToastMsg(null)}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setToastMsg(null);
+              }}
               className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/60"
             >
               <X className="w-3.5 h-3.5" />
@@ -270,7 +298,9 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
 
           <div className="mt-2.5 pl-11 flex items-center justify-end gap-2">
             <button
-              onClick={() => {
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
                 const rid = toastMsg.room.id;
                 setToastMsg(null);
                 selectedRoomIdRef.current = rid;
@@ -283,7 +313,9 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
               Balas Cepat <ArrowRight className="w-3 h-3" />
             </button>
             <button
-              onClick={() => {
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
                 const rid = toastMsg.room.id;
                 setToastMsg(null);
                 selectedRoomIdRef.current = rid;

@@ -316,6 +316,39 @@ function normalizeConsolidatedPage(page: ActivePage): ActivePage {
 function getPageFromUrl(session: UserSession | null): ActivePage {
   if (typeof window === 'undefined') return getDefaultPageForSession(session);
   try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomParam = urlParams.get('room');
+    const pageParam = urlParams.get('page');
+    const subTabParam = urlParams.get('subTab');
+    const manualSubTabParam = urlParams.get('manualSubTab');
+    const orderParam = urlParams.get('order');
+    const hrSectionParam = urlParams.get('hrSection');
+
+    if (subTabParam || manualSubTabParam || orderParam || pageParam === 'pesanan_saya' || pageParam === 'manual_shipment') {
+      (window as any).__wms_pending_pesanan_target = {
+        tab: subTabParam || 'manual_shipment',
+        subTab: subTabParam || 'manual_shipment',
+        manualSubTab: manualSubTabParam || 'rekap',
+        orderId: orderParam || undefined,
+      };
+    }
+    if (hrSectionParam) {
+      (window as any).__wms_pending_hr_tab = hrSectionParam;
+    }
+    if (roomParam) {
+      if (!session || canAccessPage(session, 'live_chat')) {
+        return 'live_chat';
+      }
+    }
+    if (pageParam) {
+      const cleanParam = pageParam.replace(/^\/+|\/+$/g, '').toLowerCase();
+      const mapped = PATH_TO_PAGE[cleanParam] || (cleanParam as ActivePage);
+      const normalized = normalizeConsolidatedPage(mapped);
+      if (PAGE_TO_PATH[normalized] && (!session || canAccessPage(session, normalized))) {
+        return normalized;
+      }
+    }
+
     if (isRunningInIframe()) {
       const rawSavedPage = localStorage.getItem('wms_last_active_page') as ActivePage | null;
       const savedPage = rawSavedPage ? normalizeConsolidatedPage(rawSavedPage) : null;
@@ -432,7 +465,8 @@ export default function App() {
   const [loadingDockInitialTab, setLoadingDockInitialTab] = useState<'penerimaan' | 'pengiriman' | 'transfer_order' | 'picking_tasks' | undefined>(() => {
     if (typeof window === 'undefined') return undefined;
     const p = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
-    if (p === 'tugas-picking' || p === 'picking' || p === 'picking-tasks') return 'picking_tasks';
+    const pageParam = new URLSearchParams(window.location.search).get('page')?.toLowerCase();
+    if (p === 'tugas-picking' || p === 'picking' || p === 'picking-tasks' || pageParam === 'picking_tasks') return 'picking_tasks';
     return undefined;
   });
   const [agendaInitialTab, setAgendaInitialTab] = useState<'calendar' | 'project' | 'notes'>('calendar');
@@ -465,7 +499,9 @@ export default function App() {
     }
   }, [activePage, session]);
 
-  // Listener navigasi tombol Back & Forward di browser + klik Notifikasi HP (Service Worker)
+  const navigateToNotificationTargetRef = useRef<(target: any) => void>(() => {});
+
+  // Listener navigasi tombol Back & Forward di browser + klik Notifikasi HP (Service Worker & BroadcastChannel)
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
       const pageFromState = event.state?.page as ActivePage | undefined;
@@ -482,43 +518,32 @@ export default function App() {
     };
 
     const handleNavigateCustom = (event: Event) => {
-      const rawTargetPage = (event as CustomEvent)?.detail?.page as ActivePage | undefined;
-      if (!rawTargetPage) return;
-      if (rawTargetPage === 'picking_tasks') setLoadingDockInitialTab('picking_tasks');
-      if (rawTargetPage === 'operasi_stok' || rawTargetPage === 'scanner') setInventoryInitialTab('scanner');
-      if (rawTargetPage === 'mutasi_log') setInventoryInitialTab('logs');
-      if (rawTargetPage === 'cetak_barcode') setCetakLabelInitialTab('barcode');
-      const targetPage = normalizeConsolidatedPage(rawTargetPage);
-      if (!session || canAccessPage(session, targetPage)) {
-        startTransition(() => {
-          setActivePage(targetPage);
-        });
-      }
+      const detail = (event as CustomEvent)?.detail;
+      if (!detail) return;
+      navigateToNotificationTargetRef.current(detail);
     };
 
     const handleSwMessage = (event: MessageEvent) => {
-      if (event.data && event.data.type === 'WMS_NOTIFICATION_CLICK') {
-        const rawTargetPage = (event.data.page || 'pesanan_saya') as ActivePage;
-        if (rawTargetPage === 'picking_tasks') setLoadingDockInitialTab('picking_tasks');
-        if (rawTargetPage === 'operasi_stok' || rawTargetPage === 'scanner') setInventoryInitialTab('scanner');
-        const targetPage = normalizeConsolidatedPage(rawTargetPage);
-        const targetRoomId = event.data.roomId as string | undefined;
-        if (targetRoomId) {
-          window.dispatchEvent(
-            new CustomEvent('wms_open_live_chat_room', {
-              detail: { roomId: targetRoomId, openFullPage: targetPage === 'live_chat' },
-            })
-          );
-        }
-        if (!session || canAccessPage(session, targetPage)) {
-          startTransition(() => {
-            setActivePage(targetPage);
-          });
-        }
-      } else if (event.data && event.data.type === 'WMS_SW_CHAT_REPLIED') {
+      const data = event.data;
+      if (!data || typeof data !== 'object') return;
+      if (data.type === 'WMS_NOTIFICATION_CLICK') {
+        navigateToNotificationTargetRef.current(data);
+      } else if (data.type === 'WMS_SW_CHAT_REPLIED') {
         liveChatManager.syncRoomsIndexFromCloud().catch(() => {});
       }
     };
+
+    let notifBroadcastChannel: BroadcastChannel | null = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        notifBroadcastChannel = new BroadcastChannel('wms_notif_click_channel_v1');
+        notifBroadcastChannel.onmessage = (event: MessageEvent) => {
+          if (event.data && event.data.type === 'WMS_NOTIFICATION_CLICK') {
+            navigateToNotificationTargetRef.current(event.data);
+          }
+        };
+      }
+    } catch {}
 
     window.addEventListener('popstate', handlePopState);
     window.addEventListener('wms_navigate_page', handleNavigateCustom);
@@ -530,6 +555,11 @@ export default function App() {
       window.removeEventListener('wms_navigate_page', handleNavigateCustom);
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+      }
+      if (notifBroadcastChannel) {
+        try {
+          notifBroadcastChannel.close();
+        } catch {}
       }
     };
   }, [session]);
@@ -701,12 +731,33 @@ export default function App() {
   // Handler navigasi dengan verifikasi izin halaman & Auto-Update Aman saat pindah menu utama
   const handleSelectPage = useCallback((rawPage: ActivePage) => {
     if (rawPage === 'cetak_barcode') setCetakLabelInitialTab('barcode');
-    if (rawPage === 'picking_tasks') setLoadingDockInitialTab('picking_tasks');
+    if (rawPage === 'picking_tasks') {
+      setLoadingDockInitialTab('picking_tasks');
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('wms_open_loading_dock_tab', { detail: { tab: 'picking_tasks' } }));
+      }
+    }
     if (rawPage === 'operasi_stok' || rawPage === 'scanner') setInventoryInitialTab('scanner');
     if (rawPage === 'mutasi_log') setInventoryInitialTab('logs');
-    const page = normalizeConsolidatedPage(rawPage);
+    if (rawPage === 'pesanan_saya' || rawPage === 'manual_shipment') {
+      if (typeof window !== 'undefined') {
+        if (newManualShipmentAlert && !(window as any).__wms_pending_pesanan_target) {
+          const autoTarget = {
+            tab: 'manual_shipment',
+            subTab: 'manual_shipment',
+            manualSubTab: 'rekap',
+            orderId: newManualShipmentAlert.orderId,
+            isAlter: newManualShipmentAlert.isAlter,
+          };
+          (window as any).__wms_pending_pesanan_target = autoTarget;
+          window.dispatchEvent(new CustomEvent('wms_open_pesanan_target', { detail: autoTarget }));
+          setNewManualShipmentAlert(null);
+        }
+      }
+    }
+    const page = normalizeConsolidatedPage(rawPage === 'manual_shipment' ? 'pesanan_saya' : rawPage);
 
-    if (!canAccessPage(session, page)) {
+    if (session && !canAccessPage(session, page)) {
       showToast('Akses ditolak: Akun Anda tidak memiliki hak akses untuk modul ini.', 'warning');
       return;
     }
@@ -736,7 +787,107 @@ export default function App() {
     startTransition(() => {
       setActivePage(page);
     });
-  }, [session, activePage]);
+  }, [session, activePage, newManualShipmentAlert]);
+
+  const navigateToNotificationTarget = useCallback(
+    (target: {
+      page?: string;
+      subTab?: string;
+      manualSubTab?: string;
+      orderId?: string;
+      isAlter?: boolean;
+      hrSection?: string;
+      roomId?: string;
+      tag?: string;
+    }) => {
+      if (!target) return;
+      const rawPage = (target.page || (target.roomId ? 'live_chat' : 'pesanan_saya')) as ActivePage;
+
+      // 1. Deep-target Pesanan Saya -> Store -> Rekap Pesanan (+ pilih Order ID)
+      if (
+        rawPage === 'pesanan_saya' ||
+        rawPage === 'manual_shipment' ||
+        target.subTab === 'manual_shipment' ||
+        target.manualSubTab ||
+        target.orderId
+      ) {
+        const pesananTarget = {
+          tab: target.subTab || 'manual_shipment',
+          subTab: target.subTab || 'manual_shipment',
+          manualSubTab: target.manualSubTab || 'rekap',
+          orderId: target.orderId ? String(target.orderId).replace(/^#/, '').trim() : undefined,
+          isAlter: target.isAlter,
+        };
+        if (typeof window !== 'undefined') {
+          (window as any).__wms_pending_pesanan_target = pesananTarget;
+          window.dispatchEvent(new CustomEvent('wms_open_pesanan_target', { detail: pesananTarget }));
+          setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('wms_open_pesanan_target', { detail: pesananTarget }));
+          }, 150);
+        }
+        setNewManualShipmentAlert(null);
+      }
+
+      // 2. Deep-target Loading Dock -> Tugas Picking
+      if (rawPage === 'picking_tasks' || (rawPage === 'loading_dock' && target.subTab === 'picking_tasks')) {
+        setLoadingDockInitialTab('picking_tasks');
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('wms_open_loading_dock_tab', { detail: { tab: 'picking_tasks' } }));
+          setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('wms_open_loading_dock_tab', { detail: { tab: 'picking_tasks' } }));
+          }, 150);
+        }
+        setNewPickingTaskAlert(null);
+      }
+
+      // 3. Deep-target HR Approval -> Lembur / Cuti / Ijin Pulang Cepat
+      if (rawPage === 'hr_approval') {
+        const tagLower = String(target.tag || '').toLowerCase();
+        const hrSec =
+          target.hrSection ||
+          (tagLower.includes('cuti')
+            ? 'cuti'
+            : tagLower.includes('ipa') || tagLower.includes('pulang')
+            ? 'izin_pulang'
+            : 'lembur');
+        if (typeof window !== 'undefined') {
+          (window as any).__wms_pending_hr_tab = hrSec;
+          window.dispatchEvent(new CustomEvent('wms_open_hr_approval_tab', { detail: { section: hrSec } }));
+          setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('wms_open_hr_approval_tab', { detail: { section: hrSec } }));
+          }, 150);
+        }
+      }
+
+      // 4. Deep-target Live Chat -> Buka Room Spesifik
+      if (rawPage === 'live_chat' || target.roomId) {
+        const rid = target.roomId ? String(target.roomId).trim() : '';
+        if (rid) {
+          void liveChatManager.selectRoom(rid);
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(
+              new CustomEvent('wms_open_live_chat_room', {
+                detail: { roomId: rid, openFullPage: true },
+              })
+            );
+            setTimeout(() => {
+              void liveChatManager.selectRoom(rid);
+              window.dispatchEvent(
+                new CustomEvent('wms_open_live_chat_room', {
+                  detail: { roomId: rid, openFullPage: true },
+                })
+              );
+            }, 220);
+          }
+        }
+      }
+
+      handleSelectPage(rawPage);
+    },
+    [handleSelectPage]
+  );
+
+  navigateToNotificationTargetRef.current = navigateToNotificationTarget;
 
   // Handler pembukaan pengaturan sistem dengan verifikasi izin ketat (Hanya @warehouse / Pemilik)
   const handleOpenSettings = useCallback(() => {
@@ -932,15 +1083,22 @@ export default function App() {
     setDarkMode((prev) => !prev);
   };
 
-  // Toast helper
+  // Toast helper (mendukung klik langsung ke halaman tujuan)
   const showToast = useCallback(
-    (message: string, type: 'success' | 'error' | 'info' | 'warning' = 'success') => {
+    (
+      message: string,
+      type: 'success' | 'error' | 'info' | 'warning' = 'success',
+      options?: { onClick?: () => void; actionLabel?: string }
+    ) => {
       const id = Date.now().toString() + Math.random().toString(36).substring(2, 5);
-      setToasts((prev) => [...prev, { id, message, type }]);
+      setToasts((prev) => [
+        ...prev,
+        { id, message, type, onClick: options?.onClick, actionLabel: options?.actionLabel },
+      ]);
 
       setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== id));
-      }, 3500);
+      }, options?.onClick ? 5500 : 3500);
     },
     []
   );
@@ -1517,14 +1675,23 @@ export default function App() {
                   body: notifBody,
                   tag: `picking-task-${firstSj}`,
                   page: 'picking_tasks',
+                  subTab: 'picking_tasks',
                 });
 
-                // 4. In-App Toast
+                // 4. In-App Toast (Klik langsung menuju Tugas Picking)
                 showToast(
                   uniqueSjs.length > 1
                     ? `📋 ${uniqueSjs.length} Tugas Picking Baru Masuk (${totalItems} item)!`
                     : `📋 Tugas Picking Baru Masuk: SJ #${firstSj} (${totalItems} item) - Tujuan: ${firstTujuan}`,
-                  'info'
+                  'info',
+                  {
+                    actionLabel: 'Buka Picking →',
+                    onClick: () =>
+                      navigateToNotificationTargetRef.current({
+                        page: 'picking_tasks',
+                        subTab: 'picking_tasks',
+                      }),
+                  }
                 );
 
                 // 5. Simpan state alert untuk banner & badge di UI
@@ -1586,8 +1753,20 @@ export default function App() {
                     body: `Pesanan ${row.nama_tujuan || 'Customer'} telah diupdate dengan No. Resi: ${row.no_resi} (${row.jasa_kirim || 'Ekspedisi'})`,
                     tag: `resi-update-${orderId}`,
                     page: 'pesanan_saya',
+                    subTab: 'manual_shipment',
+                    manualSubTab: 'rekap',
+                    orderId,
                   });
-                  showToast(`🚚 Resi pesanan #${orderId} telah diupdate: ${row.no_resi}`, 'info');
+                  showToast(`🚚 Resi pesanan #${orderId} telah diupdate: ${row.no_resi}`, 'info', {
+                    actionLabel: 'Lihat Rekap →',
+                    onClick: () =>
+                      navigateToNotificationTargetRef.current({
+                        page: 'pesanan_saya',
+                        subTab: 'manual_shipment',
+                        manualSubTab: 'rekap',
+                        orderId,
+                      }),
+                  });
                 }
               }
             }
@@ -1609,7 +1788,13 @@ export default function App() {
                 tag: `retur-new-${noRetur}`,
                 page: 'pusat_resolusi',
               });
-              showToast(`🔄 Tiket Retur Barang Baru: #${noRetur} (${customer})`, 'info');
+              showToast(`🔄 Tiket Retur Barang Baru: #${noRetur} (${customer})`, 'info', {
+                actionLabel: 'Buka Resolusi →',
+                onClick: () =>
+                  navigateToNotificationTargetRef.current({
+                    page: 'pusat_resolusi',
+                  }),
+              });
             }
           }
         )
@@ -1690,9 +1875,17 @@ export default function App() {
           body: `Tanggal: ${tgl} (${jam}) • Alasan: ${alasan}`,
           tag: `hr-lembur-${rawId}`,
           page: 'hr_approval',
+          hrSection: 'lembur',
           requireInteraction: true,
         });
-        showToast(`⚡ Pengajuan Lembur Baru: ${empName} (${tgl} • ${jam})`, 'info');
+        showToast(`⚡ Pengajuan Lembur Baru: ${empName} (${tgl} • ${jam})`, 'info', {
+          actionLabel: 'Buka Approval →',
+          onClick: () =>
+            navigateToNotificationTargetRef.current({
+              page: 'hr_approval',
+              hrSection: 'lembur',
+            }),
+        });
       } else if (sourceTable === 'perijinan_cuti') {
         const key = `HR_CUTI_${rawId}`;
         const ipcDedupKey = `HR_IPC_${String(row.nik || '').trim().toUpperCase()}_${String(row.tanggal_mulai || '').slice(0, 10)}`;
@@ -1718,9 +1911,17 @@ export default function App() {
           body: `Tanggal: ${tglLabel} • Ket: ${ket}`,
           tag: `hr-cuti-${rawId}`,
           page: 'hr_approval',
+          hrSection: 'cuti',
           requireInteraction: true,
         });
-        showToast(`🌴 Pengajuan ${jenis} Baru: ${empName} (${tglLabel})`, 'info');
+        showToast(`🌴 Pengajuan ${jenis} Baru: ${empName} (${tglLabel})`, 'info', {
+          actionLabel: 'Buka Approval →',
+          onClick: () =>
+            navigateToNotificationTargetRef.current({
+              page: 'hr_approval',
+              hrSection: 'cuti',
+            }),
+        });
       } else if (sourceTable === 'izin_pulang_cepat') {
         const key = `HR_IPA_${rawId}`;
         const ipcDedupKey = `HR_IPC_${String(row.nik || '').trim().toUpperCase()}_${String(row.tanggal || '').slice(0, 10)}`;
@@ -1742,9 +1943,17 @@ export default function App() {
           body: `Tanggal: ${tgl} (Pulang Jam ${jamPulang}) • Ket: ${alasan}`,
           tag: `hr-ipa-${rawId}`,
           page: 'hr_approval',
+          hrSection: 'izin_pulang',
           requireInteraction: true,
         });
-        showToast(`🏃 Pengajuan Ijin Pulang Cepat: ${empName} (${tgl} • Jam ${jamPulang})`, 'info');
+        showToast(`🏃 Pengajuan Ijin Pulang Cepat: ${empName} (${tgl} • Jam ${jamPulang})`, 'info', {
+          actionLabel: 'Buka Approval →',
+          onClick: () =>
+            navigateToNotificationTargetRef.current({
+              page: 'hr_approval',
+              hrSection: 'izin_pulang',
+            }),
+        });
       }
     },
     [session, showToast]
@@ -1847,13 +2056,28 @@ export default function App() {
         body: notifBody,
         tag: `manual-shipment-${primaryKey}`,
         page: 'pesanan_saya',
+        subTab: 'manual_shipment',
+        manualSubTab: 'rekap',
+        orderId,
+        isAlter,
         requireInteraction: true,
       });
 
-      // 4. Tampilkan Toast di layar Admin
+      // 4. Tampilkan Toast di layar Admin (Klik langsung buka Rekap Pesanan Store untuk Order ID tersebut)
       showToast(
         `${isAlter ? '✂️ Request Alter/Repair Baru' : '🛍️ Pesanan Baru'} dari ${storeName}: #${orderId} (${totalQty} pcs - ${customerName})`,
-        'info'
+        'info',
+        {
+          actionLabel: 'Lihat Rekap →',
+          onClick: () =>
+            navigateToNotificationTargetRef.current({
+              page: 'pesanan_saya',
+              subTab: 'manual_shipment',
+              manualSubTab: 'rekap',
+              orderId,
+              isAlter,
+            }),
+        }
       );
 
       // 5. Tampilkan Floating Alert Banner & Badge di layar Laptop / HP Admin
@@ -1923,12 +2147,21 @@ export default function App() {
         body: notifBody,
         tag: `sps-new-${noSps}`,
         page: 'picking_tasks',
+        subTab: 'picking_tasks',
         requireInteraction: true,
       });
 
       showToast(
         `📋 Permintaan SPS Baru: #${noSps} dari ${picName} (${keperluanText} - ${totalQty} pcs)`,
-        'info'
+        'info',
+        {
+          actionLabel: 'Buka Picking →',
+          onClick: () =>
+            navigateToNotificationTargetRef.current({
+              page: 'picking_tasks',
+              subTab: 'picking_tasks',
+            }),
+        }
       );
 
       setNewPickingTaskAlert({
@@ -2003,24 +2236,14 @@ export default function App() {
         savePersistedNotifiedOrderIds(notifiedOrderIdsRef.current);
         if (data.timestamp) setLastOrderCheckTimestamp(Number(data.timestamp));
       } else if (data.type === 'WMS_NOTIFICATION_CLICK') {
-        if (data.page) {
-          setActivePage(data.page as ActivePage);
-        }
-        if (data.roomId) {
-          void liveChatManager.selectRoom(String(data.roomId));
-        }
+        navigateToNotificationTargetRef.current(data);
       }
     };
 
     const handleInAppNotifClick = (ev: Event) => {
       const detail = (ev as CustomEvent)?.detail;
       if (!detail) return;
-      if (detail.page) {
-        setActivePage(detail.page as ActivePage);
-      }
-      if (detail.roomId) {
-        void liveChatManager.selectRoom(String(detail.roomId));
-      }
+      navigateToNotificationTargetRef.current(detail);
     };
 
     if ('serviceWorker' in navigator) {
@@ -2028,15 +2251,27 @@ export default function App() {
     }
     window.addEventListener('wms_inapp_notification_click', handleInAppNotifClick);
 
-    // Cek parameter ?room=... jika dibuka dari klik notifikasi saat aplikasi sebelumnya tertutup
+    // Cek parameter ?room=..., ?page=..., ?order=..., ?subTab=..., ?manualSubTab=..., ?hrSection=... jika dibuka dari klik notifikasi saat aplikasi sebelumnya tertutup
     try {
       const urlParams = new URLSearchParams(window.location.search);
       const roomParam = urlParams.get('room');
-      if (roomParam) {
-        setActivePage('live_chat');
+      const pageParam = urlParams.get('page');
+      const subTabParam = urlParams.get('subTab');
+      const manualSubTabParam = urlParams.get('manualSubTab');
+      const orderParam = urlParams.get('order');
+      const hrSectionParam = urlParams.get('hrSection');
+
+      if (roomParam || pageParam || subTabParam || manualSubTabParam || orderParam || hrSectionParam) {
         setTimeout(() => {
-          void liveChatManager.selectRoom(roomParam);
-        }, 400);
+          navigateToNotificationTargetRef.current({
+            page: pageParam || (roomParam ? 'live_chat' : 'pesanan_saya'),
+            subTab: subTabParam || undefined,
+            manualSubTab: manualSubTabParam || undefined,
+            orderId: orderParam || undefined,
+            hrSection: hrSectionParam || undefined,
+            roomId: roomParam || undefined,
+          });
+        }, 250);
       }
     } catch {}
 
@@ -2156,7 +2391,13 @@ export default function App() {
                     tag: `retur-new-${noRetur}`,
                     page: 'pusat_resolusi',
                   });
-                  showToast(`🔄 Tiket Retur Barang Baru: #${noRetur} (${r.nama_customer || 'Customer'})`, 'info');
+                  showToast(`🔄 Tiket Retur Barang Baru: #${noRetur} (${r.nama_customer || 'Customer'})`, 'info', {
+                    actionLabel: 'Buka Resolusi →',
+                    onClick: () =>
+                      navigateToNotificationTargetRef.current({
+                        page: 'pusat_resolusi',
+                      }),
+                  });
                 }
               }
             }
@@ -2313,8 +2554,20 @@ export default function App() {
                     body: `SJ #${g.no_sj} (${g.skuCount} item) - Tujuan: ${g.tujuan}. Buka untuk mulai picking.`,
                     tag: `picking-task-${g.no_sj}`,
                     page: 'picking_tasks',
+                    subTab: 'picking_tasks',
                   });
-                  showToast(`📋 Tugas Picking Baru Masuk: SJ #${g.no_sj} (${g.skuCount} item) - Tujuan: ${g.tujuan}`, 'info');
+                  showToast(
+                    `📋 Tugas Picking Baru Masuk: SJ #${g.no_sj} (${g.skuCount} item) - Tujuan: ${g.tujuan}`,
+                    'info',
+                    {
+                      actionLabel: 'Buka Picking →',
+                      onClick: () =>
+                        navigateToNotificationTargetRef.current({
+                          page: 'picking_tasks',
+                          subTab: 'picking_tasks',
+                        }),
+                    }
+                  );
                   setNewPickingTaskAlert({
                     no_sj: g.no_sj,
                     count: g.skuCount,
@@ -3205,7 +3458,18 @@ export default function App() {
           aria-label="Notifikasi Pesanan Store Baru"
           className="fixed bottom-36 sm:bottom-24 right-4 left-4 sm:left-auto sm:max-w-md z-50 animate-in fade-in slide-in-from-bottom-5 duration-300"
         >
-          <div className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white p-3.5 rounded-2xl shadow-xl shadow-indigo-600/30 border border-indigo-300/40 flex items-center justify-between gap-3">
+          <div
+            onClick={() => {
+              navigateToNotificationTarget({
+                page: 'pesanan_saya',
+                subTab: 'manual_shipment',
+                manualSubTab: 'rekap',
+                orderId: newManualShipmentAlert.orderId,
+                isAlter: newManualShipmentAlert.isAlter,
+              });
+            }}
+            className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white p-3.5 rounded-2xl shadow-xl shadow-indigo-600/30 border border-indigo-300/40 flex items-center justify-between gap-3 cursor-pointer"
+          >
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0 animate-pulse">
                 <ShoppingBag className="w-5 h-5 text-white" />
@@ -3231,17 +3495,26 @@ export default function App() {
             <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
-                onClick={() => {
-                  handleSelectPage('pesanan_saya');
-                  setNewManualShipmentAlert(null);
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigateToNotificationTarget({
+                    page: 'pesanan_saya',
+                    subTab: 'manual_shipment',
+                    manualSubTab: 'rekap',
+                    orderId: newManualShipmentAlert.orderId,
+                    isAlter: newManualShipmentAlert.isAlter,
+                  });
                 }}
                 className="px-3 py-1.5 bg-white text-indigo-600 hover:bg-indigo-50 rounded-xl text-xs font-black shadow-sm cursor-pointer transition-all active:scale-95"
               >
-                Lihat
+                Lihat Rekap
               </button>
               <button
                 type="button"
-                onClick={() => setNewManualShipmentAlert(null)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setNewManualShipmentAlert(null);
+                }}
                 aria-label="Tutup pemberitahuan pesanan baru"
                 className="p-1.5 text-white/80 hover:text-white rounded-lg hover:bg-white/10 cursor-pointer"
               >
@@ -3260,7 +3533,15 @@ export default function App() {
           aria-label="Notifikasi Tugas Picking Baru"
           className="fixed bottom-20 sm:bottom-6 right-4 left-4 sm:left-auto sm:max-w-md z-50 animate-in fade-in slide-in-from-bottom-5 duration-300"
         >
-          <div className="bg-gradient-to-r from-primary-500 to-amber-600 text-white p-3.5 rounded-2xl shadow-xl shadow-primary-500/30 border border-orange-300/40 flex items-center justify-between gap-3">
+          <div
+            onClick={() => {
+              navigateToNotificationTarget({
+                page: 'picking_tasks',
+                subTab: 'picking_tasks',
+              });
+            }}
+            className="bg-gradient-to-r from-primary-500 to-amber-600 text-white p-3.5 rounded-2xl shadow-xl shadow-primary-500/30 border border-orange-300/40 flex items-center justify-between gap-3 cursor-pointer"
+          >
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0 animate-pulse">
                 <Package className="w-5 h-5 text-white" />
@@ -3281,10 +3562,12 @@ export default function App() {
             <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
-                onClick={() => {
-                  setLoadingDockInitialTab('picking_tasks');
-                  handleSelectPage('loading_dock');
-                  setNewPickingTaskAlert(null);
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigateToNotificationTarget({
+                    page: 'picking_tasks',
+                    subTab: 'picking_tasks',
+                  });
                 }}
                 className="px-3 py-1.5 bg-white text-primary-500 hover:bg-orange-50 rounded-xl text-xs font-black shadow-sm cursor-pointer transition-all active:scale-95"
               >
@@ -3292,7 +3575,10 @@ export default function App() {
               </button>
               <button
                 type="button"
-                onClick={() => setNewPickingTaskAlert(null)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setNewPickingTaskAlert(null);
+                }}
                 aria-label="Tutup pemberitahuan tugas picking baru"
                 className="p-1.5 text-white/80 hover:text-white rounded-lg hover:bg-white/10 cursor-pointer"
               >

@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle2, AlertCircle, Info, AlertTriangle, X } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Info, AlertTriangle, X, ArrowRight } from 'lucide-react';
 import { ToastMessage } from '../types';
 
 interface ToastProps {
@@ -30,23 +30,47 @@ export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
           icon = <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />;
         }
 
+        const isClickable = typeof toast.onClick === 'function';
+
         return (
           <div
             key={toast.id ? `toast-${toast.id}` : `toast-idx-${tIdx}`}
             id={`toast-${toast.id}`}
-            className={`pointer-events-auto flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl border backdrop-blur-md transition-all duration-300 transform translate-y-0 opacity-100 ${bgClass}`}
+            onClick={() => {
+              if (toast.onClick) {
+                toast.onClick();
+                onDismiss(toast.id);
+              }
+            }}
+            role={isClickable ? 'button' : undefined}
+            tabIndex={isClickable ? 0 : undefined}
+            className={`pointer-events-auto flex items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-xl border backdrop-blur-md transition-all duration-300 transform translate-y-0 opacity-100 ${bgClass} ${
+              isClickable ? 'cursor-pointer hover:border-indigo-400/80 hover:scale-[1.01] active:scale-[0.99]' : ''
+            }`}
           >
-            <div className="flex items-center gap-2.5 overflow-hidden">
+            <div className="flex items-center gap-2.5 overflow-hidden min-w-0">
               {icon}
               <span className="text-xs font-medium leading-snug break-words">{toast.message}</span>
             </div>
-            <button
-              onClick={() => onDismiss(toast.id)}
-              className="p-1 text-slate-400 hover:text-slate-100 rounded-lg transition-colors flex-shrink-0"
-              aria-label="Dismiss toast"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {isClickable && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold whitespace-nowrap shadow-xs">
+                  <span>{toast.actionLabel || 'Buka'}</span>
+                  <ArrowRight className="w-3 h-3" />
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDismiss(toast.id);
+                }}
+                className="p-1 text-slate-400 hover:text-slate-100 rounded-lg transition-colors flex-shrink-0 cursor-pointer"
+                aria-label="Dismiss toast"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         );
       })}

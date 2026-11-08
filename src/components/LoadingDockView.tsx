@@ -90,6 +90,17 @@ export function LoadingDockView({
   }, [initialTab]);
 
   useEffect(() => {
+    const handleOpenTab = (e: Event) => {
+      const targetTab = (e as CustomEvent)?.detail?.tab as LoadingDockTab | undefined;
+      if (targetTab && tabs.some((t) => t.id === targetTab)) {
+        setActiveTab(targetTab);
+      }
+    };
+    window.addEventListener('wms_open_loading_dock_tab', handleOpenTab);
+    return () => window.removeEventListener('wms_open_loading_dock_tab', handleOpenTab);
+  }, [tabs]);
+
+  useEffect(() => {
     if (activeTab === 'picking_tasks' && onClearPickingAlert) {
       onClearPickingAlert();
     }

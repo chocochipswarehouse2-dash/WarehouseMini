@@ -849,6 +849,8 @@ export interface ToastMessage {
   id: string;
   message: string;
   type: 'success' | 'error' | 'info' | 'warning';
+  onClick?: () => void;
+  actionLabel?: string;
 }
 
 export interface CameraDevice {

@@ -159,6 +159,17 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
   }, [initialRoomId]);
 
   useEffect(() => {
+    const handleOpenRoom = (e: Event) => {
+      const rid = (e as CustomEvent)?.detail?.roomId;
+      if (rid) {
+        void liveChatManager.selectRoom(String(rid));
+      }
+    };
+    window.addEventListener('wms_open_live_chat_room', handleOpenRoom);
+    return () => window.removeEventListener('wms_open_live_chat_room', handleOpenRoom);
+  }, []);
+
+  useEffect(() => {
     const handleOpenOrder = (e: any) => {
       if (e.detail?.orderData) {
         setPendingOrderContext(e.detail.orderData);
@@ -1455,7 +1466,34 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                                 {/* Shopee-Style Attached Order Context Card */}
                                 {msg.order_context && (
                                   <div
-                                    className={`mb-2 p-2.5 rounded-xl border text-left ${
+                                    onClick={() => {
+                                      const oid = String(msg.order_context?.order_id || '').replace(/^#/, '').trim();
+                                      const targetDetail = {
+                                        tab: 'manual_shipment',
+                                        subTab: 'manual_shipment',
+                                        manualSubTab: 'rekap',
+                                        orderId: oid,
+                                      };
+                                      if (typeof window !== 'undefined') {
+                                        (window as any).__wms_pending_pesanan_target = targetDetail;
+                                        window.dispatchEvent(
+                                          new CustomEvent('wms_navigate_page', {
+                                            detail: {
+                                              page: 'pesanan_saya',
+                                              ...targetDetail,
+                                            },
+                                          })
+                                        );
+                                        window.dispatchEvent(
+                                          new CustomEvent('wms_open_pesanan_target', { detail: targetDetail })
+                                        );
+                                      }
+                                      if (mode === 'floating' && onCloseFloating) {
+                                        onCloseFloating();
+                                      }
+                                    }}
+                                    title={`Klik untuk membuka Rekap Pesanan #${msg.order_context.order_id}`}
+                                    className={`mb-2 p-2.5 rounded-xl border text-left cursor-pointer transition-opacity hover:opacity-95 ${
                                       isMine
                                         ? 'bg-indigo-700/80 border-indigo-400/40 text-white'
                                         : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 shadow-2xs'
@@ -1464,7 +1502,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                                     <div className="flex items-center justify-between gap-2 border-b border-white/20 dark:border-slate-800 pb-1.5 mb-1.5">
                                       <div className="flex items-center gap-1.5 min-w-0">
                                         <Package className={`w-3.5 h-3.5 shrink-0 ${isMine ? 'text-amber-300' : 'text-indigo-600 dark:text-indigo-400'}`} />
-                                        <span className="text-xs font-mono font-bold truncate">
+                                        <span className="text-xs font-mono font-bold truncate underline decoration-dotted">
                                           #{msg.order_context.order_id}
                                         </span>
                                       </div>

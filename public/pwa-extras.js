@@ -197,7 +197,14 @@ async function checkNewOrdersInBackground() {
                 tag: `manual-shipment-${primaryKey}`,
                 renotify: true,
                 requireInteraction: true,
-                data: { url: '/', page: 'pesanan_saya' },
+                data: {
+                  url: '/pesanan-saya',
+                  page: 'pesanan_saya',
+                  subTab: 'manual_shipment',
+                  manualSubTab: 'rekap',
+                  orderId: noPesanan || orderId,
+                  isAlter,
+                },
               });
             }
           }
@@ -326,7 +333,7 @@ async function checkNewOrdersInBackground() {
                 tag: `hr-lembur-${r.id}`,
                 renotify: true,
                 requireInteraction: true,
-                data: { url: '/hr-approval', page: 'hr_approval' },
+                data: { url: '/hr-approval', page: 'hr_approval', hrSection: 'lembur' },
               });
             }
           }
@@ -370,7 +377,7 @@ async function checkNewOrdersInBackground() {
                 tag: `hr-cuti-${r.id}`,
                 renotify: true,
                 requireInteraction: true,
-                data: { url: '/hr-approval', page: 'hr_approval' },
+                data: { url: '/hr-approval', page: 'hr_approval', hrSection: 'cuti' },
               });
             }
           }
@@ -409,7 +416,7 @@ async function checkNewOrdersInBackground() {
                 tag: `hr-ipa-${r.id}`,
                 renotify: true,
                 requireInteraction: true,
-                data: { url: '/hr-approval', page: 'hr_approval' },
+                data: { url: '/hr-approval', page: 'hr_approval', hrSection: 'izin_pulang' },
               });
             }
           }
@@ -817,7 +824,12 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   const notifData = (event.notification && event.notification.data) || {};
   const targetUrl = notifData.url || '/';
-  const targetPage = notifData.page || '';
+  const targetPage = notifData.page || (notifData.roomId ? 'live_chat' : '');
+  const targetSubTab = notifData.subTab || '';
+  const targetManualSubTab = notifData.manualSubTab || '';
+  const targetOrderId = notifData.orderId || '';
+  const targetIsAlter = Boolean(notifData.isAlter);
+  const targetHrSection = notifData.hrSection || '';
   const targetRoomId = notifData.roomId || '';
   const action = event.action || '';
   const inlineReplyText = typeof event.reply === 'string' ? event.reply.trim() : '';
@@ -849,28 +861,55 @@ self.addEventListener('notificationclick', (event) => {
     return;
   }
 
-  // 3. Default: Fokuskan atau buka jendela aplikasi dan arahkan langsung ke halaman / ruang chat terkait
+  const clickPayload = {
+    type: 'WMS_NOTIFICATION_CLICK',
+    page: targetPage,
+    subTab: targetSubTab,
+    manualSubTab: targetManualSubTab,
+    orderId: targetOrderId,
+    isAlter: targetIsAlter,
+    hrSection: targetHrSection,
+    roomId: targetRoomId,
+    timestamp: Date.now(),
+  };
+
+  // Broadcast via BroadcastChannel agar semua tab & frame menerima sinyal klik secara instan
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel('wms_notif_click_channel_v1');
+      bc.postMessage(clickPayload);
+      setTimeout(() => bc.close(), 500);
+    }
+  } catch {}
+
+  // 3. Default: Fokuskan atau buka jendela aplikasi dan arahkan langsung ke halaman / sub-tab / pesanan / ruang chat terkait
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      for (let i = 0; i < windowClients.length; i++) {
-        const client = windowClients[i];
-        if ('focus' in client) {
-          client.focus();
-          if (targetPage || targetRoomId) {
-            client.postMessage({
-              type: 'WMS_NOTIFICATION_CLICK',
-              page: targetPage,
-              roomId: targetRoomId,
-            });
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (windowClients) => {
+      if (windowClients && windowClients.length > 0) {
+        let focusedAny = false;
+        for (let i = 0; i < windowClients.length; i++) {
+          const client = windowClients[i];
+          try {
+            client.postMessage(clickPayload);
+          } catch {}
+          if (!focusedAny && 'focus' in client) {
+            try {
+              await client.focus();
+              focusedAny = true;
+            } catch {}
           }
-          return;
         }
+        return;
       }
       if (clients.openWindow) {
         const params = [];
         if (targetPage) params.push(`page=${encodeURIComponent(targetPage)}`);
+        if (targetSubTab) params.push(`subTab=${encodeURIComponent(targetSubTab)}`);
+        if (targetManualSubTab) params.push(`manualSubTab=${encodeURIComponent(targetManualSubTab)}`);
+        if (targetOrderId) params.push(`order=${encodeURIComponent(targetOrderId)}`);
+        if (targetHrSection) params.push(`hrSection=${encodeURIComponent(targetHrSection)}`);
         if (targetRoomId) params.push(`room=${encodeURIComponent(targetRoomId)}`);
-        const openUrl = params.length > 0 ? `${targetUrl}?${params.join('&')}` : targetUrl;
+        const openUrl = params.length > 0 ? `${targetUrl}${targetUrl.includes('?') ? '&' : '?'}${params.join('&')}` : targetUrl;
         return clients.openWindow(openUrl);
       }
     })

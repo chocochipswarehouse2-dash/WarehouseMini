@@ -221,6 +221,11 @@ export async function showPushNotification(
   options?: NotificationOptions & {
     url?: string;
     page?: string;
+    subTab?: string;
+    manualSubTab?: string;
+    orderId?: string;
+    isAlter?: boolean;
+    hrSection?: string;
     roomId?: string;
     roomName?: string;
     actions?: Array<{
@@ -242,6 +247,11 @@ export async function showPushNotification(
   const mergedData = {
     url: options?.url || '/',
     page: options?.page || '',
+    subTab: options?.subTab || '',
+    manualSubTab: options?.manualSubTab || '',
+    orderId: options?.orderId || '',
+    isAlter: Boolean(options?.isAlter),
+    hrSection: options?.hrSection || '',
     roomId: options?.roomId || '',
     roomName: options?.roomName || '',
     ...(options?.data && typeof options.data === 'object' ? options.data : {}),
@@ -299,7 +309,7 @@ export async function showPushNotification(
     const notif = new Notification(title, cleanOptions);
     notif.onclick = () => {
       window.focus();
-      if (mergedData.page || mergedData.roomId) {
+      if (mergedData.page || mergedData.roomId || mergedData.orderId) {
         window.dispatchEvent(
           new CustomEvent('wms_inapp_notification_click', {
             detail: mergedData,

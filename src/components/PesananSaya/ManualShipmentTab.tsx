@@ -124,7 +124,15 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
     }
   };
 
-  const [activeTab, setActiveTab] = useState<'form' | 'alteration_repair' | 'rekap'>('form');
+  const [activeTab, setActiveTab] = useState<'form' | 'alteration_repair' | 'rekap'>(() => {
+    if (typeof window !== 'undefined') {
+      const pending = (window as any).__wms_pending_pesanan_target;
+      if (pending?.manualSubTab === 'rekap' || pending?.manualSubTab === 'form' || pending?.manualSubTab === 'alteration_repair') {
+        return pending.manualSubTab;
+      }
+    }
+    return userIsAdmin ? 'rekap' : 'form';
+  });
   const [filterOrderType, setFilterOrderType] = useState<'all' | 'manual_shipment' | 'manual_with_alter' | 'alteration_repair'>('all');
   const [filterAlterStatus, setFilterAlterStatus] = useState<'all' | 'manual_with_alter' | 'all_alter' | 'no_alter'>('all');
   const [isBulkResiModalOpen, setIsBulkResiModalOpen] = useState(false);
@@ -145,7 +153,13 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
     }
     return 'split';
   });
-  const [activeSplitOrderNo, setActiveSplitOrderNo] = useState<string | null>(null);
+  const [activeSplitOrderNo, setActiveSplitOrderNo] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const pending = (window as any).__wms_pending_pesanan_target;
+      if (pending?.orderId) return String(pending.orderId).trim();
+    }
+    return null;
+  });
 
   const handleSetViewMode = (mode: 'split' | 'table' | 'card') => {
     setViewMode(mode);
@@ -991,9 +1005,46 @@ _WMS Warehouse System_`;
       }, 600);
     });
 
+    const applyPesananTarget = (target: any) => {
+      if (!target) return;
+      const targetSubTab = target.manualSubTab || 'rekap';
+      if (targetSubTab === 'rekap' || targetSubTab === 'form' || targetSubTab === 'alteration_repair') {
+        setActiveTab(targetSubTab);
+      }
+      if (targetSubTab === 'rekap') {
+        setStageTab('semua');
+        setFilterOrderType('all');
+        setFilterAlterStatus('all');
+        setFilterStatus('all');
+        setFilterStore('all');
+        setFilterStoreDirection('all');
+        if (target.orderId) {
+          const cleanOrderId = String(target.orderId).replace(/^#/, '').trim();
+          setActiveSplitOrderNo(cleanOrderId);
+          setSearchTerm((prev) => (viewMode === 'split' ? '' : cleanOrderId || prev));
+        }
+        loadOrders();
+      }
+      if (typeof window !== 'undefined') {
+        delete (window as any).__wms_pending_pesanan_target;
+      }
+    };
+
+    if (typeof window !== 'undefined' && (window as any).__wms_pending_pesanan_target) {
+      applyPesananTarget((window as any).__wms_pending_pesanan_target);
+    }
+
+    const handleOpenPesananTarget = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      applyPesananTarget(detail);
+    };
+
+    window.addEventListener('wms_open_pesanan_target', handleOpenPesananTarget);
+
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       unsubscribe();
+      window.removeEventListener('wms_open_pesanan_target', handleOpenPesananTarget);
     };
   }, []);
 
@@ -6911,9 +6962,16 @@ _WMS Warehouse System_`;
                   </div>
                 ) : (
                   filteredOrders.map((order) => {
+                    const targetOrderUpper = (activeSplitOrderNo || '').trim().toUpperCase();
                     const activeOrder =
-                      filteredOrders.find((o) => (o.no_pesanan || (o as any).id) === activeSplitOrderNo) ||
-                      filteredOrders[0];
+                      (targetOrderUpper
+                        ? filteredOrders.find(
+                            (o) =>
+                              String(o.no_pesanan || '').trim().toUpperCase() === targetOrderUpper ||
+                              String(o.no_transaksi_customer || '').trim().toUpperCase() === targetOrderUpper ||
+                              String((o as any).id || '').trim().toUpperCase() === targetOrderUpper
+                          )
+                        : null) || filteredOrders[0];
                     const isSelectedCard =
                       (activeOrder?.no_pesanan || (activeOrder as any)?.id) ===
                       (order.no_pesanan || (order as any).id);
@@ -7071,8 +7129,16 @@ _WMS Warehouse System_`;
             {/* PANEL KANAN: DETAIL & WORKSPACE PESANAN TERPILIH */}
             <div className="lg:col-span-7 xl:col-span-8 lg:sticky lg:top-3">
               {(() => {
+                const targetOrderUpper = (activeSplitOrderNo || '').trim().toUpperCase();
                 const activeOrder =
-                  filteredOrders.find((o) => (o.no_pesanan || (o as any).id) === activeSplitOrderNo) ||
+                  (targetOrderUpper
+                    ? filteredOrders.find(
+                        (o) =>
+                          String(o.no_pesanan || '').trim().toUpperCase() === targetOrderUpper ||
+                          String(o.no_transaksi_customer || '').trim().toUpperCase() === targetOrderUpper ||
+                          String((o as any).id || '').trim().toUpperCase() === targetOrderUpper
+                      )
+                    : null) ||
                   filteredOrders[0] ||
                   null;
 
