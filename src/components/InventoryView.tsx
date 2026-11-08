@@ -443,7 +443,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   }, [isLokasiExportModalOpen, flatStockSnapshot]);
 
   return (
-    <div className="w-full max-w-full px-1 sm:px-3 lg:px-4 py-2 sm:py-4 space-y-4 animate-in fade-in duration-150">
+    <div className="w-full max-w-full min-w-0 overflow-x-hidden px-1 sm:px-3 lg:px-4 py-2 sm:py-4 space-y-4 animate-in fade-in duration-150">
       {/* ========================================================
           0. NAVIGATION TABS (4 TABS):
           1. Dashboard Interaktif Kapasitas

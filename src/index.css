@@ -76,6 +76,13 @@ html.dark {
   }
 
   /* Mobile PWA Safe Area Padding & Viewport Locking */
+  html,
+  body,
+  #root {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
   body {
     padding-top: env(safe-area-inset-top, 0px);
     padding-bottom: env(safe-area-inset-bottom, 0px);

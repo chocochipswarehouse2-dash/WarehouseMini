@@ -1421,18 +1421,18 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   };
 
   return (
-    <div className="space-y-4 w-full pb-20 sm:pb-6">
+    <div className="space-y-4 w-full max-w-full min-w-0 overflow-x-hidden pb-20 sm:pb-6">
       {/* ============================================================================
           1. TOP KPI STRIP (Ringkasan Kapasitas & Status Rak)
           ============================================================================ */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5 min-w-0">
         {/* Total Utilisasi Gudang (Full width on mobile, 1 col on desktop) */}
-        <div className="col-span-2 sm:col-span-1 p-3.5 rounded-2xl border bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 shadow-2xs">
-          <div className="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400">
+        <div className="col-span-2 sm:col-span-1 min-w-0 p-3 sm:p-3.5 rounded-2xl border bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 shadow-2xs">
+          <div className="flex items-center justify-between gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400">
             <span className="truncate">{summaryStats.kpiTitle}</span>
-            <Layers className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 ml-1" />
+            <Layers className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
           </div>
-          <div className="mt-1 flex items-baseline gap-2">
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
             <span className="text-2xl font-black text-slate-900 dark:text-white font-mono tabular-nums">
               {summaryStats.overallPercent}%
             </span>
@@ -1458,7 +1458,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
         <button
           type="button"
           onClick={() => setStatusFilter((prev) => (prev === 'OVERLOAD' ? 'ALL' : 'OVERLOAD'))}
-          className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+          className={`min-w-0 p-3 sm:p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
             statusFilter === 'OVERLOAD'
               ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-500 ring-2 ring-rose-500/20'
               : summaryStats.overloadCount > 0
@@ -1466,13 +1466,13 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800'
           }`}
         >
-          <div className="flex items-center justify-between text-xs font-bold text-rose-600 dark:text-rose-400">
-            <span>{selectedArea === 'ALL' || selectedArea === 'Warehouse' ? 'RAK OVERLOAD (>100%)' : 'OVERLOAD (>100%)'}</span>
+          <div className="flex items-start justify-between gap-1 text-[11px] sm:text-xs font-bold text-rose-600 dark:text-rose-400 leading-tight">
+            <span className="min-w-0">{selectedArea === 'ALL' || selectedArea === 'Warehouse' ? 'RAK OVERLOAD (>100%)' : 'OVERLOAD (>100%)'}</span>
             <AlertTriangle
-              className={`w-4 h-4 ${summaryStats.overloadCount > 0 ? 'animate-bounce' : ''}`}
+              className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${summaryStats.overloadCount > 0 ? 'animate-bounce' : ''}`}
             />
           </div>
-          <div className="mt-1 text-2xl font-black text-rose-600 dark:text-rose-400 font-mono tabular-nums">
+          <div className="mt-1 text-xl sm:text-2xl font-black text-rose-600 dark:text-rose-400 font-mono tabular-nums">
             {summaryStats.overloadCount.toLocaleString('id-ID')}{' '}
             <span className="text-xs font-normal text-slate-400">rak</span>
           </div>
@@ -1487,17 +1487,17 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
           onClick={() =>
             setStatusFilter((prev) => (prev === 'WARNING_FULL' ? 'ALL' : 'WARNING_FULL'))
           }
-          className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+          className={`min-w-0 p-3 sm:p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
             statusFilter === 'WARNING_FULL'
               ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-500 ring-2 ring-amber-500/20'
               : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-amber-400'
           }`}
         >
-          <div className="flex items-center justify-between text-xs font-bold text-amber-600 dark:text-amber-400">
-            <span>HAMPIR PENUH (75-100%)</span>
-            <Package className="w-4 h-4" />
+          <div className="flex items-start justify-between gap-1 text-[11px] sm:text-xs font-bold text-amber-600 dark:text-amber-400 leading-tight">
+            <span className="min-w-0">HAMPIR PENUH (75-100%)</span>
+            <Package className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
           </div>
-          <div className="mt-1 text-2xl font-black text-amber-600 dark:text-amber-400 font-mono tabular-nums">
+          <div className="mt-1 text-xl sm:text-2xl font-black text-amber-600 dark:text-amber-400 font-mono tabular-nums">
             {summaryStats.warningFullCount.toLocaleString('id-ID')}{' '}
             <span className="text-xs font-normal text-slate-400">rak</span>
           </div>
@@ -1510,21 +1510,21 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
         <button
           type="button"
           onClick={() => setStatusFilter((prev) => (prev === 'SAFE' ? 'ALL' : 'SAFE'))}
-          className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+          className={`min-w-0 p-3 sm:p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
             statusFilter === 'SAFE'
               ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 ring-2 ring-emerald-500/20'
               : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-emerald-400'
           }`}
         >
-          <div className="flex items-center justify-between text-xs font-bold text-emerald-600 dark:text-emerald-400">
-            <span>TERSEDIA / LONGGAR</span>
-            <CheckCircle2 className="w-4 h-4" />
+          <div className="flex items-start justify-between gap-1 text-[11px] sm:text-xs font-bold text-emerald-600 dark:text-emerald-400 leading-tight">
+            <span className="min-w-0">TERSEDIA / LONGGAR</span>
+            <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
           </div>
-          <div className="mt-1 text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono tabular-nums">
+          <div className="mt-1 text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono tabular-nums">
             {summaryStats.safeCount.toLocaleString('id-ID')}{' '}
             <span className="text-xs font-normal text-slate-400">rak</span>
           </div>
-          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+          <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 leading-tight">
             {selectedArea === 'ALL' || selectedArea === 'Warehouse' ? 'Rak A–D terisi 1% – 74%' : 'Terisi 1% – 74%'}
           </div>
         </button>
@@ -1533,17 +1533,17 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
         <button
           type="button"
           onClick={() => setStatusFilter((prev) => (prev === 'EMPTY' ? 'ALL' : 'EMPTY'))}
-          className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+          className={`min-w-0 p-3 sm:p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
             statusFilter === 'EMPTY'
               ? 'bg-slate-100 dark:bg-slate-800 border-slate-900 dark:border-white'
               : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-slate-400'
           }`}
         >
-          <div className="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400">
-            <span>{selectedArea === 'ALL' || selectedArea === 'Warehouse' ? 'RAK KOSONG (0%)' : 'KOSONG (0%)'}</span>
-            <MapPin className="w-4 h-4" />
+          <div className="flex items-start justify-between gap-1 text-[11px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 leading-tight">
+            <span className="min-w-0">{selectedArea === 'ALL' || selectedArea === 'Warehouse' ? 'RAK KOSONG (0%)' : 'KOSONG (0%)'}</span>
+            <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
           </div>
-          <div className="mt-1 text-2xl font-black text-slate-800 dark:text-slate-100 font-mono tabular-nums">
+          <div className="mt-1 text-xl sm:text-2xl font-black text-slate-800 dark:text-slate-100 font-mono tabular-nums">
             {summaryStats.emptyCount.toLocaleString('id-ID')}{' '}
             <span className="text-xs font-normal text-slate-400">rak</span>
           </div>
@@ -1557,11 +1557,11 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
           1.1 STATUS KAPASITAS MASING-MASING KATEGORI PENYIMPANAN
           (1. Rak ABCD · 2. Koli R,V,Z,X,CC,PMK,DF · 3. Blok F Studio,Shopee,TikTok,IGlive)
           ============================================================================ */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-              <span>Status Kapasitas Kategori Penyimpanan</span>
+      <div className="space-y-2 min-w-0">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 min-w-0">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2 min-w-0">
+            <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+              Status Kapasitas Kategori Penyimpanan
             </h3>
             <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
               (Klik kartu untuk memfilter tampilan rak secara spesifik)
@@ -1574,41 +1574,41 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 setSelectedArea('ALL');
                 setSelectedZoneId('ALL');
               }}
-              className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-1"
+              className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-1 self-start sm:self-auto shrink-0"
             >
-              <RotateCcw className="w-3 h-3" />
+              <RotateCcw className="w-3 h-3 shrink-0" />
               <span>Reset ke Semua Warehouse (Rak + Koli)</span>
             </button>
           )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 min-w-0">
           {/* Kategori 1: Kapasitas Penyimpanan Rak (ABCD) */}
           <div
             onClick={() => {
               setSelectedArea((prev) => (prev === 'RAK_ABCD' || prev === 'Warehouse' ? 'ALL' : 'RAK_ABCD'));
               setSelectedZoneId('ALL');
             }}
-            className={`p-3.5 rounded-2xl border transition-all text-left cursor-pointer flex flex-col justify-between shadow-2xs group ${
+            className={`min-w-0 p-3.5 rounded-2xl border transition-all text-left cursor-pointer flex flex-col justify-between shadow-2xs group ${
               selectedArea === 'RAK_ABCD' || selectedArea === 'Warehouse'
                 ? 'bg-blue-50/70 dark:bg-blue-950/40 border-blue-500 ring-2 ring-blue-500/20'
                 : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-600'
             }`}
           >
-            <div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
+            <div className="min-w-0">
+              <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                <div className="flex items-center gap-1.5 min-w-0">
                   <Layers className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                  <span className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">
+                  <span className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider truncate">
                     Penyimpanan Rak (ABCD)
                   </span>
                 </div>
-                <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300">
+                <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 shrink-0">
                   Utilitas Rak
                 </span>
               </div>
 
-              <div className="mt-2 flex items-baseline justify-between">
+              <div className="mt-2 flex items-baseline justify-between gap-2">
                 <span className="text-2xl font-black text-blue-600 dark:text-blue-400 font-mono tabular-nums">
                   {summaryStats.rak.overallPercent}%
                 </span>
@@ -1632,26 +1632,26 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               <div className="grid grid-cols-4 gap-1 mt-2.5 text-center">
                 <div className="p-1 rounded bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-mono text-[10px]">
                   <div className="font-extrabold">{summaryStats.rak.overloadCount}</div>
-                  <div className="text-[8px] uppercase">Overload</div>
+                  <div className="text-[8px] uppercase truncate">Overload</div>
                 </div>
                 <div className="p-1 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 font-mono text-[10px]">
                   <div className="font-extrabold">{summaryStats.rak.warningFullCount}</div>
-                  <div className="text-[8px] uppercase">Penuh</div>
+                  <div className="text-[8px] uppercase truncate">Penuh</div>
                 </div>
                 <div className="p-1 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-mono text-[10px]">
                   <div className="font-extrabold">{summaryStats.rak.safeCount}</div>
-                  <div className="text-[8px] uppercase">Tersedia</div>
+                  <div className="text-[8px] uppercase truncate">Tersedia</div>
                 </div>
                 <div className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono text-[10px]">
                   <div className="font-extrabold">{summaryStats.rak.emptyCount}</div>
-                  <div className="text-[8px] uppercase">Kosong</div>
+                  <div className="text-[8px] uppercase truncate">Kosong</div>
                 </div>
               </div>
             </div>
 
-            <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-2.5 flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-1.5">
-              <span>{summaryStats.rak.rackCount} rak utama</span>
-              <span className="font-bold text-blue-600 dark:text-blue-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
+            <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-2.5 flex items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-800/80 pt-1.5 min-w-0">
+              <span className="truncate">{summaryStats.rak.rackCount} rak utama</span>
+              <span className="font-bold text-blue-600 dark:text-blue-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5 shrink-0">
                 {selectedArea === 'RAK_ABCD' || selectedArea === 'Warehouse' ? '✓ Aktif' : 'Lihat Rak →'}
               </span>
             </div>
@@ -1663,26 +1663,26 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               setSelectedArea((prev) => (prev === 'KOLI_ALL' ? 'ALL' : 'KOLI_ALL'));
               setSelectedZoneId('ALL');
             }}
-            className={`p-3.5 rounded-2xl border transition-all text-left cursor-pointer flex flex-col justify-between shadow-2xs group ${
+            className={`min-w-0 p-3.5 rounded-2xl border transition-all text-left cursor-pointer flex flex-col justify-between shadow-2xs group ${
               selectedArea === 'KOLI_ALL' || selectedArea === 'Kolian' || selectedArea === 'Transit' || selectedArea === 'Perbaikan'
                 ? 'bg-amber-50/70 dark:bg-amber-950/40 border-amber-500 ring-2 ring-amber-500/20'
                 : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-amber-400 dark:hover:border-amber-600'
             }`}
           >
-            <div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
+            <div className="min-w-0">
+              <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                <div className="flex items-center gap-1.5 min-w-0">
                   <Boxes className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                  <span className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">
+                  <span className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider truncate">
                     Penyimpanan Koli
                   </span>
                 </div>
-                <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300">
+                <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 shrink-0">
                   R, V, Z, X, CC, PMK, DF
                 </span>
               </div>
 
-              <div className="mt-2 flex items-baseline justify-between">
+              <div className="mt-2 flex items-baseline justify-between gap-2">
                 <span className="text-2xl font-black text-amber-600 dark:text-amber-400 font-mono tabular-nums">
                   {summaryStats.koli.overallPercent}%
                 </span>
@@ -1706,28 +1706,28 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               <div className="grid grid-cols-4 gap-1 mt-2.5 text-center">
                 <div className="p-1 rounded bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-mono text-[10px]">
                   <div className="font-extrabold">{summaryStats.koli.overloadCount}</div>
-                  <div className="text-[8px] uppercase">Overload</div>
+                  <div className="text-[8px] uppercase truncate">Overload</div>
                 </div>
                 <div className="p-1 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 font-mono text-[10px]">
                   <div className="font-extrabold">{summaryStats.koli.warningFullCount}</div>
-                  <div className="text-[8px] uppercase">Penuh</div>
+                  <div className="text-[8px] uppercase truncate">Penuh</div>
                 </div>
                 <div className="p-1 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-mono text-[10px]">
                   <div className="font-extrabold">{summaryStats.koli.safeCount}</div>
-                  <div className="text-[8px] uppercase">Tersedia</div>
+                  <div className="text-[8px] uppercase truncate">Tersedia</div>
                 </div>
                 <div className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono text-[10px]">
                   <div className="font-extrabold">{summaryStats.koli.emptyCount}</div>
-                  <div className="text-[8px] uppercase">Kosong</div>
+                  <div className="text-[8px] uppercase truncate">Kosong</div>
                 </div>
               </div>
             </div>
 
-            <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-2.5 flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-1.5">
-              <span className="truncate">
+            <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-2.5 flex items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-800/80 pt-1.5 min-w-0">
+              <span className="truncate min-w-0 flex-1">
                 R/V/Z: {summaryStats.koli.breakdown.kolianFilled.toLocaleString('id-ID')} · X: {summaryStats.koli.breakdown.transitFilled.toLocaleString('id-ID')} · CC/PMK/DF: {summaryStats.koli.breakdown.perbaikanFilled.toLocaleString('id-ID')} pcs
               </span>
-              <span className="font-bold text-amber-600 dark:text-amber-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5 shrink-0 ml-1">
+              <span className="font-bold text-amber-600 dark:text-amber-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5 shrink-0">
                 {selectedArea === 'KOLI_ALL' ? '✓ Aktif' : 'Lihat Koli →'}
               </span>
             </div>
@@ -1739,26 +1739,26 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               setSelectedArea((prev) => (prev === 'BLOK_F' || prev === 'Blok F' ? 'ALL' : 'BLOK_F'));
               setSelectedZoneId('ALL');
             }}
-            className={`p-3.5 rounded-2xl border transition-all text-left cursor-pointer flex flex-col justify-between shadow-2xs group ${
+            className={`min-w-0 p-3.5 rounded-2xl border transition-all text-left cursor-pointer flex flex-col justify-between shadow-2xs group ${
               selectedArea === 'BLOK_F' || selectedArea === 'Blok F'
                 ? 'bg-purple-50/70 dark:bg-purple-950/40 border-purple-500 ring-2 ring-purple-500/20'
                 : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-purple-400 dark:hover:border-purple-600'
             }`}
           >
-            <div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
+            <div className="min-w-0">
+              <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                <div className="flex items-center gap-1.5 min-w-0">
                   <Sparkles className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                  <span className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">
+                  <span className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider truncate">
                     Kapasitas Blok F
                   </span>
                 </div>
-                <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300">
+                <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 shrink-0">
                   Area Terpisah
                 </span>
               </div>
 
-              <div className="mt-2 flex items-baseline justify-between">
+              <div className="mt-2 flex items-baseline justify-between gap-2">
                 <span className="text-2xl font-black text-purple-600 dark:text-purple-400 font-mono tabular-nums">
                   {summaryStats.blokF.overallPercent}%
                 </span>
@@ -1782,26 +1782,26 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               <div className="grid grid-cols-4 gap-1 mt-2.5 text-center">
                 <div className="p-1 rounded bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-mono text-[10px]">
                   <div className="font-extrabold">{summaryStats.blokF.overloadCount}</div>
-                  <div className="text-[8px] uppercase">Overload</div>
+                  <div className="text-[8px] uppercase truncate">Overload</div>
                 </div>
                 <div className="p-1 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 font-mono text-[10px]">
                   <div className="font-extrabold">{summaryStats.blokF.warningFullCount}</div>
-                  <div className="text-[8px] uppercase">Penuh</div>
+                  <div className="text-[8px] uppercase truncate">Penuh</div>
                 </div>
                 <div className="p-1 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-mono text-[10px]">
                   <div className="font-extrabold">{summaryStats.blokF.safeCount}</div>
-                  <div className="text-[8px] uppercase">Tersedia</div>
+                  <div className="text-[8px] uppercase truncate">Tersedia</div>
                 </div>
                 <div className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono text-[10px]">
                   <div className="font-extrabold">{summaryStats.blokF.emptyCount}</div>
-                  <div className="text-[8px] uppercase">Kosong</div>
+                  <div className="text-[8px] uppercase truncate">Kosong</div>
                 </div>
               </div>
             </div>
 
-            <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-2.5 flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-1.5">
-              <span>Shopee, TikTok, IGlive, Studio</span>
-              <span className="font-bold text-purple-600 dark:text-purple-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
+            <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-2.5 flex items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-800/80 pt-1.5 min-w-0">
+              <span className="truncate min-w-0 flex-1">Shopee, TikTok, IGlive, Studio</span>
+              <span className="font-bold text-purple-600 dark:text-purple-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5 shrink-0">
                 {selectedArea === 'BLOK_F' || selectedArea === 'Blok F' ? '✓ Aktif' : 'Lihat Blok F →'}
               </span>
             </div>
@@ -1812,9 +1812,9 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       {/* ============================================================================
           2. ZONE & CATEGORY PROGRESS CARDS (Lokasi A=Dress, B=Bottom, C=Top, D=Sale, dll)
           ============================================================================ */}
-      <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div>
+      <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 sm:p-4 space-y-3 min-w-0">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 min-w-0">
+          <div className="min-w-0">
             <h3 className="text-sm font-black text-slate-900 dark:text-white">
               Kapasitas Per Area &amp; Kategori Zona Rak
             </h3>
@@ -1844,7 +1844,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                   : 'bg-slate-50 dark:bg-[#0E1420] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
               }`}
             >
-              <ArrowRightLeft className="w-3.5 h-3.5" />
+              <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" />
               <span>
                 Rekomendasi Pindah Rak
                 {simulationMoves.length > 0 ? ` (${simulationMoves.length})` : ''}
@@ -1855,21 +1855,21 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               onClick={handleOpenSetupModal}
               className="px-3.5 py-1.5 text-xs font-extrabold bg-slate-900 dark:bg-amber-500 text-white dark:text-black rounded-xl hover:opacity-90 transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
             >
-              <Sliders className="w-3.5 h-3.5" />
+              <Sliders className="w-3.5 h-3.5 shrink-0" />
               <span>Setup Kapasitas &amp; Lokasi</span>
             </button>
           </div>
         </div>
 
         {/* Quick Area Filter Tabs */}
-        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap py-1 -mx-1 px-1 sm:mx-0 sm:px-0 sm:flex-wrap">
           <button
             type="button"
             onClick={() => {
               setSelectedArea('ALL');
               setSelectedZoneId('ALL');
             }}
-            className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer ${
+            className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer shrink-0 ${
               selectedArea === 'ALL'
                 ? 'bg-slate-900 text-white border-slate-900 dark:bg-amber-500 dark:text-black dark:border-amber-500 shadow-2xs'
                 : 'bg-slate-50 dark:bg-[#0E1420] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
@@ -1884,7 +1884,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               setSelectedArea((prev) => (prev === 'RAK_ABCD' || prev === 'Warehouse' ? 'ALL' : 'RAK_ABCD'));
               setSelectedZoneId('ALL');
             }}
-            className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer ${
+            className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer shrink-0 ${
               selectedArea === 'RAK_ABCD' || selectedArea === 'Warehouse'
                 ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
                 : 'bg-slate-50 dark:bg-[#0E1420] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
@@ -1899,7 +1899,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               setSelectedArea((prev) => (prev === 'KOLI_ALL' ? 'ALL' : 'KOLI_ALL'));
               setSelectedZoneId('ALL');
             }}
-            className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer ${
+            className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer shrink-0 ${
               selectedArea === 'KOLI_ALL' || selectedArea === 'Kolian' || selectedArea === 'Transit' || selectedArea === 'Perbaikan'
                 ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
                 : 'bg-slate-50 dark:bg-[#0E1420] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
@@ -1914,7 +1914,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               setSelectedArea((prev) => (prev === 'BLOK_F' || prev === 'Blok F' ? 'ALL' : 'BLOK_F'));
               setSelectedZoneId('ALL');
             }}
-            className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer ${
+            className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer shrink-0 ${
               selectedArea === 'BLOK_F' || selectedArea === 'Blok F'
                 ? 'bg-purple-600 text-white border-purple-600 shadow-2xs'
                 : 'bg-slate-50 dark:bg-[#0E1420] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
@@ -2550,10 +2550,10 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       {/* ============================================================================
           4. FILTER & VIEW MODE TOOLBAR (Search, Category Filter, Status Filter, Grid/Table Toggle)
           ============================================================================ */}
-      <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 space-y-3">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+      <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl p-3 sm:p-3.5 space-y-3 min-w-0 max-w-full overflow-hidden">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 sm:gap-3 min-w-0">
           {/* Search Input */}
-          <div className="relative flex-1 min-w-[240px]">
+          <div className="relative w-full lg:flex-1 min-w-0">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -2574,12 +2574,12 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
           </div>
 
           {/* Right Controls: Category Select, Refresh, Dual View Mode (Grid / Table) */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto min-w-0">
             {/* Category Filter */}
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="px-3 py-2 text-xs font-bold bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl text-slate-700 dark:text-slate-200 cursor-pointer"
+              className="w-full sm:w-auto max-w-full px-3 py-2 text-xs font-bold bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl text-slate-700 dark:text-slate-200 cursor-pointer truncate"
             >
               <option value="ALL">Semua Kategori ({availableCategories.length})</option>
               {availableCategories.map((cat) => (
@@ -2589,8 +2589,8 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               ))}
             </select>
 
-            {/* Status Filter Segmented Buttons */}
-            <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-[#0E1420] rounded-xl border border-slate-200 dark:border-slate-800">
+            {/* Status Filter Segmented Buttons (Swipeable on mobile to prevent >100vw overflow) */}
+            <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-[#0E1420] rounded-xl border border-slate-200 dark:border-slate-800 w-full sm:w-auto max-w-full overflow-x-auto no-scrollbar">
               {(
                 [
                   { id: 'ALL', label: 'Semua' },
@@ -2604,7 +2604,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                   key={st.id}
                   type="button"
                   onClick={() => setStatusFilter(st.id)}
-                  className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                  className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                     statusFilter === st.id
                       ? st.id === 'OVERLOAD'
                         ? 'bg-rose-600 text-white shadow-xs'
@@ -2618,29 +2618,29 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             </div>
 
             {/* Dual View Mode Toggle: Grid vs Table */}
-            <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-[#0E1420] rounded-xl border border-slate-200 dark:border-slate-800">
+            <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-[#0E1420] rounded-xl border border-slate-200 dark:border-slate-800 flex-1 sm:flex-initial">
               <button
                 type="button"
                 onClick={() => setViewMode('GRID')}
-                className={`px-2.5 py-1 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                className={`flex-1 sm:flex-initial justify-center px-2.5 py-1 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
                   viewMode === 'GRID'
                     ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
                 }`}
               >
-                <LayoutGrid className="w-3.5 h-3.5" />
+                <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
                 <span>Grid Visual</span>
               </button>
               <button
                 type="button"
                 onClick={() => setViewMode('TABLE')}
-                className={`px-2.5 py-1 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                className={`flex-1 sm:flex-initial justify-center px-2.5 py-1 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
                   viewMode === 'TABLE'
                     ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
                 }`}
               >
-                <List className="w-3.5 h-3.5" />
+                <List className="w-3.5 h-3.5 shrink-0" />
                 <span>Tabel Ringkas</span>
               </button>
             </div>
@@ -2650,7 +2650,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 type="button"
                 onClick={onRefreshStock}
                 disabled={isRefreshingStock}
-                className="px-3 py-2 text-xs font-extrabold bg-amber-500 hover:bg-amber-600 text-black rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 whitespace-nowrap"
+                className="px-3 py-2 text-xs font-extrabold bg-amber-500 hover:bg-amber-600 text-black rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 whitespace-nowrap shrink-0"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingStock ? 'animate-spin' : ''}`} />
                 <span className="hidden sm:inline">Sinkron Stok</span>

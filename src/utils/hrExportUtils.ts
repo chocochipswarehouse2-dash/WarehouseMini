@@ -13,12 +13,125 @@ export interface DetailTidakMasukItem {
   nik: string;
   nama: string;
   divisi: string;
-  kategori: string; // 'Bolos' | 'Cuti Tahunan' | 'Izin' | 'Sakit' | etc.
+  kategori: string; // 'Bolos (Tidak Absen Pulang)' | 'Bolos (Tidak Absen Datang)' | 'Cuti Tahunan' | 'Izin' | 'Sakit' | etc.
   isBolos: boolean;
+  jenisBolos?: 'TIDAK_ABSEN_PULANG' | 'TIDAK_ABSEN_DATANG';
+  jamMasuk?: string;
+  jamPulang?: string;
+  catatanAbsensi?: string;
   alasan: string;
   shiftJadwal: string;
   statusApproval: string;
   approvedBy: string;
+}
+
+/**
+ * Evaluates a PresensiRecord for audit:
+ * - Valid Masuk Kerja (Hadir) requires BOTH jam_masuk AND jam_pulang.
+ * - Has jam_masuk but NO jam_pulang -> Bolos (Tidak Absen Pulang), NOT counted as Masuk Kerja, log kept for audit.
+ * - No jam_masuk -> Bolos (Tidak Absen Datang).
+ */
+export function evaluatePresensiForAudit(p?: PresensiRecord | null): {
+  hasMasuk: boolean;
+  hasPulang: boolean;
+  isValidHadir: boolean;
+  isLeaveOrOff: boolean;
+  isBolosTidakAbsenPulang: boolean;
+  isBolosTidakAbsenDatang: boolean;
+  auditStatusLabel: string;
+  auditNote: string;
+} {
+  if (!p) {
+    return {
+      hasMasuk: false,
+      hasPulang: false,
+      isValidHadir: false,
+      isLeaveOrOff: false,
+      isBolosTidakAbsenPulang: false,
+      isBolosTidakAbsenDatang: true,
+      auditStatusLabel: 'Bolos (Tidak Absen Datang)',
+      auditNote: 'Tidak ada catatan absen datang & pulang',
+    };
+  }
+
+  const hasMasuk = Boolean(p.jam_masuk && p.jam_masuk.trim() !== '' && p.jam_masuk.trim() !== '-');
+  const hasPulang = Boolean(p.jam_pulang && p.jam_pulang.trim() !== '' && p.jam_pulang.trim() !== '-');
+
+  const sLower = (p.status || '').trim().toLowerCase();
+  if (['libur', 'off', 'cuti', 'izin', 'ijin', 'sakit'].some((k) => sLower.includes(k))) {
+    return {
+      hasMasuk,
+      hasPulang,
+      isValidHadir: false,
+      isLeaveOrOff: true,
+      isBolosTidakAbsenPulang: false,
+      isBolosTidakAbsenDatang: false,
+      auditStatusLabel: p.status || 'Izin/Cuti',
+      auditNote: p.catatan || '-',
+    };
+  }
+
+  if (sLower === 'alpha' || sLower.includes('bolos')) {
+    if (hasMasuk && !hasPulang) {
+      return {
+        hasMasuk,
+        hasPulang,
+        isValidHadir: false,
+        isLeaveOrOff: false,
+        isBolosTidakAbsenPulang: true,
+        isBolosTidakAbsenDatang: false,
+        auditStatusLabel: 'Bolos (Tidak Absen Pulang)',
+        auditNote: `Absen Masuk ${p.jam_masuk}, Tidak Absen Pulang${p.catatan ? ` | ${p.catatan}` : ''}`,
+      };
+    }
+    return {
+      hasMasuk,
+      hasPulang,
+      isValidHadir: false,
+      isLeaveOrOff: false,
+      isBolosTidakAbsenPulang: false,
+      isBolosTidakAbsenDatang: true,
+      auditStatusLabel: 'Bolos (Tidak Absen Datang)',
+      auditNote: p.catatan || 'Tidak melakukan absen datang',
+    };
+  }
+
+  if (hasMasuk && !hasPulang) {
+    return {
+      hasMasuk,
+      hasPulang,
+      isValidHadir: false,
+      isLeaveOrOff: false,
+      isBolosTidakAbsenPulang: true,
+      isBolosTidakAbsenDatang: false,
+      auditStatusLabel: 'Bolos (Tidak Absen Pulang)',
+      auditNote: `Absen Masuk ${p.jam_masuk}, Tidak Absen Pulang${p.catatan ? ` | ${p.catatan}` : ''}`,
+    };
+  }
+
+  if (!hasMasuk) {
+    return {
+      hasMasuk,
+      hasPulang,
+      isValidHadir: false,
+      isLeaveOrOff: false,
+      isBolosTidakAbsenPulang: false,
+      isBolosTidakAbsenDatang: true,
+      auditStatusLabel: 'Bolos (Tidak Absen Datang)',
+      auditNote: p.catatan ? `Tidak Absen Datang | ${p.catatan}` : 'Tidak melakukan absen datang & pulang',
+    };
+  }
+
+  return {
+    hasMasuk,
+    hasPulang,
+    isValidHadir: true,
+    isLeaveOrOff: false,
+    isBolosTidakAbsenPulang: false,
+    isBolosTidakAbsenDatang: false,
+    auditStatusLabel: p.status || 'Hadir',
+    auditNote: p.catatan || '-',
+  };
 }
 
 export interface DetailLemburExportItem {
@@ -47,6 +160,8 @@ export interface SummaryKaryawanRow {
   totalTidakMasuk: number;
   totalHariCuti: number;
   totalHariBolos: number;
+  totalBolosTidakAbsenPulang: number;
+  totalBolosTidakAbsenDatang: number;
   totalJamLembur: number;
   totalUangLembur: number;
   detailTidakMasukStr: string;
@@ -159,6 +274,18 @@ export function buildDetailedHrReport({
         .map((d) => ({ tanggal: d, shift: 'Reguler' }));
     }
 
+    // Ensure any date where employee tapped presensi is also evaluated if not in scheduledWorkDays
+    const scheduledDateSet = new Set(scheduledWorkDays.map((s) => s.tanggal));
+    myPresensi.forEach((p) => {
+      if (p.tanggal && !scheduledDateSet.has(p.tanggal)) {
+        const s = (p.shift || '').toLowerCase();
+        if (!s.includes('libur') && !s.includes('off')) {
+          scheduledDateSet.add(p.tanggal);
+          scheduledWorkDays.push({ tanggal: p.tanggal, shift: p.shift || 'Reguler' });
+        }
+      }
+    });
+
     // Sort scheduled dates ascending
     scheduledWorkDays.sort((a, b) => a.tanggal.localeCompare(b.tanggal));
 
@@ -175,11 +302,9 @@ export function buildDetailedHrReport({
 
     scheduledWorkDays.forEach((sched) => {
       const p = presensiByDate.get(sched.tanggal);
-      const isPresent = Boolean(
-        p && (p.jam_masuk || (p.status && !['libur', 'cuti', 'alpha'].includes(p.status.toLowerCase())))
-      );
+      const evalRes = evaluatePresensiForAudit(p);
 
-      if (isPresent && p) {
+      if (evalRes.isValidHadir && p) {
         totalHadir++;
         const sLower = (p.status || '').toLowerCase();
         const catatan = p.catatan || '';
@@ -187,13 +312,13 @@ export function buildDetailedHrReport({
           totalTerlambat++;
         }
       } else {
-        // TIDAK MASUK!
-        // Check if there is a cuti/izin/sakit request covering this date
+        // TIDAK DIHITUNG MASUK KERJA!
+        // Check if there is a cuti/izin/sakit request covering this date (only if they didn't tap partial check-in without checkout, or if they had official leave)
         const matchingCuti = myCuti.find(
           (c) => sched.tanggal >= c.tgl_mulai && sched.tanggal <= c.tgl_selesai
         );
 
-        if (matchingCuti) {
+        if (matchingCuti && !evalRes.isBolosTidakAbsenPulang) {
           const item: DetailTidakMasukItem = {
             no: tidakMasukGlobalIndex++,
             tanggal: sched.tanggal,
@@ -209,19 +334,46 @@ export function buildDetailedHrReport({
           };
           empTidakMasukItems.push(item);
           allTidakMasukItems.push(item);
-        } else {
-          // "Kl tidak ada absen = bolos"
+        } else if (evalRes.isBolosTidakAbsenPulang && p) {
+          // Bolos karena tidak melakukan absen pulang (catatan absensi masuk tetap disimpan untuk audit)
           const item: DetailTidakMasukItem = {
             no: tidakMasukGlobalIndex++,
             tanggal: sched.tanggal,
             nik: kNik,
             nama: kNama,
             divisi: kDivisi,
-            kategori: 'Bolos',
+            kategori: 'Bolos (Tidak Absen Pulang)',
             isBolos: true,
-            alasan: 'Tidak ada absen (Bolos)',
+            jenisBolos: 'TIDAK_ABSEN_PULANG',
+            jamMasuk: p.jam_masuk || '-',
+            jamPulang: 'Tidak Absen Pulang',
+            catatanAbsensi: p.catatan || '-',
+            alasan: `Absen Masuk (${p.jam_masuk || '-'}), Tidak Absen Pulang${p.catatan ? ` — Catatan: ${p.catatan}` : ''}`,
+            shiftJadwal: p.shift || sched.shift,
+            statusApproval: 'Bolos (Tidak Absen Pulang)',
+            approvedBy: '-',
+          };
+          empTidakMasukItems.push(item);
+          allTidakMasukItems.push(item);
+        } else {
+          // Bolos karena tidak melakukan absen datang
+          const item: DetailTidakMasukItem = {
+            no: tidakMasukGlobalIndex++,
+            tanggal: sched.tanggal,
+            nik: kNik,
+            nama: kNama,
+            divisi: kDivisi,
+            kategori: 'Bolos (Tidak Absen Datang)',
+            isBolos: true,
+            jenisBolos: 'TIDAK_ABSEN_DATANG',
+            jamMasuk: 'Tidak Absen Datang',
+            jamPulang: '-',
+            catatanAbsensi: p?.catatan || 'Tidak ada log tap presensi',
+            alasan: p?.catatan
+              ? `Tidak Absen Datang — Catatan: ${p.catatan}`
+              : 'Tidak melakukan absen datang & pulang (Bolos)',
             shiftJadwal: sched.shift,
-            statusApproval: 'Tanpa Izin',
+            statusApproval: 'Bolos (Tidak Absen Datang)',
             approvedBy: '-',
           };
           empTidakMasukItems.push(item);
@@ -262,6 +414,12 @@ export function buildDetailedHrReport({
     empTidakMasukItems.sort((a, b) => a.tanggal.localeCompare(b.tanggal));
 
     const totalHariBolos = empTidakMasukItems.filter((i) => i.isBolos).length;
+    const totalBolosTidakAbsenPulang = empTidakMasukItems.filter(
+      (i) => i.isBolos && i.jenisBolos === 'TIDAK_ABSEN_PULANG'
+    ).length;
+    const totalBolosTidakAbsenDatang = empTidakMasukItems.filter(
+      (i) => i.isBolos && i.jenisBolos !== 'TIDAK_ABSEN_PULANG'
+    ).length;
     const totalHariCuti = empTidakMasukItems.filter((i) => !i.isBolos).length;
     const totalTidakMasuk = empTidakMasukItems.length;
 
@@ -321,8 +479,9 @@ export function buildDetailedHrReport({
           .join('; ')
       : 'Nihil';
 
-    // Add presensi items to allPresensiItems
+    // Add presensi items to allPresensiItems (preserving raw log for audit with clear Bolos label)
     myPresensi.forEach((p) => {
+      const evalRes = evaluatePresensiForAudit(p);
       allPresensiItems.push({
         no: presensiGlobalIndex++,
         tanggal: p.tanggal,
@@ -330,9 +489,9 @@ export function buildDetailedHrReport({
         nama: kNama,
         divisi: kDivisi,
         shift: p.shift || '-',
-        jamMasuk: p.jam_masuk || '-',
-        jamPulang: p.jam_pulang || '-',
-        status: p.status || '-',
+        jamMasuk: p.jam_masuk || 'Tidak Absen Datang',
+        jamPulang: p.jam_pulang || (evalRes.isBolosTidakAbsenPulang ? 'Tidak Absen Pulang' : '-'),
+        status: evalRes.auditStatusLabel,
         catatan: p.catatan || '-',
       });
     });
@@ -348,6 +507,8 @@ export function buildDetailedHrReport({
       totalTidakMasuk,
       totalHariCuti,
       totalHariBolos,
+      totalBolosTidakAbsenPulang,
+      totalBolosTidakAbsenDatang,
       totalJamLembur,
       totalUangLembur,
       detailTidakMasukStr,
@@ -387,6 +548,7 @@ export function exportHrReportToXlsx({
     ['REKAPITULASI LAPORAN KARYAWAN WMS'],
     [`Periode: ${startDate} s/d ${endDate}`],
     [`Dicetak pada: ${new Date().toLocaleString('id-ID')}`],
+    ['Catatan Audit: Karyawan yang tidak melakukan absen pulang ditandai sebagai BOLOS dan tidak dihitung masuk kerja, namun catatan absensi tetap tersimpan untuk audit.'],
     [], // empty row
     [
       'No',
@@ -394,14 +556,16 @@ export function exportHrReportToXlsx({
       'Nama Karyawan',
       'Divisi',
       'Jadwal Kerja (Hari)',
-      'Total Hadir (Hari)',
+      'Total Hadir Lengkap (Hari)',
       'Terlambat (Kali)',
       'Total Tidak Masuk (Hari)',
       'Cuti / Izin Resmi (Hari)',
-      'Bolos / Tanpa Absen (Hari)',
+      'Total Bolos (Hari)',
+      'Bolos Tidak Absen Pulang (Hari)',
+      'Bolos Tidak Absen Datang (Hari)',
       'Total Lembur ACC (Jam)',
       'Est. Upah Lembur (Rp)',
-      'Rincian Tanggal Tidak Masuk & Alasan',
+      'Rincian Tanggal Tidak Masuk & Alasan Audit',
       'Rincian Cuti (Tanggal, Jenis & Alasan)',
       'Rincian Lembur (Tanggal, Jam, Tugas & Status)',
     ],
@@ -413,6 +577,8 @@ export function exportHrReportToXlsx({
   let sumTidakMasuk = 0;
   let sumCuti = 0;
   let sumBolos = 0;
+  let sumBolosTidakPulang = 0;
+  let sumBolosTidakDatang = 0;
   let sumJamLembur = 0;
   let sumUangLembur = 0;
 
@@ -423,6 +589,8 @@ export function exportHrReportToXlsx({
     sumTidakMasuk += row.totalTidakMasuk;
     sumCuti += row.totalHariCuti;
     sumBolos += row.totalHariBolos;
+    sumBolosTidakPulang += row.totalBolosTidakAbsenPulang;
+    sumBolosTidakDatang += row.totalBolosTidakAbsenDatang;
     sumJamLembur += row.totalJamLembur;
     sumUangLembur += row.totalUangLembur;
 
@@ -437,6 +605,8 @@ export function exportHrReportToXlsx({
       row.totalTidakMasuk,
       row.totalHariCuti,
       row.totalHariBolos,
+      row.totalBolosTidakAbsenPulang,
+      row.totalBolosTidakAbsenDatang,
       row.totalJamLembur,
       row.totalUangLembur,
       row.detailTidakMasukStr,
@@ -457,6 +627,8 @@ export function exportHrReportToXlsx({
     sumTidakMasuk,
     sumCuti,
     sumBolos,
+    sumBolosTidakPulang,
+    sumBolosTidakDatang,
     sumJamLembur,
     sumUangLembur,
     '',
@@ -471,26 +643,28 @@ export function exportHrReportToXlsx({
     { wch: 24 }, // Nama
     { wch: 15 }, // Divisi
     { wch: 18 }, // Jadwal
-    { wch: 18 }, // Hadir
+    { wch: 22 }, // Hadir Lengkap
     { wch: 16 }, // Terlambat
     { wch: 22 }, // Total Tidak Masuk
     { wch: 22 }, // Cuti
-    { wch: 24 }, // Bolos
+    { wch: 18 }, // Total Bolos
+    { wch: 26 }, // Bolos Tidak Absen Pulang
+    { wch: 26 }, // Bolos Tidak Absen Datang
     { wch: 22 }, // Lembur Jam
     { wch: 22 }, // Upah Lembur
-    { wch: 55 }, // Rincian Tidak Masuk
+    { wch: 60 }, // Rincian Tidak Masuk
     { wch: 45 }, // Rincian Cuti
     { wch: 55 }, // Rincian Lembur
   ];
   XLSX.utils.book_append_sheet(wb, ws1, 'Rekap Karyawan');
 
   // ----------------------------------------------------
-  // SHEET 2: DETAIL TIDAK MASUK & CUTI
+  // SHEET 2: DETAIL TIDAK MASUK & CUTI (AUDIT BOLOS)
   // ----------------------------------------------------
   const sheet2Data: any[][] = [
-    ['RINCIAN DETAIL KETIDAKHADIRAN & CUTI KARYAWAN'],
+    ['RINCIAN DETAIL KETIDAKHADIRAN, AUDIT BOLOS & CUTI KARYAWAN'],
     [`Periode: ${startDate} s/d ${endDate}`],
-    ['Catatan: Sesuai SOP, jika jadwal kerja aktif tanpa absen & tanpa surat izin = Bolos'],
+    ['Catatan SOP: Tidak absen datang ATAU tidak absen pulang = BOLOS (tidak dihitung masuk kerja). Catatan tap absensi tetap ditampilkan untuk audit.'],
     [],
     [
       'No',
@@ -499,8 +673,10 @@ export function exportHrReportToXlsx({
       'Nama Karyawan',
       'Divisi',
       'Kategori',
-      'Status Kehadiran / Keterangan',
-      'Alasan / Surat Keterangan',
+      'Status Audit Kehadiran',
+      'Jam Masuk (Audit)',
+      'Jam Pulang (Audit)',
+      'Alasan / Catatan Log Presensi',
       'Jadwal Shift',
       'Status Approval',
       'Disetujui Oleh',
@@ -508,7 +684,7 @@ export function exportHrReportToXlsx({
   ];
 
   if (data.allTidakMasukItems.length === 0) {
-    sheet2Data.push(['-', '-', '-', '-', '-', 'Nihil', 'Seluruh karyawan hadir lengkap sesuai jadwal', '-', '-', '-', '-']);
+    sheet2Data.push(['-', '-', '-', '-', '-', 'Nihil', 'Seluruh karyawan hadir lengkap (datang & pulang) sesuai jadwal', '-', '-', '-', '-', '-', '-']);
   } else {
     data.allTidakMasukItems.forEach((item, idx) => {
       sheet2Data.push([
@@ -518,7 +694,13 @@ export function exportHrReportToXlsx({
         item.nama,
         item.divisi,
         item.kategori,
-        item.isBolos ? 'BOLOS (Tanpa Absen)' : 'Cuti / Izin',
+        item.isBolos
+          ? item.jenisBolos === 'TIDAK_ABSEN_PULANG'
+            ? 'BOLOS (Tidak Absen Pulang)'
+            : 'BOLOS (Tidak Absen Datang)'
+          : 'Cuti / Izin Resmi',
+        item.jamMasuk || '-',
+        item.jamPulang || '-',
         item.alasan,
         item.shiftJadwal,
         item.statusApproval,
@@ -534,11 +716,13 @@ export function exportHrReportToXlsx({
     { wch: 12 }, // NIK
     { wch: 24 }, // Nama
     { wch: 15 }, // Divisi
-    { wch: 18 }, // Kategori
-    { wch: 26 }, // Status
-    { wch: 40 }, // Alasan
+    { wch: 26 }, // Kategori
+    { wch: 28 }, // Status
+    { wch: 20 }, // Jam Masuk
+    { wch: 20 }, // Jam Pulang
+    { wch: 50 }, // Alasan / Catatan
     { wch: 16 }, // Shift
-    { wch: 18 }, // Status Approval
+    { wch: 24 }, // Status Approval
     { wch: 18 }, // Disetujui Oleh
   ];
   XLSX.utils.book_append_sheet(wb, ws2, 'Detail Tidak Masuk & Cuti');

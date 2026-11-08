@@ -32,6 +32,8 @@ import {
   Settings2,
   ExternalLink,
   Compass,
+  Search,
+  Filter,
 } from 'lucide-react';
 import {
   UserSession,
@@ -63,6 +65,7 @@ import {
 } from '../../services/supabase';
 import { playSuccessBeep, playErrorBeep } from '../../services/audio';
 import { calculateKpiAbsensi } from '../../utils/kpiCalculator';
+import { evaluatePresensiForAudit } from '../../utils/hrExportUtils';
 import {
   getPresensiLocationConfig,
   savePresensiLocationConfig,
@@ -162,6 +165,18 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
   const [loadingLog, setLoadingLog] = useState<boolean>(false);
   const [editingPresensiId, setEditingPresensiId] = useState<number | string | null>(null);
   const [editPresensiData, setEditPresensiData] = useState<Partial<PresensiRecord>>({});
+
+  // Filter & Search States for Log Presensi
+  const [logSearchQuery, setLogSearchQuery] = useState<string>('');
+  const [logStartDate, setLogStartDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return formatTodayIso(d);
+  });
+  const [logEndDate, setLogEndDate] = useState<string>(() => formatTodayIso());
+  const [logNikFilter, setLogNikFilter] = useState<string>('ALL');
+  const [logShiftFilter, setLogShiftFilter] = useState<string>('ALL');
+  const [logStatusFilter, setLogStatusFilter] = useState<string>('ALL');
 
   const [loading, setLoading] = useState<boolean>(true);
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -275,10 +290,9 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
   const loadLogData = useCallback(async () => {
     setLoadingLog(true);
     try {
-      const d = new Date();
-      d.setDate(d.getDate() - 30);
-      const start = d.toISOString().slice(0, 10);
-      const data = await fetchPresensiRange(start, todayIso);
+      const start = logStartDate || todayIso;
+      const end = logEndDate || todayIso;
+      const data = await fetchPresensiRange(start <= end ? start : end, start <= end ? end : start);
       setLogRecords(data);
       setLogVisibleCount(100);
     } catch (e) {
@@ -286,13 +300,97 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
     } finally {
       setLoadingLog(false);
     }
-  }, [todayIso]);
+  }, [logStartDate, logEndDate, todayIso]);
 
   useEffect(() => {
     if (activeTab === 'log') {
       loadLogData();
     }
   }, [activeTab, loadLogData]);
+
+  const setLogDatePreset = (preset: 'today' | '7d' | '30d' | 'this_month') => {
+    const now = new Date();
+    const end = formatTodayIso(now);
+    if (preset === 'today') {
+      setLogStartDate(end);
+      setLogEndDate(end);
+    } else if (preset === '7d') {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 7);
+      setLogStartDate(formatTodayIso(d));
+      setLogEndDate(end);
+    } else if (preset === '30d') {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 30);
+      setLogStartDate(formatTodayIso(d));
+      setLogEndDate(end);
+    } else if (preset === 'this_month') {
+      const d = new Date(now.getFullYear(), now.getMonth(), 1);
+      setLogStartDate(formatTodayIso(d));
+      setLogEndDate(end);
+    }
+  };
+
+  const logShiftOptions = useMemo(() => {
+    const set = new Set<string>();
+    logRecords.forEach((r) => {
+      if (r.shift && r.shift.trim()) set.add(r.shift.trim());
+    });
+    return Array.from(set).sort();
+  }, [logRecords]);
+
+  const filteredLogRecords = useMemo(() => {
+    const q = logSearchQuery.trim().toLowerCase();
+    return logRecords.filter((r) => {
+      if (logStartDate && r.tanggal < logStartDate) return false;
+      if (logEndDate && r.tanggal > logEndDate) return false;
+      if (logNikFilter !== 'ALL' && String(r.nik || '').toUpperCase() !== logNikFilter.toUpperCase()) {
+        return false;
+      }
+      if (logShiftFilter !== 'ALL' && (r.shift || '').toLowerCase() !== logShiftFilter.toLowerCase()) {
+        return false;
+      }
+      const evalRes = evaluatePresensiForAudit(r);
+      if (logStatusFilter !== 'ALL') {
+        if (logStatusFilter === 'BOLOS_SEMUA') {
+          if (!evalRes.isBolosTidakAbsenPulang && !evalRes.isBolosTidakAbsenDatang) return false;
+        } else if (logStatusFilter === 'BOLOS_TIDAK_PULANG' || logStatusFilter === 'BELUM_PULANG') {
+          if (!evalRes.isBolosTidakAbsenPulang) return false;
+        } else if (logStatusFilter === 'BOLOS_TIDAK_DATANG') {
+          if (!evalRes.isBolosTidakAbsenDatang) return false;
+        } else if (
+          (r.status || '').toLowerCase() !== logStatusFilter.toLowerCase() &&
+          evalRes.auditStatusLabel.toLowerCase() !== logStatusFilter.toLowerCase()
+        ) {
+          return false;
+        }
+      }
+      if (q) {
+        const resolvedName =
+          r.nama && r.nama.trim().toLowerCase() !== String(r.nik || '').trim().toLowerCase()
+            ? r.nama
+            : getUserPersonName(r.nik, r.nama || r.nik);
+        const matchName = (resolvedName || '').toLowerCase().includes(q);
+        const matchNik = String(r.nik || '').toLowerCase().includes(q);
+        const matchTanggal = String(r.tanggal || '').toLowerCase().includes(q);
+        const matchShift = String(r.shift || '').toLowerCase().includes(q);
+        const matchStatus =
+          String(r.status || '').toLowerCase().includes(q) ||
+          evalRes.auditStatusLabel.toLowerCase().includes(q);
+        const matchCatatan = String(r.catatan || '').toLowerCase().includes(q);
+        if (!matchName && !matchNik && !matchTanggal && !matchShift && !matchStatus && !matchCatatan) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [logRecords, logStartDate, logEndDate, logNikFilter, logShiftFilter, logStatusFilter, logSearchQuery]);
+
+  const hasActiveLogFilter =
+    Boolean(logSearchQuery.trim()) ||
+    logNikFilter !== 'ALL' ||
+    logShiftFilter !== 'ALL' ||
+    logStatusFilter !== 'ALL';
 
   // Load My KPI Data for this month (without depending on karyawanList state to avoid double-fetch cascade)
   const loadMyKpi = useCallback(async () => {
@@ -1584,23 +1682,226 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
 
       {/* ================= TAB 4: LOG PRESENSI ================= */}
       {activeTab === 'log' && (
-        <div className="bg-white dark:bg-[#131d31] rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
-              Riwayat Log Presensi (30 Hari Terakhir)
-            </h2>
-            <button
-              onClick={loadLogData}
-              disabled={loadingLog}
-              className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl"
-            >
-              <RotateCcw className={`w-4 h-4 ${loadingLog ? 'animate-spin' : ''}`} />
-            </button>
+        <div className="bg-white dark:bg-[#131d31] rounded-3xl p-4 sm:p-6 shadow-sm border border-slate-200 dark:border-slate-800 space-y-4">
+          {/* Header & Quick Date Presets */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+            <div>
+              <h2 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                <FileText className="w-4 h-4 text-primary-500" />
+                <span>Riwayat Log Presensi</span>
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-primary-50 dark:bg-primary-950/60 text-primary-600 dark:text-primary-400 font-mono">
+                  {filteredLogRecords.length}
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Periode {logStartDate} s/d {logEndDate} • Total {logRecords.length} rekaman dimuat
+              </p>
+            </div>
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setLogDatePreset('today')}
+                className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition cursor-pointer ${
+                  logStartDate === todayIso && logEndDate === todayIso
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                Hari Ini
+              </button>
+              <button
+                type="button"
+                onClick={() => setLogDatePreset('7d')}
+                className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
+              >
+                7 Hari
+              </button>
+              <button
+                type="button"
+                onClick={() => setLogDatePreset('30d')}
+                className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
+              >
+                30 Hari
+              </button>
+              <button
+                type="button"
+                onClick={() => setLogDatePreset('this_month')}
+                className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
+              >
+                Bulan Ini
+              </button>
+              <button
+                type="button"
+                onClick={loadLogData}
+                disabled={loadingLog}
+                title="Refresh Data Log Presensi"
+                className="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-white bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl cursor-pointer transition"
+              >
+                <RotateCcw className={`w-4 h-4 ${loadingLog ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </div>
+
+          {/* Search & Filter Toolbar */}
+          <div className="bg-slate-50/80 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-3.5 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5 text-xs">
+              {/* Search Keyword */}
+              <div className="sm:col-span-2">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                  Cari Nama / NIK / Catatan
+                </label>
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={logSearchQuery}
+                    onChange={(e) => {
+                      setLogSearchQuery(e.target.value);
+                      setLogVisibleCount(100);
+                    }}
+                    placeholder="Ketik nama karyawan, NIK, shift, status, atau lokasi..."
+                    className="w-full pl-8 pr-8 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  {logSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setLogSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                      title="Bersihkan pencarian"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Dari Tanggal */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                  Dari Tanggal
+                </label>
+                <input
+                  type="date"
+                  value={logStartDate}
+                  onChange={(e) => setLogStartDate(e.target.value)}
+                  className="w-full px-2.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Sampai Tanggal */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                  Sampai Tanggal
+                </label>
+                <input
+                  type="date"
+                  value={logEndDate}
+                  onChange={(e) => setLogEndDate(e.target.value)}
+                  className="w-full px-2.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Filter Karyawan */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                  Karyawan
+                </label>
+                <select
+                  value={logNikFilter}
+                  onChange={(e) => {
+                    setLogNikFilter(e.target.value);
+                    setLogVisibleCount(100);
+                  }}
+                  className="w-full px-2.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 truncate"
+                >
+                  <option value="ALL">Semua Karyawan</option>
+                  {karyawanList.map((k) => (
+                    <option key={k.nik} value={k.nik}>
+                      {k.nama} ({k.nik})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filter Shift & Status */}
+              <div className="grid grid-cols-2 gap-1.5">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                    Shift
+                  </label>
+                  <select
+                    value={logShiftFilter}
+                    onChange={(e) => {
+                      setLogShiftFilter(e.target.value);
+                      setLogVisibleCount(100);
+                    }}
+                    className="w-full px-2 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="ALL">Semua</option>
+                    {logShiftOptions.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                    Status
+                  </label>
+                  <select
+                    value={logStatusFilter}
+                    onChange={(e) => {
+                      setLogStatusFilter(e.target.value);
+                      setLogVisibleCount(100);
+                    }}
+                    className="w-full px-2 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="ALL">Semua</option>
+                    <option value="Hadir">Hadir (Lengkap Masuk & Pulang)</option>
+                    <option value="Tepat Waktu">Tepat Waktu</option>
+                    <option value="Terlambat">Terlambat</option>
+                    <option value="BOLOS_SEMUA">Bolos (Semua Audit Bolos)</option>
+                    <option value="BOLOS_TIDAK_PULANG">Bolos (Tidak Absen Pulang)</option>
+                    <option value="BOLOS_TIDAK_DATANG">Bolos (Tidak Absen Datang)</option>
+                    <option value="Izin">Izin</option>
+                    <option value="Cuti">Cuti</option>
+                    <option value="Sakit">Sakit</option>
+                    <option value="Alpha">Alpha</option>
+                    <option value="Libur">Libur</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {hasActiveLogFilter && (
+              <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-slate-800 text-[11px]">
+                <span className="text-slate-500 dark:text-slate-400">
+                  Menampilkan <b className="text-slate-800 dark:text-white">{filteredLogRecords.length}</b> dari{' '}
+                  <b>{logRecords.length}</b> data presensi
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLogSearchQuery('');
+                    setLogNikFilter('ALL');
+                    setLogShiftFilter('ALL');
+                    setLogStatusFilter('ALL');
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-rose-600 dark:text-rose-400 font-bold hover:bg-rose-50 dark:hover:bg-rose-950/30 transition cursor-pointer flex items-center gap-1"
+                >
+                  <X className="w-3 h-3" />
+                  <span>Reset Filter</span>
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs whitespace-nowrap text-slate-900 dark:text-white">
-              <thead className="bg-slate-50 dark:bg-slate-900/50">
+              <thead className="bg-slate-50 dark:bg-slate-900/50 text-[11px] font-extrabold uppercase tracking-wider text-slate-400 border-b border-slate-200 dark:border-slate-800">
                 <tr>
                   <th className="p-3">Tanggal</th>
                   <th className="p-3">NIK</th>
@@ -1608,20 +1909,29 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                   <th className="p-3">Shift</th>
                   <th className="p-3">Jam Masuk</th>
                   <th className="p-3">Jam Pulang</th>
-                  <th className="p-3">Status</th>
+                  <th className="p-3">Status Audit</th>
+                  <th className="p-3">Catatan Absensi (Audit)</th>
                   {userIsAdmin && <th className="p-3">Aksi</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {logRecords.slice(0, logVisibleCount).map((r, i) => (
-                  <tr key={r.id || i}>
-                    <td className="p-3">{r.tanggal}</td>
-                    <td className="p-3">{r.nik}</td>
-                    <td className="p-3">
-                      {r.nama && r.nama.trim().toLowerCase() !== r.nik.trim().toLowerCase()
-                        ? r.nama
-                        : getUserPersonName(r.nik, r.nama || r.nik)}
-                    </td>
+                {filteredLogRecords.slice(0, logVisibleCount).map((r, i) => {
+                  const evalRes = evaluatePresensiForAudit(r);
+                  const isBolosAudit = evalRes.isBolosTidakAbsenPulang || evalRes.isBolosTidakAbsenDatang;
+                  return (
+                    <tr
+                      key={r.id || i}
+                      className={`hover:bg-slate-50/70 dark:hover:bg-slate-900/40 transition-colors ${
+                        isBolosAudit ? 'bg-rose-50/30 dark:bg-rose-950/10' : ''
+                      }`}
+                    >
+                      <td className="p-3 font-mono font-bold">{r.tanggal}</td>
+                      <td className="p-3 font-mono text-slate-500 dark:text-slate-400">{r.nik}</td>
+                      <td className="p-3 font-bold">
+                        {r.nama && r.nama.trim().toLowerCase() !== r.nik.trim().toLowerCase()
+                          ? r.nama
+                          : getUserPersonName(r.nik, r.nama || r.nik)}
+                      </td>
                     {editingPresensiId === r.id ? (
                       <>
                         <td className="p-3">
@@ -1670,6 +1980,15 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                             <option value="Libur">Libur</option>
                           </select>
                         </td>
+                        <td className="p-3">
+                          <input
+                            type="text"
+                            value={editPresensiData.catatan || ''}
+                            onChange={(e) => setEditPresensiData({ ...editPresensiData, catatan: e.target.value })}
+                            placeholder="Catatan..."
+                            className="border p-1.5 rounded-lg text-xs w-40 bg-white dark:bg-slate-900"
+                          />
+                        </td>
                         <td className="p-3 flex items-center gap-1.5">
                           <button
                             onClick={async () => {
@@ -1695,12 +2014,55 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                     ) : (
                       <>
                         <td className="p-3">{r.shift}</td>
-                        <td className="p-3 font-mono">{r.jam_masuk || '-'}</td>
-                        <td className="p-3 font-mono">{r.jam_pulang || '-'}</td>
+                        <td className="p-3 font-mono font-bold">
+                          {evalRes.hasMasuk ? (
+                            <span className="text-emerald-600 dark:text-emerald-400">{r.jam_masuk}</span>
+                          ) : evalRes.isBolosTidakAbsenDatang ? (
+                            <span className="px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 text-[10px] font-bold">
+                              Tidak Absen Datang
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">-</span>
+                          )}
+                        </td>
+                        <td className="p-3 font-mono">
+                          {evalRes.hasPulang ? (
+                            <span className="font-bold">{r.jam_pulang}</span>
+                          ) : evalRes.isBolosTidakAbsenPulang ? (
+                            <span
+                              className="px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 text-[10px] font-bold"
+                              title="Karyawan melakukan tap masuk namun tidak melakukan absen pulang -> Ditandai Bolos (Tidak dihitung masuk kerja)"
+                            >
+                              Tidak Absen Pulang
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">-</span>
+                          )}
+                        </td>
                         <td className="p-3">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${r.status === 'Hadir' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700'}`}>
-                            {r.status}
-                          </span>
+                          <div className="flex flex-col items-start gap-0.5">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                isBolosAudit
+                                  ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60'
+                                  : evalRes.isValidHadir && (r.status === 'Hadir' || r.status === 'Tepat Waktu')
+                                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                  : evalRes.isValidHadir && r.status === 'Terlambat'
+                                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
+                                  : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                              }`}
+                            >
+                              {evalRes.auditStatusLabel}
+                            </span>
+                            {evalRes.isBolosTidakAbsenPulang && r.status && (
+                              <span className="text-[9px] text-slate-400">
+                                Log awal: {r.status} (Tap Masuk {r.jam_masuk})
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-3 text-slate-500 dark:text-slate-400 max-w-xs truncate" title={r.catatan || ''}>
+                          {r.catatan || '-'}
                         </td>
                         {userIsAdmin && (
                           <td className="p-3">
@@ -1710,15 +2072,22 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                       </>
                     )}
                   </tr>
-                ))}
-                {logRecords.length === 0 && !loadingLog && (
-                  <tr><td colSpan={8} className="text-center p-4 text-slate-400">Tidak ada log data presensi</td></tr>
+                );
+              })}
+                {filteredLogRecords.length === 0 && !loadingLog && (
+                  <tr>
+                    <td colSpan={userIsAdmin ? 9 : 8} className="text-center p-8 text-slate-400">
+                      {hasActiveLogFilter
+                        ? 'Tidak ada data log presensi yang cocok dengan filter pencarian.'
+                        : 'Tidak ada log data presensi pada periode ini.'}
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
-            {logRecords.length > logVisibleCount && (
+            {filteredLogRecords.length > logVisibleCount && (
               <div className="pt-4 flex items-center justify-between text-xs text-slate-500">
-                <span>Menampilkan {logVisibleCount} dari {logRecords.length} log presensi</span>
+                <span>Menampilkan {logVisibleCount} dari {filteredLogRecords.length} log presensi</span>
                 <button
                   type="button"
                   onClick={() => setLogVisibleCount((prev) => prev + 100)}

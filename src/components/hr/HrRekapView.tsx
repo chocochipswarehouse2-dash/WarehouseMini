@@ -63,6 +63,7 @@ import {
   buildDetailedHrReport,
   exportHrReportToXlsx,
   exportHrReportToCsv,
+  evaluatePresensiForAudit,
   SummaryKaryawanRow,
 } from '../../utils/hrExportUtils';
 
@@ -92,6 +93,8 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
   const [selectedNik, setSelectedNik] = useState<string>('ALL');
   const [selectedDivisi, setSelectedDivisi] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [presensiShiftFilter, setPresensiShiftFilter] = useState<string>('ALL');
+  const [presensiStatusFilter, setPresensiStatusFilter] = useState<string>('ALL');
   const [activeTab, setActiveTab] = useState<'ringkasan' | 'kpi' | 'lembur' | 'cuti' | 'absensi'>('ringkasan');
   const [loading, setLoading] = useState<boolean>(false);
 
@@ -393,6 +396,14 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
     });
   }, [cutiList, startDate, endDate, selectedNik, selectedDivisi, searchQuery, karyawanList]);
 
+  const presensiShiftOptions = useMemo(() => {
+    const set = new Set<string>();
+    presensiList.forEach((p) => {
+      if (p.shift && p.shift.trim()) set.add(p.shift.trim());
+    });
+    return Array.from(set).sort();
+  }, [presensiList]);
+
   // Presensi Filtered
   const filteredPresensi = useMemo(() => {
     return presensiList.filter((p) => {
@@ -402,15 +413,45 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
         const k = karyawanList.find((item) => item.nik === p.nik);
         if (k?.divisi !== selectedDivisi) return false;
       }
+      if (presensiShiftFilter !== 'ALL' && (p.shift || '').toLowerCase() !== presensiShiftFilter.toLowerCase()) {
+        return false;
+      }
+      const evalRes = evaluatePresensiForAudit(p);
+      if (presensiStatusFilter !== 'ALL') {
+        if (presensiStatusFilter === 'BOLOS_SEMUA') {
+          if (!evalRes.isBolosTidakAbsenPulang && !evalRes.isBolosTidakAbsenDatang) return false;
+        } else if (presensiStatusFilter === 'BOLOS_TIDAK_PULANG' || presensiStatusFilter === 'BELUM_PULANG') {
+          if (!evalRes.isBolosTidakAbsenPulang) return false;
+        } else if (presensiStatusFilter === 'BOLOS_TIDAK_DATANG') {
+          if (!evalRes.isBolosTidakAbsenDatang) return false;
+        } else if (
+          (p.status || '').toLowerCase() !== presensiStatusFilter.toLowerCase() &&
+          evalRes.auditStatusLabel.toLowerCase() !== presensiStatusFilter.toLowerCase()
+        ) {
+          return false;
+        }
+      }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        const matchNama = (p.nama || '').toLowerCase().includes(q);
-        const matchNik = (p.nik || '').toLowerCase().includes(q);
-        if (!matchNama && !matchNik) return false;
+        const resolvedName =
+          p.nama && p.nama.trim().toLowerCase() !== String(p.nik || '').trim().toLowerCase()
+            ? p.nama
+            : getUserPersonName(p.nik, p.nama || p.nik);
+        const matchNama = (resolvedName || '').toLowerCase().includes(q);
+        const matchNik = String(p.nik || '').toLowerCase().includes(q);
+        const matchShift = String(p.shift || '').toLowerCase().includes(q);
+        const matchStatus =
+          String(p.status || '').toLowerCase().includes(q) ||
+          evalRes.auditStatusLabel.toLowerCase().includes(q);
+        const matchCatatan = String(p.catatan || '').toLowerCase().includes(q);
+        const matchTanggal = String(p.tanggal || '').toLowerCase().includes(q);
+        if (!matchNama && !matchNik && !matchShift && !matchStatus && !matchCatatan && !matchTanggal) {
+          return false;
+        }
       }
       return true;
     });
-  }, [presensiList, startDate, endDate, selectedNik, selectedDivisi, searchQuery, karyawanList]);
+  }, [presensiList, startDate, endDate, selectedNik, selectedDivisi, presensiShiftFilter, presensiStatusFilter, searchQuery, karyawanList]);
 
   // Rekap Per Karyawan Aggregation with Leave, Absence (Bolos) & Overtime
   const detailedReport = useMemo(() => {
@@ -460,6 +501,8 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
     let cuti = 0;
     let tidakMasuk = 0;
     let bolos = 0;
+    let bolosTidakAbsenPulang = 0;
+    let bolosTidakAbsenDatang = 0;
 
     summaryPerKaryawan.forEach((s) => {
       jamLembur += s.totalJamLembur;
@@ -469,9 +512,21 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
       cuti += s.totalHariCuti;
       tidakMasuk += s.totalTidakMasuk;
       bolos += s.totalHariBolos;
+      bolosTidakAbsenPulang += s.totalBolosTidakAbsenPulang || 0;
+      bolosTidakAbsenDatang += s.totalBolosTidakAbsenDatang || 0;
     });
 
-    return { jamLembur, uangLembur, hadir, terlambat, cuti, tidakMasuk, bolos };
+    return {
+      jamLembur,
+      uangLembur,
+      hadir,
+      terlambat,
+      cuti,
+      tidakMasuk,
+      bolos,
+      bolosTidakAbsenPulang,
+      bolosTidakAbsenDatang,
+    };
   }, [summaryPerKaryawan]);
 
   // Export to Excel XLSX (Multi-sheet with neat table formatting)
@@ -784,12 +839,14 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
         <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 p-4 rounded-3xl shadow-sm">
           <div className="flex items-center gap-2 text-rose-500 text-xs font-bold mb-1">
             <AlertCircle className="w-4 h-4 text-rose-500" />
-            <span>Bolos (Tanpa Absen)</span>
+            <span>Bolos (Audit)</span>
           </div>
           <div className="text-2xl font-black text-rose-600 dark:text-rose-400">
             {grandTotals.bolos} <span className="text-xs font-bold">Hari</span>
           </div>
-          <div className="text-[10px] text-slate-400 mt-0.5">Jadwal tanpa presensi</div>
+          <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">
+            {grandTotals.bolosTidakAbsenPulang} Tak Absen Pulang • {grandTotals.bolosTidakAbsenDatang} Tak Datang
+          </div>
         </div>
 
         <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 p-4 rounded-3xl shadow-sm">
@@ -1190,15 +1247,37 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                         </span>
                       </td>
                       <td className="py-3 px-3 text-center">
-                        <span
-                          className={`inline-flex items-center justify-center font-black px-2.5 py-0.5 rounded-lg ${
-                            s.totalHariBolos > 0
-                              ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 font-bold'
-                              : 'text-slate-400'
-                          }`}
-                        >
-                          {s.totalHariBolos > 0 ? `${s.totalHariBolos} Hari` : '-'}
-                        </span>
+                        <div className="flex flex-col items-center gap-1">
+                          <span
+                            className={`inline-flex items-center justify-center font-black px-2.5 py-0.5 rounded-lg ${
+                              s.totalHariBolos > 0
+                                ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 font-bold'
+                                : 'text-slate-400'
+                            }`}
+                          >
+                            {s.totalHariBolos > 0 ? `${s.totalHariBolos} Hari` : '-'}
+                          </span>
+                          {s.totalHariBolos > 0 && (
+                            <div className="flex flex-wrap items-center justify-center gap-1 text-[9px] font-bold">
+                              {s.totalBolosTidakAbsenPulang > 0 && (
+                                <span
+                                  className="px-1.5 py-0.5 rounded bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60"
+                                  title="Bolos karena tidak melakukan absen pulang"
+                                >
+                                  Tak Pulang: {s.totalBolosTidakAbsenPulang}
+                                </span>
+                              )}
+                              {s.totalBolosTidakAbsenDatang > 0 && (
+                                <span
+                                  className="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60"
+                                  title="Bolos karena tidak melakukan absen datang"
+                                >
+                                  Tak Datang: {s.totalBolosTidakAbsenDatang}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3 px-3 text-center">
                         <span
@@ -1435,14 +1514,62 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
       {/* TAB 4: DETAIL LOG PRESENSI */}
       {activeTab === 'absensi' && (
         <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
-          <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+          <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
             <div>
               <h2 className="text-sm font-extrabold text-slate-800 dark:text-slate-200">
                 Riwayat Presensi Masuk & Pulang Sesuai Filter
               </h2>
               <span className="text-xs text-slate-400 font-bold">{filteredPresensi.length} log presensi ditemukan</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[220px] flex-1 sm:flex-initial">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Cari nama, NIK, shift, catatan..."
+                  className="w-full pl-8 pr-7 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              <select
+                value={presensiShiftFilter}
+                onChange={(e) => setPresensiShiftFilter(e.target.value)}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="ALL">Semua Shift</option>
+                {presensiShiftOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={presensiStatusFilter}
+                onChange={(e) => setPresensiStatusFilter(e.target.value)}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="ALL">Semua Status</option>
+                <option value="Hadir">Hadir (Lengkap Masuk & Pulang)</option>
+                <option value="Tepat Waktu">Tepat Waktu</option>
+                <option value="Terlambat">Terlambat</option>
+                <option value="BOLOS_SEMUA">Bolos (Semua Audit Bolos)</option>
+                <option value="BOLOS_TIDAK_PULANG">Bolos (Tidak Absen Pulang)</option>
+                <option value="BOLOS_TIDAK_DATANG">Bolos (Tidak Absen Datang)</option>
+                <option value="Izin">Izin</option>
+                <option value="Cuti">Cuti</option>
+                <option value="Sakit">Sakit</option>
+                <option value="Alpha">Alpha</option>
+              </select>
               <button
                 type="button"
                 onClick={exportToCSV}
@@ -1462,8 +1589,8 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                   <th className="py-2 px-3">Shift</th>
                   <th className="py-2 px-3 text-center">Jam Masuk</th>
                   <th className="py-2 px-3 text-center">Jam Pulang</th>
-                  <th className="py-2 px-3 text-center">Status</th>
-                  <th className="py-2 px-3">Catatan</th>
+                  <th className="py-2 px-3 text-center">Status Audit</th>
+                  <th className="py-2 px-3">Catatan Absensi (Audit)</th>
                   {isAdmin && <th className="py-2 px-3 text-center w-24">Aksi</th>}
                 </tr>
               </thead>
@@ -1475,49 +1602,106 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                     </td>
                   </tr>
                 ) : (
-                  filteredPresensi.map((p, idx) => (
-                    <tr
-                      key={p.id || idx}
-                      className="hover:bg-slate-50/70 dark:hover:bg-slate-900/40 transition-colors"
-                    >
-                      <td className="py-3 px-2 font-bold text-slate-900 dark:text-white whitespace-nowrap font-mono">
-                        {p.tanggal}
-                      </td>
-                      <td className="py-3 px-3">
-                        <div className="font-extrabold text-slate-900 dark:text-white">
-                          {p.nama && p.nama.trim().toLowerCase() !== p.nik.trim().toLowerCase()
-                            ? p.nama
-                            : getUserPersonName(p.nik, p.nama || p.nik)}
-                        </div>
-                        <div className="text-[10px] text-slate-400 font-mono">NIK: {p.nik}</div>
-                      </td>
-                      <td className="py-3 px-3 text-slate-600 dark:text-slate-300 font-semibold">
-                        {p.shift || '-'}
-                      </td>
-                      <td className="py-3 px-3 text-center font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                        {p.jam_masuk || '-'}
-                      </td>
-                      <td className="py-3 px-3 text-center font-mono text-slate-600 dark:text-slate-300">
-                        {p.jam_pulang || '-'}
-                      </td>
-                      <td className="py-3 px-3 text-center">
-                        <span
-                          className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-black ${
-                            p.status === 'Tepat Waktu' || p.status === 'Hadir'
-                              ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400'
-                              : p.status === 'Terlambat'
-                              ? 'bg-primary-50 text-primary-600 dark:bg-primary-950/40 dark:text-primary-400'
-                              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                          }`}
-                        >
-                          {p.status || '-'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-slate-500 dark:text-slate-400 text-[11px] truncate max-w-xs">
-                        {p.catatan || '-'}
-                      </td>
-                    </tr>
-                  ))
+                  filteredPresensi.map((p, idx) => {
+                    const evalRes = evaluatePresensiForAudit(p);
+                    const isBolosAudit = evalRes.isBolosTidakAbsenPulang || evalRes.isBolosTidakAbsenDatang;
+                    return (
+                      <tr
+                        key={p.id || idx}
+                        className={`hover:bg-slate-50/70 dark:hover:bg-slate-900/40 transition-colors ${
+                          isBolosAudit ? 'bg-rose-50/30 dark:bg-rose-950/10' : ''
+                        }`}
+                      >
+                        <td className="py-3 px-2 font-bold text-slate-900 dark:text-white whitespace-nowrap font-mono">
+                          {p.tanggal}
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="font-extrabold text-slate-900 dark:text-white">
+                            {p.nama && p.nama.trim().toLowerCase() !== p.nik.trim().toLowerCase()
+                              ? p.nama
+                              : getUserPersonName(p.nik, p.nama || p.nik)}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-mono">NIK: {p.nik}</div>
+                        </td>
+                        <td className="py-3 px-3 text-slate-600 dark:text-slate-300 font-semibold">
+                          {p.shift || '-'}
+                        </td>
+                        <td className="py-3 px-3 text-center font-mono font-bold">
+                          {evalRes.hasMasuk ? (
+                            <span className="text-emerald-600 dark:text-emerald-400">{p.jam_masuk}</span>
+                          ) : evalRes.isBolosTidakAbsenDatang ? (
+                            <span className="px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 text-[10px] font-bold">
+                              Tidak Absen Datang
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">-</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-center font-mono">
+                          {evalRes.hasPulang ? (
+                            <span className="text-slate-700 dark:text-slate-200 font-bold">{p.jam_pulang}</span>
+                          ) : evalRes.isBolosTidakAbsenPulang ? (
+                            <span
+                              className="px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 text-[10px] font-bold"
+                              title="Karyawan melakukan tap masuk namun tidak melakukan absen pulang -> Ditandai Bolos (Tidak dihitung masuk kerja)"
+                            >
+                              Tidak Absen Pulang
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">-</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span
+                              className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-black ${
+                                isBolosAudit
+                                  ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60'
+                                  : evalRes.isValidHadir && (p.status === 'Tepat Waktu' || p.status === 'Hadir')
+                                  ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400'
+                                  : evalRes.isValidHadir && p.status === 'Terlambat'
+                                  ? 'bg-primary-50 text-primary-600 dark:bg-primary-950/40 dark:text-primary-400'
+                                  : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                              }`}
+                            >
+                              {evalRes.auditStatusLabel}
+                            </span>
+                            {evalRes.isBolosTidakAbsenPulang && p.status && (
+                              <span className="text-[9px] text-slate-400">
+                                Log awal: {p.status} (Tap Masuk {p.jam_masuk})
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 text-slate-500 dark:text-slate-400 text-[11px] truncate max-w-xs" title={p.catatan || ''}>
+                          {p.catatan || '-'}
+                        </td>
+                      {isAdmin && (
+                        <td className="py-3 px-3 text-center">
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setEditingPresensi(p)}
+                              className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40 transition cursor-pointer"
+                              title="Edit Log Presensi"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePresensi(p)}
+                              disabled={actionLoadingId === p.id}
+                              className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 transition cursor-pointer disabled:opacity-50"
+                              title="Hapus Log Presensi"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -1888,9 +2072,12 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                 </span>
               </div>
               <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/40">
-                <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 block uppercase">Bolos (Tanpa Absen)</span>
+                <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 block uppercase">Bolos (Audit)</span>
                 <span className="text-lg font-black text-rose-700 dark:text-rose-300">
                   {selectedEmployeeDetail.totalHariBolos} Hari
+                </span>
+                <span className="text-[10px] text-rose-600/80 dark:text-rose-300/80 block mt-0.5">
+                  Tak Pulang: {selectedEmployeeDetail.totalBolosTidakAbsenPulang || 0} • Tak Datang: {selectedEmployeeDetail.totalBolosTidakAbsenDatang || 0}
                 </span>
               </div>
               <div className="p-3 rounded-2xl bg-primary-50 dark:bg-primary-950/30 border border-primary-100 dark:border-primary-900/40">
@@ -1906,13 +2093,13 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
               <div className="flex items-center gap-2">
                 <Palmtree className="w-4 h-4 text-teal-500" />
                 <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
-                  Rincian Tanggal Tidak Masuk, Cuti & Bolos ({selectedEmployeeDetail.tidakMasukItems.length})
+                  Rincian Tanggal Tidak Masuk, Cuti & Audit Bolos ({selectedEmployeeDetail.tidakMasukItems.length})
                 </h4>
               </div>
               {selectedEmployeeDetail.tidakMasukItems.length === 0 ? (
                 <div className="p-4 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-xs font-medium flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-500" />
-                  <span>Karyawan ini hadir 100% pada semua jadwal kerja periode ini (Nihil bolos atau izin).</span>
+                  <span>Karyawan ini hadir 100% lengkap (masuk & pulang) pada semua jadwal kerja periode ini.</span>
                 </div>
               ) : (
                 <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
@@ -1921,15 +2108,15 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                       <tr className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800 text-slate-400 font-extrabold uppercase text-[10px]">
                         <th className="py-2 px-3">Tanggal</th>
                         <th className="py-2 px-3">Kategori</th>
-                        <th className="py-2 px-3">Status</th>
-                        <th className="py-2 px-3">Alasan / Surat</th>
+                        <th className="py-2 px-3">Tap Absensi (Audit)</th>
+                        <th className="py-2 px-3">Keterangan / Bukti Audit</th>
                         <th className="py-2 px-3">Shift</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
                       {selectedEmployeeDetail.tidakMasukItems.map((item, i) => (
                         <tr key={i} className="hover:bg-slate-50/60 dark:hover:bg-slate-900/30">
-                          <td className="py-2.5 px-3 font-bold text-slate-900 dark:text-white whitespace-nowrap">
+                          <td className="py-2.5 px-3 font-bold text-slate-900 dark:text-white whitespace-nowrap font-mono">
                             {item.tanggal}
                           </td>
                           <td className="py-2.5 px-3">
@@ -1943,11 +2130,26 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                               {item.kategori}
                             </span>
                           </td>
-                          <td className="py-2.5 px-3 text-slate-600 dark:text-slate-300 font-bold">
+                          <td className="py-2.5 px-3 font-mono text-[11px] whitespace-nowrap">
                             {item.isBolos ? (
-                              <span className="text-rose-600 dark:text-rose-400">BOLOS (Tanpa Absen)</span>
+                              item.jenisBolos === 'TIDAK_ABSEN_PULANG' ? (
+                                <div className="flex flex-col">
+                                  <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                                    Masuk: {item.jamMasuk || '-'}
+                                  </span>
+                                  <span className="text-rose-600 dark:text-rose-400 font-bold">
+                                    Pulang: Kosong
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-rose-600 dark:text-rose-400 font-bold">
+                                  Masuk: - | Pulang: -
+                                </span>
+                              )
                             ) : (
-                              <span className="text-teal-600 dark:text-teal-400">Izin/Cuti Resmi</span>
+                              <span className="text-teal-600 dark:text-teal-400 font-sans font-bold">
+                                Izin/Cuti Resmi
+                              </span>
                             )}
                           </td>
                           <td className="py-2.5 px-3 text-slate-700 dark:text-slate-300">

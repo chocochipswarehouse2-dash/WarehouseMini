@@ -123,10 +123,26 @@ export function calculateKpiAbsensi({
     presensiMap.set(p.tanggal, p);
   });
 
+  // Track dates counted as Alpha/Bolos due to incomplete attendance (e.g. tidak absen pulang)
+  const bolosDates = new Set<string>();
+
   // Evaluate each presensi record
   myPresensi.forEach((p) => {
     const sLower = (p.status || '').toLowerCase();
-    if (sLower.includes('libur') || sLower.includes('cuti') || sLower.includes('alpha')) {
+    if (sLower.includes('libur') || sLower.includes('cuti') || sLower.includes('izin') || sLower.includes('ijin') || sLower.includes('sakit')) {
+      return;
+    }
+    if (sLower.includes('alpha') || sLower.includes('bolos')) {
+      bolosDates.add(p.tanggal);
+      return;
+    }
+
+    const hasMasuk = Boolean(p.jam_masuk && p.jam_masuk.trim() !== '' && p.jam_masuk.trim() !== '-');
+    const hasPulang = Boolean(p.jam_pulang && p.jam_pulang.trim() !== '' && p.jam_pulang.trim() !== '-');
+
+    // Karyawan yang tidak melakukan absen pulang (atau tidak absen datang) ditandai sebagai BOLOS & tidak dihitung masuk kerja
+    if (!hasMasuk || !hasPulang) {
+      bolosDates.add(p.tanggal);
       return;
     }
 
@@ -174,24 +190,33 @@ export function calculateKpiAbsensi({
         totalPulangAwalTanpaIzin++;
         totalSkorPulangAccum += 40;
       }
-    } else {
-      // Belum absen pulang
-      totalSkorPulangAccum += 60;
     }
   });
 
-  // Calculate Cuti & Alpha
+  // Calculate Cuti & Alpha (Bolos: tidak absen datang ATAU tidak absen pulang)
   const totalCutiIzin = myCuti.reduce((acc, c) => acc + (Number(c.jumlah_hari) || 1), 0);
-  
-  // Alpha: scheduled working day with no attendance record & no approved cuti
-  let totalAlpha = 0;
+
   workingRoster.forEach((r) => {
-    const hasPresensi = presensiMap.has(r.tanggal);
+    const p = presensiMap.get(r.tanggal);
+    const hasValidFullPresensi = Boolean(
+      p &&
+        p.jam_masuk &&
+        p.jam_masuk.trim() !== '' &&
+        p.jam_masuk.trim() !== '-' &&
+        p.jam_pulang &&
+        p.jam_pulang.trim() !== '' &&
+        p.jam_pulang.trim() !== '-' &&
+        !['libur', 'cuti', 'izin', 'ijin', 'sakit', 'alpha', 'bolos'].some((k) =>
+          (p.status || '').toLowerCase().includes(k)
+        )
+    );
     const hasCuti = myCuti.some((c) => r.tanggal >= c.tgl_mulai && r.tanggal <= c.tgl_selesai);
-    if (!hasPresensi && !hasCuti) {
-      totalAlpha++;
+    if (!hasValidFullPresensi && !hasCuti) {
+      bolosDates.add(r.tanggal);
     }
   });
+
+  const totalAlpha = bolosDates.size;
 
   const totalLemburJam = myLembur.reduce((acc, l) => acc + (Number(l.durasi_jam) || 0), 0);
 
