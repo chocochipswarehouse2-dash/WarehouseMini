@@ -944,7 +944,7 @@ export default function App() {
   // Pada perangkat HP Seluler (< 1024px), fitur Keep-Alive Multi-Tab & Companion Drawer
   // WAJIB MATI TOTAL (0 background mounted pages) demi menjaga RAM HP & kamera scanner.
   // ============================================================================
-  const MAX_KEEP_ALIVE_TABS = 4;
+  const MAX_KEEP_ALIVE_TABS = 3;
   const [isDesktopViewport, setIsDesktopViewport] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return window.innerWidth >= 1024;
@@ -976,7 +976,7 @@ export default function App() {
 
   useEffect(() => {
     if (!isDesktopViewport) {
-      setOpenDesktopTabs([activePage]);
+      setOpenDesktopTabs((prev) => (prev.length === 1 && prev[0] === activePage ? prev : [activePage]));
       return;
     }
     setOpenDesktopTabs((prev) => {
@@ -2870,7 +2870,7 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen w-full max-w-[100vw] overflow-x-hidden flex flex-row bg-[#f4f6f8] dark:bg-[#0f172a] text-slate-900 dark:text-slate-100 transition-colors selection:bg-primary-500 selection:text-white">
+    <div className="min-h-screen w-full max-w-[100vw] flex flex-row bg-[#f4f6f8] dark:bg-[#0f172a] text-slate-900 dark:text-slate-100 transition-colors selection:bg-primary-500 selection:text-white">
       {/* Google Maps Quota Warning Banner */}
       {gmpQuotaExceeded && (
         <div className="bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2.5 text-xs md:text-sm text-center sticky top-0 z-50 shadow-sm w-full">
@@ -3032,7 +3032,7 @@ export default function App() {
       />
 
       {/* Main App Container (Page Content) */}
-      <div className="flex-1 min-w-0 max-w-full overflow-x-hidden flex flex-col min-h-screen">
+      <div className="flex-1 min-w-0 max-w-full flex flex-col min-h-screen">
         {/* Desktop PWA Hint Banner (Shown on PC when opened in regular browser tab) */}
         <div className="print:hidden">
           <DesktopPwaBanner onOpenInstallModal={() => setIsApkModalOpen(true)} />
@@ -3139,7 +3139,7 @@ export default function App() {
 
         {/* Main Content Area + Optional Desktop Companion Drawer */}
         <div className="flex-1 flex flex-row min-w-0 w-full max-w-full items-start">
-          <main className="flex-1 min-w-0 pb-24 sm:pb-8 p-2 sm:p-4 lg:p-6 w-full max-w-full overflow-x-hidden">
+          <main className="flex-1 min-w-0 pb-24 sm:pb-8 p-2 sm:p-4 lg:p-6 w-full max-w-full">
             {session && !canAccessPage(session, activePage) ? (
               <div className="min-h-[60vh] flex items-center justify-center p-4">
                 <div className="max-w-md w-full bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-2xl p-6 text-center shadow-lg space-y-4">

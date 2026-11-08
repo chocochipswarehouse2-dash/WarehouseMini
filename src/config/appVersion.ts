@@ -15,18 +15,30 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.87",
-  "versionCode": 347,
+  "version": "v2.6.88",
+  "versionCode": 348,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v347-1230",
-  "releaseTitle": "WMS v2.6.87 — Hotfix Layar Blank / TDZ showToast pada Inisialisasi App",
+  "buildHash": "wms-261108-v348-1254",
+  "releaseTitle": "WMS v2.6.88 — Perbaikan Scroll Halaman Utama & Penghapusan Default Sandingkan",
   "releaseNotes": [
-    "Perbaikan urutan deklarasi hook useCallback showToast di App.tsx yang sempat menyebabkan ReferenceError (layar gelap/blank) saat aplikasi dimuat"
+    "Hapus saran hardcoded Sandingkan Trello/Produksi menjadi tombol universal Buka Panel Samping (bebas pilih menu apa saja)",
+    "Perbaikan CSS scroll container (overflow-x: clip & penghapusan backdrop-blur berat) agar scroll vertikal halaman utama lancar dan responsif"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.87",
+    "versionCode": 347,
+    "buildDate": "8 November 2026",
+    "buildHash": "wms-261108-v347-1230",
+    "releaseTitle": "WMS v2.6.87 — Hotfix Layar Blank / TDZ showToast pada Inisialisasi App",
+    "releaseNotes": [
+      "Perbaikan urutan deklarasi hook useCallback showToast di App.tsx yang sempat menyebabkan ReferenceError (layar gelap/blank) saat aplikasi dimuat"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.86",
     "versionCode": 346,
@@ -113,19 +125,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Edit nama, No. HP & email",
       "Ganti password (verifikasi password lama, SHA-256)",
       "Upload foto profil atau pilih avatar"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.79",
-    "versionCode": 339,
-    "buildDate": "8 November 2026",
-    "buildHash": "wms-261108-v339-0957",
-    "releaseTitle": "WMS v2.6.79 — Presisi Urutan Kolom Kanban Trello Asli",
-    "releaseNotes": [
-      "Sinkronisasi posisi list horizontal papan Trello asli ke Kanban WMS",
-      "Penyelarasan urutan UP batch dari kiri ke kanan (September ke April)",
-      "Pencegahan salah parse judul tanggal menjadi nomor batch"
     ],
     "minSupportedVersion": "v2.0.0"
   }

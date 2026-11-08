@@ -77,10 +77,13 @@ html.dark {
 
   /* Mobile PWA Safe Area Padding & Viewport Locking */
   html,
-  body,
+  body {
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
   #root {
     max-width: 100%;
-    overflow-x: hidden;
   }
 
   body {

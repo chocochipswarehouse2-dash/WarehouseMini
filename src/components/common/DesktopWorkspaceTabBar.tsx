@@ -117,27 +117,8 @@ export const DesktopWorkspaceTabBar: React.FC<DesktopWorkspaceTabBarProps> = ({
     canAccessPage(session, meta.id)
   );
 
-  // Quick companion suggestion (e.g., if on Produksi -> suggest Trello UP, if on Trello UP -> suggest Produksi)
-  const suggestedCompanion: WorkspacePageMeta | null = (() => {
-    if (activePage === 'produksi' && canAccessPage(session, 'trello_up')) {
-      return WORKSPACE_PAGE_META.trello_up;
-    }
-    if (activePage === 'trello_up' && canAccessPage(session, 'produksi')) {
-      return WORKSPACE_PAGE_META.produksi;
-    }
-    if (activePage === 'pesanan_saya' && canAccessPage(session, 'inventory')) {
-      return WORKSPACE_PAGE_META.inventory;
-    }
-    if (activePage === 'inventory' && canAccessPage(session, 'loading_dock')) {
-      return WORKSPACE_PAGE_META.loading_dock;
-    }
-    const otherTab = openTabs.find((t) => t !== activePage);
-    if (otherTab) return getWorkspacePageMeta(otherTab);
-    return null;
-  })();
-
   return (
-    <div className="hidden lg:flex items-center justify-between gap-2 px-4 py-1.5 bg-white/90 dark:bg-[#101726]/95 border-b border-slate-200/80 dark:border-slate-800/80 backdrop-blur-md sticky top-0 z-30 print:hidden select-none">
+    <div className="hidden lg:flex items-center justify-between gap-2 px-4 py-1.5 bg-white dark:bg-[#101726] border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30 print:hidden select-none">
       {/* Left: Multi-Tab Keep-Alive Bar */}
       <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar min-w-0 flex-1 py-0.5">
         <div
@@ -197,7 +178,7 @@ export const DesktopWorkspaceTabBar: React.FC<DesktopWorkspaceTabBarProps> = ({
                   title={
                     isCompanion
                       ? `Tutup Panel Samping (${meta.shortLabel})`
-                      : `Buka ${meta.shortLabel} sebagai Panel Samping (Slide-Over) di atas ${getWorkspacePageMeta(activePage).shortLabel}`
+                      : `Buka ${meta.shortLabel} sebagai Panel Samping berdampingan dengan ${getWorkspacePageMeta(activePage).shortLabel}`
                   }
                 >
                   <PanelRightOpen className="w-3 h-3" />
@@ -235,7 +216,7 @@ export const DesktopWorkspaceTabBar: React.FC<DesktopWorkspaceTabBarProps> = ({
               setIsQuickPickerOpen((prev) => !prev || pickerMode !== 'tab');
             }}
             className="flex items-center gap-1 px-2 py-1 rounded-xl text-[11px] font-bold bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-dashed border-slate-300 dark:border-slate-700 hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
-            title="Buka halaman lain di Tab Baru (Tanpa menutup halaman ini)"
+            title="Buka halaman apa saja di Tab Baru (Tanpa menutup halaman ini)"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Buka Tab</span>
@@ -245,7 +226,7 @@ export const DesktopWorkspaceTabBar: React.FC<DesktopWorkspaceTabBarProps> = ({
             <div className="fixed mt-1.5 w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl p-2 z-50">
               <div className="flex items-center justify-between px-2 py-1 border-b border-slate-100 dark:border-slate-800 mb-1.5">
                 <span className="text-[11px] font-extrabold text-slate-700 dark:text-slate-200">
-                  {pickerMode === 'companion' ? 'Pilih Halaman Panel Samping' : 'Buka Halaman di Tab Baru'}
+                  {pickerMode === 'companion' ? 'Pilih Halaman untuk Disandingkan' : 'Buka Halaman di Tab Baru'}
                 </span>
                 <button
                   type="button"
@@ -298,44 +279,31 @@ export const DesktopWorkspaceTabBar: React.FC<DesktopWorkspaceTabBarProps> = ({
         </div>
       </div>
 
-      {/* Right: Quick Companion Slide-Over Trigger (e.g. "Buka Trello UP di Samping") */}
+      {/* Right: Universal Companion Slide-Over Trigger (Bebas pilih halaman apa saja) */}
       <div className="flex items-center gap-1.5 shrink-0">
         {companionPage ? (
           <button
             type="button"
             onClick={() => onOpenCompanion(null)}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-extrabold bg-purple-600 text-white hover:bg-purple-700 shadow-xs transition-all cursor-pointer"
-            title="Tutup Panel Samping (Slide-Over)"
+            title="Tutup Panel Samping"
           >
             <PanelRightClose className="w-3.5 h-3.5" />
             <span>Tutup Panel: {getWorkspacePageMeta(companionPage).shortLabel}</span>
           </button>
         ) : (
-          <>
-            {suggestedCompanion && suggestedCompanion.id !== activePage && (
-              <button
-                type="button"
-                onClick={() => onOpenCompanion(suggestedCompanion.id)}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300 shadow-2xs transition-all cursor-pointer"
-                title={`Buka ${suggestedCompanion.label} sebagai panel geser di sebelah kanan sambil tetap bekerja di ${getWorkspacePageMeta(activePage).label}`}
-              >
-                <PanelRightOpen className="w-3.5 h-3.5 text-indigo-500" />
-                <span>Sandingkan: {suggestedCompanion.shortLabel}</span>
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                setPickerMode('companion');
-                setIsQuickPickerOpen((prev) => !prev || pickerMode !== 'companion');
-              }}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all cursor-pointer"
-              title="Pilih fitur/halaman apa saja untuk dibuka sebagai Panel Samping (Slide-Over)"
-            >
-              <PanelRightOpen className="w-3.5 h-3.5 text-slate-500" />
-              <span>Panel Samping</span>
-            </button>
-          </>
+          <button
+            type="button"
+            onClick={() => {
+              setPickerMode('companion');
+              setIsQuickPickerOpen((prev) => !prev || pickerMode !== 'companion');
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300 transition-all cursor-pointer"
+            title="Pilih halaman/fitur apa saja untuk dibuka berdampingan di Panel Samping"
+          >
+            <PanelRightOpen className="w-3.5 h-3.5 text-indigo-500" />
+            <span>Buka Panel Samping</span>
+          </button>
         )}
       </div>
     </div>
@@ -379,7 +347,7 @@ export const DesktopCompanionDrawer: React.FC<DesktopCompanionDrawerProps> = ({
       className={`hidden lg:flex flex-col ${
         isDockedSplit
           ? `${widthClass} shrink-0 border-l-2 border-indigo-500/30 dark:border-indigo-500/40 bg-[#f8fafc] dark:bg-[#0b1120] sticky top-[41px] h-[calc(100vh-41px)] z-20 shadow-xl`
-          : `fixed top-[41px] right-0 bottom-0 ${widthClass} z-40 border-l-2 border-indigo-500/40 bg-[#f8fafc]/98 dark:bg-[#0b1120]/98 backdrop-blur-md shadow-2xl`
+          : `fixed top-[41px] right-0 bottom-0 ${widthClass} z-40 border-l-2 border-indigo-500/40 bg-[#f8fafc] dark:bg-[#0b1120] shadow-2xl`
       } transition-all duration-200 print:hidden`}
     >
       {/* Top Header of Companion Panel */}
