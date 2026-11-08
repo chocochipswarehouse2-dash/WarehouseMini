@@ -62,9 +62,11 @@ export const ThemePickerModal: React.FC<ThemePickerModalProps> = ({
   ];
 
   const iconStyles = [
-    { id: 'light', name: 'Light (Tipis)' },
-    { id: 'regular', name: 'Regular (Default)' },
-    { id: 'bold', name: 'Bold (Tebal)' },
+    { id: 'light', name: 'Minimalist', desc: 'Tipis & Halus', strokeWidth: 1.25 },
+    { id: 'regular', name: 'Regular', desc: 'Klasik', strokeWidth: 2 },
+    { id: 'duotone', name: 'Duotone', desc: 'Dua Warna', strokeWidth: 1.75 },
+    { id: 'sharp', name: 'Sharp', desc: 'Sudut Tegas', strokeWidth: 1.85 },
+    { id: 'bold', name: 'Bold', desc: 'Tebal Pekat', strokeWidth: 2.75 },
   ];
 
   return (
@@ -201,23 +203,38 @@ export const ThemePickerModal: React.FC<ThemePickerModalProps> = ({
           
           {/* Icon Style Selection */}
           <div>
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">
-              Gaya Ikon (Icon Pack)
-            </label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                Gaya Ikon (Icon Pack)
+              </label>
+              <span className="text-[10px] text-primary-600 dark:text-primary-400 font-semibold">
+                {iconStyles.find((s) => s.id === themeIconStyle)?.name || 'Regular'} ({iconStyles.find((s) => s.id === themeIconStyle)?.desc || ''})
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
               {iconStyles.map((style) => (
                 <button
                   key={style.id}
                   type="button"
                   onClick={() => setThemeIconStyle(style.id)}
-                  className={`flex items-center justify-center gap-2 px-2 py-2.5 rounded-xl text-xs border cursor-pointer transition-all ${
+                  className={`flex flex-col items-center justify-center p-2 rounded-xl text-xs border cursor-pointer transition-all ${
                     themeIconStyle === style.id
-                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-bold shadow-sm'
+                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-bold shadow-sm ring-1 ring-primary-500/20'
                       : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 hover:border-slate-300'
                   }`}
                 >
-                  <Sparkles className={`w-4 h-4 ${themeIconStyle === style.id ? 'text-primary-500' : ''}`} style={{ strokeWidth: style.id === 'light' ? 1.25 : style.id === 'bold' ? 2.75 : 2 }} />
-                  <span className="hidden sm:inline">{style.name.split(' ')[0]}</span>
+                  <Sparkles
+                    className={`w-4 h-4 mb-1 ${
+                      themeIconStyle === style.id ? 'text-primary-500' : 'text-slate-500 dark:text-slate-400'
+                    } ${style.id === 'duotone' ? 'fill-current fill-opacity-25' : ''}`}
+                    style={{
+                      strokeWidth: style.strokeWidth,
+                      strokeLinecap: style.id === 'sharp' ? 'square' : 'round',
+                      strokeLinejoin: style.id === 'sharp' ? 'miter' : 'round',
+                    }}
+                  />
+                  <span className="font-bold text-[11px] leading-tight">{style.name}</span>
+                  <span className="text-[9px] text-slate-400 font-normal leading-tight mt-0.5">{style.desc}</span>
                 </button>
               ))}
             </div>

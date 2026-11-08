@@ -1490,14 +1490,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-extrabold text-slate-700 dark:text-slate-300 block">
-                    5. Gaya Ketebalan Ikon
-                  </label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-extrabold text-slate-700 dark:text-slate-300">
+                      5. Gaya Ikon (Icon Pack)
+                    </label>
+                    <span className="text-[10px] text-primary-600 dark:text-primary-400 font-bold">
+                      {themeIconStyle === 'duotone'
+                        ? 'Duotone (Dua Warna)'
+                        : themeIconStyle === 'sharp'
+                        ? 'Sharp (Industrial)'
+                        : themeIconStyle === 'light'
+                        ? 'Minimalist (Tipis)'
+                        : themeIconStyle === 'bold'
+                        ? 'Bold (Tebal)'
+                        : 'Regular (Default)'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                     {[
-                      { id: 'light', label: 'Tipis' },
-                      { id: 'regular', label: 'Regular' },
-                      { id: 'bold', label: 'Tebal' },
+                      { id: 'light', label: 'Minimalist', desc: 'Tipis & Halus' },
+                      { id: 'regular', label: 'Regular', desc: 'Klasik' },
+                      { id: 'duotone', label: 'Duotone', desc: 'Dua Warna' },
+                      { id: 'sharp', label: 'Sharp', desc: 'Sudut Tegas' },
+                      { id: 'bold', label: 'Bold', desc: 'Tebal Pekat' },
                     ].map((ic) => (
                       <button
                         key={ic.id}
@@ -1509,7 +1524,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400'
                         }`}
                       >
-                        {ic.label}
+                        <div>{ic.label}</div>
+                        <div className="text-[9px] font-normal opacity-70 mt-0.5">{ic.desc}</div>
                       </button>
                     ))}
                   </div>

@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.83",
-  "versionCode": 343,
+  "version": "v2.6.84",
+  "versionCode": 344,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v343-1112",
-  "releaseTitle": "WMS v2.6.83 — Profil Store: No. HP dari Master Kontak",
+  "buildHash": "wms-261108-v344-1148",
+  "releaseTitle": "WMS v2.6.84 — Gaya Ikon (Icon Pack): Minimalist, Duotone, Sharp & Bold",
   "releaseNotes": [
-    "Profil akun Store otomatis menampilkan No. HP & email dari Master Kontak Store",
-    "Edit No. HP/email di profil Store ikut memperbarui Master Kontak Store"
+    "Pembaruan Icon Pack tema dengan 4 karakter visual nyata: Minimalist Line, Duotone Semi-Fill, Sharp Industrial, dan Bold Stamp",
+    "Pilihan gaya ikon tersedia di Pengaturan & Sesuaikan Tampilan"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.83",
+    "versionCode": 343,
+    "buildDate": "8 November 2026",
+    "buildHash": "wms-261108-v343-1112",
+    "releaseTitle": "WMS v2.6.83 — Profil Store: No. HP dari Master Kontak",
+    "releaseNotes": [
+      "Profil akun Store otomatis menampilkan No. HP & email dari Master Kontak Store",
+      "Edit No. HP/email di profil Store ikut memperbarui Master Kontak Store"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.82",
     "versionCode": 342,
@@ -118,19 +130,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Perlebar ukuran modal Edit/Buat Catatan dari max-w-lg ke max-w-2xl / lg:max-w-3xl agar lebih lega",
       "Perbesar textarea Isi Catatan (minimal 6 baris / 180px, otomatis bertambah mengikuti jumlah baris teks, dan mendukung resize-y manual)",
       "Hapus batasan scroll sempit (max-h-48) pada daftar Checklist sehingga seluruh item checkbox tampil penuh dan leluasa"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.75",
-    "versionCode": 335,
-    "buildDate": "7 November 2026",
-    "buildHash": "wms-261107-v335-1143",
-    "releaseTitle": "WMS v2.6.75 — Auto-Migrasi Taylor Pants & Sanitasi Ukuran Pengecekan Surat Jalan",
-    "releaseNotes": [
-      "Auto-migrasi data draft antrean dan riwayat Pengecekan Surat Jalan agar SKU DF26KBF03 otomatis menjadi Taylor Pants Dark Denim",
-      "Perbaikan data lampau di Supabase pengecekan_sj dan pencegahan tampilan nama produk pada kolom ukuran",
-      "Sanitasi ukuran otomatis ke All Size/Default jika tidak memiliki varian S-XL"
     ],
     "minSupportedVersion": "v2.0.0"
   }

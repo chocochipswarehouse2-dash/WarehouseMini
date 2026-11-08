@@ -1,12 +1,12 @@
 {
-  "version": "v2.6.83",
-  "versionCode": 343,
+  "version": "v2.6.84",
+  "versionCode": 344,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v343-1112",
-  "releaseTitle": "WMS v2.6.83 — Profil Store: No. HP dari Master Kontak",
+  "buildHash": "wms-261108-v344-1148",
+  "releaseTitle": "WMS v2.6.84 — Gaya Ikon (Icon Pack): Minimalist, Duotone, Sharp & Bold",
   "releaseNotes": [
-    "Profil akun Store otomatis menampilkan No. HP & email dari Master Kontak Store",
-    "Edit No. HP/email di profil Store ikut memperbarui Master Kontak Store"
+    "Pembaruan Icon Pack tema dengan 4 karakter visual nyata: Minimalist Line, Duotone Semi-Fill, Sharp Industrial, dan Bold Stamp",
+    "Pilihan gaya ikon tersedia di Pengaturan & Sesuaikan Tampilan"
   ],
   "minSupportedVersion": "v2.0.0"
 }
