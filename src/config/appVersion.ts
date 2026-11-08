@@ -15,20 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.86",
-  "versionCode": 346,
+  "version": "v2.6.87",
+  "versionCode": 347,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v346-1215",
-  "releaseTitle": "WMS v2.6.86 — Multitasking Multi-Tab & Panel Samping (Khusus Laptop/PC) + Proteksi Operasional HP",
+  "buildHash": "wms-261108-v347-1230",
+  "releaseTitle": "WMS v2.6.87 — Hotfix Layar Blank / TDZ showToast pada Inisialisasi App",
   "releaseNotes": [
-    "Fitur Multi-Tab Keep-Alive & Panel Samping (Slide-Over / Split) khusus Laptop/PC (>= 1024px) untuk membuka 2 halaman sekaligus (misal Produksi berdampingan dengan Trello UP) tanpa me-reset form/filter",
-    "Proteksi Ketat Operasional HP Seluler (< 1024px): Fitur multi-tab otomatis nonaktif di HP agar layar dan RAM HP 100% aman untuk operasional scanner & lapangan",
-    "Penetapan Rule Permanen #13 di GEMINI.md dan Skill Agent agar seluruh agen mematuhi isolasi Desktop vs Mobile"
+    "Perbaikan urutan deklarasi hook useCallback showToast di App.tsx yang sempat menyebabkan ReferenceError (layar gelap/blank) saat aplikasi dimuat"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.86",
+    "versionCode": 346,
+    "buildDate": "8 November 2026",
+    "buildHash": "wms-261108-v346-1215",
+    "releaseTitle": "WMS v2.6.86 — Multitasking Multi-Tab & Panel Samping (Khusus Laptop/PC) + Proteksi Operasional HP",
+    "releaseNotes": [
+      "Fitur Multi-Tab Keep-Alive & Panel Samping (Slide-Over / Split) khusus Laptop/PC (>= 1024px) untuk membuka 2 halaman sekaligus (misal Produksi berdampingan dengan Trello UP) tanpa me-reset form/filter",
+      "Proteksi Ketat Operasional HP Seluler (< 1024px): Fitur multi-tab otomatis nonaktif di HP agar layar dan RAM HP 100% aman untuk operasional scanner & lapangan",
+      "Penetapan Rule Permanen #13 di GEMINI.md dan Skill Agent agar seluruh agen mematuhi isolasi Desktop vs Mobile"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.85",
     "versionCode": 345,
@@ -115,20 +126,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Sinkronisasi posisi list horizontal papan Trello asli ke Kanban WMS",
       "Penyelarasan urutan UP batch dari kiri ke kanan (September ke April)",
       "Pencegahan salah parse judul tanggal menjadi nomor batch"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.78",
-    "versionCode": 338,
-    "buildDate": "7 November 2026",
-    "buildHash": "wms-261107-v338-2302",
-    "releaseTitle": "WMS v2.6.78 — Audit & Optimasi Halaman Inventory, Lookup Master SKU & Drawer Komparasi",
-    "releaseNotes": [
-      "Perbaikan tabel Komparasi Fisik vs DealPOS per Area (MAP, LIVE, STUDIO, PERMAK, DEFECT) di Drawer Rincian Inventory agar kuantitas fisik live tidak berubah menjadi 0",
-      "Standarisasi 100% lookup Nama Produk dan Size via Master Produk (resolveProductName & resolveProductDisplaySize) di Tabel Stok, Kapasitas Rak & 3D Gudang tanpa anomali Default/SKU",
-      "Penambahan fungsi pengurutan kolom Area (AREA_ASC & AREA_DESC) pada Tabel Stok Inventory",
-      "Sinkronisasi otomatis realtime store Inventory saat perbaikan anomali atau update stok (wms_inventory_updated & wms_stock_updated)"
     ],
     "minSupportedVersion": "v2.0.0"
   }

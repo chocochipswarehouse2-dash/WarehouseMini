@@ -411,128 +411,6 @@ export default function App() {
   // Active module page (mendukung deep link & reload F5 dari URL)
   const [activePage, setActivePage] = useState<ActivePage>(() => getPageFromUrl(session));
   const [visitedPages, setVisitedPages] = useState<Set<ActivePage>>(() => new Set<ActivePage>([getPageFromUrl(session)]));
-
-  // ============================================================================
-  // DESKTOP-ONLY MULTITASKING WORKSPACE (>= 1024px / Laptop & PC)
-  // HARD CONSTRAINT (GEMINI.md Rule #13):
-  // Pada perangkat HP Seluler (< 1024px), fitur Keep-Alive Multi-Tab & Companion Drawer
-  // WAJIB MATI TOTAL (0 background mounted pages) demi menjaga RAM HP & kamera scanner.
-  // ============================================================================
-  const MAX_KEEP_ALIVE_TABS = 4;
-  const [isDesktopViewport, setIsDesktopViewport] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return window.innerWidth >= 1024;
-  });
-  const [openDesktopTabs, setOpenDesktopTabs] = useState<ActivePage[]>(() => [getPageFromUrl(session)]);
-  const [companionPage, setCompanionPage] = useState<ActivePage | null>(null);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const mq = window.matchMedia('(min-width: 1024px)');
-    const handleViewportChange = (e: MediaQueryListEvent | MediaQueryList) => {
-      const desktop = Boolean(e.matches);
-      setIsDesktopViewport(desktop);
-      if (!desktop) {
-        // Segera bersihkan tab background & companion jika layar mengecil ke mode HP/Seluler (< 1024px)
-        setCompanionPage(null);
-        setOpenDesktopTabs((prev) => (prev.length > 1 ? [activePage] : prev));
-      }
-    };
-    handleViewportChange(mq);
-    if (typeof mq.addEventListener === 'function') {
-      mq.addEventListener('change', handleViewportChange);
-      return () => mq.removeEventListener('change', handleViewportChange);
-    } else {
-      window.addEventListener('resize', () => handleViewportChange(mq));
-      return () => window.removeEventListener('resize', () => handleViewportChange(mq));
-    }
-  }, [activePage]);
-
-  // Sinkronkan activePage ke daftar openDesktopTabs (Maksimal 4 Tab Keep-Alive di Laptop/PC)
-  useEffect(() => {
-    if (!isDesktopViewport) {
-      setOpenDesktopTabs([activePage]);
-      return;
-    }
-    setOpenDesktopTabs((prev) => {
-      const normalized = normalizeConsolidatedPage(activePage);
-      if (prev.includes(normalized)) return prev;
-      const next = [...prev, normalized];
-      if (next.length > MAX_KEEP_ALIVE_TABS) {
-        // Evict oldest tab yang bukan activePage dan bukan companionPage
-        const evictIdx = next.findIndex((p) => p !== normalized && p !== companionPage);
-        if (evictIdx >= 0) {
-          next.splice(evictIdx, 1);
-        } else {
-          next.shift();
-        }
-      }
-      return next;
-    });
-    // Jika halaman utama yang baru dipilih sama dengan companionPage di kanan, tutup companionPage agar tidak duplikat kembar
-    setCompanionPage((prevComp) => (prevComp === activePage ? null : prevComp));
-  }, [activePage, isDesktopViewport, companionPage]);
-
-  const handleCloseDesktopTab = useCallback(
-    (tabToClose: ActivePage) => {
-      setOpenDesktopTabs((prev) => {
-        if (prev.length <= 1) return prev;
-        const next = prev.filter((p) => p !== tabToClose);
-        if (tabToClose === activePage && next.length > 0) {
-          const fallbackPage = next[next.length - 1];
-          startTransition(() => {
-            setActivePage(fallbackPage);
-          });
-        }
-        return next;
-      });
-      setCompanionPage((prevComp) => (prevComp === tabToClose ? null : prevComp));
-    },
-    [activePage]
-  );
-
-  const handleOpenCompanion = useCallback(
-    (targetPage: ActivePage | null) => {
-      if (!isDesktopViewport) return;
-      if (!targetPage) {
-        setCompanionPage(null);
-        return;
-      }
-      const normalized = normalizeConsolidatedPage(targetPage);
-      if (!canAccessPage(session, normalized)) {
-        showToast('Akses ditolak: Akun Anda tidak memiliki hak akses untuk modul ini.', 'warning');
-        return;
-      }
-      if (normalized === activePage) {
-        showToast('Halaman ini sudah terbuka sebagai layar utama di sebelah kiri.', 'info');
-        return;
-      }
-      setCompanionPage(normalized);
-      // Pastikan juga terdaftar di openDesktopTabs agar state-nya terjaga
-      setOpenDesktopTabs((prev) => {
-        if (prev.includes(normalized)) return prev;
-        const next = [...prev, normalized];
-        if (next.length > MAX_KEEP_ALIVE_TABS) {
-          const evictIdx = next.findIndex((p) => p !== activePage && p !== normalized);
-          if (evictIdx >= 0) next.splice(evictIdx, 1);
-        }
-        return next;
-      });
-    },
-    [isDesktopViewport, session, activePage, showToast]
-  );
-
-  const handleSwapCompanionWithMain = useCallback(
-    (compPage: ActivePage) => {
-      if (!isDesktopViewport) return;
-      const oldMain = activePage;
-      startTransition(() => {
-        setActivePage(compPage);
-        setCompanionPage(oldMain);
-      });
-    },
-    [isDesktopViewport, activePage]
-  );
   const [inventoryInitialTab, setInventoryInitialTab] = useState<'capacity' | 'inventory' | 'scanner' | 'logs' | undefined>(() => {
     if (typeof window === 'undefined') return undefined;
     const p = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
@@ -1047,6 +925,124 @@ export default function App() {
   const dismissToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
+
+  // ============================================================================
+  // DESKTOP-ONLY MULTITASKING WORKSPACE (>= 1024px / Laptop & PC)
+  // HARD CONSTRAINT (GEMINI.md Rule #13):
+  // Pada perangkat HP Seluler (< 1024px), fitur Keep-Alive Multi-Tab & Companion Drawer
+  // WAJIB MATI TOTAL (0 background mounted pages) demi menjaga RAM HP & kamera scanner.
+  // ============================================================================
+  const MAX_KEEP_ALIVE_TABS = 4;
+  const [isDesktopViewport, setIsDesktopViewport] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth >= 1024;
+  });
+  const [openDesktopTabs, setOpenDesktopTabs] = useState<ActivePage[]>(() => [getPageFromUrl(session)]);
+  const [companionPage, setCompanionPage] = useState<ActivePage | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const handleViewportChange = (e: MediaQueryListEvent | MediaQueryList) => {
+      const desktop = Boolean(e.matches);
+      setIsDesktopViewport(desktop);
+      if (!desktop) {
+        setCompanionPage(null);
+        setOpenDesktopTabs((prev) => (prev.length > 1 ? [activePage] : prev));
+      }
+    };
+    handleViewportChange(mq);
+    if (typeof mq.addEventListener === 'function') {
+      mq.addEventListener('change', handleViewportChange);
+      return () => mq.removeEventListener('change', handleViewportChange);
+    } else {
+      const onResize = () => handleViewportChange(mq);
+      window.addEventListener('resize', onResize);
+      return () => window.removeEventListener('resize', onResize);
+    }
+  }, [activePage]);
+
+  useEffect(() => {
+    if (!isDesktopViewport) {
+      setOpenDesktopTabs([activePage]);
+      return;
+    }
+    setOpenDesktopTabs((prev) => {
+      const normalized = normalizeConsolidatedPage(activePage);
+      if (prev.includes(normalized)) return prev;
+      const next = [...prev, normalized];
+      if (next.length > MAX_KEEP_ALIVE_TABS) {
+        const evictIdx = next.findIndex((p) => p !== normalized && p !== companionPage);
+        if (evictIdx >= 0) {
+          next.splice(evictIdx, 1);
+        } else {
+          next.shift();
+        }
+      }
+      return next;
+    });
+    setCompanionPage((prevComp) => (prevComp === activePage ? null : prevComp));
+  }, [activePage, isDesktopViewport, companionPage]);
+
+  const handleCloseDesktopTab = useCallback(
+    (tabToClose: ActivePage) => {
+      setOpenDesktopTabs((prev) => {
+        if (prev.length <= 1) return prev;
+        const next = prev.filter((p) => p !== tabToClose);
+        if (tabToClose === activePage && next.length > 0) {
+          const fallbackPage = next[next.length - 1];
+          startTransition(() => {
+            setActivePage(fallbackPage);
+          });
+        }
+        return next;
+      });
+      setCompanionPage((prevComp) => (prevComp === tabToClose ? null : prevComp));
+    },
+    [activePage]
+  );
+
+  const handleOpenCompanion = useCallback(
+    (targetPage: ActivePage | null) => {
+      if (!isDesktopViewport) return;
+      if (!targetPage) {
+        setCompanionPage(null);
+        return;
+      }
+      const normalized = normalizeConsolidatedPage(targetPage);
+      if (!canAccessPage(session, normalized)) {
+        showToast('Akses ditolak: Akun Anda tidak memiliki hak akses untuk modul ini.', 'warning');
+        return;
+      }
+      if (normalized === activePage) {
+        showToast('Halaman ini sudah terbuka sebagai layar utama di sebelah kiri.', 'info');
+        return;
+      }
+      setCompanionPage(normalized);
+      setOpenDesktopTabs((prev) => {
+        if (prev.includes(normalized)) return prev;
+        const next = [...prev, normalized];
+        if (next.length > MAX_KEEP_ALIVE_TABS) {
+          const evictIdx = next.findIndex((p) => p !== activePage && p !== normalized);
+          if (evictIdx >= 0) next.splice(evictIdx, 1);
+        }
+        return next;
+      });
+    },
+    [isDesktopViewport, session, activePage, showToast]
+  );
+
+  const handleSwapCompanionWithMain = useCallback(
+    (compPage: ActivePage) => {
+      if (!isDesktopViewport) return;
+      const oldMain = activePage;
+      startTransition(() => {
+        setActivePage(compPage);
+        setCompanionPage(oldMain);
+      });
+    },
+    [isDesktopViewport, activePage]
+  );
 
   // Load product database on session ready (100% directly from Supabase with instant local cache)
   const loadProducts = useCallback(
