@@ -42,6 +42,7 @@ import {
   Receipt,
   Download,
   MessageSquare,
+  PanelRightOpen,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { hasPermission, isSuperadmin, canAccessSettings, canAccessJneRekap, canAccessLiveChat, ROLE_DETAILS } from '../services/permissions';
@@ -55,6 +56,8 @@ interface SidebarProps {
   session: UserSession | null;
   activePage: ActivePage;
   onSelectPage: (page: ActivePage) => void;
+  companionPage?: ActivePage | null;
+  onOpenCompanion?: (page: ActivePage | null) => void;
   isMobileOpen: boolean;
   onCloseMobile: () => void;
   isCollapsed: boolean;
@@ -80,6 +83,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   session,
   activePage,
   onSelectPage,
+  companionPage = null,
+  onOpenCompanion,
   isMobileOpen,
   onCloseMobile,
   isCollapsed,
@@ -370,65 +375,94 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activePage === item.id;
+            const isCompanion = companionPage === item.id;
             const isPicking = item.id === 'loading_dock';
             const isPesanan = item.id === 'pesanan_saya';
             const showPickingBadge = isPicking && hasNewPickingAlert;
             const showPesananBadge = isPesanan && hasNewPesananAlert;
             const showAlertBadge = showPickingBadge || showPesananBadge;
             return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => handleNavClick(item.id)}
-                title={collapsed ? `${item.label} - ${item.description}` : undefined}
-                className={`w-full group flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer relative ${
-                  isActive
-                    ? 'bg-primary-500 text-white shadow-md shadow-primary-500/25 font-extrabold'
-                    : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white font-bold'
-                } ${collapsed ? 'justify-center px-2' : ''}`}
-              >
-                <div
-                  className={`p-1.5 rounded-lg transition-colors shrink-0 relative ${
+              <div key={item.id} className="relative group/navitem">
+                <button
+                  type="button"
+                  onClick={() => handleNavClick(item.id)}
+                  title={collapsed ? `${item.label} - ${item.description}` : undefined}
+                  className={`w-full group flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer relative ${
                     isActive
-                      ? 'bg-white/20 text-white'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 group-hover:text-primary-500 group-hover:bg-primary-500/10'
-                  }`}
+                      ? 'bg-primary-500 text-white shadow-md shadow-primary-500/25 font-extrabold'
+                      : isCompanion
+                      ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/70 font-bold'
+                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white font-bold'
+                  } ${collapsed ? 'justify-center px-2' : ''}`}
                 >
-                  <Icon className="w-4 h-4" />
-                  {showAlertBadge && (
-                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-primary-500 rounded-full animate-ping" />
-                  )}
-                </div>
-
-                {!collapsed && (
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-1">
-                      <div className="text-xs truncate leading-snug">{item.label}</div>
-                      {showAlertBadge && (
-                        <span className="px-1.5 py-0.5 text-[9px] font-black bg-primary-500 text-white rounded-full animate-pulse shrink-0">
-                          BARU
-                        </span>
-                      )}
-                      {(item as any).badgeText && (
-                        <span className="px-1.5 py-0.5 text-[9px] font-black bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 border border-indigo-400/30 rounded-full shrink-0">
-                          {(item as any).badgeText}
-                        </span>
-                      )}
-                    </div>
-                    <div
-                      className={`text-[10px] font-normal truncate ${
-                        isActive ? 'text-white/80' : 'text-slate-400 dark:text-slate-500'
-                      }`}
-                    >
-                      {item.description}
-                    </div>
+                  <div
+                    className={`p-1.5 rounded-lg transition-colors shrink-0 relative ${
+                      isActive
+                        ? 'bg-white/20 text-white'
+                        : isCompanion
+                        ? 'bg-purple-200/70 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 group-hover:text-primary-500 group-hover:bg-primary-500/10'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    {showAlertBadge && (
+                      <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-primary-500 rounded-full animate-ping" />
+                    )}
                   </div>
-                )}
 
-                {isActive && !collapsed && (
-                  <div className="w-1.5 h-1.5 rounded-full bg-white shrink-0 shadow-xs" />
+                  {!collapsed && (
+                    <div className="flex-1 min-w-0 pr-5">
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="text-xs truncate leading-snug">{item.label}</div>
+                        {showAlertBadge && (
+                          <span className="px-1.5 py-0.5 text-[9px] font-black bg-primary-500 text-white rounded-full animate-pulse shrink-0">
+                            BARU
+                          </span>
+                        )}
+                        {(item as any).badgeText && (
+                          <span className="px-1.5 py-0.5 text-[9px] font-black bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 border border-indigo-400/30 rounded-full shrink-0">
+                            {(item as any).badgeText}
+                          </span>
+                        )}
+                      </div>
+                      <div
+                        className={`text-[10px] font-normal truncate ${
+                          isActive ? 'text-white/80' : 'text-slate-400 dark:text-slate-500'
+                        }`}
+                      >
+                        {item.description}
+                      </div>
+                    </div>
+                  )}
+
+                  {isActive && !collapsed && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-white shrink-0 shadow-xs" />
+                  )}
+                </button>
+
+                {/* Desktop-Only Quick Companion Split Trigger */}
+                {!collapsed && !isActive && onOpenCompanion && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenCompanion(isCompanion ? null : item.id);
+                    }}
+                    title={
+                      isCompanion
+                        ? `Tutup Panel Samping (${item.shortLabel})`
+                        : `Buka ${item.shortLabel} berdampingan di Panel Samping (Khusus Laptop/PC)`
+                    }
+                    className={`hidden lg:flex items-center justify-center p-1.5 rounded-lg absolute right-2 top-1/2 -translate-y-1/2 transition-all cursor-pointer ${
+                      isCompanion
+                        ? 'opacity-100 bg-purple-600 text-white shadow-xs'
+                        : 'opacity-0 group-hover/navitem:opacity-100 bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-200 hover:bg-indigo-600 hover:text-white border border-slate-200 dark:border-slate-600 shadow-xs'
+                    }`}
+                  >
+                    <PanelRightOpen className="w-3.5 h-3.5" />
+                  </button>
                 )}
-              </button>
+              </div>
             );
           })}
         </div>

@@ -187,3 +187,16 @@ Whenever designing, modifying, or tidying up any frontend component, table, card
 
 ## 12. Live Chat Guardrails
 Setiap perubahan pada Live Chat (liveChatService.ts, LiveChatWorkspace.tsx, LiveChatFloatingWidget.tsx, public/pwa-extras.js, direktori user/role Customer Service) WAJIB membaca dan mematuhi `.agents/skills/wms-live-chat-guardrails/SKILL.md` (invarian + checklist regresi). Tambahkan bug baru yang ditemukan ke skill tersebut.
+
+## 13. Desktop Multitasking Isolation & Mobile Operational Protection (HARD CONSTRAINT)
+Fitur **Multitasking / Multi-Tab Keep-Alive & Slide-Over Companion Drawer** (misal membuka *Produksi* bersamaan dengan *Trello UP* tanpa reset halaman) WAJIB mematuhi aturan isolasi arsitektur berikut secara permanen pada setiap update fitur, perbaikan bug, atau penambahan halaman baru:
+1. **100% Desktop-Only (`>= 1024px` / `lg:`)**:
+   - Bar Multi-Tab Workspace, Keep-Alive multi-view, dan Slide-Over Drawer **HANYA BOLEH** aktif pada layar Laptop/PC (`window.innerWidth >= 1024`).
+   - Pada perangkat HP Seluler / Mobile (`< 1024px`), sistem WAJIB merender **hanya 1 halaman aktif (`activePage`)** secara eksklusif (unmount halaman lain saat pindah menu) dan menyembunyikan seluruh UI multitasking (`hidden lg:flex`).
+2. **Zero Mobile Performance & Viewport Degradation**:
+   - DILARANG KERAS membiarkan komponen halaman yang sedang tidak aktif tetap hidup (*mounted/keep-alive*) di memori RAM HP Seluler, karena dapat menyebabkan lag, *out-of-memory*, atau mengganggu kamera/scanner barcode operasional.
+   - DILARANG menambahkan bar navigasi ekstra yang memakan ruang vertikal pada layar HP (`< 1024px`).
+3. **Desktop Memory Cap (Anti-Freeze)**:
+   - Di Laptop/PC (`>= 1024px`), jumlah tab halaman yang ditahan tetap hidup (*Keep-Alive*) di latar belakang dibatasi maksimal **4 tab aktif** (LRU eviction otomatis jika membuka tab ke-5, atau dapat ditutup manual dengan tombol `×` pada tab).
+   - Setiap penambahan halaman/modul baru di `App.tsx` wajib mengikuti pola render tunggal terpusat (`renderPageContent(pageId)`) agar otomatis kompatibel dengan Single-View di HP maupun Multi-Tab Keep-Alive & Slide-Over Drawer di Laptop/PC.
+

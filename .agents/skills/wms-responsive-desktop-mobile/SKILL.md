@@ -93,3 +93,16 @@ Use Tailwind CSS responsive prefixes consistently across all components:
 2. **Zoom In Protection (110% – 150%)**:
    - Toolbars with more than 4 buttons MUST allow wrapping (`flex-wrap`) but controls should maintain `shrink-0` with minimum tap dimensions.
    - For tables, the table wrapper `<div className="w-full overflow-x-auto">` absorbs the horizontal zoom without breaking the parent card or header.
+
+---
+
+## 7. Desktop Multitasking Isolation & Mobile Operational Protection (HARD CONSTRAINT)
+
+1. **Strict Desktop-Only Multitasking (`>= 1024px` / `lg:`)**:
+   - Workspace Multi-Tab Bar, Keep-Alive multi-view instances, and Slide-Over Companion Drawers (e.g., opening `Produksi` alongside `Trello UP`) MUST be strictly isolated to Desktop (`isDesktopViewport` / `window.innerWidth >= 1024` and CSS `hidden lg:flex`).
+   - On Mobile / HP Seluler (`< 1024px`), NEVER keep inactive page views mounted in the DOM/memory (`display: none`). Mobile MUST render strictly the single `activePage` to protect phone RAM, battery, camera barcode scanner stability, and vertical screen space.
+2. **Memory Cap on Desktop (Max 4 Keep-Alive Tabs)**:
+   - Even on Desktop, cap simultaneous Keep-Alive mounted pages to a maximum of **4 tabs** (using LRU eviction when a 5th tab is opened, unless closed manually by the user) to guarantee zero browser lag.
+3. **New Page Registration Standard**:
+   - Any new page or module added to `App.tsx` MUST be registered inside the centralized `renderPageContent(pageId)` helper and `PAGE_META_MAP` so it works seamlessly in single-page mode on Mobile and Multi-Tab / Slide-Over Drawer mode on Desktop.
+

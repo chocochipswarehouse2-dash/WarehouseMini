@@ -1,12 +1,13 @@
 {
-  "version": "v2.6.85",
-  "versionCode": 345,
+  "version": "v2.6.86",
+  "versionCode": 346,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v345-1209",
-  "releaseTitle": "WMS v2.6.85 — Fix: Anti-Freeze Ketebalan Ikon & Penjelasan Icon Pack",
+  "buildHash": "wms-261108-v346-1215",
+  "releaseTitle": "WMS v2.6.86 — Multitasking Multi-Tab & Panel Samping (Khusus Laptop/PC) + Proteksi Operasional HP",
   "releaseNotes": [
-    "Optimalisasi anti-freeze instan 0ms pada ketebalan ikon",
-    "Penyesuaian label akurat Ketebalan Ikon (Light, Regular, Bold)"
+    "Fitur Multi-Tab Keep-Alive & Panel Samping (Slide-Over / Split) khusus Laptop/PC (>= 1024px) untuk membuka 2 halaman sekaligus (misal Produksi berdampingan dengan Trello UP) tanpa me-reset form/filter",
+    "Proteksi Ketat Operasional HP Seluler (< 1024px): Fitur multi-tab otomatis nonaktif di HP agar layar dan RAM HP 100% aman untuk operasional scanner & lapangan",
+    "Penetapan Rule Permanen #13 di GEMINI.md dan Skill Agent agar seluruh agen mematuhi isolasi Desktop vs Mobile"
   ],
   "minSupportedVersion": "v2.0.0"
 }

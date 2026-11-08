@@ -36,6 +36,11 @@ import { DesktopPwaBanner } from './components/DesktopPwaBanner';
 import { PwaUpdatePrompt } from './components/PwaUpdatePrompt';
 import { AppUpdateModal } from './components/common/AppUpdateModal';
 import { AppUpdateFloatingWidget } from './components/common/AppUpdateFloatingWidget';
+import {
+  DesktopWorkspaceTabBar,
+  DesktopCompanionDrawer,
+  getWorkspacePageMeta,
+} from './components/common/DesktopWorkspaceTabBar';
 import { appUpdateManager } from './services/appUpdateService';
 import { MobileOrientationWarning } from './components/MobileOrientationWarning';
 import { ToastContainer } from './components/Toast';
@@ -406,6 +411,128 @@ export default function App() {
   // Active module page (mendukung deep link & reload F5 dari URL)
   const [activePage, setActivePage] = useState<ActivePage>(() => getPageFromUrl(session));
   const [visitedPages, setVisitedPages] = useState<Set<ActivePage>>(() => new Set<ActivePage>([getPageFromUrl(session)]));
+
+  // ============================================================================
+  // DESKTOP-ONLY MULTITASKING WORKSPACE (>= 1024px / Laptop & PC)
+  // HARD CONSTRAINT (GEMINI.md Rule #13):
+  // Pada perangkat HP Seluler (< 1024px), fitur Keep-Alive Multi-Tab & Companion Drawer
+  // WAJIB MATI TOTAL (0 background mounted pages) demi menjaga RAM HP & kamera scanner.
+  // ============================================================================
+  const MAX_KEEP_ALIVE_TABS = 4;
+  const [isDesktopViewport, setIsDesktopViewport] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth >= 1024;
+  });
+  const [openDesktopTabs, setOpenDesktopTabs] = useState<ActivePage[]>(() => [getPageFromUrl(session)]);
+  const [companionPage, setCompanionPage] = useState<ActivePage | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const handleViewportChange = (e: MediaQueryListEvent | MediaQueryList) => {
+      const desktop = Boolean(e.matches);
+      setIsDesktopViewport(desktop);
+      if (!desktop) {
+        // Segera bersihkan tab background & companion jika layar mengecil ke mode HP/Seluler (< 1024px)
+        setCompanionPage(null);
+        setOpenDesktopTabs((prev) => (prev.length > 1 ? [activePage] : prev));
+      }
+    };
+    handleViewportChange(mq);
+    if (typeof mq.addEventListener === 'function') {
+      mq.addEventListener('change', handleViewportChange);
+      return () => mq.removeEventListener('change', handleViewportChange);
+    } else {
+      window.addEventListener('resize', () => handleViewportChange(mq));
+      return () => window.removeEventListener('resize', () => handleViewportChange(mq));
+    }
+  }, [activePage]);
+
+  // Sinkronkan activePage ke daftar openDesktopTabs (Maksimal 4 Tab Keep-Alive di Laptop/PC)
+  useEffect(() => {
+    if (!isDesktopViewport) {
+      setOpenDesktopTabs([activePage]);
+      return;
+    }
+    setOpenDesktopTabs((prev) => {
+      const normalized = normalizeConsolidatedPage(activePage);
+      if (prev.includes(normalized)) return prev;
+      const next = [...prev, normalized];
+      if (next.length > MAX_KEEP_ALIVE_TABS) {
+        // Evict oldest tab yang bukan activePage dan bukan companionPage
+        const evictIdx = next.findIndex((p) => p !== normalized && p !== companionPage);
+        if (evictIdx >= 0) {
+          next.splice(evictIdx, 1);
+        } else {
+          next.shift();
+        }
+      }
+      return next;
+    });
+    // Jika halaman utama yang baru dipilih sama dengan companionPage di kanan, tutup companionPage agar tidak duplikat kembar
+    setCompanionPage((prevComp) => (prevComp === activePage ? null : prevComp));
+  }, [activePage, isDesktopViewport, companionPage]);
+
+  const handleCloseDesktopTab = useCallback(
+    (tabToClose: ActivePage) => {
+      setOpenDesktopTabs((prev) => {
+        if (prev.length <= 1) return prev;
+        const next = prev.filter((p) => p !== tabToClose);
+        if (tabToClose === activePage && next.length > 0) {
+          const fallbackPage = next[next.length - 1];
+          startTransition(() => {
+            setActivePage(fallbackPage);
+          });
+        }
+        return next;
+      });
+      setCompanionPage((prevComp) => (prevComp === tabToClose ? null : prevComp));
+    },
+    [activePage]
+  );
+
+  const handleOpenCompanion = useCallback(
+    (targetPage: ActivePage | null) => {
+      if (!isDesktopViewport) return;
+      if (!targetPage) {
+        setCompanionPage(null);
+        return;
+      }
+      const normalized = normalizeConsolidatedPage(targetPage);
+      if (!canAccessPage(session, normalized)) {
+        showToast('Akses ditolak: Akun Anda tidak memiliki hak akses untuk modul ini.', 'warning');
+        return;
+      }
+      if (normalized === activePage) {
+        showToast('Halaman ini sudah terbuka sebagai layar utama di sebelah kiri.', 'info');
+        return;
+      }
+      setCompanionPage(normalized);
+      // Pastikan juga terdaftar di openDesktopTabs agar state-nya terjaga
+      setOpenDesktopTabs((prev) => {
+        if (prev.includes(normalized)) return prev;
+        const next = [...prev, normalized];
+        if (next.length > MAX_KEEP_ALIVE_TABS) {
+          const evictIdx = next.findIndex((p) => p !== activePage && p !== normalized);
+          if (evictIdx >= 0) next.splice(evictIdx, 1);
+        }
+        return next;
+      });
+    },
+    [isDesktopViewport, session, activePage, showToast]
+  );
+
+  const handleSwapCompanionWithMain = useCallback(
+    (compPage: ActivePage) => {
+      if (!isDesktopViewport) return;
+      const oldMain = activePage;
+      startTransition(() => {
+        setActivePage(compPage);
+        setCompanionPage(oldMain);
+      });
+    },
+    [isDesktopViewport, activePage]
+  );
   const [inventoryInitialTab, setInventoryInitialTab] = useState<'capacity' | 'inventory' | 'scanner' | 'logs' | undefined>(() => {
     if (typeof window === 'undefined') return undefined;
     const p = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
@@ -2877,6 +3004,8 @@ export default function App() {
         session={session}
         activePage={activePage}
         onSelectPage={handleSelectPage}
+        companionPage={isDesktopViewport ? companionPage : null}
+        onOpenCompanion={isDesktopViewport ? handleOpenCompanion : undefined}
         isMobileOpen={isMobileSidebarOpen}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
         isCollapsed={isSidebarCollapsed}
@@ -2948,7 +3077,7 @@ export default function App() {
             )}
         </div>
 
-        {/* Sticky Mobile Top Header Bar (< 1024px) */}
+        {/* Sticky Mobile Top Header Bar (< 1024px) — 100% Untouched for Mobile */}
         <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between px-3 sm:px-4 py-2 bg-white/95 dark:bg-[#101726]/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 shadow-2xs print:hidden">
           <div className="flex items-center gap-2 min-w-0">
             <button
@@ -2976,6 +3105,20 @@ export default function App() {
           </div>
         </header>
 
+        {/* Desktop-Only Multitasking Tab Bar & Companion Trigger (>= 1024px) */}
+        {isDesktopViewport && session && (
+          <DesktopWorkspaceTabBar
+            session={session}
+            activePage={activePage}
+            openTabs={openDesktopTabs}
+            companionPage={companionPage}
+            onSelectTab={handleSelectPage}
+            onCloseTab={handleCloseDesktopTab}
+            onOpenCompanion={handleOpenCompanion}
+            maxKeepAliveTabs={MAX_KEEP_ALIVE_TABS}
+          />
+        )}
+
         {/* Floating Mobile Sidebar Toggle */}
         <button
           type="button"
@@ -2986,314 +3129,418 @@ export default function App() {
           <Menu className="w-6 h-6" />
         </button>
 
-        {/* Main Content Area based on active navigation tab with Keep-Alive - Fluid Full-Width across all screens & zoom levels */}
-        <main className="flex-1 min-w-0 pb-24 sm:pb-8 p-2 sm:p-4 lg:p-6 w-full max-w-full overflow-x-hidden">
-          {session && !canAccessPage(session, activePage) ? (
-            <div className="min-h-[60vh] flex items-center justify-center p-4">
-              <div className="max-w-md w-full bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-2xl p-6 text-center shadow-lg space-y-4">
-                <div className="w-14 h-14 bg-primary-100 dark:bg-primary-950/60 rounded-2xl flex items-center justify-center mx-auto text-primary-600 dark:text-primary-400">
-                  <ShieldAlert className="w-7 h-7" />
+        {/* Main Content Area + Optional Desktop Companion Drawer */}
+        <div className="flex-1 flex flex-row min-w-0 w-full max-w-full items-start">
+          <main className="flex-1 min-w-0 pb-24 sm:pb-8 p-2 sm:p-4 lg:p-6 w-full max-w-full overflow-x-hidden">
+            {session && !canAccessPage(session, activePage) ? (
+              <div className="min-h-[60vh] flex items-center justify-center p-4">
+                <div className="max-w-md w-full bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-2xl p-6 text-center shadow-lg space-y-4">
+                  <div className="w-14 h-14 bg-primary-100 dark:bg-primary-950/60 rounded-2xl flex items-center justify-center mx-auto text-primary-600 dark:text-primary-400">
+                    <ShieldAlert className="w-7 h-7" />
+                  </div>
+                  <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
+                    Akses Halaman Dibatasi
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                    Akun Anda (<span className="font-bold text-slate-700 dark:text-slate-200">{session.name || session.username}</span> - Role: <span className="font-extrabold text-primary-500">{session.role}</span>) tidak memiliki izin untuk mengakses halaman ini.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setActivePage(getDefaultPageForSession(session))}
+                    className="px-4 py-2.5 bg-primary-500 text-white rounded-xl text-xs font-extrabold hover:bg-primary-600 transition-colors cursor-pointer"
+                  >
+                    Buka Modul Utama Anda
+                  </button>
                 </div>
-                <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
-                  Akses Halaman Dibatasi
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Akun Anda (<span className="font-bold text-slate-700 dark:text-slate-200">{session.name || session.username}</span> - Role: <span className="font-extrabold text-primary-500">{session.role}</span>) tidak memiliki izin untuk mengakses halaman ini.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setActivePage(getDefaultPageForSession(session))}
-                  className="px-4 py-2.5 bg-primary-500 text-white rounded-xl text-xs font-extrabold hover:bg-primary-600 transition-colors cursor-pointer"
-                >
-                  Buka Modul Utama Anda
-                </button>
               </div>
-            </div>
-          ) : (
-            <>
-          <ErrorBoundary fallbackTitle="Kendala Memuat Halaman" onReset={() => window.location.reload()}>
-            <React.Suspense fallback={<div className="flex justify-center p-8"><span className="animate-spin text-3xl">⏳</span></div>}>
-              {activePage === 'dashboard' && (
-                  <DashboardView
-                    session={session}
-                    onNavigate={(page, subTab) => {
-                      if (page === 'agenda' && subTab) setAgendaInitialTab(subTab as any);
-                      if (page === 'loading_dock' && subTab) setLoadingDockInitialTab(subTab as any);
-                      if (page === 'inventory' && subTab) setInventoryInitialTab(subTab as any);
-                      handleSelectPage(page as any);
-                    }}
-                    productCatalog={productDatabase}
-                    currentLocations={activeLocations}
-                    onShowToast={showToast}
-                  />
-              )}
-              {activePage === 'packing' && (
-                  <PackingView />
-              )}
-              {activePage === 'agenda' && (
-                  <AgendaView 
-                    session={session}
-                    onShowToast={showToast}
-                    initialTab={agendaInitialTab}
-                  />
-              )}
-              {activePage === 'produksi' && (
-                  <ProduksiView
-                    session={session}
-                    productCatalog={productDatabase}
-                    onShowToast={showToast}
-                  />
-              )}
-              {activePage === 'trello_up' && (
-                  <TrelloView
-                    session={session}
-                    productCatalog={productDatabase}
-                    onNotify={showToast}
-                  />
-              )}
-              {(activePage === 'loading_dock' || activePage === 'picking_tasks') && (
-                  <LoadingDockView
-                    session={session}
-                    productCatalog={productDatabase}
-                    onShowToast={showToast}
-                    initialTab={activePage === 'picking_tasks' ? 'picking_tasks' : loadingDockInitialTab}
-                    hasNewPickingAlert={!!newPickingTaskAlert}
-                    onClearPickingAlert={() => setNewPickingTaskAlert(null)}
-                  />
-              )}
-              {(activePage === 'inventory' || activePage === 'operasi_stok' || activePage === 'scanner' || activePage === 'mutasi_log') && (
-                  <InventoryView
-                    session={session}
-                    currentLocations={activeLocations}
-                    productCatalog={productDatabase}
-                    onNotify={showToast}
-                    onRefreshCatalog={loadProducts}
-                    initialTab={
-                      activePage === 'operasi_stok' || activePage === 'scanner'
-                        ? 'scanner'
-                        : activePage === 'mutasi_log'
-                        ? 'logs'
-                        : inventoryInitialTab
-                    }
-                    scannedCount={scannedData.length}
-                    onOpenImportModal={() => setIsImportModalOpen(true)}
-                    scannerComponent={(layoutMode) => {
-                      const inputCard = (
-                        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
-                          <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-50/70 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800 rounded-t-xl">
-                            <div className="flex-1 min-w-0">
-                              <ScanMethodSelector currentMode={scanMode} onSelectMode={setScanMode} />
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setShowQuickTags((prev) => !prev)}
-                              className="py-1 px-2.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 whitespace-nowrap shadow-2xs cursor-pointer select-none"
-                              title={showQuickTags ? 'Sembunyikan Pengaturan Tag' : 'Tampilkan Pengaturan Tag'}
-                            >
-                              <Tag className="w-3.5 h-3.5 text-indigo-500" />
-                              <span className="hidden sm:inline">
-                                {showQuickTags ? 'Sembunyikan Tag' : 'Tampilkan Tag'}
-                              </span>
-                            </button>
-                          </div>
-                          {(scanMode === 'fisik' || scanMode === 'manual') && (
-                            <PhysicalScanInput onScan={handleScannedItem} products={productDatabase} />
-                          )}
-                          {scanMode === 'kamera' && (
-                            <CameraScanner
-                              onScan={handleScannedItem}
-                              onRequestWakeLock={requestScreenWakeLock}
-                            />
-                          )}
-                          <QuickTagToolbar
-                            isVisible={showQuickTags}
-                            currentCategory={currentCategory}
-                            currentLocation={currentLocation}
-                            onSelectCategory={handleSelectQuickCategory}
-                            onSelectLocation={handleSelectQuickLocation}
+            ) : (
+              <ErrorBoundary fallbackTitle="Kendala Memuat Halaman" onReset={() => window.location.reload()}>
+                <React.Suspense fallback={<div className="flex justify-center p-8"><span className="animate-spin text-3xl">⏳</span></div>}>
+                  {(isDesktopViewport
+                    ? openDesktopTabs.filter((p) => p !== companionPage)
+                    : [activePage]
+                  ).map((pageKey) => {
+                    const isVisible = pageKey === activePage;
+                    return (
+                      <div
+                        key={pageKey}
+                        className={isVisible ? 'block w-full' : 'hidden'}
+                        aria-hidden={!isVisible}
+                      >
+                        {pageKey === 'dashboard' && (
+                          <DashboardView
+                            session={session}
+                            onNavigate={(page, subTab) => {
+                              if (page === 'agenda' && subTab) setAgendaInitialTab(subTab as any);
+                              if (page === 'loading_dock' && subTab) setLoadingDockInitialTab(subTab as any);
+                              if (page === 'inventory' && subTab) setInventoryInitialTab(subTab as any);
+                              handleSelectPage(page as any);
+                            }}
+                            productCatalog={productDatabase}
+                            currentLocations={activeLocations}
+                            onShowToast={showToast}
                           />
-                        </div>
-                      );
-
-                      const saveBar = (
-                        <BottomSaveBar
-                          items={scannedData}
-                          keterangan={keterangan}
-                          onChangeKeterangan={setKeterangan}
-                          onSave={handleSaveData}
-                          isSaving={isSaving}
-                        />
-                      );
-
-                      if (layoutMode === 'split') {
-                        return (
-                          <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-                            <div className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-3 space-y-3">
-                              {inputCard}
-                              {saveBar}
-                            </div>
-                            <div className="lg:col-span-7 xl:col-span-8">
-                              <ScannedItemsList
-                                items={scannedData}
-                                onRemoveItem={handleRemoveItem}
-                                onClearAll={handleClearAll}
-                                onUpdateCategory={handleUpdateItemCategory}
-                                onUpdateQty={handleUpdateItemQty}
-                              />
-                            </div>
-                          </div>
-                        );
-                      }
-
-                      if (layoutMode === 'table') {
-                        return (
-                          <div className="w-full space-y-3">
-                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
-                              <div className="lg:col-span-8">{inputCard}</div>
-                              <div className="lg:col-span-4 flex flex-col justify-end">{saveBar}</div>
-                            </div>
-                            <ScannedItemsList
-                              items={scannedData}
-                              onRemoveItem={handleRemoveItem}
-                              onClearAll={handleClearAll}
-                              onUpdateCategory={handleUpdateItemCategory}
-                              onUpdateQty={handleUpdateItemQty}
-                              forceTableMode={true}
-                            />
-                          </div>
-                        );
-                      }
-
-                      return (
-                        <div className="w-full max-w-3xl mx-auto space-y-3">
-                          <div className="sticky top-0 z-30 bg-slate-50/95 dark:bg-[#0a0f1c]/95 pb-1 backdrop-blur-md">
-                            {inputCard}
-                          </div>
-                          <ScannedItemsList
-                            items={scannedData}
-                            onRemoveItem={handleRemoveItem}
-                            onClearAll={handleClearAll}
-                            onUpdateCategory={handleUpdateItemCategory}
-                            onUpdateQty={handleUpdateItemQty}
+                        )}
+                        {pageKey === 'packing' && <PackingView />}
+                        {pageKey === 'agenda' && (
+                          <AgendaView
+                            session={session}
+                            onShowToast={showToast}
+                            initialTab={agendaInitialTab}
                           />
-                          {saveBar}
-                        </div>
-                      );
-                    }}
-                  />
-              )}
-              {activePage === 'peminjaman' && (
-                  <PeminjamanView
-                    session={session}
-                    productCatalog={productDatabase}
-                    onShowToast={showToast}
-                    onRefreshCatalog={loadProducts}
-                  />
-              )}
-              {(activePage === 'cetak_label' || activePage === 'cetak_barcode') && (
-                  <CetakLabelView
-                    session={session}
-                    productCatalog={productDatabase}
-                    onShowToast={showToast}
-                    initialTab={cetakLabelInitialTab}
-                  />
-              )}
-              {activePage === 'perbaikan' && (
-                  <QualityControlView
-                    session={session}
-                    productCatalog={productDatabase}
-                    onShowToast={showToast}
-                    onRefreshCatalog={loadProducts}
-                  />
-              )}
-              {activePage === 'karyawan' && (
-                  <KaryawanView
-                    session={session}
-                    onShowToast={showToast}
-                  />
-              )}
-              {activePage === 'presensi' && (
-                  <PresensiView
-                    session={session}
-                    onShowToast={showToast}
-                  />
-              )}
-              {activePage === 'roster_shift' && (
-                  <RosterShiftView
-                    session={session}
-                    onShowToast={showToast}
-                  />
-              )}
-              {activePage === 'lembur_cuti' && (
-                  <LemburCutiView
-                    session={session}
-                    onShowToast={showToast}
-                  />
-              )}
-              {activePage === 'hr_approval' && (
-                  <HrApprovalView
-                    session={session}
-                    onShowToast={showToast}
-                  />
-              )}
-              {activePage === 'hr_rekap' && (
-                  <HrRekapView
-                    session={session}
-                    onShowToast={showToast}
-                  />
-              )}
-              {activePage === 'pesanan_saya' && (
-                  <PesananSayaView
-                    session={session}
-                    productCatalog={productDatabase}
-                    onShowToast={showToast}
-                    onRefreshCatalog={() => loadProducts(true)}
-                  />
-              )}
-              {activePage === 'pusat_resolusi' && (
-                  <PusatResolusiView
-                    session={session}
-                    productCatalog={productDatabase}
-                    onNotify={showToast}
-                  />
-              )}
-              {activePage === 'rekap_tagihan_jne' && (
-                  <JneRekapView
-                    session={session}
-                    onShowToast={showToast}
-                  />
-              )}
-              {activePage === 'katalog_produk' && (
-                  <KatalogProdukView session={session} onNotify={showToast} />
-              )}
+                        )}
+                        {pageKey === 'produksi' && (
+                          <ProduksiView
+                            session={session}
+                            productCatalog={productDatabase}
+                            onShowToast={showToast}
+                          />
+                        )}
+                        {pageKey === 'trello_up' && (
+                          <TrelloView
+                            session={session}
+                            productCatalog={productDatabase}
+                            onNotify={showToast}
+                          />
+                        )}
+                        {(pageKey === 'loading_dock' || pageKey === 'picking_tasks') && (
+                          <LoadingDockView
+                            session={session}
+                            productCatalog={productDatabase}
+                            onShowToast={showToast}
+                            initialTab={pageKey === 'picking_tasks' ? 'picking_tasks' : loadingDockInitialTab}
+                            hasNewPickingAlert={!!newPickingTaskAlert}
+                            onClearPickingAlert={() => setNewPickingTaskAlert(null)}
+                          />
+                        )}
+                        {(pageKey === 'inventory' || pageKey === 'operasi_stok' || pageKey === 'scanner' || pageKey === 'mutasi_log') && (
+                          <InventoryView
+                            session={session}
+                            currentLocations={activeLocations}
+                            productCatalog={productDatabase}
+                            onNotify={showToast}
+                            onRefreshCatalog={loadProducts}
+                            initialTab={
+                              pageKey === 'operasi_stok' || pageKey === 'scanner'
+                                ? 'scanner'
+                                : pageKey === 'mutasi_log'
+                                ? 'logs'
+                                : inventoryInitialTab
+                            }
+                            scannedCount={scannedData.length}
+                            onOpenImportModal={() => setIsImportModalOpen(true)}
+                            scannerComponent={(layoutMode) => {
+                              const inputCard = (
+                                <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
+                                  <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-50/70 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800 rounded-t-xl">
+                                    <div className="flex-1 min-w-0">
+                                      <ScanMethodSelector currentMode={scanMode} onSelectMode={setScanMode} />
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowQuickTags((prev) => !prev)}
+                                      className="py-1 px-2.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 whitespace-nowrap shadow-2xs cursor-pointer select-none"
+                                      title={showQuickTags ? 'Sembunyikan Pengaturan Tag' : 'Tampilkan Pengaturan Tag'}
+                                    >
+                                      <Tag className="w-3.5 h-3.5 text-indigo-500" />
+                                      <span className="hidden sm:inline">
+                                        {showQuickTags ? 'Sembunyikan Tag' : 'Tampilkan Tag'}
+                                      </span>
+                                    </button>
+                                  </div>
+                                  {(scanMode === 'fisik' || scanMode === 'manual') && (
+                                    <PhysicalScanInput onScan={handleScannedItem} products={productDatabase} />
+                                  )}
+                                  {scanMode === 'kamera' && isVisible && (
+                                    <CameraScanner
+                                      onScan={handleScannedItem}
+                                      onRequestWakeLock={requestScreenWakeLock}
+                                    />
+                                  )}
+                                  <QuickTagToolbar
+                                    isVisible={showQuickTags}
+                                    currentCategory={currentCategory}
+                                    currentLocation={currentLocation}
+                                    onSelectCategory={handleSelectQuickCategory}
+                                    onSelectLocation={handleSelectQuickLocation}
+                                  />
+                                </div>
+                              );
 
-              {activePage === 'roadmap' && (
-                  <RoadmapView session={session} onShowToast={showToast} />
-              )}
-              {activePage === 'live_chat' && session && (
-                  <LiveChatWorkspace
-                    session={session}
-                    productCatalog={productDatabase}
-                    onNotify={showToast}
-                    mode="full"
-                    initialRoomId={liveChatManager.getSnapshot().activeRoomId}
-                    allSkus={productDatabase.map(p => p.k).filter(Boolean)}
-                    onQuickSearchContext={(tagLabel) => {
-                      showToast(`Tag Referensi: ${tagLabel}`, 'info');
-                    }}
-                  />
-              )}
-              {activePage === 'supabase_migration' && (
-                  <SupabaseMigrationView
-                    session={session}
-                    onNotify={showToast}
-                  />
-              )}
-            </React.Suspense>
-          </ErrorBoundary>
-            </>
+                              const saveBar = (
+                                <BottomSaveBar
+                                  items={scannedData}
+                                  keterangan={keterangan}
+                                  onChangeKeterangan={setKeterangan}
+                                  onSave={handleSaveData}
+                                  isSaving={isSaving}
+                                />
+                              );
+
+                              if (layoutMode === 'split') {
+                                return (
+                                  <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+                                    <div className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-3 space-y-3">
+                                      {inputCard}
+                                      {saveBar}
+                                    </div>
+                                    <div className="lg:col-span-7 xl:col-span-8">
+                                      <ScannedItemsList
+                                        items={scannedData}
+                                        onRemoveItem={handleRemoveItem}
+                                        onClearAll={handleClearAll}
+                                        onUpdateCategory={handleUpdateItemCategory}
+                                        onUpdateQty={handleUpdateItemQty}
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              }
+
+                              if (layoutMode === 'table') {
+                                return (
+                                  <div className="w-full space-y-3">
+                                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
+                                      <div className="lg:col-span-8">{inputCard}</div>
+                                      <div className="lg:col-span-4 flex flex-col justify-end">{saveBar}</div>
+                                    </div>
+                                    <ScannedItemsList
+                                      items={scannedData}
+                                      onRemoveItem={handleRemoveItem}
+                                      onClearAll={handleClearAll}
+                                      onUpdateCategory={handleUpdateItemCategory}
+                                      onUpdateQty={handleUpdateItemQty}
+                                      forceTableMode={true}
+                                    />
+                                  </div>
+                                );
+                              }
+
+                              return (
+                                <div className="w-full max-w-3xl mx-auto space-y-3">
+                                  <div className="sticky top-0 z-30 bg-slate-50/95 dark:bg-[#0a0f1c]/95 pb-1 backdrop-blur-md">
+                                    {inputCard}
+                                  </div>
+                                  <ScannedItemsList
+                                    items={scannedData}
+                                    onRemoveItem={handleRemoveItem}
+                                    onClearAll={handleClearAll}
+                                    onUpdateCategory={handleUpdateItemCategory}
+                                    onUpdateQty={handleUpdateItemQty}
+                                  />
+                                  {saveBar}
+                                </div>
+                              );
+                            }}
+                          />
+                        )}
+                        {pageKey === 'peminjaman' && (
+                          <PeminjamanView
+                            session={session}
+                            productCatalog={productDatabase}
+                            onShowToast={showToast}
+                            onRefreshCatalog={loadProducts}
+                          />
+                        )}
+                        {(pageKey === 'cetak_label' || pageKey === 'cetak_barcode') && (
+                          <CetakLabelView
+                            session={session}
+                            productCatalog={productDatabase}
+                            onShowToast={showToast}
+                            initialTab={cetakLabelInitialTab}
+                          />
+                        )}
+                        {pageKey === 'perbaikan' && (
+                          <QualityControlView
+                            session={session}
+                            productCatalog={productDatabase}
+                            onShowToast={showToast}
+                            onRefreshCatalog={loadProducts}
+                          />
+                        )}
+                        {pageKey === 'karyawan' && (
+                          <KaryawanView session={session} onShowToast={showToast} />
+                        )}
+                        {pageKey === 'presensi' && (
+                          <PresensiView session={session} onShowToast={showToast} />
+                        )}
+                        {pageKey === 'roster_shift' && (
+                          <RosterShiftView session={session} onShowToast={showToast} />
+                        )}
+                        {pageKey === 'lembur_cuti' && (
+                          <LemburCutiView session={session} onShowToast={showToast} />
+                        )}
+                        {pageKey === 'hr_approval' && (
+                          <HrApprovalView session={session} onShowToast={showToast} />
+                        )}
+                        {pageKey === 'hr_rekap' && (
+                          <HrRekapView session={session} onShowToast={showToast} />
+                        )}
+                        {pageKey === 'pesanan_saya' && (
+                          <PesananSayaView
+                            session={session}
+                            productCatalog={productDatabase}
+                            onShowToast={showToast}
+                            onRefreshCatalog={() => loadProducts(true)}
+                          />
+                        )}
+                        {pageKey === 'pusat_resolusi' && (
+                          <PusatResolusiView
+                            session={session}
+                            productCatalog={productDatabase}
+                            onNotify={showToast}
+                          />
+                        )}
+                        {pageKey === 'rekap_tagihan_jne' && (
+                          <JneRekapView session={session} onShowToast={showToast} />
+                        )}
+                        {pageKey === 'katalog_produk' && (
+                          <KatalogProdukView session={session} onNotify={showToast} />
+                        )}
+                        {pageKey === 'roadmap' && (
+                          <RoadmapView session={session} onShowToast={showToast} />
+                        )}
+                        {pageKey === 'live_chat' && session && (
+                          <LiveChatWorkspace
+                            session={session}
+                            productCatalog={productDatabase}
+                            onNotify={showToast}
+                            mode="full"
+                            initialRoomId={liveChatManager.getSnapshot().activeRoomId}
+                            allSkus={productDatabase.map((p) => p.k).filter(Boolean)}
+                            onQuickSearchContext={(tagLabel) => {
+                              showToast(`Tag Referensi: ${tagLabel}`, 'info');
+                            }}
+                          />
+                        )}
+                        {pageKey === 'supabase_migration' && (
+                          <SupabaseMigrationView session={session} onNotify={showToast} />
+                        )}
+                      </div>
+                    );
+                  })}
+                </React.Suspense>
+              </ErrorBoundary>
+            )}
+          </main>
+
+          {/* Desktop-Only Slide-Over / Side-by-Side Companion Drawer (>= 1024px) */}
+          {isDesktopViewport && session && companionPage && canAccessPage(session, companionPage) && (
+            <DesktopCompanionDrawer
+              companionPage={companionPage}
+              activePage={activePage}
+              onClose={() => setCompanionPage(null)}
+              onSwapWithMain={handleSwapCompanionWithMain}
+            >
+              <ErrorBoundary fallbackTitle="Kendala Memuat Panel Samping" onReset={() => setCompanionPage(null)}>
+                <React.Suspense fallback={<div className="flex justify-center p-8"><span className="animate-spin text-2xl">⏳</span></div>}>
+                  {companionPage === 'dashboard' && (
+                    <DashboardView
+                      session={session}
+                      onNavigate={(page) => handleSelectPage(page as any)}
+                      productCatalog={productDatabase}
+                      currentLocations={activeLocations}
+                      onShowToast={showToast}
+                    />
+                  )}
+                  {companionPage === 'packing' && <PackingView />}
+                  {companionPage === 'agenda' && (
+                    <AgendaView session={session} onShowToast={showToast} initialTab={agendaInitialTab} />
+                  )}
+                  {companionPage === 'produksi' && (
+                    <ProduksiView session={session} productCatalog={productDatabase} onShowToast={showToast} />
+                  )}
+                  {companionPage === 'trello_up' && (
+                    <TrelloView session={session} productCatalog={productDatabase} onNotify={showToast} />
+                  )}
+                  {(companionPage === 'loading_dock' || companionPage === 'picking_tasks') && (
+                    <LoadingDockView
+                      session={session}
+                      productCatalog={productDatabase}
+                      onShowToast={showToast}
+                      initialTab={companionPage === 'picking_tasks' ? 'picking_tasks' : loadingDockInitialTab}
+                      hasNewPickingAlert={!!newPickingTaskAlert}
+                      onClearPickingAlert={() => setNewPickingTaskAlert(null)}
+                    />
+                  )}
+                  {(companionPage === 'inventory' || companionPage === 'operasi_stok' || companionPage === 'scanner' || companionPage === 'mutasi_log') && (
+                    <InventoryView
+                      session={session}
+                      currentLocations={activeLocations}
+                      productCatalog={productDatabase}
+                      onNotify={showToast}
+                      onRefreshCatalog={loadProducts}
+                      initialTab={inventoryInitialTab}
+                      scannedCount={scannedData.length}
+                      onOpenImportModal={() => setIsImportModalOpen(true)}
+                      scannerComponent={() => null}
+                    />
+                  )}
+                  {companionPage === 'peminjaman' && (
+                    <PeminjamanView
+                      session={session}
+                      productCatalog={productDatabase}
+                      onShowToast={showToast}
+                      onRefreshCatalog={loadProducts}
+                    />
+                  )}
+                  {(companionPage === 'cetak_label' || companionPage === 'cetak_barcode') && (
+                    <CetakLabelView
+                      session={session}
+                      productCatalog={productDatabase}
+                      onShowToast={showToast}
+                      initialTab={cetakLabelInitialTab}
+                    />
+                  )}
+                  {companionPage === 'perbaikan' && (
+                    <QualityControlView
+                      session={session}
+                      productCatalog={productDatabase}
+                      onShowToast={showToast}
+                      onRefreshCatalog={loadProducts}
+                    />
+                  )}
+                  {companionPage === 'karyawan' && <KaryawanView session={session} onShowToast={showToast} />}
+                  {companionPage === 'presensi' && <PresensiView session={session} onShowToast={showToast} />}
+                  {companionPage === 'roster_shift' && <RosterShiftView session={session} onShowToast={showToast} />}
+                  {companionPage === 'lembur_cuti' && <LemburCutiView session={session} onShowToast={showToast} />}
+                  {companionPage === 'hr_approval' && <HrApprovalView session={session} onShowToast={showToast} />}
+                  {companionPage === 'hr_rekap' && <HrRekapView session={session} onShowToast={showToast} />}
+                  {companionPage === 'pesanan_saya' && (
+                    <PesananSayaView
+                      session={session}
+                      productCatalog={productDatabase}
+                      onShowToast={showToast}
+                      onRefreshCatalog={() => loadProducts(true)}
+                    />
+                  )}
+                  {companionPage === 'pusat_resolusi' && (
+                    <PusatResolusiView session={session} productCatalog={productDatabase} onNotify={showToast} />
+                  )}
+                  {companionPage === 'rekap_tagihan_jne' && <JneRekapView session={session} onShowToast={showToast} />}
+                  {companionPage === 'katalog_produk' && <KatalogProdukView session={session} onNotify={showToast} />}
+                  {companionPage === 'roadmap' && <RoadmapView session={session} onShowToast={showToast} />}
+                  {companionPage === 'live_chat' && (
+                    <LiveChatWorkspace
+                      session={session}
+                      productCatalog={productDatabase}
+                      onNotify={showToast}
+                      mode="full"
+                      initialRoomId={liveChatManager.getSnapshot().activeRoomId}
+                      allSkus={productDatabase.map((p) => p.k).filter(Boolean)}
+                      onQuickSearchContext={(tagLabel) => {
+                        showToast(`Tag Referensi: ${tagLabel}`, 'info');
+                      }}
+                    />
+                  )}
+                  {companionPage === 'supabase_migration' && (
+                    <SupabaseMigrationView session={session} onNotify={showToast} />
+                  )}
+                </React.Suspense>
+              </ErrorBoundary>
+            </DesktopCompanionDrawer>
           )}
-        </main>
+        </div>
       </div>
 
       {/* APK Installation Guide Modal */}

@@ -15,19 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.85",
-  "versionCode": 345,
+  "version": "v2.6.86",
+  "versionCode": 346,
   "buildDate": "8 November 2026",
-  "buildHash": "wms-261108-v345-1209",
-  "releaseTitle": "WMS v2.6.85 — Fix: Anti-Freeze Ketebalan Ikon & Penjelasan Icon Pack",
+  "buildHash": "wms-261108-v346-1215",
+  "releaseTitle": "WMS v2.6.86 — Multitasking Multi-Tab & Panel Samping (Khusus Laptop/PC) + Proteksi Operasional HP",
   "releaseNotes": [
-    "Optimalisasi anti-freeze instan 0ms pada ketebalan ikon",
-    "Penyesuaian label akurat Ketebalan Ikon (Light, Regular, Bold)"
+    "Fitur Multi-Tab Keep-Alive & Panel Samping (Slide-Over / Split) khusus Laptop/PC (>= 1024px) untuk membuka 2 halaman sekaligus (misal Produksi berdampingan dengan Trello UP) tanpa me-reset form/filter",
+    "Proteksi Ketat Operasional HP Seluler (< 1024px): Fitur multi-tab otomatis nonaktif di HP agar layar dan RAM HP 100% aman untuk operasional scanner & lapangan",
+    "Penetapan Rule Permanen #13 di GEMINI.md dan Skill Agent agar seluruh agen mematuhi isolasi Desktop vs Mobile"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.85",
+    "versionCode": 345,
+    "buildDate": "8 November 2026",
+    "buildHash": "wms-261108-v345-1209",
+    "releaseTitle": "WMS v2.6.85 — Fix: Anti-Freeze Ketebalan Ikon & Penjelasan Icon Pack",
+    "releaseNotes": [
+      "Optimalisasi anti-freeze instan 0ms pada ketebalan ikon",
+      "Penyesuaian label akurat Ketebalan Ikon (Light, Regular, Bold)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.84",
     "versionCode": 344,
@@ -116,19 +129,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Standarisasi 100% lookup Nama Produk dan Size via Master Produk (resolveProductName & resolveProductDisplaySize) di Tabel Stok, Kapasitas Rak & 3D Gudang tanpa anomali Default/SKU",
       "Penambahan fungsi pengurutan kolom Area (AREA_ASC & AREA_DESC) pada Tabel Stok Inventory",
       "Sinkronisasi otomatis realtime store Inventory saat perbaikan anomali atau update stok (wms_inventory_updated & wms_stock_updated)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.77",
-    "versionCode": 337,
-    "buildDate": "7 November 2026",
-    "buildHash": "wms-261107-v337-1407",
-    "releaseTitle": "WMS v2.6.77 — Standarisasi Order ID Tunggal di Seluruh Modul Pesanan & Input Resi",
-    "releaseNotes": [
-      "Penyatuan generator Order ID Manual Shipment (MS[STORE]-YYMMDD-XXXX) sehingga no_pesanan dan no_transaksi_customer menggunakan 1 kode unik yang 100% identik",
-      "Perbaikan modal Update No. Resi Massal, Batalkan Pesanan, Notifikasi WA, dan Email agar selalu menampilkan Order ID utama (#no_pesanan) yang sama persis dengan Rekap Pesanan",
-      "Penghapusan tampilan ID Ref ganda hasil auto-generate lama pada kartu/tabel Rekap Pesanan"
     ],
     "minSupportedVersion": "v2.0.0"
   }
