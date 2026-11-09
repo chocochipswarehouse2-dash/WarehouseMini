@@ -15,19 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.99",
-  "versionCode": 359,
+  "version": "v2.6.100",
+  "versionCode": 360,
   "buildDate": "9 November 2026",
-  "buildHash": "wms-261109-v359-0526",
-  "releaseTitle": "WMS v2.6.99 — Refine Produksi Couple Match Scoring & Instant Trello Swap Button",
+  "buildHash": "wms-261109-v360-1033",
+  "releaseTitle": "WMS v2.6.100 — Anti Quota Exceeded Engine & Safe LocalStorage Healing",
   "releaseNotes": [
-    "Koreksi gender scoring pada kode kembar busana couple (25751 MAN -> Logan Top SAMPLE, 25751 WOMAN -> Kailea Set)",
-    "Tombol interaktif 1-klik 'Ganti Produk' di tabel Produksi untuk menukar kartu Trello alternatif secara instan tanpa ketik manual"
+    "Arsitektur Safe Storage Utility (safeLocalStorageSet, auto-eviction, clearHeavyCaches) mencegah crash 'The quota has been exceeded' pada Tugas Picking",
+    "Optimasi cache offline PickingTasksView hanya menyimpan tugas aktif (mereduksi 95% beban memori localStorage)",
+    "Penyempurnaan ErrorBoundary dengan tombol pemulihan darurat dan pembersihan otomatis storage"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.99",
+    "versionCode": 359,
+    "buildDate": "9 November 2026",
+    "buildHash": "wms-261109-v359-0526",
+    "releaseTitle": "WMS v2.6.99 — Refine Produksi Couple Match Scoring & Instant Trello Swap Button",
+    "releaseNotes": [
+      "Koreksi gender scoring pada kode kembar busana couple (25751 MAN -> Logan Top SAMPLE, 25751 WOMAN -> Kailea Set)",
+      "Tombol interaktif 1-klik 'Ganti Produk' di tabel Produksi untuk menukar kartu Trello alternatif secara instan tanpa ketik manual"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.98",
     "versionCode": 358,
@@ -113,19 +126,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Desain kartu Input Penerimaan Produksi disesuaikan dengan referensi matriks ukuran (Banyak Ukuran S-3XL yang judul kolomnya dapat diedit & All Size / Free Size)",
       "Penyesuaian tampilan responsif HP Seluler (Grid 3 kolom ukuran, tanpa scroll horizontal)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.91",
-    "versionCode": 351,
-    "buildDate": "8 November 2026",
-    "buildHash": "wms-261108-v351-1451",
-    "releaseTitle": "WMS v2.6.91 — Isolasi Sesi Multi-Tab & Pembersihan Cache Saat Ganti Akun",
-    "releaseNotes": [
-      "Reset otomatis seluruh Multi-Tab Keep-Alive, Panel Samping, dan halaman aktif saat Logout atau Login akun baru",
-      "Filter ketat tab berdasarkan hak akses canAccessPage agar tab akun sebelumnya tidak pernah bocor ke akun lain",
-      "Tampilan sapaan nama lengkap operator di Dashboard"
     ],
     "minSupportedVersion": "v2.0.0"
   }

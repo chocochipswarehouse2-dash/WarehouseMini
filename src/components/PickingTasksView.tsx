@@ -54,6 +54,7 @@ import { FulfillmentRefillModal } from './FulfillmentRefillModal';
 import { PhysicalScanInput } from './PhysicalScanInput';
 import { ErrorBoundary } from './ErrorBoundary';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
+import { safeLocalStorageSet, safeLocalStorageRemove, clearHeavyCaches } from '../utils/safeStorage';
 import {
   PickingListItem,
   PickingSuratJalanGroup,
@@ -269,18 +270,38 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
   // Save active picking session to localStorage to persist across refreshes / offline
   useEffect(() => {
-    if (activeSJ) {
-      const sessionData = {
-        activeSJ,
-        activeItems,
-        unexpectedItems,
-        activeLocation,
-        rekapCatatan,
-        timestamp: new Date().toISOString()
-      };
-      localStorage.setItem('wms_active_picking_session', JSON.stringify(sessionData));
-    } else {
-      localStorage.removeItem('wms_active_picking_session');
+    try {
+      if (activeSJ) {
+        const sessionData = {
+          activeSJ,
+          activeItems,
+          unexpectedItems,
+          activeLocation,
+          rekapCatatan,
+          timestamp: new Date().toISOString()
+        };
+        const saved = safeLocalStorageSet('wms_active_picking_session', JSON.stringify(sessionData));
+        if (!saved) {
+          // Fallback lightweight session (hanya simpan info esensial jika storage hampir penuh)
+          const lightweightSession = {
+            activeSJ,
+            activeItems: activeItems.map((it) => ({
+              id: it.id,
+              sku: it.sku,
+              qty_picked: it.qty_picked,
+              qty_target: it.qty_target,
+            })),
+            unexpectedItems,
+            activeLocation,
+            timestamp: new Date().toISOString(),
+          };
+          safeLocalStorageSet('wms_active_picking_session', JSON.stringify(lightweightSession));
+        }
+      } else {
+        safeLocalStorageRemove('wms_active_picking_session');
+      }
+    } catch (err) {
+      console.warn('[PickingTasksView] Gagal menyimpan sesi picking aktif:', err);
     }
   }, [activeSJ, activeItems, unexpectedItems, activeLocation, rekapCatatan]);
 
@@ -320,7 +341,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         const recentLocals: any[] = [];
         const merged = [...recentLocals, ...supabaseData];
         try {
-          localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify(merged));
+          // Hanya simpan tugas aktif / in-progress atau maksimal 100 tugas terbaru untuk offline cache!
+          const offlineCacheData = merged
+            .filter((it) => it.status === 'PENDING' || it.status === 'IN_PROGRESS' || it.status === 'PARTIAL')
+            .slice(0, 100);
+          safeLocalStorageSet('wms_raw_picking_list_cache', JSON.stringify(offlineCacheData));
         } catch {}
         return merged;
       });
@@ -686,7 +711,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           setRawItems((prev) => {
             const updated = prev.filter((item) => !upperSJs.has((item.no_sj || '').toUpperCase().trim()));
             try {
-              localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify(updated));
+              const activeOnly = updated.filter((it) => it.status !== 'SELESAI').slice(0, 100);
+              safeLocalStorageSet('wms_raw_picking_list_cache', JSON.stringify(activeOnly));
             } catch {}
             return updated;
           });
@@ -726,7 +752,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               return item;
             });
             try {
-              localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify(updated));
+              const activeOnly = updated.filter((it) => it.status !== 'SELESAI').slice(0, 100);
+              safeLocalStorageSet('wms_raw_picking_list_cache', JSON.stringify(activeOnly));
             } catch {}
             return updated;
           });
@@ -1204,7 +1231,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           setRawItems((prev) => {
             const updated = prev.filter((item) => (item.no_sj || '').toUpperCase().trim() !== cleanNoSj);
             try {
-              localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify(updated));
+              const activeOnly = updated.filter((it) => it.status !== 'SELESAI').slice(0, 100);
+              safeLocalStorageSet('wms_raw_picking_list_cache', JSON.stringify(activeOnly));
             } catch {}
             return updated;
           });
@@ -1808,7 +1836,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         const otherItems = prev.filter((it) => (it.no_sj || '').trim().toUpperCase() !== targetNoSj);
         const updated = [...otherItems, ...sanitizedRows];
         try {
-          localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify(updated));
+          const activeOnly = updated.filter((it) => it.status !== 'SELESAI').slice(0, 100);
+          safeLocalStorageSet('wms_raw_picking_list_cache', JSON.stringify(activeOnly));
         } catch {}
         return updated;
       });
@@ -2019,7 +2048,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             return item;
           });
           try {
-            localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify(updated));
+            const activeOnly = updated.filter((it) => it.status !== 'SELESAI').slice(0, 100);
+            safeLocalStorageSet('wms_raw_picking_list_cache', JSON.stringify(activeOnly));
           } catch {}
           return updated;
         });
@@ -4054,8 +4084,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               );
               const updated = [...newItems, ...prevFiltered];
               try {
-                localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify(updated));
-                localStorage.setItem('wms_picking_cache', JSON.stringify(updated));
+                const activeOnly = updated.filter((it) => it.status !== 'SELESAI').slice(0, 100);
+                safeLocalStorageSet('wms_raw_picking_list_cache', JSON.stringify(activeOnly));
+                safeLocalStorageSet('wms_picking_cache', JSON.stringify(activeOnly));
               } catch {}
               return updated;
             });
@@ -4076,7 +4107,10 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = (props) => {
       fallbackTitle="Terjadi Kendala pada Tampilan Tugas Picking"
       onReset={() => {
         try {
-          localStorage.removeItem('wms_active_picking_session');
+          clearHeavyCaches();
+          safeLocalStorageRemove('wms_active_picking_session');
+          safeLocalStorageRemove('wms_raw_picking_list_cache');
+          safeLocalStorageRemove('wms_picking_cache');
         } catch {}
         window.location.reload();
       }}
