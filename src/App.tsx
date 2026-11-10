@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback, useRef, startTransition } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, startTransition } from 'react';
 import confetti from 'canvas-confetti';
 import {
   Menu, Scan, FileText, ShieldAlert, Package, X, Tag, BellRing, ShoppingBag, Sparkles } from 'lucide-react';

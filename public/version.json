@@ -1,14 +1,13 @@
 {
-  "version": "v2.9.0",
-  "versionCode": 290,
+  "version": "v2.9.1",
+  "versionCode": 291,
   "buildDate": "10 November 2026",
-  "buildHash": "wms-261110-v290-2145",
-  "releaseTitle": "WMS v2.9.0 — Asisten AI Multimodal: Olah Lampiran Excel/CSV, Vision Foto OCR & Top Bar Panel Nav",
+  "buildHash": "wms-261110-v291-2158",
+  "releaseTitle": "WMS v2.9.1 — Hotfix Import React useMemo & Proteksi Eksklusif Token Owner",
   "releaseNotes": [
-    "Multimodal Vision OCR: Ekstraksi Foto Dokumen & Surat Jalan",
-    "Pengolahan Lampiran Spreadsheet Excel (.xlsx/.xls) dan CSV (.csv)",
-    "Navigasi Fleksibel Tombol AI di Panel Atas (Desktop & Mobile Header)",
-    "Pembersihan Shortcut Panel Samping di Setiap Tab (Rapi & Minimalis)"
+    "Fix Blank Page: Menambahkan missing useMemo import di App.tsx",
+    "Proteksi Eksklusif: Tombol Token & Akses AI kini HANYA tampil untuk akun @warehouse selaku owner",
+    "Pencegahan Akses Pengaturan AI dari Akun Lain (Superadmin non-owner)"
   ],
   "minSupportedVersion": "v2.0.0"
 }

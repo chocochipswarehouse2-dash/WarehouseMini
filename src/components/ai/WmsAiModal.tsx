@@ -33,7 +33,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { UserSession } from '../../types';
-import { isSuperadmin } from '../../services/permissions';
+import { isSuperadmin, isWarehouseAccountOnly } from '../../services/permissions';
 import { parseAiAttachmentFile, AiAttachment } from '../../utils/aiAttachmentParser';
 import {
   AiChatMessage,
@@ -229,7 +229,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const userIsSuperadmin = isSuperadmin(session);
+  const isOwnerWarehouse = isWarehouseAccountOnly(session);
 
   // Auto-sync session ke sessions list dan localStorage
   useEffect(() => {
@@ -449,6 +449,10 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
   };
 
   const handleAddWhitelistedUser = async () => {
+    if (!isOwnerWarehouse) {
+      onNotify?.('Akses ditolak: Hanya akun @warehouse yang dapat mengelola whitelist', 'error');
+      return;
+    }
     const u = newUserWhitelisted.trim().toLowerCase();
     if (!u) return;
     if (aiConfig.allowedUsers.includes(u)) {
@@ -467,6 +471,10 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
   };
 
   const handleRemoveWhitelistedUser = async (u: string) => {
+    if (!isOwnerWarehouse) {
+      onNotify?.('Akses ditolak: Hanya akun @warehouse yang dapat mengelola whitelist', 'error');
+      return;
+    }
     const updatedUsers = aiConfig.allowedUsers.filter((item) => item !== u);
     setAiConfig((prev) => ({ ...prev, allowedUsers: updatedUsers }));
 
@@ -477,6 +485,10 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
   };
 
   const handleSaveApiKey = async () => {
+    if (!isOwnerWarehouse) {
+      onNotify?.('Akses ditolak: Hanya akun @warehouse yang dapat mengelola token API Key', 'error');
+      return;
+    }
     setIsSavingConfig(true);
     const key = customKeyInput.trim();
     setActiveGeminiApiKey(key);
@@ -742,15 +754,15 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
               )}
             </button>
 
-            {/* Superadmin Settings Button */}
-            {userIsSuperadmin && (
+            {/* Owner Settings & Token Button (Khusus Akun @warehouse / Pemilik Sistem) */}
+            {isOwnerWarehouse && (
               <button
                 type="button"
                 onClick={() => {
                   setIsSettingsOpen(!isSettingsOpen);
                   setIsHistoryOpen(false);
                 }}
-                title="Kelola Whitelist User & API Key (Khusus Superadmin)"
+                title="Kelola Whitelist User & API Key Token (Khusus Akun @warehouse / Owner)"
                 className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   isSettingsOpen
                     ? 'bg-primary-600 text-white shadow-xs'
@@ -758,7 +770,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                 }`}
               >
                 <Settings2 className="w-4 h-4" />
-                <span className="hidden lg:inline text-[11px]">Akses</span>
+                <span className="hidden lg:inline text-[11px]">Token & Akses</span>
               </button>
             )}
 
@@ -785,15 +797,15 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
         </div>
 
         {/* ========================================================================= */}
-        {/* SUPERADMIN SETTINGS DRAWER / OVERLAY */}
+        {/* OWNER SETTINGS DRAWER / OVERLAY (KHUSUS AKUN WAREHOUSE) */}
         {/* ========================================================================= */}
-        {isSettingsOpen && userIsSuperadmin && (
+        {isSettingsOpen && isOwnerWarehouse && (
           <div className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/90 dark:bg-slate-800/90 p-4 shrink-0 animate-in slide-in-from-top duration-200">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 <h4 className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">
-                  Pengaturan Akses AI & Penghemat Kuota (Superadmin)
+                  Pengaturan Akses AI & API Key Token (Khusus Akun @warehouse)
                 </h4>
               </div>
               <button

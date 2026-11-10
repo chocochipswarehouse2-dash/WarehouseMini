@@ -15,21 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.9.0",
-  "versionCode": 290,
+  "version": "v2.9.1",
+  "versionCode": 291,
   "buildDate": "10 November 2026",
-  "buildHash": "wms-261110-v290-2145",
-  "releaseTitle": "WMS v2.9.0 — Asisten AI Multimodal: Olah Lampiran Excel/CSV, Vision Foto OCR & Top Bar Panel Nav",
+  "buildHash": "wms-261110-v291-2158",
+  "releaseTitle": "WMS v2.9.1 — Hotfix Import React useMemo & Proteksi Eksklusif Token Owner",
   "releaseNotes": [
-    "Multimodal Vision OCR: Ekstraksi Foto Dokumen & Surat Jalan",
-    "Pengolahan Lampiran Spreadsheet Excel (.xlsx/.xls) dan CSV (.csv)",
-    "Navigasi Fleksibel Tombol AI di Panel Atas (Desktop & Mobile Header)",
-    "Pembersihan Shortcut Panel Samping di Setiap Tab (Rapi & Minimalis)"
+    "Fix Blank Page: Menambahkan missing useMemo import di App.tsx",
+    "Proteksi Eksklusif: Tombol Token & Akses AI kini HANYA tampil untuk akun @warehouse selaku owner",
+    "Pencegahan Akses Pengaturan AI dari Akun Lain (Superadmin non-owner)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.9.0",
+    "versionCode": 290,
+    "buildDate": "10 November 2026",
+    "buildHash": "wms-261110-v290-2145",
+    "releaseTitle": "WMS v2.9.0 — Asisten AI Multimodal: Olah Lampiran Excel/CSV, Vision Foto OCR & Top Bar Panel Nav",
+    "releaseNotes": [
+      "Multimodal Vision OCR: Ekstraksi Foto Dokumen & Surat Jalan",
+      "Pengolahan Lampiran Spreadsheet Excel (.xlsx/.xls) dan CSV (.csv)",
+      "Navigasi Fleksibel Tombol AI di Panel Atas (Desktop & Mobile Header)",
+      "Pembersihan Shortcut Panel Samping di Setiap Tab (Rapi & Minimalis)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.8.1",
     "versionCode": 281,
@@ -120,19 +133,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Penambahan Asisten AI WMS di Sidebar dengan popup floating page",
       "Mendukung tanya stok produk, letak rak, lookup kode produksi Trello UP, dan rekapitulasi penerimaan bulanan",
       "Kontrol akses token hemat: default khusus Superadmin dengan whitelist user management"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.104",
-    "versionCode": 364,
-    "buildDate": "10 November 2026",
-    "buildHash": "wms-261110-v364-1706",
-    "releaseTitle": "WMS v2.6.104 — Perbaikan Filter Tanggal Dropdown Tab Kargo & Pemulihan Tampilan Madeline Top",
-    "releaseNotes": [
-      "Memperbaiki pencocokan filter tanggal dropdown cepat pada ProduksiSpreadsheetView yang sebelumnya gagal karena pemisahan delimiter pipa",
-      "Merapikan label dropdown tanggal penerimaan dan badge filter tanpa karakter mentah",
-      "Menambahkan auto-fill nama produk untuk kode produksi alfabet seperti Madeline Top saat push/render"
     ],
     "minSupportedVersion": "v2.0.0"
   }
