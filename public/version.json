@@ -1,13 +1,14 @@
 {
-  "version": "v2.7.3",
-  "versionCode": 273,
+  "version": "v2.8.1",
+  "versionCode": 281,
   "buildDate": "10 November 2026",
-  "buildHash": "wms-261110-v273-2001",
-  "releaseTitle": "WMS v2.7.3 — Centralized Cloud Gemini API Key & Multi-Device Auto-Sync",
+  "buildHash": "wms-261110-v281-2027",
+  "releaseTitle": "WMS v2.8.1 — Optimasi Batch Lookup AI & Anti-Missing Stok Fisik",
   "releaseNotes": [
-    "Penyimpanan Gemini API Key terpusat di Supabase wms_system_docs",
-    "Auto-sync API Key ke seluruh perangkat (HP, Laptop, PC Toko) tanpa input berulang",
-    "Auto-fetch API Key saat app load dan sebelum eksekusi AI chat"
+    "Batch Multi-Product Lookup 1-Turn",
+    "Akurasi Word-Boundary Token Matching (Ruth Top Cherry 5 pcs)",
+    "Penghapusan Total Halusinasi Minta Kode SKU",
+    "Loop Headroom & Anti-Truncate Response"
   ],
   "minSupportedVersion": "v2.0.0"
 }

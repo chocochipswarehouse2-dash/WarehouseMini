@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Sparkles,
   Send,
@@ -19,7 +19,14 @@ import {
   Boxes,
   MapPin,
   FileText,
-  ShoppingCart
+  ShoppingCart,
+  Minus,
+  Maximize2,
+  MessageSquarePlus,
+  History,
+  Trash2,
+  Clock,
+  Plus
 } from 'lucide-react';
 import { UserSession } from '../../types';
 import { isSuperadmin } from '../../services/permissions';
@@ -32,6 +39,14 @@ import {
   getActiveGeminiApiKey,
   setActiveGeminiApiKey
 } from '../../services/wmsAiService';
+
+export interface AiChatSession {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: AiChatMessage[];
+}
 
 interface WmsAiModalProps {
   isOpen: boolean;
@@ -75,10 +90,45 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
   onNotify,
   onNavigateToInventoryCart
 }) => {
+  const sessionUser = session?.username || 'default_user';
+  const sessionsStorageKey = `wms_ai_sessions_${sessionUser}`;
+  const activeSessionStorageKey = `wms_ai_active_session_id_${sessionUser}`;
+
+  // Mini-dock / Minimize & History Drawer States
+  const [isMinimized, setIsMinimized] = useState<boolean>(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
+  const [historySearchQuery, setHistorySearchQuery] = useState<string>('');
+
+  // 1. Daftar Sessions
+  const [sessions, setSessions] = useState<AiChatSession[]>(() => {
+    try {
+      const saved = localStorage.getItem(sessionsStorageKey);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  });
+
+  // 2. Active Session ID
+  const [currentSessionId, setCurrentSessionId] = useState<string>(() => {
+    try {
+      const savedActive = localStorage.getItem(activeSessionStorageKey);
+      if (savedActive) return savedActive;
+    } catch {}
+    return `session_${Date.now()}`;
+  });
+
+  // 3. Pesan Aktif di Sesi Saat Ini
   const [messages, setMessages] = useState<AiChatMessage[]>(() => {
     try {
-      const saved = localStorage.getItem('wms_ai_chat_history');
-      if (saved) return JSON.parse(saved);
+      const savedSessions = localStorage.getItem(sessionsStorageKey);
+      const savedActive = localStorage.getItem(activeSessionStorageKey);
+      if (savedSessions && savedActive) {
+        const parsed: AiChatSession[] = JSON.parse(savedSessions);
+        const cur = parsed.find((s) => s.id === savedActive);
+        if (cur && Array.isArray(cur.messages)) return cur.messages;
+      }
+      const savedLegacy = localStorage.getItem('wms_ai_chat_history');
+      if (savedLegacy) return JSON.parse(savedLegacy);
     } catch {}
     return [];
   });
@@ -138,19 +188,73 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const userIsSuperadmin = isSuperadmin(session);
 
-  // Simpan riwayat chat ke localStorage
+  // Auto-sync session ke sessions list dan localStorage
   useEffect(() => {
+    if (!currentSessionId) return;
     try {
+      localStorage.setItem(activeSessionStorageKey, currentSessionId);
       localStorage.setItem('wms_ai_chat_history', JSON.stringify(messages.slice(-20)));
-    } catch {}
-  }, [messages]);
 
-  // Scroll otomatis ke pesan terbaru
+      setSessions((prevSessions) => {
+        const existingIdx = prevSessions.findIndex((s) => s.id === currentSessionId);
+        let sessionTitle = 'Percakapan Baru';
+        const firstUserMsg = messages.find((m) => m.role === 'user');
+        if (firstUserMsg && firstUserMsg.text) {
+          const cleanText = firstUserMsg.text.replace(/\n+/g, ' ').trim();
+          sessionTitle = cleanText.length > 36 ? cleanText.slice(0, 36) + '...' : cleanText;
+        }
+
+        let updatedSessions: AiChatSession[];
+        if (existingIdx >= 0) {
+          const current = prevSessions[existingIdx];
+          const updated: AiChatSession = {
+            ...current,
+            title: current.title && current.title !== 'Percakapan Baru' ? current.title : sessionTitle,
+            updatedAt: Date.now(),
+            messages: messages
+          };
+          updatedSessions = [
+            updated,
+            ...prevSessions.filter((_, idx) => idx !== existingIdx)
+          ];
+        } else if (messages.length > 0) {
+          const newSession: AiChatSession = {
+            id: currentSessionId,
+            title: sessionTitle,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            messages: messages
+          };
+          updatedSessions = [newSession, ...prevSessions];
+        } else {
+          updatedSessions = prevSessions;
+        }
+
+        try {
+          localStorage.setItem(sessionsStorageKey, JSON.stringify(updatedSessions.slice(0, 40)));
+        } catch {}
+        return updatedSessions;
+      });
+    } catch (e) {
+      console.warn('[WMS AI] Gagal menyimpan session:', e);
+    }
+  }, [messages, currentSessionId, sessionsStorageKey, activeSessionStorageKey]);
+
+  // Reset minimize state saat modal ditutup total
   useEffect(() => {
-    if (isOpen) {
+    if (!isOpen) {
+      setIsMinimized(false);
+      setIsHistoryOpen(false);
+      setIsSettingsOpen(false);
+    }
+  }, [isOpen]);
+
+  // Scroll otomatis ke pesan terbaru jika tidak diminimize
+  useEffect(() => {
+    if (isOpen && !isMinimized) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [messages, isOpen, isLoading]);
+  }, [messages, isOpen, isMinimized, isLoading]);
 
   // Muat konfigurasi AI saat modal atau settings dibuka
   useEffect(() => {
@@ -161,6 +265,66 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
       });
     }
   }, [isOpen]);
+
+  // Handler: Mulai Percakapan Baru (+ New Chat)
+  const handleNewChat = () => {
+    const newId = `session_${Date.now()}`;
+    setCurrentSessionId(newId);
+    setMessages([]);
+    setInputPrompt('');
+    setIsHistoryOpen(false);
+    onNotify?.('Sesi percakapan baru dimulai', 'info');
+  };
+
+  // Handler: Pilih Sesi dari Riwayat
+  const handleSelectSession = (sessionId: string) => {
+    const target = sessions.find((s) => s.id === sessionId);
+    if (target) {
+      setCurrentSessionId(target.id);
+      setMessages(target.messages || []);
+      setIsHistoryOpen(false);
+    }
+  };
+
+  // Handler: Hapus 1 Sesi dari Riwayat
+  const handleDeleteSession = (sessionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = sessions.filter((s) => s.id !== sessionId);
+    setSessions(updated);
+    try {
+      localStorage.setItem(sessionsStorageKey, JSON.stringify(updated));
+    } catch {}
+    if (currentSessionId === sessionId) {
+      if (updated.length > 0) {
+        setCurrentSessionId(updated[0].id);
+        setMessages(updated[0].messages || []);
+      } else {
+        handleNewChat();
+      }
+    }
+    onNotify?.('Sesi riwayat berhasil dihapus', 'info');
+  };
+
+  // Handler: Hapus Seluruh Riwayat Chat
+  const handleClearAllHistory = () => {
+    if (window.confirm('Hapus seluruh riwayat percakapan AI Anda? Tindakan ini tidak dapat dibatalkan.')) {
+      setSessions([]);
+      setMessages([]);
+      try {
+        localStorage.removeItem(sessionsStorageKey);
+        localStorage.removeItem('wms_ai_chat_history');
+      } catch {}
+      handleNewChat();
+      onNotify?.('Seluruh riwayat percakapan telah dibersihkan', 'info');
+    }
+  };
+
+  // Filter riwayat berdasarkan kata kunci
+  const filteredSessions = useMemo(() => {
+    if (!historySearchQuery.trim()) return sessions;
+    const q = historySearchQuery.toLowerCase();
+    return sessions.filter((s) => (s.title || '').toLowerCase().includes(q));
+  }, [sessions, historySearchQuery]);
 
   if (!isOpen) return null;
 
@@ -383,81 +547,187 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
       .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-primary-600 dark:text-primary-400 font-mono text-[11px] font-bold border border-slate-200/80 dark:border-slate-700/80">$1</code>');
   };
 
+  // JIKA SEDANG DIMINIMIZE: Tampilkan Widget Mengambang (Floating Companion Pill) di Pojok Bawah
+  // Pengguna bisa bebas bekerja di modul WMS lain sambil menunggu jawaban AI!
+  if (isMinimized) {
+    return (
+      <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 p-2 sm:p-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 animate-in slide-in-from-bottom duration-200 hover:shadow-primary-500/10 transition-all select-none">
+        <div
+          onClick={() => setIsMinimized(false)}
+          className="flex items-center gap-2.5 cursor-pointer hover:opacity-90 transition-opacity"
+        >
+          <div
+            className={`w-9 h-9 rounded-xl flex items-center justify-center text-white shadow-sm shrink-0 ${
+              isLoading
+                ? 'bg-gradient-to-tr from-purple-600 via-indigo-600 to-primary-600 animate-pulse'
+                : 'bg-gradient-to-tr from-primary-600 to-indigo-600'
+            }`}
+          >
+            <Bot className="w-5 h-5" />
+          </div>
+          <div className="flex flex-col pr-1 min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-extrabold text-slate-900 dark:text-white truncate">
+                Asisten AI WMS
+              </span>
+              {isLoading ? (
+                <span className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 animate-pulse shrink-0">
+                  ⏳ Menjawab...
+                </span>
+              ) : (
+                <span className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 shrink-0">
+                  Ready
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 max-w-[170px] sm:max-w-[240px] truncate">
+              {isLoading
+                ? (activeToolName || 'Sedang menganalisis data gudang...')
+                : (messages.length > 0
+                    ? (messages[messages.length - 1].role === 'model'
+                        ? '✅ Jawaban AI selesai (Klik untuk buka)'
+                        : 'Klik untuk melanjutkan chat')
+                    : 'Tanya stok, kode, dll.')}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 pl-1 border-l border-slate-200 dark:border-slate-800">
+          <button
+            type="button"
+            onClick={() => setIsMinimized(false)}
+            title="Buka Layar Chat Penuh"
+            className="p-1.5 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+          >
+            <Maximize2 className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setIsMinimized(false);
+              onClose();
+            }}
+            title="Tutup Chat"
+            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150">
-      <div className="flex flex-col w-full max-w-4xl h-[92vh] max-h-[850px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden relative">
+      <div className="flex flex-col w-full max-w-5xl h-[92vh] max-h-[850px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden relative">
         
         {/* ========================================================================= */}
         {/* MODAL HEADER */}
         {/* ========================================================================= */}
-        <div className="px-4 py-3 sm:px-5 sm:py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 flex items-center justify-between shrink-0">
+        <div className="px-3 py-2.5 sm:px-5 sm:py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 flex items-center justify-between shrink-0 gap-2">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-primary-600 via-indigo-600 to-purple-600 flex items-center justify-center shadow-md shadow-primary-500/25 shrink-0">
-              <Sparkles className="w-5 h-5 text-white animate-pulse" />
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-primary-600 via-indigo-600 to-purple-600 flex items-center justify-center shadow-md shadow-primary-500/25 shrink-0">
+              <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-white animate-pulse" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-tight truncate">
+                <h3 className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-tight truncate">
                   Asisten AI Pintar WMS
                 </h3>
-                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-gradient-to-r from-primary-500/15 to-purple-500/15 text-primary-600 dark:text-primary-400 border border-primary-500/20">
+                <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-gradient-to-r from-primary-500/15 to-purple-500/15 text-primary-600 dark:text-primary-400 border border-primary-500/20">
                   Gemini 3.5 Flash
                 </span>
               </div>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate hidden xs:block">
                 Tanya stok real, posisi rak, lookup kode produksi, dan laporan rekapitulasi otomatis
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
             {/* Quick Open Cart Button */}
             {onNavigateToInventoryCart && (
               <button
                 type="button"
                 onClick={handleOpenCart}
                 title="Buka Keranjang Order di Inventory"
-                className="px-2.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-300/80 dark:border-amber-700/80 hover:bg-amber-100"
+                className="px-2 sm:px-2.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-300/80 dark:border-amber-700/80 hover:bg-amber-100"
               >
                 <ShoppingCart className="w-3.5 h-3.5" />
-                <span>Keranjang ({cartCount})</span>
+                <span className="hidden md:inline">Keranjang</span> ({cartCount})
               </button>
             )}
+
+            {/* + New Chat Button */}
+            <button
+              type="button"
+              onClick={handleNewChat}
+              title="Mulai percakapan baru (+ New Chat)"
+              className="px-2 sm:px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 bg-primary-50 dark:bg-primary-950/40 text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-800 hover:bg-primary-100"
+            >
+              <MessageSquarePlus className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline text-[11px]">Chat Baru</span>
+            </button>
+
+            {/* Chat History Sessions Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsHistoryOpen(!isHistoryOpen);
+                setIsSettingsOpen(false);
+              }}
+              title="Lihat riwayat percakapan lampau"
+              className={`px-2 sm:px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                isHistoryOpen
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700'
+              }`}
+            >
+              <History className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline text-[11px]">Riwayat</span>
+              {sessions.length > 0 && (
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${isHistoryOpen ? 'bg-indigo-700 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
+                  {sessions.length}
+                </span>
+              )}
+            </button>
 
             {/* Superadmin Settings Button */}
             {userIsSuperadmin && (
               <button
                 type="button"
-                onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+                onClick={() => {
+                  setIsSettingsOpen(!isSettingsOpen);
+                  setIsHistoryOpen(false);
+                }}
                 title="Kelola Whitelist User & API Key (Khusus Superadmin)"
-                className={`p-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   isSettingsOpen
                     ? 'bg-primary-600 text-white shadow-xs'
                     : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 <Settings2 className="w-4 h-4" />
-                <span className="hidden sm:inline text-[11px]">Akses & Kuota</span>
+                <span className="hidden lg:inline text-[11px]">Akses</span>
               </button>
             )}
 
-            {/* Clear Chat Button */}
-            {messages.length > 0 && (
-              <button
-                type="button"
-                onClick={handleClearChat}
-                title="Bersihkan riwayat percakapan"
-                className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl transition-colors cursor-pointer"
-              >
-                <RotateCcw className="w-4 h-4" />
-              </button>
-            )}
+            {/* Minimize Button */}
+            <button
+              type="button"
+              onClick={() => setIsMinimized(true)}
+              title="Kecilkan chat (bisa sambil kerja nunggu jawaban AI)"
+              className="p-1.5 sm:p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+            >
+              <Minus className="w-4 h-4" />
+            </button>
 
             {/* Close Button */}
             <button
               type="button"
               onClick={onClose}
-              className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+              title="Tutup chat"
+              className="p-1.5 sm:p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -572,9 +842,116 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
         )}
 
         {/* ========================================================================= */}
-        {/* CHAT MESSAGES BODY */}
+        {/* MAIN BODY: HISTORY DRAWER + CHAT CONTAINER */}
         {/* ========================================================================= */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 bg-slate-50/40 dark:bg-slate-950/40">
+        <div className="flex-1 flex overflow-hidden relative">
+          {/* HISTORY DRAWER (COLLAPSIBLE SIDEBAR) */}
+          {isHistoryOpen && (
+            <div className="w-64 sm:w-72 shrink-0 border-r border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex flex-col z-20 animate-in slide-in-from-left duration-200">
+              <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <History className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <span className="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider">
+                    Riwayat ({sessions.length})
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleNewChat}
+                  title="Percakapan Baru"
+                  className="px-2 py-1 text-[11px] font-bold bg-primary-600 hover:bg-primary-700 text-white rounded-lg flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Baru</span>
+                </button>
+              </div>
+
+              {/* Search History */}
+              {sessions.length > 2 && (
+                <div className="p-2 border-b border-slate-200/80 dark:border-slate-800">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={historySearchQuery}
+                      onChange={(e) => setHistorySearchQuery(e.target.value)}
+                      placeholder="Cari topik chat..."
+                      className="w-full pl-8 pr-2 py-1 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Sessions List */}
+              <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                {filteredSessions.length === 0 ? (
+                  <div className="text-center py-8 text-xs text-slate-400">
+                    Belum ada riwayat percakapan tersimpan
+                  </div>
+                ) : (
+                  filteredSessions.map((s) => {
+                    const isActive = s.id === currentSessionId;
+                    const dateStr = new Date(s.updatedAt || s.createdAt).toLocaleDateString('id-ID', {
+                      day: 'numeric',
+                      month: 'short',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    });
+                    return (
+                      <div
+                        key={s.id}
+                        onClick={() => handleSelectSession(s.id)}
+                        className={`group p-2 sm:p-2.5 rounded-xl text-left cursor-pointer transition-all flex items-start justify-between gap-1.5 ${
+                          isActive
+                            ? 'bg-primary-50 dark:bg-primary-950/50 border border-primary-200 dark:border-primary-800/80 shadow-xs'
+                            : 'hover:bg-slate-100 dark:hover:bg-slate-800/60 border border-transparent'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-xs font-bold truncate ${isActive ? 'text-primary-700 dark:text-primary-300' : 'text-slate-800 dark:text-slate-200'}`}>
+                            {s.title || 'Percakapan Tanpa Judul'}
+                          </p>
+                          <div className="flex items-center gap-1.5 mt-1 text-[10px] text-slate-400">
+                            <Clock className="w-3 h-3 shrink-0" />
+                            <span className="truncate">{dateStr}</span>
+                            <span>•</span>
+                            <span className="shrink-0">{s.messages?.length || 0} pesan</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteSession(s.id, e)}
+                          title="Hapus sesi ini"
+                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 transition-all cursor-pointer shrink-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Clear All History Button */}
+              {sessions.length > 0 && (
+                <div className="p-2 border-t border-slate-200 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={handleClearAllHistory}
+                    className="w-full py-1.5 px-3 rounded-lg text-xs font-bold text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Hapus Semua Riwayat</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* CHAT MESSAGES + INPUT AREA */}
+          <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50/40 dark:bg-slate-950/40">
+            {/* CHAT MESSAGES BODY */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center max-w-lg mx-auto py-8">
               <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-primary-500/20 via-indigo-500/20 to-purple-500/20 border border-primary-500/30 flex items-center justify-center mb-4 shadow-inner">
@@ -770,8 +1147,10 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
             </span>
           </div>
         </div>
-
       </div>
     </div>
+
+  </div>
+</div>
   );
 };

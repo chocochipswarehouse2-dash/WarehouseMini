@@ -15,20 +15,48 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.7.3",
-  "versionCode": 273,
+  "version": "v2.8.1",
+  "versionCode": 281,
   "buildDate": "10 November 2026",
-  "buildHash": "wms-261110-v273-2001",
-  "releaseTitle": "WMS v2.7.3 — Centralized Cloud Gemini API Key & Multi-Device Auto-Sync",
+  "buildHash": "wms-261110-v281-2027",
+  "releaseTitle": "WMS v2.8.1 — Optimasi Batch Lookup AI & Anti-Missing Stok Fisik",
   "releaseNotes": [
-    "Penyimpanan Gemini API Key terpusat di Supabase wms_system_docs",
-    "Auto-sync API Key ke seluruh perangkat (HP, Laptop, PC Toko) tanpa input berulang",
-    "Auto-fetch API Key saat app load dan sebelum eksekusi AI chat"
+    "Batch Multi-Product Lookup 1-Turn",
+    "Akurasi Word-Boundary Token Matching (Ruth Top Cherry 5 pcs)",
+    "Penghapusan Total Halusinasi Minta Kode SKU",
+    "Loop Headroom & Anti-Truncate Response"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.8.0",
+    "versionCode": 280,
+    "buildDate": "10 November 2026",
+    "buildHash": "wms-261110-v280-2017",
+    "releaseTitle": "WMS v2.8.0 — Asisten AI Multitasking Companion: Minimize Dock, Riwayat Sesi & New Chat",
+    "releaseNotes": [
+      "Floating Mini Dock (Minimize chat sambil kerja di modul gudang lain)",
+      "Riwayat Sesi Percakapan Lampau (Chat History Drawer & Search)",
+      "Tombol + Chat Baru untuk memulai topik percakapan bersih",
+      "Indikator status live & preview jawaban saat diminimize"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
+  {
+    "version": "v2.7.3",
+    "versionCode": 273,
+    "buildDate": "10 November 2026",
+    "buildHash": "wms-261110-v273-2001",
+    "releaseTitle": "WMS v2.7.3 — Centralized Cloud Gemini API Key & Multi-Device Auto-Sync",
+    "releaseNotes": [
+      "Penyimpanan Gemini API Key terpusat di Supabase wms_system_docs",
+      "Auto-sync API Key ke seluruh perangkat (HP, Laptop, PC Toko) tanpa input berulang",
+      "Auto-fetch API Key saat app load dan sebelum eksekusi AI chat"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.7.2",
     "versionCode": 272,
@@ -104,33 +132,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Mengeliminasi kategori palsu Physical Stock dengan pencarian kategori resmi DealPOS via lookup nama produk",
       "Menghilangkan pemaksaan varian ALL pada barang dengan size unassigned menjadi tanda strip (-)",
       "Menghapus sisa regex endsWith size yang melangkahi master produk di Supabase Blok F dan Inventori"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.102",
-    "versionCode": 362,
-    "buildDate": "10 November 2026",
-    "buildHash": "wms-261110-v362-1126",
-    "releaseTitle": "WMS v2.6.102 — Eliminasi Menyeluruh Regex & String Splitting Nama Produk & Size",
-    "releaseNotes": [
-      "Standarisasi lookup O(1) master catalog untuk nama produk & size di seluruh modul",
-      "Pencegahan polusi suffix size pada nama produk di Manual Shipment & IG Live",
-      "Dukungan kode produksi alfanumerik (cth: D1055, CCT045) & auto-lookup Trello UP ke Google Sheet",
-      "Perbaikan penentuan size di QC Job Card, Distribusi Picking, dan WhatsApp"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.101",
-    "versionCode": 361,
-    "buildDate": "10 November 2026",
-    "buildHash": "wms-261110-v361-0759",
-    "releaseTitle": "WMS v2.6.101 — Standardisasi Pure O(1) Master Product SKU Lookup & Eliminasi Regex Parsing",
-    "releaseNotes": [
-      "Standarisasi lookup nama produk & size berbasis VLOOKUP/XLOOKUP murni O(1) dari master_produk",
-      "Eliminasi regex parsing dan hardcoded matrix pada SKU (DF26, letter code, dsb)",
-      "Sinkronisasi master catalog in-memory 28.000+ SKU di seluruh modul (Picking, Live, Produksi, Distribusi)"
     ],
     "minSupportedVersion": "v2.0.0"
   }

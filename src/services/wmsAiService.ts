@@ -187,16 +187,20 @@ const AI_TOOLS = [
     functionDeclarations: [
       {
         name: 'lookup_product_stock',
-        description: 'Mencari stok fisik terkini di rak gudang, kuota DealPOS, dan lokasi rak untuk produk tertentu berdasarkan NAMA PRODUK pakaian (contoh: "ruth top cherry", "sailor top", "taylor pants"), varian warna, atau kode SKU/kode produksi jika ada.',
+        description: 'Mencari stok fisik terkini di rak gudang, kuota DealPOS, dan lokasi rak untuk satu ATAU BANYAK NAMA PRODUK SEKALIGUS (batch) berdasarkan NAMA PRODUK pakaian (contoh: "ruth top cherry", "sailor top", "taylor pants"). SANGAT DISARANKAN menggunakan parameter "queries" jika pengguna meminta cek banyak produk sekaligus dalam 1 pesan agar instan dan hemat token!',
         parameters: {
           type: 'OBJECT',
           properties: {
             query: {
               type: 'STRING',
-              description: 'Nama produk baju/celana/rok atau varian warna yang ingin dicari, contoh: "ruth top cherry", "sailor top", "taylor pants mocca"'
+              description: 'Nama satu produk jika hanya mencari 1 produk, contoh: "ruth top cherry"'
+            },
+            queries: {
+              type: 'ARRAY',
+              description: 'Daftar nama banyak produk jika pengguna meminta cek banyak produk sekaligus (misal 5, 10, atau 29 produk), contoh: ["ruth top cherry", "sailor top", "taylor pants"]',
+              items: { type: 'STRING' }
             }
-          },
-          required: ['query']
+          }
         }
       },
       {
@@ -328,25 +332,37 @@ async function getResolvedMasterProducts(): Promise<ProductItem[]> {
 }
 
 /**
- * 1. Eksekusi tool: lookup_product_stock
- * Pendekatan Cerdas: Multi-Token Matching berbasis Nama Produk, Varian Warna, Size, dan SKU,
- * dilengkapi fallback langsung ke Visual Katalog dan Supabase PostgREST (stok_real_fisik).
- * Pengguna TIDAK PERLU hafal/menyebutkan Kode SKU!
+ * Helper pencocokan token kata utuh (Word-Boundary Token Matching)
+ * Mencegah kesalahan 'truth' mencocokkan 'ruth', atau kata yang saling tertukar.
  */
-async function executeLookupProductStock(args: { query: string }): Promise<any> {
-  const rawQuery = String(args.query || '').trim();
-  if (!rawQuery) {
-    return { error: 'Query pencarian kosong' };
-  }
+function matchAllTokensStrict(targetText: string, tokens: string[]): boolean {
+  if (!tokens || tokens.length === 0) return false;
+  const words = targetText.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  return tokens.every((tok) => words.some((w) => w === tok || (w.startsWith(tok) && tok.length >= 4)));
+}
 
+/**
+ * Eksekusi lookup 1 produk secara menyeluruh (Master Catalog + Supabase PostgREST)
+ */
+async function searchSingleProductDetail(rawQuery: string, masterProducts: ProductItem[]): Promise<any> {
   const cleanQuery = rawQuery.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
   const queryTokens = cleanQuery.split(' ').filter(Boolean);
+  if (queryTokens.length === 0) {
+    return {
+      query: rawQuery,
+      total_ditemukan: 0,
+      total_stok_fisik: 0,
+      lokasi_rak: 'Stok Kosong / Belum Ada di Rak Gudang',
+      stok_dealpos: 0,
+      products: [],
+      pesan: `Nama produk "${rawQuery}" kosong.`
+    };
+  }
 
-  // 1. Ambil master catalog dari memori / IndexedDB
-  const masterProducts = await getResolvedMasterProducts();
   const scoredMatches: Array<{ item: ProductItem; score: number }> = [];
   const seenKeys = new Set<string>();
 
+  // 1. Cek di Master Catalog Lokal (Memory / IndexedDB)
   if (masterProducts.length > 0) {
     for (let i = 0; i < masterProducts.length; i++) {
       const item = masterProducts[i];
@@ -365,45 +381,25 @@ async function executeLookupProductStock(args: { query: string }): Promise<any> 
 
       const pLower = cleanP.toLowerCase();
       const nLower = rawN.toLowerCase();
-      const colorLower = color.toLowerCase();
-      const sizeLower = size.toLowerCase();
-      const skuLower = sku.toLowerCase();
-      const codeLower = code.toLowerCase();
-      const searchableAll = `${pLower} ${nLower} ${colorLower} ${sizeLower} ${codeLower} ${skuLower} ${cat.toLowerCase()}`;
+      const searchableAll = `${pLower} ${nLower} ${color.toLowerCase()} ${size.toLowerCase()} ${code.toLowerCase()} ${sku.toLowerCase()} ${cat.toLowerCase()}`;
 
       let score = 0;
 
-      // Tier 1: Exact phrase matches
-      if (cleanQuery === pLower || cleanQuery === nLower || cleanQuery === skuLower) {
-        score += 150;
+      // Tier 1: Exact phrase match
+      if (cleanQuery === pLower || cleanQuery === nLower || cleanQuery === sku.toLowerCase()) {
+        score += 160;
       } else if (pLower.includes(cleanQuery) || nLower.includes(cleanQuery)) {
-        score += 100;
-      } else if (searchableAll.includes(cleanQuery)) {
-        score += 85;
-      }
-
-      // Tier 2: Token-based multi-word match (e.g. "ruth", "top", "cherry")
-      if (queryTokens.length > 0) {
-        let matchedTokens = 0;
-        for (const tok of queryTokens) {
-          if (searchableAll.includes(tok)) {
-            matchedTokens++;
-          }
-        }
-        if (matchedTokens === queryTokens.length) {
-          // Seluruh kata user cocok di dalam profil produk/warna/size/SKU!
-          score += 70 + (queryTokens.length * 10);
-        } else if (queryTokens.length > 1 && matchedTokens >= queryTokens.length - 1) {
-          // Hampir seluruh kata cocok (toleransi 1 kata, misal sebut "ruth cherry" tanpa "top")
-          score += 40 + (matchedTokens * 5);
-        }
-      }
-
-      // Tier 3: SKU atau Code exact match
-      if (cleanQuery.toUpperCase() === sku || cleanQuery.toUpperCase() === code) {
         score += 120;
-      } else if (sku.length > 3 && skuLower.includes(cleanQuery)) {
-        score += 60;
+      } else if (matchAllTokensStrict(searchableAll, queryTokens)) {
+        // Seluruh kata cocok sebagai kata utuh (misal "ruth", "top", "cherry")
+        score += 100 + (queryTokens.length * 10);
+      } else if (queryTokens.length > 2) {
+        // Toleransi jika sebagian besar kata cocok
+        const words = searchableAll.split(/[^a-z0-9]+/).filter(Boolean);
+        const matched = queryTokens.filter((tok) => words.some((w) => w === tok || (w.startsWith(tok) && tok.length >= 4)));
+        if (matched.length >= queryTokens.length - 1) {
+          score += 40 + (matched.length * 5);
+        }
       }
 
       if (score > 0) {
@@ -416,11 +412,11 @@ async function executeLookupProductStock(args: { query: string }): Promise<any> 
     }
   }
 
-  // Urutkan berdasarkan skor relevansi tertinggi
   scoredMatches.sort((a, b) => b.score - a.score);
-  let matchedItems = scoredMatches.slice(0, 30).map((m) => m.item);
+  let matchedItems = scoredMatches.slice(0, 20).map((m) => m.item);
+  const hasHighConfidence = scoredMatches.some((m) => m.score >= 100);
 
-  // 2. FALLBACK KE MODUL KATALOG VISUAL (wms_katalog_manual_data) jika belum ada di master
+  // 2. Fallback Visual Katalog jika belum ada
   if (matchedItems.length === 0) {
     try {
       const rawKatalog = typeof window !== 'undefined'
@@ -434,11 +430,7 @@ async function executeLookupProductStock(args: { query: string }): Promise<any> 
             if (!Array.isArray(list)) continue;
             for (const it of list) {
               const dName = String(it.deskripsi || it.nama || '').toLowerCase();
-              const dCode = String(it.kode_produk || it.nomor || '').toLowerCase();
-              const isMatch = queryTokens.length > 0
-                ? queryTokens.every((tok) => dName.includes(tok) || dCode.includes(tok))
-                : dName.includes(cleanQuery);
-
+              const isMatch = matchAllTokensStrict(dName, queryTokens) || dName.includes(cleanQuery);
               if (isMatch && Array.isArray(it.variants)) {
                 for (const v of it.variants) {
                   matchedItems.push({
@@ -455,69 +447,75 @@ async function executeLookupProductStock(args: { query: string }): Promise<any> 
           }
         }
       }
-    } catch (e) {
-      console.warn('[WMS AI] Gagal search di visual katalog:', e);
-    }
+    } catch {}
   }
 
-  // 3. FALLBACK LANGSUNG KE SUPABASE POSTGREST (stok_real_fisik)
-  // Menjamin jika produk ada di rak gudang (seperti "Ruth Top Cherry"), tetap 100% PASTI DITEMUKAN
-  // bahkan saat master katalog lokal belum tersinkronisasi sempurna!
-  if (matchedItems.length === 0 && queryTokens.length > 0) {
+  // 3. Fallback Langsung ke Supabase PostgREST (stok_real_fisik)
+  // Dilakukan jika belum ada kecocokan 100% atau belum ditemukan di master
+  if ((!hasHighConfidence || matchedItems.length === 0) && queryTokens.length > 0) {
     try {
       const searchToken = queryTokens[0];
       const sbRows = await supabaseFetch<any[]>(
         'stok_real_fisik',
         'GET',
         null,
-        `or=(nama_produk.ilike.*${encodeURIComponent(searchToken)}*,sku.ilike.*${encodeURIComponent(searchToken)}*)&limit=40`
+        `or=(nama_produk.ilike.*${encodeURIComponent(searchToken)}*,sku.ilike.*${encodeURIComponent(searchToken)}*)&limit=50`
       );
 
       if (Array.isArray(sbRows) && sbRows.length > 0) {
         const filteredSb = sbRows.filter((r) => {
-          const np = String(r.nama_produk || '').toLowerCase();
-          const sk = String(r.sku || '').toLowerCase();
-          const targetStr = `${np} ${sk}`;
-          return queryTokens.every((tok) => targetStr.includes(tok)) || targetStr.includes(cleanQuery);
+          const targetStr = `${r.nama_produk || ''} ${r.sku || ''}`;
+          return matchAllTokensStrict(targetStr, queryTokens) || targetStr.toLowerCase().includes(cleanQuery);
         });
 
-        const distinctSbMap = new Map<string, any>();
-        filteredSb.forEach((r) => {
-          const s = String(r.sku || '').trim().toUpperCase();
-          if (s && !distinctSbMap.has(s)) {
-            distinctSbMap.set(s, r);
+        if (filteredSb.length > 0) {
+          // Jika ditemukan di stok_real_fisik dengan token 100% cocok, prioritas fisik ini!
+          const distinctSbMap = new Map<string, any>();
+          filteredSb.forEach((r) => {
+            const s = String(r.sku || '').trim().toUpperCase();
+            if (s && !distinctSbMap.has(s)) {
+              distinctSbMap.set(s, r);
+            }
+          });
+
+          // Jika sebelumnya hanya ada kecocokan lemah/parsial dari master, reset dengan data fisik nyata
+          if (!hasHighConfidence) {
+            matchedItems = [];
           }
-        });
 
-        distinctSbMap.forEach((r) => {
-          matchedItems.push({
-            k: r.sku,
-            p: cleanProductName(r.nama_produk) || r.nama_produk,
-            n: r.nama_produk,
-            s: extractSizeFromSku(r.sku) || '-',
-            warna: r.warna || '-',
-            q: 0
-          } as any);
-        });
+          distinctSbMap.forEach((r) => {
+            matchedItems.push({
+              k: r.sku,
+              p: cleanProductName(r.nama_produk) || r.nama_produk,
+              n: r.nama_produk,
+              s: extractSizeFromSku(r.sku) || r.size || '-',
+              warna: r.warna || '-',
+              q: 0
+            } as any);
+          });
+        }
       }
     } catch (err) {
-      console.warn('[WMS AI] Gagal fallback pencarian langsung ke Supabase stok_real_fisik:', err);
+      console.warn('[WMS AI] Gagal query langsung ke Supabase stok_real_fisik:', err);
     }
   }
 
-  // Batasi maksimal 25 varian teratas
-  matchedItems = matchedItems.slice(0, 25);
+  // Batasi maksimal 20 varian teratas
+  matchedItems = matchedItems.slice(0, 20);
 
   if (matchedItems.length === 0) {
     return {
       query: rawQuery,
       total_ditemukan: 0,
+      total_stok_fisik: 0,
+      lokasi_rak: 'Stok Kosong / Belum Ada di Rak Gudang',
+      stok_dealpos: 0,
       products: [],
-      pesan: `Produk "${rawQuery}" belum terdaftar di sistem. Minta konfirmasi sebutan model atau varian dengan ramah tanpa pernah menyuruh user mencari kode SKU.`
+      pesan: `Produk "${rawQuery}" saat ini belum tercatat memiliki stok di rak gudang.`
     };
   }
 
-  // 4. Ambil lokasi rak live dari Supabase PostgREST stok_real_fisik untuk SKU yang ditemukan
+  // 4. Ambil lokasi rak live dari Supabase PostgREST stok_real_fisik untuk seluruh SKU yang cocok
   const skus = matchedItems.map((m) => String(m.k || (m as any).sku || '').trim().toUpperCase()).filter(Boolean);
   let stockRacks: any[] = [];
   try {
@@ -526,7 +524,6 @@ async function executeLookupProductStock(args: { query: string }): Promise<any> 
     console.warn('[WMS AI] Gagal fetch rak stok live:', e);
   }
 
-  // Kelompokkan stok fisik per SKU
   const rackMap = new Map<string, { locations: string[]; totalFisik: number }>();
   stockRacks.forEach((sr) => {
     const s = String(sr.sku || '').toUpperCase();
@@ -541,6 +538,10 @@ async function executeLookupProductStock(args: { query: string }): Promise<any> 
     }
   });
 
+  let grandTotalFisik = 0;
+  let grandTotalDealpos = 0;
+  const allLocationsList: string[] = [];
+
   const results = matchedItems.map((item) => {
     const sku = String(item.k || (item as any).sku || '').trim().toUpperCase();
     const rackInfo = rackMap.get(sku) || { locations: [], totalFisik: 0 };
@@ -550,6 +551,13 @@ async function executeLookupProductStock(args: { query: string }): Promise<any> 
 
     const color = String((item as any).warna || (item as any).w || (item as any).color || '-').trim();
     const size = resolveProductDisplaySize(sku, String(item.s || (item as any).size || ''), String(item.s || ''));
+    const dealpos = Number(item.qty ?? (item as any).stok ?? item.q ?? 0);
+
+    grandTotalFisik += rackInfo.totalFisik;
+    grandTotalDealpos += dealpos;
+    if (rackInfo.locations.length > 0) {
+      allLocationsList.push(...rackInfo.locations);
+    }
 
     return {
       nama_produk: cleanP,
@@ -558,7 +566,7 @@ async function executeLookupProductStock(args: { query: string }): Promise<any> 
       size: size,
       warna: color !== '-' ? color : (rawN.toLowerCase().includes('cherry') ? 'Cherry' : '-'),
       kategori: (item as any).category || (item as any).c || '-',
-      stok_dealpos: Number(item.qty ?? (item as any).stok ?? item.q ?? 0),
+      stok_dealpos: dealpos,
       stok_fisik_rak: rackInfo.totalFisik,
       lokasi_rak: rackInfo.locations.length > 0 ? rackInfo.locations.join(', ') : 'Belum ada stok fisik di rak'
     };
@@ -567,8 +575,60 @@ async function executeLookupProductStock(args: { query: string }): Promise<any> 
   return {
     query: rawQuery,
     total_ditemukan: results.length,
+    total_stok_fisik: grandTotalFisik,
+    lokasi_rak: allLocationsList.length > 0 ? Array.from(new Set(allLocationsList)).join(', ') : 'Belum ada stok fisik di rak',
+    stok_dealpos: grandTotalDealpos,
     products: results
   };
+}
+
+/**
+ * 1. Eksekusi tool: lookup_product_stock
+ * Mendukung Single Query ATAU Batch Queries (puluhan produk sekaligus) dalam 1 kali pemanggilan!
+ */
+async function executeLookupProductStock(args: { query?: string; queries?: string[] }): Promise<any> {
+  const masterProducts = await getResolvedMasterProducts();
+
+  // Mode BATCH: Jika model mengirimkan array `queries`
+  if (Array.isArray(args.queries) && args.queries.length > 0) {
+    const cleanList = args.queries.map((q) => String(q || '').trim()).filter(Boolean);
+    const batchResults: any[] = [];
+
+    // Eksekusi per produk secara paralel
+    const processed = await Promise.all(
+      cleanList.map((q) => searchSingleProductDetail(q, masterProducts))
+    );
+
+    processed.forEach((itemRes, idx) => {
+      batchResults.push({
+        no: idx + 1,
+        nama_diminta: itemRes.query,
+        status: itemRes.total_ditemukan > 0
+          ? (itemRes.total_stok_fisik > 0 ? 'DITEMUKAN' : 'HABIS_DI_RAK')
+          : 'TIDAK_DITEMUKAN',
+        total_stok_fisik: itemRes.total_stok_fisik || 0,
+        lokasi_rak: itemRes.lokasi_rak || '-',
+        stok_dealpos: itemRes.stok_dealpos || 0,
+        sku_terkait: itemRes.products?.map((p: any) => p.sku).filter(Boolean).join(', ') || '-',
+        rincian_varian: itemRes.products?.map((p: any) => `${p.size}/${p.warna}: ${p.stok_fisik_rak} pcs di ${p.lokasi_rak}`).join(' | ') || '-'
+      });
+    });
+
+    return {
+      is_batch: true,
+      total_permintaan: batchResults.length,
+      pesan_ringkas: `Pemeriksaan batch ${batchResults.length} produk selesai diproses.`,
+      batch_results: batchResults
+    };
+  }
+
+  // Mode SINGLE: Pencarian 1 produk
+  const rawQuery = String(args.query || '').trim();
+  if (!rawQuery) {
+    return { error: 'Query pencarian kosong' };
+  }
+
+  return await searchSingleProductDetail(rawQuery, masterProducts);
 }
 
 /**
@@ -854,24 +914,33 @@ const SYSTEM_INSTRUCTION = `Anda adalah Asisten AI Cerdas resmi untuk sistem WMS
 Tugas utama Anda adalah membantu staf gudang, store, operasional, dan manajemen dengan cepat, akurat, dan ramah dalam Bahasa Indonesia.
 
 PANDUAN & ATURAN UTAMA:
-1. PENCARIAN BERBASIS NAMA PRODUK (JANGAN PERNAH MINTA KODE SKU!):
+1. PENCARIAN BERBASIS NAMA PRODUK (DILARANG KERAS MEREKOMENDASIKAN / MEMINTA KODE SKU!):
    - Pengguna adalah staf gudang, store, dan manajemen yang biasa menyebut NAMA BAJU / PAKAIAN (contoh: "Ruth Top Cherry", "Sailor Top", "Taylor Pants", "Celana Kulot"), BUKAN Kode SKU barcode yang panjang dan rumit.
-   - DILARANG KERAS menyuruh, meminta, atau mewajibkan pengguna untuk memberikan/mencari Kode SKU! Sistem telah dilengkapi pencarian cerdas multi-kata dan pencocokan warna/size otomatis.
-   - Panggil tool "lookup_product_stock" dengan nama produk dan varian yang diinput pengguna.
-   - Jika ditemukan, langsung sajikan data stok fisik di rak gudang, kuota DealPOS, serta lokasi raknya secara rapi (misal: "Ruth Top Cherry ditemukan! Di Rak C082 ada 4 pcs, dan di SHOPEE ada 1 pcs. Total fisik: 5 pcs").
-   - Jika suatu produk benar-benar tidak terdaftar di sistem, tanyakan dengan ramah: "Nama produk '[nama]' belum terdaftar di katalog aktif. Apakah ada sebutan model lain atau koleksi serupa yang bisa saya bantu cek?" — JANGAN PERNAH MENYEBUT "silakan berikan Kode SKU / Kode Produksi".
-2. AKURASI DATA GUDANG: Selalu gunakan Function Calling (tools) yang disediakan untuk mengecek data nyata di database WMS. JANGAN pernah mereka-reka (halusinasi) nomor rak atau stok barang.
-3. TANYA STOK: Laporkan stok fisik di rak gudang, kuota DealPOS, serta rincian lokasi rak (misal Rak B014, C082, SHOPEE, Transit, dsb.).
-4. TANYA KODE PRODUKSI: Saat ditanya kode produk atau nama barang dari kode angka tertentu (misal 6612, 7312), panggil tool "lookup_production_code" untuk memeriksa Trello UP dan Riwayat Penerimaan.
-5. REKAP / LAPORAN: Saat diminta membuat rekap (misal rekap kedatangan Oktober), panggil tool "generate_production_recap". Sajikan jawaban dalam format tabel Markdown yang rapi, profesional, dan sertakan kesimpulan singkat.
-6. FITUR KERANJANG ORDER INVENTORY (INTERAKTIF & TANYA JAWAB NEGOSIASI):
+   - DILARANG KERAS menyuruh, meminta, merekomendasikan, atau mengasumsikan pengguna untuk memberikan/mencari Kode SKU atau Kode Produksi!
+   - JANGAN PERNAH menuliskan catatan seperti "mungkin terdaftar menggunakan Kode SKU / Kode Produksi angka", "silakan berikan Kode SKU", atau "jika Anda memiliki Kode SKU". Aturan ini berlaku 100% mutlak tanpa pengecualian!
+   - Jika suatu produk berstatus tidak ditemukan di rak gudang, cukup laporkan statusnya dengan jelas: "❌ Stok Kosong / Belum Ada di Rak" atau tanyakan apakah ada sebutan model/nama koleksi alternatif yang ingin dicari, TANPA PERNAH menyebut kata "Kode SKU".
+
+2. BATCH LOOKUP (CEK BANYAK PRODUK SEKALIGUS DALAM 1 KALI JALAN):
+   - Jika pengguna memberikan daftar banyak nama produk sekaligus (misal daftar 5, 10, 20, atau 29 produk):
+     WAJIB gunakan SATU KALI panggilan tool "lookup_product_stock" dengan parameter "queries" berupa array seluruh nama produk tersebut:
+     contoh: queries: ["Ruth Top Cherry", "Sailor Top", "Taylor Pants", ...].
+     DILARANG KERAS memanggil tool satu per satu secara terpisah karena akan memakan banyak giliran iterasi!
+   - Sajikan hasil dalam format TABEL MARKDOWN LENGKAP dengan urutan nomor yang sama persis seperti input pengguna:
+     | No | Nama Produk | Status | Stok Fisik Gudang | Lokasi Rak | Stok DealPOS |
+   - Jika ada produk yang stok fisiknya 0 atau tidak ditemukan, beri tanda "❌ Kosong di Rak" pada tabel tersebut.
+
+3. AKURASI DATA GUDANG: Selalu gunakan Function Calling (tools) yang disediakan untuk mengecek data nyata di database WMS. JANGAN pernah mereka-reka (halusinasi) nomor rak atau stok barang.
+4. TANYA STOK: Laporkan stok fisik di rak gudang, kuota DealPOS, serta rincian lokasi rak (misal Rak B014, C082, SHOPEE, Transit, dsb.).
+5. TANYA KODE PRODUKSI: Hanya jika pengguna SECARA EKSPLISIT menanyakan kode produksi angka tertentu (misal "kode 6612 itu baju apa ya?"), panggil tool "lookup_production_code" untuk memeriksa Trello UP dan Riwayat Penerimaan.
+6. REKAP / LAPORAN: Saat diminta membuat rekap (misal rekap kedatangan Oktober), panggil tool "generate_production_recap". Sajikan jawaban dalam format tabel Markdown yang rapi, profesional, dan sertakan kesimpulan singkat.
+7. FITUR KERANJANG ORDER INVENTORY (INTERAKTIF & TANYA JAWAB NEGOSIASI):
    Ketika pengguna meminta untuk memasukkan barang ke keranjang order (misal "Tolong masukkan sailor top dan taylor pants ke keranjang"):
    a. JANGAN LANGSUNG EKSEKUSI JIKA BELUM JELAS: Panggil terlebih dahulu tool "lookup_product_stock" untuk memeriksa seluruh varian (warna & size) dan jumlah stok fisik real-time di rak.
    b. TANYA QTY JIKA PENGGUNA BELUM MENYEBUTKAN JUMLAH: Jika pengguna tidak menyebutkan qty, tanyakan dengan ramah mau dimasukkan berapa pcs untuk tiap varian yang ada stoknya.
    c. TAWARKAN ALTERNATIF JIKA WARNA KOSONG: Jika pengguna meminta warna yang stok fisiknya 0 pcs (misal minta warna Maroon tapi di rak kosong), jelaskan bahwa warna Maroon sedang kosong, lalu secara aktif TAWARKAN warna lain yang masih tersedia stok fisiknya di rak (misal: "Warna Maroon kosong kak, tapi ready warna Forest (12 pcs di B020) dan Black (5 pcs di B015). Mau yang warna Forest atau Black?").
    d. TAWARKAN ALTERNATIF JIKA SIZE KOSONG: Jika pengguna minta size S tetapi size S kosong (0 pcs), tawarkan alternatif size lain yang masih ada stok di rak (misal size M atau L).
    e. EKSEKUSI SETELAH DISETUJUI / DIKONFIRMASI: Jika pengguna sudah memberikan konfirmasi qty, warna, dan size (atau dari awal sudah jelas dan ada stoknya), PANGGIL TOOL "add_to_inventory_cart". Sajikan tabel konfirmasi SKU, Nama, Size, Qty, dan Posisi Rak, lalu infokan bahwa pesanan telah berhasil masuk ke Keranjang Order Inventory dan bisa langsung dibuka di menu Inventory!
-7. TONE OF VOICE: Ramah, komunikatif, solutif, profesional, dan selalu mengutamakan kemudahan pengguna tanpa menyulitkan dengan istilah teknis / keharusan hafal SKU barcode.`;
+8. TONE OF VOICE: Ramah, komunikatif, solutif, profesional, dan selalu mengutamakan kemudahan pengguna tanpa menyulitkan dengan istilah teknis barcode.`;
 
 /**
  * Mengirim pesan ke Google Gemini dengan multi-turn Tool Execution loop
@@ -944,9 +1013,9 @@ export async function sendChatMessageToGemini(
     return data;
   };
 
-  // Loop tool calling (maksimal 4 iterasi untuk menghindari loop tak berujung)
+  // Loop tool calling (maksimal 8 iterasi untuk fleksibilitas percakapan)
   let loopCount = 0;
-  const MAX_LOOPS = 4;
+  const MAX_LOOPS = 8;
 
   while (loopCount < MAX_LOOPS) {
     loopCount++;
@@ -1039,26 +1108,31 @@ export async function sendChatMessageToGemini(
     });
   }
 
-  // Jika mencapai batas maksimal loop, minta model memberikan kesimpulan akhir
+  // Jika mencapai batas maksimal loop, minta model memberikan kesimpulan teks akhir (tanpa tool)
   try {
     const finalModel = modelsToTry[currentModelIndex] || 'gemini-3.5-flash';
     contents.push({
       role: 'user',
-      parts: [{ text: 'Berdasarkan data yang sudah diperiksa di atas, silakan berikan jawaban dan rincian lengkapnya sekarang.' }]
+      parts: [{ text: 'Berdasarkan data database yang sudah diperiksa di atas, tolong langsung tuliskan jawaban akhir dan tabel rincian lengkapnya sekarang tanpa memanggil tool lagi.' }]
     });
+    // Kuncinya: TIDAK mengirimkan `tools` di turn ini agar Gemini dipaksa menghasilkan jawaban teks akhir
     const finalRes = await postToGemini(finalModel, {
       contents,
       systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] }
     });
     const candidate = finalRes.candidates?.[0];
     const textParts = candidate?.content?.parts?.filter((p: any) => p.text).map((p: any) => p.text).join('\n');
-    if (textParts) {
-      return { text: textParts, executedTools };
+    if (textParts && textParts.trim()) {
+      return { text: textParts.trim(), executedTools };
     }
-  } catch {}
+  } catch (err) {
+    console.warn('[WMS AI] Gagal generate final text summary:', err);
+  }
 
   return {
-    text: 'Selesai menganalisis data gudang.',
+    text: executedTools.length > 0
+      ? `Pemeriksaan database selesai untuk ${executedTools.length} langkah data. Seluruh hasil pencarian telah dicocokkan dengan data fisik live rak gudang.`
+      : 'Selesai memproses.',
     executedTools
   };
 }
