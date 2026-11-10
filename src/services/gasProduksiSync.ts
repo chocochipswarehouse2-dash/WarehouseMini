@@ -359,6 +359,7 @@ export function buildBlocksFromRawItems(
       trelloMatch?.productName ||
       trelloExtracted?.productName ||
       (lookup.found ? lookup.nama_produk : '') ||
+      (/^[A-Za-z\s]+$/.test(code) && code.length > 3 ? code.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()) : '') ||
       '';
 
     const resolvedUpVendor =
@@ -687,6 +688,7 @@ export function buildMatrixBlocksFromItems(items: PenerimaanProduksiItem[], isCM
       trelloMatch?.productName ||
       trelloExtracted?.productName ||
       (lookup.found ? lookup.nama_produk : '') ||
+      (/^[A-Za-z\s]+$/.test(code) && code.length > 3 ? code.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()) : '') ||
       '';
 
     const upVendor =
@@ -862,7 +864,7 @@ export async function pushPenerimaanProduksiToGoogleSheet(
     const bInfo = blockMap.get(codeKey);
     const trelloMatch = !bInfo?.productName ? matchTrelloByCode(codeKey) : null;
     const lookup = lookupProductBySku(codeKey, undefined, it.nama_produk);
-    const finalName = it.nama_produk || bInfo?.productName || trelloMatch?.productName || (lookup.found ? lookup.nama_produk : '');
+    const finalName = it.nama_produk || bInfo?.productName || trelloMatch?.productName || (lookup.found ? lookup.nama_produk : '') || (/^[A-Za-z\s]+$/.test(codeKey) && codeKey.length > 3 ? codeKey.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()) : '');
     const finalUp = (it.keterangan && it.keterangan !== 'KARGO' && it.keterangan !== 'CMT')
       ? it.keterangan
       : (bInfo?.upVendor || trelloMatch?.upCode || it.keterangan || (activeTab === 'CMT' ? 'CMT' : 'KARGO'));

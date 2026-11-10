@@ -1,13 +1,13 @@
 {
-  "version": "v2.6.103",
-  "versionCode": 363,
+  "version": "v2.6.104",
+  "versionCode": 364,
   "buildDate": "10 November 2026",
-  "buildHash": "wms-261110-v363-1456",
-  "releaseTitle": "WMS v2.6.103 — Pembersihan Pseudo Kategori Physical Stock & Standarisasi Lookup Size Master",
+  "buildHash": "wms-261110-v364-1706",
+  "releaseTitle": "WMS v2.6.104 — Perbaikan Filter Tanggal Dropdown Tab Kargo & Pemulihan Tampilan Madeline Top",
   "releaseNotes": [
-    "Mengeliminasi kategori palsu Physical Stock dengan pencarian kategori resmi DealPOS via lookup nama produk",
-    "Menghilangkan pemaksaan varian ALL pada barang dengan size unassigned menjadi tanda strip (-)",
-    "Menghapus sisa regex endsWith size yang melangkahi master produk di Supabase Blok F dan Inventori"
+    "Memperbaiki pencocokan filter tanggal dropdown cepat pada ProduksiSpreadsheetView yang sebelumnya gagal karena pemisahan delimiter pipa",
+    "Merapikan label dropdown tanggal penerimaan dan badge filter tanpa karakter mentah",
+    "Menambahkan auto-fill nama produk untuk kode produksi alfabet seperti Madeline Top saat push/render"
   ],
   "minSupportedVersion": "v2.0.0"
 }

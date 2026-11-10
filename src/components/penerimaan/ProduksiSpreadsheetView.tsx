@@ -330,8 +330,10 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
           productName = lookup.nama_produk;
         } else if (catalogNameMap.has(cleanCode)) {
           productName = catalogNameMap.get(cleanCode)!;
-        } else {
-          productName = firstItem?.nama_produk || '';
+        } else if (firstItem?.nama_produk) {
+          productName = firstItem.nama_produk;
+        } else if (/^[A-Za-z\s]+$/.test(cleanCode) && cleanCode.length > 3) {
+          productName = cleanCode.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
         }
       }
 
@@ -799,7 +801,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       kode_produksi: cleanCode,
       qty_nota: finalNota,
       kategori,
-      tanggal: selectedDateFilter !== 'all' ? selectedDateFilter : undefined,
+      tanggal: selectedDateFilter !== 'all' ? selectedDateFilter.split('||')[0] : undefined,
     }).catch(() => {});
 
     const updatedRec = syncRes.notaMap?.[cleanCode];
@@ -948,11 +950,41 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
 
     // Filter per tanggal penerimaan jika dipilih spesifik (mendukung tanggal kedatangan maupun tanggal retur)
     if (selectedDateFilter && selectedDateFilter !== 'all') {
-      result = result.filter(
-        (b) =>
-          b.dateSlots.some((slot) => slot.split('||')[0] === selectedDateFilter) ||
-          (b.returDateSlots && b.returDateSlots.some((r) => r.split('||')[0] === selectedDateFilter))
-      );
+      const cleanFilterDate = selectedDateFilter.split('||')[0].trim();
+      const cleanFilterSj = selectedDateFilter.includes('||') ? selectedDateFilter.split('||')[1].trim().toUpperCase() : '';
+
+      result = result.filter((b) => {
+        // 1. Check exact slot match (both date and SJ)
+        const matchExactSlot = b.dateSlots.some((slot) => {
+          if (!slot) return false;
+          if (slot === selectedDateFilter) return true;
+          const slotDate = slot.split('||')[0].trim();
+          const slotSj = slot.includes('||') ? slot.split('||')[1].trim().toUpperCase() : '';
+          if (cleanFilterSj) {
+            return slotDate === cleanFilterDate && slotSj === cleanFilterSj;
+          }
+          return slotDate === cleanFilterDate;
+        });
+        if (matchExactSlot) return true;
+
+        // 2. Check retur slots (Khusus CMT)
+        const matchReturSlot = b.returDateSlots && b.returDateSlots.some((r) => {
+          if (!r) return false;
+          if (r === selectedDateFilter) return true;
+          return r.split('||')[0].trim() === cleanFilterDate;
+        });
+        if (matchReturSlot) return true;
+
+        // 3. Fallback: Check dateToSjMap
+        if (b.dateToSjMap && b.dateToSjMap[cleanFilterDate]) {
+          if (cleanFilterSj) {
+            return b.dateToSjMap[cleanFilterDate].some((s) => s.toUpperCase() === cleanFilterSj);
+          }
+          return true;
+        }
+
+        return false;
+      });
     }
 
     // Filter status audit hitung ulang
@@ -1806,11 +1838,17 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
               title="Filter Tanggal Penerimaan"
             >
               <option value="all">Semua Tanggal ({availableDates.length})</option>
-              {availableDates.map((dStr) => (
-                <option key={dStr} value={dStr}>
-                  {formatDateHeader(dStr)} ({dStr})
-                </option>
-              ))}
+              {availableDates.map((dStr) => {
+                const [dPart, sjPart] = dStr.split('||');
+                const label = sjPart
+                  ? `${formatDateHeader(dPart)} (${sjPart})`
+                  : formatDateHeader(dPart);
+                return (
+                  <option key={dStr} value={dStr}>
+                    {label}
+                  </option>
+                );
+              })}
             </select>
             {selectedDateFilter !== 'all' && (
               <button
@@ -1860,12 +1898,12 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
             type="button"
             onClick={() => setIsPushDateModalOpen(true)}
             className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition cursor-pointer shadow-xs"
-            title={selectedDateFilter !== 'all' ? `Push Sheet Khusus Tanggal ${formatDateHeader(selectedDateFilter)}` : 'Push Sheet Per Tanggal'}
+            title={selectedDateFilter !== 'all' ? `Push Sheet Khusus Tanggal ${formatDateHeader(selectedDateFilter.split('||')[0])}` : 'Push Sheet Per Tanggal'}
           >
             <CloudUpload className="w-3.5 h-3.5" />
             <span>
               {selectedDateFilter !== 'all'
-                ? `Push Sheet (${formatDateHeader(selectedDateFilter)})`
+                ? `Push Sheet (${formatDateHeader(selectedDateFilter.split('||')[0])})`
                 : 'Push Sheet'}
             </span>
           </button>
@@ -1912,7 +1950,10 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
           </span>
           {selectedDateFilter !== 'all' && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-bold border border-blue-200 dark:border-blue-800 text-[11px]">
-              Tgl: {formatDateHeader(selectedDateFilter)} ({selectedDateFilter})
+              Tgl: {(() => {
+                const [dPart, sjPart] = selectedDateFilter.split('||');
+                return sjPart ? `${formatDateHeader(dPart)} (${sjPart})` : formatDateHeader(dPart);
+              })()}
               <button
                 type="button"
                 onClick={() => setSelectedDateFilter('all')}
@@ -3209,7 +3250,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
           dataList={dataList}
           blocks={blocks}
           activeTab={activeTab}
-          initialDateFilter={selectedDateFilter !== 'all' ? selectedDateFilter : null}
+          initialDateFilter={selectedDateFilter !== 'all' ? selectedDateFilter.split('||')[0] : null}
           productCatalog={productCatalog}
           onShowToast={onShowToast}
         />

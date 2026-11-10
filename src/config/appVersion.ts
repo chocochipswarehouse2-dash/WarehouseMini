@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.103",
-  "versionCode": 363,
+  "version": "v2.6.104",
+  "versionCode": 364,
   "buildDate": "10 November 2026",
-  "buildHash": "wms-261110-v363-1456",
-  "releaseTitle": "WMS v2.6.103 — Pembersihan Pseudo Kategori Physical Stock & Standarisasi Lookup Size Master",
+  "buildHash": "wms-261110-v364-1706",
+  "releaseTitle": "WMS v2.6.104 — Perbaikan Filter Tanggal Dropdown Tab Kargo & Pemulihan Tampilan Madeline Top",
   "releaseNotes": [
-    "Mengeliminasi kategori palsu Physical Stock dengan pencarian kategori resmi DealPOS via lookup nama produk",
-    "Menghilangkan pemaksaan varian ALL pada barang dengan size unassigned menjadi tanda strip (-)",
-    "Menghapus sisa regex endsWith size yang melangkahi master produk di Supabase Blok F dan Inventori"
+    "Memperbaiki pencocokan filter tanggal dropdown cepat pada ProduksiSpreadsheetView yang sebelumnya gagal karena pemisahan delimiter pipa",
+    "Merapikan label dropdown tanggal penerimaan dan badge filter tanpa karakter mentah",
+    "Menambahkan auto-fill nama produk untuk kode produksi alfabet seperti Madeline Top saat push/render"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.103",
+    "versionCode": 363,
+    "buildDate": "10 November 2026",
+    "buildHash": "wms-261110-v363-1456",
+    "releaseTitle": "WMS v2.6.103 — Pembersihan Pseudo Kategori Physical Stock & Standarisasi Lookup Size Master",
+    "releaseNotes": [
+      "Mengeliminasi kategori palsu Physical Stock dengan pencarian kategori resmi DealPOS via lookup nama produk",
+      "Menghilangkan pemaksaan varian ALL pada barang dengan size unassigned menjadi tanda strip (-)",
+      "Menghapus sisa regex endsWith size yang melangkahi master produk di Supabase Blok F dan Inventori"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.102",
     "versionCode": 362,
@@ -115,20 +128,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Auto-lookup Nama Produk, UP, dan Foto dari data Trello UP board pada Form Penerimaan dan Spreadsheet Produksi (CMT & Kargo)",
       "Chip preview match Trello real-time saat ketik kode produk",
       "Tombol 1-klik Lengkapi Trello pada toolbar Spreadsheet Produksi"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.95",
-    "versionCode": 355,
-    "buildDate": "8 November 2026",
-    "buildHash": "wms-261108-v355-1204",
-    "releaseTitle": "WMS v2.6.95 — Perbaikan Foto Koleksi UP (Trello) & Auto-Recovery GDrive",
-    "releaseNotes": [
-      "Perbaikan bug auto-sync Trello 60 detik yang sebelumnya menimpa cache lokal tanpa gdrive_image_url sehingga foto berubah menjadi No Photo",
-      "Penambahan pewarisan foto lintas UP otomatis untuk kode barang yang sama (misal artikel 251052 & 622289 yang belum dilampiri foto di salah satu UP otomatis mewarisi foto dari UP lain / Katalog Produk)",
-      "Peningkatan komponen TrelloImage dengan lazy loading, referrerPolicy no-referrer, antrean batas request (mencegah error 429 Too Many Requests saat memuat 727 kartu), serta 3-tahap fallback otomatis (Google Drive CDN -> GDrive Thumbnail -> Trello OAuth Blob)",
-      "Penambahan filter cepat Belum Ada Foto dan tombol Pasang/Ganti Foto manual langsung ke Google Drive pada modal detail kartu Trello"
     ],
     "minSupportedVersion": "v2.0.0"
   }

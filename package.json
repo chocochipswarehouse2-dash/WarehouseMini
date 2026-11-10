@@ -1,7 +1,7 @@
 {
   "name": "warehouse-mini",
   "private": true,
-  "version": "2.6.103",
+  "version": "2.6.104",
   "description": "Chocochips Warehouse",
   "type": "module",
   "scripts": {
