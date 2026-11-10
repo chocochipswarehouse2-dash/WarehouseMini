@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.7.0",
-  "versionCode": 270,
+  "version": "v2.7.1",
+  "versionCode": 271,
   "buildDate": "10 November 2026",
-  "buildHash": "wms-261110-v270-1812",
-  "releaseTitle": "WMS v2.7.0 — Asisten AI Pintar WMS (Google Gemini Flash)",
+  "buildHash": "wms-261110-v271-1848",
+  "releaseTitle": "WMS v2.7.1 — Interaktif Order Keranjang & Fix Multi-Tool Call AI",
   "releaseNotes": [
-    "Rilis Fitur Baru: Asisten AI WMS berbasis Google Gemini Flash terintegrasi di Sidebar",
-    "Tanya stok real, posisi rak, lookup kode produksi Trello UP, dan rekapitulasi penerimaan bulanan via bahasa alami",
-    "Kontrol akses hemat token: Superadmin default dengan Whitelist Staf Terpilih"
+    "Penambahan tool add_to_inventory_cart untuk memasukkan produk ke keranjang order inventory",
+    "Dukungan interaksi cerdas: tanya qty jika kosong, penawaran alternatif warna/size jika stok 0",
+    "Perbaikan multi-tool calling agar seluruh produk dieksekusi simultan dan menghasilkan rangkuman lengkap"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.7.0",
+    "versionCode": 270,
+    "buildDate": "10 November 2026",
+    "buildHash": "wms-261110-v270-1812",
+    "releaseTitle": "WMS v2.7.0 — Asisten AI Pintar WMS (Google Gemini Flash)",
+    "releaseNotes": [
+      "Rilis Fitur Baru: Asisten AI WMS berbasis Google Gemini Flash terintegrasi di Sidebar",
+      "Tanya stok real, posisi rak, lookup kode produksi Trello UP, dan rekapitulasi penerimaan bulanan via bahasa alami",
+      "Kontrol akses hemat token: Superadmin default dengan Whitelist Staf Terpilih"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.105",
     "versionCode": 365,
@@ -117,18 +130,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Koreksi gender scoring pada kode kembar busana couple (25751 MAN -> Logan Top SAMPLE, 25751 WOMAN -> Kailea Set)",
       "Tombol interaktif 1-klik 'Ganti Produk' di tabel Produksi untuk menukar kartu Trello alternatif secara instan tanpa ketik manual"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.98",
-    "versionCode": 358,
-    "buildDate": "8 November 2026",
-    "buildHash": "wms-261108-v358-2137",
-    "releaseTitle": "WMS v2.6.98 — Fix Produksi Trello Match Ambiguity & Sheet Push Product Name/UP",
-    "releaseNotes": [
-      "Sistem scoring ranking multi-faktor untuk pencocokan Trello dengan gender/single-code hint (memastikan 25762 - WOMAN cocok ke Viorica Top bukan Cedric Top)",
-      "Enrichment otomatis nama produk dan UP Vendor saat push ke Google Sheets Master & Tanggal (menjamin kolom C dan D tidak kosong/default KARGO)"
     ],
     "minSupportedVersion": "v2.0.0"
   }

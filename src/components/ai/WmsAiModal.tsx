@@ -18,7 +18,8 @@ import {
   CheckCircle2,
   Boxes,
   MapPin,
-  FileText
+  FileText,
+  ShoppingCart
 } from 'lucide-react';
 import { UserSession } from '../../types';
 import { isSuperadmin } from '../../services/permissions';
@@ -37,9 +38,16 @@ interface WmsAiModalProps {
   onClose: () => void;
   session: UserSession | null;
   onNotify?: (message: string, type: 'success' | 'error' | 'info') => void;
+  onNavigateToInventoryCart?: () => void;
 }
 
 const SUGGESTED_PROMPTS = [
+  {
+    icon: ShoppingCart,
+    label: 'Order ke Keranjang',
+    prompt: 'Tolong masukkan ke keranjang order: Sailor Top Blue S 2 pcs dan Taylor Pants M 1 pcs',
+    desc: 'AI cek stok & masukkan otomatis ke keranjang order'
+  },
   {
     icon: Boxes,
     label: 'Cek Stok Produk',
@@ -57,12 +65,6 @@ const SUGGESTED_PROMPTS = [
     label: 'Rekap Penerimaan Bulan',
     prompt: 'Buat rekap penerimaan produk selama bulan Oktober',
     desc: 'Total pcs, surat jalan, dan per kategori CMT/Kargo'
-  },
-  {
-    icon: MapPin,
-    label: 'Posisi Rak Gudang',
-    prompt: 'Di rak mana saja stok Taylor Pants Dark Denim?',
-    desc: 'Lokasi rak live dari database PostgREST'
   }
 ];
 
@@ -70,7 +72,8 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
   isOpen,
   onClose,
   session,
-  onNotify
+  onNotify,
+  onNavigateToInventoryCart
 }) => {
   const [messages, setMessages] = useState<AiChatMessage[]>(() => {
     try {
@@ -84,6 +87,41 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [activeToolName, setActiveToolName] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const [cartCount, setCartCount] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem('wms_inventory_picking_cart');
+      return raw ? JSON.parse(raw).length : 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  useEffect(() => {
+    const updateCount = () => {
+      try {
+        const raw = localStorage.getItem('wms_inventory_picking_cart');
+        setCartCount(raw ? JSON.parse(raw).length : 0);
+      } catch {
+        setCartCount(0);
+      }
+    };
+    updateCount();
+    window.addEventListener('wms_inventory_cart_updated', updateCount);
+    window.addEventListener('storage', updateCount);
+    return () => {
+      window.removeEventListener('wms_inventory_cart_updated', updateCount);
+      window.removeEventListener('storage', updateCount);
+    };
+  }, [isOpen]);
+
+  const handleOpenCart = () => {
+    if (typeof window !== 'undefined') {
+      (window as any).__wms_open_inventory_cart = true;
+    }
+    onNavigateToInventoryCart?.();
+    onClose();
+  };
 
   // Superadmin Access & Settings Popover
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
@@ -373,6 +411,19 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
+            {/* Quick Open Cart Button */}
+            {onNavigateToInventoryCart && (
+              <button
+                type="button"
+                onClick={handleOpenCart}
+                title="Buka Keranjang Order di Inventory"
+                className="px-2.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-300/80 dark:border-amber-700/80 hover:bg-amber-100"
+              >
+                <ShoppingCart className="w-3.5 h-3.5" />
+                <span>Keranjang ({cartCount})</span>
+              </button>
+            )}
+
             {/* Superadmin Settings Button */}
             {userIsSuperadmin && (
               <button
@@ -605,6 +656,25 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                     <div className="prose dark:prose-invert max-w-none text-xs leading-relaxed">
                       {isUser ? <p className="whitespace-pre-wrap">{msg.text}</p> : renderFormattedContent(msg.text)}
                     </div>
+
+                    {/* Direct CTA: Buka Keranjang Order jika tool add_to_inventory_cart dieksekusi */}
+                    {!isUser && msg.toolCallsExecuted?.includes('add_to_inventory_cart') && onNavigateToInventoryCart && (
+                      <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 bg-emerald-50/60 dark:bg-emerald-950/30 p-2.5 rounded-xl border border-emerald-200/80 dark:border-emerald-800/80">
+                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                          <span>Produk telah masuk ke Keranjang Order</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleOpenCart}
+                          className="px-3 py-1.5 rounded-lg text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                        >
+                          <ShoppingCart className="w-3.5 h-3.5" />
+                          <span>Buka Keranjang ({cartCount})</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
 
                     {/* Copy Button */}
                     {!isUser && (

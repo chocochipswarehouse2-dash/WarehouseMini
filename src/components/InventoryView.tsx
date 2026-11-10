@@ -270,6 +270,31 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     } catch {}
   }, [cartItems]);
 
+  // Sinkronisasi otomatis saat AI atau sesi lain mengupdate keranjang picking
+  useEffect(() => {
+    const handleCartSync = () => {
+      try {
+        const saved = localStorage.getItem('wms_inventory_picking_cart');
+        if (saved) setCartItems(JSON.parse(saved));
+        else setCartItems([]);
+      } catch {}
+    };
+
+    window.addEventListener('wms_inventory_cart_updated', handleCartSync);
+    window.addEventListener('storage', handleCartSync);
+
+    // Cek jika ada sinyal buka keranjang dari Asisten AI
+    if (typeof window !== 'undefined' && (window as any).__wms_open_inventory_cart) {
+      delete (window as any).__wms_open_inventory_cart;
+      setIsCartDrawerOpen(true);
+    }
+
+    return () => {
+      window.removeEventListener('wms_inventory_cart_updated', handleCartSync);
+      window.removeEventListener('storage', handleCartSync);
+    };
+  }, []);
+
   const [isCartDrawerOpen, setIsCartDrawerOpen] = useState(false);
   const [isPickingModalOpen, setIsPickingModalOpen] = useState(false);
   const [pickingModalDraft, setPickingModalDraft] = useState<PengecekanSJDraft | null>(null);

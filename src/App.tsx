@@ -4910,6 +4910,12 @@ export default function App() {
         onClose={() => setIsAiModalOpen(false)}
         session={session}
         onNotify={showToast}
+        onNavigateToInventoryCart={() => {
+          handleSelectPage('inventory');
+          if (typeof window !== 'undefined') {
+            (window as any).__wms_open_inventory_cart = true;
+          }
+        }}
       />
 
       {/* Custom Confirm Dialog (replaces window.confirm for PWA Builder / TWA compat) */}

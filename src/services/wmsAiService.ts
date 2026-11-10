@@ -13,7 +13,7 @@
  */
 
 import { supabaseFetch, fetchStockForSkus, fetchPenerimaanProduksiFromSupabase } from './supabase';
-import { getGlobalProductCatalogMap, ProductLookupResult } from '../utils/productLookup';
+import { getGlobalProductCatalogMap, lookupProductBySku, ProductLookupResult } from '../utils/productLookup';
 import { normalizeLookupCode } from '../utils/trelloProduksiMatcher';
 import { getLocalCachedTrelloItems } from './trelloSyncService';
 import { ProductItem, PenerimaanProduksiItem } from '../types';
@@ -231,6 +231,38 @@ const AI_TOOLS = [
             }
           },
           required: ['keyword']
+        }
+      },
+      {
+        name: 'add_to_inventory_cart',
+        description: 'Memasukkan satu atau beberapa produk ke dalam Keranjang Order / Picking Cart di modul Inventory setelah jumlah (qty), warna, dan size telah dikonfirmasi atau disetujui pengguna.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            items: {
+              type: 'ARRAY',
+              description: 'Daftar produk yang akan dimasukkan ke keranjang order',
+              items: {
+                type: 'OBJECT',
+                properties: {
+                  sku: { type: 'STRING', description: 'Kode SKU produk persis dari hasil lookup' },
+                  qty: { type: 'NUMBER', description: 'Jumlah pcs yang dimasukkan (harus lebih dari 0)' },
+                  nama_produk: { type: 'STRING', description: 'Nama produk lengkap' },
+                  size: { type: 'STRING', description: 'Ukuran produk (S/M/L/All Size, dll)' }
+                },
+                required: ['sku', 'qty']
+              }
+            }
+          },
+          required: ['items']
+        }
+      },
+      {
+        name: 'view_inventory_cart',
+        description: 'Melihat rincian produk, size, dan kuantitas yang saat ini sudah ada di dalam Keranjang Order Inventory.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {}
         }
       }
     ]
@@ -496,6 +528,128 @@ async function executeSearchManualShipment(args: { keyword: string }): Promise<a
   };
 }
 
+/**
+ * 5. Eksekusi tool: add_to_inventory_cart
+ */
+async function executeAddToInventoryCart(args: {
+  items: Array<{ sku: string; qty: number; nama_produk?: string; size?: string }>;
+}): Promise<any> {
+  if (!args.items || !Array.isArray(args.items) || args.items.length === 0) {
+    return { error: 'Daftar produk untuk keranjang kosong.' };
+  }
+
+  // Ambil data stok live dari Supabase PostgREST stok_real_fisik
+  const skus = args.items.map((it) => String(it.sku || '').trim().toUpperCase()).filter(Boolean);
+  let liveRacks: any[] = [];
+  try {
+    liveRacks = await fetchStockForSkus(skus);
+  } catch (err) {
+    console.warn('[WMS AI] Gagal fetch stok live untuk keranjang:', err);
+  }
+
+  const rackMap = new Map<string, { locations: Array<{ lokasi: string; qty: number; area?: string }>; totalFisik: number }>();
+  liveRacks.forEach((r) => {
+    const s = String(r.sku || '').toUpperCase();
+    if (!rackMap.has(s)) {
+      rackMap.set(s, { locations: [], totalFisik: 0 });
+    }
+    const entry = rackMap.get(s)!;
+    const q = Number(r.sisa_stok) || 0;
+    if (q > 0 && r.lokasi) {
+      entry.locations.push({ lokasi: r.lokasi, qty: q, area: r.area });
+      entry.totalFisik += q;
+    }
+  });
+
+  // Baca keranjang saat ini dari localStorage
+  let currentCart: any[] = [];
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('wms_inventory_picking_cart') : null;
+    if (raw) currentCart = JSON.parse(raw);
+  } catch {}
+
+  const updatedCartMap = new Map<string, any>();
+  currentCart.forEach((c) => {
+    if (c && c.sku) updatedCartMap.set(String(c.sku).toUpperCase(), { ...c });
+  });
+
+  const addedReport: any[] = [];
+
+  for (const it of args.items) {
+    const cleanSku = String(it.sku || '').trim().toUpperCase();
+    if (!cleanSku) continue;
+
+    const lookup = lookupProductBySku(cleanSku);
+    const rackInfo = rackMap.get(cleanSku) || { locations: [], totalFisik: 0 };
+    const avail = rackInfo.totalFisik;
+    const requestedQty = Math.max(1, Number(it.qty) || 1);
+
+    const existing = updatedCartMap.get(cleanSku);
+    const newQty = existing ? existing.qty + requestedQty : requestedQty;
+
+    const cartItem = {
+      sku: cleanSku,
+      nama_produk: it.nama_produk || lookup.nama_produk || existing?.nama_produk || cleanSku,
+      size: it.size || lookup.size || existing?.size || '-',
+      qty: newQty,
+      available_stock: avail,
+      locations: rackInfo.locations
+    };
+
+    updatedCartMap.set(cleanSku, cartItem);
+    addedReport.push({
+      sku: cleanSku,
+      nama_produk: cartItem.nama_produk,
+      size: cartItem.size,
+      qty_ditambahkan: requestedQty,
+      total_qty_di_keranjang: newQty,
+      stok_tersedia_di_rak: avail,
+      lokasi_rak: rackInfo.locations.map((l) => `${l.lokasi} (${l.qty} pcs)`).join(', ') || 'Belum ada stok fisik di rak'
+    });
+  }
+
+  const finalCart = Array.from(updatedCartMap.values());
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('wms_inventory_picking_cart', JSON.stringify(finalCart));
+      window.dispatchEvent(
+        new CustomEvent('wms_inventory_cart_updated', {
+          detail: { totalCount: finalCart.length, items: finalCart }
+        })
+      );
+    }
+  } catch {}
+
+  return {
+    status: 'success',
+    pesan: `Berhasil menambahkan ${addedReport.length} item ke Keranjang Order Inventory.`,
+    rincian_item: addedReport,
+    total_item_di_keranjang: finalCart.length
+  };
+}
+
+/**
+ * 6. Eksekusi tool: view_inventory_cart
+ */
+async function executeViewInventoryCart(): Promise<any> {
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('wms_inventory_picking_cart') : null;
+    const items = raw ? JSON.parse(raw) : [];
+    return {
+      total_item_di_keranjang: items.length,
+      items: items.map((it: any) => ({
+        sku: it.sku,
+        nama_produk: it.nama_produk,
+        size: it.size,
+        qty: it.qty,
+        available_stock: it.available_stock
+      }))
+    };
+  } catch {
+    return { total_item_di_keranjang: 0, items: [] };
+  }
+}
+
 // =============================================================================
 // MAIN CHAT COMPLETION CONTROLLER
 // =============================================================================
@@ -503,12 +657,19 @@ async function executeSearchManualShipment(args: { keyword: string }): Promise<a
 const SYSTEM_INSTRUCTION = `Anda adalah Asisten AI Cerdas resmi untuk sistem WMS Inventory (Chocochips Warehouse).
 Tugas utama Anda adalah membantu staf gudang, operasional, dan manajemen dengan cepat, akurat, dan ramah dalam Bahasa Indonesia.
 
-PANDUAN & ATURAN:
+PANDUAN & ATURAN UTAMA:
 1. AKURASI DATA GUDANG: Selalu gunakan Function Calling (tools) yang disediakan untuk mengecek data nyata di database WMS. JANGAN pernah mereka-reka (halusinasi) nomor rak, kode SKU, atau stok barang.
 2. TANYA STOK: Saat ditanya stok produk, panggil tool "lookup_product_stock". Laporkan stok fisik di rak gudang, kuota DealPOS, serta rincian lokasi rak (misal Rak B014, Transit, dsb.).
 3. TANYA KODE PRODUKSI: Saat ditanya kode produk atau nama barang dari kode tertentu (misal 6612), panggil tool "lookup_production_code" untuk memeriksa Trello UP dan Riwayat Penerimaan.
 4. REKAP / LAPORAN: Saat diminta membuat rekap (misal rekap kedatangan Oktober), panggil tool "generate_production_recap". Sajikan jawaban dalam format tabel Markdown yang rapi, profesional, dan mudah dibaca serta sertakan kesimpulan singkat.
-5. TONE OF VOICE: Profesional, ringkas, terstruktur, dan siap membantu operasional gudang.`;
+5. FITUR KERANJANG ORDER INVENTORY (INTERAKTIF & TANYA JAWAB NEGOSIASI):
+   Ketika pengguna meminta untuk memasukkan barang ke keranjang order (misal "Tolong masukkan sailor top dan taylor pants ke keranjang"):
+   a. JANGAN LANGSUNG EKSEKUSI JIKA BELUM JELAS: Panggil terlebih dahulu tool "lookup_product_stock" untuk memeriksa seluruh varian (warna & size) dan jumlah stok fisik real-time di rak.
+   b. TANYA QTY JIKA PENGGUNA BELUM MENYEBUTKAN JUMLAH: Jika pengguna tidak menyebutkan qty (misal hanya minta nama produk), tanyakan dengan ramah mau dimasukkan berapa pcs untuk tiap varian yang ada stoknya.
+   c. TAWARKAN ALTERNATIF JIKA WARNA KOSONG: Jika pengguna meminta warna yang stok fisiknya 0 pcs (misal minta warna Maroon tapi di rak kosong), jelaskan bahwa warna Maroon sedang kosong, lalu secara aktif TAWARKAN warna lain yang masih tersedia stok fisiknya di rak (misal: "Warna Maroon kosong kak, tapi ready warna Forest (12 pcs di B020) dan Black (5 pcs di B015). Mau yang warna Forest atau Black?").
+   d. TAWARKAN ALTERNATIF JIKA SIZE KOSONG: Jika pengguna minta size S tetapi size S kosong (0 pcs), tawarkan alternatif size lain yang masih ada stok di rak (misal size M atau L).
+   e. EKSEKUSI SETELAH DISETUJUI / DIKONFIRMASI: Jika pengguna sudah memberikan konfirmasi qty, warna, dan size (atau dari awal sudah jelas dan ada stoknya), PANGGIL TOOL "add_to_inventory_cart". Sajikan tabel konfirmasi SKU, Nama, Size, Qty, dan Posisi Rak, lalu infokan bahwa pesanan telah berhasil masuk ke Keranjang Order Inventory dan bisa langsung dibuka di menu Inventory!
+6. TONE OF VOICE: Ramah, komunikatif, profesional, ringkas, dan proaktif membantu pekerjaan tim gudang.`;
 
 /**
  * Mengirim pesan ke Google Gemini dengan multi-turn Tool Execution loop
@@ -602,10 +763,10 @@ export async function sendChatMessageToGemini(
     const modelContent = candidate.content;
     const parts = modelContent.parts || [];
 
-    // Cari apakah model meminta Function Call
-    const functionCallPart = parts.find((p: any) => p.functionCall);
+    // Cari apakah model meminta satu atau beberapa Function Call
+    const functionCallParts = parts.filter((p: any) => p.functionCall);
 
-    if (!functionCallPart) {
+    if (functionCallParts.length === 0) {
       // Tidak ada function call, kita mendapatkan jawaban teks akhir!
       const textParts = parts.filter((p: any) => p.text).map((p: any) => p.text).join('\n');
       return {
@@ -614,45 +775,71 @@ export async function sendChatMessageToGemini(
       };
     }
 
-    // Eksekusi Tool Call lokal
-    const fnName = functionCallPart.functionCall.name;
-    const fnArgs = functionCallPart.functionCall.args || {};
-    executedTools.push(fnName);
-    onToolCallStart?.(fnName);
+    // Eksekusi SEMUA Tool Calls yang diminta model dalam turn ini
+    const functionResponseParts: any[] = [];
 
-    let toolResult: any = null;
-    try {
-      if (fnName === 'lookup_product_stock') {
-        toolResult = await executeLookupProductStock(fnArgs);
-      } else if (fnName === 'lookup_production_code') {
-        toolResult = await executeLookupProductionCode(fnArgs);
-      } else if (fnName === 'generate_production_recap') {
-        toolResult = await executeGenerateProductionRecap(fnArgs);
-      } else if (fnName === 'search_manual_shipment') {
-        toolResult = await executeSearchManualShipment(fnArgs);
-      } else {
-        toolResult = { error: `Fungsi ${fnName} tidak dikenali.` };
+    for (const fcPart of functionCallParts) {
+      const fnName = fcPart.functionCall.name;
+      const fnArgs = fcPart.functionCall.args || {};
+      executedTools.push(fnName);
+      onToolCallStart?.(fnName);
+
+      let toolResult: any = null;
+      try {
+        if (fnName === 'lookup_product_stock') {
+          toolResult = await executeLookupProductStock(fnArgs);
+        } else if (fnName === 'lookup_production_code') {
+          toolResult = await executeLookupProductionCode(fnArgs);
+        } else if (fnName === 'generate_production_recap') {
+          toolResult = await executeGenerateProductionRecap(fnArgs);
+        } else if (fnName === 'search_manual_shipment') {
+          toolResult = await executeSearchManualShipment(fnArgs);
+        } else if (fnName === 'add_to_inventory_cart') {
+          toolResult = await executeAddToInventoryCart(fnArgs);
+        } else if (fnName === 'view_inventory_cart') {
+          toolResult = await executeViewInventoryCart();
+        } else {
+          toolResult = { error: `Fungsi ${fnName} tidak dikenali.` };
+        }
+      } catch (toolExecErr: any) {
+        toolResult = { error: toolExecErr?.message || 'Gagal mengeksekusi data WMS' };
       }
-    } catch (toolExecErr: any) {
-      toolResult = { error: toolExecErr?.message || 'Gagal mengeksekusi data WMS' };
+
+      functionResponseParts.push({
+        functionResponse: {
+          name: fnName,
+          response: toolResult
+        }
+      });
     }
 
     // Sisipkan modelContent lengkap (termasuk thoughtSignature) ke riwayat
     contents.push(modelContent);
 
-    // Sisipkan functionResponse dari user
+    // Sisipkan SEMUA functionResponse dari user
     contents.push({
       role: 'user',
-      parts: [
-        {
-          functionResponse: {
-            name: fnName,
-            response: toolResult
-          }
-        }
-      ]
+      parts: functionResponseParts
     });
   }
+
+  // Jika mencapai batas maksimal loop, minta model memberikan kesimpulan akhir
+  try {
+    const finalModel = modelsToTry[currentModelIndex] || 'gemini-3.5-flash';
+    contents.push({
+      role: 'user',
+      parts: [{ text: 'Berdasarkan data yang sudah diperiksa di atas, silakan berikan jawaban dan rincian lengkapnya sekarang.' }]
+    });
+    const finalRes = await postToGemini(finalModel, {
+      contents,
+      systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] }
+    });
+    const candidate = finalRes.candidates?.[0];
+    const textParts = candidate?.content?.parts?.filter((p: any) => p.text).map((p: any) => p.text).join('\n');
+    if (textParts) {
+      return { text: textParts, executedTools };
+    }
+  } catch {}
 
   return {
     text: 'Selesai menganalisis data gudang.',
