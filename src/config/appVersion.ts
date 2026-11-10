@@ -15,21 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.102",
-  "versionCode": 362,
+  "version": "v2.6.103",
+  "versionCode": 363,
   "buildDate": "10 November 2026",
-  "buildHash": "wms-261110-v362-1126",
-  "releaseTitle": "WMS v2.6.102 — Eliminasi Menyeluruh Regex & String Splitting Nama Produk & Size",
+  "buildHash": "wms-261110-v363-1456",
+  "releaseTitle": "WMS v2.6.103 — Pembersihan Pseudo Kategori Physical Stock & Standarisasi Lookup Size Master",
   "releaseNotes": [
-    "Standarisasi lookup O(1) master catalog untuk nama produk & size di seluruh modul",
-    "Pencegahan polusi suffix size pada nama produk di Manual Shipment & IG Live",
-    "Dukungan kode produksi alfanumerik (cth: D1055, CCT045) & auto-lookup Trello UP ke Google Sheet",
-    "Perbaikan penentuan size di QC Job Card, Distribusi Picking, dan WhatsApp"
+    "Mengeliminasi kategori palsu Physical Stock dengan pencarian kategori resmi DealPOS via lookup nama produk",
+    "Menghilangkan pemaksaan varian ALL pada barang dengan size unassigned menjadi tanda strip (-)",
+    "Menghapus sisa regex endsWith size yang melangkahi master produk di Supabase Blok F dan Inventori"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.102",
+    "versionCode": 362,
+    "buildDate": "10 November 2026",
+    "buildHash": "wms-261110-v362-1126",
+    "releaseTitle": "WMS v2.6.102 — Eliminasi Menyeluruh Regex & String Splitting Nama Produk & Size",
+    "releaseNotes": [
+      "Standarisasi lookup O(1) master catalog untuk nama produk & size di seluruh modul",
+      "Pencegahan polusi suffix size pada nama produk di Manual Shipment & IG Live",
+      "Dukungan kode produksi alfanumerik (cth: D1055, CCT045) & auto-lookup Trello UP ke Google Sheet",
+      "Perbaikan penentuan size di QC Job Card, Distribusi Picking, dan WhatsApp"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.101",
     "versionCode": 361,
@@ -116,18 +129,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Penambahan pewarisan foto lintas UP otomatis untuk kode barang yang sama (misal artikel 251052 & 622289 yang belum dilampiri foto di salah satu UP otomatis mewarisi foto dari UP lain / Katalog Produk)",
       "Peningkatan komponen TrelloImage dengan lazy loading, referrerPolicy no-referrer, antrean batas request (mencegah error 429 Too Many Requests saat memuat 727 kartu), serta 3-tahap fallback otomatis (Google Drive CDN -> GDrive Thumbnail -> Trello OAuth Blob)",
       "Penambahan filter cepat Belum Ada Foto dan tombol Pasang/Ganti Foto manual langsung ke Google Drive pada modal detail kartu Trello"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.94",
-    "versionCode": 354,
-    "buildDate": "8 November 2026",
-    "buildHash": "wms-261108-v354-1043",
-    "releaseTitle": "WMS v2.6.94 — Hapus Tombol Menu Mengambang Ganda di Seluler & Bubble Live Chat Draggable Saat Ada Pesan Baru",
-    "releaseNotes": [
-      "Menghapus tombol hamburger mengambang di kanan bawah pada tampilan seluler karena sudah ada tombol menu sticky di bagian atas layar",
-      "Bubble Live Chat kini hanya muncul saat ada pesan baru/belum dibaca dan dapat digeser bebas (draggable) ke posisi mana saja di layar"
     ],
     "minSupportedVersion": "v2.0.0"
   }

@@ -1588,7 +1588,7 @@ export default function App() {
                   k: sku,
                   sku: sku,
                   p: raw.nama_produk || raw.nama || raw.p || sku,
-                  s: raw.size || raw.s || 'ALL',
+                  s: raw.size || raw.s || '-',
                   lokasi: raw.lokasi || 'Warehouse',
                   category: raw.kategori || raw.category || 'IN',
                   price: Number(raw.harga || raw.price) || 0,

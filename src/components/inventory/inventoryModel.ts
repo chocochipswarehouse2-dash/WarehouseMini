@@ -19,8 +19,11 @@ import {
   cleanProductName,
   extractCleanSizeToken,
   extractSizeFromSku,
+  isRealSize,
   resolveProductName,
   resolveProductDisplaySize,
+  inferCategoryFromProductName,
+  lookupCategoryByName,
 } from '../../utils/sortUtils';
 
 // ========================================================
@@ -186,18 +189,28 @@ function parseCatalogItem(item: ProductItem): CatalogBase | null {
 
   // Kategori: dari master produk DealPOS
   const rawCat = String(item.kategori || item.category || (item as any).c || (item as any).jenis || '').trim();
-  const kategori = rawCat && rawCat !== '-' && rawCat !== 'Apparel' ? rawCat : (rawCat || 'CLOTHING');
+  let kategori = rawCat && rawCat !== '-' && rawCat !== 'Apparel' && rawCat.toUpperCase() !== 'PHYSICAL STOCK' ? rawCat : (rawCat || 'CLOTHING');
+  if (kategori.toUpperCase() === 'PHYSICAL STOCK') {
+    kategori = lookupCategoryByName(produk) || inferCategoryFromProductName(produk) || 'CLOTHING';
+  }
 
-  // Size: ukuran master -> akhiran SKU -> 'ALL'
+  // Size: ukuran master -> akhiran SKU -> '-'
   const rawMasterSize = String(item.s || (item as any).size || '');
   let size = resolveProductDisplaySize(sku, rawMasterSize, rawMasterSize);
   if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') {
     const fromSku = extractSizeFromSku(sku);
-    if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT') {
+    if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT' && isRealSize(fromSku)) {
       size = fromSku;
     }
   }
-  if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = 'ALL';
+  if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') {
+    const upperMaster = rawMasterSize.toUpperCase();
+    if (upperMaster === 'ALL' || upperMaster === 'ALL SIZE' || upperMaster === 'ALLSIZE' || upperMaster === 'FS' || upperMaster === 'FREE SIZE') {
+      size = 'ALL';
+    } else {
+      size = '-';
+    }
+  }
 
   const dpRaw = isObj(item.dealpos_channels) ? (item.dealpos_channels as Record<string, any>) : {};
   const dpD = isObj(dpRaw.d) ? dpRaw.d : undefined;
@@ -421,8 +434,13 @@ export function composeRows(bases: CatalogBase[], stockBySku: Map<string, StockR
     const first = stockRows[0];
     const produk = resolveProductName(sku, first?.nama_produk) || cleanProductName(first?.nama_produk || sku) || sku;
     let size = resolveProductDisplaySize(sku, first?.size);
-    if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = extractSizeFromSku(sku);
-    if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = 'ALL';
+    if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') {
+      const fromSku = extractSizeFromSku(sku);
+      if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT' && isRealSize(fromSku)) {
+        size = fromSku;
+      }
+    }
+    if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = '-';
 
     const pLower = produk.toLowerCase();
     const skuLower = sku.toLowerCase();
@@ -933,10 +951,18 @@ export function composeAreaRows(
       base?.produk ||
       cleanSku;
     let size = resolveProductDisplaySize(cleanSku, stockRows[0]?.size, base?.size);
-    if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = extractSizeFromSku(cleanSku);
-    if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = 'ALL';
+    if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') {
+      const fromSku = extractSizeFromSku(cleanSku);
+      if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT' && isRealSize(fromSku)) {
+        size = fromSku;
+      }
+    }
+    if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = '-';
 
-    const kategori = base?.kategori || (stockRows[0] as any)?.kategori || (stockRows[0] as any)?.category || 'CLOTHING';
+    let kategori = base?.kategori || (stockRows[0] as any)?.kategori || (stockRows[0] as any)?.category || '';
+    if (!kategori || kategori.toUpperCase() === 'PHYSICAL STOCK') {
+      kategori = lookupCategoryByName(produk) || inferCategoryFromProductName(produk) || 'CLOTHING';
+    }
     const sizeOrder = getSizeOrder(size);
     const pLower = produk.toLowerCase();
     const skuLower = sku.toLowerCase();

@@ -1201,7 +1201,7 @@ export function generateConsolidatedKoliRefillMoves(
         it.nama_produk ||
         skuUp;
       const size =
-        (catInfo?.size && catInfo.size !== '-' ? catInfo.size : '') || it.size || 'ALL';
+        (catInfo?.size && catInfo.size !== '-' ? catInfo.size : '') || it.size || '-';
       const inferred = inferTargetAbcdPrefixForProduct(nama, catInfo?.kategori);
 
       list.push({
@@ -1515,7 +1515,7 @@ export function generateConsolidatedSkuScatteredMoves(
         it.nama_produk ||
         skuUp;
       const size =
-        (catInfo?.size && catInfo.size !== '-' ? catInfo.size : '') || it.size || 'ALL';
+        (catInfo?.size && catInfo.size !== '-' ? catInfo.size : '') || it.size || '-';
 
       const list = skuOccurrences.get(skuUp) || [];
       list.push({
@@ -1745,7 +1745,7 @@ export function generateConsolidatedOverloadMoves(
         item.nama_produk ||
         item.sku;
       const size =
-        (catInfo?.size && catInfo.size !== '-' ? catInfo.size : '') || item.size || 'ALL';
+        (catInfo?.size && catInfo.size !== '-' ? catInfo.size : '') || item.size || '-';
 
       targetBin.remainingSpace -= moveQty;
       targetBin.currentSimulated += moveQty;
@@ -1928,7 +1928,7 @@ export function generateConsolidatedAbcdToKoliMoves(
           it.nama_produk ||
           it.sku;
         const size =
-          (catInfo?.size && catInfo.size !== '-' ? catInfo.size : '') || it.size || 'ALL';
+          (catInfo?.size && catInfo.size !== '-' ? catInfo.size : '') || it.size || '-';
 
         const priorityScore = isOverload
           ? 100 + (s.simulatedQty - s.maxCapacity)

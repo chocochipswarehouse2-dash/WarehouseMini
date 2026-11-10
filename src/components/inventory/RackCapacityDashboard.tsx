@@ -34,8 +34,11 @@ import {
   cleanProductName,
   extractCleanSizeToken,
   extractSizeFromSku,
+  isRealSize,
   resolveProductName,
   resolveProductDisplaySize,
+  inferCategoryFromProductName,
+  lookupCategoryByName,
 } from '../../utils/sortUtils';
 import {
   type RackCapacityConfig,
@@ -265,15 +268,23 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       const nama_produk = resolveProductName(sku, rawName, item as any) || cleanProductName(rawName) || rawName || sku;
       const rawMasterSize = String(item.s || (item as Record<string, unknown>).size || '');
       let size = resolveProductDisplaySize(sku, rawMasterSize, rawMasterSize);
-      if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = extractSizeFromSku(sku);
-      if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = 'ALL';
-      const kategori = String(
+      if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') {
+        const fromSku = extractSizeFromSku(sku);
+        if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT' && isRealSize(fromSku)) {
+          size = fromSku;
+        }
+      }
+      if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = '-';
+      const rawCat = String(
         (item as Record<string, unknown>).kategori ||
           item.category ||
           item.c ||
           (item as Record<string, unknown>).jenis ||
-          'Apparel'
+          ''
       ).trim();
+      const kategori = rawCat && rawCat !== '-' && rawCat.toUpperCase() !== 'PHYSICAL STOCK'
+        ? rawCat
+        : (lookupCategoryByName(nama_produk) || inferCategoryFromProductName(nama_produk) || 'CLOTHING');
       map.set(sku, { sku, nama_produk, size, kategori });
     }
     return map;
@@ -1054,8 +1065,8 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     const resolvedSize =
       (catInfo?.size && catInfo.size !== '-' ? catInfo.size : '') ||
       (matchedItem?.size && matchedItem.size !== '-' ? matchedItem.size : '') ||
-      extractSizeFromSku(finalSku) ||
-      'ALL';
+      (extractSizeFromSku(finalSku) !== '-' ? extractSizeFromSku(finalSku) : '-') ||
+      '-';
 
     const move: SimulationMove = {
       id: `sim_${Date.now()}`,

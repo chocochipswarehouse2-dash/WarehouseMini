@@ -10,7 +10,7 @@
  * 6. Only negative physical rack stock (sisa_stok < 0) is a quantity anomaly.
  */
 import { ProductItem } from '../types';
-import { cleanProductName, extractCleanSizeToken, extractSizeFromSku, setSortUtilsMasterCatalog } from './sortUtils';
+import { cleanProductName, extractCleanSizeToken, extractSizeFromSku, isRealSize, setSortUtilsMasterCatalog, inferCategoryFromProductName, lookupCategoryByName } from './sortUtils';
 
 export interface ProductLookupResult {
   found: boolean;
@@ -181,14 +181,16 @@ export function lookupProductBySku(
     const rawCurSize = extractCleanSizeToken(currentSize ? String(currentSize).trim() : '');
     const skuSize = extractSizeFromSku(cleanSku);
     const fallbackSize =
-      (rawCurSize && rawCurSize !== '-' && rawCurSize.toUpperCase() !== 'DEFAULT' ? rawCurSize : '') ||
-      (skuSize && skuSize !== '-' && skuSize.toUpperCase() !== 'DEFAULT' ? skuSize : '') ||
-      'ALL';
+      (rawCurSize && rawCurSize !== '-' && rawCurSize.toUpperCase() !== 'DEFAULT' && isRealSize(rawCurSize) ? rawCurSize : '') ||
+      (skuSize && skuSize !== '-' && skuSize.toUpperCase() !== 'DEFAULT' && isRealSize(skuSize) ? skuSize : '') ||
+      '-';
+    const fallbackCat = lookupCategoryByName(fallbackName, catalogOrMap) || inferCategoryFromProductName(fallbackName);
     return {
       found: false,
       sku: cleanSku,
       nama_produk: fallbackName && fallbackName.toUpperCase() !== cleanSku ? fallbackName : cleanSku,
       size: fallbackSize,
+      category: fallbackCat,
       dealposQty: 0,
     };
   }
@@ -206,15 +208,23 @@ export function lookupProductBySku(
   // If master data recorded "Default" or empty, try extracting size
   if (!officialSize || officialSize === '-' || officialSize.toUpperCase() === 'DEFAULT') {
     const fromSku = extractSizeFromSku(cleanSku);
-    if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT') {
+    if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT' && isRealSize(fromSku)) {
       officialSize = fromSku;
     } else {
-      officialSize = 'ALL';
+      const rawMasterVariant = String(master.s || (master as any).size || (master as any).variant || '').trim().toUpperCase();
+      if (rawMasterVariant === 'ALL' || rawMasterVariant === 'ALL SIZE' || rawMasterVariant === 'ALLSIZE' || rawMasterVariant === 'FS' || rawMasterVariant === 'FREE SIZE') {
+        officialSize = 'ALL';
+      } else {
+        officialSize = '-';
+      }
     }
   }
 
   const dealposQty = Number(master.q) || 0;
-  const category = (master.c || master.category || (master as any).kategori || '') as string;
+  let category = (master.c || master.category || (master as any).kategori || '') as string;
+  if (!category || category.toUpperCase() === 'PHYSICAL STOCK') {
+    category = lookupCategoryByName(officialName, catalogOrMap) || inferCategoryFromProductName(officialName);
+  }
 
   // Check mismatches against current data:
   // "Nama produk dan size hasil kalkulasi/input data yang tidak sesuai dengan master produk = anomali"
@@ -257,7 +267,7 @@ export function lookupProductBySku(
     found: true,
     sku: cleanSku,
     nama_produk: officialName || cleanSku,
-    size: officialSize || 'ALL',
+    size: officialSize || '-',
     dealposQty,
     category,
     masterItem: master,

@@ -1,14 +1,13 @@
 {
-  "version": "v2.6.102",
-  "versionCode": 362,
+  "version": "v2.6.103",
+  "versionCode": 363,
   "buildDate": "10 November 2026",
-  "buildHash": "wms-261110-v362-1126",
-  "releaseTitle": "WMS v2.6.102 — Eliminasi Menyeluruh Regex & String Splitting Nama Produk & Size",
+  "buildHash": "wms-261110-v363-1456",
+  "releaseTitle": "WMS v2.6.103 — Pembersihan Pseudo Kategori Physical Stock & Standarisasi Lookup Size Master",
   "releaseNotes": [
-    "Standarisasi lookup O(1) master catalog untuk nama produk & size di seluruh modul",
-    "Pencegahan polusi suffix size pada nama produk di Manual Shipment & IG Live",
-    "Dukungan kode produksi alfanumerik (cth: D1055, CCT045) & auto-lookup Trello UP ke Google Sheet",
-    "Perbaikan penentuan size di QC Job Card, Distribusi Picking, dan WhatsApp"
+    "Mengeliminasi kategori palsu Physical Stock dengan pencarian kategori resmi DealPOS via lookup nama produk",
+    "Menghilangkan pemaksaan varian ALL pada barang dengan size unassigned menjadi tanda strip (-)",
+    "Menghapus sisa regex endsWith size yang melangkahi master produk di Supabase Blok F dan Inventori"
   ],
   "minSupportedVersion": "v2.0.0"
 }

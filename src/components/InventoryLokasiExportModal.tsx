@@ -411,7 +411,7 @@ export const InventoryLokasiExportModal: React.FC<InventoryLokasiExportModalProp
       if (rawSize && rawSize.toUpperCase() !== 'DEFAULT' && rawSize !== '-') {
         return rawSize;
       }
-      return 'ALL';
+      return '-';
     };
 
     selectedLocations.forEach((targetLoc) => {

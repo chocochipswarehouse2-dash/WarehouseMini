@@ -46,8 +46,8 @@ import {
   NoteChecklistItem,
 } from '../types';
 export type { StockRealtimeItem };
-import { extractSizeFromSku, formatProductNameWithSize, cleanProductName } from '../utils/sortUtils';
-import { setGlobalProductCatalog } from '../utils/productLookup';
+import { extractSizeFromSku, formatProductNameWithSize, cleanProductName, isRealSize, inferCategoryFromProductName, lookupCategoryByName } from '../utils/sortUtils';
+import { setGlobalProductCatalog, lookupProductBySku } from '../utils/productLookup';
 import { registerUserNames, getUserPersonName } from '../utils/userResolver';
 import { ALL_PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, isSuperadmin } from './permissions';
 
@@ -4492,15 +4492,25 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
           const rawName = String(r.nama_produk || '').trim();
           if (rawName && rawName.toUpperCase() !== sku) {
             const cleanName = cleanProductName(rawName);
+            // Look up real category from master products with identical or sibling product name
+            let resolvedCat = (r as any).category || (r as any).kategori || '';
+            if (!resolvedCat || resolvedCat.toUpperCase() === 'PHYSICAL STOCK') {
+              resolvedCat = lookupCategoryByName(cleanName, productsMap) || inferCategoryFromProductName(cleanName);
+            }
+
+            const rawSize = r.size && String(r.size).trim();
+            const isDef = !rawSize || rawSize === '-' || rawSize.toUpperCase() === 'DEFAULT';
+            const resolvedSize = !isDef && isRealSize(rawSize) ? rawSize : (extractSizeFromSku(sku) !== '-' ? extractSizeFromSku(sku) : '-');
+
             item = {
               k: sku,
               sku: sku,
               p: cleanName,
               nama_produk: cleanName,
-              s: r.size || 'Default',
-              size: r.size || 'Default',
-              category: (r as any).category || (r as any).kategori || 'Physical Stock',
-              kategori: (r as any).category || (r as any).kategori || 'Physical Stock',
+              s: resolvedSize,
+              size: resolvedSize,
+              category: resolvedCat,
+              kategori: resolvedCat,
               lokasi: isPickableLoc ? locClean : '',
               price: 0,
               stokMap: 0,
@@ -4852,29 +4862,21 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
         const lok = String(r.lokasi || 'BLOK F').trim();
         const area = String(r.area || getAreaFromLokasi(lok)).trim();
         
-        let size = String(r.size || r.ukuran || '').trim();
-        if (!size || size === '-' || size === 'ALL') {
-          // Detect size suffix if present (e.g. WHL -> L, WHXL -> XL)
-          if (sku.endsWith('XXL')) size = 'XXL';
-          else if (sku.endsWith('XL')) size = 'XL';
-          else if (sku.endsWith('XS')) size = 'XS';
-          else if (sku.endsWith('L')) size = 'L';
-          else if (sku.endsWith('M')) size = 'M';
-          else if (sku.endsWith('S')) size = 'S';
-          else size = 'ALL';
-        }
+        const lookup = lookupProductBySku(sku, undefined, r.nama_produk || r.nama, r.size || r.ukuran);
+        const resolvedName = lookup.nama_produk || nama;
+        const resolvedSize = lookup.size && lookup.size !== '-' ? lookup.size : (extractSizeFromSku(sku) !== '-' ? extractSizeFromSku(sku) : '-');
 
         if (!stockMap.has(sku)) {
           stockMap.set(sku, {
             sku,
-            produk: nama,
-            size: size || 'ALL',
+            produk: resolvedName,
+            size: resolvedSize,
             locations: new Map(),
           });
         }
         const entry = stockMap.get(sku)!;
-        if (entry.produk === sku && nama !== sku) entry.produk = nama;
-        if ((!entry.size || entry.size === 'ALL' || entry.size === '-') && size && size !== '-') entry.size = size;
+        if (entry.produk === sku && resolvedName !== sku) entry.produk = resolvedName;
+        if ((!entry.size || entry.size === '-' || entry.size === 'Default') && resolvedSize && resolvedSize !== '-') entry.size = resolvedSize;
 
         const lokKey = `${lok.toUpperCase()}__${area.toUpperCase()}`;
         const prev = entry.locations.get(lokKey)?.qty || 0;
@@ -4895,28 +4897,21 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
           const sku = String(m.sku || '').trim().toUpperCase();
           if (!sku) continue;
           const nama = String(m.nama_produk || m.nama || sku).trim();
-          let size = String(m.size || m.ukuran || '').trim();
-          if (!size || size === '-') {
-            if (sku.endsWith('XXL')) size = 'XXL';
-            else if (sku.endsWith('XL')) size = 'XL';
-            else if (sku.endsWith('XS')) size = 'XS';
-            else if (sku.endsWith('L')) size = 'L';
-            else if (sku.endsWith('M')) size = 'M';
-            else if (sku.endsWith('S')) size = 'S';
-            else size = 'ALL';
-          }
+          const lookup = lookupProductBySku(sku, undefined, m.nama_produk || m.nama, m.size || m.ukuran);
+          const resolvedName = lookup.nama_produk || nama;
+          const resolvedSize = lookup.size && lookup.size !== '-' ? lookup.size : (extractSizeFromSku(sku) !== '-' ? extractSizeFromSku(sku) : '-');
 
           if (!stockMap.has(sku)) {
             stockMap.set(sku, {
               sku,
-              produk: nama,
-              size: size || 'ALL',
+              produk: resolvedName,
+              size: resolvedSize,
               locations: new Map(),
             });
           } else {
             const entry = stockMap.get(sku)!;
-            if (nama && nama !== sku) entry.produk = nama;
-            if (size && size !== '-' && (!entry.size || entry.size === 'ALL' || entry.size === '-')) entry.size = size;
+            if (resolvedName && resolvedName !== sku) entry.produk = resolvedName;
+            if (resolvedSize && resolvedSize !== '-' && (!entry.size || entry.size === '-' || entry.size === 'Default')) entry.size = resolvedSize;
           }
 
           // If dealpos_channels or explicit stock columns exist in master_produk
@@ -8522,24 +8517,17 @@ export async function fetchChannelStocksBySkus(skus: string[]): Promise<import('
       const area = String(r.area || getAreaFromLokasi(lok)).trim();
       const nama = String(r.nama_produk || r.nama || sku).trim();
       
-      let size = String(r.size || r.ukuran || '').trim();
-      if (!size || size === '-' || size === 'ALL') {
-        if (sku.endsWith('XXL')) size = 'XXL';
-        else if (sku.endsWith('XL')) size = 'XL';
-        else if (sku.endsWith('XS')) size = 'XS';
-        else if (sku.endsWith('L')) size = 'L';
-        else if (sku.endsWith('M')) size = 'M';
-        else if (sku.endsWith('S')) size = 'S';
-        else size = 'ALL';
-      }
+      const lookup = lookupProductBySku(sku, undefined, r.nama_produk || r.nama, r.size || r.ukuran);
+      const resolvedName = lookup.nama_produk || nama;
+      const resolvedSize = lookup.size && lookup.size !== '-' ? lookup.size : (extractSizeFromSku(sku) !== '-' ? extractSizeFromSku(sku) : '-');
 
       if (!stockMap.has(sku)) {
-        stockMap.set(sku, { sku, produk: nama, size: size || 'ALL', locations: new Map() });
+        stockMap.set(sku, { sku, produk: resolvedName, size: resolvedSize, locations: new Map() });
       }
 
       const entry = stockMap.get(sku)!;
-      if (entry.produk === sku && nama !== sku) entry.produk = nama;
-      if ((!entry.size || entry.size === 'ALL' || entry.size === '-') && size && size !== '-') entry.size = size;
+      if (entry.produk === sku && resolvedName !== sku) entry.produk = resolvedName;
+      if ((!entry.size || entry.size === '-' || entry.size === 'Default') && resolvedSize && resolvedSize !== '-') entry.size = resolvedSize;
 
       const lokKey = `${lok.toUpperCase()}__${area.toUpperCase()}`;
       const prev = entry.locations.get(lokKey)?.qty || 0;

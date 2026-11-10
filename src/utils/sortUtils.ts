@@ -328,6 +328,7 @@ export function isRealSize(sz?: unknown): boolean {
 interface CachedMasterEntry {
   name: string;
   size: string;
+  category?: string;
 }
 
 let masterExactMap: Map<string, CachedMasterEntry> | null = null;
@@ -346,7 +347,8 @@ export function setSortUtilsMasterCatalog(catalog: any[], lookupMap?: Map<string
       if (!p) continue;
       const rawName = String(p.p || p.nama_produk || p.n || p.nama || '').trim();
       const rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
-      masterExactMap.set(k, { name: rawName, size: rawSize });
+      const rawCat = String(p.kategori || p.category || (p as any).c || (p as any).jenis || '').trim();
+      masterExactMap.set(k, { name: rawName, size: rawSize, category: rawCat });
     }
   } else if (Array.isArray(catalog)) {
     for (let i = 0; i < catalog.length; i++) {
@@ -356,7 +358,8 @@ export function setSortUtilsMasterCatalog(catalog: any[], lookupMap?: Map<string
       if (!k) continue;
       const rawName = String(p.p || p.nama_produk || p.n || p.nama || '').trim();
       const rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
-      masterExactMap.set(k, { name: rawName, size: rawSize });
+      const rawCat = String(p.kategori || p.category || (p as any).c || (p as any).jenis || '').trim();
+      masterExactMap.set(k, { name: rawName, size: rawSize, category: rawCat });
     }
   }
 }
@@ -378,7 +381,8 @@ function getMasterLookupMaps(): { exact: Map<string, CachedMasterEntry>; prefix:
         if (!p) continue;
         const rawName = String(p.p || p.nama_produk || p.n || p.nama || '').trim();
         const rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
-        masterExactMap.set(k, { name: rawName, size: rawSize });
+        const rawCat = String(p.kategori || p.category || (p as any).c || (p as any).jenis || '').trim();
+        masterExactMap.set(k, { name: rawName, size: rawSize, category: rawCat });
       }
       return { exact: masterExactMap, prefix: masterPrefixMap };
     }
@@ -400,10 +404,12 @@ function getMasterLookupMaps(): { exact: Map<string, CachedMasterEntry>; prefix:
             if (!k) continue;
             const rawName = String(p.p || p.nama_produk || p.n || p.nama || '').trim();
             const rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
+            const rawCat = String(p.kategori || p.category || (p as any).c || (p as any).jenis || '').trim();
             if (!masterExactMap.has(k)) {
               masterExactMap.set(k, {
                 name: rawName,
                 size: rawSize,
+                category: rawCat,
               });
             }
             if (k.length >= 6 && rawName && rawName.toUpperCase() !== k) {
@@ -421,6 +427,78 @@ function getMasterLookupMaps(): { exact: Map<string, CachedMasterEntry>; prefix:
   }
 
   return { exact: masterExactMap, prefix: masterPrefixMap };
+}
+
+/**
+ * Infer apparel/garment category from product title keywords
+ * Prevents pseudo-categories like 'Physical Stock' or undefined categories from contaminating views.
+ */
+export function inferCategoryFromProductName(name: string): string {
+  if (!name) return 'CLOTHING';
+  const lower = name.toLowerCase();
+
+  if (/\b(dress|maxi|midi)\b/.test(lower)) return 'CLOTHING/DRESS';
+  if (/\b(top|blouse|shirt|tee|t-shirt|tank|camisole)\b/.test(lower)) return 'CLOTHING/TOP/BLOUSE';
+  if (/\b(knit|sweater|cardigan)\b/.test(lower)) return 'CLOTHING/TOP/KNIT';
+  if (/\b(outer|jacket|blazer|vest|coat)\b/.test(lower)) return 'CLOTHING/OUTER';
+  if (/\b(pants|celana|trousers|cullote|kulot|jeans|denim)\b/.test(lower)) return 'CLOTHING/BOTTOM/PANTS';
+  if (/\b(shorts)\b/.test(lower)) return 'CLOTHING/BOTTOM/SHORTS';
+  if (/\b(skirt|rok)\b/.test(lower)) return 'CLOTHING/BOTTOM/SKIRT';
+  if (/\b(set|oneset|suit)\b/.test(lower)) return 'CLOTHING/ONE SET';
+  if (/\b(belt)\b/.test(lower)) return 'ACCESSORIES/BELT';
+  if (/\b(bag)\b/.test(lower)) return 'ACCESSORIES/BAG';
+  if (/\b(hijab|pashmina|scarf)\b/.test(lower)) return 'ACCESSORIES/SCARF';
+
+  return 'CLOTHING';
+}
+
+/**
+ * Look up official DealPOS category by matching product name against master products.
+ * If sibling variants exist in master catalog (e.g. Timora Top Brown in S/M with CLOTHING/TOP/BLOUSE),
+ * returns the authoritative master category.
+ */
+export function lookupCategoryByName(
+  productName: string,
+  catalogOrMap?: any[] | Map<string, any> | null
+): string | null {
+  if (!productName) return null;
+  const cleanName = productName.trim().toLowerCase();
+  if (!cleanName) return null;
+
+  // 1. Check passed-in map or catalog
+  if (catalogOrMap instanceof Map) {
+    for (const item of catalogOrMap.values()) {
+      if (!item) continue;
+      const pName = String(item.p || item.n || item.nama_produk || item.nama || '').trim().toLowerCase();
+      if (pName === cleanName || (cleanName.length > 5 && pName.startsWith(cleanName))) {
+        const cat = String(item.kategori || item.category || item.c || '').trim();
+        if (cat && cat !== '-' && cat.toUpperCase() !== 'PHYSICAL STOCK') return cat;
+      }
+    }
+  } else if (Array.isArray(catalogOrMap)) {
+    for (let i = 0; i < catalogOrMap.length; i++) {
+      const item = catalogOrMap[i];
+      if (!item) continue;
+      const pName = String(item.p || item.n || item.nama_produk || item.nama || '').trim().toLowerCase();
+      if (pName === cleanName || (cleanName.length > 5 && pName.startsWith(cleanName))) {
+        const cat = String(item.kategori || item.category || item.c || '').trim();
+        if (cat && cat !== '-' && cat.toUpperCase() !== 'PHYSICAL STOCK') return cat;
+      }
+    }
+  }
+
+  // 2. Check cached master lookup
+  const { exact } = getMasterLookupMaps();
+  for (const item of exact.values()) {
+    if (!item) continue;
+    const pName = String(item.name || '').trim().toLowerCase();
+    if (pName === cleanName || (cleanName.length > 5 && pName.startsWith(cleanName))) {
+      const cat = String(item.category || '').trim();
+      if (cat && cat !== '-' && cat.toUpperCase() !== 'PHYSICAL STOCK') return cat;
+    }
+  }
+
+  return null;
 }
 
 /**

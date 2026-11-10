@@ -728,7 +728,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
     const rawName = cat ? (cat.p || (cat as any).nama_produk || (cat as any).nama || cat.n || skuUpper) : (cs?.produk || skuUpper);
     const cleanName = resolveProductName(skuUpper, rawName, cat);
-    const cleanSize = resolveProductDisplaySize(skuUpper, cs?.size, cat?.s || (cat?.size as string | undefined)) || (extractSizeFromSku(skuUpper) !== '-' ? extractSizeFromSku(skuUpper) : 'ALL');
+    const cleanSize = resolveProductDisplaySize(skuUpper, cs?.size, cat?.s || (cat?.size as string | undefined)) || (extractSizeFromSku(skuUpper) !== '-' ? extractSizeFromSku(skuUpper) : '-');
     const total = cs
       ? (typeof cs.totalQty === 'number' ? cs.totalQty : ((cs.whQty || 0) + (cs.studioQty || 0) + (cs.shpQty || 0) + (cs.ttkQty || 0)))
       : (cat?.stokMap !== undefined ? Number(cat.stokMap) : ((cat?.stokStudio || 0) + (cat?.stokShp || 0) + (cat?.stokTtk || 0)));
@@ -773,7 +773,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     const resolvedName = resolveProductName(cleanSku, p.produk, master);
     const resolvedSize =
       resolveProductDisplaySize(cleanSku, p.size, master?.s || (master?.size as string | undefined)) ||
-      (extractSizeFromSku(cleanSku) !== '-' ? extractSizeFromSku(cleanSku) : 'ALL');
+      (extractSizeFromSku(cleanSku) !== '-' ? extractSizeFromSku(cleanSku) : '-');
 
     handleItemChange(itemId, {
       sku: cleanSku,
@@ -1186,7 +1186,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
           const rawSize = (it.size || '').trim();
           const cleanSize = (rawSize && rawSize !== '-') 
             ? rawSize 
-            : (extractSizeFromSku(it.sku) !== '-' ? extractSizeFromSku(it.sku) : 'ALL');
+            : (extractSizeFromSku(it.sku) !== '-' ? extractSizeFromSku(it.sku) : '-');
           const formattedNama = it.produk;
           const cleanSku = (it.sku || '').toUpperCase().trim();
           const resolvedLoc = resolveLiveLocationsForSku(cleanSku, it.lokasi);
@@ -1235,7 +1235,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
           const rawSize = (it.size || '').trim();
           const cleanSize = (rawSize && rawSize !== '-') 
             ? rawSize 
-            : (extractSizeFromSku(it.sku) !== '-' ? extractSizeFromSku(it.sku) : 'ALL');
+            : (extractSizeFromSku(it.sku) !== '-' ? extractSizeFromSku(it.sku) : '-');
           const formattedNama = it.produk;
           const cleanSku = (it.sku || '').toUpperCase().trim();
           const resolvedLoc = resolveLiveLocationsForSku(cleanSku, it.lokasi);
@@ -2056,12 +2056,12 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   const handleAddItemInEdit = (prod?: any) => {
     if (!editingRecord) return;
     const cleanSku = (prod?.sku || '').trim().toUpperCase();
-    const cleanSize = prod?.size || (cleanSku ? extractSizeFromSku(cleanSku) : 'ALL');
+    const cleanSize = prod?.size || (cleanSku ? extractSizeFromSku(cleanSku) : '-');
     const newItem: PeminjamanItemForm = {
       id: `edit-item-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
       produk: prod?.nama_produk || prod?.nama || prod?.produk || '',
       sku: cleanSku,
-      size: cleanSize && cleanSize !== '-' ? cleanSize : 'ALL',
+      size: cleanSize && cleanSize !== '-' ? cleanSize : '-',
       qty: 1,
       lokasi: prod?.lokasi || 'BLOK F',
       stokMap: 0,

@@ -943,11 +943,11 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
       const rawSku = String(item.sku || item.k || '').trim().toUpperCase();
       if (!rawSku) continue;
       const rawName = String(item.nama_produk || item.p || rawSku || '');
-      const rawSize = String(item.size || item.s || extractSizeFromSku(rawSku) || 'ALL');
+      const rawSize = String(item.size || item.s || (extractSizeFromSku(rawSku) !== '-' ? extractSizeFromSku(rawSku) : '-'));
       const cleanedName = cleanProductName(rawName);
-      const cleanedSize = extractCleanSizeToken(rawSize) || rawSize || 'ALL';
+      const cleanedSize = extractCleanSizeToken(rawSize) || rawSize || '-';
       const rawKat = String(item.kategori || item.category || '').trim();
-      const validKat = rawKat && !['IN', 'OUT', 'SO', '-'].includes(rawKat.toUpperCase()) ? rawKat : '';
+      const validKat = rawKat && !['IN', 'OUT', 'SO', '-', 'PHYSICAL STOCK'].includes(rawKat.toUpperCase()) ? rawKat : '';
       map.set(rawSku, {
         sku: rawSku,
         nama_produk: cleanedName || rawName,
