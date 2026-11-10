@@ -49,6 +49,7 @@ import { ThemePickerModal } from './components/ThemePickerModal';
 import { UpdateDatabaseModal } from './components/UpdateDatabaseModal';
 import { LocationPurgeModal } from './components/inventory/LocationPurgeModal';
 import { WmsAiModal } from './components/ai/WmsAiModal';
+import { fetchAiConfig } from './services/wmsAiService';
 import { OfflineProtectionBar } from './components/OfflineProtectionBar';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { globalRealtimeStore } from './services/store';
@@ -611,6 +612,9 @@ export default function App() {
         });
       }
     }).catch(err => console.warn('Failed to load global settings from Supabase', err));
+
+    // Preload konfigurasi WMS AI & centralized API Key dari Supabase Cloud
+    fetchAiConfig().catch((err) => console.warn('[WMS AI] Gagal preload AI config dari Supabase:', err));
 
     const handleSettingsChanged = (e: any) => {
       const settings = e.detail;

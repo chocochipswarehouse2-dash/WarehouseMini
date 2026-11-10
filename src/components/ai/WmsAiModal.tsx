@@ -536,11 +536,16 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
               {/* Gemini API Key */}
               <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700/80 flex flex-col justify-between">
                 <div>
-                  <label className="block text-[11px] font-extrabold text-slate-700 dark:text-slate-300 mb-1.5 uppercase">
-                    Google Gemini API Key
-                  </label>
-                  <p className="text-[10px] text-slate-400 mb-2">
-                    Menggunakan model gratis Google AI Studio dengan token Function Calling grounded.
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-extrabold text-slate-700 dark:text-slate-300 uppercase">
+                      Google Gemini API Key
+                    </label>
+                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
+                      ☁️ Sinkron Semua Perangkat
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mb-2 leading-relaxed">
+                    Cukup disimpan <strong>1 kali oleh Superadmin</strong>. API Key tersimpan aman di database cloud Supabase dan otomatis aktif di semua perangkat (HP, Laptop, PC) untuk seluruh user yang diizinkan tanpa perlu input berulang.
                   </p>
                   <input
                     type="password"
@@ -558,7 +563,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                     className="px-3 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    Simpan API Key
+                    Simpan Terpusat
                   </button>
                 </div>
               </div>

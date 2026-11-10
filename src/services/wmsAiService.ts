@@ -44,26 +44,38 @@ export interface WmsAiConfig {
   model: string;
 }
 
+let inMemoryGeminiApiKey = '';
+
 /**
- * Mengambil API Key aktif (dari localStorage jika di-override Superadmin, atau default)
+ * Mengambil API Key aktif (dari in-memory, localStorage, Supabase, atau env)
  */
 export function getActiveGeminiApiKey(): string {
+  if (inMemoryGeminiApiKey && inMemoryGeminiApiKey.trim()) {
+    return inMemoryGeminiApiKey.trim();
+  }
   if (typeof window !== 'undefined') {
     const customKey = localStorage.getItem('wms_gemini_api_key');
-    if (customKey && customKey.trim()) return customKey.trim();
+    if (customKey && customKey.trim()) {
+      inMemoryGeminiApiKey = customKey.trim();
+      return inMemoryGeminiApiKey;
+    }
   }
   const envKey = (import.meta as any).env?.VITE_GEMINI_API_KEY;
-  if (envKey && String(envKey).trim()) return String(envKey).trim();
+  if (envKey && String(envKey).trim()) {
+    inMemoryGeminiApiKey = String(envKey).trim();
+    return inMemoryGeminiApiKey;
+  }
   return '';
 }
 
 /**
- * Menyimpan custom API Key
+ * Menyimpan custom API Key secara lokal & in-memory
  */
 export function setActiveGeminiApiKey(key: string): void {
+  inMemoryGeminiApiKey = (key || '').trim();
   if (typeof window !== 'undefined') {
-    if (key && key.trim()) {
-      localStorage.setItem('wms_gemini_api_key', key.trim());
+    if (inMemoryGeminiApiKey) {
+      localStorage.setItem('wms_gemini_api_key', inMemoryGeminiApiKey);
     } else {
       localStorage.removeItem('wms_gemini_api_key');
     }
@@ -71,11 +83,12 @@ export function setActiveGeminiApiKey(key: string): void {
 }
 
 /**
- * Mengambil konfigurasi AI & daftar whitelist pengguna dari Supabase (dengan cache localStorage)
+ * Mengambil konfigurasi AI & daftar whitelist pengguna dari Supabase wms_system_docs
+ * (Tersinkronisasi otomatis ke semua perangkat: HP, Laptop, PC Toko)
  */
 export async function fetchAiConfig(): Promise<WmsAiConfig> {
   const defaultConfig: WmsAiConfig = {
-    apiKey: '',
+    apiKey: getActiveGeminiApiKey() || '',
     allowedUsers: ['admin', 'warehouse', 'chocoadm'],
     enabled: true,
     model: 'gemini-3.5-flash'
@@ -95,7 +108,7 @@ export async function fetchAiConfig(): Promise<WmsAiConfig> {
       'wms_system_docs',
       'GET',
       null,
-      `section_id=eq.${SYSTEM_DOC_AI_CONFIG_ID}&limit=1`
+      `doc_key=eq.${SYSTEM_DOC_AI_CONFIG_ID}&limit=1`
     );
 
     if (docs && docs[0] && docs[0].content) {
@@ -106,11 +119,11 @@ export async function fetchAiConfig(): Promise<WmsAiConfig> {
         allowedUsers: Array.isArray(parsed.allowedUsers) ? parsed.allowedUsers : defaultConfig.allowedUsers
       };
 
+      if (config.apiKey) {
+        setActiveGeminiApiKey(config.apiKey);
+      }
       if (typeof window !== 'undefined') {
         localStorage.setItem('wms_ai_allowed_users', JSON.stringify(config.allowedUsers));
-        if (config.apiKey) {
-          localStorage.setItem('wms_gemini_api_key', config.apiKey);
-        }
       }
       return config;
     }
@@ -122,7 +135,8 @@ export async function fetchAiConfig(): Promise<WmsAiConfig> {
 }
 
 /**
- * Menyimpan konfigurasi AI & whitelist pengguna ke Supabase & localStorage
+ * Menyimpan konfigurasi AI, API Key, & whitelist pengguna ke Supabase wms_system_docs
+ * (Cukup Superadmin simpan 1 kali, otomatis aktif di seluruh perangkat dan user)
  */
 export async function saveAiConfig(config: Partial<WmsAiConfig>): Promise<boolean> {
   try {
@@ -133,13 +147,12 @@ export async function saveAiConfig(config: Partial<WmsAiConfig>): Promise<boolea
       allowedUsers: config.allowedUsers || current.allowedUsers
     };
 
+    if (updated.apiKey !== undefined) {
+      setActiveGeminiApiKey(updated.apiKey);
+    }
+
     if (typeof window !== 'undefined') {
       localStorage.setItem('wms_ai_allowed_users', JSON.stringify(updated.allowedUsers));
-      if (updated.apiKey) {
-        localStorage.setItem('wms_gemini_api_key', updated.apiKey);
-      } else {
-        localStorage.removeItem('wms_gemini_api_key');
-      }
     }
 
     await supabaseFetch(
@@ -148,12 +161,13 @@ export async function saveAiConfig(config: Partial<WmsAiConfig>): Promise<boolea
       [
         {
           section_id: SYSTEM_DOC_AI_CONFIG_ID,
+          doc_key: SYSTEM_DOC_AI_CONFIG_ID,
           title: 'Konfigurasi & Whitelist Pengguna Asisten AI WMS',
           content: JSON.stringify(updated),
           updated_at: new Date().toISOString()
         }
       ],
-      '',
+      'on_conflict=doc_key',
       true
     );
 
@@ -867,7 +881,21 @@ export async function sendChatMessageToGemini(
   userPrompt: string,
   onToolCallStart?: (toolName: string) => void
 ): Promise<{ text: string; executedTools: string[] }> {
-  const apiKey = getActiveGeminiApiKey();
+  let apiKey = getActiveGeminiApiKey();
+
+  // Jika belum ada di memory/localStorage, ambil otomatis dari Supabase cloud config
+  if (!apiKey) {
+    try {
+      const cfg = await fetchAiConfig();
+      if (cfg && cfg.apiKey) {
+        apiKey = cfg.apiKey;
+        setActiveGeminiApiKey(apiKey);
+      }
+    } catch (e) {
+      console.warn('[WMS AI] Gagal auto-fetch API key dari Supabase:', e);
+    }
+  }
+
   if (!apiKey) {
     throw new Error('API Key Google Gemini belum dikonfigurasi. Hubungi Superadmin.');
   }

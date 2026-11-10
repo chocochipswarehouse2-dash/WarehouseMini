@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.7.2",
-  "versionCode": 272,
+  "version": "v2.7.3",
+  "versionCode": 273,
   "buildDate": "10 November 2026",
-  "buildHash": "wms-261110-v272-1919",
-  "releaseTitle": "WMS v2.7.2 — Smart Multi-Token Product Search & Zero-SKU Requirement",
+  "buildHash": "wms-261110-v273-2001",
+  "releaseTitle": "WMS v2.7.3 — Centralized Cloud Gemini API Key & Multi-Device Auto-Sync",
   "releaseNotes": [
-    "Pencarian produk cerdas berbasis nama pakaian (multi-token & multi-layer)",
-    "Tidak mewajibkan SKU & fallback langsung ke Supabase PostgREST",
-    "Pencegahan AI meminta/menuntut kode SKU kepada operator"
+    "Penyimpanan Gemini API Key terpusat di Supabase wms_system_docs",
+    "Auto-sync API Key ke seluruh perangkat (HP, Laptop, PC Toko) tanpa input berulang",
+    "Auto-fetch API Key saat app load dan sebelum eksekusi AI chat"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.7.2",
+    "versionCode": 272,
+    "buildDate": "10 November 2026",
+    "buildHash": "wms-261110-v272-1919",
+    "releaseTitle": "WMS v2.7.2 — Smart Multi-Token Product Search & Zero-SKU Requirement",
+    "releaseNotes": [
+      "Pencarian produk cerdas berbasis nama pakaian (multi-token & multi-layer)",
+      "Tidak mewajibkan SKU & fallback langsung ke Supabase PostgREST",
+      "Pencegahan AI meminta/menuntut kode SKU kepada operator"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.7.1",
     "versionCode": 271,
@@ -118,19 +131,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Standarisasi lookup nama produk & size berbasis VLOOKUP/XLOOKUP murni O(1) dari master_produk",
       "Eliminasi regex parsing dan hardcoded matrix pada SKU (DF26, letter code, dsb)",
       "Sinkronisasi master catalog in-memory 28.000+ SKU di seluruh modul (Picking, Live, Produksi, Distribusi)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.100",
-    "versionCode": 360,
-    "buildDate": "9 November 2026",
-    "buildHash": "wms-261109-v360-1033",
-    "releaseTitle": "WMS v2.6.100 — Anti Quota Exceeded Engine & Safe LocalStorage Healing",
-    "releaseNotes": [
-      "Arsitektur Safe Storage Utility (safeLocalStorageSet, auto-eviction, clearHeavyCaches) mencegah crash 'The quota has been exceeded' pada Tugas Picking",
-      "Optimasi cache offline PickingTasksView hanya menyimpan tugas aktif (mereduksi 95% beban memori localStorage)",
-      "Penyempurnaan ErrorBoundary dengan tombol pemulihan darurat dan pembersihan otomatis storage"
     ],
     "minSupportedVersion": "v2.0.0"
   }
