@@ -468,11 +468,6 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
           const kategori = String((idxKat !== -1 ? r[idxKat] : '') || '').trim() || 'Apparel';
           let size = String((idxSize !== -1 ? r[idxSize] : '') || '').trim() || 'Default';
 
-          // Sanitize erroneous DealPOS names (DF26KBF03 is Taylor Pants, not Femima Pants)
-          if (/^DF26KBF03/i.test(sku)) {
-            nama = 'Taylor Pants Dark Denim';
-          }
-
           // Clean size: If user explicitly provided a real size (e.g. S, M, L, XL, XXL, XS, 28, 30, ALL, etc.),
           // RESPECT IT 100%! Never let the sanitizer destroy a legitimate size!
           const cleanSizeToken = extractCleanSizeToken(size);

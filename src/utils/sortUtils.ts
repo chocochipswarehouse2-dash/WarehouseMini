@@ -130,42 +130,38 @@ export function fuzzySearchMultiple(query: string, targets: (string | undefined)
 }
 
 /**
- * Extract size from SKU if size is not explicitly provided.
- * Recognizes common apparel sizing patterns:
- * - Separated by - / _ / space: e.g. "SKU-M", "SKU_XL", "SKU S"
- * - Trailing standard sizes: e.g. "XXXL", "3XL", "XXL", "2XL", "XL", "XS", "ALL", "FS"
- * - Single letter trailing codes: e.g. "F26FBH363BNM" -> "M", "F24CBI160WHS" -> "S", "F24CBI160CHS" -> "S"
+ * Extract size from SKU.
+ * Follows strict priority order:
+ * 1. Authoritative VLOOKUP: Look up SKU directly in Master Product catalog first.
+ * 2. If genuinely not in master product, extracts from explicit separator (- / _ / space) e.g. "SKU-M", "SKU_XL".
+ * 3. Never attempts fragile regex guessing for complex/unseparated SKUs.
  */
 export function extractSizeFromSku(sku: string): string {
   const clean = (sku || '').trim().toUpperCase();
   if (!clean || clean.length < 3) return '-';
 
-  // 1. Explicit separator: -S, _M, /L, .XL, -ALL, -FS
+  // 1. Authoritative O(1) VLOOKUP in Master Product Catalog FIRST!
+  const { exact } = getMasterLookupMaps();
+  const found = exact.get(clean);
+  if (found && found.size) {
+    const mSize = extractCleanSizeToken(found.size);
+    if (mSize && mSize !== '-' && isRealSize(mSize)) {
+      return mSize;
+    }
+  }
+
+  // 2. Explicit separator in SKU: -S, _M, /L, .XL, -ALL, -FS
   const sepMatch = clean.match(/[-_/\s.](XXXL|3XL|XXL|2XL|XL|XS|[SML]|ALL|FS)$/i);
   if (sepMatch) return sepMatch[1].toUpperCase();
 
-  // 2. Trailing multi-character standard sizes
+  // 3. Trailing multi-character standard sizes
   const multiMatch = clean.match(/(XXXL|3XL|XXL|2XL|XL|XS|ALL|FS)$/i);
   if (multiMatch) return multiMatch[1].toUpperCase();
 
-  // 3. Trailing single letter size (S, M, L) preceded by letter/digit (e.g. BNM -> M, WHS -> S, CHS -> S)
+  // 4. Trailing single letter size (S, M, L) preceded by standard separator/letter
   if (clean.length >= 4) {
     const singleMatch = clean.match(/[A-Z0-9]([SML])$/i);
     if (singleMatch) return singleMatch[1].toUpperCase();
-  }
-
-  // 4. Letter-based size standard (Chococips 2026/season collections, e.g. DF26, ZF26, BF26, AF26, CF26):
-  // Format: [Prefix 4][Type 3][Model 2][Color 2][Letter Size 1] (e.g. ZF26KBH01NVC)
-  // Ends with: C -> S, D -> M, E -> L, F -> XL, G -> XXL, A -> ALL, B -> XS
-  if (/^[A-Z]{1,3}\d{2}[A-Z0-9]{4,}[A-G]$/i.test(clean) || /^DF26[A-Z0-9]{4,}/i.test(clean)) {
-    const lastChar = clean.slice(-1);
-    if (lastChar === 'A') return 'ALL';
-    if (lastChar === 'B') return 'XS';
-    if (lastChar === 'C') return 'S';
-    if (lastChar === 'D') return 'M';
-    if (lastChar === 'E') return 'L';
-    if (lastChar === 'F') return 'XL';
-    if (lastChar === 'G') return 'XXL';
   }
 
   return '-';
@@ -338,15 +334,57 @@ let masterExactMap: Map<string, CachedMasterEntry> | null = null;
 let masterPrefixMap: Map<string, string> | null = null;
 let lastMasterMapBuild = 0;
 
+/**
+ * Directly populate master lookup maps from in-memory catalog
+ */
+export function setSortUtilsMasterCatalog(catalog: any[], lookupMap?: Map<string, any>): void {
+  if (!masterExactMap) masterExactMap = new Map();
+  if (!masterPrefixMap) masterPrefixMap = new Map();
+
+  if (lookupMap && lookupMap instanceof Map) {
+    for (const [k, p] of lookupMap.entries()) {
+      if (!p) continue;
+      const rawName = String(p.p || p.nama_produk || p.n || p.nama || '').trim();
+      const rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
+      masterExactMap.set(k, { name: rawName, size: rawSize });
+    }
+  } else if (Array.isArray(catalog)) {
+    for (let i = 0; i < catalog.length; i++) {
+      const p = catalog[i];
+      if (!p) continue;
+      const k = String(p.k || p.sku || '').trim().toUpperCase();
+      if (!k) continue;
+      const rawName = String(p.p || p.nama_produk || p.n || p.nama || '').trim();
+      const rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
+      masterExactMap.set(k, { name: rawName, size: rawSize });
+    }
+  }
+}
+
 function getMasterLookupMaps(): { exact: Map<string, CachedMasterEntry>; prefix: Map<string, string> } {
   const now = Date.now();
-  if (masterExactMap && masterPrefixMap && now - lastMasterMapBuild < 60000) {
+  if (masterExactMap && masterExactMap.size > 0 && masterPrefixMap && now - lastMasterMapBuild < 60000) {
     return { exact: masterExactMap, prefix: masterPrefixMap };
   }
-  masterExactMap = new Map();
-  masterPrefixMap = new Map();
+  if (!masterExactMap) masterExactMap = new Map();
+  if (!masterPrefixMap) masterPrefixMap = new Map();
   lastMasterMapBuild = now;
 
+  // 1. High-speed check: global in-memory catalog Map
+  if (typeof window !== 'undefined' && (window as any).__wms_global_catalog_map) {
+    const gMap = (window as any).__wms_global_catalog_map as Map<string, any>;
+    if (gMap && gMap.size > 0) {
+      for (const [k, p] of gMap.entries()) {
+        if (!p) continue;
+        const rawName = String(p.p || p.nama_produk || p.n || p.nama || '').trim();
+        const rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
+        masterExactMap.set(k, { name: rawName, size: rawSize });
+      }
+      return { exact: masterExactMap, prefix: masterPrefixMap };
+    }
+  }
+
+  // 2. Fallback to localStorage caches
   if (typeof window !== 'undefined' && window.localStorage) {
     const cacheKeys = ['wms_master_produk', 'wms_product_cache', 'wms_catalog_cache', 'wms_dealpos_products'];
     for (const cKey of cacheKeys) {
@@ -361,7 +399,7 @@ function getMasterLookupMaps(): { exact: Map<string, CachedMasterEntry>; prefix:
             const k = String(p.k || p.sku || '').trim().toUpperCase();
             if (!k) continue;
             const rawName = String(p.p || p.nama_produk || p.n || p.nama || '').trim();
-            const rawSize = String(p.s || p.size || p.ukuran || p.varian || '').trim();
+            const rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
             if (!masterExactMap.has(k)) {
               masterExactMap.set(k, {
                 name: rawName,
@@ -399,11 +437,7 @@ export function resolveProductName(
 ): string {
   const cleanSku = (sku || '').trim().toUpperCase();
 
-  // 1. Authoritative hard-coded overrides for known SKU corrections
-  if (cleanSku && /^DF26KBF03/i.test(cleanSku)) {
-    return 'Taylor Pants Dark Denim';
-  }
-
+  // 1. Direct catalogItem match if provided
   if (catalogItem) {
     const catName = cleanProductName(
       (catalogItem.p || catalogItem.nama_produk || catalogItem.n || (catalogItem as any).nama || '').trim()
@@ -417,7 +451,7 @@ export function resolveProductName(
     }
   }
 
-  // 2. O(1) Lookup SKU in cached master product Map
+  // 2. Exact O(1) VLOOKUP in Master Product Map
   if (cleanSku) {
     const { exact, prefix } = getMasterLookupMaps();
     const found = exact.get(cleanSku);

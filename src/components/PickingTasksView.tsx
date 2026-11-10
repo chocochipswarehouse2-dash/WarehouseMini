@@ -538,10 +538,13 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
       const group = map.get(sjKey)!;
       const catMatch = productCatalog.find((p) => p.k && p.k.trim().toUpperCase() === item.sku?.toUpperCase());
+      const catSize = catMatch?.s || (catMatch as any)?.size || (catMatch as any)?.variant;
       const effectiveSize = (item.size && item.size !== '-') 
         ? item.size 
-        : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(item.sku));
-      const effectiveName = item.nama_produk;
+        : (catSize && catSize !== '-' ? catSize : extractSizeFromSku(item.sku));
+      const effectiveName = (item.nama_produk && item.nama_produk !== item.sku)
+        ? item.nama_produk
+        : (catMatch?.p || (catMatch as any)?.nama_produk || catMatch?.n || item.nama_produk);
 
       const isStoreItem = /store|toko|outlet/i.test(item.tujuan || '');
       let effectiveLokasi = (item.lokasi || '').trim();
@@ -1257,10 +1260,13 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       .map((it) => {
         const cleanSku = String(it.sku || '').trim().toUpperCase();
         const catMatch = productCatalog.find((p) => p.k && p.k.trim().toUpperCase() === cleanSku);
+        const catSize = catMatch?.s || (catMatch as any)?.size || (catMatch as any)?.variant;
         const effectiveSize = (it.size && it.size !== '-') 
           ? it.size 
-          : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(cleanSku));
-        const effectiveName = it.nama_produk || cleanSku;
+          : (catSize && catSize !== '-' ? catSize : extractSizeFromSku(cleanSku));
+        const effectiveName = (it.nama_produk && it.nama_produk !== cleanSku)
+          ? it.nama_produk
+          : (catMatch?.p || (catMatch as any)?.nama_produk || catMatch?.n || it.nama_produk || cleanSku);
 
         const isStoreSJ = /store|toko|outlet/i.test(sj.tujuan || '');
         let itemLokasi = (it.lokasi || '').trim();
@@ -1738,10 +1744,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       (p) => p.k && p.k.toUpperCase() === cleanSku
     );
     const targetNoSj = editingSJGroup?.no_sj || activeSJ?.no_sj || '';
+    const catSize = catProd?.s || (catProd as any)?.size || (catProd as any)?.variant;
     const cleanSize = (newSjSkuSize.trim() && newSjSkuSize.trim() !== '-')
       ? newSjSkuSize.trim()
-      : (catProd?.s && catProd.s !== '-' ? catProd.s : extractSizeFromSku(cleanSku));
-    const cleanNama = newSjSkuNama.trim() || catProd?.p || `Produk ${cleanSku}`;
+      : (catSize && catSize !== '-' ? catSize : extractSizeFromSku(cleanSku));
+    const cleanNama = newSjSkuNama.trim() || catProd?.p || (catProd as any)?.nama_produk || catProd?.n || `Produk ${cleanSku}`;
     const formattedNama = cleanNama;
 
     const newRow: PickingListItem = {
@@ -1796,10 +1803,13 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         .map((r, idx) => {
           const cleanSku = String(r.sku || '').trim().toUpperCase();
           const catMatch = productCatalog.find((p) => p.k && p.k.trim().toUpperCase() === cleanSku);
+          const catSize = catMatch?.s || (catMatch as any)?.size || (catMatch as any)?.variant;
           const effectiveSize = (r.size && r.size !== '-') 
             ? r.size 
-            : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(cleanSku));
-          const effectiveName = r.nama_produk || cleanSku;
+            : (catSize && catSize !== '-' ? catSize : extractSizeFromSku(cleanSku));
+          const effectiveName = (r.nama_produk && r.nama_produk !== cleanSku)
+            ? r.nama_produk
+            : (catMatch?.p || (catMatch as any)?.nama_produk || catMatch?.n || r.nama_produk || cleanSku);
           return {
             ...r,
             id: r.id || `pick_new_${Date.now()}_${idx}`,
@@ -2706,9 +2716,10 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               } catch {}
             }
 
+            const catSize = catMatch?.s || (catMatch as any)?.size || (catMatch as any)?.variant;
             let displaySize = (item.size && item.size !== '-') 
               ? item.size 
-              : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(itemSku));
+              : (catSize && catSize !== '-' ? catSize : extractSizeFromSku(itemSku));
 
             let displayName = resolveProductName(item.sku, item.nama_produk);
             

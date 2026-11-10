@@ -47,6 +47,7 @@ import {
 } from '../types';
 export type { StockRealtimeItem };
 import { extractSizeFromSku, formatProductNameWithSize, cleanProductName } from '../utils/sortUtils';
+import { setGlobalProductCatalog } from '../utils/productLookup';
 import { registerUserNames, getUserPersonName } from '../utils/userResolver';
 import { ALL_PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, isSuperadmin } from './permissions';
 
@@ -4610,6 +4611,7 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
   if (result.length > 0) {
     memoryProductCache = result;
     memoryProductLastFetch = Date.now();
+    setGlobalProductCatalog(result);
     try {
       await saveProductsToLocalDb(result, 'replace');
     } catch (err) {
@@ -5363,13 +5365,26 @@ export function extractPickingItemFromRow(row: any): PickingListItem | null {
   const rawQtyPicked = Number(row.qty_picked || row.picked_qty || row.terambil || 0);
 
   let rawSize = String(row.size || row.ukuran || row.variant || row.varian || '').trim();
+  let nama_produk = String(row.nama_produk || row.produk || row.product || row.item_name || '').trim();
+
+  // Authoritative Master Product lookup (VLOOKUP / XLOOKUP)
+  const cachedCat = memoryProductCache?.find(p => (p.k && p.k.trim().toUpperCase() === sku) || ((p as any).sku && String((p as any).sku).trim().toUpperCase() === sku));
+  if (cachedCat) {
+    if (!rawSize || rawSize === '-' || rawSize === 'Default') {
+      const catSize = cachedCat.s || (cachedCat as any).size || (cachedCat as any).variant;
+      if (catSize && catSize !== '-') rawSize = catSize;
+    }
+    if (!nama_produk || nama_produk === sku || nama_produk.toUpperCase() === sku) {
+      const catName = cachedCat.p || (cachedCat as any).nama_produk || cachedCat.n;
+      if (catName) nama_produk = catName;
+    }
+  }
+
   if (!rawSize || rawSize === '-') {
     rawSize = extractSizeFromSku(sku);
   }
-
-  let nama_produk = String(row.nama_produk || row.produk || row.product || row.item_name || sku).trim();
-  if (rawSize && rawSize !== '-' && rawSize !== 'ALL') {
-    // nama_produk = nama_produk;
+  if (!nama_produk) {
+    nama_produk = sku;
   }
 
   const rawTujuan = String(row.tujuan || row.destination || row.channel || 'Marketplace').trim();
@@ -5500,12 +5515,20 @@ export async function fetchPickingListFromSupabase(forceRefresh = false): Promis
 
       if (no_sj && sku && !itemsMap.has(`${no_sj}__${sku}`)) {
         let pSize = String(p.size || '').trim();
+        let pNama = String(p.nama_produk || sku).trim();
+        const cachedCat = memoryProductCache?.find(prod => (prod.k && prod.k.trim().toUpperCase() === sku) || ((prod as any).sku && String((prod as any).sku).trim().toUpperCase() === sku));
+        if (cachedCat) {
+          if (!pSize || pSize === '-' || pSize === 'Default') {
+            const catSize = cachedCat.s || (cachedCat as any).size || (cachedCat as any).variant;
+            if (catSize && catSize !== '-') pSize = catSize;
+          }
+          if (!pNama || pNama === sku || pNama.toUpperCase() === sku) {
+            const catName = cachedCat.p || (cachedCat as any).nama_produk || cachedCat.n;
+            if (catName) pNama = catName;
+          }
+        }
         if (!pSize || pSize === '-') {
           pSize = extractSizeFromSku(sku);
-        }
-        let pNama = String(p.nama_produk || sku).trim();
-        if (pSize && pSize !== '-' && pSize !== 'ALL') {
-          // pNama = pNama;
         }
 
         if (!invoiceMap.has(no_sj)) {
@@ -5924,18 +5947,24 @@ export async function createPickingSuratJalanSupabase(
 
   const newItems: PickingListItem[] = items.map((it, idx) => {
     const cleanSku = it.sku.trim().toUpperCase();
-    const rawSize = (it.size || '').trim();
-    const cleanSize = (rawSize && rawSize !== '-') 
-      ? rawSize 
-      : (extractSizeFromSku(cleanSku) !== '-' ? extractSizeFromSku(cleanSku) : '-');
+    const cachedCat = memoryProductCache?.find(p => (p.k && p.k.trim().toUpperCase() === cleanSku) || ((p as any).sku && String((p as any).sku).trim().toUpperCase() === cleanSku));
+    let rawSize = (it.size || '').trim();
+    if (!rawSize || rawSize === '-' || rawSize === 'Default') {
+      const catSize = cachedCat?.s || (cachedCat as any)?.size || (cachedCat as any)?.variant;
+      if (catSize && catSize !== '-') {
+        rawSize = catSize;
+      } else {
+        const fromSku = extractSizeFromSku(cleanSku);
+        rawSize = fromSku !== '-' ? fromSku : '-';
+      }
+    }
+    const cleanSize = rawSize || '-';
 
     let rawNama = (it.nama_produk || '').trim();
     const isNameSku = !rawNama || rawNama.toUpperCase() === cleanSku || rawNama.toUpperCase().replace(/\s+/g, '') === cleanSku.replace(/\s+/g, '');
-    if (isNameSku) {
-      const cached = memoryProductCache?.find(p => (p.k && p.k.trim().toUpperCase() === cleanSku) || ((p as any).sku && String((p as any).sku).trim().toUpperCase() === cleanSku));
-      if (cached && (cached.p || (cached as any).nama_produk || cached.n)) {
-        rawNama = String(cached.p || (cached as any).nama_produk || cached.n || cleanSku).trim();
-      }
+    if (isNameSku && cachedCat) {
+      const catName = cachedCat.p || (cachedCat as any).nama_produk || cachedCat.n;
+      if (catName) rawNama = String(catName).trim();
     }
     const formattedNama = rawNama || cleanSku;
     const safeNumericId = baseTime * 1000 + (idx % 1000);

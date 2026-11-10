@@ -10,7 +10,7 @@
  * 6. Only negative physical rack stock (sisa_stok < 0) is a quantity anomaly.
  */
 import { ProductItem } from '../types';
-import { cleanProductName, extractCleanSizeToken, extractSizeFromSku } from './sortUtils';
+import { cleanProductName, extractCleanSizeToken, extractSizeFromSku, setSortUtilsMasterCatalog } from './sortUtils';
 
 export interface ProductLookupResult {
   found: boolean;
@@ -27,9 +27,37 @@ export interface ProductLookupResult {
 const catalogMapCache = new WeakMap<ProductItem[], Map<string, ProductItem>>();
 let fallbackLocalStorageMap: Map<string, ProductItem> | null = null;
 let fallbackLocalStorageTimestamp = 0;
+let globalCatalogMap: Map<string, ProductItem> | null = null;
+
+/**
+ * Register loaded catalog globally in memory so every component/util has instant O(1) VLOOKUP access
+ */
+export function setGlobalProductCatalog(catalog: ProductItem[]): void {
+  if (!Array.isArray(catalog) || catalog.length === 0) return;
+  globalCatalogMap = buildProductLookupMap(catalog);
+  if (typeof window !== 'undefined') {
+    (window as any).__wms_global_catalog_map = globalCatalogMap;
+  }
+  setSortUtilsMasterCatalog(catalog, globalCatalogMap);
+}
+
+/**
+ * Retrieve global in-memory product catalog Map
+ */
+export function getGlobalProductCatalogMap(): Map<string, ProductItem> | null {
+  if (globalCatalogMap && globalCatalogMap.size > 0) {
+    return globalCatalogMap;
+  }
+  if (typeof window !== 'undefined' && (window as any).__wms_global_catalog_map) {
+    globalCatalogMap = (window as any).__wms_global_catalog_map;
+    return globalCatalogMap;
+  }
+  return null;
+}
 
 /**
  * Creates a fast O(1) indexed Map from product catalog (cached by array reference via WeakMap)
+ * Strictly maps exact SKU and product code without corrupting variant prefixes
  */
 export function buildProductLookupMap(
   catalog: ProductItem[] = []
@@ -51,11 +79,6 @@ export function buildProductLookupMap(
       const cleanSku = String(rawSku).trim().toUpperCase();
       if (cleanSku) {
         map.set(cleanSku, item);
-        const dash = cleanSku.indexOf('-');
-        if (dash > 0) {
-          const pfx = cleanSku.slice(0, dash).trim();
-          if (pfx && !map.has(pfx)) map.set(pfx, item);
-        }
       }
     }
     const rawCode = (item as any).kode_produksi;
@@ -110,10 +133,11 @@ export function normalizeSkuForLookup(rawSku: string | null | undefined): string
 
 /**
  * Look up official product name and size from Master Product using SKU
+ * Employs exact O(1) dictionary lookup (VLOOKUP / XLOOKUP equivalent)
  */
 export function lookupProductBySku(
   rawSku: string | null | undefined,
-  catalogOrMap: ProductItem[] | Map<string, ProductItem>,
+  catalogOrMap?: ProductItem[] | Map<string, ProductItem> | null,
   currentName?: string | null,
   currentSize?: string | null
 ): ProductLookupResult {
@@ -130,21 +154,25 @@ export function lookupProductBySku(
   }
 
   let master: ProductItem | undefined;
-  let hasProvidedCatalog = false;
 
-  if (catalogOrMap instanceof Map) {
-    hasProvidedCatalog = catalogOrMap.size > 0;
+  // 1. Direct match from passed-in catalog or map
+  if (catalogOrMap instanceof Map && catalogOrMap.size > 0) {
     master = catalogOrMap.get(cleanSku);
-  } else if (Array.isArray(catalogOrMap)) {
-    hasProvidedCatalog = catalogOrMap.length > 0;
-    if (hasProvidedCatalog) {
-      const map = buildProductLookupMap(catalogOrMap);
-      master = map.get(cleanSku);
+  } else if (Array.isArray(catalogOrMap) && catalogOrMap.length > 0) {
+    const map = buildProductLookupMap(catalogOrMap);
+    master = map.get(cleanSku);
+  }
+
+  // 2. Exact match from global in-memory catalog (28,000+ items)
+  if (!master) {
+    const gMap = getGlobalProductCatalogMap();
+    if (gMap) {
+      master = gMap.get(cleanSku);
     }
   }
 
-  // Fallback to cached localStorage map ONLY when no in-memory catalog was provided
-  if (!master && !hasProvidedCatalog) {
+  // 3. Fallback to cached localStorage map ONLY when in-memory catalog was not yet available
+  if (!master) {
     master = getFallbackLocalStorageMap().get(cleanSku);
   }
 
@@ -165,16 +193,17 @@ export function lookupProductBySku(
     };
   }
 
+  // Exact Master Product record found! Read authoritative fields directly
   const rawMasterName = String(
-    master.p || master.n || (master as any).nama_produk || ''
+    master.p || master.n || (master as any).nama_produk || (master as any).product_name || (master as any).nama || ''
   ).trim();
   const officialName = cleanProductName(rawMasterName) || rawMasterName;
 
   let officialSize = extractCleanSizeToken(
-    String(master.s || (master as any).size || '')
+    String(master.s || (master as any).size || (master as any).variant || (master as any).varian || (master as any).ukuran || '')
   );
 
-  // If master data recorded "Default" or empty, try extracting legitimate size from SKU
+  // If master data recorded "Default" or empty, try extracting size
   if (!officialSize || officialSize === '-' || officialSize.toUpperCase() === 'DEFAULT') {
     const fromSku = extractSizeFromSku(cleanSku);
     if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT') {
@@ -185,7 +214,7 @@ export function lookupProductBySku(
   }
 
   const dealposQty = Number(master.q) || 0;
-  const category = (master.c || master.category || '') as string;
+  const category = (master.c || master.category || (master as any).kategori || '') as string;
 
   // Check mismatches against current data:
   // "Nama produk dan size hasil kalkulasi/input data yang tidak sesuai dengan master produk = anomali"

@@ -166,6 +166,7 @@ import {
   ROLE_DEFAULT_PERMISSIONS,
 } from './services/permissions';
 import { getUserPersonName, registerUserNames } from './utils/userResolver';
+import { setGlobalProductCatalog } from './utils/productLookup';
 import {
   playCategoryBeep,
   playErrorBeep,
@@ -992,6 +993,13 @@ export default function App() {
 
   const productDatabaseRef = useRef<ProductItem[]>(productDatabase);
   productDatabaseRef.current = productDatabase;
+
+  // Register master product catalog into high-speed in-memory O(1) map for instant VLOOKUP across entire app
+  useEffect(() => {
+    if (productDatabase && productDatabase.length > 0) {
+      setGlobalProductCatalog(productDatabase);
+    }
+  }, [productDatabase]);
 
   // Modals & Drawers & Sidebar
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);

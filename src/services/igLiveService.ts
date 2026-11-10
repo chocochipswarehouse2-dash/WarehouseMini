@@ -1,6 +1,7 @@
 import { ProductItem } from '../types';
 import { getAreaFromLokasi, getPickingPriority, generateUUID, supabaseFetch } from './supabase';
 import { cleanProductName, extractSizeFromSku } from '../utils/sortUtils';
+import { getGlobalProductCatalogMap } from '../utils/productLookup';
 
 export { generateUUID };
 
@@ -80,9 +81,15 @@ export function lookupMasterProduct(sku: string, catalog: ProductItem[]): {
   harga?: number;
 } {
   const cleanSku = (sku || '').trim().toUpperCase();
-  const match = catalog.find(
-    (p) => (p.k || '').trim().toUpperCase() === cleanSku
-  );
+  let match = Array.isArray(catalog) ? catalog.find(
+    (p) => (p.k || (p as any).sku || '').trim().toUpperCase() === cleanSku
+  ) : undefined;
+
+  // Exact fallback to global in-memory catalog Map
+  if (!match) {
+    const gMap = getGlobalProductCatalogMap();
+    if (gMap) match = gMap.get(cleanSku);
+  }
 
   if (match) {
     let rawLokasi = match.lokasi || '-';
@@ -106,12 +113,13 @@ export function lookupMasterProduct(sku: string, catalog: ProductItem[]): {
     const primaryLoc = rawLokasi.split(',')[0]?.replace(/\s*\([^)]*\)\s*$/, '').trim() || rawLokasi;
     const area = getAreaFromLokasi(primaryLoc);
     const priority = getPickingPriority(primaryLoc, area);
-    const rawName = match.n || match.p || cleanSku;
+    const rawName = match.n || match.p || (match as any).nama_produk || (match as any).nama || cleanSku;
     const standardName = cleanProductName(rawName);
-    const standardSize = (match.s && match.s !== '-' ? match.s : extractSizeFromSku(cleanSku)) || '-';
+    const catSize = match.s || (match as any).size || (match as any).variant || (match as any).ukuran;
+    const standardSize = (catSize && catSize !== '-' ? catSize : extractSizeFromSku(cleanSku)) || '-';
 
     return {
-      sku: match.k,
+      sku: match.k || (match as any).sku || cleanSku,
       nama_produk: standardName,
       size: standardSize,
       lokasi: rawLokasi,

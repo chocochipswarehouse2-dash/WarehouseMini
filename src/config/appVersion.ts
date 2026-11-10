@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.100",
-  "versionCode": 360,
-  "buildDate": "9 November 2026",
-  "buildHash": "wms-261109-v360-1033",
-  "releaseTitle": "WMS v2.6.100 — Anti Quota Exceeded Engine & Safe LocalStorage Healing",
+  "version": "v2.6.101",
+  "versionCode": 361,
+  "buildDate": "10 November 2026",
+  "buildHash": "wms-261110-v361-0759",
+  "releaseTitle": "WMS v2.6.101 — Standardisasi Pure O(1) Master Product SKU Lookup & Eliminasi Regex Parsing",
   "releaseNotes": [
-    "Arsitektur Safe Storage Utility (safeLocalStorageSet, auto-eviction, clearHeavyCaches) mencegah crash 'The quota has been exceeded' pada Tugas Picking",
-    "Optimasi cache offline PickingTasksView hanya menyimpan tugas aktif (mereduksi 95% beban memori localStorage)",
-    "Penyempurnaan ErrorBoundary dengan tombol pemulihan darurat dan pembersihan otomatis storage"
+    "Standarisasi lookup nama produk & size berbasis VLOOKUP/XLOOKUP murni O(1) dari master_produk",
+    "Eliminasi regex parsing dan hardcoded matrix pada SKU (DF26, letter code, dsb)",
+    "Sinkronisasi master catalog in-memory 28.000+ SKU di seluruh modul (Picking, Live, Produksi, Distribusi)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.100",
+    "versionCode": 360,
+    "buildDate": "9 November 2026",
+    "buildHash": "wms-261109-v360-1033",
+    "releaseTitle": "WMS v2.6.100 — Anti Quota Exceeded Engine & Safe LocalStorage Healing",
+    "releaseNotes": [
+      "Arsitektur Safe Storage Utility (safeLocalStorageSet, auto-eviction, clearHeavyCaches) mencegah crash 'The quota has been exceeded' pada Tugas Picking",
+      "Optimasi cache offline PickingTasksView hanya menyimpan tugas aktif (mereduksi 95% beban memori localStorage)",
+      "Penyempurnaan ErrorBoundary dengan tombol pemulihan darurat dan pembersihan otomatis storage"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.99",
     "versionCode": 359,
@@ -114,18 +127,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Penambahan informasi Shift dan Jam Absen Datang/Pulang pada Daftar Approval Lembur, Cuti, dan Riwayat",
       "Penambahan opsi Ijin Pulang Cepat pada Form Ijin/Cuti lengkap dengan input Jam Pulang, Keterangan, serta info Shift & Absensi",
       "Notifikasi real-time & background khusus ke akun warehouse setiap ada pengajuan Ijin, Cuti, atau Lembur baru"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.92",
-    "versionCode": 352,
-    "buildDate": "8 November 2026",
-    "buildHash": "wms-261108-v352-1514",
-    "releaseTitle": "WMS v2.6.92 — Matriks Input Penerimaan Produksi & Mode Ukuran (Multi-Size / All Size)",
-    "releaseNotes": [
-      "Desain kartu Input Penerimaan Produksi disesuaikan dengan referensi matriks ukuran (Banyak Ukuran S-3XL yang judul kolomnya dapat diedit & All Size / Free Size)",
-      "Penyesuaian tampilan responsif HP Seluler (Grid 3 kolom ukuran, tanpa scroll horizontal)"
     ],
     "minSupportedVersion": "v2.0.0"
   }

@@ -1,13 +1,13 @@
 {
-  "version": "v2.6.100",
-  "versionCode": 360,
-  "buildDate": "9 November 2026",
-  "buildHash": "wms-261109-v360-1033",
-  "releaseTitle": "WMS v2.6.100 — Anti Quota Exceeded Engine & Safe LocalStorage Healing",
+  "version": "v2.6.101",
+  "versionCode": 361,
+  "buildDate": "10 November 2026",
+  "buildHash": "wms-261110-v361-0759",
+  "releaseTitle": "WMS v2.6.101 — Standardisasi Pure O(1) Master Product SKU Lookup & Eliminasi Regex Parsing",
   "releaseNotes": [
-    "Arsitektur Safe Storage Utility (safeLocalStorageSet, auto-eviction, clearHeavyCaches) mencegah crash 'The quota has been exceeded' pada Tugas Picking",
-    "Optimasi cache offline PickingTasksView hanya menyimpan tugas aktif (mereduksi 95% beban memori localStorage)",
-    "Penyempurnaan ErrorBoundary dengan tombol pemulihan darurat dan pembersihan otomatis storage"
+    "Standarisasi lookup nama produk & size berbasis VLOOKUP/XLOOKUP murni O(1) dari master_produk",
+    "Eliminasi regex parsing dan hardcoded matrix pada SKU (DF26, letter code, dsb)",
+    "Sinkronisasi master catalog in-memory 28.000+ SKU di seluruh modul (Picking, Live, Produksi, Distribusi)"
   ],
   "minSupportedVersion": "v2.0.0"
 }
