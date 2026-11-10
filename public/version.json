@@ -1,13 +1,13 @@
 {
-  "version": "v2.7.1",
-  "versionCode": 271,
+  "version": "v2.7.2",
+  "versionCode": 272,
   "buildDate": "10 November 2026",
-  "buildHash": "wms-261110-v271-1848",
-  "releaseTitle": "WMS v2.7.1 — Interaktif Order Keranjang & Fix Multi-Tool Call AI",
+  "buildHash": "wms-261110-v272-1919",
+  "releaseTitle": "WMS v2.7.2 — Smart Multi-Token Product Search & Zero-SKU Requirement",
   "releaseNotes": [
-    "Penambahan tool add_to_inventory_cart untuk memasukkan produk ke keranjang order inventory",
-    "Dukungan interaksi cerdas: tanya qty jika kosong, penawaran alternatif warna/size jika stok 0",
-    "Perbaikan multi-tool calling agar seluruh produk dieksekusi simultan dan menghasilkan rangkuman lengkap"
+    "Pencarian produk cerdas berbasis nama pakaian (multi-token & multi-layer)",
+    "Tidak mewajibkan SKU & fallback langsung ke Supabase PostgREST",
+    "Pencegahan AI meminta/menuntut kode SKU kepada operator"
   ],
   "minSupportedVersion": "v2.0.0"
 }

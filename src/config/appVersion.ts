@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.7.1",
-  "versionCode": 271,
+  "version": "v2.7.2",
+  "versionCode": 272,
   "buildDate": "10 November 2026",
-  "buildHash": "wms-261110-v271-1848",
-  "releaseTitle": "WMS v2.7.1 — Interaktif Order Keranjang & Fix Multi-Tool Call AI",
+  "buildHash": "wms-261110-v272-1919",
+  "releaseTitle": "WMS v2.7.2 — Smart Multi-Token Product Search & Zero-SKU Requirement",
   "releaseNotes": [
-    "Penambahan tool add_to_inventory_cart untuk memasukkan produk ke keranjang order inventory",
-    "Dukungan interaksi cerdas: tanya qty jika kosong, penawaran alternatif warna/size jika stok 0",
-    "Perbaikan multi-tool calling agar seluruh produk dieksekusi simultan dan menghasilkan rangkuman lengkap"
+    "Pencarian produk cerdas berbasis nama pakaian (multi-token & multi-layer)",
+    "Tidak mewajibkan SKU & fallback langsung ke Supabase PostgREST",
+    "Pencegahan AI meminta/menuntut kode SKU kepada operator"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.7.1",
+    "versionCode": 271,
+    "buildDate": "10 November 2026",
+    "buildHash": "wms-261110-v271-1848",
+    "releaseTitle": "WMS v2.7.1 — Interaktif Order Keranjang & Fix Multi-Tool Call AI",
+    "releaseNotes": [
+      "Penambahan tool add_to_inventory_cart untuk memasukkan produk ke keranjang order inventory",
+      "Dukungan interaksi cerdas: tanya qty jika kosong, penawaran alternatif warna/size jika stok 0",
+      "Perbaikan multi-tool calling agar seluruh produk dieksekusi simultan dan menghasilkan rangkuman lengkap"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.7.0",
     "versionCode": 270,
@@ -118,18 +131,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Arsitektur Safe Storage Utility (safeLocalStorageSet, auto-eviction, clearHeavyCaches) mencegah crash 'The quota has been exceeded' pada Tugas Picking",
       "Optimasi cache offline PickingTasksView hanya menyimpan tugas aktif (mereduksi 95% beban memori localStorage)",
       "Penyempurnaan ErrorBoundary dengan tombol pemulihan darurat dan pembersihan otomatis storage"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.99",
-    "versionCode": 359,
-    "buildDate": "9 November 2026",
-    "buildHash": "wms-261109-v359-0526",
-    "releaseTitle": "WMS v2.6.99 — Refine Produksi Couple Match Scoring & Instant Trello Swap Button",
-    "releaseNotes": [
-      "Koreksi gender scoring pada kode kembar busana couple (25751 MAN -> Logan Top SAMPLE, 25751 WOMAN -> Kailea Set)",
-      "Tombol interaktif 1-klik 'Ganti Produk' di tabel Produksi untuk menukar kartu Trello alternatif secara instan tanpa ketik manual"
     ],
     "minSupportedVersion": "v2.0.0"
   }
