@@ -105,3 +105,4 @@ Fitur **Asisten AI WMS** dirancang untuk membantu tim operasional dan manajemen 
    - Skenario 2: *"kode 6612 itu nama produknya apa ya?"*
    - Skenario 3: *"buat rekap penerimaan produk selama bulan Oktober"*
 6. **Step 6**: Jalankan build `npm run build`, bump versi rilis `node tools/bump_version.cjs`, commit, push ke GitHub, dan tampilkan tabel status deployment proaktif.
+

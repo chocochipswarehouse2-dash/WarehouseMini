@@ -1,13 +1,13 @@
 {
-  "version": "v2.6.105",
-  "versionCode": 365,
+  "version": "v2.7.0",
+  "versionCode": 270,
   "buildDate": "10 November 2026",
-  "buildHash": "wms-261110-v365-1802",
-  "releaseTitle": "WMS v2.6.105 — Asisten AI Pintar WMS (Google Gemini Flash)",
+  "buildHash": "wms-261110-v270-1812",
+  "releaseTitle": "WMS v2.7.0 — Asisten AI Pintar WMS (Google Gemini Flash)",
   "releaseNotes": [
-    "Penambahan Asisten AI WMS di Sidebar dengan popup floating page",
-    "Mendukung tanya stok produk, letak rak, lookup kode produksi Trello UP, dan rekapitulasi penerimaan bulanan",
-    "Kontrol akses token hemat: default khusus Superadmin dengan whitelist user management"
+    "Rilis Fitur Baru: Asisten AI WMS berbasis Google Gemini Flash terintegrasi di Sidebar",
+    "Tanya stok real, posisi rak, lookup kode produksi Trello UP, dan rekapitulasi penerimaan bulanan via bahasa alami",
+    "Kontrol akses hemat token: Superadmin default dengan Whitelist Staf Terpilih"
   ],
   "minSupportedVersion": "v2.0.0"
 }

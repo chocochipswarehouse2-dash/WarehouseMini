@@ -56,8 +56,12 @@ node tools/bump_version.cjs verify-release --output C:/Users/Chocochips\ Warehou
 - Strictly maintain **Store vs. Admin perspective** (never instruct Store PICs to click Admin-only buttons).
 
 ### 2. Bump Version & Release Notes (`tools/bump_version.cjs bump`)
-- Run `node tools/bump_version.cjs bump --title "..." --notes "..." --output ...` whenever `src/` files are modified for deployment.
-- Confirm that `package.json`, `src/config/appVersion.ts`, and `public/version.json` all share the exact new `version` (`v2.5.x`) and `buildHash`.
+- **Aturan Tegas SemVer (`MAJOR.MINOR.PATCH`)**:
+  - **`--major` (`v3.0.0`)**: Perombakan arsitektur besar / breaking changes menyeluruh.
+  - **`--minor` (`v2.X.0`)**: **WAJIB DIGUNAKAN saat menambahkan Fitur Baru Fungsional / Modul Baru** (seperti fitur *Asisten AI*, modul *Fulfilment Online*, *Live Chat*). Angka minor naik (`v2.6.x` → `v2.7.0`) dan digit patch di-reset ke `0`.
+  - **Default Patch (`v2.X.Y`)**: Digunakan untuk **Bug Fixes, Optimasi Performa, Perbaikan Tampilan/UI, atau Hotfix**.
+- Run `node tools/bump_version.cjs bump [--minor|--major] --title "..." --notes "..."` whenever `src/` files are modified for deployment.
+- Confirm that `package.json`, `src/config/appVersion.ts`, and `public/version.json` all share the exact new `version` and `buildHash`.
 
 ### 3. Enforce Multi-User Safe OTA Rules (`tools/bump_version.cjs verify-release`)
 - **Zero Forced-Reload Mid-Work & Background Update Preparation**:

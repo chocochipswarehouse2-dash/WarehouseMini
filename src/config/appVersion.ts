@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.105",
-  "versionCode": 365,
+  "version": "v2.7.0",
+  "versionCode": 270,
   "buildDate": "10 November 2026",
-  "buildHash": "wms-261110-v365-1802",
-  "releaseTitle": "WMS v2.6.105 — Asisten AI Pintar WMS (Google Gemini Flash)",
+  "buildHash": "wms-261110-v270-1812",
+  "releaseTitle": "WMS v2.7.0 — Asisten AI Pintar WMS (Google Gemini Flash)",
   "releaseNotes": [
-    "Penambahan Asisten AI WMS di Sidebar dengan popup floating page",
-    "Mendukung tanya stok produk, letak rak, lookup kode produksi Trello UP, dan rekapitulasi penerimaan bulanan",
-    "Kontrol akses token hemat: default khusus Superadmin dengan whitelist user management"
+    "Rilis Fitur Baru: Asisten AI WMS berbasis Google Gemini Flash terintegrasi di Sidebar",
+    "Tanya stok real, posisi rak, lookup kode produksi Trello UP, dan rekapitulasi penerimaan bulanan via bahasa alami",
+    "Kontrol akses hemat token: Superadmin default dengan Whitelist Staf Terpilih"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.105",
+    "versionCode": 365,
+    "buildDate": "10 November 2026",
+    "buildHash": "wms-261110-v365-1802",
+    "releaseTitle": "WMS v2.6.105 — Asisten AI Pintar WMS (Google Gemini Flash)",
+    "releaseNotes": [
+      "Penambahan Asisten AI WMS di Sidebar dengan popup floating page",
+      "Mendukung tanya stok produk, letak rak, lookup kode produksi Trello UP, dan rekapitulasi penerimaan bulanan",
+      "Kontrol akses token hemat: default khusus Superadmin dengan whitelist user management"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.104",
     "versionCode": 364,
@@ -116,18 +129,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Sistem scoring ranking multi-faktor untuk pencocokan Trello dengan gender/single-code hint (memastikan 25762 - WOMAN cocok ke Viorica Top bukan Cedric Top)",
       "Enrichment otomatis nama produk dan UP Vendor saat push ke Google Sheets Master & Tanggal (menjamin kolom C dan D tidak kosong/default KARGO)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.97",
-    "versionCode": 357,
-    "buildDate": "8 November 2026",
-    "buildHash": "wms-261108-v357-2052",
-    "releaseTitle": "WMS v2.6.97 — Filter Pengaman Header Tabel pada Modul IG Live",
-    "releaseNotes": [
-      "Pembersihan dan filter pencegah baris header template gsheet (NAMA PEMESAN / SKU) terbaca sebagai pesanan valid",
-      "Deploy Google Apps Script IG Live v28"
     ],
     "minSupportedVersion": "v2.0.0"
   }

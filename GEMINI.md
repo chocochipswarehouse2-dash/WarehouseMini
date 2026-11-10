@@ -14,7 +14,18 @@ Whenever database schemas, table structures, or payload models are updated (whet
 
 ## 3. Post-Task: Build, Auto-Deploy & Proactive Status Reporting
 Whenever modifications are completed, execute the full deployment lifecycle without waiting for user prompts:
-1. **Bump Version & Release Notes (When Frontend `src/` Changes)**: Run `node tools/bump_version.cjs --title "<Judul Rilis>" --notes "<Catatan 1>|<Catatan 2>"` so `package.json`, `src/config/appVersion.ts`, and `public/version.json` are always synchronized with the latest version (`v2.5.x`) and changelog (adhering to `.agents/skills/wms-app-release-update/SKILL.md`).
+1. **Bump Version & Release Notes (When Frontend `src/` Changes)**:
+   Gunakan aturan Semantic Versioning (`MAJOR.MINOR.PATCH`) yang tegas:
+   - **`--major` (`v3.0.0`)**: Digunakan jika ada perombakan arsitektur besar / breaking changes menyeluruh pada aplikasi.
+   - **`--minor` (`v2.X.0`)**: **WAJIB DIGUNAKAN saat ada Penambahan Fitur Baru / Modul Baru** (contoh: rilis fitur baru *Asisten AI Pintar*, modul baru *Fulfilment Pesanan Online*, integrasi baru). Angka minor naik (`v2.6.x` $\rightarrow$ `v2.7.0`) dan patch di-reset ke `0`.
+     ```bash
+     node tools/bump_version.cjs bump --minor --title "WMS v2.X.0 — <Judul Fitur Baru>" --notes "<Catatan 1>|<Catatan 2>"
+     ```
+   - **Default Patch (`v2.X.Y`)**: Digunakan untuk **Perbaikan Bug, Optimasi Performa, Penyesuaian Logic/UI Kecil, dan Hotfix**.
+     ```bash
+     node tools/bump_version.cjs bump --title "<Judul Rilis>" --notes "<Catatan 1>|<Catatan 2>"
+     ```
+   Pastikan `package.json`, `src/config/appVersion.ts`, dan `public/version.json` selalu tersinkronisasi (dikelola otomatis oleh `tools/bump_version.cjs`).
 2. **Validate Build**: Run `npm run build` to verify that there are no compilation or bundling errors.
 3. **Deploy Google Apps Script (GAS)**: If any file under `gas/` or GAS deployment scripts was touched, run:
    ```bash
