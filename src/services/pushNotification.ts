@@ -163,6 +163,8 @@ export async function configureServiceWorkerOrderWatcher(params: {
   isAdmin: boolean;
   isPicker?: boolean;
   isWarehouseOnly?: boolean;
+  canProduksi?: boolean;
+  isCustomerService?: boolean;
   storeName?: string;
   username?: string;
   displayName?: string;

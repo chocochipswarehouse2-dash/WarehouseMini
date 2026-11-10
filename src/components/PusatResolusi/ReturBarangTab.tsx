@@ -36,6 +36,8 @@ import {
 import QRCode from 'qrcode';
 import { UserSession, ProductItem } from '../../types';
 import { isSuperadmin } from '../../services/permissions';
+import { showPushNotification } from '../../services/pushNotification';
+import { globalRealtimeStore } from '../../services/store';
 import { compressImage } from '../../utils/imageCompressor';
 import { uploadImageToGdrive } from '../../services/gdriveUpload';
 import { getFonnteConfig, sendFonnteMessage } from '../../services/whatsapp';
@@ -677,6 +679,9 @@ export default function ReturBarangTab({
 
     setLoading(true);
     try {
+      if (!editingOrder) {
+        globalRealtimeStore.markOrderSubmittedLocally(payload.no_retur);
+      }
       const res = editingOrder
         ? await updateReturOrder(payload)
         : await submitReturOrder(payload);
@@ -690,6 +695,13 @@ export default function ReturBarangTab({
         );
 
         if (!editingOrder) {
+          showPushNotification(`✅ Tiket Retur #${payload.no_retur} Berhasil Disubmit`, {
+            body: `Pesanan #${payload.no_pesanan_asal} (${payload.nama_customer}) telah masuk ke antrian Gudang & Rekap Retur.`,
+            tag: `cs-retur-submit-${payload.no_retur}`,
+            page: 'pusat_resolusi',
+            orderId: payload.no_retur,
+            requireInteraction: false,
+          });
           sendReturNotificationEmail(payload, 'submit')
             .then(emailRes => {
               if (emailRes.sent) {

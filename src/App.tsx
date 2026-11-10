@@ -163,6 +163,12 @@ import {
   canAccessSettings,
   isSuperadmin,
   isWarehouseAccountOnly,
+  canReceiveAdminOrderNotif,
+  canReceivePickingAndSpsNotif,
+  canReceiveRecountNotif,
+  isCustomerServiceSession,
+  isPeminjamOnlySession,
+  isEmployeeMatchingRecord,
   ALL_PERMISSIONS,
   ROLE_DEFAULT_PERMISSIONS,
 } from './services/permissions';
@@ -1535,10 +1541,21 @@ export default function App() {
           (payload) => {
             invalidateStokFisikCache();
             if (payload.eventType === 'INSERT' && payload.new) {
-              const newLog = payload.new as { type?: string; sku?: string; lokasi?: string; qty?: number, invoice?: string };
-              showPushNotification('📦 Log Mutasi Baru', {
-                body: `Mutasi #${newLog.type || 'LOG'}: ${newLog.sku || 'Barang'} di lokasi ${newLog.lokasi || '-'}`,
-              });
+              const newLog = payload.new as { type?: string; sku?: string; lokasi?: string; qty?: number; invoice?: string };
+
+              // Jangan kirim push notification spam global untuk setiap scan barcode #IN / #OUT biasa!
+              // Hanya kirim notifikasi ke Admin & Warehouse jika ada scan antrian Stock Opname (#SO) baru
+              if (newLog.type === 'SO' && canReceiveAdminOrderNotif(session)) {
+                const soDedupKey = `SO_SCAN_${String(newLog.invoice || newLog.lokasi || Date.now()).toUpperCase()}`;
+                if (!notifiedOrderIdsRef.current.has(soDedupKey)) {
+                  notifiedOrderIdsRef.current.add(soDedupKey);
+                  showPushNotification(`📋 Antrian Stock Opname Baru — Rak ${newLog.lokasi || '-'}`, {
+                    body: `Scan #SO diterima (${newLog.sku || 'Produk'}). Buka Stock Opname untuk review & approval.`,
+                    tag: `so-queue-${newLog.lokasi || 'rak'}`,
+                    page: 'stock_opname',
+                  });
+                }
+              }
 
               import('./services/pickingSync').then(({ processPickingSync }) => {
                 processPickingSync(newLog);
@@ -1548,7 +1565,6 @@ export default function App() {
               if (newLog.sku && newLog.lokasi && newLog.qty) {
                 setProductDatabase(prev => {
                   const skuUpper = newLog.sku!.toUpperCase();
-                  const locUpper = newLog.lokasi!.toUpperCase();
                   return prev.map(p => {
                     if (p.k.toUpperCase() === skuUpper) {
                       const updated = { ...p };
@@ -1670,10 +1686,18 @@ export default function App() {
             invalidatePickingListCache();
             globalRealtimeStore.notify('picking_list', payload);
 
-            // Notifikasi Realtime saat ada Tugas Picking / Surat Jalan / Refill baru diinput oleh Admin
+            // Notifikasi Realtime Tugas Picking HANYA untuk Admin, Warehouse, Picker & Operator Gudang
             if (payload.eventType === 'INSERT' && payload.new) {
+              if (!canReceivePickingAndSpsNotif(session)) return;
+
               const row = payload.new as any;
-              const sj = row.no_sj || 'Tugas Baru';
+              const sj = String(row.no_sj || 'Tugas Baru').trim();
+              if (
+                globalRealtimeStore.isOrderSubmittedLocally(sj) ||
+                globalRealtimeStore.isOrderSubmittedLocally(row.invoice_picking)
+              ) {
+                return;
+              }
               const tujuan = row.tujuan || 'Gudang';
               incomingPickingRows.push({
                 no_sj: sj,
@@ -1689,10 +1713,10 @@ export default function App() {
                 const uniqueSjs = Array.from(
                   new Set(rowsSnapshot.map((r) => String(r.no_sj || '').trim().toUpperCase()))
                 ).filter(Boolean);
-                const unnotifiedSjs = uniqueSjs.filter((sj) => !notifiedOrderIdsRef.current.has(sj));
+                const unnotifiedSjs = uniqueSjs.filter((s) => !notifiedOrderIdsRef.current.has(s));
                 if (unnotifiedSjs.length === 0) return;
 
-                unnotifiedSjs.forEach((sj) => notifiedOrderIdsRef.current.add(sj));
+                unnotifiedSjs.forEach((s) => notifiedOrderIdsRef.current.add(s));
                 savePersistedNotifiedOrderIds(notifiedOrderIdsRef.current);
                 setLastOrderCheckTimestamp(Date.now());
                 syncNotifiedOrdersToServiceWorker(Array.from(notifiedOrderIdsRef.current));
@@ -1701,13 +1725,9 @@ export default function App() {
                 const firstSj = unnotifiedSjs[0] || uniqueSjs[0] || 'Surat Jalan';
                 const firstTujuan = rowsSnapshot[0]?.tujuan || 'Gudang';
 
-                // 1. Putar nada lonceng tugas baru (jelas & nyaring di gudang)
                 playNewTaskChime();
-
-                // 2. Getarkan HP picker
                 vibrateDevice([250, 100, 250, 100, 450]);
 
-                // 3. Web Push / System Notification (muncul di status bar HP / Chrome)
                 const notifTitle = '📋 Tugas Picking Baru Masuk!';
                 const notifBody =
                   unnotifiedSjs.length > 1
@@ -1721,7 +1741,6 @@ export default function App() {
                   subTab: 'picking_tasks',
                 });
 
-                // 4. In-App Toast (Klik langsung menuju Tugas Picking)
                 showToast(
                   unnotifiedSjs.length > 1
                     ? `📋 ${unnotifiedSjs.length} Tugas Picking Baru Masuk (${totalItems} item)!`
@@ -1737,7 +1756,6 @@ export default function App() {
                   }
                 );
 
-                // 5. Simpan state alert untuk banner & badge di UI
                 setNewPickingTaskAlert({
                   no_sj: firstSj,
                   count: totalItems,
@@ -1754,16 +1772,27 @@ export default function App() {
           ({ payload }) => {
             invalidatePickingListCache();
             globalRealtimeStore.notify('picking_list', { eventType: 'INSERT', new: payload });
+            // HANYA Admin, Warehouse, Picker & Operator Gudang yang menerima notifikasi Tugas Picking
+            if (!canReceivePickingAndSpsNotif(session)) return;
+
             const rows: any[] = Array.isArray(payload?.rows) ? payload.rows : [];
             if (rows.length === 0) return;
             rows.forEach((row) => {
+              const sj = String(row.no_sj || 'Tugas Baru').trim();
+              if (
+                globalRealtimeStore.isOrderSubmittedLocally(sj) ||
+                globalRealtimeStore.isOrderSubmittedLocally(row.invoice_picking)
+              ) {
+                return;
+              }
               incomingPickingRows.push({
-                no_sj: row.no_sj || 'Tugas Baru',
+                no_sj: sj,
                 tujuan: row.tujuan || 'Gudang',
                 nama_produk: row.nama_produk,
                 sku: row.sku,
               });
             });
+            if (incomingPickingRows.length === 0) return;
             if (pickingDebounceTimer) clearTimeout(pickingDebounceTimer);
             pickingDebounceTimer = setTimeout(() => {
               const rowsSnapshot = [...incomingPickingRows];
@@ -1771,10 +1800,10 @@ export default function App() {
               const uniqueSjs = Array.from(
                 new Set(rowsSnapshot.map((r) => String(r.no_sj || '').trim().toUpperCase()))
               ).filter(Boolean);
-              const unnotifiedSjs = uniqueSjs.filter((sj) => !notifiedOrderIdsRef.current.has(sj));
+              const unnotifiedSjs = uniqueSjs.filter((s) => !notifiedOrderIdsRef.current.has(s));
               if (unnotifiedSjs.length === 0) return;
 
-              unnotifiedSjs.forEach((sj) => notifiedOrderIdsRef.current.add(sj));
+              unnotifiedSjs.forEach((s) => notifiedOrderIdsRef.current.add(s));
               savePersistedNotifiedOrderIds(notifiedOrderIdsRef.current);
               setLastOrderCheckTimestamp(Date.now());
               syncNotifiedOrdersToServiceWorker(Array.from(notifiedOrderIdsRef.current));
@@ -1856,32 +1885,34 @@ export default function App() {
             } else if (payload.eventType === 'UPDATE' && payload.new) {
               const row = payload.new as any;
               const oldRow = (payload.old || {}) as any;
-              // Jika resi baru saja diinput oleh Admin, beri notifikasi ke akun Store pengirim
-              if (row.no_resi && row.no_resi !== oldRow.no_resi && !isSuperadmin(session)) {
+              // Khusus akun Store pengirim: Notifikasi saat Resi baru diinput atau status pesanan tokonya diupdate oleh Admin
+              if (!canReceiveAdminOrderNotif(session)) {
                 const orderId = row.no_pesanan || row.no_transaksi_customer || 'Pesanan';
-                const storeName = row.nama_pengirim || 'Store';
-                const userStore = (session.store_name || session.name || '').toLowerCase();
+                const storeName = String(row.nama_pengirim || 'Store').trim();
+                const userStore = String(session.store_name || session.store_code || session.name || '').trim().toLowerCase();
                 if (userStore && storeName.toLowerCase().includes(userStore)) {
-                  playNewTaskChime();
-                  vibrateDevice([200, 100, 300]);
-                  showPushNotification(`🚚 Resi Pesanan Diupdate (#${orderId})`, {
-                    body: `Pesanan ${row.nama_tujuan || 'Customer'} telah diupdate dengan No. Resi: ${row.no_resi} (${row.jasa_kirim || 'Ekspedisi'})`,
-                    tag: `resi-update-${orderId}`,
-                    page: 'pesanan_saya',
-                    subTab: 'manual_shipment',
-                    manualSubTab: 'rekap',
-                    orderId,
-                  });
-                  showToast(`🚚 Resi pesanan #${orderId} telah diupdate: ${row.no_resi}`, 'info', {
-                    actionLabel: 'Lihat Rekap →',
-                    onClick: () =>
-                      navigateToNotificationTargetRef.current({
-                        page: 'pesanan_saya',
-                        subTab: 'manual_shipment',
-                        manualSubTab: 'rekap',
-                        orderId,
-                      }),
-                  });
+                  if (row.no_resi && row.no_resi !== oldRow.no_resi) {
+                    playNewTaskChime();
+                    vibrateDevice([200, 100, 300]);
+                    showPushNotification(`🚚 Resi Pesanan Diupdate (#${orderId})`, {
+                      body: `Pesanan ${row.nama_tujuan || 'Customer'} telah diupdate dengan No. Resi: ${row.no_resi} (${row.jasa_kirim || 'Ekspedisi'})`,
+                      tag: `resi-update-${orderId}`,
+                      page: 'pesanan_saya',
+                      subTab: 'manual_shipment',
+                      manualSubTab: 'rekap',
+                      orderId,
+                    });
+                    showToast(`🚚 Resi pesanan #${orderId} telah diupdate: ${row.no_resi}`, 'info', {
+                      actionLabel: 'Lihat Rekap →',
+                      onClick: () =>
+                        navigateToNotificationTargetRef.current({
+                          page: 'pesanan_saya',
+                          subTab: 'manual_shipment',
+                          manualSubTab: 'rekap',
+                          orderId,
+                        }),
+                    });
+                  }
                 }
               }
             }
@@ -1892,9 +1923,16 @@ export default function App() {
           { event: '*', schema: 'public', table: 'retur_barang' },
           (payload) => {
             globalRealtimeStore.notify('retur_barang', payload);
-            if (payload.eventType === 'INSERT' && payload.new && isSuperadmin(session)) {
+            if (payload.eventType === 'INSERT' && payload.new) {
+              // 1. Tiket Retur Baru: Notifikasi HANYA ke Admin & Warehouse
+              if (!canReceiveAdminOrderNotif(session)) return;
               const row = payload.new as any;
-              const noRetur = row.no_retur || 'RTR-BARU';
+              const noRetur = String(row.no_retur || 'RTR-BARU').trim().toUpperCase();
+              if (globalRealtimeStore.isOrderSubmittedLocally(noRetur)) return;
+              if (notifiedOrderIdsRef.current.has(noRetur)) return;
+              notifiedOrderIdsRef.current.add(noRetur);
+              savePersistedNotifiedOrderIds(notifiedOrderIdsRef.current);
+
               const customer = row.nama_customer || 'Customer';
               playNewTaskChime();
               vibrateDevice([250, 100, 250]);
@@ -1910,6 +1948,74 @@ export default function App() {
                     page: 'pusat_resolusi',
                   }),
               });
+            } else if (payload.eventType === 'UPDATE' && payload.new) {
+              // 2. Update Status Retur oleh Gudang/Admin: Notifikasi khusus ke Customer Service (CS)
+              if (!isCustomerServiceSession(session)) return;
+              const row = payload.new as any;
+              const oldRow = (payload.old || {}) as any;
+              const noRetur = String(row.no_retur || 'RTR').trim().toUpperCase();
+              const customer = String(row.nama_customer || 'Customer').trim();
+
+              const newResi = String(row.no_resi || '').trim();
+              const oldResi = String(oldRow.no_resi || '').trim();
+              const newStatus = String(row.status || '').trim().toLowerCase();
+              const oldStatus = String(oldRow.status || '').trim().toLowerCase();
+              const newSj = String(row.no_sj_gudang_retur || '').trim();
+              const oldSj = String(oldRow.no_sj_gudang_retur || '').trim();
+              const newInv = String(row.no_invoice_return || '').trim();
+              const oldInv = String(oldRow.no_invoice_return || '').trim();
+
+              let updateTitle = '';
+              let updateBody = '';
+              let dedupSuffix = '';
+
+              if (newResi && newResi !== oldResi) {
+                updateTitle = `🚚 Retur Selesai — Resi Pengganti Terbit (#${noRetur})`;
+                updateBody = `Customer: ${customer} • No. Resi Pengganti: ${newResi}`;
+                dedupSuffix = `RESI_${newResi}`;
+              } else if (newStatus && newStatus !== oldStatus) {
+                const statusLabel =
+                  newStatus === 'dikirim'
+                    ? 'Pesanan Selesai (Dikirim)'
+                    : newStatus === 'diproses'
+                    ? 'Pesanan Sedang Diproses Gudang'
+                    : newStatus.toUpperCase();
+                updateTitle = `🔄 Update Status Retur #${noRetur}`;
+                updateBody = `Customer: ${customer} • Status beralih ke: ${statusLabel}`;
+                dedupSuffix = `STATUS_${newStatus}`;
+              } else if (newSj && newSj !== oldSj) {
+                updateTitle = `📦 SJ Gudang Retur Diinput (#${noRetur})`;
+                updateBody = `Customer: ${customer} • No. SJ DealPOS: ${newSj}`;
+                dedupSuffix = `SJ_${newSj}`;
+              } else if (newInv && newInv !== oldInv) {
+                updateTitle = `🧾 Invoice Return Diinput (#${noRetur})`;
+                updateBody = `Customer: ${customer} • No. Invoice Return: ${newInv}`;
+                dedupSuffix = `INV_${newInv}`;
+              }
+
+              if (updateTitle && dedupSuffix) {
+                const dedupKey = `RTR_UPD_${noRetur}_${dedupSuffix}`;
+                if (notifiedOrderIdsRef.current.has(dedupKey)) return;
+                notifiedOrderIdsRef.current.add(dedupKey);
+                savePersistedNotifiedOrderIds(notifiedOrderIdsRef.current);
+
+                playNewTaskChime();
+                vibrateDevice([200, 100, 250]);
+                showPushNotification(updateTitle, {
+                  body: updateBody,
+                  tag: `retur-upd-${noRetur}`,
+                  page: 'pusat_resolusi',
+                  orderId: noRetur,
+                });
+                showToast(`${updateTitle} — ${updateBody}`, 'info', {
+                  actionLabel: 'Lihat Retur →',
+                  onClick: () =>
+                    navigateToNotificationTargetRef.current({
+                      page: 'pusat_resolusi',
+                      orderId: noRetur,
+                    }),
+                });
+              }
             }
           }
         )
@@ -1924,28 +2030,92 @@ export default function App() {
         )
         .on(
           'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'lembur' },
+          { event: '*', schema: 'public', table: 'lembur' },
           (payload) => {
-            if (payload.new) {
+            if (payload.eventType === 'INSERT' && payload.new) {
               handleIncomingHrRequestRef.current('lembur', payload.new);
+            } else if (payload.eventType === 'UPDATE' && payload.new) {
+              const row = payload.new as any;
+              const oldRow = (payload.old || {}) as any;
+              const status = String(row.status || '').trim();
+              if (
+                (status === 'Disetujui' || status === 'Ditolak') &&
+                status !== oldRow.status &&
+                !isWarehouseAccountOnly(session) &&
+                isEmployeeMatchingRecord(session, row)
+              ) {
+                const tgl = String(row.tanggal || '').slice(0, 10);
+                const icon = status === 'Disetujui' ? '✅' : '❌';
+                playNewTaskChime();
+                vibrateDevice([200, 100, 250]);
+                showPushNotification(`${icon} Pengajuan Lembur ${status}`, {
+                  body: `Lembur tanggal ${tgl} telah ${status.toLowerCase()} oleh HR/Warehouse.`,
+                  tag: `hr-emp-lmb-${row.id}`,
+                  page: 'lembur_cuti',
+                });
+                showToast(`${icon} Pengajuan Lembur Anda (${tgl}) telah ${status}!`, status === 'Disetujui' ? 'success' : 'warning');
+              }
             }
           }
         )
         .on(
           'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'perijinan_cuti' },
+          { event: '*', schema: 'public', table: 'perijinan_cuti' },
           (payload) => {
-            if (payload.new) {
+            if (payload.eventType === 'INSERT' && payload.new) {
               handleIncomingHrRequestRef.current('perijinan_cuti', payload.new);
+            } else if (payload.eventType === 'UPDATE' && payload.new) {
+              const row = payload.new as any;
+              const oldRow = (payload.old || {}) as any;
+              const status = String(row.status || '').trim();
+              if (
+                (status === 'Disetujui' || status === 'Ditolak') &&
+                status !== oldRow.status &&
+                !isWarehouseAccountOnly(session) &&
+                isEmployeeMatchingRecord(session, row)
+              ) {
+                const jenis = String(row.jenis || 'Ijin/Cuti').trim();
+                const tgl = String(row.tgl_mulai || row.tanggal_mulai || '').slice(0, 10);
+                const icon = status === 'Disetujui' ? '✅' : '❌';
+                playNewTaskChime();
+                vibrateDevice([200, 100, 250]);
+                showPushNotification(`${icon} Pengajuan ${jenis} ${status}`, {
+                  body: `Pengajuan ${jenis} tanggal ${tgl} telah ${status.toLowerCase()} oleh HR/Warehouse.`,
+                  tag: `hr-emp-cuti-${row.id}`,
+                  page: 'lembur_cuti',
+                });
+                showToast(`${icon} Pengajuan ${jenis} Anda (${tgl}) telah ${status}!`, status === 'Disetujui' ? 'success' : 'warning');
+              }
             }
           }
         )
         .on(
           'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'izin_pulang_cepat' },
+          { event: '*', schema: 'public', table: 'izin_pulang_cepat' },
           (payload) => {
-            if (payload.new) {
+            if (payload.eventType === 'INSERT' && payload.new) {
               handleIncomingHrRequestRef.current('izin_pulang_cepat', payload.new);
+            } else if (payload.eventType === 'UPDATE' && payload.new) {
+              const row = payload.new as any;
+              const oldRow = (payload.old || {}) as any;
+              const status = String(row.status || '').trim();
+              if (
+                (status === 'Disetujui' || status === 'Ditolak') &&
+                status !== oldRow.status &&
+                !isWarehouseAccountOnly(session) &&
+                isEmployeeMatchingRecord(session, row)
+              ) {
+                const tgl = String(row.tanggal || '').slice(0, 10);
+                const icon = status === 'Disetujui' ? '✅' : '❌';
+                playNewTaskChime();
+                vibrateDevice([200, 100, 250]);
+                showPushNotification(`${icon} Ijin Pulang Cepat ${status}`, {
+                  body: `Pengajuan Ijin Pulang Cepat tanggal ${tgl} telah ${status.toLowerCase()}.`,
+                  tag: `hr-emp-ipc-${row.id}`,
+                  page: 'lembur_cuti',
+                });
+                showToast(`${icon} Pengajuan Ijin Pulang Cepat Anda (${tgl}) telah ${status}!`, status === 'Disetujui' ? 'success' : 'warning');
+              }
             }
           }
         )
@@ -1987,16 +2157,12 @@ export default function App() {
     }
   }, [session, loadProducts]);
 
-  // Handler terpusat saat ada tugas Antrian Hitung Ulang Fisik baru (dari Buyer Qty Nota selisih / input manual)
+  // Handler terpusat saat ada tugas Antrian Hitung Ulang Fisik baru (HANYA Admin, Warehouse & Produksi)
   const handleIncomingRecountNotification = useCallback(
     (row: any) => {
       if (!row || !session) return;
 
-      const userCanProduksi =
-        isSuperadmin(session) ||
-        canAccessPage(session, 'produksi') ||
-        canAccessPage(session, 'penerimaan');
-      if (!userCanProduksi) return;
+      if (!canReceiveRecountNotif(session)) return;
 
       const kode = String(row.kode_produksi || row.kode || '').trim().toUpperCase();
       if (!kode || kode === 'DUMMY') return;
@@ -2168,14 +2334,14 @@ export default function App() {
   const handleIncomingHrRequestRef = useRef(handleIncomingHrRequestNotification);
   handleIncomingHrRequestRef.current = handleIncomingHrRequestNotification;
 
-  // Handler terpusat KHUSUS ADMIN (Laptop & HP Admin) saat Toko A submit Pesanan Baru (Manual Shipment / Alter)
-  // TIDAK AKAN berbunyi di HP / perangkat PIC Toko yang menginput.
+  // Handler terpusat KHUSUS ADMIN & WAREHOUSE saat Toko submit Pesanan Baru (Manual Shipment / Alter)
+  // TIDAK AKAN berbunyi di HP / perangkat PIC Toko, Picker, CS, atau Peminjam.
   const handleIncomingManualShipmentNotification = useCallback(
     (row: any) => {
       if (!row || !session) return;
 
-      // 1. HANYA muncul di Laptop / HP Admin (bukan di akun Store PIC)
-      if (!isSuperadmin(session)) {
+      // 1. HANYA muncul di Laptop / HP Admin & Warehouse
+      if (!canReceiveAdminOrderNotif(session)) {
         return;
       }
 
@@ -2246,13 +2412,9 @@ export default function App() {
         .filter(Boolean)
         .join(', ');
 
-      // 1. Putar nada lonceng pesanan baru di Laptop / HP Admin
       playNewTaskChime();
-
-      // 2. Getarkan HP Admin
       vibrateDevice([300, 120, 300, 120, 500]);
 
-      // 3. Tampilkan Push Notification Sistem di Laptop Admin (Windows/Mac) & HP Admin (Android/iOS)
       const notifTitle = isAlter
         ? `✂️ Form Alter/Repair Baru — ${storeName}`
         : `🛍️ Pesanan Baru dari ${storeName}`;
@@ -2269,7 +2431,6 @@ export default function App() {
         requireInteraction: true,
       });
 
-      // 4. Tampilkan Toast di layar Admin (Klik langsung buka Rekap Pesanan Store untuk Order ID tersebut)
       showToast(
         `${isAlter ? '✂️ Request Alter/Repair Baru' : '🛍️ Pesanan Baru'} dari ${storeName}: #${orderId} (${totalQty} pcs - ${customerName})`,
         'info',
@@ -2286,7 +2447,6 @@ export default function App() {
         }
       );
 
-      // 5. Tampilkan Floating Alert Banner & Badge di layar Laptop / HP Admin
       setNewManualShipmentAlert({
         orderId,
         storeName,
@@ -2303,14 +2463,13 @@ export default function App() {
   const handleIncomingManualShipmentRef = useRef(handleIncomingManualShipmentNotification);
   handleIncomingManualShipmentRef.current = handleIncomingManualShipmentNotification;
 
-  // Handler terpusat KHUSUS ADMIN & PICKER saat ada Permintaan Peminjaman Sementara (SPS) baru
+  // Handler terpusat KHUSUS ADMIN, WAREHOUSE, PICKER & OPERATOR GUDANG saat ada Permintaan Peminjaman Sementara (SPS) baru
   const handleIncomingSpsNotification = useCallback(
     (rowOrRecord: any) => {
       if (!rowOrRecord || !session) return;
 
-      const userIsAdmin = isSuperadmin(session);
-      const userIsPicker = canAccessPage(session, 'picking_tasks');
-      if (!userIsAdmin && !userIsPicker) {
+      // HANYA Admin, Warehouse, Picker & Operator Gudang (Akun Peminjam / Store / CS tidak boleh terganggu)
+      if (!canReceivePickingAndSpsNotif(session)) {
         return;
       }
 
@@ -2383,28 +2542,24 @@ export default function App() {
   const handleIncomingSpsRef = useRef(handleIncomingSpsNotification);
   handleIncomingSpsRef.current = handleIncomingSpsNotification;
 
-  // Web Push (VAPID): daftarkan perangkat agar notifikasi tetap masuk walau aplikasi / browser ditutup
+  // Web Push (VAPID): daftarkan perangkat sesuai role masing-masing
   useEffect(() => {
     if (!session?.username || notificationPermission !== 'granted') return;
     void subscribeToWebPush({
       username: session.username,
-      isAdmin: Boolean(isSuperadmin(session)),
-      isPicker: Boolean(canAccessPage(session, 'picking_tasks')),
+      isAdmin: Boolean(canReceiveAdminOrderNotif(session)),
+      isPicker: Boolean(canReceivePickingAndSpsNotif(session)),
       storeName: session.store_name || session.store_code || '',
     });
   }, [session, notificationPermission]);
 
-  // Background, Service Worker & Screen-Wake Delta Poller (Unified: Live Chat untuk Semua User + Pesanan/SPS/Retur untuk Admin & Picker + Hitung Ulang untuk Produksi + HR untuk Warehouse Only)
+  // Background, Service Worker & Screen-Wake Delta Poller (Strict Role-Aware Matrix)
   useEffect(() => {
-    const userIsAdmin = Boolean(session && isSuperadmin(session));
-    const userIsPicker = Boolean(session && canAccessPage(session, 'picking_tasks'));
+    const userIsAdmin = Boolean(session && canReceiveAdminOrderNotif(session));
+    const userIsPicker = Boolean(session && canReceivePickingAndSpsNotif(session));
     const userIsWarehouseOnly = Boolean(session && isWarehouseAccountOnly(session));
-    const userCanProduksi = Boolean(
-      session &&
-        (isSuperadmin(session) ||
-          canAccessPage(session, 'produksi') ||
-          canAccessPage(session, 'penerimaan'))
-    );
+    const userCanProduksi = Boolean(session && canReceiveRecountNotif(session));
+    const userIsCustomerService = Boolean(session && isCustomerServiceSession(session));
 
     if (!session) {
       configureServiceWorkerOrderWatcher({
@@ -2414,12 +2569,12 @@ export default function App() {
         isAdmin: false,
         isPicker: false,
         isWarehouseOnly: false,
+        canProduksi: false,
+        isCustomerService: false,
       });
       return;
     }
 
-    // Sinkronkan konfigurasi ke Service Worker untuk SEMUA user yang login (agar Live Chat Background & Balas Cepat bekerja untuk semua user,
-    // sedangkan pengecekan pesanan/SPS/retur tetap difilter berdasarkan isAdmin & isPicker, dan HR khusus isWarehouseOnly di Service Worker)
     const customUrl = localStorage.getItem('wms_supabase_url') || DEFAULT_SUPABASE_URL;
     const customKey = localStorage.getItem('wms_supabase_key') || DEFAULT_SUPABASE_ANON_KEY;
     configureServiceWorkerOrderWatcher({
@@ -2429,6 +2584,8 @@ export default function App() {
       isAdmin: userIsAdmin,
       isPicker: userIsPicker,
       isWarehouseOnly: userIsWarehouseOnly,
+      canProduksi: userCanProduksi,
+      isCustomerService: userIsCustomerService,
       username: session.username,
       displayName: session.name || getUserPersonName(session.username) || session.username,
       userRole: session.role,
@@ -2437,7 +2594,6 @@ export default function App() {
       lastCheckedAt: getLastOrderCheckTimestamp() || Date.now(),
     });
 
-    // Dengarkan pesan dari Service Worker & in-app notification click untuk SEMUA user (termasuk klik notif Live Chat / Balas Cepat)
     const handleSwMessage = (event: MessageEvent) => {
       const data = event.data;
       if (!data || typeof data !== 'object') return;
@@ -2463,7 +2619,6 @@ export default function App() {
     }
     window.addEventListener('wms_inapp_notification_click', handleInAppNotifClick);
 
-    // Cek parameter ?room=..., ?page=..., ?order=..., ?subTab=..., ?manualSubTab=..., ?hrSection=..., ?produksiTab=..., ?kodeProduksi=... jika dibuka dari klik notifikasi saat aplikasi sebelumnya tertutup
     try {
       const urlParams = new URLSearchParams(window.location.search);
       const roomParam = urlParams.get('room');
@@ -2500,7 +2655,6 @@ export default function App() {
       }
     } catch {}
 
-    // Auto-minta izin notifikasi pada ketukan pertama user di layar HP/Browser jika status masih 'default'
     const handleFirstGesturePermission = () => {
       if (isNotificationSupported() && getNotificationPermissionStatus() === 'default') {
         requestNotificationPermission()
@@ -2513,7 +2667,7 @@ export default function App() {
       window.addEventListener('pointerdown', handleFirstGesturePermission, { once: true });
     }
 
-    if (!userIsAdmin && !userIsPicker && !userIsWarehouseOnly && !userCanProduksi) {
+    if (!userIsAdmin && !userIsPicker && !userIsWarehouseOnly && !userCanProduksi && !userIsCustomerService) {
       const swChatKeepAlive = setInterval(() => {
         if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
           void triggerServiceWorkerCheckNow();
@@ -2541,7 +2695,6 @@ export default function App() {
       if (k3) notifiedOrderIdsRef.current.add(k3);
     };
 
-    // 2. Cek pesanan baru, Retur baru, SPS baru, Tugas Picking, Hitung Ulang & HR baru (khusus warehouse) secara responsif
     const checkNewStoreOrdersDelta = async () => {
       if (!isSeeded) return;
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
@@ -2549,7 +2702,7 @@ export default function App() {
       }
       try {
         const nowMs = Date.now();
-        const MAX_AGE_MS = 12 * 60 * 60 * 1000; // Hanya yang dibuat dalam 12 jam terakhir
+        const MAX_AGE_MS = 12 * 60 * 60 * 1000;
         const prevCheck = getLastOrderCheckTimestamp();
         const deltaSinceIso = prevCheck && prevCheck > 0 && Math.abs(nowMs - prevCheck) <= MAX_AGE_MS
           ? new Date(Math.max(nowMs - MAX_AGE_MS, prevCheck - 5000)).toISOString()
@@ -2590,7 +2743,7 @@ export default function App() {
             }
           }
 
-          // Cek juga tiket Retur Barang baru untuk Admin
+          // Cek juga tiket Retur Barang baru untuk Admin & Warehouse
           try {
             const returQuery = deltaSinceIso
               ? `select=id,no_retur,nama_customer,created_at&created_at=gt.${encodeURIComponent(deltaSinceIso)}&order=created_at.desc&limit=10`
@@ -2605,7 +2758,7 @@ export default function App() {
             if (isMounted && Array.isArray(latestRetur)) {
               for (const r of [...latestRetur].reverse()) {
                 const noRetur = String(r.no_retur || '').trim().toUpperCase();
-                if (!noRetur || notifiedOrderIdsRef.current.has(noRetur)) continue;
+                if (!noRetur || notifiedOrderIdsRef.current.has(noRetur) || globalRealtimeStore.isOrderSubmittedLocally(noRetur)) continue;
                 const rowTs = r.created_at ? new Date(r.created_at).getTime() : nowMs;
                 notifiedOrderIdsRef.current.add(noRetur);
                 if (!isNaN(rowTs) && Math.abs(nowMs - rowTs) <= MAX_AGE_MS) {
@@ -2621,6 +2774,59 @@ export default function App() {
                     onClick: () =>
                       navigateToNotificationTargetRef.current({
                         page: 'pusat_resolusi',
+                      }),
+                  });
+                }
+              }
+            }
+          } catch {}
+        }
+
+        // Khusus Customer Service (CS): Cek update status tiket Retur Barang (diproses / dikirim / resi terbit)
+        if (userIsCustomerService) {
+          try {
+            const csReturQuery = deltaSinceIso
+              ? `select=id,no_retur,nama_customer,status,no_resi,no_sj_gudang_retur,no_invoice_return,updated_at&updated_at=gt.${encodeURIComponent(deltaSinceIso)}&order=updated_at.desc&limit=10`
+              : 'select=id,no_retur,nama_customer,status,no_resi,no_sj_gudang_retur,no_invoice_return,updated_at&order=updated_at.desc&limit=8';
+            const updatedReturs = await supabaseFetch<any[]>('retur_barang', 'GET', null, csReturQuery);
+            if (isMounted && Array.isArray(updatedReturs)) {
+              for (const r of [...updatedReturs].reverse()) {
+                const noRetur = String(r.no_retur || '').trim().toUpperCase();
+                if (!noRetur) continue;
+                const status = String(r.status || '').trim().toLowerCase();
+                const resi = String(r.no_resi || '').trim();
+                const sj = String(r.no_sj_gudang_retur || '').trim();
+                if (status === 'diterima' && !resi && !sj) continue;
+
+                const stateSignature = resi ? `RESI_${resi}` : sj ? `SJ_${sj}` : `STATUS_${status}`;
+                const dedupKey = `RTR_UPD_${noRetur}_${stateSignature}`;
+                if (notifiedOrderIdsRef.current.has(dedupKey)) continue;
+                notifiedOrderIdsRef.current.add(dedupKey);
+
+                const updTs = r.updated_at ? new Date(r.updated_at).getTime() : nowMs;
+                if (!isNaN(updTs) && Math.abs(nowMs - updTs) <= MAX_AGE_MS) {
+                  const customer = r.nama_customer || 'Customer';
+                  const title = resi
+                    ? `🚚 Retur Selesai — Resi Pengganti Terbit (#${noRetur})`
+                    : `🔄 Update Status Retur #${noRetur}`;
+                  const body = resi
+                    ? `Customer: ${customer} • No. Resi Pengganti: ${resi}`
+                    : `Customer: ${customer} • Status: ${status === 'diproses' ? 'Diproses Gudang' : status.toUpperCase()}${sj ? ` (SJ: ${sj})` : ''}`;
+
+                  playNewTaskChime();
+                  vibrateDevice([200, 100, 250]);
+                  showPushNotification(title, {
+                    body,
+                    tag: `retur-upd-${noRetur}`,
+                    page: 'pusat_resolusi',
+                    orderId: noRetur,
+                  });
+                  showToast(`${title} — ${body}`, 'info', {
+                    actionLabel: 'Lihat Retur →',
+                    onClick: () =>
+                      navigateToNotificationTargetRef.current({
+                        page: 'pusat_resolusi',
+                        orderId: noRetur,
                       }),
                   });
                 }
@@ -2896,6 +3102,29 @@ export default function App() {
               }
             } catch {}
           }
+        }
+
+        if (userIsCustomerService && !hasPersistedHistory) {
+          try {
+            const recentCsRetur = await supabaseFetch<any[]>(
+              'retur_barang',
+              'GET',
+              null,
+              'select=no_retur,status,no_resi,no_sj_gudang_retur&order=updated_at.desc&limit=20'
+            );
+            if (Array.isArray(recentCsRetur)) {
+              recentCsRetur.forEach((r) => {
+                const nr = String(r.no_retur || '').trim().toUpperCase();
+                if (!nr) return;
+                const status = String(r.status || '').trim().toLowerCase();
+                const resi = String(r.no_resi || '').trim();
+                const sj = String(r.no_sj_gudang_retur || '').trim();
+                if (resi) notifiedOrderIdsRef.current.add(`RTR_UPD_${nr}_RESI_${resi}`);
+                if (sj) notifiedOrderIdsRef.current.add(`RTR_UPD_${nr}_SJ_${sj}`);
+                if (status) notifiedOrderIdsRef.current.add(`RTR_UPD_${nr}_STATUS_${status}`);
+              });
+            }
+          } catch {}
         }
 
         if (userCanProduksi) {

@@ -343,8 +343,10 @@ async function checkNewOrdersInBackground() {
         }
       }
     } catch {}
+  }
 
-    // 2A-3. Cek Antrian Hitung Ulang Fisik Baru (recount_active_queue)
+  // 2A-3. Khusus Admin/Warehouse ATAU Tim Produksi: Cek Antrian Hitung Ulang Fisik Baru (recount_active_queue)
+  if (cfg.isAdmin || cfg.canProduksi) {
     try {
       const recUrl = `${cfg.supabaseUrl}/rest/v1/wms_system_docs?select=content,updated_at&section_id=eq.recount_active_queue&limit=1`;
       const resRec = await fetch(recUrl, { method: 'GET', headers });
@@ -391,6 +393,61 @@ async function checkNewOrdersInBackground() {
                   },
                 });
               }
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // 2A-4. Khusus Customer Service (CS): Cek Update Status Retur Barang (diproses / dikirim / resi terbit)
+  if (cfg.isCustomerService) {
+    try {
+      const csRtrUrl = `${cfg.supabaseUrl}/rest/v1/retur_barang?select=id,no_retur,nama_customer,status,no_resi,no_sj_gudang_retur,updated_at&order=updated_at.desc&limit=8`;
+      const resCsRtr = await fetch(csRtrUrl, { method: 'GET', headers });
+      if (resCsRtr.ok) {
+        const rowsCsRtr = await resCsRtr.json();
+        if (Array.isArray(rowsCsRtr)) {
+          for (const r of rowsCsRtr.reverse()) {
+            const noRetur = String(r.no_retur || '').trim().toUpperCase();
+            if (!noRetur) continue;
+            const status = String(r.status || '').trim().toLowerCase();
+            const resi = String(r.no_resi || '').trim();
+            const sj = String(r.no_sj_gudang_retur || '').trim();
+            if (status === 'diterima' && !resi && !sj) continue;
+
+            const stateSignature = resi ? `RESI_${resi}` : sj ? `SJ_${sj}` : `STATUS_${status}`;
+            const dedupKey = `RTR_UPD_${noRetur}_${stateSignature}`;
+            if (notifiedSet.has(dedupKey)) continue;
+
+            const updTs = r.updated_at ? new Date(r.updated_at).getTime() : nowMs;
+            if (updTs >= lastCheckMs - 60000 && Math.abs(nowMs - updTs) <= MAX_AGE_MS) {
+              notifiedSet.add(dedupKey);
+              newlyNotifiedIds.push(dedupKey);
+              updated = true;
+
+              const customer = r.nama_customer || 'Customer';
+              const title = resi
+                ? `🚚 Retur Selesai — Resi Pengganti Terbit (#${noRetur})`
+                : `🔄 Update Status Retur #${noRetur}`;
+              const body = resi
+                ? `Customer: ${customer} • No. Resi Pengganti: ${resi}`
+                : `Customer: ${customer} • Status: ${status === 'diproses' ? 'Diproses Gudang' : status.toUpperCase()}${sj ? ` (SJ: ${sj})` : ''}`;
+
+              await safeShowNotification(title, {
+                body,
+                icon: '/icon-192.png',
+                badge: '/icon-192.png',
+                vibrate: [200, 100, 250],
+                tag: `retur-upd-${noRetur}`,
+                renotify: true,
+                requireInteraction: true,
+                data: {
+                  url: '/',
+                  page: 'pusat_resolusi',
+                  orderId: noRetur,
+                },
+              });
             }
           }
         }
@@ -831,6 +888,9 @@ self.addEventListener('message', (event) => {
           supabaseAnonKey: data.supabaseAnonKey || existing.supabaseAnonKey || '',
           isAdmin: Boolean(data.isAdmin),
           isPicker: Boolean(data.isPicker),
+          isWarehouseOnly: Boolean(data.isWarehouseOnly),
+          canProduksi: Boolean(data.canProduksi),
+          isCustomerService: Boolean(data.isCustomerService),
           storeName: data.storeName || '',
           username: data.username || '',
           displayName: data.displayName || existing.displayName || '',

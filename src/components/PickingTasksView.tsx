@@ -290,7 +290,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               id: it.id,
               sku: it.sku,
               qty_picked: it.qty_picked,
-              qty_target: it.qty_target,
+              qty_req: it.qty_req,
             })),
             unexpectedItems,
             activeLocation,

@@ -50,6 +50,7 @@ import {
   normalizeWhatsAppNumber,
 } from '../services/whatsapp';
 import { ProductItem, PeminjamanItemForm, PeminjamanRecord, ChannelStockItem, UserSession, PickingListItem, StockRealtimeItem } from '../types';
+import { showPushNotification } from '../services/pushNotification';
 import {
   fetchPeminjamanFromSupabase,
   savePeminjamanToSupabase,
@@ -1230,6 +1231,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         const dateStr = nowIso.slice(2, 10).replace(/-/g, ''); // YYMMDD
         const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
         const generatedInvoice = `WA${dateStr}SPS${randomStr}`;
+        globalRealtimeStore.markOrderSubmittedLocally(generatedInvoice);
 
         const pickingTasks: PickingListItem[] = validItems.map((it) => {
           const rawSize = (it.size || '').trim();
@@ -1258,6 +1260,15 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       } catch (err) {
         console.warn('Gagal menambahkan ke picking_list Supabase', err);
       }
+
+      // Notifikasi konfirmasi submit peminjaman khusus untuk Peminjam
+      const totalSubmittedPcs = newRecord.items.reduce((sum, it) => sum + (Number(it.qty) || 1), 0);
+      showPushNotification(`✅ Permintaan Peminjaman #${noSps} Berhasil Diajukan`, {
+        body: `PIC: ${newRecord.namaPeminjam} • ${newRecord.keperluan} (${newRecord.items.length} SKU / ${totalSubmittedPcs} pcs) telah diteruskan ke Gudang & Picker.`,
+        tag: `sps-submit-confirm-${noSps}`,
+        page: 'peminjaman',
+        requireInteraction: false,
+      });
 
       // Update state & cache
       const updated = [newRecord, ...records.filter((r) => r.noPeminjaman !== noSps)];
