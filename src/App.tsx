@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useCallback, useRef, startTransition } from 'react';
 import confetti from 'canvas-confetti';
 import {
-  Menu, Scan, FileText, ShieldAlert, Package, X, Tag, BellRing, ShoppingBag } from 'lucide-react';
+  Menu, Scan, FileText, ShieldAlert, Package, X, Tag, BellRing, ShoppingBag, Sparkles } from 'lucide-react';
 
 import {
   CategoryType,
@@ -1020,6 +1020,22 @@ export default function App() {
   const [isApkModalOpen, setIsApkModalOpen] = useState<boolean>(false);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState<boolean>(false);
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
+  const [allowedAiUsers, setAllowedAiUsers] = useState<string[]>(() => {
+    try {
+      const cached = localStorage.getItem('wms_ai_allowed_users');
+      return cached ? JSON.parse(cached) : ['admin', 'warehouse', 'chocoadm'];
+    } catch {
+      return ['admin', 'warehouse', 'chocoadm'];
+    }
+  });
+
+  const userCanAccessAi = useMemo(() => {
+    if (!session) return false;
+    if (isSuperadmin(session)) return true;
+    const u = (session.username || '').toLowerCase();
+    return allowedAiUsers.includes(u);
+  }, [session, allowedAiUsers]);
+
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     const saved = localStorage.getItem('wms_sidebar_autohide_v2');
@@ -4230,6 +4246,18 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
+            {/* Tombol AI di Header Mobile (Khusus Superadmin & Whitelisted User) */}
+            {userCanAccessAi && (
+              <button
+                type="button"
+                onClick={() => setIsAiModalOpen(true)}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-black bg-gradient-to-r from-purple-600 via-indigo-600 to-primary-600 text-white shadow-xs active:scale-95 transition-all cursor-pointer"
+                title="Buka Asisten AI Pintar WMS"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>AI</span>
+              </button>
+            )}
             {session && (
               <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 truncate max-w-[120px]">
                 {session.name || getUserPersonName(session.username) || session.username}
@@ -4248,6 +4276,7 @@ export default function App() {
             onSelectTab={handleSelectPage}
             onCloseTab={handleCloseDesktopTab}
             onOpenCompanion={handleOpenCompanion}
+            onOpenAiModal={userCanAccessAi ? () => setIsAiModalOpen(true) : undefined}
             maxKeepAliveTabs={MAX_KEEP_ALIVE_TABS}
           />
         )}

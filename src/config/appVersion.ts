@@ -15,21 +15,35 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.8.1",
-  "versionCode": 281,
+  "version": "v2.9.0",
+  "versionCode": 290,
   "buildDate": "10 November 2026",
-  "buildHash": "wms-261110-v281-2027",
-  "releaseTitle": "WMS v2.8.1 — Optimasi Batch Lookup AI & Anti-Missing Stok Fisik",
+  "buildHash": "wms-261110-v290-2145",
+  "releaseTitle": "WMS v2.9.0 — Asisten AI Multimodal: Olah Lampiran Excel/CSV, Vision Foto OCR & Top Bar Panel Nav",
   "releaseNotes": [
-    "Batch Multi-Product Lookup 1-Turn",
-    "Akurasi Word-Boundary Token Matching (Ruth Top Cherry 5 pcs)",
-    "Penghapusan Total Halusinasi Minta Kode SKU",
-    "Loop Headroom & Anti-Truncate Response"
+    "Multimodal Vision OCR: Ekstraksi Foto Dokumen & Surat Jalan",
+    "Pengolahan Lampiran Spreadsheet Excel (.xlsx/.xls) dan CSV (.csv)",
+    "Navigasi Fleksibel Tombol AI di Panel Atas (Desktop & Mobile Header)",
+    "Pembersihan Shortcut Panel Samping di Setiap Tab (Rapi & Minimalis)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.8.1",
+    "versionCode": 281,
+    "buildDate": "10 November 2026",
+    "buildHash": "wms-261110-v281-2027",
+    "releaseTitle": "WMS v2.8.1 — Optimasi Batch Lookup AI & Anti-Missing Stok Fisik",
+    "releaseNotes": [
+      "Batch Multi-Product Lookup 1-Turn",
+      "Akurasi Word-Boundary Token Matching (Ruth Top Cherry 5 pcs)",
+      "Penghapusan Total Halusinasi Minta Kode SKU",
+      "Loop Headroom & Anti-Truncate Response"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.8.0",
     "versionCode": 280,
@@ -119,19 +133,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Memperbaiki pencocokan filter tanggal dropdown cepat pada ProduksiSpreadsheetView yang sebelumnya gagal karena pemisahan delimiter pipa",
       "Merapikan label dropdown tanggal penerimaan dan badge filter tanpa karakter mentah",
       "Menambahkan auto-fill nama produk untuk kode produksi alfabet seperti Madeline Top saat push/render"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.103",
-    "versionCode": 363,
-    "buildDate": "10 November 2026",
-    "buildHash": "wms-261110-v363-1456",
-    "releaseTitle": "WMS v2.6.103 — Pembersihan Pseudo Kategori Physical Stock & Standarisasi Lookup Size Master",
-    "releaseNotes": [
-      "Mengeliminasi kategori palsu Physical Stock dengan pencarian kategori resmi DealPOS via lookup nama produk",
-      "Menghilangkan pemaksaan varian ALL pada barang dengan size unassigned menjadi tanda strip (-)",
-      "Menghapus sisa regex endsWith size yang melangkahi master produk di Supabase Blok F dan Inventori"
     ],
     "minSupportedVersion": "v2.0.0"
   }

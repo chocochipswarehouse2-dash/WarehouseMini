@@ -19,6 +19,8 @@ import { getAllProductsFromLocalDb } from './localDb';
 import { normalizeLookupCode } from '../utils/trelloProduksiMatcher';
 import { getLocalCachedTrelloItems } from './trelloSyncService';
 import { ProductItem, PenerimaanProduksiItem } from '../types';
+import { AiAttachment } from '../utils/aiAttachmentParser';
+export type { AiAttachment };
 
 export const SYSTEM_DOC_AI_CONFIG_ID = 'wms_ai_config';
 
@@ -29,6 +31,7 @@ export interface AiChatMessage {
   timestamp: number;
   isStreaming?: boolean;
   toolCallsExecuted?: string[];
+  attachments?: AiAttachment[];
   reportTable?: {
     title: string;
     headers: string[];
@@ -929,26 +932,36 @@ PANDUAN & ATURAN UTAMA:
      | No | Nama Produk | Status | Stok Fisik Gudang | Lokasi Rak | Stok DealPOS |
    - Jika ada produk yang stok fisiknya 0 atau tidak ditemukan, beri tanda "❌ Kosong di Rak" pada tabel tersebut.
 
-3. AKURASI DATA GUDANG: Selalu gunakan Function Calling (tools) yang disediakan untuk mengecek data nyata di database WMS. JANGAN pernah mereka-reka (halusinasi) nomor rak atau stok barang.
-4. TANYA STOK: Laporkan stok fisik di rak gudang, kuota DealPOS, serta rincian lokasi rak (misal Rak B014, C082, SHOPEE, Transit, dsb.).
-5. TANYA KODE PRODUKSI: Hanya jika pengguna SECARA EKSPLISIT menanyakan kode produksi angka tertentu (misal "kode 6612 itu baju apa ya?"), panggil tool "lookup_production_code" untuk memeriksa Trello UP dan Riwayat Penerimaan.
-6. REKAP / LAPORAN: Saat diminta membuat rekap (misal rekap kedatangan Oktober), panggil tool "generate_production_recap". Sajikan jawaban dalam format tabel Markdown yang rapi, profesional, dan sertakan kesimpulan singkat.
-7. FITUR KERANJANG ORDER INVENTORY (INTERAKTIF & TANYA JAWAB NEGOSIASI):
+3. EKSTRAKSI LAMPIRAN MULTIMODAL (FOTO SURAT JALAN, NOTA, CORETIK KERTAS, FILE EXCEL & CSV):
+   - Jika pengguna melampirkan FOTO (surat jalan fisik vendor/CMT, nota, foto baju, label tag, coretan kertas daftar pesanan):
+     Gunakan kemampuan Multimodal Vision Anda untuk membaca teks, tabel, nama baju, warna, size, nomor surat jalan, dan kuantitas pcs pada gambar secara teliti.
+     Setelah mengekstrak nama-nama produk tersebut, otomatis verifikasi ke database WMS menggunakan tool "lookup_product_stock({ queries: [...] })" atau "search_manual_shipment" sesuai konteks pertanyaan pengguna!
+   - Jika pengguna melampirkan file EXCEL (.xlsx / .xls) atau CSV (.csv):
+     Data baris tabel telah diekstrak secara otomatis ke dalam prompt percakapan. Analisis kolom Nama Produk, Warna, Size, dan Qty.
+     Jika pengguna meminta cek stok atau minta dimasukkan ke keranjang order, gunakan data tabel tersebut untuk memanggil "lookup_product_stock" atau "add_to_inventory_cart"!
+
+4. AKURASI DATA GUDANG: Selalu gunakan Function Calling (tools) yang disediakan untuk mengecek data nyata di database WMS. JANGAN pernah mereka-reka (halusinasi) nomor rak atau stok barang.
+5. TANYA STOK: Laporkan stok fisik di rak gudang, kuota DealPOS, serta rincian lokasi rak (misal Rak B014, C082, SHOPEE, Transit, dsb.).
+6. TANYA KODE PRODUKSI: Hanya jika pengguna SECARA EKSPLISIT menanyakan kode produksi angka tertentu (misal "kode 6612 itu baju apa ya?"), panggil tool "lookup_production_code" untuk memeriksa Trello UP dan Riwayat Penerimaan.
+7. REKAP / LAPORAN: Saat diminta membuat rekap (misal rekap kedatangan Oktober), panggil tool "generate_production_recap". Sajikan jawaban dalam format tabel Markdown yang rapi, profesional, dan sertakan kesimpulan singkat.
+8. FITUR KERANJANG ORDER INVENTORY (INTERAKTIF & TANYA JAWAB NEGOSIASI):
    Ketika pengguna meminta untuk memasukkan barang ke keranjang order (misal "Tolong masukkan sailor top dan taylor pants ke keranjang"):
    a. JANGAN LANGSUNG EKSEKUSI JIKA BELUM JELAS: Panggil terlebih dahulu tool "lookup_product_stock" untuk memeriksa seluruh varian (warna & size) dan jumlah stok fisik real-time di rak.
    b. TANYA QTY JIKA PENGGUNA BELUM MENYEBUTKAN JUMLAH: Jika pengguna tidak menyebutkan qty, tanyakan dengan ramah mau dimasukkan berapa pcs untuk tiap varian yang ada stoknya.
    c. TAWARKAN ALTERNATIF JIKA WARNA KOSONG: Jika pengguna meminta warna yang stok fisiknya 0 pcs (misal minta warna Maroon tapi di rak kosong), jelaskan bahwa warna Maroon sedang kosong, lalu secara aktif TAWARKAN warna lain yang masih tersedia stok fisiknya di rak (misal: "Warna Maroon kosong kak, tapi ready warna Forest (12 pcs di B020) dan Black (5 pcs di B015). Mau yang warna Forest atau Black?").
    d. TAWARKAN ALTERNATIF JIKA SIZE KOSONG: Jika pengguna minta size S tetapi size S kosong (0 pcs), tawarkan alternatif size lain yang masih ada stok di rak (misal size M atau L).
    e. EKSEKUSI SETELAH DISETUJUI / DIKONFIRMASI: Jika pengguna sudah memberikan konfirmasi qty, warna, dan size (atau dari awal sudah jelas dan ada stoknya), PANGGIL TOOL "add_to_inventory_cart". Sajikan tabel konfirmasi SKU, Nama, Size, Qty, dan Posisi Rak, lalu infokan bahwa pesanan telah berhasil masuk ke Keranjang Order Inventory dan bisa langsung dibuka di menu Inventory!
-8. TONE OF VOICE: Ramah, komunikatif, solutif, profesional, dan selalu mengutamakan kemudahan pengguna tanpa menyulitkan dengan istilah teknis barcode.`;
+9. TONE OF VOICE: Ramah, komunikatif, solutif, profesional, dan selalu mengutamakan kemudahan pengguna tanpa menyulitkan dengan istilah teknis barcode.`;
 
 /**
  * Mengirim pesan ke Google Gemini dengan multi-turn Tool Execution loop
+ * Mendukung Multimodal Vision (Foto/Gambar) dan Ekstraksi Dokumen Spreadsheet (Excel/CSV)
  */
 export async function sendChatMessageToGemini(
   conversationHistory: AiChatMessage[],
   userPrompt: string,
-  onToolCallStart?: (toolName: string) => void
+  onToolCallStart?: (toolName: string) => void,
+  attachments?: AiAttachment[]
 ): Promise<{ text: string; executedTools: string[] }> {
   let apiKey = getActiveGeminiApiKey();
 
@@ -980,16 +993,63 @@ export async function sendChatMessageToGemini(
   const recentHistory = conversationHistory.slice(-6);
   recentHistory.forEach((msg) => {
     if (msg.role === 'user') {
-      contents.push({ role: 'user', parts: [{ text: msg.text }] });
+      const histParts: any[] = [];
+      // Jika ada lampiran gambar di riwayat user sebelumnya
+      if (msg.attachments && msg.attachments.length > 0) {
+        msg.attachments.forEach((att) => {
+          if (att.type === 'image' && att.base64Data) {
+            histParts.push({
+              inlineData: {
+                mimeType: att.mimeType || 'image/jpeg',
+                data: att.base64Data
+              }
+            });
+          }
+        });
+      }
+      histParts.push({ text: msg.text });
+      contents.push({ role: 'user', parts: histParts });
     } else if (msg.role === 'model') {
       contents.push({ role: 'model', parts: [{ text: msg.text }] });
     }
   });
 
-  // Tambahkan prompt baru dari user
+  // Tambahkan prompt & lampiran baru dari user
+  const userParts: any[] = [];
+
+  // 1. Sisipkan Gambar (Vision inlineData base64) jika ada
+  if (attachments && attachments.length > 0) {
+    attachments.forEach((att) => {
+      if (att.type === 'image' && att.base64Data) {
+        userParts.push({
+          inlineData: {
+            mimeType: att.mimeType || 'image/jpeg',
+            data: att.base64Data
+          }
+        });
+      }
+    });
+  }
+
+  // 2. Sisipkan Teks Prompt beserta Ekstraksi Tabel Excel / CSV
+  let fullPromptText = (userPrompt || '').trim();
+  if (attachments && attachments.length > 0) {
+    const docAttachments = attachments.filter((a) => a.type === 'excel' || a.type === 'csv' || a.type === 'file');
+    if (docAttachments.length > 0) {
+      const docSummaries = docAttachments.map((doc) => {
+        return `\n\n--- LAMPIRAN FILE: "${doc.name}" (${doc.rowCount || 0} baris data) ---\n${doc.extractedText || ''}`;
+      }).join('\n');
+      fullPromptText = `${fullPromptText}\n${docSummaries}`.trim();
+    }
+  }
+
+  userParts.push({
+    text: fullPromptText || (attachments && attachments.length > 0 ? 'Tolong periksa, ekstrak data dari lampiran di atas, dan analisis dengan database WMS.' : 'Halo')
+  });
+
   contents.push({
     role: 'user',
-    parts: [{ text: userPrompt }]
+    parts: userParts
   });
 
   const executedTools: string[] = [];

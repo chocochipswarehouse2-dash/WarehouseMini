@@ -26,10 +26,15 @@ import {
   History,
   Trash2,
   Clock,
-  Plus
+  Plus,
+  Paperclip,
+  Camera,
+  Image as ImageIcon,
+  Loader2
 } from 'lucide-react';
 import { UserSession } from '../../types';
 import { isSuperadmin } from '../../services/permissions';
+import { parseAiAttachmentFile, AiAttachment } from '../../utils/aiAttachmentParser';
 import {
   AiChatMessage,
   sendChatMessageToGemini,
@@ -137,6 +142,44 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [activeToolName, setActiveToolName] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Lampiran Multimodal (Foto Dokumen, Excel, CSV)
+  const [pendingAttachments, setPendingAttachments] = useState<AiAttachment[]>([]);
+  const [isParsingAttachment, setIsParsingAttachment] = useState<boolean>(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsParsingAttachment(true);
+    try {
+      const parsedList: AiAttachment[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        try {
+          const parsed = await parseAiAttachmentFile(file);
+          parsedList.push(parsed);
+        } catch (fileErr: any) {
+          console.error('[WMS AI] Gagal parse file:', fileErr);
+          onNotify?.(`Gagal memproses ${file.name}: ${fileErr?.message || 'File tidak valid'}`, 'error');
+        }
+      }
+
+      if (parsedList.length > 0) {
+        setPendingAttachments((prev) => [...prev, ...parsedList]);
+        onNotify?.(`Berhasil melampirkan ${parsedList.length} file.`, 'success');
+      }
+    } finally {
+      setIsParsingAttachment(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const handleRemoveAttachment = (id: string) => {
+    setPendingAttachments((prev) => prev.filter((a) => a.id !== id));
+  };
 
   const [cartCount, setCartCount] = useState<number>(() => {
     try {
@@ -330,13 +373,17 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
 
   const handleSendMessage = async (textToSend?: string) => {
     const prompt = (textToSend || inputPrompt).trim();
-    if (!prompt || isLoading) return;
+    if ((!prompt && pendingAttachments.length === 0) || isLoading) return;
 
+    const currentAtts = [...pendingAttachments];
     setInputPrompt('');
+    setPendingAttachments([]);
+
     const userMsg: AiChatMessage = {
       id: `user_${Date.now()}`,
       role: 'user',
-      text: prompt,
+      text: prompt || (currentAtts.length > 0 ? (currentAtts[0].type === 'image' ? 'Analisis foto dokumen terlampir' : `Periksa file lampiran ${currentAtts[0].name}`) : 'Halo'),
+      attachments: currentAtts.length > 0 ? currentAtts : undefined,
       timestamp: Date.now()
     };
 
@@ -348,15 +395,18 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
     try {
       const result = await sendChatMessageToGemini(
         newHistory,
-        prompt,
+        userMsg.text,
         (toolName) => {
           let toolLabel = 'Mengecek data WMS...';
           if (toolName === 'lookup_product_stock') toolLabel = 'Mengecek katalog & stok rak gudang...';
           else if (toolName === 'lookup_production_code') toolLabel = 'Mencari kode produksi di Trello UP...';
           else if (toolName === 'generate_production_recap') toolLabel = 'Menghitung rekapitulasi penerimaan barang...';
           else if (toolName === 'search_manual_shipment') toolLabel = 'Mencari data resi pengiriman...';
+          else if (toolName === 'add_to_inventory_cart') toolLabel = 'Memasukkan barang ke Keranjang Order...';
+          else if (toolName === 'view_inventory_cart') toolLabel = 'Melihat isi Keranjang Order...';
           setActiveToolName(toolLabel);
-        }
+        },
+        currentAtts
       );
 
       const botMsg: AiChatMessage = {
@@ -1034,6 +1084,36 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                       </div>
                     )}
 
+                    {/* Render Attachments in User Message */}
+                    {isUser && msg.attachments && msg.attachments.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {msg.attachments.map((att) => (
+                          <div
+                            key={att.id}
+                            className="flex items-center gap-2 p-1.5 rounded-lg bg-black/20 border border-white/20 text-[11px]"
+                          >
+                            {att.type === 'image' && att.previewUrl ? (
+                              <img
+                                src={att.previewUrl}
+                                alt={att.name}
+                                className="w-16 h-16 object-cover rounded-md border border-white/30"
+                              />
+                            ) : (
+                              <div className="flex items-center gap-1.5 px-1 font-bold">
+                                <FileSpreadsheet className="w-4 h-4 text-emerald-300 shrink-0" />
+                                <span className="truncate max-w-[140px]">{att.name}</span>
+                                {att.rowCount !== undefined && (
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/20 font-mono">
+                                    {att.rowCount} baris
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
                     {/* Content */}
                     <div className="prose dark:prose-invert max-w-none text-xs leading-relaxed">
                       {isUser ? <p className="whitespace-pre-wrap">{msg.text}</p> : renderFormattedContent(msg.text)}
@@ -1105,6 +1185,50 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
         {/* INPUT BAR */}
         {/* ========================================================================= */}
         <div className="p-3 sm:p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
+          {/* Pending Attachments Preview Chips */}
+          {pendingAttachments.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 mb-2.5 p-2 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 animate-in fade-in duration-150">
+              {pendingAttachments.map((att) => (
+                <div
+                  key={att.id}
+                  className="flex items-center gap-2 p-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs shadow-2xs"
+                >
+                  {att.type === 'image' && att.previewUrl ? (
+                    <img
+                      src={att.previewUrl}
+                      alt={att.name}
+                      className="w-10 h-10 object-cover rounded-md border border-slate-200 dark:border-slate-700 shrink-0"
+                    />
+                  ) : (
+                    <div className="p-1 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 shrink-0">
+                      <FileSpreadsheet className="w-4 h-4" />
+                    </div>
+                  )}
+                  <div className="min-w-0 max-w-[160px]">
+                    <p className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate">{att.name}</p>
+                    <p className="text-[9px] text-slate-400">
+                      {att.type === 'image' ? 'Foto Dokumen (Vision)' : `${att.rowCount || 0} baris data`}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveAttachment(att.id)}
+                    className="p-1 text-slate-400 hover:text-rose-500 rounded-md transition-colors cursor-pointer"
+                    title="Hapus lampiran"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+              {isParsingAttachment && (
+                <div className="flex items-center gap-1.5 text-xs text-indigo-500 px-2 py-1 font-bold animate-pulse">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Mengekstrak file...</span>
+                </div>
+              )}
+            </div>
+          )}
+
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -1112,6 +1236,46 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
             }}
             className="flex items-end gap-2"
           >
+            {/* Hidden File & Camera Inputs */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".xlsx,.xls,.csv,image/jpeg,image/png,image/webp"
+              multiple
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+            <input
+              type="file"
+              ref={cameraInputRef}
+              accept="image/*"
+              capture="environment"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+
+            {/* Action Buttons: Paperclip & Camera */}
+            <div className="flex items-center gap-1 shrink-0 pb-0.5">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isLoading || isParsingAttachment}
+                title="Lampirkan File Excel (.xlsx, .xls), CSV (.csv), atau Foto Dokumen"
+                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:text-indigo-600 hover:border-indigo-400 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/40 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+              >
+                <Paperclip className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => cameraInputRef.current?.click()}
+                disabled={isLoading || isParsingAttachment}
+                title="Ambil Foto Dokumen / Baju dengan Kamera (Gemini Vision OCR)"
+                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:text-indigo-600 hover:border-indigo-400 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/40 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+              >
+                <Camera className="w-4 h-4" />
+              </button>
+            </div>
+
             <div className="flex-1 relative">
               <textarea
                 ref={textareaRef}
@@ -1124,7 +1288,11 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                   }
                 }}
                 rows={1}
-                placeholder="Tanya stok produk, kode produksi, atau minta rekap laporan... (Enter untuk kirim)"
+                placeholder={
+                  pendingAttachments.length > 0
+                    ? 'Ketik instruksi untuk lampiran ini... (atau Enter langsung untuk analisis)'
+                    : 'Tanya stok, minta rekap, atau lampirkan Excel/Foto... (Enter kirim)'
+                }
                 disabled={isLoading}
                 className="w-full px-3.5 py-2.5 text-xs sm:text-sm bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-primary-500 text-slate-900 dark:text-white placeholder-slate-400 resize-none max-h-32 transition-all"
               />
@@ -1132,7 +1300,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
 
             <button
               type="submit"
-              disabled={isLoading || !inputPrompt.trim()}
+              disabled={isLoading || (!inputPrompt.trim() && pendingAttachments.length === 0)}
               className="p-2.5 sm:px-4 sm:py-2.5 bg-gradient-to-r from-primary-600 to-indigo-600 hover:from-primary-700 hover:to-indigo-700 text-white rounded-xl font-bold text-xs shadow-md shadow-primary-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
             >
               <Send className="w-4 h-4" />

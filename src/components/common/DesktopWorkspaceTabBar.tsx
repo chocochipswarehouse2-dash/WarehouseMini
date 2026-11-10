@@ -85,6 +85,7 @@ interface DesktopWorkspaceTabBarProps {
   onSelectTab: (page: ActivePage) => void;
   onCloseTab: (page: ActivePage) => void;
   onOpenCompanion: (page: ActivePage | null) => void;
+  onOpenAiModal?: () => void;
   maxKeepAliveTabs: number;
 }
 
@@ -96,6 +97,7 @@ export const DesktopWorkspaceTabBar: React.FC<DesktopWorkspaceTabBarProps> = ({
   onSelectTab,
   onCloseTab,
   onOpenCompanion,
+  onOpenAiModal,
   maxKeepAliveTabs,
 }) => {
   const [isQuickPickerOpen, setIsQuickPickerOpen] = useState(false);
@@ -164,29 +166,6 @@ export const DesktopWorkspaceTabBar: React.FC<DesktopWorkspaceTabBarProps> = ({
                   />
                 )}
               </button>
-
-              {/* Quick Pin as Slide-Over Companion Button (only on non-active tabs) */}
-              {!isActive && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenCompanion(isCompanion ? null : tabPage);
-                  }}
-                  className={`p-0.5 rounded-md transition-colors cursor-pointer ${
-                    isCompanion
-                      ? 'bg-purple-200 dark:bg-purple-800 text-purple-900 dark:text-purple-100'
-                      : 'text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 hover:bg-slate-200/70 dark:hover:bg-slate-700/70 opacity-75 group-hover:opacity-100'
-                  }`}
-                  title={
-                    isCompanion
-                      ? `Tutup Panel Samping (${meta.shortLabel})`
-                      : `Buka ${meta.shortLabel} sebagai Panel Samping berdampingan dengan ${getWorkspacePageMeta(activePage).shortLabel}`
-                  }
-                >
-                  <PanelRightOpen className="w-3 h-3" />
-                </button>
-              )}
 
               {/* Close Tab Button (if more than 1 tab open) */}
               {visibleTabs.length > 1 && (
@@ -282,8 +261,20 @@ export const DesktopWorkspaceTabBar: React.FC<DesktopWorkspaceTabBarProps> = ({
         </div>
       </div>
 
-      {/* Right: Universal Companion Slide-Over Trigger (Bebas pilih halaman apa saja) */}
+      {/* Right: Asisten AI Pintar & Universal Companion Slide-Over Trigger */}
       <div className="flex items-center gap-1.5 shrink-0">
+        {onOpenAiModal && (
+          <button
+            type="button"
+            onClick={onOpenAiModal}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black bg-gradient-to-r from-purple-600 via-indigo-600 to-primary-600 hover:from-purple-700 hover:to-primary-700 text-white shadow-xs hover:shadow-sm active:scale-95 transition-all cursor-pointer"
+            title="Buka Asisten AI Pintar WMS (Cek Stok, Rekap, Input Keranjang, Vision)"
+          >
+            <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+            <span>Asisten AI</span>
+          </button>
+        )}
+
         {companionPage ? (
           <button
             type="button"
