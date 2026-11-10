@@ -9,6 +9,7 @@ import { createPickingSuratJalanSupabase, fetchStockForSkus, isWarehouseLocation
 import { getWhatsAppWebUrl, getFonnteConfig, sendFonnteMessage, generateRefillPickingGroupMessage } from '../../services/whatsapp';
 import { playSaveSuccessChime, playSuccessBeep } from '../../services/audio';
 import { extractSizeFromSku, cleanProductName, extractCleanSizeToken } from '../../utils/sortUtils';
+import { lookupProductBySku } from '../../utils/productLookup';
 
 export type PickingTab = 'print' | 'whatsapp' | 'app';
 
@@ -308,13 +309,13 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
             (p) => p.k && p.k.replace(/\s+/g, '').toUpperCase() === cleanSku.replace(/\s+/g, '')
           );
 
-        let size = extractCleanSizeToken(prod?.s) || extractCleanSizeToken((it as any).size);
-        const skuSize = extractSizeFromSku(cleanSku);
-        if (skuSize && skuSize !== '-' && skuSize !== 'DEFAULT') {
-          size = skuSize;
-        }
-        if (!size || size === '-') {
-          size = '-';
+        const lookup = lookupProductBySku(cleanSku, productCatalog, it.nama_produk, (it as any).size);
+        let size = (lookup.found && lookup.size !== '-') 
+          ? lookup.size 
+          : (extractCleanSizeToken(prod?.s) || extractCleanSizeToken((it as any).size));
+        if (!size || size === '-' || size === 'DEFAULT') {
+          const skuSize = extractSizeFromSku(cleanSku);
+          size = (skuSize && skuSize !== '-' && skuSize !== 'DEFAULT') ? skuSize : '-';
         }
 
         const locs = getProductLocations(cleanSku, (it as any).lokasi);

@@ -57,6 +57,7 @@ import { getFormalStoreBrandName } from '../../services/emailService';
 import { hasPermission, isSuperadmin } from '../../services/permissions';
 import { BulkUpdateResiIgLiveModal } from './BulkUpdateResiIgLiveModal';
 import { ImportPesananIgLiveModal } from './ImportPesananIgLiveModal';
+import { lookupProductBySku } from '../../utils/productLookup';
 import QRCode from 'qrcode';
 
 const QRCodeDisplay = ({ text }: { text: string }) => {
@@ -2471,15 +2472,11 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                         <tbody>
                           {(order.items || []).length > 0 ? (
                             (order.items || []).map((it, itIdx) => {
-                              let cleanName = it.nama_produk || '-';
-                              let size = it.size || '';
-                              if (!size && it.nama_produk) {
-                                const parts = it.nama_produk.split('-');
-                                if (parts.length > 1) {
-                                  size = parts[parts.length - 1].trim();
-                                  cleanName = parts.slice(0, parts.length - 1).join('-').trim();
-                                }
-                              }
+                              const lookup = lookupProductBySku(it.sku, productCatalog, it.nama_produk, it.size);
+                              const cleanName = lookup.nama_produk || it.nama_produk || '-';
+                              const size = (it.size && it.size !== '-' && it.size.toLowerCase() !== 'default')
+                                ? it.size
+                                : (lookup.size !== '-' ? lookup.size : '-');
                               return (
                                 <tr key={itIdx} className="border-b border-dashed border-black">
                                   <td className="py-1 align-top">{itIdx + 1}.</td>

@@ -1,13 +1,14 @@
 {
-  "version": "v2.6.101",
-  "versionCode": 361,
+  "version": "v2.6.102",
+  "versionCode": 362,
   "buildDate": "10 November 2026",
-  "buildHash": "wms-261110-v361-0759",
-  "releaseTitle": "WMS v2.6.101 — Standardisasi Pure O(1) Master Product SKU Lookup & Eliminasi Regex Parsing",
+  "buildHash": "wms-261110-v362-1126",
+  "releaseTitle": "WMS v2.6.102 — Eliminasi Menyeluruh Regex & String Splitting Nama Produk & Size",
   "releaseNotes": [
-    "Standarisasi lookup nama produk & size berbasis VLOOKUP/XLOOKUP murni O(1) dari master_produk",
-    "Eliminasi regex parsing dan hardcoded matrix pada SKU (DF26, letter code, dsb)",
-    "Sinkronisasi master catalog in-memory 28.000+ SKU di seluruh modul (Picking, Live, Produksi, Distribusi)"
+    "Standarisasi lookup O(1) master catalog untuk nama produk & size di seluruh modul",
+    "Pencegahan polusi suffix size pada nama produk di Manual Shipment & IG Live",
+    "Dukungan kode produksi alfanumerik (cth: D1055, CCT045) & auto-lookup Trello UP ke Google Sheet",
+    "Perbaikan penentuan size di QC Job Card, Distribusi Picking, dan WhatsApp"
   ],
   "minSupportedVersion": "v2.0.0"
 }

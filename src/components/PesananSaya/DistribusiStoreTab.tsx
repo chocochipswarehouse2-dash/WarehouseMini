@@ -37,6 +37,7 @@ import { fetchWithDeltaSync, clearDeltaSyncCache } from '../../services/gasSync'
 import { playSuccessBeep, playErrorBeep } from '../../services/audio';
 import { SuratJalanSelisihMessageParams, generateSuratJalanSelisihMessage, getWhatsAppWebUrl } from '../../services/whatsapp';
 import { extractSizeFromSku, formatProductNameWithSize, resolveProductName, resolveProductDisplaySize, cleanProductName, extractCleanSizeToken, isRealSize } from '../../utils/sortUtils';
+import { lookupProductBySku } from '../../utils/productLookup';
 import { isWarehouseLocation } from '../../services/supabase';
 import { DistribusiPickingModal } from './DistribusiPickingModal';
 import { DistribusiSelisihWaModal } from './DistribusiSelisihWaModal';
@@ -2031,9 +2032,11 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                               <span className="inline-block px-2 py-0.5 rounded-md font-mono text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                                 {isRealSize(item.size)
                                   ? item.size
-                                  : (extractSizeFromSku(item.sku) !== '-'
-                                      ? extractSizeFromSku(item.sku)
-                                      : (item.size === 'Default' || resolveProductDisplaySize(item.sku, item.size) === 'Default' ? 'Default' : '-'))}
+                                  : (lookupProductBySku(item.sku, productCatalog, item.nama_produk, item.size).size !== '-'
+                                      ? lookupProductBySku(item.sku, productCatalog, item.nama_produk, item.size).size
+                                      : (extractSizeFromSku(item.sku) !== '-'
+                                          ? extractSizeFromSku(item.sku)
+                                          : (item.size === 'Default' || resolveProductDisplaySize(item.sku, item.size) === 'Default' ? 'Default' : '-')))}
                               </span>
                             </td>
 
@@ -2877,9 +2880,11 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                           <span className="inline-block px-1.5 py-0.5 rounded font-mono text-[11px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
                                             {isRealSize(item.size)
                                               ? item.size
-                                              : (extractSizeFromSku(item.sku) !== '-'
-                                                  ? extractSizeFromSku(item.sku)
-                                                  : (item.size === 'Default' || resolveProductDisplaySize(item.sku, item.size) === 'Default' ? 'Default' : '-'))}
+                                              : (lookupProductBySku(item.sku, productCatalog, item.nama_produk, item.size).size !== '-'
+                                                  ? lookupProductBySku(item.sku, productCatalog, item.nama_produk, item.size).size
+                                                  : (extractSizeFromSku(item.sku) !== '-'
+                                                      ? extractSizeFromSku(item.sku)
+                                                      : (item.size === 'Default' || resolveProductDisplaySize(item.sku, item.size) === 'Default' ? 'Default' : '-')))}
                                           </span>
                                         </td>
                                         {/* 3. SKU */}

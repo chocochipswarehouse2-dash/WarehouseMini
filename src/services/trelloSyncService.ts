@@ -115,9 +115,14 @@ export function resolveTrelloListMeta(listId?: string, listName?: string): Trell
 export function extractBaseItemCode(raw?: string): string {
   if (!raw) return '';
   const trimmed = raw.trim();
-  const codeMatch = trimmed.match(/^(\d{3,8}[A-Za-z]?)\b/);
-  if (codeMatch) {
+  // 1. Pola kode produksi angka atau alfanumerik (cth: D1055, 25762, CCT045, 25751, DF26KBF03)
+  const codeMatch = trimmed.match(/^([A-Za-z]{0,4}\d{2,8}[A-Za-z0-9_-]*?)\b/);
+  if (codeMatch && codeMatch[1].length >= 3) {
     return codeMatch[1].toUpperCase();
+  }
+  const firstToken = trimmed.split(/[\/\-\s]+/)[0].trim().toUpperCase();
+  if (firstToken && firstToken.length >= 3 && /\d{2,}/.test(firstToken)) {
+    return firstToken;
   }
   return trimmed.toUpperCase();
 }
@@ -158,11 +163,11 @@ export function parseCardName(cardName: string): { itemCode: string; itemName: s
     };
   }
 
-  // Jika dimulai dengan kode angka diikuti spasi/kurung (misal "622289 (foto hanya ilustrasi)")
-  const leadingCodeMatch = cleanRaw.match(/^(\d{4,8}[A-Za-z]?)\s+(.+)$/);
+  // Jika dimulai dengan kode angka atau alfanumerik (misal "D1055 Crimson Top", "622289 (foto hanya ilustrasi)")
+  const leadingCodeMatch = cleanRaw.match(/^([A-Za-z]{0,4}\d{2,8}[A-Za-z0-9_-]*?)\s+(.+)$/);
   if (leadingCodeMatch) {
     return {
-      itemCode: leadingCodeMatch[1].trim(),
+      itemCode: leadingCodeMatch[1].trim().toUpperCase(),
       itemName: leadingCodeMatch[2].trim(),
       qtyNote
     };

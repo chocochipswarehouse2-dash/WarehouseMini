@@ -58,6 +58,7 @@ import {
   generateShortOrderId,
 } from '../../utils/transactionGenerator';
 import { getUserPersonName, formatOperatorWithPersonName } from '../../utils/userResolver';
+import { lookupProductBySku } from '../../utils/productLookup';
 import { globalRealtimeStore } from '../../services/store';
 import { liveChatManager } from '../../services/liveChatService';
 
@@ -1646,15 +1647,14 @@ _WMS Warehouse System_`;
       }
       
       const displayNama = product!.p || (product as any).nama_produk || product!.n || 'Unknown Product';
-      const displaySize = product!.s && product!.s !== 'ALL' && product!.s !== 'Default' ? ` - ${product!.s}` : '';
-      const fullName = `${displayNama}${displaySize}`;
+      const cleanSize = product!.s && product!.s !== 'ALL' && product!.s !== 'Default' ? product!.s : '';
       return [...prev, {
         id: `item-${Date.now()}`,
-        nama_produk: fullName,
+        nama_produk: displayNama,
         sku: product!.k,
         qty: 1,
         fulfillment: '',
-        size: product!.s && product!.s !== 'ALL' && product!.s !== 'Default' ? product!.s : ''
+        size: cleanSize
       }];
     });
     onShowToast(`Berhasil menambahkan ${product.p || (product as any).nama_produk || product.n || product.k}`, 'success');
@@ -2786,19 +2786,11 @@ _WMS Warehouse System_`;
           .map((it, idx) => {
             const itemNum = idx + 1;
             const cleanSku = (it.sku || '-').trim();
-            const cleanName = (it.nama_produk || cleanSku || '-').trim();
-
-            let rawSize = (it.size || '').trim();
-            if (!rawSize || rawSize === '-' || rawSize.toLowerCase() === 'default') {
-              const parts = cleanName.split('-');
-              if (parts.length > 1) {
-                const candidate = parts[parts.length - 1].trim();
-                if (candidate && candidate.length <= 10) {
-                  rawSize = candidate;
-                }
-              }
-            }
-            const cleanSize = rawSize && rawSize.toLowerCase() !== 'default' ? rawSize : '-';
+            const lookup = lookupProductBySku(cleanSku, productCatalog, it.nama_produk, it.size);
+            const cleanName = lookup.nama_produk || it.nama_produk || cleanSku;
+            const cleanSize = (it.size && it.size !== '-' && it.size.toLowerCase() !== 'default')
+              ? it.size
+              : (lookup.size !== '-' ? lookup.size : '-');
 
             // Sama persis dengan Picking A4: jika fulfillment Store -> lokasi = kode/nama Store; jika Gudang/MKT -> lokasi rak
             const ful = (it.fulfillment || (it as any).toko_asal || (it as any).store_name || '').trim();
@@ -5638,18 +5630,16 @@ _WMS Warehouse System_`;
 
       if (o.items && o.items.length > 0) {
         o.items.forEach((it) => {
-          let size = it.size || '';
-          if (!size && it.nama_produk) {
-            const parts = it.nama_produk.split('-');
-            if (parts.length > 1) {
-              size = parts[parts.length - 1].trim();
-            }
-          }
+          const lookup = lookupProductBySku(it.sku, productCatalog, it.nama_produk, it.size);
+          const cleanName = lookup.nama_produk || it.nama_produk || '';
+          const size = (it.size && it.size !== '-' && it.size.toLowerCase() !== 'default')
+            ? it.size
+            : (lookup.size !== '-' ? lookup.size : '');
 
           const rowCols = [
             ...baseOrderCols,
             it.sku || '',
-            it.nama_produk || '',
+            cleanName,
             size,
             it.qty || 1,
             it.fulfillment || '',
@@ -10401,13 +10391,11 @@ _WMS Warehouse System_`;
                           <tbody>
                             {order.items && order.items.length > 0 ? (
                               order.items.map((it, idx) => {
-                                let cleanName = it.nama_produk;
-                                let size = '';
-                                const parts = it.nama_produk.split('-');
-                                if (parts.length > 1) {
-                                  size = parts[parts.length - 1].trim();
-                                  cleanName = parts.slice(0, parts.length - 1).join('-').trim();
-                                }
+                                const lookup = lookupProductBySku(it.sku, productCatalog, it.nama_produk, it.size);
+                                const cleanName = lookup.nama_produk || it.nama_produk;
+                                const size = (it.size && it.size !== '-' && it.size.toLowerCase() !== 'default')
+                                  ? it.size
+                                  : (lookup.size !== '-' ? lookup.size : '-');
                                 const isSold = it.item_status === 'sold_out' || it.item_status === 'cancelled';
                                 return (
                                   <tr key={idx} className={`border-b border-dashed border-black ${isSold ? 'opacity-50 line-through' : ''}`}>

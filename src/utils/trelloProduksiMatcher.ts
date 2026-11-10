@@ -61,10 +61,27 @@ export function buildTrelloLookupDictionary(items: TrelloUpItem[]): TrelloLookup
       byExactCode.get(exact)!.push(item);
     }
 
+    // Indeks bagian pecahan dari kode compound (misal "25762 / 26762")
+    const slashParts = (item.item_code || '').split(/[\/\&]+/).map(p => normalizeLookupCode(p)).filter(p => p.length >= 3);
+    slashParts.forEach(sp => {
+      if (sp !== exact) {
+        if (!byExactCode.has(sp)) byExactCode.set(sp, []);
+        byExactCode.get(sp)!.push(item);
+      }
+      if (!byBaseCode.has(sp)) byBaseCode.set(sp, []);
+      byBaseCode.get(sp)!.push(item);
+    });
+
     const base = extractBaseItemCode(item.item_code || item.card_name);
     if (base && base.length >= 3) {
       if (!byBaseCode.has(base)) byBaseCode.set(base, []);
       byBaseCode.get(base)!.push(item);
+    }
+
+    const cardBase = extractBaseItemCode(item.card_name);
+    if (cardBase && cardBase.length >= 3 && cardBase !== base) {
+      if (!byBaseCode.has(cardBase)) byBaseCode.set(cardBase, []);
+      byBaseCode.get(cardBase)!.push(item);
     }
   });
 

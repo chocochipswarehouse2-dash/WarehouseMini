@@ -12,6 +12,7 @@ import {
   savePerbaikanTicketToSupabase,
   supabaseFetch,
 } from './supabase';
+import { lookupProductBySku } from '../utils/productLookup';
 
 const LOCAL_STORAGE_KEY = 'wms_local_qc_pengerjaan_jobs';
 
@@ -282,7 +283,15 @@ export function extractProductInfoFromSJItem(item: { sku?: string; nama_produk?:
     size = '';
   }
 
-  // Coba ekstrak dari SKU jika size belum ada
+  // 1. Prioritaskan Master Product Catalog Lookup O(1)
+  if (sku) {
+    const lookup = lookupProductBySku(sku, undefined, nama, size);
+    if (!size && lookup.size && lookup.size !== '-' && lookup.size !== 'ALL') {
+      size = lookup.size;
+    }
+  }
+
+  // 2. Fallback ekstrak dari format SKU jika master catalog belum memiliki ukuran
   if (!size && sku) {
     const parts = sku.split('-');
     if (parts.length >= 3) {

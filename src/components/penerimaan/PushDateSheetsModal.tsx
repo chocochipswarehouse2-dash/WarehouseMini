@@ -25,7 +25,7 @@ import {
   formatDateIndo,
 } from '../../services/gasProduksiSync';
 import { MatrixProductBlock } from './ProduksiSpreadsheetView';
-import { alignItemWithMasterProduct, buildProductLookupMap } from '../../utils/productLookup';
+import { alignItemWithMasterProduct, buildProductLookupMap, lookupProductBySku } from '../../utils/productLookup';
 import { matchTrelloByCode } from '../../utils/trelloProduksiMatcher';
 
 interface PushDateSheetsModalProps {
@@ -237,12 +237,13 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
         ? baseBlocks
         : buildMatrixBlocksFromItems(categoryItems, currentTab === 'CMT');
 
-      // Pastikan productName dan upVendor selalu ter-enrich dari Trello Matcher
+      // Pastikan productName dan upVendor selalu ter-enrich dari Trello Matcher & Master Catalog
       const enrichedBlocks = effectiveBlocks.map((b) => {
         const trelloMatch = matchTrelloByCode(b.code);
+        const lookup = lookupProductBySku(b.code, productCatalog, b.productName);
         return {
           ...b,
-          productName: b.productName || trelloMatch?.productName || '',
+          productName: b.productName || trelloMatch?.productName || (lookup.found ? lookup.nama_produk : '') || '',
           upVendor: (b.upVendor && b.upVendor !== 'KARGO' && b.upVendor !== 'CMT')
             ? b.upVendor
             : (trelloMatch?.upCode || b.upVendor || (currentTab === 'CMT' ? 'CMT' : 'KARGO')),

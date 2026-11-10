@@ -51,6 +51,7 @@ import {
 import { PushSuratJalanModal } from './PushSuratJalanModal';
 import { PushDateSheetsModal } from './PushDateSheetsModal';
 import { matchTrelloByCode, extractTrelloMetadataFromItem, refreshTrelloLookupDictionaryFromCloud } from '../../utils/trelloProduksiMatcher';
+import { lookupProductBySku } from '../../utils/productLookup';
 
 interface ProduksiSpreadsheetViewProps {
   dataList: PenerimaanProduksiItem[];
@@ -262,16 +263,6 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       const name = String(p.p || p.n || (p as any).nama_produk || '').trim();
       if (!sku || !name) continue;
       if (!map.has(sku)) map.set(sku, name);
-      const dash = sku.indexOf('-');
-      if (dash > 0) {
-        const pfx = sku.slice(0, dash).trim();
-        if (!map.has(pfx)) map.set(pfx, name);
-      }
-      const space = sku.indexOf(' ');
-      if (space > 0) {
-        const pfx = sku.slice(0, space).trim();
-        if (!map.has(pfx)) map.set(pfx, name);
-      }
     }
     spreadsheetCatalogNameCache.set(productCatalog, map);
     return map;
@@ -334,10 +325,13 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
 
       // Prioritas 3: Fallback ke Master Produk gudang & Kategori
       if (!productName) {
-        productName = firstItem?.nama_produk || '';
-        const officialName = catalogNameMap.get(cleanCode);
-        if (officialName) {
-          productName = officialName;
+        const lookup = lookupProductBySku(cleanCode, productCatalog, firstItem?.nama_produk);
+        if (lookup.found && lookup.nama_produk) {
+          productName = lookup.nama_produk;
+        } else if (catalogNameMap.has(cleanCode)) {
+          productName = catalogNameMap.get(cleanCode)!;
+        } else {
+          productName = firstItem?.nama_produk || '';
         }
       }
 

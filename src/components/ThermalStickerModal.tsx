@@ -20,6 +20,7 @@ import {
   RotateCw,
 } from 'lucide-react';
 import QRCode from 'qrcode';
+import { lookupProductBySku } from '../utils/productLookup';
 
 export interface ThermalTicketItem {
   id?: string | number;
@@ -86,37 +87,11 @@ export const getTicketDisplayData = (t?: ThermalTicketItem | null): TicketDispla
   }
 
   const cleanSku = (t.sku || '').trim();
-  let nama = (t.nama_produk || '').trim();
-
-  // Bersihkan size
-  let size = (t.size || '').trim();
-  const isDummySize =
-    !size ||
-    size === '-' ||
-    size.toLowerCase() === 'default' ||
-    size.toLowerCase() === 'none';
-
-  if (isDummySize) {
-    // 1. Cek apakah size tertulis di akhir SKU (cth: ...PWS -> S, ...WHL -> L)
-    const skuSizeRegex = /([A-Z0-9]+)(XS|S|M|L|XL|XXL|XXXL|2XL|3XL)$/i;
-    // 2. Cek apakah size ada di ujung nama produk (cth: "Tifara Dress S", "Torin Skirt Cream XL")
-    const sizeEndRegex =
-      /(?:[\s\-_/|(),]+)(xs|s|m|l|xl|xxl|xxxl|2xl|3xl|all\s*size|onesize|free\s*size)(?:[\s\-_/|()]*)$/i;
-    const matchName = nama.match(sizeEndRegex);
-
-    if (matchName) {
-      size = matchName[1].trim().toUpperCase();
-    } else {
-      const matchSku = cleanSku.match(skuSizeRegex);
-      if (matchSku) {
-        size = matchSku[2].trim().toUpperCase();
-      } else {
-        size = 'ALL SIZE';
-      }
-    }
-  } else {
-    size = size.toUpperCase();
-  }
+  const lookup = lookupProductBySku(cleanSku, undefined, t.nama_produk, t.size);
+  const nama = lookup.nama_produk || t.nama_produk || cleanSku;
+  const size = (t.size && t.size !== '-' && t.size.toLowerCase() !== 'default') 
+    ? t.size 
+    : (lookup.size !== '-' ? lookup.size : 'ALL SIZE');
 
   // Format Lokasi Rak
   let lokasi = (t.lokasi_sekarang || '').trim().toUpperCase();

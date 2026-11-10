@@ -13,6 +13,7 @@ import {
   matchTrelloByCode,
   extractTrelloMetadataFromItem,
 } from '../utils/trelloProduksiMatcher';
+import { lookupProductBySku } from '../utils/productLookup';
 
 export const PRODUKSI_SPREADSHEET_ID = '1fnW49pCI8X8-lYtmXljxB0GsZWKkQtKshV2R5-mlodk';
 export const PRODUKSI_SCRIPT_ID = '1vYGP1u5mCAvjFYbJQHbc7mLruxrtwUmlKh27djBJ6oBlomuOCCKy-scb';
@@ -351,11 +352,13 @@ export function buildBlocksFromRawItems(
     // Auto-lookup Trello UP jika nama_produk atau keterangan/UP masih kosong
     const trelloMatch = matchTrelloByCode(code);
     const trelloExtracted = items.map(it => extractTrelloMetadataFromItem(it)).find(x => x.upCode || x.productName);
+    const lookup = lookupProductBySku(code, undefined, firstItem.nama_produk);
 
     const resolvedProductName =
       firstItem.nama_produk ||
       trelloMatch?.productName ||
       trelloExtracted?.productName ||
+      (lookup.found ? lookup.nama_produk : '') ||
       '';
 
     const resolvedUpVendor =
@@ -515,22 +518,33 @@ export async function pushProduksiPerTanggalToGoogleSheet(
       dateBlocks = buildBlocksFromRawItems(dateItems, [dStr], activeTab);
     }
 
-    const formattedDateItems = dateItems.map((it) => ({
-      tanggal_penerimaan: it.tanggal_penerimaan || dStr,
-      kategori: it.kategori || (activeTab === 'CMT' ? 'Lokal CMT' : 'Kargo'),
-      no_surat_jalan: it.no_surat_jalan || '',
-      kode_produksi: it.kode_produksi || '',
-      nama_produk: it.nama_produk || '',
-      warna: it.warna || '',
-      size: it.size || '',
-      qty: Number(it.qty) || 0,
-      foto_url: formatImageUrlForSheets(it.foto_url),
-      up_vendor: it.keterangan || '',
-      keterangan: it.keterangan || '',
-      catatan: it.keterangan || '',
-      operator: it.operator || 'Operator Gudang',
-      created_at: it.created_at || new Date().toISOString(),
-    }));
+    const formattedDateItems = dateItems.map((it) => {
+      const codeKey = (it.kode_produksi || '').trim().toUpperCase();
+      const bMatch = dateBlocks?.find(b => (b.code || '').trim().toUpperCase() === codeKey);
+      const trelloMatch = matchTrelloByCode(codeKey);
+      const lookup = lookupProductBySku(codeKey, undefined, it.nama_produk);
+      const finalName = it.nama_produk || bMatch?.productName || trelloMatch?.productName || (lookup.found ? lookup.nama_produk : '');
+      const finalUp = (it.keterangan && it.keterangan !== 'KARGO' && it.keterangan !== 'CMT')
+        ? it.keterangan
+        : (bMatch?.upVendor || trelloMatch?.upCode || it.keterangan || (activeTab === 'CMT' ? 'CMT' : 'KARGO'));
+
+      return {
+        tanggal_penerimaan: it.tanggal_penerimaan || dStr,
+        kategori: it.kategori || (activeTab === 'CMT' ? 'Lokal CMT' : 'Kargo'),
+        no_surat_jalan: it.no_surat_jalan || '',
+        kode_produksi: it.kode_produksi || '',
+        nama_produk: finalName,
+        warna: it.warna || '',
+        size: it.size || '',
+        qty: Number(it.qty) || 0,
+        foto_url: formatImageUrlForSheets(it.foto_url),
+        up_vendor: finalUp,
+        keterangan: finalUp,
+        catatan: finalUp,
+        operator: it.operator || 'Operator Gudang',
+        created_at: it.created_at || new Date().toISOString(),
+      };
+    });
 
     if ((dateBlocks && dateBlocks.length > 0) || formattedDateItems.length > 0) {
       dateSheets.push({
@@ -566,9 +580,10 @@ export async function pushProduksiPerTanggalToGoogleSheet(
         : buildBlocksFromRawItems(ds.items, [ds.tanggal], activeTab)
       ).map((b) => {
         const trelloMatch = matchTrelloByCode(b.code);
+        const lookup = lookupProductBySku(b.code, undefined, b.productName);
         return {
           ...b,
-          productName: b.productName || trelloMatch?.productName || '',
+          productName: b.productName || trelloMatch?.productName || (lookup.found ? lookup.nama_produk : '') || '',
           upVendor: (b.upVendor && b.upVendor !== 'KARGO' && b.upVendor !== 'CMT')
             ? b.upVendor
             : (trelloMatch?.upCode || b.upVendor || (activeTab === 'CMT' ? 'CMT' : 'KARGO')),
@@ -665,11 +680,13 @@ export function buildMatrixBlocksFromItems(items: PenerimaanProduksiItem[], isCM
     const first = codeItems[0];
     const trelloMatch = matchTrelloByCode(code);
     const trelloExtracted = codeItems.map(it => extractTrelloMetadataFromItem(it)).find(x => x.upCode || x.productName);
+    const lookup = lookupProductBySku(code, undefined, first?.nama_produk);
 
     const productName =
       first?.nama_produk ||
       trelloMatch?.productName ||
       trelloExtracted?.productName ||
+      (lookup.found ? lookup.nama_produk : '') ||
       '';
 
     const upVendor =
@@ -816,7 +833,8 @@ export async function pushPenerimaanProduksiToGoogleSheet(
       : b.totalNet;
 
     const trelloMatch = matchTrelloByCode(b.code);
-    const resolvedProductName = b.productName || trelloMatch?.productName || '';
+    const lookup = lookupProductBySku(b.code, undefined, b.productName);
+    const resolvedProductName = b.productName || trelloMatch?.productName || (lookup.found ? lookup.nama_produk : '') || '';
     const resolvedUpVendor = (b.upVendor && b.upVendor !== 'KARGO' && b.upVendor !== 'CMT')
       ? b.upVendor
       : (trelloMatch?.upCode || b.upVendor || (activeTab === 'CMT' ? 'CMT' : 'KARGO'));
@@ -843,7 +861,8 @@ export async function pushPenerimaanProduksiToGoogleSheet(
     const codeKey = (it.kode_produksi || '').trim().toUpperCase();
     const bInfo = blockMap.get(codeKey);
     const trelloMatch = !bInfo?.productName ? matchTrelloByCode(codeKey) : null;
-    const finalName = it.nama_produk || bInfo?.productName || trelloMatch?.productName || '';
+    const lookup = lookupProductBySku(codeKey, undefined, it.nama_produk);
+    const finalName = it.nama_produk || bInfo?.productName || trelloMatch?.productName || (lookup.found ? lookup.nama_produk : '');
     const finalUp = (it.keterangan && it.keterangan !== 'KARGO' && it.keterangan !== 'CMT')
       ? it.keterangan
       : (bInfo?.upVendor || trelloMatch?.upCode || it.keterangan || (activeTab === 'CMT' ? 'CMT' : 'KARGO'));

@@ -15,20 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.101",
-  "versionCode": 361,
+  "version": "v2.6.102",
+  "versionCode": 362,
   "buildDate": "10 November 2026",
-  "buildHash": "wms-261110-v361-0759",
-  "releaseTitle": "WMS v2.6.101 — Standardisasi Pure O(1) Master Product SKU Lookup & Eliminasi Regex Parsing",
+  "buildHash": "wms-261110-v362-1126",
+  "releaseTitle": "WMS v2.6.102 — Eliminasi Menyeluruh Regex & String Splitting Nama Produk & Size",
   "releaseNotes": [
-    "Standarisasi lookup nama produk & size berbasis VLOOKUP/XLOOKUP murni O(1) dari master_produk",
-    "Eliminasi regex parsing dan hardcoded matrix pada SKU (DF26, letter code, dsb)",
-    "Sinkronisasi master catalog in-memory 28.000+ SKU di seluruh modul (Picking, Live, Produksi, Distribusi)"
+    "Standarisasi lookup O(1) master catalog untuk nama produk & size di seluruh modul",
+    "Pencegahan polusi suffix size pada nama produk di Manual Shipment & IG Live",
+    "Dukungan kode produksi alfanumerik (cth: D1055, CCT045) & auto-lookup Trello UP ke Google Sheet",
+    "Perbaikan penentuan size di QC Job Card, Distribusi Picking, dan WhatsApp"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.101",
+    "versionCode": 361,
+    "buildDate": "10 November 2026",
+    "buildHash": "wms-261110-v361-0759",
+    "releaseTitle": "WMS v2.6.101 — Standardisasi Pure O(1) Master Product SKU Lookup & Eliminasi Regex Parsing",
+    "releaseNotes": [
+      "Standarisasi lookup nama produk & size berbasis VLOOKUP/XLOOKUP murni O(1) dari master_produk",
+      "Eliminasi regex parsing dan hardcoded matrix pada SKU (DF26, letter code, dsb)",
+      "Sinkronisasi master catalog in-memory 28.000+ SKU di seluruh modul (Picking, Live, Produksi, Distribusi)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.100",
     "versionCode": 360,
@@ -114,19 +128,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Menghapus tombol hamburger mengambang di kanan bawah pada tampilan seluler karena sudah ada tombol menu sticky di bagian atas layar",
       "Bubble Live Chat kini hanya muncul saat ada pesan baru/belum dibaca dan dapat digeser bebas (draggable) ke posisi mana saja di layar"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.93",
-    "versionCode": 353,
-    "buildDate": "8 November 2026",
-    "buildHash": "wms-261108-v353-1030",
-    "releaseTitle": "WMS v2.6.93 — Data Shift & Absensi di Approval Lembur, Ijin Pulang Cepat & Notifikasi Khusus Warehouse",
-    "releaseNotes": [
-      "Penambahan informasi Shift dan Jam Absen Datang/Pulang pada Daftar Approval Lembur, Cuti, dan Riwayat",
-      "Penambahan opsi Ijin Pulang Cepat pada Form Ijin/Cuti lengkap dengan input Jam Pulang, Keterangan, serta info Shift & Absensi",
-      "Notifikasi real-time & background khusus ke akun warehouse setiap ada pengajuan Ijin, Cuti, atau Lembur baru"
     ],
     "minSupportedVersion": "v2.0.0"
   }

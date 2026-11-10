@@ -85,6 +85,7 @@ import {
   vibrateDevice,
 } from '../services/audio';
 import { sortAlphabeticalAndSize, fuzzySearchMultiple, fuzzySearch, partialSearchMatch, extractSizeFromSku, formatProductNameWithSize , cleanProductName } from '../utils/sortUtils';
+import { lookupProductBySku } from '../utils/productLookup';
 import { formatOperatorWithPersonName, getUserPersonName } from '../utils/userResolver';
 import { generateRefillPickingGroupMessage, sendFonnteMessage, getFonnteConfig, getWhatsAppWebUrl } from '../services/whatsapp';
 
@@ -1085,26 +1086,14 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     const pickedItems = group.items.filter((it) => it.qty_picked > 0);
     const itemsRows = pickedItems
       .map((it, idx) => {
-        let nama = resolveProductName(it.sku, it.nama_produk);
-        let size = it.size;
-        if (!size) {
-          let match = nama.match(/\(([^)]+)\)\s*$/);
-          if (match) {
-            size = match[1];
-            nama = nama.replace(/\s*\(([^)]+)\)\s*$/, '');
-          } else {
-            match = nama.match(/\s+-\s+([^-]+)$/);
-            if (match) {
-              size = match[1].trim();
-              nama = nama.replace(/\s+-\s+([^-]+)$/, '');
-            }
-          }
-        }
+        const lookup = lookupProductBySku(it.sku, productCatalog, it.nama_produk, it.size);
+        const nama = lookup.nama_produk;
+        const size = (it.size && it.size !== '-') ? it.size : (lookup.size !== '-' ? lookup.size : '-');
         return `
       <tr>
         <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${idx + 1}</td>
         <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${nama}</td>
-        <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${size || '-'}</td>
+        <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${size}</td>
         <td style="padding: 6px; border: 1px solid #cbd5e1; font-family: monospace;">${it.sku}</td>
         <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${it.qty_picked}</td>
       </tr>
@@ -1115,21 +1104,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     const pickedUnexpectedItems = (group.unexpected_items || []).filter((it) => it.qty_picked > 0);
     const unexpectedRows = pickedUnexpectedItems
       .map((it, idx) => {
-        let nama = resolveProductName(it.sku, it.nama_produk);
-        let size = it.size;
-        if (!size) {
-          let match = nama.match(/\(([^)]+)\)\s*$/);
-          if (match) {
-            size = match[1];
-            nama = nama.replace(/\s*\(([^)]+)\)\s*$/, '');
-          } else {
-            match = nama.match(/\s+-\s+([^-]+)$/);
-            if (match) {
-              size = match[1].trim();
-              nama = nama.replace(/\s+-\s+([^-]+)$/, '');
-            }
-          }
-        }
+        const lookup = lookupProductBySku(it.sku, productCatalog, it.nama_produk, it.size);
+        const nama = lookup.nama_produk;
+        const size = (it.size && it.size !== '-') ? it.size : (lookup.size !== '-' ? lookup.size : '-');
         return `
       <tr>
         <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${pickedItems.length + idx + 1}</td>
@@ -2716,22 +2693,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               } catch {}
             }
 
-            const catSize = catMatch?.s || (catMatch as any)?.size || (catMatch as any)?.variant;
-            let displaySize = (item.size && item.size !== '-') 
+            const lookup = lookupProductBySku(item.sku, productCatalog, item.nama_produk, item.size);
+            const displayName = lookup.nama_produk;
+            const displaySize = (item.size && item.size !== '-') 
               ? item.size 
-              : (catSize && catSize !== '-' ? catSize : extractSizeFromSku(itemSku));
-
-            let displayName = resolveProductName(item.sku, item.nama_produk);
-            
-            // Auto clean name and extract size if missing
-            const sizesList = ['XXXL','XXL','XL','L','M','S','XS','ALL','FS'];
-            const sizeRegex = new RegExp(`[\\s\\-\\[\\(]+(${sizesList.join('|')})[\\]\\)]?\\s*$`, 'i');
-            const nameMatch = displayName.match(sizeRegex);
-            if (nameMatch) {
-              if (displaySize === '-') displaySize = nameMatch[1].toUpperCase();
-              displayName = displayName.substring(0, nameMatch.index).trim();
-            }
-            if (displayName.endsWith('-')) displayName = displayName.replace(/-$/, '').trim();
+              : (lookup.size !== '-' ? lookup.size : 'ALL');
             return (
 
               <div

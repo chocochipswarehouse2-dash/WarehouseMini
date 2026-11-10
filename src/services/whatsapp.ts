@@ -1,5 +1,6 @@
 import { PeminjamanRecord, ProductItem } from '../types';
 import { extractSizeFromSku, formatProductNameWithSize, resolveProductName, resolveProductDisplaySize, cleanProductName } from '../utils/sortUtils';
+import { lookupProductBySku } from '../utils/productLookup';
 import { getSettings } from './settings';
 
 export interface FonnteConfig {
@@ -251,11 +252,12 @@ export function generateRefillPickingGroupMessage(params: RefillPickingMessagePa
     .map((it, idx) => {
       const itemNum = idx + 1;
       const cleanSku = (it.sku || '-').trim();
+      const lookup = lookupProductBySku(cleanSku, undefined, it.nama_produk, it.size);
+      const cleanName = cleanProductName(lookup.nama_produk || it.nama_produk || cleanSku) || cleanSku;
       const rawSize = (it.size || '').trim();
-      const cleanSize = rawSize && rawSize !== '-'
+      const cleanSize = (rawSize && rawSize !== '-' && rawSize.toLowerCase() !== 'default')
         ? rawSize
-        : (extractSizeFromSku(cleanSku) !== '-' ? extractSizeFromSku(cleanSku) : '-');
-      const cleanName = cleanProductName((it.nama_produk || cleanSku).trim()) || cleanSku;
+        : (lookup.size !== '-' ? lookup.size : (extractSizeFromSku(cleanSku) !== '-' ? extractSizeFromSku(cleanSku) : '-'));
       const cleanLoc = (it.lokasi && it.lokasi !== '-') ? it.lokasi.trim() : 'Belum Ada Rak';
       const stockNote = it.isKosong && !cleanLoc.toUpperCase().includes('KOSONG') && !cleanLoc.includes('0 pcs')
         ? ' ⚠️ _(Stok 0 - cek fisik)_'
