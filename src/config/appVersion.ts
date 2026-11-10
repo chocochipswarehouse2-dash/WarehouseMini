@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.6.104",
-  "versionCode": 364,
+  "version": "v2.6.105",
+  "versionCode": 365,
   "buildDate": "10 November 2026",
-  "buildHash": "wms-261110-v364-1706",
-  "releaseTitle": "WMS v2.6.104 — Perbaikan Filter Tanggal Dropdown Tab Kargo & Pemulihan Tampilan Madeline Top",
+  "buildHash": "wms-261110-v365-1802",
+  "releaseTitle": "WMS v2.6.105 — Asisten AI Pintar WMS (Google Gemini Flash)",
   "releaseNotes": [
-    "Memperbaiki pencocokan filter tanggal dropdown cepat pada ProduksiSpreadsheetView yang sebelumnya gagal karena pemisahan delimiter pipa",
-    "Merapikan label dropdown tanggal penerimaan dan badge filter tanpa karakter mentah",
-    "Menambahkan auto-fill nama produk untuk kode produksi alfabet seperti Madeline Top saat push/render"
+    "Penambahan Asisten AI WMS di Sidebar dengan popup floating page",
+    "Mendukung tanya stok produk, letak rak, lookup kode produksi Trello UP, dan rekapitulasi penerimaan bulanan",
+    "Kontrol akses token hemat: default khusus Superadmin dengan whitelist user management"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.6.104",
+    "versionCode": 364,
+    "buildDate": "10 November 2026",
+    "buildHash": "wms-261110-v364-1706",
+    "releaseTitle": "WMS v2.6.104 — Perbaikan Filter Tanggal Dropdown Tab Kargo & Pemulihan Tampilan Madeline Top",
+    "releaseNotes": [
+      "Memperbaiki pencocokan filter tanggal dropdown cepat pada ProduksiSpreadsheetView yang sebelumnya gagal karena pemisahan delimiter pipa",
+      "Merapikan label dropdown tanggal penerimaan dan badge filter tanpa karakter mentah",
+      "Menambahkan auto-fill nama produk untuk kode produksi alfabet seperti Madeline Top saat push/render"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.6.103",
     "versionCode": 363,
@@ -115,19 +128,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Pembersihan dan filter pencegah baris header template gsheet (NAMA PEMESAN / SKU) terbaca sebagai pesanan valid",
       "Deploy Google Apps Script IG Live v28"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.96",
-    "versionCode": 356,
-    "buildDate": "8 November 2026",
-    "buildHash": "wms-261108-v356-2002",
-    "releaseTitle": "WMS v2.6.96 — Auto-Lookup Trello UP pada Penerimaan Produksi",
-    "releaseNotes": [
-      "Auto-lookup Nama Produk, UP, dan Foto dari data Trello UP board pada Form Penerimaan dan Spreadsheet Produksi (CMT & Kargo)",
-      "Chip preview match Trello real-time saat ketik kode produk",
-      "Tombol 1-klik Lengkapi Trello pada toolbar Spreadsheet Produksi"
     ],
     "minSupportedVersion": "v2.0.0"
   }

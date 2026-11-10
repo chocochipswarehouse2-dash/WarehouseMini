@@ -57,6 +57,7 @@ export const PERMISSION_GROUPS = [
       { key: 'menu_ops_dashboard', label: 'Akses Dashboard', description: 'Lihat ringkasan operasional', isSuperadminOnly: false },
       { key: 'menu_ops_live_chat', label: 'Akses Live Chat & Diskusi', description: 'Chat real-time antar user online & ruang diskusi (Otomatis aktif default)', isSuperadminOnly: false },
       { key: 'action_manage_chat_groups', label: 'Buat & Kelola Grup Diskusi', description: 'Membuat ruang diskusi baru dan menambah/mengeluarkan anggota grup', isSuperadminOnly: true },
+      { key: 'action_access_wms_ai', label: 'Akses Asisten AI Pintar (Gemini)', description: 'Tanya stok produk, cari kode/UP, dan buat laporan rekap otomatis via AI', isSuperadminOnly: false },
     ]
   },
   {
@@ -607,6 +608,42 @@ export const canManageChatGroups = (session: UserSession | null): boolean => {
   const uname = String(session.username || '').toLowerCase();
   if (role.includes('admin') || uname === 'warehouse') return true;
   return Boolean(session.permissions?.action_manage_chat_groups);
+};
+
+/**
+ * Mengecek apakah user berhak mengakses fitur Asisten AI Pintar WMS (Google Gemini).
+ * Default: Superadmin (akun pemilik/warehouse/admin) selalu punya akses.
+ * User staf lain hanya bisa jika explicit diberi permission atau masuk dalam whitelist Superadmin.
+ */
+export const canAccessWmsAi = (session: UserSession | null): boolean => {
+  if (!session) return false;
+  if (isSuperadmin(session)) return true;
+
+  // 1. Cek permission explicit dari user session
+  if (session.permissions && session.permissions.action_access_wms_ai === true) {
+    return true;
+  }
+
+  // 2. Cek whitelist lokal wms_ai_allowed_users
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('wms_ai_allowed_users') : null;
+    if (raw) {
+      const allowed: string[] = JSON.parse(raw);
+      if (Array.isArray(allowed)) {
+        const u = String(session.username || '').trim().toLowerCase();
+        const nik = String(session.nik || '').trim().toLowerCase();
+        const email = String(session.email || '').trim().toLowerCase();
+        if (allowed.some((item) => {
+          const clean = String(item || '').trim().toLowerCase();
+          return clean === u || clean === nik || clean === email;
+        })) {
+          return true;
+        }
+      }
+    }
+  } catch {}
+
+  return false;
 };
 
 export const getDefaultPageForSession = (session: UserSession | null): ActivePage => {

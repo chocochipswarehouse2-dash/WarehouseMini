@@ -48,6 +48,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { ThemePickerModal } from './components/ThemePickerModal';
 import { UpdateDatabaseModal } from './components/UpdateDatabaseModal';
 import { LocationPurgeModal } from './components/inventory/LocationPurgeModal';
+import { WmsAiModal } from './components/ai/WmsAiModal';
 import { OfflineProtectionBar } from './components/OfflineProtectionBar';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { globalRealtimeStore } from './services/store';
@@ -1008,6 +1009,7 @@ export default function App() {
   const [isLocationPurgeOpen, setIsLocationPurgeOpen] = useState<boolean>(false);
   const [isApkModalOpen, setIsApkModalOpen] = useState<boolean>(false);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState<boolean>(false);
+  const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     const saved = localStorage.getItem('wms_sidebar_autohide_v2');
@@ -3914,6 +3916,7 @@ export default function App() {
         onOpenApkModal={() => setIsApkModalOpen(true)}
         onOpenUpdateDatabase={() => setIsUpdateDatabaseOpen(true)}
         onOpenUpdateModal={() => setIsUpdateModalOpen(true)}
+        onOpenAiModal={() => setIsAiModalOpen(true)}
         onLogout={handleLogout}
         totalScannedCount={scannedData.length}
         hasNewPickingAlert={!!newPickingTaskAlert}
@@ -4670,6 +4673,14 @@ export default function App() {
           loadProducts(true);
         }}
         allExistingLocations={activeLocations}
+      />
+
+      {/* Asisten AI Pintar WMS Modal (Gemini Flash) */}
+      <WmsAiModal
+        isOpen={isAiModalOpen}
+        onClose={() => setIsAiModalOpen(false)}
+        session={session}
+        onNotify={showToast}
       />
 
       {/* Custom Confirm Dialog (replaces window.confirm for PWA Builder / TWA compat) */}

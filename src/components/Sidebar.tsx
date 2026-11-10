@@ -43,9 +43,11 @@ import {
   Download,
   MessageSquare,
   PanelRightOpen,
+  Sparkles,
+  Bot,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
-import { hasPermission, isSuperadmin, canAccessSettings, canAccessJneRekap, canAccessLiveChat, ROLE_DETAILS } from '../services/permissions';
+import { hasPermission, isSuperadmin, canAccessSettings, canAccessJneRekap, canAccessLiveChat, canAccessWmsAi, ROLE_DETAILS } from '../services/permissions';
 import { getUserPersonName } from '../utils/userResolver';
 import { CURRENT_APP_VERSION, CURRENT_APP_VERSION_INFO, isNewerVersion } from '../config/appVersion';
 import { useAppUpdate } from '../hooks/useAppUpdate';
@@ -70,6 +72,7 @@ interface SidebarProps {
   onOpenApkModal: () => void;
   onOpenUpdateDatabase?: () => void;
   onOpenUpdateModal?: () => void;
+  onOpenAiModal?: () => void;
   onLogout: () => void;
   totalScannedCount: number;
   hasNewPickingAlert?: boolean;
@@ -97,6 +100,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenApkModal,
   onOpenUpdateDatabase,
   onOpenUpdateModal,
+  onOpenAiModal,
   onLogout,
   totalScannedCount,
   hasNewPickingAlert = false,
@@ -140,6 +144,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const userIsAdmin = isSuperadmin(session);
   const userCanAccessSettings = canAccessSettings(session);
+  const userCanAccessAi = canAccessWmsAi(session);
 
   // Operasional
   const canViewDashboard = userIsAdmin || hasPermission(session, 'menu_ops_dashboard');
@@ -549,6 +554,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
         Alat & Utilitas
       </div>
 
+      {/* Asisten AI WMS (Google Gemini Flash) — Akses Khusus Superadmin & Whitelisted Users */}
+      {userCanAccessAi && (
+        <button
+          type="button"
+          onClick={() => {
+            onOpenAiModal?.();
+            onCloseMobile();
+          }}
+          title="Asisten AI Pintar WMS — Tanya stok, lokasi rak, kode produksi & rekap laporan"
+          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer group bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-primary-500/10 hover:from-purple-500/20 hover:via-indigo-500/20 hover:to-primary-500/20 border border-purple-200/60 dark:border-purple-800/60 text-purple-700 dark:text-purple-300 shadow-xs ${
+            collapsed ? 'justify-center px-2' : ''
+          }`}
+        >
+          <div className="p-1.5 rounded-lg shrink-0 bg-gradient-to-tr from-purple-600 to-indigo-600 text-white shadow-xs group-hover:scale-105 transition-transform">
+            <Sparkles className="w-4 h-4 animate-pulse" />
+          </div>
+          {!collapsed && (
+            <div className="flex-1 text-left truncate flex items-center justify-between">
+              <span className="truncate font-black">Asisten AI WMS</span>
+              <span className="text-[9px] px-1.5 py-0.2 rounded font-black uppercase bg-purple-600 text-white shadow-xs">
+                AI
+              </span>
+            </div>
+          )}
+        </button>
+      )}
 
       {/* Pengaturan Sistem (Halaman Utama) - Khusus Akun @warehouse / Pemilik Sistem */}
       {userCanAccessSettings && (
