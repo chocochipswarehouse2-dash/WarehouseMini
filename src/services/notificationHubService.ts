@@ -8,6 +8,9 @@
  * saja di Notification Hub (lengkap dengan fitur Mark All as Read & Deep Link).
  */
 
+import { UserSession } from '../types';
+import { canSessionReceiveNotification } from './permissions';
+
 export type WmsNotifCategory =
   | 'pesanan'
   | 'picking'
@@ -46,15 +49,46 @@ export interface WmsNotificationHubItem {
 const MAX_HUB_ITEMS = 120;
 const HUB_EVENT_NAME = 'wms_notification_hub_updated';
 
+export function getActiveSessionFromStorage(): UserSession | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const username = localStorage.getItem('wms_session_username');
+    const role = localStorage.getItem('wms_user_role');
+    if (username && role) {
+      let permissions = undefined;
+      try {
+        const permStr = localStorage.getItem('wms_user_permissions');
+        if (permStr) permissions = JSON.parse(permStr);
+      } catch {}
+      return {
+        token: localStorage.getItem('wms_session_token') || '',
+        username,
+        name: localStorage.getItem('wms_session_name') || username,
+        role: role as any,
+        permissions,
+        nik: localStorage.getItem('wms_user_nik') || undefined,
+        store_code: localStorage.getItem('wms_user_store_code') || undefined,
+        store_name: localStorage.getItem('wms_user_store_name') || undefined,
+        endpointUrl: '',
+      };
+    }
+
+    const rawLegacy = localStorage.getItem('wms_session');
+    if (rawLegacy) {
+      const parsed = JSON.parse(rawLegacy);
+      if (parsed && parsed.username) return parsed as UserSession;
+    }
+  } catch {}
+  return null;
+}
+
 function getActiveUsernameKey(): string {
   if (typeof window === 'undefined') return 'guest';
   try {
-    const rawSession = localStorage.getItem('wms_session');
-    if (rawSession) {
-      const parsed = JSON.parse(rawSession);
-      const u = String(parsed?.username || parsed?.name || '').trim().toLowerCase();
-      if (u) return u;
-    }
+    const u1 = localStorage.getItem('wms_session_username');
+    if (u1 && u1.trim()) return u1.trim().toLowerCase();
+    const s = getActiveSessionFromStorage();
+    if (s?.username) return s.username.trim().toLowerCase();
   } catch {}
   return 'guest';
 }
@@ -94,7 +128,7 @@ export function inferNotifCategory(
   if (target.page === 'produksi' || t.includes('hitung ulang') || t.includes('recount')) {
     return 'produksi';
   }
-  if (target.subTab === 'so_approval' || t.includes('stock opname') || t.includes('so ')) {
+  if (target.subTab === 'so_approval' || target.page === 'stock_opname' || t.includes('stock opname') || t.includes('so ')) {
     return 'so';
   }
   if (
@@ -115,7 +149,23 @@ export function getNotificationHubItems(username?: string): WmsNotificationHubIt
     const raw = localStorage.getItem(getStorageKey(username));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+
+    // Filter out any legacy/stale notifications that do not match the current user's role & permissions
+    const activeSession = getActiveSessionFromStorage();
+    if (!activeSession) return parsed;
+
+    const validItems = parsed.filter((item: WmsNotificationHubItem) =>
+      canSessionReceiveNotification(activeSession, item.category, item.target)
+    );
+
+    if (validItems.length !== parsed.length) {
+      try {
+        localStorage.setItem(getStorageKey(username), JSON.stringify(validItems));
+      } catch {}
+    }
+
+    return validItems;
   } catch {
     return [];
   }
@@ -150,8 +200,15 @@ export function addNotificationToHub(params: {
 
   const target: WmsNotificationTarget = params.target || {};
   const category = params.category || inferNotifCategory(cleanTitle, target);
-  const now = Date.now();
 
+  // Strict Role & Permission Gatekeeper:
+  // Tolak otomatis jika notifikasi tidak sesuai hak akses akun yang sedang login!
+  const activeSession = getActiveSessionFromStorage();
+  if (activeSession && !canSessionReceiveNotification(activeSession, category, target)) {
+    return null;
+  }
+
+  const now = Date.now();
   const existing = getNotificationHubItems();
 
   // Deduplikasi berdasarkan tag atau kombinasi title+body dalam rentang 45 detik terakhir

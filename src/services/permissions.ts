@@ -510,19 +510,112 @@ export const updateRoleTemplates = (roles: Record<string, any>) => {
   ROLE_DETAILS = newDetails;
 };
 
+export const isStoreAccountSession = (session: UserSession | null): boolean => {
+  if (!session) return false;
+  if (isSuperadmin(session)) return false;
+
+  const user = String(session.username || '').trim().toLowerCase();
+  const role = String(session.role || '').trim().toLowerCase();
+  const div = String(session.divisi || '').trim().toLowerCase();
+  const storeCode = String(session.store_code || '').trim();
+  const storeName = String(session.store_name || '').trim();
+
+  if (user.startsWith('choco') && user !== 'chocoadm') return true;
+  if (role === 'store' || role === 'outlet' || role === 'toko') return true;
+  if (div === 'store' || div === 'outlet' || div === 'toko') return true;
+  if (storeCode || storeName) return true;
+
+  return false;
+};
+
+export const resolveRoleDefaultPermissions = (
+  sessionOrRole: UserSession | string | null | undefined
+): Partial<UserPermissions> => {
+  if (!sessionOrRole) return {};
+
+  if (typeof sessionOrRole === 'object') {
+    if (isSuperadmin(sessionOrRole)) return { ...ALL_PERMISSIONS };
+    if (isStoreAccountSession(sessionOrRole)) {
+      return ROLE_DEFAULT_PERMISSIONS['Store'] || INITIAL_ROLE_DEFAULT_PERMISSIONS['Store'] || {};
+    }
+  }
+
+  const rawRole =
+    typeof sessionOrRole === 'string'
+      ? sessionOrRole
+      : String(sessionOrRole.role || '').trim();
+
+  if (rawRole && ROLE_DEFAULT_PERMISSIONS[rawRole]) {
+    return ROLE_DEFAULT_PERMISSIONS[rawRole];
+  }
+
+  const lower = rawRole.toLowerCase();
+  const matchedKey = Object.keys(ROLE_DEFAULT_PERMISSIONS).find(
+    (k) => k.toLowerCase() === lower
+  );
+  if (matchedKey) {
+    return ROLE_DEFAULT_PERMISSIONS[matchedKey];
+  }
+
+  if (lower.includes('store') || lower.includes('outlet') || lower.includes('toko')) {
+    return ROLE_DEFAULT_PERMISSIONS['Store'] || {};
+  }
+  if (lower.includes('cs') || lower.includes('customer service') || lower.includes('resolusi')) {
+    return ROLE_DEFAULT_PERMISSIONS['Customer Service'] || {};
+  }
+  if (lower.includes('peminjam') || lower.includes('sps')) {
+    return ROLE_DEFAULT_PERMISSIONS['Peminjaman'] || {};
+  }
+  if (lower.includes('picking') || lower.includes('picker')) {
+    return ROLE_DEFAULT_PERMISSIONS['Tugas Picking'] || {};
+  }
+
+  return ROLE_DEFAULT_PERMISSIONS['Operator'] || {};
+};
+
 export const hasPermission = (session: UserSession | null, permission: string): boolean => {
   if (!session) return false;
   if (isSuperadmin(session)) return true;
 
+  // Guard: Akun Store DILARANG memiliki permission Produksi, HR/Presensi, Picking Gudang, atau Pusat Resolusi
+  if (isStoreAccountSession(session)) {
+    const blockedForStore = new Set([
+      'menu_ops_produksi',
+      'tab_ops_loading_produksi',
+      'menu_ops_picking',
+      'menu_ops_loading_dock',
+      'tab_ops_loading_penerimaan',
+      'tab_ops_loading_pengiriman',
+      'menu_ops_resolusi',
+      'tab_ops_resolusi_retur',
+      'menu_hr_karyawan',
+      'menu_hr_presensi',
+      'menu_hr_roster',
+      'menu_hr_lembur_cuti',
+      'menu_hr_approval',
+      'tab_ops_mutasi_so',
+    ]);
+    if (blockedForStore.has(permission)) return false;
+  }
+
   // 1. Explicit permission defined in user session object
   const userPerms = session.permissions;
-  if (userPerms && typeof userPerms[permission as keyof UserPermissions] === 'boolean') {
-    return userPerms[permission as keyof UserPermissions]!;
+  if (userPerms && typeof userPerms === 'object') {
+    if (typeof userPerms[permission as keyof UserPermissions] === 'boolean') {
+      return userPerms[permission as keyof UserPermissions]!;
+    }
+    // Jika objek permissions user sudah didefinisikan secara eksplisit di database (memiliki key),
+    // JANGAN fallback ke Operator untuk key yang tidak dicentang agar role spesifik (SPS/CS/Store/Picker)
+    // tidak bocor mendapat akses Produksi atau Presensi!
+    const definedKeys = Object.keys(userPerms);
+    if (definedKeys.length > 0) {
+      if (permission === 'menu_ops_live_chat') return true;
+      return false;
+    }
   }
 
   // 2. Role template default fallback
-  const roleKey = session.role || 'Operator';
-  const roleDefaults = ROLE_DEFAULT_PERMISSIONS[roleKey] || ROLE_DEFAULT_PERMISSIONS['Operator'];
+  const roleDefaults = resolveRoleDefaultPermissions(session);
   if (roleDefaults && typeof roleDefaults[permission as keyof UserPermissions] === 'boolean') {
     return !!roleDefaults[permission as keyof UserPermissions];
   }
@@ -691,8 +784,14 @@ export const canPeminjaman = (session: UserSession | null) =>
 
 /**
  * ============================================================================
- * MATRIKS FILTER NOTIFIKASI PER ROLE / USER
+ * MATRIKS FILTER NOTIFIKASI PER ROLE / USER (STRICT TARGETING)
  * ============================================================================
+ * 1. Akun Store: HANYA Pesanan / Manual Shipment / Alter milik tokonya & Live Chat.
+ * 2. Akun Karyawan / Picker: Tugas Picking, pengajuan Ijin/Cuti/Lembur MILIK DIRINYA
+ *    SENDIRI (hanya jika punya akses Presensi/Lembur & Cuti), & Live Chat.
+ * 3. Akun Spesifik (SPS, CS, Produksi, dll.): Murni sesuai role akses halaman yang dimiliki.
+ * 4. Akun Admin (non-warehouse): Operasional lengkap, TANPA notif Ijin/Cuti/Lembur!
+ * 5. Akun Warehouse: Seluruh notifikasi operasional + Approval HR (Ijin/Cuti/Lembur).
  */
 
 /** 1. Notifikasi Pesanan Baru (Manual Shipment, Form Alter, Tiket Retur Baru, Antrian SO): HANYA Admin & Warehouse */
@@ -702,7 +801,7 @@ export const canReceiveAdminOrderNotif = (session: UserSession | null): boolean 
 
 /** 2. Apakah session ini adalah akun khusus Peminjam (SPS) saja (bukan Admin/Warehouse/Picker/Operator Gudang) */
 export const isPeminjamOnlySession = (session: UserSession | null): boolean => {
-  if (!session || isSuperadmin(session)) return false;
+  if (!session || isSuperadmin(session) || isStoreAccountSession(session)) return false;
   const role = String(session.role || '').trim().toLowerCase();
   const uname = String(session.username || '').trim().toLowerCase();
   if (role === 'peminjaman' || uname.startsWith('sps') || uname.includes('peminjam')) {
@@ -722,7 +821,7 @@ export const isPeminjamOnlySession = (session: UserSession | null): boolean => {
 
 /** 3. Apakah session ini adalah Customer Service (CS) */
 export const isCustomerServiceSession = (session: UserSession | null): boolean => {
-  if (!session) return false;
+  if (!session || isSuperadmin(session) || isStoreAccountSession(session)) return false;
   const role = String(session.role || '').trim().toLowerCase();
   const uname = String(session.username || '').trim().toLowerCase();
   if (
@@ -735,11 +834,11 @@ export const isCustomerServiceSession = (session: UserSession | null): boolean =
   ) {
     return true;
   }
-  // User non-admin & non-store yang diberi akses menu Pusat Resolusi / Retur
+  // User non-admin & non-store yang diberi akses menu Pusat Resolusi / Retur tanpa akses picking/produksi
   if (
-    !isSuperadmin(session) &&
-    role !== 'store' &&
     !isPeminjamOnlySession(session) &&
+    !hasPermission(session, 'menu_ops_picking') &&
+    !hasPermission(session, 'menu_ops_produksi') &&
     (hasPermission(session, 'menu_ops_resolusi') || hasPermission(session, 'tab_ops_resolusi_retur'))
   ) {
     return true;
@@ -747,76 +846,112 @@ export const isCustomerServiceSession = (session: UserSession | null): boolean =
   return false;
 };
 
-/** 4. Notifikasi Tugas Picking & Permintaan SPS Baru: HANYA Admin, Warehouse, Picker (Tugas Picking/Fulfillment), dan Operator Gudang */
+/** 4. Notifikasi Tugas Picking & Permintaan SPS Baru ke Gudang: HANYA Admin, Warehouse, Picker, dan Operator Gudang yang punya akses Picking */
 export const canReceivePickingAndSpsNotif = (session: UserSession | null): boolean => {
   if (!session) return false;
   if (isSuperadmin(session)) return true;
 
+  // Store, CS, dan Peminjam-Only DILARANG menerima notifikasi Tugas Picking / SPS Gudang
+  if (
+    isStoreAccountSession(session) ||
+    isPeminjamOnlySession(session) ||
+    isCustomerServiceSession(session)
+  ) {
+    return false;
+  }
+
   const role = String(session.role || '').trim().toLowerCase();
-  // Role yang DILARANG menerima notifikasi tugas picking / SPS gudang:
   if (
     role === 'store' ||
     role === 'peminjaman' ||
     role === 'customer service' ||
+    role === 'cs' ||
     role === 'hr' ||
     role === 'produk' ||
     role === 'qc/repair' ||
     role === 'perbaikan' ||
-    role === 'viewer' ||
-    isPeminjamOnlySession(session) ||
-    isCustomerServiceSession(session)
+    role === 'viewer'
   ) {
     return false;
   }
 
-  // Role Picker / Operator Gudang / Fulfillment
-  if (
-    role === 'tugas picking' ||
-    role === 'picker' ||
-    role === 'fulfillment' ||
-    role === 'operator'
-  ) {
-    return true;
-  }
-
   return (
     hasPermission(session, 'menu_ops_picking') ||
-    hasPermission(session, 'tab_ops_mutasi_scanner')
+    hasPermission(session, 'menu_ops_loading_dock') ||
+    role === 'tugas picking' ||
+    role === 'picker' ||
+    role === 'fulfillment'
   );
 };
 
-/** 5. Notifikasi Tugas Hitung Ulang Fisik (Recount): HANYA Admin, Warehouse, dan Tim Produksi / Operator Produksi */
+/** 5. Notifikasi Tugas Hitung Ulang Fisik (Recount Kargo/CMT): HANYA Admin, Warehouse, dan akun yang punya akses halaman Produksi */
 export const canReceiveRecountNotif = (session: UserSession | null): boolean => {
   if (!session) return false;
   if (isSuperadmin(session)) return true;
+
+  // Store, CS, Peminjam, Picker murni, dan HR DILARANG KERAS menerima notifikasi Hitung Ulang Kargo/Produksi
+  if (
+    isStoreAccountSession(session) ||
+    isCustomerServiceSession(session) ||
+    isPeminjamOnlySession(session)
+  ) {
+    return false;
+  }
 
   const role = String(session.role || '').trim().toLowerCase();
   if (
     role === 'store' ||
     role === 'peminjaman' ||
     role === 'customer service' ||
+    role === 'cs' ||
     role === 'tugas picking' ||
     role === 'picker' ||
     role === 'hr' ||
-    isPeminjamOnlySession(session) ||
-    isCustomerServiceSession(session)
+    role === 'produk' ||
+    role === 'qc/repair' ||
+    role === 'perbaikan'
   ) {
     return false;
   }
 
-  if (role === 'produksi') return true;
+  // Jika user memiliki custom permissions eksplisit, wajib punya menu_ops_produksi / tab_ops_loading_produksi
+  if (session.permissions && Object.keys(session.permissions).length > 0) {
+    return Boolean(
+      session.permissions.menu_ops_produksi || session.permissions.tab_ops_loading_produksi
+    );
+  }
+
+  return role === 'produksi' || role === 'manager';
+};
+
+/**
+ * 6. Apakah user berhak menerima notifikasi Ijin / Cuti / Lembur MILIK DIRINYA SENDIRI:
+ *    - Admin (non-warehouse) TIDAK PERLU notif ijin/cuti/lembur.
+ *    - Store, CS, Peminjam, atau user yang TIDAK punya akses Presensi / Lembur & Cuti DILARANG menerima notif ijin/cuti/lembur.
+ *    - Hanya karyawan yang memiliki akses halaman Presensi atau Lembur & Cuti yang boleh menerima notif pengajuan miliknya sendiri.
+ */
+export const canReceiveEmployeeOwnHrNotif = (session: UserSession | null): boolean => {
+  if (!session) return false;
+  // Admin & Warehouse tidak menggunakan jalur notifikasi karyawan ini (Warehouse punya jalur HR Approval sendiri, Admin tidak perlu notif HR)
+  if (isSuperadmin(session)) return false;
+  if (isStoreAccountSession(session)) return false;
+  if (isCustomerServiceSession(session)) return false;
+  if (isPeminjamOnlySession(session)) return false;
+
   return (
-    hasPermission(session, 'menu_ops_produksi') ||
-    hasPermission(session, 'tab_ops_loading_produksi')
+    hasPermission(session, 'menu_hr_presensi') ||
+    hasPermission(session, 'menu_hr_lembur_cuti')
   );
 };
 
-/** 6. Cek apakah record HR (Lembur / Ijin / Cuti / Pulang Cepat) milik karyawan yang sedang login */
+/** 7. Cek apakah record HR (Lembur / Ijin / Cuti / Pulang Cepat) benar-benar milik karyawan yang sedang login */
 export const isEmployeeMatchingRecord = (
   session: UserSession | null,
   record: { nik?: string | null; nama?: string | null; username?: string | null }
 ): boolean => {
   if (!session || !record) return false;
+  if (!canReceiveEmployeeOwnHrNotif(session)) return false;
+
   const myNik = String(session.nik || '').trim().toLowerCase();
   const myName = String(session.name || '').trim().toLowerCase();
   const myUser = String(session.username || '').trim().toLowerCase();
@@ -830,6 +965,144 @@ export const isEmployeeMatchingRecord = (
   if (myName && recName && myName.length >= 3 && myName === recName) return true;
   return false;
 };
+
+/** 8. Cek apakah record Pesanan / Manual Shipment / Alter milik Store yang sedang login */
+export const isStoreMatchingOrderRecord = (
+  session: UserSession | null,
+  record: {
+    nama_pengirim?: string | null;
+    store_name?: string | null;
+    pic_store?: string | null;
+    submitted_by?: string | null;
+  }
+): boolean => {
+  if (!session || !record) return false;
+  if (!isStoreAccountSession(session)) return false;
+
+  const sender = String(record.nama_pengirim || record.store_name || '').trim().toLowerCase();
+  const submittedBy = String(record.submitted_by || record.pic_store || '').trim().toLowerCase();
+
+  const myStoreName = String(session.store_name || '').trim().toLowerCase();
+  const myStoreCode = String(session.store_code || '').trim().toLowerCase();
+  const myName = String(session.name || '').trim().toLowerCase();
+  const myUser = String(session.username || '').trim().toLowerCase();
+
+  if (myStoreName && sender && (sender.includes(myStoreName) || myStoreName.includes(sender))) return true;
+  if (myStoreCode && sender && sender.includes(myStoreCode)) return true;
+  if (myName && sender && (sender.includes(myName) || myName.includes(sender))) return true;
+  if (myUser && submittedBy && submittedBy === myUser) return true;
+  if (myUser.startsWith('choco') && myUser.length > 5) {
+    const suffix = myUser.replace(/^choco[\s_-]*/, '').trim();
+    if (suffix.length >= 3 && sender.includes(suffix)) return true;
+  }
+
+  return false;
+};
+
+/**
+ * 9. CENTRAL NOTIFICATION GATEKEEPER:
+ *    Menentukan apakah suatu notifikasi (berdasarkan kategori & target halaman)
+ *    BOLEH ditampilkan / disimpan ke Notification Hub untuk user yang sedang login.
+ */
+export const canSessionReceiveNotification = (
+  session: UserSession | null,
+  category: string,
+  target?: {
+    page?: string;
+    subTab?: string;
+    roomId?: string;
+    tag?: string;
+  }
+): boolean => {
+  if (!session) return false;
+
+  const cat = String(category || '').toLowerCase();
+  const page = String(target?.page || '').toLowerCase();
+  const tag = String(target?.tag || '').toLowerCase();
+
+  // A. ATURAN KHUSUS AKUN STORE:
+  // Hanya boleh menerima notifikasi seputar Pesanan / Manual Shipment / Alter dan Live Chat!
+  if (isStoreAccountSession(session)) {
+    if (cat === 'chat' || page === 'live_chat' || Boolean(target?.roomId)) {
+      return canAccessLiveChat(session);
+    }
+    if (cat === 'pesanan' || page === 'pesanan_saya' || page === 'manual_shipment' || target?.subTab === 'manual_shipment') {
+      return true;
+    }
+    return false;
+  }
+
+  // B. ATURAN KHUSUS NOTIFIKASI HR (IJIN / CUTI / LEMBUR / PULANG CEPAT):
+  // - Admin (non-warehouse) TIDAK PERLU notif ijin/cuti/lembur!
+  // - Pengajuan baru dari karyawan lain (page === 'hr_approval' atau tag 'hr-lembur-', 'hr-cuti-', 'hr-ipa-') HANYA untuk akun `warehouse`!
+  // - Status/submit milik karyawan sendiri (page === 'lembur_cuti' / 'presensi') HANYA untuk karyawan yang punya akses Presensi / Lembur & Cuti!
+  if (
+    cat === 'hr' ||
+    page === 'hr_approval' ||
+    page === 'lembur_cuti' ||
+    page === 'presensi' ||
+    tag.startsWith('hr-')
+  ) {
+    if (page === 'hr_approval' || tag.startsWith('hr-lembur-') || tag.startsWith('hr-cuti-') || tag.startsWith('hr-ipa-')) {
+      return isWarehouseAccountOnly(session);
+    }
+    if (isWarehouseAccountOnly(session)) {
+      return true;
+    }
+    // Admin (selain warehouse) tidak perlu notif ijin/cuti/lembur
+    if (isSuperadmin(session)) {
+      return false;
+    }
+    return canReceiveEmployeeOwnHrNotif(session);
+  }
+
+  // C. ATURAN KHUSUS PRODUKSI / HITUNG ULANG KARGO & CMT:
+  if (cat === 'produksi' || page === 'produksi' || tag.startsWith('recount-')) {
+    return canReceiveRecountNotif(session);
+  }
+
+  // D. ATURAN KHUSUS TUGAS PICKING:
+  if (cat === 'picking' || page === 'picking_tasks' || target?.subTab === 'picking_tasks' || tag.startsWith('picking-task-')) {
+    return canReceivePickingAndSpsNotif(session);
+  }
+
+  // E. ATURAN KHUSUS PEMINJAMAN (SPS):
+  if (cat === 'sps' || page === 'peminjaman' || tag.startsWith('sps-')) {
+    if (tag.startsWith('sps-new-')) {
+      return canReceivePickingAndSpsNotif(session);
+    }
+    return canReceivePickingAndSpsNotif(session) || hasPermission(session, 'menu_ops_peminjaman');
+  }
+
+  // F. ATURAN KHUSUS PUSAT RESOLUSI / RETUR BARANG:
+  if (cat === 'retur' || page === 'pusat_resolusi' || tag.startsWith('retur-')) {
+    if (tag.startsWith('retur-new-')) {
+      return canReceiveAdminOrderNotif(session);
+    }
+    return isSuperadmin(session) || isCustomerServiceSession(session) || canAccessPage(session, 'pusat_resolusi');
+  }
+
+  // G. ATURAN KHUSUS PESANAN STORE (MANUAL SHIPMENT / ALTER):
+  if (cat === 'pesanan' || page === 'pesanan_saya' || page === 'manual_shipment' || tag.startsWith('manual-shipment-') || tag.startsWith('resi-update-')) {
+    if (tag.startsWith('manual-shipment-')) {
+      return canReceiveAdminOrderNotif(session);
+    }
+    return isSuperadmin(session) || isStoreAccountSession(session) || canAccessPage(session, 'pesanan_saya');
+  }
+
+  // H. ATURAN KHUSUS STOCK OPNAME (#SO):
+  if (cat === 'so' || page === 'stock_opname' || tag.startsWith('so-')) {
+    return canReceiveAdminOrderNotif(session) || canAccessPage(session, 'stock_opname');
+  }
+
+  // I. ATURAN LIVE CHAT:
+  if (cat === 'chat' || page === 'live_chat' || Boolean(target?.roomId)) {
+    return canAccessLiveChat(session);
+  }
+
+  return true;
+};
+
 export const canKatalogProduk = (session: UserSession | null) =>
   hasPermission(session, 'menu_ops_katalog_produk') || isSuperadmin(session);
 export const canManageKatalogProduk = (session: UserSession | null) =>

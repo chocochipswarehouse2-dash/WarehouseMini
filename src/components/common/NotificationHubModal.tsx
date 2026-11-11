@@ -26,7 +26,9 @@ import {
   deleteNotificationItem,
   clearAllNotifications,
   subscribeNotificationHub,
+  getActiveSessionFromStorage,
 } from '../../services/notificationHubService';
+import { canSessionReceiveNotification } from '../../services/permissions';
 
 interface NotificationHubModalProps {
   isOpen: boolean;
@@ -185,6 +187,24 @@ export const NotificationHubModal: React.FC<NotificationHubModalProps> = ({
 
   const unreadCount = useMemo(() => items.filter((i) => !i.read).length, [items]);
 
+  const allowedCategoryPills = useMemo(() => {
+    const session = getActiveSessionFromStorage();
+    const allPills = [
+      { id: 'all', label: 'Semua Kategori' },
+      { id: 'pesanan', label: '🛍️ Pesanan' },
+      { id: 'picking', label: '📋 Picking' },
+      { id: 'sps', label: '📦 SPS' },
+      { id: 'retur', label: '🔄 Retur' },
+      { id: 'produksi', label: '🏭 Produksi' },
+      { id: 'hr', label: '🌴 HR/Ijin' },
+      { id: 'chat', label: '💬 Chat' },
+    ];
+    if (!session) return allPills;
+    return allPills.filter(
+      (cat) => cat.id === 'all' || canSessionReceiveNotification(session, cat.id)
+    );
+  }, [isOpen, username]);
+
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
       if (filterTab === 'unread' && item.read) return false;
@@ -309,16 +329,7 @@ export const NotificationHubModal: React.FC<NotificationHubModalProps> = ({
 
         {/* Category Sub-Filter Pills (Horizontal Swipe) */}
         <div className="px-4 py-2 bg-slate-50/70 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 flex items-center gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap shrink-0">
-          {[
-            { id: 'all', label: 'Semua Kategori' },
-            { id: 'pesanan', label: '🛍️ Pesanan' },
-            { id: 'picking', label: '📋 Picking' },
-            { id: 'sps', label: '📦 SPS' },
-            { id: 'retur', label: '🔄 Retur' },
-            { id: 'produksi', label: '🏭 Produksi' },
-            { id: 'hr', label: '🌴 HR/Ijin' },
-            { id: 'chat', label: '💬 Chat' },
-          ].map((cat) => (
+          {allowedCategoryPills.map((cat) => (
             <button
               key={cat.id}
               type="button"
@@ -349,7 +360,7 @@ export const NotificationHubModal: React.FC<NotificationHubModalProps> = ({
               <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs leading-relaxed">
                 {filterTab === 'unread' && items.length > 0
                   ? 'Semua notifikasi Anda telah ditandai sudah dibaca. Klik tab "Semua" untuk melihat riwayat sebelumnya.'
-                  : 'Notifikasi pesanan, picking, SPS, retur, hitung ulang, dan chat yang relevan dengan akun Anda akan tersimpan otomatis di sini.'}
+                  : 'Notifikasi yang sesuai dengan hak akses dan peran akun Anda akan tersimpan otomatis di sini.'}
               </p>
               {filterTab === 'unread' && items.length > 0 && (
                 <button

@@ -1,13 +1,15 @@
 {
-  "version": "v2.11.0",
-  "versionCode": 310,
+  "version": "v2.11.1",
+  "versionCode": 311,
   "buildDate": "11 November 2026",
-  "buildHash": "wms-261111-v310-1234",
-  "releaseTitle": "WMS v2.11.0 — Ekspor Laporan AI (PDF & Excel) & Notification Hub (Popup Auto-Hide 10 Detik)",
+  "buildHash": "wms-261111-v311-1435",
+  "releaseTitle": "WMS v2.11.1 — Isolasi Ketat Notifikasi Tepat Sasaran Per Role & Hak Akses",
   "releaseNotes": [
-    "Fitur Ekspor Laporan AI ke Excel (.xlsx) & PDF (.pdf): AI kini memiliki skill generate_exportable_report untuk membuat laporan data stok, DealPOS, maupun penerimaan CMT/Kargo dalam bentuk file Excel (.xlsx) atau PDF (.pdf), ditambah tombol download 1-klik otomatis di setiap tabel AI",
-    "Notification Hub Terpusat (🔔): Seluruh notifikasi relevan sesuai role akun tersimpan otomatis di Notification Hub pada bar atas (Mobile & Desktop) dengan filter Belum Dibaca vs Semua, fitur Mark All Read, dan klik langsung menuju halaman/pesanan/ruang chat tujuan",
-    "Popup Notifikasi Auto-Hide 10 Detik: Semua popup notifikasi melayang (Toast, Banner Pesanan Baru, Banner Picking, dan OS Push Notification) kini otomatis menutup sendiri setelah 10 detik agar tidak menghalangi layar kerja"
+    "Akun Store: Hanya menerima notifikasi Pesanan / Manual Shipment / Alterasi milik store sendiri & Live Chat",
+    "Akun Karyawan / Picker: Hanya menerima notifikasi Tugas Picking, pengajuan & status Ijin/Cuti/Lembur milik dirinya sendiri (tidak menerima pengajuan karyawan lain), & Live Chat",
+    "Akun Khusus Sesuai Role Akses (SPS / CS / Produksi): Hanya menerima notifikasi sesuai modul aksesnya (SPS hanya Peminjaman SPS, CS hanya Retur Pusat Resolusi & Chat, Produksi hanya Hitung Ulang Kargo/CMT)",
+    "Admin & Warehouse: Admin dikecualikan dari seluruh notifikasi HR (Ijin/Cuti/Lembur); pengajuan HR karyawan baru hanya masuk ke akun Warehouse",
+    "Perbaikan bug fallback permission Operator & pembersihan otomatis riwayat Notification Hub yang tidak relevan dengan role akun aktif"
   ],
   "minSupportedVersion": "v2.0.0"
 }

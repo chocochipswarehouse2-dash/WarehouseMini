@@ -168,12 +168,16 @@ import {
   canAccessSettings,
   isSuperadmin,
   isWarehouseAccountOnly,
+  isStoreAccountSession,
+  isStoreMatchingOrderRecord,
   canReceiveAdminOrderNotif,
   canReceivePickingAndSpsNotif,
   canReceiveRecountNotif,
+  canReceiveEmployeeOwnHrNotif,
   isCustomerServiceSession,
   isPeminjamOnlySession,
   isEmployeeMatchingRecord,
+  resolveRoleDefaultPermissions,
   ALL_PERMISSIONS,
   ROLE_DEFAULT_PERMISSIONS,
 } from './services/permissions';
@@ -708,10 +712,18 @@ export default function App() {
           u.username.toLowerCase() === 'chocoadm' ||
           (u.nik && u.nik.toLowerCase() === 'wh0001');
 
-        const userDefaultPerms = ROLE_DEFAULT_PERMISSIONS[newRole] || ROLE_DEFAULT_PERMISSIONS['Operator'] || {};
+        const hasExplicitUserPerms =
+          u.permissions && typeof u.permissions === 'object' && Object.keys(u.permissions).length > 0;
+        const userDefaultPerms = resolveRoleDefaultPermissions({
+          ...session,
+          role: newRole as any,
+          nik: u.nik || session.nik,
+        });
         const newPermissions = isUserSuper
           ? { ...ALL_PERMISSIONS }
-          : { ...userDefaultPerms, ...(u.permissions || {}) };
+          : hasExplicitUserPerms
+          ? { menu_ops_live_chat: true, ...u.permissions }
+          : { ...userDefaultPerms };
 
         const roleChanged = newRole !== session.role;
         const permsChanged = JSON.stringify(newPermissions || {}) !== JSON.stringify(session.permissions || {});
@@ -1924,38 +1936,96 @@ export default function App() {
 
             if (payload.eventType === 'INSERT' && payload.new) {
               const row = payload.new as any;
-              handleIncomingManualShipmentRef.current(row);
-            } else if (payload.eventType === 'UPDATE' && payload.new) {
-              const row = payload.new as any;
-              const oldRow = (payload.old || {}) as any;
-              // Khusus akun Store pengirim: Notifikasi saat Resi baru diinput atau status pesanan tokonya diupdate oleh Admin
-              if (!canReceiveAdminOrderNotif(session)) {
-                const orderId = row.no_pesanan || row.no_transaksi_customer || 'Pesanan';
-                const storeName = String(row.nama_pengirim || 'Store').trim();
-                const userStore = String(session.store_name || session.store_code || session.name || '').trim().toLowerCase();
-                if (userStore && storeName.toLowerCase().includes(userStore)) {
-                  if (row.no_resi && row.no_resi !== oldRow.no_resi) {
-                    playNewTaskChime();
-                    vibrateDevice([200, 100, 300]);
-                    showPushNotification(`🚚 Resi Pesanan Diupdate (#${orderId})`, {
-                      body: `Pesanan ${row.nama_tujuan || 'Customer'} telah diupdate dengan No. Resi: ${row.no_resi} (${row.jasa_kirim || 'Ekspedisi'})`,
-                      tag: `resi-update-${orderId}`,
+              if (canReceiveAdminOrderNotif(session)) {
+                handleIncomingManualShipmentRef.current(row);
+              } else if (isStoreAccountSession(session) && isStoreMatchingOrderRecord(session, row)) {
+                const orderId = String(row.no_pesanan || row.no_transaksi_customer || 'Pesanan').trim();
+                const rawNotes = String(row.notes_paket || '');
+                const isAlter =
+                  orderId.toUpperCase().startsWith('AR-') ||
+                  orderId.toUpperCase().startsWith('ALT-') ||
+                  orderId.toUpperCase().startsWith('REP-') ||
+                  rawNotes.includes('[ALTERATION_REPAIR]:');
+                const submitKey = `STORE_SELF_SUBMIT_${orderId.toUpperCase()}`;
+                if (!notifiedOrderIdsRef.current.has(submitKey)) {
+                  notifiedOrderIdsRef.current.add(submitKey);
+                  savePersistedNotifiedOrderIds(notifiedOrderIdsRef.current);
+                  showPushNotification(
+                    isAlter
+                      ? `✅ Form Alter/Repair #${orderId} Terkirim`
+                      : `✅ Pesanan #${orderId} Berhasil Disubmit`,
+                    {
+                      body: `Customer: ${row.nama_tujuan || 'Customer'} • Menunggu diproses oleh Gudang.`,
+                      tag: `resi-update-submit-${orderId}`,
                       page: 'pesanan_saya',
                       subTab: 'manual_shipment',
                       manualSubTab: 'rekap',
                       orderId,
-                    });
-                    showToast(`🚚 Resi pesanan #${orderId} telah diupdate: ${row.no_resi}`, 'info', {
-                      actionLabel: 'Lihat Rekap →',
-                      onClick: () =>
-                        navigateToNotificationTargetRef.current({
-                          page: 'pesanan_saya',
-                          subTab: 'manual_shipment',
-                          manualSubTab: 'rekap',
-                          orderId,
-                        }),
-                    });
-                  }
+                      isAlter,
+                    }
+                  );
+                }
+              }
+            } else if (payload.eventType === 'UPDATE' && payload.new) {
+              const row = payload.new as any;
+              const oldRow = (payload.old || {}) as any;
+              // Khusus akun Store pengirim: Notifikasi saat Resi baru diinput atau status pesanan/alter tokonya diupdate oleh Admin
+              if (isStoreAccountSession(session) && isStoreMatchingOrderRecord(session, row)) {
+                const orderId = String(row.no_pesanan || row.no_transaksi_customer || 'Pesanan').trim();
+                const rawNotes = String(row.notes_paket || '');
+                const isAlter =
+                  orderId.toUpperCase().startsWith('AR-') ||
+                  orderId.toUpperCase().startsWith('ALT-') ||
+                  orderId.toUpperCase().startsWith('REP-') ||
+                  rawNotes.includes('[ALTERATION_REPAIR]:');
+
+                if (row.no_resi && row.no_resi !== oldRow.no_resi) {
+                  playNewTaskChime();
+                  vibrateDevice([200, 100, 300]);
+                  showPushNotification(`🚚 Resi Pesanan Diupdate (#${orderId})`, {
+                    body: `Pesanan ${row.nama_tujuan || 'Customer'} telah diupdate dengan No. Resi: ${row.no_resi} (${row.jasa_kirim || 'Ekspedisi'})`,
+                    tag: `resi-update-${orderId}`,
+                    page: 'pesanan_saya',
+                    subTab: 'manual_shipment',
+                    manualSubTab: 'rekap',
+                    orderId,
+                    isAlter,
+                  });
+                  showToast(`🚚 Resi pesanan #${orderId} telah diupdate: ${row.no_resi}`, 'info', {
+                    actionLabel: 'Lihat Rekap →',
+                    onClick: () =>
+                      navigateToNotificationTargetRef.current({
+                        page: 'pesanan_saya',
+                        subTab: 'manual_shipment',
+                        manualSubTab: 'rekap',
+                        orderId,
+                        isAlter,
+                      }),
+                  });
+                } else if (row.status && row.status !== oldRow.status) {
+                  const statusStr = String(row.status || '').toUpperCase();
+                  playNewTaskChime();
+                  vibrateDevice([200, 100, 250]);
+                  showPushNotification(`📦 Status Pesanan #${orderId}: ${statusStr}`, {
+                    body: `Pesanan Customer ${row.nama_tujuan || '-'} kini berstatus: ${statusStr}.`,
+                    tag: `resi-update-status-${orderId}-${statusStr}`,
+                    page: 'pesanan_saya',
+                    subTab: 'manual_shipment',
+                    manualSubTab: 'rekap',
+                    orderId,
+                    isAlter,
+                  });
+                  showToast(`📦 Status pesanan #${orderId} diupdate menjadi: ${statusStr}`, 'info', {
+                    actionLabel: 'Lihat Rekap →',
+                    onClick: () =>
+                      navigateToNotificationTargetRef.current({
+                        page: 'pesanan_saya',
+                        subTab: 'manual_shipment',
+                        manualSubTab: 'rekap',
+                        orderId,
+                        isAlter,
+                      }),
+                  });
                 }
               }
             }
@@ -2076,7 +2146,17 @@ export default function App() {
           { event: '*', schema: 'public', table: 'lembur' },
           (payload) => {
             if (payload.eventType === 'INSERT' && payload.new) {
-              handleIncomingHrRequestRef.current('lembur', payload.new);
+              const row = payload.new as any;
+              if (isWarehouseAccountOnly(session)) {
+                handleIncomingHrRequestRef.current('lembur', row);
+              } else if (canReceiveEmployeeOwnHrNotif(session) && isEmployeeMatchingRecord(session, row)) {
+                const tgl = String(row.tanggal || '').slice(0, 10);
+                showPushNotification(`✅ Pengajuan Lembur Terkirim (${tgl})`, {
+                  body: `Pengajuan lembur Anda tanggal ${tgl} telah dikirim dan menunggu persetujuan HR/Warehouse.`,
+                  tag: `hr-emp-self-lmb-${row.id || tgl}`,
+                  page: 'lembur_cuti',
+                });
+              }
             } else if (payload.eventType === 'UPDATE' && payload.new) {
               const row = payload.new as any;
               const oldRow = (payload.old || {}) as any;
@@ -2084,7 +2164,7 @@ export default function App() {
               if (
                 (status === 'Disetujui' || status === 'Ditolak') &&
                 status !== oldRow.status &&
-                !isWarehouseAccountOnly(session) &&
+                canReceiveEmployeeOwnHrNotif(session) &&
                 isEmployeeMatchingRecord(session, row)
               ) {
                 const tgl = String(row.tanggal || '').slice(0, 10);
@@ -2106,7 +2186,18 @@ export default function App() {
           { event: '*', schema: 'public', table: 'perijinan_cuti' },
           (payload) => {
             if (payload.eventType === 'INSERT' && payload.new) {
-              handleIncomingHrRequestRef.current('perijinan_cuti', payload.new);
+              const row = payload.new as any;
+              if (isWarehouseAccountOnly(session)) {
+                handleIncomingHrRequestRef.current('perijinan_cuti', row);
+              } else if (canReceiveEmployeeOwnHrNotif(session) && isEmployeeMatchingRecord(session, row)) {
+                const jenis = String(row.jenis || 'Ijin/Cuti').trim();
+                const tgl = String(row.tgl_mulai || row.tanggal_mulai || '').slice(0, 10);
+                showPushNotification(`✅ Pengajuan ${jenis} Terkirim (${tgl})`, {
+                  body: `Pengajuan ${jenis} Anda tanggal ${tgl} telah dikirim dan menunggu persetujuan HR/Warehouse.`,
+                  tag: `hr-emp-self-cuti-${row.id || tgl}`,
+                  page: 'lembur_cuti',
+                });
+              }
             } else if (payload.eventType === 'UPDATE' && payload.new) {
               const row = payload.new as any;
               const oldRow = (payload.old || {}) as any;
@@ -2114,7 +2205,7 @@ export default function App() {
               if (
                 (status === 'Disetujui' || status === 'Ditolak') &&
                 status !== oldRow.status &&
-                !isWarehouseAccountOnly(session) &&
+                canReceiveEmployeeOwnHrNotif(session) &&
                 isEmployeeMatchingRecord(session, row)
               ) {
                 const jenis = String(row.jenis || 'Ijin/Cuti').trim();
@@ -2137,7 +2228,17 @@ export default function App() {
           { event: '*', schema: 'public', table: 'izin_pulang_cepat' },
           (payload) => {
             if (payload.eventType === 'INSERT' && payload.new) {
-              handleIncomingHrRequestRef.current('izin_pulang_cepat', payload.new);
+              const row = payload.new as any;
+              if (isWarehouseAccountOnly(session)) {
+                handleIncomingHrRequestRef.current('izin_pulang_cepat', row);
+              } else if (canReceiveEmployeeOwnHrNotif(session) && isEmployeeMatchingRecord(session, row)) {
+                const tgl = String(row.tanggal || '').slice(0, 10);
+                showPushNotification(`✅ Ijin Pulang Cepat Terkirim (${tgl})`, {
+                  body: `Pengajuan Ijin Pulang Cepat Anda tanggal ${tgl} telah dikirim dan menunggu persetujuan HR/Warehouse.`,
+                  tag: `hr-emp-self-ipc-${row.id || tgl}`,
+                  page: 'lembur_cuti',
+                });
+              }
             } else if (payload.eventType === 'UPDATE' && payload.new) {
               const row = payload.new as any;
               const oldRow = (payload.old || {}) as any;
@@ -2145,7 +2246,7 @@ export default function App() {
               if (
                 (status === 'Disetujui' || status === 'Ditolak') &&
                 status !== oldRow.status &&
-                !isWarehouseAccountOnly(session) &&
+                canReceiveEmployeeOwnHrNotif(session) &&
                 isEmployeeMatchingRecord(session, row)
               ) {
                 const tgl = String(row.tanggal || '').slice(0, 10);

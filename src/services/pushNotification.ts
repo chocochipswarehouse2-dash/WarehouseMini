@@ -1,4 +1,9 @@
-import { addNotificationToHub } from './notificationHubService';
+import {
+  addNotificationToHub,
+  getActiveSessionFromStorage,
+  inferNotifCategory,
+} from './notificationHubService';
+import { canSessionReceiveNotification } from './permissions';
 
 export function isIosDevice(): boolean {
   if (typeof navigator === 'undefined') return false;
@@ -257,24 +262,35 @@ export async function showPushNotification(
     ...(options?.data && typeof options.data === 'object' ? options.data : {}),
   };
 
+  const targetPayload = {
+    page: mergedData.page || undefined,
+    subTab: mergedData.subTab || undefined,
+    manualSubTab: mergedData.manualSubTab || undefined,
+    orderId: mergedData.orderId || undefined,
+    isAlter: mergedData.isAlter || undefined,
+    hrSection: mergedData.hrSection || undefined,
+    produksiTab: mergedData.produksiTab || undefined,
+    kodeProduksi: mergedData.kodeProduksi || undefined,
+    roomId: mergedData.roomId || undefined,
+    roomName: mergedData.roomName || undefined,
+    tag: options?.tag || undefined,
+  };
+
+  // Gatekeeper ketat: jika notifikasi tidak sesuai hak akses user aktif, blokir total (jangan bunyikan OS pop-up & jangan masukkan Hub)
+  try {
+    const activeSession = getActiveSessionFromStorage();
+    const category = inferNotifCategory(title, targetPayload);
+    if (activeSession && !canSessionReceiveNotification(activeSession, category, targetPayload)) {
+      return;
+    }
+  } catch {}
+
   // Simpan setiap notifikasi ke Notification Hub in-app (walau izin OS belum aktif)
   try {
     addNotificationToHub({
       title,
       body: String(options?.body || '').trim(),
-      target: {
-        page: mergedData.page || undefined,
-        subTab: mergedData.subTab || undefined,
-        manualSubTab: mergedData.manualSubTab || undefined,
-        orderId: mergedData.orderId || undefined,
-        isAlter: mergedData.isAlter || undefined,
-        hrSection: mergedData.hrSection || undefined,
-        produksiTab: mergedData.produksiTab || undefined,
-        kodeProduksi: mergedData.kodeProduksi || undefined,
-        roomId: mergedData.roomId || undefined,
-        roomName: mergedData.roomName || undefined,
-        tag: options?.tag || undefined,
-      },
+      target: targetPayload,
     });
   } catch (err) {
     console.warn('Failed to add notification to hub:', err);
