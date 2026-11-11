@@ -516,8 +516,36 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
   };
 
   useEffect(() => {
-    const applyTarget = (detail?: { tab?: TabMode; kodeProduksi?: string }) => {
+    const loadDraftIntoFormState = (customDraft?: any) => {
+      try {
+        const parsed = customDraft || JSON.parse(localStorage.getItem('wms_penerimaan_produksi_form_draft') || 'null');
+        if (!parsed) return;
+        if (parsed.formKategori === 'Kargo' || parsed.formKategori === 'Lokal CMT') {
+          setFormKategori(parsed.formKategori);
+        }
+        if (parsed.formTanggal) {
+          setFormTanggal(parsed.formTanggal);
+        }
+        if (typeof parsed.formNoSuratJalan === 'string') {
+          setFormNoSuratJalan(parsed.formNoSuratJalan);
+        }
+        if (typeof parsed.formKeteranganGlobal === 'string') {
+          setFormKeteranganGlobal(parsed.formKeteranganGlobal);
+        }
+        if (Array.isArray(parsed.productBlocks) && parsed.productBlocks.length > 0) {
+          setProductBlocks(convertBlocksToHierarchical(parsed.productBlocks));
+        }
+        setEditingOriginalSJ(null);
+      } catch (e) {
+        console.warn('[PenerimaanProduksiView] Gagal menerapkan draft form:', e);
+      }
+    };
+
+    const applyTarget = (detail?: { tab?: TabMode; kodeProduksi?: string; reloadDraft?: boolean; draft?: any }) => {
       if (!detail) return;
+      if (detail.reloadDraft || detail.draft) {
+        loadDraftIntoFormState(detail.draft);
+      }
       if (detail.kodeProduksi) {
         setSelectedAuditTargetCode(String(detail.kodeProduksi).trim().toUpperCase());
       }
@@ -539,8 +567,18 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       applyTarget(detail);
     };
 
+    const onPrefillForm = (ev: Event) => {
+      const detail = (ev as CustomEvent)?.detail;
+      loadDraftIntoFormState(detail);
+      setActiveTab('input');
+    };
+
     window.addEventListener('wms_open_produksi_tab', onOpenProduksiTab);
-    return () => window.removeEventListener('wms_open_produksi_tab', onOpenProduksiTab);
+    window.addEventListener('wms_prefill_penerimaan_produksi_form', onPrefillForm);
+    return () => {
+      window.removeEventListener('wms_open_produksi_tab', onOpenProduksiTab);
+      window.removeEventListener('wms_prefill_penerimaan_produksi_form', onPrefillForm);
+    };
   }, []);
 
   // View Mode: 'matrix' (Spreadsheet Excel Matrix), 'card' (1 Kartu = 1 No. Surat Jalan), atau 'table' (1 Baris = 1 Varian)
@@ -594,7 +632,12 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       const raw = localStorage.getItem('wms_penerimaan_produksi_form_draft');
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed && (parsed.formNoSuratJalan || (Array.isArray(parsed.productBlocks) && parsed.productBlocks.some((b: any) => b.kode_produksi)))) {
+        if (
+          parsed &&
+          (parsed.fromAiAssistant ||
+            parsed.formNoSuratJalan ||
+            (Array.isArray(parsed.productBlocks) && parsed.productBlocks.some((b: any) => b.kode_produksi)))
+        ) {
           return parsed;
         }
       }

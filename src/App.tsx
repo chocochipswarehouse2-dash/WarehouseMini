@@ -4949,6 +4949,17 @@ export default function App() {
             (window as any).__wms_open_inventory_cart = true;
           }
         }}
+        onNavigateToProduksiInput={() => {
+          if (typeof window !== 'undefined') {
+            (window as any).__wms_pending_produksi_target = { tab: 'input', reloadDraft: true };
+            window.dispatchEvent(
+              new CustomEvent('wms_open_produksi_tab', {
+                detail: { tab: 'input', reloadDraft: true }
+              })
+            );
+          }
+          handleSelectPage('produksi');
+        }}
       />
 
       {/* Custom Confirm Dialog (replaces window.confirm for PWA Builder / TWA compat) */}

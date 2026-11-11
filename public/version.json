@@ -1,13 +1,12 @@
 {
-  "version": "v2.9.1",
-  "versionCode": 291,
-  "buildDate": "10 November 2026",
-  "buildHash": "wms-261110-v291-2158",
-  "releaseTitle": "WMS v2.9.1 — Hotfix Import React useMemo & Proteksi Eksklusif Token Owner",
+  "version": "v2.10.1",
+  "versionCode": 301,
+  "buildDate": "11 November 2026",
+  "buildHash": "wms-261111-v301-0529",
+  "releaseTitle": "WMS v2.10.1 — Konfirmasi Kode Produksi Mirip (6612 vs 6612-1) & Lampiran Foto Produk Trello di Chat AI",
   "releaseNotes": [
-    "Fix Blank Page: Menambahkan missing useMemo import di App.tsx",
-    "Proteksi Eksklusif: Tombol Token & Akses AI kini HANYA tampil untuk akun @warehouse selaku owner",
-    "Pencegahan Akses Pengaturan AI dari Akun Lain (Superadmin non-owner)"
+    "Konfirmasi Kode Produksi Mirip di AI: Jika pengguna menyebutkan kode seperti 6612 namun di Trello UP hanya ada kode varian/mirip seperti 6612-1, AI tidak langsung auto-match diam-diam melainkan bertanya terlebih dahulu kepada pengguna",
+    "Lampiran Kartu Foto Produk Trello UP di Chat AI: Saat AI bertanya konfirmasi kode mirip (maupun saat cek kode produksi), AI otomatis melampirkan Kartu Foto Produk Trello di gelembung chat lengkap dengan fitur klik perbesar (Zoom Lightbox) dan tombol 1-klik 'Ya, Pakai Kode 6612-1'"
   ],
   "minSupportedVersion": "v2.0.0"
 }

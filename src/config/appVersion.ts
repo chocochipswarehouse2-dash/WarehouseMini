@@ -15,20 +15,45 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.9.1",
-  "versionCode": 291,
-  "buildDate": "10 November 2026",
-  "buildHash": "wms-261110-v291-2158",
-  "releaseTitle": "WMS v2.9.1 — Hotfix Import React useMemo & Proteksi Eksklusif Token Owner",
+  "version": "v2.10.1",
+  "versionCode": 301,
+  "buildDate": "11 November 2026",
+  "buildHash": "wms-261111-v301-0529",
+  "releaseTitle": "WMS v2.10.1 — Konfirmasi Kode Produksi Mirip (6612 vs 6612-1) & Lampiran Foto Produk Trello di Chat AI",
   "releaseNotes": [
-    "Fix Blank Page: Menambahkan missing useMemo import di App.tsx",
-    "Proteksi Eksklusif: Tombol Token & Akses AI kini HANYA tampil untuk akun @warehouse selaku owner",
-    "Pencegahan Akses Pengaturan AI dari Akun Lain (Superadmin non-owner)"
+    "Konfirmasi Kode Produksi Mirip di AI: Jika pengguna menyebutkan kode seperti 6612 namun di Trello UP hanya ada kode varian/mirip seperti 6612-1, AI tidak langsung auto-match diam-diam melainkan bertanya terlebih dahulu kepada pengguna",
+    "Lampiran Kartu Foto Produk Trello UP di Chat AI: Saat AI bertanya konfirmasi kode mirip (maupun saat cek kode produksi), AI otomatis melampirkan Kartu Foto Produk Trello di gelembung chat lengkap dengan fitur klik perbesar (Zoom Lightbox) dan tombol 1-klik 'Ya, Pakai Kode 6612-1'"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.10.0",
+    "versionCode": 300,
+    "buildDate": "11 November 2026",
+    "buildHash": "wms-261111-v300-0507",
+    "releaseTitle": "WMS v2.10.0 — Asisten AI Penerimaan Produksi (CMT & Kargo) & Auto-Draft Form Input",
+    "releaseNotes": [
+      "AI kini dapat membaca & mencari rincian penerimaan barang produksi (Lokal CMT maupun Kargo) per tanggal spesifik (hari ini, kemarin, rentang tanggal), per nomor surat jalan, atau per kode produksi beserta pencocokan otomatis Nama Produk & Kode UP dari Trello UP.",
+      "Fitur Bantu Input Penerimaan ke Form Input (prepare_production_receipt_form): AI menyiapkan draft Form Input Penerimaan (Kategori CMT/Kargo, Tanggal, No. Surat Jalan, Kode Produksi, Foto & UP Trello otomatis, serta matriks Warna, Size, dan Qty) sehingga Anda tinggal mengecek, melengkapi data yang kurang, dan menekan tombol Submit sendiri.",
+      "Skill Tanya Jawab (Q&A) Interaktif Produksi: Jika data input penerimaan belum lengkap (misal belum ada No. Surat Jalan, Warna, atau Qty per ukuran), AI secara proaktif bertanya jawab dengan ramah dan memperbarui draft form secara bertahap."
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
+  {
+    "version": "v2.9.1",
+    "versionCode": 291,
+    "buildDate": "10 November 2026",
+    "buildHash": "wms-261110-v291-2158",
+    "releaseTitle": "WMS v2.9.1 — Hotfix Import React useMemo & Proteksi Eksklusif Token Owner",
+    "releaseNotes": [
+      "Fix Blank Page: Menambahkan missing useMemo import di App.tsx",
+      "Proteksi Eksklusif: Tombol Token & Akses AI kini HANYA tampil untuk akun @warehouse selaku owner",
+      "Pencegahan Akses Pengaturan AI dari Akun Lain (Superadmin non-owner)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.9.0",
     "versionCode": 290,
@@ -107,32 +132,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Penambahan tool add_to_inventory_cart untuk memasukkan produk ke keranjang order inventory",
       "Dukungan interaksi cerdas: tanya qty jika kosong, penawaran alternatif warna/size jika stok 0",
       "Perbaikan multi-tool calling agar seluruh produk dieksekusi simultan dan menghasilkan rangkuman lengkap"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.7.0",
-    "versionCode": 270,
-    "buildDate": "10 November 2026",
-    "buildHash": "wms-261110-v270-1812",
-    "releaseTitle": "WMS v2.7.0 — Asisten AI Pintar WMS (Google Gemini Flash)",
-    "releaseNotes": [
-      "Rilis Fitur Baru: Asisten AI WMS berbasis Google Gemini Flash terintegrasi di Sidebar",
-      "Tanya stok real, posisi rak, lookup kode produksi Trello UP, dan rekapitulasi penerimaan bulanan via bahasa alami",
-      "Kontrol akses hemat token: Superadmin default dengan Whitelist Staf Terpilih"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.6.105",
-    "versionCode": 365,
-    "buildDate": "10 November 2026",
-    "buildHash": "wms-261110-v365-1802",
-    "releaseTitle": "WMS v2.6.105 — Asisten AI Pintar WMS (Google Gemini Flash)",
-    "releaseNotes": [
-      "Penambahan Asisten AI WMS di Sidebar dengan popup floating page",
-      "Mendukung tanya stok produk, letak rak, lookup kode produksi Trello UP, dan rekapitulasi penerimaan bulanan",
-      "Kontrol akses token hemat: default khusus Superadmin dengan whitelist user management"
     ],
     "minSupportedVersion": "v2.0.0"
   }

@@ -147,7 +147,8 @@ export type UserPermissionKey =
   | 'action_sync_dealpos'
   | 'action_edit_master'
   | 'action_delete_master'
-  | 'action_manage_chat_groups';
+  | 'action_manage_chat_groups'
+  | 'action_access_wms_ai';
 
 export type UserPermissions = {
   [K in UserPermissionKey]?: boolean;

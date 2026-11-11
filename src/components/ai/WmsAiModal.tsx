@@ -35,8 +35,10 @@ import {
 import { UserSession } from '../../types';
 import { isSuperadmin, isWarehouseAccountOnly } from '../../services/permissions';
 import { parseAiAttachmentFile, AiAttachment } from '../../utils/aiAttachmentParser';
+import { TrelloImage } from '../Trello/TrelloImage';
 import {
   AiChatMessage,
+  TrelloCandidatePreview,
   sendChatMessageToGemini,
   fetchAiConfig,
   saveAiConfig,
@@ -59,9 +61,22 @@ interface WmsAiModalProps {
   session: UserSession | null;
   onNotify?: (message: string, type: 'success' | 'error' | 'info') => void;
   onNavigateToInventoryCart?: () => void;
+  onNavigateToProduksiInput?: () => void;
 }
 
 const SUGGESTED_PROMPTS = [
+  {
+    icon: FileSpreadsheet,
+    label: 'Cek Kedatangan Kargo / CMT',
+    prompt: 'Kemarin ada masuk kargo apa aja dan berapa aja?',
+    desc: 'Baca rincian penerimaan barang CMT & Kargo per tanggal'
+  },
+  {
+    icon: FileText,
+    label: 'Bantu Input Form Produksi',
+    prompt: 'Tolong bantu input penerimaan kargo hari ini ke form input',
+    desc: 'AI tanya jawab & isikan ke draft form, Anda tinggal cek & submit'
+  },
   {
     icon: ShoppingCart,
     label: 'Order ke Keranjang',
@@ -73,18 +88,6 @@ const SUGGESTED_PROMPTS = [
     label: 'Cek Stok Produk',
     prompt: 'Stok sailor top sekarang berapa ya?',
     desc: 'Cek total fisik, DealPOS, dan posisi rak'
-  },
-  {
-    icon: Search,
-    label: 'Cari Nama Kode Produksi',
-    prompt: 'Kode 6612 itu nama produknya apa ya?',
-    desc: 'Lookup dari Trello UP dan riwayat penerimaan'
-  },
-  {
-    icon: FileSpreadsheet,
-    label: 'Rekap Penerimaan Bulan',
-    prompt: 'Buat rekap penerimaan produk selama bulan Oktober',
-    desc: 'Total pcs, surat jalan, dan per kategori CMT/Kargo'
   }
 ];
 
@@ -93,7 +96,8 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
   onClose,
   session,
   onNotify,
-  onNavigateToInventoryCart
+  onNavigateToInventoryCart,
+  onNavigateToProduksiInput
 }) => {
   const sessionUser = session?.username || 'default_user';
   const sessionsStorageKey = `wms_ai_sessions_${sessionUser}`;
@@ -142,6 +146,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [activeToolName, setActiveToolName] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [zoomedTrelloCandidate, setZoomedTrelloCandidate] = useState<TrelloCandidatePreview | null>(null);
 
   // Lampiran Multimodal (Foto Dokumen, Excel, CSV)
   const [pendingAttachments, setPendingAttachments] = useState<AiAttachment[]>([]);
@@ -208,12 +213,69 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
     };
   }, [isOpen]);
 
+  const [prodDraftCount, setProdDraftCount] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem('wms_penerimaan_produksi_form_draft');
+      if (!raw) return 0;
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed.productBlocks)
+        ? parsed.productBlocks.filter((b: any) => b && b.kode_produksi && String(b.kode_produksi).trim()).length
+        : 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  useEffect(() => {
+    const updateProdDraft = () => {
+      try {
+        const raw = localStorage.getItem('wms_penerimaan_produksi_form_draft');
+        if (!raw) {
+          setProdDraftCount(0);
+          return;
+        }
+        const parsed = JSON.parse(raw);
+        setProdDraftCount(
+          Array.isArray(parsed.productBlocks)
+            ? parsed.productBlocks.filter((b: any) => b && b.kode_produksi && String(b.kode_produksi).trim()).length
+            : 0
+        );
+      } catch {
+        setProdDraftCount(0);
+      }
+    };
+    updateProdDraft();
+    window.addEventListener('wms_production_draft_updated', updateProdDraft);
+    window.addEventListener('storage', updateProdDraft);
+    return () => {
+      window.removeEventListener('wms_production_draft_updated', updateProdDraft);
+      window.removeEventListener('storage', updateProdDraft);
+    };
+  }, [isOpen]);
+
   const handleOpenCart = () => {
     if (typeof window !== 'undefined') {
       (window as any).__wms_open_inventory_cart = true;
     }
     onNavigateToInventoryCart?.();
     onClose();
+  };
+
+  const handleOpenProduksiForm = (minimizeInsteadOfClose = true) => {
+    if (typeof window !== 'undefined') {
+      (window as any).__wms_pending_produksi_target = { tab: 'input', reloadDraft: true };
+      window.dispatchEvent(
+        new CustomEvent('wms_open_produksi_tab', {
+          detail: { tab: 'input', reloadDraft: true }
+        })
+      );
+    }
+    onNavigateToProduksiInput?.();
+    if (minimizeInsteadOfClose) {
+      setIsMinimized(true);
+    } else {
+      onClose();
+    }
   };
 
   // Superadmin Access & Settings Popover
@@ -400,7 +462,10 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
           let toolLabel = 'Mengecek data WMS...';
           if (toolName === 'lookup_product_stock') toolLabel = 'Mengecek katalog & stok rak gudang...';
           else if (toolName === 'lookup_production_code') toolLabel = 'Mencari kode produksi di Trello UP...';
+          else if (toolName === 'query_production_receipts') toolLabel = 'Membaca data penerimaan CMT & Kargo...';
           else if (toolName === 'generate_production_recap') toolLabel = 'Menghitung rekapitulasi penerimaan barang...';
+          else if (toolName === 'prepare_production_receipt_form') toolLabel = 'Menyiapkan Draft Form Input Penerimaan...';
+          else if (toolName === 'view_production_receipt_form_draft') toolLabel = 'Membaca Draft Form Input Penerimaan...';
           else if (toolName === 'search_manual_shipment') toolLabel = 'Mencari data resi pengiriman...';
           else if (toolName === 'add_to_inventory_cart') toolLabel = 'Memasukkan barang ke Keranjang Order...';
           else if (toolName === 'view_inventory_cart') toolLabel = 'Melihat isi Keranjang Order...';
@@ -414,7 +479,8 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
         role: 'model',
         text: result.text,
         timestamp: Date.now(),
-        toolCallsExecuted: result.executedTools
+        toolCallsExecuted: result.executedTools,
+        trelloCandidates: result.trelloCandidates
       };
 
       setMessages((prev) => [...prev, botMsg]);
@@ -707,6 +773,19 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
           </div>
 
           <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+            {/* Quick Open Form Input Produksi Button */}
+            {onNavigateToProduksiInput && prodDraftCount > 0 && (
+              <button
+                type="button"
+                onClick={() => handleOpenProduksiForm(true)}
+                title="Buka Draft Form Input Penerimaan Produksi"
+                className="px-2 sm:px-2.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-300/80 dark:border-indigo-700/80 hover:bg-indigo-100"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Form Produksi</span> ({prodDraftCount})
+              </button>
+            )}
+
             {/* Quick Open Cart Button */}
             {onNavigateToInventoryCart && (
               <button
@@ -1131,6 +1210,116 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                       {isUser ? <p className="whitespace-pre-wrap">{msg.text}</p> : renderFormattedContent(msg.text)}
                     </div>
 
+                    {/* Lampiran Visual Kartu Foto Produk Trello UP (Exact maupun Konfirmasi Kode Mirip seperti 6612 -> 6612-1) */}
+                    {!isUser && msg.trelloCandidates && msg.trelloCandidates.length > 0 && (
+                      <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between gap-2 text-[11px] font-black text-slate-700 dark:text-slate-200">
+                          <span className="flex items-center gap-1.5">
+                            <ImageIcon className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                            {msg.trelloCandidates.some((c) => c.needsConfirmation)
+                              ? 'Konfirmasi Kode Produksi Mirip & Foto Trello UP:'
+                              : 'Lampiran Foto Produk Trello UP:'}
+                          </span>
+                          <span className="text-[10px] font-normal text-slate-400">Klik foto untuk perbesar</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          {msg.trelloCandidates.map((cand, cIdx) => (
+                            <div
+                              key={`${cand.matchedCode}_${cIdx}`}
+                              className={`flex flex-col rounded-xl border p-2.5 transition-all ${
+                                cand.needsConfirmation
+                                  ? 'bg-amber-50/70 dark:bg-amber-950/30 border-amber-300 dark:border-amber-800/80'
+                                  : 'bg-slate-50/80 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700'
+                              }`}
+                            >
+                              <div className="flex items-start gap-2.5">
+                                {/* Thumbnail Foto Trello UP */}
+                                <div
+                                  onClick={() => (cand.photoUrl || cand.fallbackPhotoUrl) && setZoomedTrelloCandidate(cand)}
+                                  className={`w-20 h-20 rounded-lg overflow-hidden border shrink-0 flex items-center justify-center relative group/img ${
+                                    cand.photoUrl || cand.fallbackPhotoUrl
+                                      ? 'cursor-pointer border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
+                                      : 'border-dashed border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800'
+                                  }`}
+                                  title={cand.photoUrl || cand.fallbackPhotoUrl ? 'Klik untuk memperbesar foto' : 'Belum ada foto di Trello'}
+                                >
+                                  {cand.photoUrl || cand.fallbackPhotoUrl ? (
+                                    <>
+                                      <TrelloImage
+                                        src={cand.photoUrl || cand.fallbackPhotoUrl}
+                                        fallbackSrc={cand.fallbackPhotoUrl}
+                                        alt={cand.productName}
+                                        className="w-full h-full object-cover group-hover/img:scale-105 transition-transform"
+                                      />
+                                      <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/30 transition-colors flex items-center justify-center">
+                                        <Maximize2 className="w-4 h-4 text-white opacity-0 group-hover/img:opacity-100 transition-opacity drop-shadow" />
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <div className="text-[9px] text-slate-400 text-center px-1 leading-tight">
+                                      Tanpa Foto
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Detail Kode, Nama Produk & UP */}
+                                <div className="min-w-0 flex-1 space-y-1">
+                                  <div className="flex flex-wrap items-center gap-1">
+                                    <span
+                                      className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+                                        cand.needsConfirmation
+                                          ? 'bg-amber-500 text-white'
+                                          : 'bg-emerald-600 text-white'
+                                      }`}
+                                    >
+                                      {cand.needsConfirmation
+                                        ? `⚠️ Mirip (Diminta: ${cand.requestedCode})`
+                                        : '✅ Cocok Persis'}
+                                    </span>
+                                    {cand.upCode && (
+                                      <span className="px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 font-mono text-[9px] font-bold">
+                                        {cand.upCode}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="font-mono text-xs font-black text-slate-900 dark:text-white">
+                                    Kode Trello: <span className="text-indigo-600 dark:text-indigo-400">{cand.matchedCode}</span>
+                                  </div>
+
+                                  <div className="text-[11px] font-bold text-slate-700 dark:text-slate-200 line-clamp-2 leading-snug">
+                                    {cand.productName}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Tombol 1-Klik Konfirmasi jika kode mirip (6612 -> 6612-1) */}
+                              {cand.needsConfirmation && (
+                                <div className="mt-2.5 pt-2 border-t border-amber-200/80 dark:border-amber-800/60 flex items-center justify-between gap-2">
+                                  <span className="text-[10px] font-medium text-amber-800 dark:text-amber-300">
+                                    Apakah benar produk ini?
+                                  </span>
+                                  <button
+                                    type="button"
+                                    disabled={isLoading}
+                                    onClick={() =>
+                                      handleSendMessage(
+                                        `Ya benar, pakai kode ${cand.matchedCode} (${cand.productName}${cand.upCode ? ` - ${cand.upCode}` : ''}) untuk diinput ke form penerimaan`
+                                      )
+                                    }
+                                    className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-[10px] font-black flex items-center gap-1 shadow-2xs transition-colors cursor-pointer shrink-0"
+                                  >
+                                    <Check className="w-3 h-3" />
+                                    <span>Ya, Pakai Kode {cand.matchedCode}</span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Direct CTA: Buka Keranjang Order jika tool add_to_inventory_cart dieksekusi */}
                     {!isUser && msg.toolCallsExecuted?.includes('add_to_inventory_cart') && onNavigateToInventoryCart && (
                       <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 bg-emerald-50/60 dark:bg-emerald-950/30 p-2.5 rounded-xl border border-emerald-200/80 dark:border-emerald-800/80">
@@ -1149,6 +1338,27 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                         </button>
                       </div>
                     )}
+
+                    {/* Direct CTA: Buka Form Input Penerimaan Produksi jika tool prepare_production_receipt_form dieksekusi */}
+                    {!isUser &&
+                      (msg.toolCallsExecuted?.includes('prepare_production_receipt_form') ||
+                        msg.toolCallsExecuted?.includes('view_production_receipt_form_draft')) &&
+                      onNavigateToProduksiInput && (
+                        <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 bg-indigo-50/70 dark:bg-indigo-950/30 p-2.5 rounded-xl border border-indigo-200/80 dark:border-indigo-800/80">
+                          <div className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-700 dark:text-indigo-300">
+                            <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                            <span>Draft Form Input Penerimaan siap dicek & dilengkapi (Tetap Anda yang Submit)</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenProduksiForm(true)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer shrink-0"
+                          >
+                            <span>Buka Form Input Produksi</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
 
                     {/* Copy Button */}
                     {!isUser && (
@@ -1328,6 +1538,73 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Modal Lightbox Zoom Foto Produk Trello UP */}
+      {zoomedTrelloCandidate && (
+        <div
+          onClick={() => setZoomedTrelloCandidate(null)}
+          className="fixed inset-0 z-[130] bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full overflow-hidden shadow-2xl"
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono text-xs font-black text-indigo-600 dark:text-indigo-400">
+                    {zoomedTrelloCandidate.matchedCode}
+                  </span>
+                  {zoomedTrelloCandidate.upCode && (
+                    <span className="px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-300 font-mono text-[10px] font-bold">
+                      {zoomedTrelloCandidate.upCode}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate mt-0.5">
+                  {zoomedTrelloCandidate.productName}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setZoomedTrelloCandidate(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-4 bg-slate-50 dark:bg-slate-950 flex items-center justify-center max-h-[65vh] overflow-hidden">
+              <TrelloImage
+                src={zoomedTrelloCandidate.photoUrl || zoomedTrelloCandidate.fallbackPhotoUrl}
+                fallbackSrc={zoomedTrelloCandidate.fallbackPhotoUrl}
+                alt={zoomedTrelloCandidate.productName}
+                className="max-h-[58vh] w-auto object-contain rounded-xl"
+              />
+            </div>
+            {zoomedTrelloCandidate.needsConfirmation && (
+              <div className="px-4 py-3 bg-amber-50 dark:bg-amber-950/40 border-t border-amber-200 dark:border-amber-800/60 flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-amber-800 dark:text-amber-300">
+                  Kode diminta: <span className="font-mono">{zoomedTrelloCandidate.requestedCode}</span> → Trello: <span className="font-mono">{zoomedTrelloCandidate.matchedCode}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cand = zoomedTrelloCandidate;
+                    setZoomedTrelloCandidate(null);
+                    handleSendMessage(
+                      `Ya benar, pakai kode ${cand.matchedCode} (${cand.productName}${cand.upCode ? ` - ${cand.upCode}` : ''}) untuk diinput ke form penerimaan`
+                    );
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black flex items-center gap-1.5 shadow-sm cursor-pointer shrink-0"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Ya, Pakai Kode {zoomedTrelloCandidate.matchedCode}</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
 
   </div>
