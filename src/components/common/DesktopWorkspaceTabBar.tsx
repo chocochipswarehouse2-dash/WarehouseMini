@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { ActivePage, UserSession } from '../../types';
 import { canAccessPage } from '../../services/permissions';
+import { NotificationHubButton } from './NotificationHubModal';
 
 export interface WorkspacePageMeta {
   id: ActivePage;
@@ -86,6 +87,7 @@ interface DesktopWorkspaceTabBarProps {
   onCloseTab: (page: ActivePage) => void;
   onOpenCompanion: (page: ActivePage | null) => void;
   onOpenAiModal?: () => void;
+  onOpenNotificationHub?: () => void;
   maxKeepAliveTabs: number;
 }
 
@@ -98,6 +100,7 @@ export const DesktopWorkspaceTabBar: React.FC<DesktopWorkspaceTabBarProps> = ({
   onCloseTab,
   onOpenCompanion,
   onOpenAiModal,
+  onOpenNotificationHub,
   maxKeepAliveTabs,
 }) => {
   const [isQuickPickerOpen, setIsQuickPickerOpen] = useState(false);
@@ -261,8 +264,15 @@ export const DesktopWorkspaceTabBar: React.FC<DesktopWorkspaceTabBarProps> = ({
         </div>
       </div>
 
-      {/* Right: Asisten AI Pintar & Universal Companion Slide-Over Trigger */}
+      {/* Right: Notification Hub, Asisten AI Pintar & Universal Companion Slide-Over Trigger */}
       <div className="flex items-center gap-1.5 shrink-0">
+        {onOpenNotificationHub && (
+          <NotificationHubButton
+            onClick={onOpenNotificationHub}
+            username={session?.username}
+          />
+        )}
+
         {onOpenAiModal && (
           <button
             type="button"

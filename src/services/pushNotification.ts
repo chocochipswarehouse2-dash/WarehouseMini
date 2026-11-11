@@ -1,3 +1,5 @@
+import { addNotificationToHub } from './notificationHubService';
+
 export function isIosDevice(): boolean {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent || '';
@@ -240,14 +242,6 @@ export async function showPushNotification(
     }>;
   }
 ) {
-  if (!('Notification' in window)) return;
-
-  if (Notification.permission === 'default') {
-    await requestNotificationPermission();
-  }
-
-  if (Notification.permission !== 'granted') return;
-
   const mergedData = {
     url: options?.url || '/',
     page: options?.page || '',
@@ -263,15 +257,60 @@ export async function showPushNotification(
     ...(options?.data && typeof options.data === 'object' ? options.data : {}),
   };
 
+  // Simpan setiap notifikasi ke Notification Hub in-app (walau izin OS belum aktif)
+  try {
+    addNotificationToHub({
+      title,
+      body: String(options?.body || '').trim(),
+      target: {
+        page: mergedData.page || undefined,
+        subTab: mergedData.subTab || undefined,
+        manualSubTab: mergedData.manualSubTab || undefined,
+        orderId: mergedData.orderId || undefined,
+        isAlter: mergedData.isAlter || undefined,
+        hrSection: mergedData.hrSection || undefined,
+        produksiTab: mergedData.produksiTab || undefined,
+        kodeProduksi: mergedData.kodeProduksi || undefined,
+        roomId: mergedData.roomId || undefined,
+        roomName: mergedData.roomName || undefined,
+        tag: options?.tag || undefined,
+      },
+    });
+  } catch (err) {
+    console.warn('Failed to add notification to hub:', err);
+  }
+
+  if (!('Notification' in window)) return;
+
+  if (Notification.permission === 'default') {
+    await requestNotificationPermission();
+  }
+
+  if (Notification.permission !== 'granted') return;
+
+  const notifTag = options?.tag || 'wms-notification-' + Date.now();
+
+  // Auto-hide popup: jangan paksa requireInteraction agar popup tidak menempel selamanya
   const defaultOptions: any = {
     ...options,
     icon: options?.icon || '/icon-192.png',
     badge: options?.badge || '/icon-192.png',
     vibrate: (options as any)?.vibrate || [250, 100, 250, 100, 400],
-    tag: options?.tag || 'wms-notification-' + Date.now(),
+    tag: notifTag,
     renotify: true,
-    requireInteraction: options?.requireInteraction ?? true,
+    requireInteraction: false,
     data: mergedData,
+  };
+
+  const scheduleSwClose = (reg: ServiceWorkerRegistration, tagToClose: string) => {
+    setTimeout(async () => {
+      try {
+        if (typeof reg.getNotifications === 'function') {
+          const list = await reg.getNotifications({ tag: tagToClose });
+          list.forEach((n) => n.close());
+        }
+      } catch {}
+    }, 10000);
   };
 
   try {
@@ -280,6 +319,7 @@ export async function showPushNotification(
       if (registration && 'showNotification' in registration) {
         try {
           await registration.showNotification(title, defaultOptions);
+          scheduleSwClose(registration, notifTag);
           return;
         } catch {
           // Fallback 1: If browser rejects `type: 'text'` inline reply action, retry with button actions only
@@ -293,12 +333,14 @@ export async function showPushNotification(
                 })),
               };
               await registration.showNotification(title, buttonOnlyOptions);
+              scheduleSwClose(registration, notifTag);
               return;
             } catch {
               // Fallback 2: Retry without `actions` property
               const noActionsOptions = { ...defaultOptions };
               delete noActionsOptions.actions;
               await registration.showNotification(title, noActionsOptions);
+              scheduleSwClose(registration, notifTag);
               return;
             }
           }
@@ -313,7 +355,14 @@ export async function showPushNotification(
     const cleanOptions = { ...defaultOptions };
     delete cleanOptions.actions;
     const notif = new Notification(title, cleanOptions);
+    // Auto-hide OS notification after 10 seconds
+    const closeTimer = setTimeout(() => {
+      try {
+        notif.close();
+      } catch {}
+    }, 10000);
     notif.onclick = () => {
+      clearTimeout(closeTimer);
       window.focus();
       if (mergedData.page || mergedData.roomId || mergedData.orderId) {
         window.dispatchEvent(

@@ -1,6 +1,0 @@
-{
-  "summary":  "Finalisasi rencana implementasi Live Chat & Ruang Diskusi: (1) Otomatis aktif untuk seluruh user lama maupun user baru dengan opsi toggle di Hak Akses User, (2) Zero-Setup tanpa wajib buat tabel baru di Supabase (otomatis berjalan di atas wms_system_docs yang sudah ada), (3) Riwayat permanen 3-lapis, Edit/Hapus batas 5 menit & status baca ✓✓, serta Inline Direct Reply + Unified Background Sync di pwa-extras.js.",
-  "updatedAt":  "2026-11-01T05:28:47.313247642Z",
-  "requestFeedback":  true,
-  "userFacing":  true
-}

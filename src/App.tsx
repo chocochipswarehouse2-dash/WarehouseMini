@@ -41,6 +41,10 @@ import {
   DesktopCompanionDrawer,
   getWorkspacePageMeta,
 } from './components/common/DesktopWorkspaceTabBar';
+import {
+  NotificationHubModal,
+  NotificationHubButton,
+} from './components/common/NotificationHubModal';
 import { appUpdateManager } from './services/appUpdateService';
 import { MobileOrientationWarning } from './components/MobileOrientationWarning';
 import { ToastContainer } from './components/Toast';
@@ -1020,6 +1024,7 @@ export default function App() {
   const [isApkModalOpen, setIsApkModalOpen] = useState<boolean>(false);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState<boolean>(false);
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
+  const [isNotificationHubOpen, setIsNotificationHubOpen] = useState<boolean>(false);
   const [allowedAiUsers, setAllowedAiUsers] = useState<string[]>(() => {
     try {
       const cached = localStorage.getItem('wms_ai_allowed_users');
@@ -1141,7 +1146,7 @@ export default function App() {
     setDarkMode((prev) => !prev);
   };
 
-  // Toast helper (mendukung klik langsung ke halaman tujuan)
+  // Toast helper (mendukung klik langsung ke halaman tujuan & auto-hide maksimal 10 detik)
   const showToast = useCallback(
     (
       message: string,
@@ -1156,10 +1161,28 @@ export default function App() {
 
       setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== id));
-      }, options?.onClick ? 5500 : 3500);
+      }, options?.onClick ? 10000 : 4500);
     },
     []
   );
+
+  // Auto-hide floating popup banners strictly after 10 seconds (10000 ms)
+  // User dapat melihat kembali semua notifikasi yang belum dibaca di Notification Hub
+  useEffect(() => {
+    if (!newManualShipmentAlert) return;
+    const timer = setTimeout(() => {
+      setNewManualShipmentAlert(null);
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, [newManualShipmentAlert]);
+
+  useEffect(() => {
+    if (!newPickingTaskAlert) return;
+    const timer = setTimeout(() => {
+      setNewPickingTaskAlert(null);
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, [newPickingTaskAlert]);
 
   const dismissToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -4246,6 +4269,14 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
+            {/* Tombol Notification Hub di Header Mobile */}
+            {session && (
+              <NotificationHubButton
+                onClick={() => setIsNotificationHubOpen(true)}
+                username={session.username}
+                compact
+              />
+            )}
             {/* Tombol AI di Header Mobile (Khusus Superadmin & Whitelisted User) */}
             {userCanAccessAi && (
               <button
@@ -4277,6 +4308,7 @@ export default function App() {
             onCloseTab={handleCloseDesktopTab}
             onOpenCompanion={handleOpenCompanion}
             onOpenAiModal={userCanAccessAi ? () => setIsAiModalOpen(true) : undefined}
+            onOpenNotificationHub={() => setIsNotificationHubOpen(true)}
             maxKeepAliveTabs={MAX_KEEP_ALIVE_TABS}
           />
         )}
@@ -4959,6 +4991,16 @@ export default function App() {
             );
           }
           handleSelectPage('produksi');
+        }}
+      />
+
+      {/* Notification Hub Modal (Riwayat Notifikasi Belum Dibaca & Mark All Read) */}
+      <NotificationHubModal
+        isOpen={isNotificationHubOpen}
+        onClose={() => setIsNotificationHubOpen(false)}
+        username={session?.username}
+        onNavigateTarget={(target) => {
+          navigateToNotificationTarget(target);
         }}
       />
 

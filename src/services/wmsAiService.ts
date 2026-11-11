@@ -52,9 +52,12 @@ export interface AiChatMessage {
   trelloCandidates?: TrelloCandidatePreview[];
   reportTable?: {
     title: string;
+    subtitle?: string;
+    filename?: string;
     headers: string[];
     rows: (string | number)[][];
     summary?: string;
+    preferredFormat?: 'excel' | 'pdf' | 'both';
   };
 }
 
@@ -406,6 +409,49 @@ const AI_TOOLS = [
           type: 'OBJECT',
           properties: {}
         }
+      },
+      {
+        name: 'generate_exportable_report',
+        description: 'Membuat dokumen laporan data terstruktur yang siap diunduh oleh pengguna dalam format File Excel (.xlsx) maupun Dokumen PDF (.pdf). WAJIB panggil tool ini ketika pengguna meminta dibuatkan laporan dalam format PDF atau Excel (baik laporan stok rak/DealPOS, laporan penerimaan CMT/Kargo, rekap bulanan, maupun tabel data kustom).',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            title: {
+              type: 'STRING',
+              description: 'Judul utama laporan (contoh: "Laporan Stok Fisik & DealPOS Gudang", "Laporan Penerimaan Kargo 10 November 2026")'
+            },
+            subtitle: {
+              type: 'STRING',
+              description: 'Subjudul atau keterangan periode laporan (opsional)'
+            },
+            filename: {
+              type: 'STRING',
+              description: 'Nama file tanpa ekstensi (contoh: "Laporan_Stok_Gudang" atau "Rekap_Penerimaan_Kargo")'
+            },
+            preferred_format: {
+              type: 'STRING',
+              description: 'Format yang diminta pengguna: "excel", "pdf", atau "both" (default: "both")'
+            },
+            summary: {
+              type: 'STRING',
+              description: 'Ringkasan total atau kesimpulan singkat di bagian atas laporan (contoh: "Total 7 SKU • Total Fisik: 5 pcs • Total DealPOS: 254 pcs")'
+            },
+            headers: {
+              type: 'ARRAY',
+              description: 'Daftar nama kolom tabel laporan, contoh: ["No", "Nama Produk & Varian", "Status Rak", "Stok Fisik", "Stok DealPOS", "Lokasi Rak"]',
+              items: { type: 'STRING' }
+            },
+            rows: {
+              type: 'ARRAY',
+              description: 'Data baris tabel laporan (array 2 dimensi di mana setiap baris memiliki jumlah elemen yang sama dengan headers)',
+              items: {
+                type: 'ARRAY',
+                items: { type: 'STRING' }
+              }
+            }
+          },
+          required: ['title', 'headers', 'rows']
+        }
       }
     ]
   }
@@ -454,24 +500,213 @@ async function getResolvedMasterProducts(): Promise<ProductItem[]> {
 }
 
 /**
- * Helper pencocokan token kata utuh (Word-Boundary Token Matching)
- * Mencegah kesalahan 'truth' mencocokkan 'ruth', atau kata yang saling tertukar.
+ * Normalisasi token ukuran pakaian agar konsisten saat dibandingkan
+ * (misal 'S', 'M', 'L', 'XL', '2XL' -> 'XXL', 'ALL SIZE'/'DEFAULT' -> 'ALL')
  */
-function matchAllTokensStrict(targetText: string, tokens: string[]): boolean {
-  if (!tokens || tokens.length === 0) return false;
-  const words = targetText.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-  return tokens.every((tok) => words.some((w) => w === tok || (w.startsWith(tok) && tok.length >= 4)));
+function normalizeSizeTokenForMatch(rawSize: string): string {
+  const s = String(rawSize || '')
+    .trim()
+    .toUpperCase()
+    .replace(/^SIZE\s*:?\s*/i, '')
+    .replace(/^UKURAN\s*:?\s*/i, '')
+    .replace(/^UK\s*:?\s*/i, '')
+    .replace(/[()[\]]/g, '')
+    .trim();
+  if (!s || s === '-' || s === 'DEFAULT' || s === 'ALL' || s === 'ALL SIZE' || s === 'ALLSIZE' || s === 'FREE SIZE' || s === 'FREESIZE' || s === 'FS' || s === 'ONE SIZE' || s === 'ONESIZE' || s === 'OS') {
+    return 'ALL';
+  }
+  if (s === '2XL') return 'XXL';
+  if (s === '3XL') return 'XXXL';
+  if (s === '4XL') return 'XXXXL';
+  if (s === '2XS') return 'XXS';
+  return s;
 }
 
 /**
- * Eksekusi lookup 1 produk secara menyeluruh (Master Catalog + Supabase PostgREST)
+ * Memisahkan query pengguna menjadi:
+ * - `nameTokens`: daftar kata nama produk & warna (contoh: ["zilva", "top", "white"])
+ * - `cleanProductNameQuery`: gabungan kata nama produk & warna ("zilva top white")
+ * - `requestedSize`: ukuran spesifik jika pengguna menyebutkannya (contoh: "M", "S", "L", "XL", "XXL", "ALL"), atau null jika tidak sebut size
+ */
+function parseProductQueryAndSize(rawQuery: string): {
+  nameTokens: string[];
+  cleanProductNameQuery: string;
+  requestedSize: string | null;
+} {
+  let working = String(rawQuery || '').trim();
+  let requestedSize: string | null = null;
+
+  // 1. Cek apakah ada ukuran di dalam tanda kurung, contoh: "Zilva Top White (M)" atau "(ALL SIZE)"
+  const parenSizeMatch = working.match(/\(\s*(?:size\s*:?\s*|ukuran\s*:?\s*|uk\s*:?\s*)?(XXXL|3XL|XXL|2XL|XL|XS|XXS|S|M|L|ALL\s*SIZE|ALLSIZE|ALL|FREE\s*SIZE|FS)\s*\)/i);
+  if (parenSizeMatch && parenSizeMatch[1]) {
+    requestedSize = normalizeSizeTokenForMatch(parenSizeMatch[1]);
+    working = working.replace(parenSizeMatch[0], ' ');
+  }
+
+  // 2. Cek apakah ada pola eksplisit "size M" / "ukuran S" / "- M" di akhir kalimat
+  if (!requestedSize) {
+    const explicitSizeMatch = working.match(/(?:[-–—/]\s*|\b(?:size|ukuran|uk)\s+)(XXXL|3XL|XXL|2XL|XL|XS|XXS|S|M|L|ALL\s*SIZE|ALLSIZE|ALL|FREE\s*SIZE|FS)\s*$/i);
+    if (explicitSizeMatch && explicitSizeMatch[1]) {
+      requestedSize = normalizeSizeTokenForMatch(explicitSizeMatch[1]);
+      working = working.slice(0, explicitSizeMatch.index).trim();
+    }
+  }
+
+  // 3. Cek apakah kata paling belakang adalah token ukuran pakaian standar (contoh: "Posy Dress Blue S" atau "Zilva Top White M")
+  if (!requestedSize) {
+    const trailingAllSize = working.match(/\b(ALL\s*SIZE|ALLSIZE|FREE\s*SIZE)\s*$/i);
+    if (trailingAllSize && trailingAllSize[1]) {
+      requestedSize = 'ALL';
+      working = working.slice(0, trailingAllSize.index).trim();
+    } else {
+      const tokensTemp = working
+        .replace(/[^a-zA-Z0-9\s]/g, ' ')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+      if (tokensTemp.length >= 2) {
+        const lastTok = tokensTemp[tokensTemp.length - 1].toUpperCase();
+        if (/^(XXXL|3XL|XXL|2XL|XL|XS|XXS|S|M|L|ALL|FS)$/.test(lastTok)) {
+          requestedSize = normalizeSizeTokenForMatch(lastTok);
+          tokensTemp.pop();
+          working = tokensTemp.join(' ');
+        }
+      }
+    }
+  }
+
+  // Bersihkan kata tambahan non-nama seperti "size", "ukuran", "pcs"
+  const nameTokens = working
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((t) => Boolean(t) && !['size', 'ukuran', 'uk', 'pcs', 'pc', 'stok', 'cek'].includes(t));
+
+  return {
+    nameTokens,
+    cleanProductNameQuery: nameTokens.join(' '),
+    requestedSize
+  };
+}
+
+/**
+ * Menghitung angka DealPOS suatu item Master Produk persis mengikuti rumus resmi
+ * `src/components/inventory/inventoryModel.ts` (Menu Inventory Tabel & Detail Drawer)
+ */
+function computeOfficialDealposBreakdown(item: any): {
+  commercialDp: number;
+  perbaikanDp: number;
+  totalDp: number;
+  dpMap: number;
+  dpLive: number;
+  dpStudio: number;
+  dpPermak: number;
+  dpDefect: number;
+} {
+  if (!item || typeof item !== 'object') {
+    return { commercialDp: 0, perbaikanDp: 0, totalDp: 0, dpMap: 0, dpLive: 0, dpStudio: 0, dpPermak: 0, dpDefect: 0 };
+  }
+
+  const isObj = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v);
+  const toNum = (v: unknown): number => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const pickNum = (sources: Array<Record<string, any> | undefined | null>, keys: readonly string[]): number | undefined => {
+    for (let i = 0; i < sources.length; i++) {
+      const s = sources[i];
+      if (!s) continue;
+      for (let j = 0; j < keys.length; j++) {
+        const v = s[keys[j]];
+        if (v !== undefined && v !== null && v !== '') return toNum(v);
+      }
+    }
+    return undefined;
+  };
+
+  const dpRaw = isObj(item.dealpos_channels)
+    ? (item.dealpos_channels as Record<string, any>)
+    : isObj(item.dealpos)
+    ? (item.dealpos as Record<string, any>)
+    : {};
+  const dpD = isObj(dpRaw.d) ? dpRaw.d : undefined;
+  const dpCabang = isObj(dpRaw.cabang) ? dpRaw.cabang : undefined;
+  const dpB = isObj(dpRaw.b) ? dpRaw.b : undefined;
+
+  const d: Record<string, any> = { ...dpRaw, ...(dpD || {}), ...(isObj(item.d) ? item.d : {}) };
+  const b: Record<string, any> = { ...dpRaw, ...(dpCabang || {}), ...(dpB || {}), ...(isObj(item.b) ? item.b : {}) };
+
+  const src = [d, dpRaw, dpD, item as Record<string, any>];
+  const dpMap = pickNum(src, ['MAP', 'Gudang Utama', 'Marketplace', 'GUDANG', 'TOTAL', 'stokMap', 'q']) ?? toNum(item.q);
+  const dpLive = pickNum(src, ['LIVE', 'Barang Live', 'Sample Live', 'stokLive']) ?? 0;
+  const dpStudio = pickNum(src, ['STUDIO', 'Sample Studio', 'stokStudio']) ?? 0;
+  const dpPermak = pickNum(src, ['PERMAK', 'Permak / Cuci', 'Permak']) ?? 0;
+  const dpDefect = pickNum(src, ['DEFECT', 'Barang Cacat', 'Diskon Defect', 'Cacat']) ?? 0;
+  const dpTotal5 = dpMap + dpLive + dpStudio + dpPermak + dpDefect;
+
+  const chanSrc = [b, d, dpRaw, dpCabang, dpB];
+  const whChannel = pickNum(chanSrc, ['WH', 'Warehouse']) ?? 0;
+  const qcChannel = pickNum(chanSrc, ['QC', 'Gudang QC']) ?? 0;
+
+  let commercialDp = dpMap + dpLive + dpStudio;
+  if (commercialDp === 0 && whChannel !== 0) {
+    commercialDp = whChannel;
+  }
+  const perbaikanDp = dpPermak + dpDefect + qcChannel;
+  if (commercialDp === 0 && perbaikanDp === 0 && dpTotal5 !== 0) {
+    commercialDp = dpTotal5;
+  }
+
+  return {
+    commercialDp,
+    perbaikanDp,
+    totalDp: commercialDp + perbaikanDp,
+    dpMap,
+    dpLive,
+    dpStudio,
+    dpPermak,
+    dpDefect
+  };
+}
+
+/**
+ * Helper: Mengambil nama produk bersih TANPA embel-embel ukuran di ujungnya
+ * agar perbandingan nama produk ("Zilva Top White" vs "Zilva Top White (M)") akurat 100%.
+ */
+function getBaseProductNameTokens(rawName: string): string[] {
+  const cleaned = cleanProductName(rawName || '')
+    .replace(/\(\s*(?:size\s*:?\s*)?(?:XXXL|3XL|XXL|2XL|XL|XS|XXS|S|M|L|ALL\s*SIZE|ALLSIZE|ALL|DEFAULT)\s*\)/gi, ' ')
+    .replace(/(?:[-–—/]\s*)(?:XXXL|3XL|XXL|2XL|XL|XS|XXS|S|M|L|ALL\s*SIZE|ALLSIZE|ALL|DEFAULT)\s*$/i, ' ')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  return cleaned;
+}
+
+/**
+ * Helper pencocokan kata utuh yang KETAT (Strict Whole-Word Token Matching):
+ * Setiap kata di `requiredTokens` WAJIB ada sebagai kata utuh di dalam `targetWords`.
+ * Mencegah kesalahan 'zilva top white m' mencocokkan 'ruth top white m' hanya karena 3 dari 4 kata cocok!
+ */
+function matchAllNameTokensStrict(targetWords: string[], requiredTokens: string[]): boolean {
+  if (!requiredTokens || requiredTokens.length === 0) return false;
+  return requiredTokens.every((reqTok) => targetWords.some((w) => w === reqTok));
+}
+
+/**
+ * Eksekusi lookup 1 produk secara menyeluruh & teraudit:
+ * - Memisahkan Nama Produk vs Size yang diminta (contoh: "Zilva Top White (M)" -> nama "zilva top white", size "M")
+ * - Mengambil data live dari `master_produk` (termasuk `dealpos_channels`) DAN `stok_real_fisik` di Supabase
+ * - Menghitung DealPOS persis dengan rumus `inventoryModel.ts` TANPA mencampur produk lain atau size lain!
  */
 async function searchSingleProductDetail(rawQuery: string, masterProducts: ProductItem[]): Promise<any> {
-  const cleanQuery = rawQuery.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-  const queryTokens = cleanQuery.split(' ').filter(Boolean);
-  if (queryTokens.length === 0) {
+  const { nameTokens, cleanProductNameQuery, requestedSize } = parseProductQueryAndSize(rawQuery);
+
+  if (nameTokens.length === 0) {
     return {
       query: rawQuery,
+      requested_size: requestedSize || 'SEMUA_SIZE',
       total_ditemukan: 0,
       total_stok_fisik: 0,
       lokasi_rak: 'Stok Kosong / Belum Ada di Rak Gudang',
@@ -481,226 +716,298 @@ async function searchSingleProductDetail(rawQuery: string, masterProducts: Produ
     };
   }
 
-  const scoredMatches: Array<{ item: ProductItem; score: number }> = [];
-  const seenKeys = new Set<string>();
+  // Kumpulkan kandidat produk yang 100% cocok seluruh kata nama produknya (Strict Whole-Word Match)
+  const candidateBySku = new Map<string, { item: any; nameTier: 1 | 2 }>();
 
-  // 1. Cek di Master Catalog Lokal (Memory / IndexedDB)
-  if (masterProducts.length > 0) {
-    for (let i = 0; i < masterProducts.length; i++) {
-      const item = masterProducts[i];
-      if (!item) continue;
+  const registerCandidate = (rawItem: any) => {
+    if (!rawItem) return;
+    const sku = String(rawItem.k || rawItem.sku || '').trim().toUpperCase();
+    if (!sku || sku.startsWith('#')) return;
 
-      const rawP = String(item.p || (item as any).product_name || '').trim();
-      const rawN = String(item.n || (item as any).nama || (item as any).nama_produk || (item as any).deskripsi || '').trim();
-      const cleanP = cleanProductName(rawP || rawN) || rawP || rawN;
-      const sku = String(item.k || (item as any).sku || '').trim().toUpperCase();
-      const code = String((item as any).kode_produk || (item as any).kode_produksi || (item as any).nomor || '').trim().toUpperCase();
-      const color = String((item as any).warna || (item as any).w || (item as any).color || '').trim();
-      const size = String(item.s || (item as any).size || extractSizeFromSku(sku) || '').trim();
-      const cat = String(item.category || item.c || (item as any).kategori || '').trim();
+    const rawP = String(rawItem.p || rawItem.nama_produk || rawItem.product_name || rawItem.n || rawItem.nama || '').trim();
+    const cleanP = cleanProductName(rawP) || rawP;
+    if (!cleanP) return;
 
-      if (!cleanP && !rawN && !sku) continue;
+    const baseWords = getBaseProductNameTokens(cleanP);
+    const fullWords = `${cleanP} ${rawItem.warna || ''} ${sku}`
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(Boolean);
 
-      const pLower = cleanP.toLowerCase();
-      const nLower = rawN.toLowerCase();
-      const searchableAll = `${pLower} ${nLower} ${color.toLowerCase()} ${size.toLowerCase()} ${code.toLowerCase()} ${sku.toLowerCase()} ${cat.toLowerCase()}`;
+    // Cek apakah cocok secara exact SKU
+    const isExactSku = nameTokens.length === 1 && nameTokens[0].toUpperCase() === sku;
 
-      let score = 0;
+    // Cek apakah SELURUH kata di nameTokens ada di nama produk
+    const allTokensInBase = matchAllNameTokensStrict(baseWords, nameTokens);
+    const allTokensInFull = !allTokensInBase && matchAllNameTokensStrict(fullWords, nameTokens);
 
-      // Tier 1: Exact phrase match
-      if (cleanQuery === pLower || cleanQuery === nLower || cleanQuery === sku.toLowerCase()) {
-        score += 160;
-      } else if (pLower.includes(cleanQuery) || nLower.includes(cleanQuery)) {
-        score += 120;
-      } else if (matchAllTokensStrict(searchableAll, queryTokens)) {
-        // Seluruh kata cocok sebagai kata utuh (misal "ruth", "top", "cherry")
-        score += 100 + (queryTokens.length * 10);
-      } else if (queryTokens.length > 2) {
-        // Toleransi jika sebagian besar kata cocok
-        const words = searchableAll.split(/[^a-z0-9]+/).filter(Boolean);
-        const matched = queryTokens.filter((tok) => words.some((w) => w === tok || (w.startsWith(tok) && tok.length >= 4)));
-        if (matched.length >= queryTokens.length - 1) {
-          score += 40 + (matched.length * 5);
-        }
+    if (!isExactSku && !allTokensInBase && !allTokensInFull) {
+      return; // DILARANG mencocokkan produk yang kehilangan salah satu kata nama/warna!
+    }
+
+    // Tier 1: Jumlah kata nama dasar produk sama persis dengan nameTokens (contoh: "zilva top white" === "zilva top white")
+    // Tier 2: Mengandung seluruh kata nameTokens tetapi ada kata tambahan (contoh: "zilva knit top white")
+    const isExactWordSet =
+      isExactSku ||
+      (allTokensInBase && baseWords.length === nameTokens.length) ||
+      baseWords.join(' ') === cleanProductNameQuery;
+
+    const tier: 1 | 2 = isExactWordSet ? 1 : 2;
+    const existing = candidateBySku.get(sku);
+    if (!existing) {
+      candidateBySku.set(sku, { item: { ...rawItem, k: sku, sku, p: cleanP, nama_produk: cleanP }, nameTier: tier });
+    } else {
+      // Gabungkan data jika rawItem baru memiliki dealpos_channels yang lebih lengkap
+      if (tier < existing.nameTier) existing.nameTier = tier;
+      if (rawItem.dealpos_channels && Object.keys(rawItem.dealpos_channels).length > 0) {
+        existing.item.dealpos_channels = rawItem.dealpos_channels;
       }
-
-      if (score > 0) {
-        const itemKey = `${sku}_${cleanP}_${size}_${color}`;
-        if (!seenKeys.has(itemKey)) {
-          seenKeys.add(itemKey);
-          scoredMatches.push({ item, score });
-        }
+      if (rawItem.q !== undefined && Number(rawItem.q) !== 0 && !existing.item.q) {
+        existing.item.q = rawItem.q;
       }
+      if (rawItem.size && (!existing.item.size || existing.item.size === '-')) {
+        existing.item.size = rawItem.size;
+        existing.item.s = rawItem.size;
+      }
+    }
+  };
+
+  // 1. Scan dari Master Catalog di memori / IndexedDB
+  for (let i = 0; i < masterProducts.length; i++) {
+    registerCandidate(masterProducts[i]);
+  }
+
+  // 2. Query LANGSUNG ke Supabase `master_produk` & `stok_real_fisik` berdasarkan kata kunci utama
+  // agar selalu mendapatkan `dealpos_channels` paling baru & produk yang baru diinput!
+  const primaryToken = nameTokens[0];
+  if (primaryToken && primaryToken.length >= 2) {
+    try {
+      const [liveMasterRows, liveStokRows] = await Promise.all([
+        supabaseFetch<any[]>(
+          'master_produk',
+          'GET',
+          null,
+          `select=sku,nama_produk,kategori,size,price,dealpos_channels&or=(nama_produk.ilike.*${encodeURIComponent(primaryToken)}*,sku.ilike.*${encodeURIComponent(primaryToken)}*)&limit=100`
+        ).catch(() => []),
+        supabaseFetch<any[]>(
+          'stok_real_fisik',
+          'GET',
+          null,
+          `or=(nama_produk.ilike.*${encodeURIComponent(primaryToken)}*,sku.ilike.*${encodeURIComponent(primaryToken)}*)&limit=100`
+        ).catch(() => [])
+      ]);
+
+      if (Array.isArray(liveMasterRows)) {
+        liveMasterRows.forEach((r) => registerCandidate(r));
+      }
+      if (Array.isArray(liveStokRows)) {
+        liveStokRows.forEach((r) => registerCandidate(r));
+      }
+    } catch (e) {
+      console.warn('[WMS AI] Gagal live query master_produk/stok_real_fisik:', e);
     }
   }
 
-  scoredMatches.sort((a, b) => b.score - a.score);
-  let matchedItems = scoredMatches.slice(0, 20).map((m) => m.item);
-  const hasHighConfidence = scoredMatches.some((m) => m.score >= 100);
+  // Jika ada kecocokan Tier 1 (nama produk persis, misal "Zilva Top White"), buang kandidat Tier 2
+  const allCandidates = Array.from(candidateBySku.values());
+  const hasTier1 = allCandidates.some((c) => c.nameTier === 1);
+  const nameMatchedCandidates = (hasTier1 ? allCandidates.filter((c) => c.nameTier === 1) : allCandidates).map(
+    (c) => c.item
+  );
 
-  // 2. Fallback Visual Katalog jika belum ada
-  if (matchedItems.length === 0) {
-    try {
-      const rawKatalog = typeof window !== 'undefined'
-        ? localStorage.getItem('wms_katalog_manual_data') || localStorage.getItem('wms_katalog_data')
-        : null;
-      if (rawKatalog) {
-        const batches = JSON.parse(rawKatalog);
-        if (Array.isArray(batches)) {
-          for (const b of batches) {
-            const list = b.items || b.products || [];
-            if (!Array.isArray(list)) continue;
-            for (const it of list) {
-              const dName = String(it.deskripsi || it.nama || '').toLowerCase();
-              const isMatch = matchAllTokensStrict(dName, queryTokens) || dName.includes(cleanQuery);
-              if (isMatch && Array.isArray(it.variants)) {
-                for (const v of it.variants) {
-                  matchedItems.push({
-                    k: v.sku || '',
-                    p: it.deskripsi || it.nama || 'Produk Katalog',
-                    n: `${it.deskripsi || ''} ${v.warna || ''} ${v.size || ''}`.trim(),
-                    s: v.size || '-',
-                    warna: v.warna || '-',
-                    q: Number(v.stok || 0)
-                  } as any);
-                }
-              }
-            }
-          }
-        }
-      }
-    } catch {}
-  }
-
-  // 3. Fallback Langsung ke Supabase PostgREST (stok_real_fisik)
-  // Dilakukan jika belum ada kecocokan 100% atau belum ditemukan di master
-  if ((!hasHighConfidence || matchedItems.length === 0) && queryTokens.length > 0) {
-    try {
-      const searchToken = queryTokens[0];
-      const sbRows = await supabaseFetch<any[]>(
-        'stok_real_fisik',
-        'GET',
-        null,
-        `or=(nama_produk.ilike.*${encodeURIComponent(searchToken)}*,sku.ilike.*${encodeURIComponent(searchToken)}*)&limit=50`
-      );
-
-      if (Array.isArray(sbRows) && sbRows.length > 0) {
-        const filteredSb = sbRows.filter((r) => {
-          const targetStr = `${r.nama_produk || ''} ${r.sku || ''}`;
-          return matchAllTokensStrict(targetStr, queryTokens) || targetStr.toLowerCase().includes(cleanQuery);
-        });
-
-        if (filteredSb.length > 0) {
-          // Jika ditemukan di stok_real_fisik dengan token 100% cocok, prioritas fisik ini!
-          const distinctSbMap = new Map<string, any>();
-          filteredSb.forEach((r) => {
-            const s = String(r.sku || '').trim().toUpperCase();
-            if (s && !distinctSbMap.has(s)) {
-              distinctSbMap.set(s, r);
-            }
-          });
-
-          // Jika sebelumnya hanya ada kecocokan lemah/parsial dari master, reset dengan data fisik nyata
-          if (!hasHighConfidence) {
-            matchedItems = [];
-          }
-
-          distinctSbMap.forEach((r) => {
-            matchedItems.push({
-              k: r.sku,
-              p: cleanProductName(r.nama_produk) || r.nama_produk,
-              n: r.nama_produk,
-              s: extractSizeFromSku(r.sku) || r.size || '-',
-              warna: r.warna || '-',
-              q: 0
-            } as any);
-          });
-        }
-      }
-    } catch (err) {
-      console.warn('[WMS AI] Gagal query langsung ke Supabase stok_real_fisik:', err);
-    }
-  }
-
-  // Batasi maksimal 20 varian teratas
-  matchedItems = matchedItems.slice(0, 20);
-
-  if (matchedItems.length === 0) {
+  if (nameMatchedCandidates.length === 0) {
     return {
       query: rawQuery,
+      requested_size: requestedSize || 'SEMUA_SIZE',
       total_ditemukan: 0,
       total_stok_fisik: 0,
       lokasi_rak: 'Stok Kosong / Belum Ada di Rak Gudang',
       stok_dealpos: 0,
       products: [],
-      pesan: `Produk "${rawQuery}" saat ini belum tercatat memiliki stok di rak gudang.`
+      pesan: `Produk "${rawQuery}" tidak ditemukan di katalog maupun rak gudang.`
     };
   }
 
-  // 4. Ambil lokasi rak live dari Supabase PostgREST stok_real_fisik untuk seluruh SKU yang cocok
-  const skus = matchedItems.map((m) => String(m.k || (m as any).sku || '').trim().toUpperCase()).filter(Boolean);
+  // 3. Pastikan seluruh SKU kandidat memiliki data `master_produk` (terutama `dealpos_channels`) & `stok_real_fisik` LIVE dari Supabase!
+  const candidateSkus = Array.from(
+    new Set(nameMatchedCandidates.map((c) => String(c.k || c.sku || '').trim().toUpperCase()).filter(Boolean))
+  );
+
+  const liveMasterBySku = new Map<string, any>();
   let stockRacks: any[] = [];
+
   try {
-    stockRacks = await fetchStockForSkus(skus);
+    const encodedSkus = `(${candidateSkus.map((s) => `"${s.replace(/"/g, '\\"')}"`).join(',')})`;
+    const [freshMasterRows, freshStockRows] = await Promise.all([
+      candidateSkus.length > 0
+        ? supabaseFetch<any[]>(
+            'master_produk',
+            'GET',
+            null,
+            `select=sku,nama_produk,kategori,size,price,dealpos_channels&sku=in.${encodeURIComponent(encodedSkus)}`
+          ).catch(() => [])
+        : Promise.resolve([]),
+      fetchStockForSkus(candidateSkus).catch(() => [])
+    ]);
+
+    if (Array.isArray(freshMasterRows)) {
+      freshMasterRows.forEach((m) => {
+        const s = String(m.sku || '').trim().toUpperCase();
+        if (s) liveMasterBySku.set(s, m);
+      });
+    }
+    if (Array.isArray(freshStockRows)) {
+      stockRacks = freshStockRows;
+    }
   } catch (e) {
-    console.warn('[WMS AI] Gagal fetch rak stok live:', e);
+    console.warn('[WMS AI] Gagal menyegarkan master_produk/stok_real_fisik per SKU:', e);
   }
 
-  const rackMap = new Map<string, { locations: string[]; totalFisik: number }>();
+  // 4. Kelompokkan lokasi fisik rak per SKU (menggabungkan lokasi yang sama & memisahkan Komersial vs Perbaikan)
+  const rackMap = new Map<
+    string,
+    {
+      locations: string[];
+      totalFisik: number;
+      commercialFisik: number;
+      perbaikanFisik: number;
+    }
+  >();
+
   stockRacks.forEach((sr) => {
-    const s = String(sr.sku || '').toUpperCase();
+    const s = String(sr.sku || '').trim().toUpperCase();
+    if (!s) return;
     if (!rackMap.has(s)) {
-      rackMap.set(s, { locations: [], totalFisik: 0 });
+      rackMap.set(s, { locations: [], totalFisik: 0, commercialFisik: 0, perbaikanFisik: 0 });
     }
     const entry = rackMap.get(s)!;
     const qty = Number(sr.sisa_stok) || 0;
-    if (qty > 0 && sr.lokasi) {
-      entry.locations.push(`${sr.lokasi} (${qty} pcs)`);
+    const lok = String(sr.lokasi || '').trim().toUpperCase();
+    const area = String(sr.area || '').trim().toUpperCase();
+    if (qty !== 0 && lok && lok !== '-') {
+      entry.locations.push(`${lok} (${qty} pcs)`);
       entry.totalFisik += qty;
+      const isPerbaikan =
+        area.includes('PERBAIKAN') ||
+        area.includes('CUCI') ||
+        area.includes('PERMAK') ||
+        area.includes('DEFECT') ||
+        lok.startsWith('CC') ||
+        lok.startsWith('PMK') ||
+        lok.startsWith('DF');
+      if (isPerbaikan) {
+        entry.perbaikanFisik += qty;
+      } else {
+        entry.commercialFisik += qty;
+      }
     }
   });
 
-  let grandTotalFisik = 0;
-  let grandTotalDealpos = 0;
-  const allLocationsList: string[] = [];
+  // 5. Bangun rincian lengkap untuk setiap varian SKU dari produk tersebut
+  const allVariants = nameMatchedCandidates.map((item) => {
+    const sku = String(item.k || item.sku || '').trim().toUpperCase();
+    const freshMaster = liveMasterBySku.get(sku);
+    const mergedItem = freshMaster ? { ...item, ...freshMaster, dealpos_channels: freshMaster.dealpos_channels || item.dealpos_channels } : item;
 
-  const results = matchedItems.map((item) => {
-    const sku = String(item.k || (item as any).sku || '').trim().toUpperCase();
-    const rackInfo = rackMap.get(sku) || { locations: [], totalFisik: 0 };
-    const rawP = String(item.p || (item as any).product_name || '').trim();
-    const rawN = String(item.n || (item as any).nama || (item as any).nama_produk || (item as any).deskripsi || '').trim();
-    const cleanP = cleanProductName(rawP || rawN) || rawP || rawN || 'Produk Tanpa Nama';
+    const rawP = String(mergedItem.nama_produk || mergedItem.p || mergedItem.n || '').trim();
+    const cleanP = cleanProductName(rawP) || rawP || sku;
 
-    const color = String((item as any).warna || (item as any).w || (item as any).color || '-').trim();
-    const size = resolveProductDisplaySize(sku, String(item.s || (item as any).size || ''), String(item.s || ''));
-    const dealpos = Number(item.qty ?? (item as any).stok ?? item.q ?? 0);
+    const rawSize = String(mergedItem.size || mergedItem.s || '');
+    const resolvedSize = resolveProductDisplaySize(sku, rawSize, rawSize) || extractSizeFromSku(sku) || rawSize || '-';
+    const normalizedVariantSize = normalizeSizeTokenForMatch(resolvedSize);
 
-    grandTotalFisik += rackInfo.totalFisik;
-    grandTotalDealpos += dealpos;
-    if (rackInfo.locations.length > 0) {
-      allLocationsList.push(...rackInfo.locations);
-    }
+    const dpInfo = computeOfficialDealposBreakdown(mergedItem);
+    const rackInfo = rackMap.get(sku) || { locations: [], totalFisik: 0, commercialFisik: 0, perbaikanFisik: 0 };
 
     return {
       nama_produk: cleanP,
-      nama_lengkap: rawN || cleanP,
-      sku: sku,
-      size: size,
-      warna: color !== '-' ? color : (rawN.toLowerCase().includes('cherry') ? 'Cherry' : '-'),
-      kategori: (item as any).category || (item as any).c || '-',
-      stok_dealpos: dealpos,
+      sku,
+      size: resolvedSize === 'Default' ? 'ALL' : resolvedSize,
+      normalized_size: normalizedVariantSize,
+      kategori: mergedItem.kategori || mergedItem.category || mergedItem.c || '-',
       stok_fisik_rak: rackInfo.totalFisik,
-      lokasi_rak: rackInfo.locations.length > 0 ? rackInfo.locations.join(', ') : 'Belum ada stok fisik di rak'
+      stok_fisik_komersial: rackInfo.commercialFisik,
+      stok_fisik_perbaikan: rackInfo.perbaikanFisik,
+      lokasi_rak: rackInfo.locations.length > 0 ? rackInfo.locations.join(', ') : 'Kosong di Rak',
+      stok_dealpos: dpInfo.commercialDp,
+      stok_dealpos_perbaikan: dpInfo.perbaikanDp,
+      stok_dealpos_total: dpInfo.totalDp,
+      rincian_dealpos: {
+        MAP: dpInfo.dpMap,
+        LIVE: dpInfo.dpLive,
+        STUDIO: dpInfo.dpStudio,
+        PERMAK: dpInfo.dpPermak,
+        DEFECT: dpInfo.dpDefect
+      }
     };
   });
 
+  // 6. FILTER KETAT BERDASARKAN UKURAN (SIZE) JIKA PENGGUNA MENYEBUTKAN SIZE SPESIFIK!
+  // Contoh: Jika user meminta "Zilva Top White (M)" atau "Posy Dress Blue S",
+  // HANYA hitung stok fisik & DealPOS milik ukuran tersebut! DILARANG menjumlahkan ukuran S + M + L + XL!
+  let targetVariants = allVariants;
+  let sizeNote = '';
+
+  if (requestedSize) {
+    const exactSizeMatches = allVariants.filter((v) => v.normalized_size === requestedSize);
+    if (exactSizeMatches.length > 0) {
+      targetVariants = exactSizeMatches;
+    } else {
+      // Jika ukuran yang diminta (misal M) tidak ada di katalog untuk produk ini (misal produk ini hanya ALL SIZE atau hanya ada S & L)
+      targetVariants = [];
+      const availableSizesInfo = allVariants
+        .map((v) => `Size ${v.size}: Fisik ${v.stok_fisik_rak} pcs (${v.lokasi_rak}), DealPOS ${v.stok_dealpos}`)
+        .join(' | ');
+      sizeNote = `Varian ukuran "${requestedSize}" tidak terdaftar untuk produk ini. Varian ukuran yang terdaftar di sistem: ${availableSizesInfo || 'Tidak ada'}.`;
+    }
+  }
+
+  let grandTotalFisik = 0;
+  let grandTotalDealpos = 0;
+  let grandTotalDealposAll = 0;
+  const targetLocationsList: string[] = [];
+
+  targetVariants.forEach((v) => {
+    grandTotalFisik += v.stok_fisik_rak;
+    grandTotalDealpos += v.stok_dealpos;
+    grandTotalDealposAll += v.stok_dealpos_total;
+    if (v.stok_fisik_rak !== 0 && v.lokasi_rak && v.lokasi_rak !== 'Kosong di Rak') {
+      if (requestedSize || targetVariants.length === 1) {
+        targetLocationsList.push(v.lokasi_rak);
+      } else {
+        targetLocationsList.push(`Size ${v.size}: ${v.lokasi_rak}`);
+      }
+    }
+  });
+
+  const cleanLocationsStr =
+    targetLocationsList.length > 0
+      ? Array.from(new Set(targetLocationsList)).join(', ')
+      : 'Kosong di Rak';
+
   return {
     query: rawQuery,
-    total_ditemukan: results.length,
+    requested_size: requestedSize || 'SEMUA_SIZE',
+    total_ditemukan: targetVariants.length,
     total_stok_fisik: grandTotalFisik,
-    lokasi_rak: allLocationsList.length > 0 ? Array.from(new Set(allLocationsList)).join(', ') : 'Belum ada stok fisik di rak',
+    lokasi_rak: cleanLocationsStr,
     stok_dealpos: grandTotalDealpos,
-    products: results
+    stok_dealpos_total_termasuk_perbaikan: grandTotalDealposAll,
+    catatan_size: sizeNote || undefined,
+    products: targetVariants,
+    varian_size_lain_produk_ini:
+      requestedSize && allVariants.length > targetVariants.length
+        ? allVariants
+            .filter((v) => v.normalized_size !== requestedSize)
+            .map((v) => ({
+              size: v.size,
+              sku: v.sku,
+              stok_fisik_rak: v.stok_fisik_rak,
+              lokasi_rak: v.lokasi_rak,
+              stok_dealpos: v.stok_dealpos
+            }))
+        : undefined
   };
 }
 
@@ -725,21 +1032,32 @@ async function executeLookupProductStock(args: { query?: string; queries?: strin
       batchResults.push({
         no: idx + 1,
         nama_diminta: itemRes.query,
+        size_diminta: itemRes.requested_size,
         status: itemRes.total_ditemukan > 0
-          ? (itemRes.total_stok_fisik > 0 ? 'DITEMUKAN' : 'HABIS_DI_RAK')
-          : 'TIDAK_DITEMUKAN',
+          ? (itemRes.total_stok_fisik > 0 ? 'ADA_DI_RAK' : 'KOSONG_DI_RAK')
+          : 'VARIAN_TIDAK_TERDAFTAR',
         total_stok_fisik: itemRes.total_stok_fisik || 0,
-        lokasi_rak: itemRes.lokasi_rak || '-',
-        stok_dealpos: itemRes.stok_dealpos || 0,
+        lokasi_rak: itemRes.lokasi_rak || 'Kosong di Rak',
+        stok_dealpos: itemRes.stok_dealpos ?? 0,
+        stok_dealpos_termasuk_perbaikan: itemRes.stok_dealpos_total_termasuk_perbaikan ?? 0,
+        catatan_size: itemRes.catatan_size || undefined,
         sku_terkait: itemRes.products?.map((p: any) => p.sku).filter(Boolean).join(', ') || '-',
-        rincian_varian: itemRes.products?.map((p: any) => `${p.size}/${p.warna}: ${p.stok_fisik_rak} pcs di ${p.lokasi_rak}`).join(' | ') || '-'
+        rincian_varian:
+          itemRes.products
+            ?.map(
+              (p: any) =>
+                `Size ${p.size}: Fisik ${p.stok_fisik_rak} pcs (${p.lokasi_rak}) | DealPOS: ${p.stok_dealpos}${
+                  p.stok_dealpos_perbaikan ? ` (+Perbaikan: ${p.stok_dealpos_perbaikan})` : ''
+                }`
+            )
+            .join(' ; ') || itemRes.catatan_size || '-'
       });
     });
 
     return {
       is_batch: true,
       total_permintaan: batchResults.length,
-      pesan_ringkas: `Pemeriksaan batch ${batchResults.length} produk selesai diproses.`,
+      pesan_ringkas: `Pemeriksaan batch ${batchResults.length} produk selesai diproses secara akurat per varian/size dari tabel master_produk & stok_real_fisik live.`,
       batch_results: batchResults
     };
   }
@@ -1825,10 +2143,14 @@ PANDUAN & ATURAN UTAMA:
    - DILARANG KERAS menyuruh, meminta, atau merekomendasikan pengguna untuk memberikan Kode SKU!
    - Jika suatu produk berstatus tidak ditemukan di rak gudang, cukup laporkan statusnya dengan jelas: "❌ Stok Kosong / Belum Ada di Rak" tanpa pernah menyebut kata "Kode SKU".
 
-2. BATCH LOOKUP STOK (CEK BANYAK PRODUK SEKALIGUS DALAM 1 KALI JALAN):
-   - Jika pengguna memberikan daftar banyak nama produk sekaligus, WAJIB gunakan SATU KALI panggilan tool "lookup_product_stock" dengan parameter "queries" berupa array seluruh nama produk tersebut.
-   - Sajikan hasil dalam format TABEL MARKDOWN LENGKAP:
-     | No | Nama Produk | Status | Stok Fisik Gudang | Lokasi Rak | Stok DealPOS |
+2. BATCH & SINGLE LOOKUP STOK (PRESISI PER UKURAN/VARIAN, ANTI-CAMPUR PRODUK & ANTI-SINGKAT "dll."):
+   - Jika pengguna memberikan daftar banyak nama produk sekaligus, WAJIB gunakan SATU KALI panggilan tool "lookup_product_stock" dengan parameter "queries" berupa array seluruh nama produk tersebut (sertakan ukuran/size pada masing-masing item jika pengguna menyebutkannya, contoh: ["Zilva Top White (M)", "Posy Dress Blue (S)"]).
+   - Sajikan hasil dalam format TABEL MARKDOWN LENGKAP dengan menyalin angka persis dari hasil tool tanpa mengubah atau menjumlahkan antar baris:
+     | No | Nama Produk & Varian | Status Stok Fisik di Rak | Stok Fisik | Stok DealPOS | Lokasi Rak Lengkap |
+   - ATURAN KETAT PELAPORAN STOK & DEALPOS:
+     * **DILARANG KERAS menyingkat lokasi rak dengan kata "dll."**! Tuliskan seluruh kode rak beserta jumlah pcs-nya secara lengkap sesuai field "lokasi_rak" (contoh: "C044 (2 pcs), STUDIO (1 pcs)").
+     * Selalu tampilkan nilai "stok_dealpos" dari hasil tool secara konsisten untuk setiap produk/size (jangan dikosongkan dan jangan digabung dengan ukuran lain).
+     * Jika tool mengembalikan "catatan_size" (misal pengguna meminta ukuran M tetapi produk tersebut di sistem hanya terdaftar ukuran "ALL" atau ukuran lain), tampilkan informasi "catatan_size" tersebut pada kolom Lokasi Rak / Catatan agar pengguna mengetahui varian ukuran yang sebenarnya ada di sistem.
 
 3. BACA & CARI DATA PENERIMAAN PRODUKSI (LOKAL CMT & KARGO) + TANYA JAWAB PINTAR:
    - Anda memiliki akses penuh ke database Penerimaan Barang Produksi (kategori "Lokal CMT" maupun "Kargo") melalui tool "query_production_receipts" dan "generate_production_recap".
@@ -1883,7 +2205,15 @@ PANDUAN & ATURAN UTAMA:
      b. Tanyakan qty jika belum disebutkan, dan tawarkan alternatif warna/size lain yang ready di rak jika yang diminta kosong (0 pcs).
      c. Setelah jelas/dikonfirmasi, panggil "add_to_inventory_cart".
 
-7. TONE OF VOICE: Ramah, komunikatif, proaktif bertanya jika data belum lengkap, solutif, dan profesional.`;
+7. PEMBUATAN & EKSPOR LAPORAN DATA DALAM FORMAT PDF ATAU EXCEL (.XLSX):
+   - Anda MEMILIKI KEMAMPUAN PENUH untuk membuatkan laporan data dalam format **Excel (.xlsx)** maupun **PDF (.pdf)**!
+   - Ketika pengguna meminta laporan dalam bentuk PDF atau Excel (contoh: "Tolong buatkan laporan tadi dalam bentuk Excel/PDF", "Bisa export ke PDF?", "Buatkan rekap penerimaan kargo minggu ini dalam file Excel"):
+     a. Jika data belum diambil, panggil dulu tool data yang relevan ("lookup_product_stock", "query_production_receipts", "generate_production_recap", atau "search_manual_shipment").
+     b. Selanjutnya WAJIB panggil tool **"generate_exportable_report"** dengan menyusun "title", "headers", "rows", "summary", dan "preferred_format" ("excel", "pdf", atau "both").
+     c. Setelah tool "generate_exportable_report" dieksekusi, sistem otomatis menampilkan **Kartu Dokumen Siap Unduh (Tombol Download Excel .xlsx & Download PDF .pdf)** di bawah pesan Anda (dan juga menempelkan tombol **Excel** & **PDF** di atas setiap tabel Markdown).
+     d. Beritahu pengguna dengan ramah bahwa laporan telah siap dan mereka dapat langsung menekan tombol **"📊 Unduh Excel (.xlsx)"** atau **"📄 Unduh PDF (.pdf)"** yang tersedia di bawah pesan chat!
+
+8. TONE OF VOICE: Ramah, komunikatif, proaktif bertanya jika data belum lengkap, solutif, dan profesional.`;
 
 function buildFullSystemInstruction(): string {
   const now = new Date();
@@ -1926,7 +2256,12 @@ export async function sendChatMessageToGemini(
   userPrompt: string,
   onToolCallStart?: (toolName: string) => void,
   attachments?: AiAttachment[]
-): Promise<{ text: string; executedTools: string[]; trelloCandidates?: TrelloCandidatePreview[] }> {
+): Promise<{
+  text: string;
+  executedTools: string[];
+  trelloCandidates?: TrelloCandidatePreview[];
+  reportTable?: AiChatMessage['reportTable'];
+}> {
   let apiKey = getActiveGeminiApiKey();
 
   // Jika belum ada di memory/localStorage, ambil otomatis dari Supabase cloud config
@@ -2017,6 +2352,7 @@ export async function sendChatMessageToGemini(
   });
 
   const executedTools: string[] = [];
+  let generatedReportTable: AiChatMessage['reportTable'] | undefined = undefined;
   const collectedCandidatesMap = new Map<string, TrelloCandidatePreview>();
   const handleCollectTrelloPreviews = (previews: TrelloCandidatePreview[]) => {
     previews.forEach((p) => {
@@ -2092,7 +2428,8 @@ export async function sendChatMessageToGemini(
       return {
         text: textParts || 'Selesai memproses.',
         executedTools,
-        trelloCandidates: finalCandidates.length > 0 ? finalCandidates : undefined
+        trelloCandidates: finalCandidates.length > 0 ? finalCandidates : undefined,
+        reportTable: generatedReportTable
       };
     }
 
@@ -2125,6 +2462,27 @@ export async function sendChatMessageToGemini(
           toolResult = await executeAddToInventoryCart(fnArgs);
         } else if (fnName === 'view_inventory_cart') {
           toolResult = await executeViewInventoryCart();
+        } else if (fnName === 'generate_exportable_report') {
+          const rawHeaders = Array.isArray(fnArgs.headers) ? fnArgs.headers.map((h: any) => String(h ?? '')) : [];
+          const rawRows = Array.isArray(fnArgs.rows)
+            ? fnArgs.rows.map((r: any) => (Array.isArray(r) ? r.map((c: any) => String(c ?? '')) : []))
+            : [];
+          const prefFmt = String(fnArgs.preferred_format || 'both').toLowerCase();
+          generatedReportTable = {
+            title: String(fnArgs.title || 'Laporan Data WMS AI').trim(),
+            subtitle: fnArgs.subtitle ? String(fnArgs.subtitle).trim() : undefined,
+            filename: fnArgs.filename ? String(fnArgs.filename).trim() : undefined,
+            headers: rawHeaders,
+            rows: rawRows,
+            summary: fnArgs.summary ? String(fnArgs.summary).trim() : undefined,
+            preferredFormat: prefFmt === 'excel' ? 'excel' : prefFmt === 'pdf' ? 'pdf' : 'both'
+          };
+          toolResult = {
+            status: 'report_ready',
+            pesan: `Dokumen laporan "${generatedReportTable.title}" (${rawRows.length} baris data) telah berhasil disusun dan tombol Download Excel (.xlsx) serta Download PDF (.pdf) kini tampil di layar pengguna.`,
+            total_baris: rawRows.length,
+            kolom: rawHeaders
+          };
         } else {
           toolResult = { error: `Fungsi ${fnName} tidak dikenali.` };
         }
@@ -2169,7 +2527,8 @@ export async function sendChatMessageToGemini(
       return {
         text: textParts.trim(),
         executedTools,
-        trelloCandidates: finalCandidates.length > 0 ? finalCandidates : undefined
+        trelloCandidates: finalCandidates.length > 0 ? finalCandidates : undefined,
+        reportTable: generatedReportTable
       };
     }
   } catch (err) {
@@ -2181,6 +2540,7 @@ export async function sendChatMessageToGemini(
       ? `Pemeriksaan database selesai untuk ${executedTools.length} langkah data. Seluruh hasil pencarian telah dicocokkan dengan data fisik live rak gudang.`
       : 'Selesai memproses.',
     executedTools,
-    trelloCandidates: finalCandidates.length > 0 ? finalCandidates : undefined
+    trelloCandidates: finalCandidates.length > 0 ? finalCandidates : undefined,
+    reportTable: generatedReportTable
   };
 }
