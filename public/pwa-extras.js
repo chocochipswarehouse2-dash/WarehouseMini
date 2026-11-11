@@ -16,7 +16,36 @@ async function safeShowNotification(title, options) {
     icon: '/icon-192.png',
     badge: '/icon-192.png',
     ...options,
+    requireInteraction: false,
   };
+
+  // Kirim payload notifikasi ke client tab yang terbuka agar langsung masuk ke Notification Hub
+  try {
+    const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const d = opts.data || {};
+    for (const c of allClients) {
+      c.postMessage({
+        type: 'WMS_SW_NOTIFICATION_FIRED',
+        title,
+        body: opts.body || '',
+        timestamp: Date.now(),
+        target: {
+          page: d.page || (d.roomId ? 'live_chat' : undefined),
+          subTab: d.subTab || undefined,
+          manualSubTab: d.manualSubTab || undefined,
+          orderId: d.orderId || undefined,
+          isAlter: Boolean(d.isAlter),
+          hrSection: d.hrSection || undefined,
+          produksiTab: d.produksiTab || undefined,
+          kodeProduksi: d.kodeProduksi || undefined,
+          roomId: d.roomId || undefined,
+          roomName: d.roomName || undefined,
+          tag: opts.tag || undefined,
+        },
+      });
+    }
+  } catch {}
+
   try {
     await self.registration.showNotification(title, opts);
   } catch {
@@ -27,7 +56,6 @@ async function safeShowNotification(title, options) {
           actions: opts.actions.map((a) => ({ action: a.action, title: a.title })),
         };
         await self.registration.showNotification(title, buttonOnlyOpts);
-        return;
       } catch {
         const noActionsOpts = { ...opts };
         delete noActionsOpts.actions;
@@ -36,6 +64,28 @@ async function safeShowNotification(title, options) {
         } catch {}
       }
     }
+  }
+
+  // Auto-hide popup notifikasi OS setelah 10 detik (tetap tersimpan di Notification Hub)
+  if (opts.tag) {
+    setTimeout(() => {
+      try {
+        if (self.registration && typeof self.registration.getNotifications === 'function') {
+          self.registration
+            .getNotifications({ tag: opts.tag })
+            .then((list) => {
+              if (Array.isArray(list)) {
+                list.forEach((n) => {
+                  try {
+                    n.close();
+                  } catch {}
+                });
+              }
+            })
+            .catch(() => {});
+        }
+      } catch {}
+    }, 10000);
   }
 }
 

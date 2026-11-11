@@ -15,22 +15,35 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.11.1",
-  "versionCode": 311,
+  "version": "v2.11.2",
+  "versionCode": 312,
   "buildDate": "11 November 2026",
-  "buildHash": "wms-261111-v311-1435",
-  "releaseTitle": "WMS v2.11.1 — Isolasi Ketat Notifikasi Tepat Sasaran Per Role & Hak Akses",
+  "buildHash": "wms-261111-v312-2251",
+  "releaseTitle": "WMS v2.11.2 — Auto-Sync Notification Hub dari OS Notification Tray, Service Worker & Supabase",
   "releaseNotes": [
-    "Akun Store: Hanya menerima notifikasi Pesanan / Manual Shipment / Alterasi milik store sendiri & Live Chat",
-    "Akun Karyawan / Picker: Hanya menerima notifikasi Tugas Picking, pengajuan & status Ijin/Cuti/Lembur milik dirinya sendiri (tidak menerima pengajuan karyawan lain), & Live Chat",
-    "Akun Khusus Sesuai Role Akses (SPS / CS / Produksi): Hanya menerima notifikasi sesuai modul aksesnya (SPS hanya Peminjaman SPS, CS hanya Retur Pusat Resolusi & Chat, Produksi hanya Hitung Ulang Kargo/CMT)",
-    "Admin & Warehouse: Admin dikecualikan dari seluruh notifikasi HR (Ijin/Cuti/Lembur); pengajuan HR karyawan baru hanya masuk ke akun Warehouse",
-    "Perbaikan bug fallback permission Operator & pembersihan otomatis riwayat Notification Hub yang tidak relevan dengan role akun aktif"
+    "Sinkronisasi Otomatis OS Notification Tray: Menarik seluruh notifikasi yang sedang tampil di panel notifikasi HP/Desktop (reg.getNotifications()) langsung ke dalam Notification Hub",
+    "Live Backfill Supabase Sesuai Role: Saat aplikasi dimuat atau Notification Hub dibuka, sistem otomatis menarik riwayat notifikasi terbaru (Lembur/Ijin/Cuti, Pesanan Store, Tugas Picking, SPS, Retur CS, Hitung Ulang, & Live Chat) yang sesuai dengan hak akses akun",
+    "Jembatan Service Worker Background (WMS_SW_NOTIFICATION_FIRED): Notifikasi yang masuk saat layar HP mati / aplikasi di background kini langsung tersimpan ke Notification Hub dan popup OS otomatis tertutup setelah 10 detik"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.11.1",
+    "versionCode": 311,
+    "buildDate": "11 November 2026",
+    "buildHash": "wms-261111-v311-1435",
+    "releaseTitle": "WMS v2.11.1 — Isolasi Ketat Notifikasi Tepat Sasaran Per Role & Hak Akses",
+    "releaseNotes": [
+      "Akun Store: Hanya menerima notifikasi Pesanan / Manual Shipment / Alterasi milik store sendiri & Live Chat",
+      "Akun Karyawan / Picker: Hanya menerima notifikasi Tugas Picking, pengajuan & status Ijin/Cuti/Lembur milik dirinya sendiri (tidak menerima pengajuan karyawan lain), & Live Chat",
+      "Akun Khusus Sesuai Role Akses (SPS / CS / Produksi): Hanya menerima notifikasi sesuai modul aksesnya (SPS hanya Peminjaman SPS, CS hanya Retur Pusat Resolusi & Chat, Produksi hanya Hitung Ulang Kargo/CMT)",
+      "Admin & Warehouse: Admin dikecualikan dari seluruh notifikasi HR (Ijin/Cuti/Lembur); pengajuan HR karyawan baru hanya masuk ke akun Warehouse",
+      "Perbaikan bug fallback permission Operator & pembersihan otomatis riwayat Notification Hub yang tidak relevan dengan role akun aktif"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.11.0",
     "versionCode": 310,
@@ -120,20 +133,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Akurasi Word-Boundary Token Matching (Ruth Top Cherry 5 pcs)",
       "Penghapusan Total Halusinasi Minta Kode SKU",
       "Loop Headroom & Anti-Truncate Response"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.8.0",
-    "versionCode": 280,
-    "buildDate": "10 November 2026",
-    "buildHash": "wms-261110-v280-2017",
-    "releaseTitle": "WMS v2.8.0 — Asisten AI Multitasking Companion: Minimize Dock, Riwayat Sesi & New Chat",
-    "releaseNotes": [
-      "Floating Mini Dock (Minimize chat sambil kerja di modul gudang lain)",
-      "Riwayat Sesi Percakapan Lampau (Chat History Drawer & Search)",
-      "Tombol + Chat Baru untuk memulai topik percakapan bersih",
-      "Indikator status live & preview jawaban saat diminimize"
     ],
     "minSupportedVersion": "v2.0.0"
   }

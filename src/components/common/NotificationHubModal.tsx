@@ -14,6 +14,7 @@ import {
   ArrowRight,
   Check,
   Inbox,
+  RefreshCw,
 } from 'lucide-react';
 import {
   WmsNotificationHubItem,
@@ -27,6 +28,7 @@ import {
   clearAllNotifications,
   subscribeNotificationHub,
   getActiveSessionFromStorage,
+  syncNotificationHubWithLiveSources,
 } from '../../services/notificationHubService';
 import { canSessionReceiveNotification } from '../../services/permissions';
 
@@ -132,6 +134,7 @@ export const NotificationHubButton: React.FC<{
   useEffect(() => {
     const sync = () => setUnreadCount(getUnreadNotificationCount(username));
     sync();
+    void syncNotificationHubWithLiveSources(false);
     return subscribeNotificationHub(sync);
   }, [username]);
 
@@ -166,6 +169,17 @@ export const NotificationHubModal: React.FC<NotificationHubModalProps> = ({
   const [items, setItems] = useState<WmsNotificationHubItem[]>([]);
   const [filterTab, setFilterTab] = useState<'unread' | 'all'>('unread');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+
+  const handleManualRefresh = async () => {
+    setIsSyncing(true);
+    try {
+      await syncNotificationHubWithLiveSources(true);
+      setItems(getNotificationHubItems(username));
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   useEffect(() => {
     const sync = () => {
@@ -174,13 +188,19 @@ export const NotificationHubModal: React.FC<NotificationHubModalProps> = ({
     };
     if (isOpen) {
       sync();
-      // Jika tidak ada yang unread saat dibuka pertama kali, otomatis tampilkan tab 'all'
-      const currentUnread = getUnreadNotificationCount(username);
-      if (currentUnread === 0) {
-        setFilterTab('all');
-      } else {
-        setFilterTab('unread');
-      }
+      setIsSyncing(true);
+      syncNotificationHubWithLiveSources(true)
+        .then(() => {
+          const updatedList = getNotificationHubItems(username);
+          setItems(updatedList);
+          const unreadAfterSync = updatedList.filter((i) => !i.read).length;
+          if (unreadAfterSync === 0 && updatedList.length > 0) {
+            setFilterTab('all');
+          } else {
+            setFilterTab('unread');
+          }
+        })
+        .finally(() => setIsSyncing(false));
     }
     return subscribeNotificationHub(sync);
   }, [isOpen, username]);
@@ -253,14 +273,25 @@ export const NotificationHubModal: React.FC<NotificationHubModalProps> = ({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-            title="Tutup Notification Hub"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={handleManualRefresh}
+              disabled={isSyncing}
+              className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer disabled:opacity-50"
+              title="Sinkronkan notifikasi terbaru"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-indigo-600' : ''}`} />
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Tutup Notification Hub"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Filter Tabs (Belum Dibaca vs Semua) + Mark All as Read */}

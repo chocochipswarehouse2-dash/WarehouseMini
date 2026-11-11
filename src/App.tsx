@@ -45,6 +45,10 @@ import {
   NotificationHubModal,
   NotificationHubButton,
 } from './components/common/NotificationHubModal';
+import {
+  addNotificationToHub,
+  syncNotificationHubWithLiveSources,
+} from './services/notificationHubService';
 import { appUpdateManager } from './services/appUpdateService';
 import { MobileOrientationWarning } from './components/MobileOrientationWarning';
 import { ToastContainer } from './components/Toast';
@@ -2741,12 +2745,20 @@ export default function App() {
     const handleSwMessage = (event: MessageEvent) => {
       const data = event.data;
       if (!data || typeof data !== 'object') return;
-      if (data.type === 'WMS_SW_ORDERS_NOTIFIED' && Array.isArray(data.notifiedIds)) {
+      if (data.type === 'WMS_SW_NOTIFICATION_FIRED' && data.title) {
+        addNotificationToHub({
+          title: String(data.title || ''),
+          body: String(data.body || ''),
+          timestamp: Number(data.timestamp) || Date.now(),
+          target: data.target || {},
+        });
+      } else if (data.type === 'WMS_SW_ORDERS_NOTIFIED' && Array.isArray(data.notifiedIds)) {
         data.notifiedIds.forEach((id: string) => {
           if (id) notifiedOrderIdsRef.current.add(String(id).toUpperCase());
         });
         savePersistedNotifiedOrderIds(notifiedOrderIdsRef.current);
         if (data.timestamp) setLastOrderCheckTimestamp(Number(data.timestamp));
+        void syncNotificationHubWithLiveSources(true);
       } else if (data.type === 'WMS_NOTIFICATION_CLICK') {
         navigateToNotificationTargetRef.current(data);
       }
