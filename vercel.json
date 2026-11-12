@@ -5,7 +5,7 @@
   "installCommand": "npm install --include=dev",
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!assets/|api/|sw\\.js|pwa-extras\\.js|version\\.json|manifest).*)",
       "destination": "/index.html"
     }
   ],

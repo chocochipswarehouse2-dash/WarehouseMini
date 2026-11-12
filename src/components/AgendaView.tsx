@@ -524,22 +524,40 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
 
   useEffect(() => {
+    const applyLoadedCategories = (rawCats: any) => {
+      if (
+        rawCats &&
+        typeof rawCats === 'object' &&
+        !Array.isArray(rawCats) &&
+        Object.keys(rawCats).length > 0
+      ) {
+        const mergedConfig = {
+          ...DEFAULT_CATEGORY_CONFIG,
+          ...rawCats,
+        };
+        setCategoryConfig(mergedConfig);
+
+        setSelectedCategories(prev => {
+          const nextSelected: Record<string, boolean> = { ...prev };
+          Object.keys(mergedConfig).forEach(k => {
+            if (nextSelected[k] === undefined) {
+              nextSelected[k] = true;
+            }
+          });
+          return nextSelected;
+        });
+      }
+    };
+
     fetchWmsSettings().then(settings => {
       if (settings?.agenda_categories) {
-        setCategoryConfig(settings.agenda_categories);
-        
-        // Update selected categories based on loaded config
-        const initialSelected: Record<string, boolean> = {};
-        Object.keys(settings.agenda_categories).forEach(k => {
-          initialSelected[k] = true;
-        });
-        setSelectedCategories(initialSelected);
+        applyLoadedCategories(settings.agenda_categories);
       }
     });
     
     const handleSettingsChange = (e: any) => {
       if (e.detail?.agenda_categories) {
-        setCategoryConfig(e.detail.agenda_categories);
+        applyLoadedCategories(e.detail.agenda_categories);
       }
     };
     window.addEventListener('wms_settings_changed', handleSettingsChange);
@@ -872,6 +890,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
       next.setDate(next.getDate() - 7);
     }
     setCurrentDate(next);
+    setSelectedDate(next);
   };
 
   const handleNext = () => {
@@ -886,6 +905,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
       next.setDate(next.getDate() + 7);
     }
     setCurrentDate(next);
+    setSelectedDate(next);
   };
 
   const handleToday = () => {
@@ -897,8 +917,9 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
   // Filtered Events
   const filteredEvents = useMemo(() => {
     return events.filter(e => {
-      // Category filter
-      if (!selectedCategories[e.category]) return false;
+      // Category filter: only exclude if explicitly unchecked (false)
+      const catKey = e.category || 'umum';
+      if (selectedCategories[catKey] === false) return false;
       // Search filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -1135,6 +1156,19 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
     setIsSyncing(true);
     try {
       const saved = await saveAgendaEvent(eventToSave);
+
+      // Pastikan kategori agenda baru aktif di filter & kalender fokus pada tanggal agenda tersebut
+      if (saved.category) {
+        setSelectedCategories(prev => ({ ...prev, [saved.category]: true }));
+      }
+      if (saved.start_date) {
+        const [sy, sm, sd] = saved.start_date.split('-').map(Number);
+        if (sy && sm && sd) {
+          const targetDate = new Date(sy, sm - 1, sd);
+          setCurrentDate(targetDate);
+          setSelectedDate(targetDate);
+        }
+      }
       
       // OPTIMISTIC UPDATE: Langsung update state kalender di layar tanpa menunggu query asinkron
       setEvents(prev => {
@@ -1146,7 +1180,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
         return [...prev, saved];
       });
 
-      onShowToast?.('Agenda berhasil disimpan!', 'success');
+      onShowToast?.(`Agenda "${saved.title}" (${saved.start_date}) berhasil disimpan!`, 'success');
       setAgendaModalOpen(false);
       setEditingEvent(null);
       await loadData();
@@ -1682,6 +1716,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                       const d = new Date(currentDate);
                       d.setMonth(d.getMonth() - 1);
                       setCurrentDate(d);
+                      setSelectedDate(d);
                     }}
                     className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"
                   >
@@ -1692,6 +1727,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                       const d = new Date(currentDate);
                       d.setMonth(d.getMonth() + 1);
                       setCurrentDate(d);
+                      setSelectedDate(d);
                     }}
                     className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"
                   >
@@ -2315,9 +2351,11 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
+                                        setSelectedDate(item.date);
+                                        setCurrentDate(item.date);
                                         handleOpenAddEvent(item.dateStr);
                                       }}
-                                      className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 flex items-center justify-center transition-all cursor-pointer"
+                                      className={`${isSel ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} w-5 h-5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 flex items-center justify-center transition-all cursor-pointer`}
                                       title={`+ Tambah agenda pada ${item.dateStr}`}
                                     >
                                       <Plus className="w-3 h-3 stroke-[2.5]" />
@@ -2327,9 +2365,9 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                               })}
                             </div>
 
-                            {/* Layer 3: Continuous Event Bars (Flexible Full Height - Menampilkan seluruh agenda tanpa tersembunyi) */}
+                            {/* Layer 3: Continuous Event Bars (Flexible Full Height - pointer-events-none agar klik pada sel tanggal tetap berfungsi) */}
                             <div
-                              className="grid grid-cols-7 gap-y-1 relative z-10 px-0.5 pb-2.5 flex-1"
+                              className="grid grid-cols-7 gap-y-1 relative z-10 px-0.5 pb-2.5 flex-1 pointer-events-none"
                               style={{
                                 gridAutoRows: '24px',
                                 alignContent: 'start'
@@ -2364,7 +2402,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                                       gridRowStart: seg.slot + 1,
                                       ...(colorStyle.barBgStyle || {})
                                     }}
-                                    className={`h-6 text-[11px] font-bold text-white flex items-center px-2 shadow-2xs cursor-pointer truncate transition-all hover:brightness-110 active:scale-[0.99] select-none ${colorStyle.barBgClass} ${borderRounding}`}
+                                    className={`pointer-events-auto h-6 text-[11px] font-bold text-white flex items-center px-2 shadow-2xs cursor-pointer truncate transition-all hover:brightness-110 active:scale-[0.99] select-none ${colorStyle.barBgClass} ${borderRounding}`}
                                     title={`${seg.event.title} (${seg.event.start_date}${seg.event.end_date ? ' s/d ' + seg.event.end_date : ''}) - Klik untuk lihat, klik 2x untuk edit`}
                                   >
                                     {seg.continuesFromPrev && (

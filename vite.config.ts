@@ -59,7 +59,7 @@ export default defineConfig(({ command }) => {
           importScripts: ['pwa-extras.js'],
           navigateFallback: 'index.html',
           navigateFallbackDenylist: [/^\/api\//],
-          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+          maximumFileSizeToCacheInBytes: 15 * 1024 * 1024,
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/[a-z0-9]+\.supabase\.co\/.*/i,
@@ -244,6 +244,28 @@ export default defineConfig(({ command }) => {
                 return 'vendor-react';
               }
               return 'vendor-core';
+            }
+            if (id.includes('/src/services/')) {
+              return 'wms-services';
+            }
+            if (id.includes('/src/components/hr/')) {
+              return 'wms-hr';
+            }
+            if (
+              id.includes('/src/components/PesananSaya/') ||
+              id.includes('/src/components/PusatResolusi/') ||
+              id.includes('/src/components/LiveChat/')
+            ) {
+              return 'wms-store-chat';
+            }
+            if (
+              id.includes('/src/components/ProduksiView') ||
+              id.includes('/src/components/Trello/') ||
+              id.includes('/src/components/LoadingDockView') ||
+              id.includes('/src/components/PickingTasksView') ||
+              id.includes('/src/components/PackingView')
+            ) {
+              return 'wms-ops-core';
             }
           }
         }

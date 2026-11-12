@@ -1,5 +1,6 @@
 import { supabaseFetch } from './supabase';
 import { WmsSettings } from '../types';
+import { updateRoleTemplates } from './permissions';
 
 export const DEFAULT_GDRIVE_FOLDER_URL =
   'https://drive.google.com/drive/folders/1oFx9WFm8Ch_DlOxw66WRy4nH-kIAXwcw';
@@ -66,7 +67,7 @@ function initCacheFromLocalStorage(): WmsSettings {
     if (rolesConfig) {
       try {
         parsedRoles = JSON.parse(rolesConfig);
-        import('./permissions').then(m => m.updateRoleTemplates(parsedRoles));
+        updateRoleTemplates(parsedRoles);
       } catch {}
     }
 
@@ -207,8 +208,7 @@ function syncCacheAndStorage(data: WmsSettings): WmsSettings {
   try {
     if (merged.roles) {
       localStorage.setItem('wms_roles_config', JSON.stringify(merged.roles));
-      // Import the dynamic updater dynamically to avoid circular dependencies if any
-      import('./permissions').then(m => m.updateRoleTemplates(merged.roles!));
+      updateRoleTemplates(merged.roles!);
     }
     if (merged.gas_endpoint) {
       localStorage.setItem('wms_gas_endpoint', merged.gas_endpoint);

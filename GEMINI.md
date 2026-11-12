@@ -243,6 +243,17 @@ Fitur **Multitasking / Multi-Tab Keep-Alive & Slide-Over Companion Drawer** (mis
 ## 15. Product Lookup Integrity (HARD CONSTRAINT)
 Setiap lookup nama produk / size WAJIB mengikuti `.agents/skills/wms-product-lookup-integrity/SKILL.md`:
 1. Master Produk (`master_produk`) = satu-satunya kebenaran; VLOOKUP SKU persis (`lookupProductBySku`).
-2. DILARANG menebak size dari akhiran SKU (regex) atau nama dari prefix SKU saudara; akhiran 2-3 huruf SKU umumnya kode warna (`YL`, `OL`, `VL`, `PL`, `SL`, `CL`, `TL`, `GL`, `BL`, `NL`, `RL`, `EL`, `KL`, `ML`, `EM`, `CM`, `DM`, `LM`, `BM`, `PM`, `SM`, `TM`, `GM`, `KM`, `BS`, `WS`, `NS`, `HS`, `RS`, `CS`, `GS`, `MS`, `SS`, `TS`, `KS`, `NVL`, `ORS`, `CRS`, `DBL`, dll.). Gunakan runtime guard `isCorruptedColorCodeSize(sku, size)` di seluruh view & resolver untuk mencegah pseudo-size kode warna.
+2. DILARANG menebak size dari akhiran SKU (regex) atau nama dari prefix SKU saudara; akhiran huruf SKU umumnya kode warna (YL, OL, EM, CM, DM, DD).
 3. Katalog marketing/Trello hanya untuk pencarian; nama & size yang disimpan/ditampilkan wajib disejajarkan ke master.
-4. Koreksi data master yang tercemar: 7.020 data `master_produk` tercemar pseudo-size kode warna telah disanitasi menyeluruh ke `size: 'Default'` via background batch script. Pastikan seluruh resolver mengembalikan size `-` / `Default` untuk produk-produk ini.
+4. Koreksi data master yang tercemar hanya setelah verifikasi fisik + approval user (lihat `docs/audits/`).
+
+## 16. Zero Chunk-Load Error & Static View Bundling Standard (HARD CONSTRAINT — MANDATORY FOR ALL AGENTS)
+Untuk mencegah error operasional `Failed to fetch dynamically imported module` saat perpindahan menu di tengah rilis Vercel baru:
+1. **DILARANG KERAS Menggunakan `React.lazy(() => import(...))` pada Halaman Utama (`src/App.tsx`)**:
+   - Seluruh halaman/modul utama di `src/App.tsx` WAJIB di-import secara **statis** (`import ... from './components/...'`) agar masuk ke dalam bundel aplikasi utama yang sudah tersedia di memori sejak awal sesi dibuka.
+   - Dengan static import, perpindahan antar menu (Gudang, Loading Dock, Produksi, Store, Packing, Presensi, dll.) 100% bebas request jaringan tambahan untuk file chunk `.js` per halaman, sehingga **tidak akan pernah gagal** meskipun ada deploy versi baru di Vercel.
+2. **Vercel Rewrite Rule (`vercel.json`)**:
+   - Aturan rewrite SPA di `vercel.json` WAJIB mengecualikan `/assets/` (`"source": "/((?!assets/).*)"`) agar file statis yang tidak ditemukan tidak pernah mengembalikan `index.html` (`text/html`) yang memicu MIME/chunk error.
+3. **Self-Healing Preload Guard (`src/main.tsx` & `src/components/ErrorBoundary.tsx`)**:
+   - Jangan pernah menghapus listener `vite:preloadError` di `src/main.tsx` maupun pembersihan Service Worker cache otomatis di `ErrorBoundary.tsx`.
+

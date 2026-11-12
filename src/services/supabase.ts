@@ -10970,16 +10970,30 @@ function safeSetLocalStorage(key: string, data: any): void {
   }
 }
 
+const VALID_DB_AGENDA_CATEGORIES = new Set([
+  'meeting',
+  'operasional',
+  'project',
+  'supplier',
+  'urgent',
+  'umum',
+]);
+
 /**
- * Helper untuk menyisipkan metadata ekstra (color, google_event_id, source) ke description
- * agar tersimpan aman di Supabase tanpa terkena error kolom tidak ada (PGRST204).
+ * Helper untuk menyisipkan metadata ekstra (color, google_event_id, source, custom_category) ke description
+ * agar tersimpan aman di Supabase tanpa terkena error kolom tidak ada (PGRST204) atau check constraint (23514).
  */
 function encodeAgendaMetadata(
   description: string,
-  meta: { color?: string; google_event_id?: string; source?: string }
+  meta: { color?: string; google_event_id?: string; source?: string; custom_category?: string }
 ): string {
   const clean = (description || '').replace(/<!--wms_meta:[\s\S]*?-->/g, '').trim();
-  const hasMeta = Boolean(meta.color || meta.google_event_id || (meta.source && meta.source !== 'wms'));
+  const hasMeta = Boolean(
+    meta.color ||
+      meta.google_event_id ||
+      meta.custom_category ||
+      (meta.source && meta.source !== 'wms')
+  );
   if (!hasMeta) return clean;
   return `${clean}${clean ? '\n' : ''}<!--wms_meta:${JSON.stringify(meta)}-->`;
 }
@@ -10989,7 +11003,7 @@ function encodeAgendaMetadata(
  */
 function decodeAgendaMetadata(rawDescription: string): {
   description: string;
-  meta: { color?: string; google_event_id?: string; source?: string };
+  meta: { color?: string; google_event_id?: string; source?: string; custom_category?: string };
 } {
   if (!rawDescription) return { description: '', meta: {} };
   const match = rawDescription.match(/<!--wms_meta:([\s\S]*?)-->/);
@@ -11015,13 +11029,14 @@ export async function getAgendaEvents(): Promise<AgendaEvent[]> {
         return {
           ...item,
           description,
+          category: meta.custom_category || item.category || 'umum',
           color: item.color || meta.color || undefined,
           google_event_id: item.google_event_id || meta.google_event_id || undefined,
           source: item.source || meta.source || 'wms',
         };
       });
 
-      // Sinkronkan dengan local cache agar perubahan lokal yang lebih baru tidak tertimpa
+      // Sinkronkan dengan local cache agar perubahan lokal yang lebih baru atau belum tersinkron tidak hilang
       let merged = parsedData;
       if (typeof window !== 'undefined') {
         try {
@@ -11045,6 +11060,21 @@ export async function getAgendaEvents(): Promise<AgendaEvent[]> {
                 }
                 return remote;
               });
+
+              const remoteIds = new Set(parsedData.map((r) => r.id));
+              const remoteGoogleIds = new Set(
+                parsedData.map((r) => r.google_event_id).filter(Boolean)
+              );
+              const unsyncedLocals = localList.filter(
+                (l) =>
+                  l.id &&
+                  !l.id.startsWith('seed-agenda-') &&
+                  !remoteIds.has(l.id) &&
+                  (!l.google_event_id || !remoteGoogleIds.has(l.google_event_id))
+              );
+              if (unsyncedLocals.length > 0) {
+                merged = [...merged, ...unsyncedLocals];
+              }
             }
           }
         } catch {}
@@ -11071,6 +11101,12 @@ export async function getAgendaEvents(): Promise<AgendaEvent[]> {
 
         deduplicated.push(item);
       }
+
+      deduplicated.sort((a, b) => {
+        const dCmp = (a.start_date || '').localeCompare(b.start_date || '');
+        if (dCmp !== 0) return dCmp;
+        return (a.start_time || '').localeCompare(b.start_time || '');
+      });
 
       safeSetLocalStorage(LOCAL_AGENDA_KEY, deduplicated);
       return deduplicated;
@@ -11131,6 +11167,11 @@ export async function saveAgendaEvent(item: Partial<AgendaEvent>): Promise<Agend
     }
   }
 
+  const rawCategory = String(item.category || 'umum').trim() || 'umum';
+  const isStandardDbCategory = VALID_DB_AGENDA_CATEGORIES.has(rawCategory);
+  const dbCategory = isStandardDbCategory ? rawCategory : 'umum';
+  const customCategoryMeta = isStandardDbCategory ? undefined : rawCategory;
+
   const payload: AgendaEvent = {
     id,
     title: item.title || 'Agenda Baru',
@@ -11140,7 +11181,7 @@ export async function saveAgendaEvent(item: Partial<AgendaEvent>): Promise<Agend
     is_all_day: Boolean(item.is_all_day),
     start_time: item.start_time || '',
     end_time: item.end_time || '',
-    category: item.category || 'umum',
+    category: rawCategory,
     color: item.color || undefined,
     location: item.location || '',
     pic: item.pic || '',
@@ -11154,11 +11195,12 @@ export async function saveAgendaEvent(item: Partial<AgendaEvent>): Promise<Agend
   };
 
   // Siapkan DB payload yang 100% kompatibel dengan schema tabel public.wms_agenda di Supabase
-  // Metadata ekstra (color, google_event_id, source) diamankan di dalam description
+  // Metadata ekstra (color, google_event_id, source, custom_category) diamankan di dalam description
   const dbDescription = encodeAgendaMetadata(payload.description, {
     color: payload.color,
     google_event_id: payload.google_event_id,
     source: payload.source,
+    custom_category: customCategoryMeta,
   });
 
   const dbPayload: Record<string, any> = {
@@ -11170,7 +11212,7 @@ export async function saveAgendaEvent(item: Partial<AgendaEvent>): Promise<Agend
     is_all_day: payload.is_all_day,
     start_time: payload.start_time,
     end_time: payload.end_time,
-    category: payload.category,
+    category: dbCategory,
     location: payload.location,
     pic: payload.pic,
     project_id: payload.project_id,
@@ -11187,7 +11229,10 @@ export async function saveAgendaEvent(item: Partial<AgendaEvent>): Promise<Agend
     } else {
       const updateData = { ...dbPayload };
       delete (updateData as any).id;
-      await supabaseFetch('wms_agenda', 'PATCH', updateData, `id=eq.${encodeURIComponent(id)}`);
+      const patchRes = await supabaseFetch<any[]>('wms_agenda', 'PATCH', updateData, `id=eq.${encodeURIComponent(id)}`);
+      if (!Array.isArray(patchRes) || patchRes.length === 0) {
+        await supabaseFetch('wms_agenda', 'POST', [dbPayload]);
+      }
     }
   } catch (err) {
     console.warn('Gagal sync agenda ke Supabase (disimpan ke cache lokal):', err);

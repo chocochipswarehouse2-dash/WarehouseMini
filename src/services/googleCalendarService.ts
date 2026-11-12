@@ -219,6 +219,7 @@ export async function reconcileGoogleCalendarTwoWay(
       if (!existing) {
         // Event baru dari Google Calendar -> Tambahkan ke WMS
         const newEvent: Partial<AgendaEvent> = {
+          id: gEv.wms_id || undefined,
           title: gEv.title || 'Agenda Google Calendar',
           description: gEv.description || '',
           start_date: gEv.start_date,

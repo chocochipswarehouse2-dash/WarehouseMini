@@ -92,7 +92,10 @@ const ALL_MIGRATION_TABLES: Omit<TableMigrationItem, 'sourceCount' | 'targetCoun
   { name: 'store_help_tickets', label: '27. Tiket & Eskalasi Store (store_help_tickets)' },
 ];
 
-export const SupabaseMigrationView: React.FC = () => {
+export const SupabaseMigrationView: React.FC<{
+  session?: any;
+  onNotify?: (message: string, type?: 'success' | 'error' | 'info' | 'warning', options?: any) => void;
+}> = () => {
   const currentActiveConfig = useMemo(() => getStoredSupabaseConfig(), []);
   
   // Tab Stepper State

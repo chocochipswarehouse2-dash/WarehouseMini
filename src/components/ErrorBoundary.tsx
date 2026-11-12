@@ -23,11 +23,68 @@ export class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error };
   }
 
+  private isDynamicModuleError(error: Error | null): boolean {
+    const msg = String(error?.message || error || '').toLowerCase();
+    return (
+      msg.includes('failed to fetch dynamically imported module') ||
+      msg.includes('importing a module script failed') ||
+      msg.includes('error loading dynamically imported module') ||
+      msg.includes('chunkloaderror')
+    );
+  }
+
+  private performCleanBundleRecovery = async () => {
+    try {
+      // Bersihkan kunci sessionStorage chunk_reload lama yang mengunci pemulihan
+      for (let i = sessionStorage.length - 1; i >= 0; i--) {
+        const k = sessionStorage.key(i);
+        if (k && k.startsWith('chunk_reload_')) {
+          sessionStorage.removeItem(k);
+        }
+      }
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        for (const r of regs) {
+          if (r.waiting) {
+            r.waiting.postMessage({ type: 'SKIP_WAITING' });
+          }
+          await r.update().catch(() => {});
+        }
+      }
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        for (const name of cacheNames) {
+          if (name.includes('workbox-precache')) {
+            await caches.delete(name).catch(() => {});
+          }
+        }
+      }
+    } catch {}
+    const url = new URL(window.location.href);
+    url.searchParams.set('_v', String(Date.now()));
+    window.location.replace(url.toString());
+  };
+
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Uncaught error caught by ErrorBoundary:', error, errorInfo);
+    if (this.isDynamicModuleError(error) && typeof window !== 'undefined') {
+      try {
+        const lastAutoHeal = Number(sessionStorage.getItem('wms_eb_chunk_heal_ts') || '0');
+        if (Date.now() - lastAutoHeal > 12000) {
+          sessionStorage.setItem('wms_eb_chunk_heal_ts', String(Date.now()));
+          void this.performCleanBundleRecovery();
+        }
+      } catch {}
+    }
   }
 
   private handleReset = () => {
+    const isChunkErr = this.isDynamicModuleError(this.state.error);
+    if (isChunkErr && typeof window !== 'undefined') {
+      void this.performCleanBundleRecovery();
+      return;
+    }
+
     try {
       // Clear huge caches to prevent recurring QuotaExceeded errors immediately upon reload
       clearHeavyCaches();

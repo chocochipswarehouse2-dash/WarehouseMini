@@ -594,7 +594,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     localStorage.setItem('wms_wa_webhook_gas_url', waWebhookGasUrl.trim());
     
     try {
-      const { saveWmsSettings } = await import('../services/settings');
       const success = await saveWmsSettings({
         fonnte_token: fonnteToken.trim(),
         fonnte_group_target: fonnteGroupTarget.trim(),

@@ -32,6 +32,28 @@ import { setupOrientationAutoLock, isRunningInIframe } from './services/orientat
 import { registerSW } from 'virtual:pwa-register';
 import { appUpdateManager } from './services/appUpdateService';
 
+// Self-Healing Vite Preload Error Defense (Anti-ChunkLoadError)
+if (typeof window !== 'undefined') {
+  window.addEventListener('vite:preloadError', (event) => {
+    event.preventDefault();
+    try {
+      const lastAttempt = Number(sessionStorage.getItem('wms_last_chunk_heal_ts') || '0');
+      if (Date.now() - lastAttempt > 10000) {
+        sessionStorage.setItem('wms_last_chunk_heal_ts', String(Date.now()));
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then((regs) => {
+            regs.forEach((r) => {
+              if (r.waiting) r.waiting.postMessage({ type: 'SKIP_WAITING' });
+              void r.update().catch(() => {});
+            });
+          }).catch(() => {});
+        }
+        window.location.reload();
+      }
+    } catch {}
+  });
+}
+
 // Auto-register Service Worker safely (Multi-User Non-Disruptive: NEVER force reload mid-work!)
 try {
   const isIframe = isRunningInIframe();

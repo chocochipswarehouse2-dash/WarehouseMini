@@ -18,6 +18,7 @@ interface QualityControlViewProps {
   session: UserSession | null;
   productCatalog?: ProductItem[];
   onShowToast: (msg: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
+  onRefreshCatalog?: (forceRefresh?: boolean) => Promise<any>;
 }
 
 export type QcMainTab = 'form_laporan' | 'riwayat_laporan' | 'perbaikan' | 'acc_defect';

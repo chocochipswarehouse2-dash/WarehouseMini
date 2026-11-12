@@ -68,77 +68,39 @@ import {
   bulkUpsertProductsInLocalDb,
 } from './services/localDb';
 
-// Resilient Lazy Loader with auto-retry and cache-busting on network or server-restart glitches
-function lazyWithRetry<T extends React.ComponentType<any>>(
-  factory: () => Promise<{ default: T } | any>,
-  retries = 3,
-  interval = 800
-): React.LazyExoticComponent<T> {
-  return React.lazy(() =>
-    new Promise<{ default: T }>((resolve, reject) => {
-      const attempt = (remaining: number) => {
-        factory()
-          .then((module) => {
-            const resolved = module?.default ? module : { default: module };
-            resolve(resolved);
-          })
-          .catch((error) => {
-            if (remaining > 0) {
-              setTimeout(() => attempt(remaining - 1), interval);
-            } else {
-              const errorMsg = String(error?.message || '');
-              const isModuleError =
-                errorMsg.includes('Failed to fetch dynamically imported module') ||
-                errorMsg.includes('Importing a module script failed') ||
-                errorMsg.includes('error loading dynamically imported module');
-
-              if (isModuleError && typeof window !== 'undefined') {
-                const reloadKey = 'chunk_reload_' + window.location.pathname;
-                const hasReloaded = sessionStorage.getItem(reloadKey);
-                if (!hasReloaded) {
-                  sessionStorage.setItem(reloadKey, 'true');
-                  window.location.reload();
-                  return;
-                }
-              }
-              reject(error);
-            }
-          });
-      };
-      attempt(retries);
-    })
-  );
-}
-
-// Lazy load large components with resilient retry
-const DashboardView = lazyWithRetry(() => import('./components/DashboardView').then(m => ({ default: m.DashboardView })));
-const ProduksiView = lazyWithRetry(() => import('./components/ProduksiView').then(m => ({ default: m.ProduksiView })));
-const TrelloView = lazyWithRetry(() => import('./components/Trello/TrelloView').then(m => ({ default: m.TrelloView })));
-const LoadingDockView = lazyWithRetry(() => import('./components/LoadingDockView').then(m => ({ default: m.LoadingDockView })));
-const PackingView = lazyWithRetry(() => import('./components/PackingView').then(m => ({ default: m.PackingView })));
-const AgendaView = lazyWithRetry(() => import('./components/AgendaView').then(m => ({ default: m.AgendaView })));
-const PeminjamanView = lazyWithRetry(() => import('./components/PeminjamanView').then(m => ({ default: m.PeminjamanView })));
-const QualityControlView = lazyWithRetry(() => import('./components/QualityControlView').then(m => ({ default: m.QualityControlView })));
-const PickingTasksView = lazyWithRetry(() => import('./components/PickingTasksView').then(m => ({ default: m.PickingTasksView })));
-const MutasiLogView = lazyWithRetry(() => import('./components/MutasiLogView').then(m => ({ default: m.MutasiLogView })));
-const InventoryView = lazyWithRetry(() => import('./components/InventoryView').then(m => ({ default: m.InventoryView })));
-const PresensiView = lazyWithRetry(() => import('./components/hr/PresensiView').then(m => ({ default: m.PresensiView })));
-const KaryawanView = lazyWithRetry(() => import('./components/hr/KaryawanView').then(m => ({ default: m.KaryawanView })));
-const RosterShiftView = lazyWithRetry(() => import('./components/hr/RosterShiftView').then(m => ({ default: m.RosterShiftView })));
-const LemburCutiView = lazyWithRetry(() => import('./components/hr/LemburCutiView').then(m => ({ default: m.LemburCutiView })));
-const HrApprovalView = lazyWithRetry(() => import('./components/hr/HrApprovalView').then(m => ({ default: m.HrApprovalView })));
-const HrRekapView = lazyWithRetry(() => import('./components/hr/HrRekapView').then(m => ({ default: m.HrRekapView })));
-const CetakLabelView = lazyWithRetry(() => import('./components/CetakLabelView').then(m => ({ default: m.CetakLabelView })));
-const CetakBarcodeProdukView = lazyWithRetry(() => import('./components/CetakBarcodeProdukView').then(m => ({ default: m.CetakBarcodeProdukView })));
+// MANDATORY ZERO-CHUNK-ERROR POLICY:
+// Seluruh halaman utama wajib di-import secara statis agar perpindahan menu
+// (Loading Dock, Produksi, Picking, Presensi, dll.) 100% bebas dari error
+// "Failed to fetch dynamically imported module" saat ada update Vercel di background
+// maupun saat koneksi internet gudang sedang tidak stabil / offline.
+import { DashboardView } from './components/DashboardView';
+import { ProduksiView } from './components/ProduksiView';
+import { TrelloView } from './components/Trello/TrelloView';
+import { LoadingDockView } from './components/LoadingDockView';
+import { PackingView } from './components/PackingView';
+import { AgendaView } from './components/AgendaView';
+import { PeminjamanView } from './components/PeminjamanView';
+import { QualityControlView } from './components/QualityControlView';
+import { PickingTasksView } from './components/PickingTasksView';
+import { MutasiLogView } from './components/MutasiLogView';
+import { InventoryView } from './components/InventoryView';
+import { PresensiView } from './components/hr/PresensiView';
+import { KaryawanView } from './components/hr/KaryawanView';
+import { RosterShiftView } from './components/hr/RosterShiftView';
+import { LemburCutiView } from './components/hr/LemburCutiView';
+import { HrApprovalView } from './components/hr/HrApprovalView';
+import { HrRekapView } from './components/hr/HrRekapView';
+import { CetakLabelView } from './components/CetakLabelView';
+import { CetakBarcodeProdukView } from './components/CetakBarcodeProdukView';
 import { PesananSayaView } from './components/PesananSaya/PesananSayaView';
 import PusatResolusiView from './components/PusatResolusi/PusatResolusiView';
-const JneRekapView = lazyWithRetry(() => import('./components/JneRekapView').then(m => ({ default: m.JneRekapView })));
-const LiveChatWorkspace = lazyWithRetry(() => import('./components/LiveChat/LiveChatWorkspace').then(m => ({ default: m.LiveChatWorkspace })));
+import { JneRekapView } from './components/JneRekapView';
+import { LiveChatWorkspace } from './components/LiveChat/LiveChatWorkspace';
 import { LiveChatFloatingWidget } from './components/LiveChat/LiveChatFloatingWidget';
 import { liveChatManager } from './services/liveChatService';
-
-const SupabaseMigrationView = lazyWithRetry(() => import('./components/SupabaseMigrationView').then(m => ({ default: m.SupabaseMigrationView })));
-const SettingsView = lazyWithRetry(() => import('./components/SettingsView').then(m => ({ default: m.SettingsView })));
+import { SupabaseMigrationView } from './components/SupabaseMigrationView';
+import { SettingsView } from './components/SettingsView';
+import { processPickingSync } from './services/pickingSync';
 
 import {
   DEFAULT_SUPABASE_URL,
@@ -648,29 +610,7 @@ export default function App() {
     if (!session || !session.username) return;
     let isMounted = true;
 
-    // Preload lazy components safely without unhandled rejections
-    const preloadTimer = setTimeout(() => {
-      const safePreload = (factory: () => Promise<any>) => {
-        try {
-          factory().catch((_val: boolean) => {});
-        } catch {
-          // Ignore background preload errors
-        }
-      };
-
-      safePreload(() => import('./components/PeminjamanView'));
-      safePreload(() => import('./components/PickingTasksView'));
-      safePreload(() => import('./components/StockOpnameView'));
-      safePreload(() => import('./components/MutasiLogView'));
-      safePreload(() => import('./components/InventoryView'));
-      safePreload(() => import('./components/hr/PresensiView'));
-      safePreload(() => import('./components/hr/KaryawanView'));
-      safePreload(() => import('./components/hr/RosterShiftView'));
-      safePreload(() => import('./components/hr/LemburCutiView'));
-      safePreload(() => import('./components/hr/HrApprovalView'));
-      safePreload(() => import('./components/hr/HrRekapView'));
-      safePreload(() => import('./components/PesananSaya/PesananSayaView'));
-    }, 2500);
+    // Semua halaman utama kini di-import statis (Zero Chunk Error Policy)
 
     const syncSessionPermissions = async () => {
       try {
@@ -756,7 +696,6 @@ export default function App() {
     syncSessionPermissions();
     return () => {
       isMounted = false;
-      clearTimeout(preloadTimer);
     };
   }, [session?.username]);
 
@@ -1616,9 +1555,7 @@ export default function App() {
                 }
               }
 
-              import('./services/pickingSync').then(({ processPickingSync }) => {
-                processPickingSync(newLog);
-              }).catch(console.error);
+              void processPickingSync(newLog).catch(console.error);
 
               // Local State Mutation to save egress: update locally instead of fetching the whole database
               if (newLog.sku && newLog.lokasi && newLog.qty) {
