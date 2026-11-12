@@ -243,6 +243,6 @@ Fitur **Multitasking / Multi-Tab Keep-Alive & Slide-Over Companion Drawer** (mis
 ## 15. Product Lookup Integrity (HARD CONSTRAINT)
 Setiap lookup nama produk / size WAJIB mengikuti `.agents/skills/wms-product-lookup-integrity/SKILL.md`:
 1. Master Produk (`master_produk`) = satu-satunya kebenaran; VLOOKUP SKU persis (`lookupProductBySku`).
-2. DILARANG menebak size dari akhiran SKU (regex) atau nama dari prefix SKU saudara; akhiran huruf SKU umumnya kode warna (YL, OL, EM, CM, DM, DD).
+2. DILARANG menebak size dari akhiran SKU (regex) atau nama dari prefix SKU saudara; akhiran 2-3 huruf SKU umumnya kode warna (`YL`, `OL`, `VL`, `PL`, `SL`, `CL`, `TL`, `GL`, `BL`, `NL`, `RL`, `EL`, `KL`, `ML`, `EM`, `CM`, `DM`, `LM`, `BM`, `PM`, `SM`, `TM`, `GM`, `KM`, `BS`, `WS`, `NS`, `HS`, `RS`, `CS`, `GS`, `MS`, `SS`, `TS`, `KS`, `NVL`, `ORS`, `CRS`, `DBL`, dll.). Gunakan runtime guard `isCorruptedColorCodeSize(sku, size)` di seluruh view & resolver untuk mencegah pseudo-size kode warna.
 3. Katalog marketing/Trello hanya untuk pencarian; nama & size yang disimpan/ditampilkan wajib disejajarkan ke master.
-4. Koreksi data master yang tercemar hanya setelah verifikasi fisik + approval user (lihat `docs/audits/`).
+4. Koreksi data master yang tercemar: 7.020 data `master_produk` tercemar pseudo-size kode warna telah disanitasi menyeluruh ke `size: 'Default'` via background batch script. Pastikan seluruh resolver mengembalikan size `-` / `Default` untuk produk-produk ini.

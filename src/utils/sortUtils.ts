@@ -147,7 +147,7 @@ export function extractSizeFromSku(sku: string): string {
   const found = exact.get(clean);
   if (found) {
     const mSize = extractCleanSizeToken(found.size || '');
-    if (mSize && mSize !== '-' && isRealSize(mSize)) {
+    if (mSize && mSize !== '-' && isRealSize(mSize) && !isCorruptedColorCodeSize(clean, mSize)) {
       return mSize;
     }
     return '-';
@@ -293,6 +293,57 @@ export function extractCleanSizeToken(str?: string): string {
 }
 
 /**
+ * 2-letter color suffix codes commonly used across Chocochips SKUs.
+ * In single-size/All-Size items, these suffixes end with 'L' (e.g. YL=Yellow, OL=Olive, VL=Violet),
+ * 'M' (e.g. CM=Caramel, EM=Emerald, DM=Denim), or 'S' (e.g. RS=Rust, BS=Black Stripe, WS=White Stripe).
+ * NAIVE REGEX often mistakenly parses these last letters as clothing sizes 'L', 'M', or 'S'.
+ */
+export const KNOWN_2LETTER_COLOR_CODES = new Set([
+  'YL', 'OL', 'VL', 'PL', 'SL', 'CL', 'TL', 'GL', 'BL', 'NL', 'RL', 'EL', 'KL', 'ML', 'LL', 'DL',
+  'EM', 'CM', 'DM', 'LM', 'BM', 'PM', 'SM', 'TM', 'GM', 'KM', 'MM', 'RM', 'NM', 'AM',
+  'BS', 'WS', 'NS', 'HS', 'RS', 'CS', 'GS', 'MS', 'SS', 'TS', 'KS', 'LS', 'OS', 'PS'
+]);
+
+export const KNOWN_3LETTER_COLOR_CODES = new Set([
+  'NVL', 'ORS', 'CRS', 'DBL', 'BNL', 'YLM', 'DGM', 'BCM', 'CRL', 'BKL', 'WHL', 'GRL', 'PKL', 'RDL'
+]);
+
+/**
+ * Checks if a given size ('S', 'M', 'L') is a false positive derived from a SKU color abbreviation suffix.
+ * Example false positives:
+ * - F26CTN699YL with size 'L' (YL = Yellow)
+ * - STN501YL with size 'L' (YL = Yellow)
+ * - 19LTO008OL with size 'L' (OL = Olive)
+ * - B138CM with size 'M' (CM = Caramel)
+ * - ST0103ORS with size 'S' (ORS = Old Rose)
+ */
+export function isCorruptedColorCodeSize(sku?: string | null, size?: unknown): boolean {
+  if (!sku || size === undefined || size === null) return false;
+  const cleanSku = String(sku).trim().toUpperCase();
+  const cleanSize = String(size).trim().toUpperCase();
+
+  // Only S, M, L are vulnerable to false positive color suffix collisions
+  if (cleanSize !== 'S' && cleanSize !== 'M' && cleanSize !== 'L') return false;
+
+  // Genuine multi-size SKUs with explicit separators (-S, _M, /L, .XL) are ALWAYS legitimate
+  if (/[-_/\s.](S|M|L)$/i.test(cleanSku)) return false;
+
+  if (cleanSku.length < 4) return false;
+
+  const suf2 = cleanSku.slice(-2);
+  const suf3 = cleanSku.slice(-3);
+
+  if (KNOWN_2LETTER_COLOR_CODES.has(suf2) && suf2.endsWith(cleanSize)) {
+    return true;
+  }
+  if (KNOWN_3LETTER_COLOR_CODES.has(suf3) && suf3.endsWith(cleanSize)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Validates whether a value is a legitimate clothing size (e.g. S, M, L, XL, XXL, 28, 30, etc.)
  * Returns false if value is null, undefined, '-', 'Default', or if it's erroneously set to a
  * full product/variant title (e.g. "Wintour Skirt Blue").
@@ -341,7 +392,10 @@ export function setSortUtilsMasterCatalog(catalog: any[], lookupMap?: Map<string
     for (const [k, p] of lookupMap.entries()) {
       if (!p) continue;
       const rawName = String(p.p || p.nama_produk || p.n || p.nama || '').trim();
-      const rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
+      let rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
+      if (isCorruptedColorCodeSize(k, rawSize)) {
+        rawSize = 'Default';
+      }
       const rawCat = String(p.kategori || p.category || (p as any).c || (p as any).jenis || '').trim();
       masterExactMap.set(k, { name: rawName, size: rawSize, category: rawCat });
     }
@@ -352,7 +406,10 @@ export function setSortUtilsMasterCatalog(catalog: any[], lookupMap?: Map<string
       const k = String(p.k || p.sku || '').trim().toUpperCase();
       if (!k) continue;
       const rawName = String(p.p || p.nama_produk || p.n || p.nama || '').trim();
-      const rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
+      let rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
+      if (isCorruptedColorCodeSize(k, rawSize)) {
+        rawSize = 'Default';
+      }
       const rawCat = String(p.kategori || p.category || (p as any).c || (p as any).jenis || '').trim();
       masterExactMap.set(k, { name: rawName, size: rawSize, category: rawCat });
     }
@@ -375,7 +432,10 @@ function getMasterLookupMaps(): { exact: Map<string, CachedMasterEntry>; prefix:
       for (const [k, p] of gMap.entries()) {
         if (!p) continue;
         const rawName = String(p.p || p.nama_produk || p.n || p.nama || '').trim();
-        const rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
+        let rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
+        if (isCorruptedColorCodeSize(k, rawSize)) {
+          rawSize = 'Default';
+        }
         const rawCat = String(p.kategori || p.category || (p as any).c || (p as any).jenis || '').trim();
         masterExactMap.set(k, { name: rawName, size: rawSize, category: rawCat });
       }
@@ -398,7 +458,10 @@ function getMasterLookupMaps(): { exact: Map<string, CachedMasterEntry>; prefix:
             const k = String(p.k || p.sku || '').trim().toUpperCase();
             if (!k) continue;
             const rawName = String(p.p || p.nama_produk || p.n || p.nama || '').trim();
-            const rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
+            let rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
+            if (isCorruptedColorCodeSize(k, rawSize)) {
+              rawSize = 'Default';
+            }
             const rawCat = String(p.kategori || p.category || (p as any).c || (p as any).jenis || '').trim();
             if (!masterExactMap.has(k)) {
               masterExactMap.set(k, {
@@ -567,7 +630,7 @@ export function resolveProductDisplaySize(
   // 1. Master catalog size (authoritative standard from master product)
   if (catalogSize) {
     const cleanCatSize = extractCleanSizeToken(catalogSize);
-    if (cleanCatSize && cleanCatSize !== '-' && isRealSize(cleanCatSize)) {
+    if (cleanCatSize && cleanCatSize !== '-' && isRealSize(cleanCatSize) && !isCorruptedColorCodeSize(cleanSku, cleanCatSize)) {
       return cleanCatSize;
     }
   }
@@ -579,7 +642,7 @@ export function resolveProductDisplaySize(
     const found = exact.get(cleanSku);
     if (found) {
       const mSize = extractCleanSizeToken(found.size || '');
-      if (mSize && mSize !== '-' && isRealSize(mSize)) {
+      if (mSize && mSize !== '-' && isRealSize(mSize) && !isCorruptedColorCodeSize(cleanSku, mSize)) {
         return mSize;
       }
       if (/^(ALL|ALL SIZE|ALLSIZE|FS|FREE SIZE|ONESIZE|ONE SIZE)$/i.test((found.size || '').trim())) {
@@ -591,12 +654,12 @@ export function resolveProductDisplaySize(
 
   // 3. Fallback only if not in master product: record size or extracted suffix
   const rawSize = extractCleanSizeToken(recordSize || '');
-  if (rawSize && rawSize !== '-' && rawSize.toUpperCase() !== 'DEFAULT' && isRealSize(rawSize)) {
+  if (rawSize && rawSize !== '-' && rawSize.toUpperCase() !== 'DEFAULT' && isRealSize(rawSize) && !isCorruptedColorCodeSize(cleanSku, rawSize)) {
     return rawSize;
   }
 
   const fromSku = extractSizeFromSku(cleanSku);
-  if (fromSku && fromSku !== '-' && fromSku !== 'DEFAULT' && isRealSize(fromSku)) {
+  if (fromSku && fromSku !== '-' && fromSku !== 'DEFAULT' && isRealSize(fromSku) && !isCorruptedColorCodeSize(cleanSku, fromSku)) {
     return fromSku;
   }
 

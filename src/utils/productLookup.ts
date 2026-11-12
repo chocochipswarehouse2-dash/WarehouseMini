@@ -10,7 +10,7 @@
  * 6. Only negative physical rack stock (sisa_stok < 0) is a quantity anomaly.
  */
 import { ProductItem } from '../types';
-import { cleanProductName, extractCleanSizeToken, extractSizeFromSku, isRealSize, setSortUtilsMasterCatalog, inferCategoryFromProductName, lookupCategoryByName } from './sortUtils';
+import { cleanProductName, extractCleanSizeToken, extractSizeFromSku, isRealSize, setSortUtilsMasterCatalog, inferCategoryFromProductName, lookupCategoryByName, isCorruptedColorCodeSize } from './sortUtils';
 
 export interface ProductLookupResult {
   found: boolean;
@@ -179,11 +179,10 @@ export function lookupProductBySku(
   if (!master) {
     const fallbackName = currentName ? cleanProductName(String(currentName).trim()) : '';
     const rawCurSize = extractCleanSizeToken(currentSize ? String(currentSize).trim() : '');
+    const validCurSize = (!isCorruptedColorCodeSize(cleanSku, rawCurSize) && rawCurSize && rawCurSize !== '-' && rawCurSize.toUpperCase() !== 'DEFAULT' && isRealSize(rawCurSize)) ? rawCurSize : '';
     const skuSize = extractSizeFromSku(cleanSku);
-    const fallbackSize =
-      (rawCurSize && rawCurSize !== '-' && rawCurSize.toUpperCase() !== 'DEFAULT' && isRealSize(rawCurSize) ? rawCurSize : '') ||
-      (skuSize && skuSize !== '-' && skuSize.toUpperCase() !== 'DEFAULT' && isRealSize(skuSize) ? skuSize : '') ||
-      '-';
+    const validSkuSize = (!isCorruptedColorCodeSize(cleanSku, skuSize) && skuSize && skuSize !== '-' && skuSize.toUpperCase() !== 'DEFAULT' && isRealSize(skuSize)) ? skuSize : '';
+    const fallbackSize = validCurSize || validSkuSize || '-';
     const fallbackCat = lookupCategoryByName(fallbackName, catalogOrMap) || inferCategoryFromProductName(fallbackName);
     return {
       found: false,
@@ -205,10 +204,14 @@ export function lookupProductBySku(
     String(master.s || (master as any).size || (master as any).variant || (master as any).varian || (master as any).ukuran || '')
   );
 
+  if (isCorruptedColorCodeSize(cleanSku, officialSize)) {
+    officialSize = '-';
+  }
+
   // If master data recorded "Default" or empty, try extracting size
   if (!officialSize || officialSize === '-' || officialSize.toUpperCase() === 'DEFAULT') {
     const fromSku = extractSizeFromSku(cleanSku);
-    if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT' && isRealSize(fromSku)) {
+    if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT' && isRealSize(fromSku) && !isCorruptedColorCodeSize(cleanSku, fromSku)) {
       officialSize = fromSku;
     } else {
       const rawMasterVariant = String(master.s || (master as any).size || (master as any).variant || '').trim().toUpperCase();

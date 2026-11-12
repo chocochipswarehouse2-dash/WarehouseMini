@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.11.4",
-  "versionCode": 314,
+  "version": "v2.11.5",
+  "versionCode": 315,
   "buildDate": "12 November 2026",
-  "buildHash": "wms-261112-v314-1247",
-  "releaseTitle": "WMS v2.11.4 — Sinkronisasi Otomatis Nama Produk Pesanan Store & Koreksi Tiket Alteration Taylor Pants",
+  "buildHash": "wms-261112-v315-1331",
+  "releaseTitle": "WMS v2.11.5 — Sanitasi Menyeluruh Size Kode Warna (YL/OL/CM) di Seluruh Sistem & Master DB",
   "releaseNotes": [
-    "Penyelarasan otomatis nama & size produk pada Pesanan Store (Split, Tabel, Kartu) dengan Master Produk via lookupProductBySku",
-    "Koreksi data tiket AR-BY -261108-P8Z5 di database Supabase menjadi Taylor Pants Denim Blue"
+    "Pembersihan 7.020 data master_produk dari pseudo-size kode warna",
+    "Runtime guard isCorruptedColorCodeSize di Inventory, Katalog, dan Lookup"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.11.4",
+    "versionCode": 314,
+    "buildDate": "12 November 2026",
+    "buildHash": "wms-261112-v314-1247",
+    "releaseTitle": "WMS v2.11.4 — Sinkronisasi Otomatis Nama Produk Pesanan Store & Koreksi Tiket Alteration Taylor Pants",
+    "releaseNotes": [
+      "Penyelarasan otomatis nama & size produk pada Pesanan Store (Split, Tabel, Kartu) dengan Master Produk via lookupProductBySku",
+      "Koreksi data tiket AR-BY -261108-P8Z5 di database Supabase menjadi Taylor Pants Denim Blue"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.11.3",
     "versionCode": 313,
@@ -118,19 +130,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "AI kini dapat membaca & mencari rincian penerimaan barang produksi (Lokal CMT maupun Kargo) per tanggal spesifik (hari ini, kemarin, rentang tanggal), per nomor surat jalan, atau per kode produksi beserta pencocokan otomatis Nama Produk & Kode UP dari Trello UP.",
       "Fitur Bantu Input Penerimaan ke Form Input (prepare_production_receipt_form): AI menyiapkan draft Form Input Penerimaan (Kategori CMT/Kargo, Tanggal, No. Surat Jalan, Kode Produksi, Foto & UP Trello otomatis, serta matriks Warna, Size, dan Qty) sehingga Anda tinggal mengecek, melengkapi data yang kurang, dan menekan tombol Submit sendiri.",
       "Skill Tanya Jawab (Q&A) Interaktif Produksi: Jika data input penerimaan belum lengkap (misal belum ada No. Surat Jalan, Warna, atau Qty per ukuran), AI secara proaktif bertanya jawab dengan ramah dan memperbarui draft form secara bertahap."
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.9.1",
-    "versionCode": 291,
-    "buildDate": "10 November 2026",
-    "buildHash": "wms-261110-v291-2158",
-    "releaseTitle": "WMS v2.9.1 — Hotfix Import React useMemo & Proteksi Eksklusif Token Owner",
-    "releaseNotes": [
-      "Fix Blank Page: Menambahkan missing useMemo import di App.tsx",
-      "Proteksi Eksklusif: Tombol Token & Akses AI kini HANYA tampil untuk akun @warehouse selaku owner",
-      "Pencegahan Akses Pengaturan AI dari Akun Lain (Superadmin non-owner)"
     ],
     "minSupportedVersion": "v2.0.0"
   }

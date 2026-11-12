@@ -24,6 +24,7 @@ import {
   resolveProductDisplaySize,
   inferCategoryFromProductName,
   lookupCategoryByName,
+  isCorruptedColorCodeSize,
 } from '../../utils/sortUtils';
 
 // ========================================================
@@ -197,9 +198,11 @@ function parseCatalogItem(item: ProductItem): CatalogBase | null {
   // Size: ukuran master -> akhiran SKU -> '-'
   const rawMasterSize = String(item.s || (item as any).size || '');
   let size = resolveProductDisplaySize(sku, rawMasterSize, rawMasterSize);
-  if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') {
+  if (isCorruptedColorCodeSize(sku, size) || isCorruptedColorCodeSize(sku, rawMasterSize)) {
+    size = '-';
+  } else if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') {
     const fromSku = extractSizeFromSku(sku);
-    if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT' && isRealSize(fromSku)) {
+    if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT' && isRealSize(fromSku) && !isCorruptedColorCodeSize(sku, fromSku)) {
       size = fromSku;
     }
   }
@@ -434,9 +437,11 @@ export function composeRows(bases: CatalogBase[], stockBySku: Map<string, StockR
     const first = stockRows[0];
     const produk = resolveProductName(sku, first?.nama_produk) || cleanProductName(first?.nama_produk || sku) || sku;
     let size = resolveProductDisplaySize(sku, first?.size);
-    if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') {
+    if (isCorruptedColorCodeSize(sku, size)) {
+      size = '-';
+    } else if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') {
       const fromSku = extractSizeFromSku(sku);
-      if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT' && isRealSize(fromSku)) {
+      if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT' && isRealSize(fromSku) && !isCorruptedColorCodeSize(sku, fromSku)) {
         size = fromSku;
       }
     }
