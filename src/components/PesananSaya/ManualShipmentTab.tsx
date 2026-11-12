@@ -6968,13 +6968,17 @@ _WMS Warehouse System_`;
 
                     const orderItems = order.items || [];
                     const firstIt = orderItems[0];
+                    const cleanFirstSku = String(firstIt?.sku || '').trim().toUpperCase();
+                    const firstMaster = cleanFirstSku ? lookupProductBySku(cleanFirstSku, productCatalog, firstIt?.nama_produk, firstIt?.size) : null;
+                    const effectiveFirstName = (firstMaster && firstMaster.found) ? firstMaster.nama_produk : (firstIt?.nama_produk || firstIt?.sku || '-');
+                    const effectiveFirstSize = (firstMaster && firstMaster.found && firstMaster.size && firstMaster.size !== '-') ? firstMaster.size : (firstIt?.size || '');
                     const firstItName = firstIt
-                      ? `${firstIt.nama_produk || firstIt.sku || '-'}${
-                          firstIt.size &&
-                          firstIt.size !== 'ALL' &&
-                          firstIt.size !== '-' &&
-                          !(firstIt.nama_produk || '').toLowerCase().endsWith(`- ${firstIt.size.toLowerCase()}`)
-                            ? ` - ${firstIt.size}`
+                      ? `${effectiveFirstName}${
+                          effectiveFirstSize &&
+                          effectiveFirstSize !== 'ALL' &&
+                          effectiveFirstSize !== '-' &&
+                          !effectiveFirstName.toLowerCase().endsWith(`- ${effectiveFirstSize.toLowerCase()}`)
+                            ? ` - ${effectiveFirstSize}`
                             : ''
                         }`
                       : '-';
@@ -7445,12 +7449,16 @@ _WMS Warehouse System_`;
 
                         <div className="space-y-2">
                           {(activeOrder.items || []).map((it, idx) => {
-                            const itemDisplayName = `${it.nama_produk || it.sku || '-'}${
-                              it.size &&
-                              it.size !== 'ALL' &&
-                              it.size !== '-' &&
-                              !(it.nama_produk || '').toLowerCase().endsWith(`- ${it.size.toLowerCase()}`)
-                                ? ` - ${it.size}`
+                            const cleanSku = String(it.sku || '').trim().toUpperCase();
+                            const master = cleanSku ? lookupProductBySku(cleanSku, productCatalog, it.nama_produk, it.size) : null;
+                            const effectiveName = (master && master.found) ? master.nama_produk : (it.nama_produk || it.sku || '-');
+                            const effectiveSize = (master && master.found && master.size && master.size !== '-') ? master.size : (it.size || '');
+                            const itemDisplayName = `${effectiveName}${
+                              effectiveSize &&
+                              effectiveSize !== 'ALL' &&
+                              effectiveSize !== '-' &&
+                              !effectiveName.toLowerCase().endsWith(`- ${effectiveSize.toLowerCase()}`)
+                                ? ` - ${effectiveSize}`
                                 : ''
                             }`;
                             const fulfillmentName =
@@ -8289,12 +8297,16 @@ _WMS Warehouse System_`;
 
                       <div className="divide-y divide-slate-200/70 dark:divide-slate-700/70 bg-slate-50/90 dark:bg-slate-800/60 rounded-lg border border-slate-200/80 dark:border-slate-700/80 overflow-hidden">
                         {(order.items || []).map((it, idx) => {
+                          const cleanSku = String(it.sku || '').trim().toUpperCase();
+                          const master = cleanSku ? lookupProductBySku(cleanSku, productCatalog, it.nama_produk, it.size) : null;
+                          const effectiveName = (master && master.found) ? master.nama_produk : (it.nama_produk || it.sku || '-');
+                          const effectiveSize = (master && master.found && master.size && master.size !== '-') ? master.size : (it.size || '');
                           return (
                             <div key={it.id || idx} className="p-2 text-[10.5px] leading-tight flex flex-col gap-1">
                               {/* Baris 1: Nama Produk & Qty */}
                               <div className="flex items-start justify-between gap-1.5">
-                                <div className="font-bold text-slate-800 dark:text-slate-100 line-clamp-1" title={it.nama_produk}>
-                                  {it.nama_produk}
+                                <div className="font-bold text-slate-800 dark:text-slate-100 line-clamp-1" title={effectiveName}>
+                                  {effectiveName}
                                 </div>
                                 <span className="font-extrabold text-slate-700 dark:text-slate-200 text-[9.5px] shrink-0 bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 shadow-2xs">
                                   x{it.qty}
@@ -8304,8 +8316,8 @@ _WMS Warehouse System_`;
                               {/* Baris 2: SKU & Size */}
                               <div className="flex items-center gap-1 text-[9.5px] text-slate-500 dark:text-slate-400">
                                 <span className="font-mono text-indigo-600 dark:text-indigo-400 font-semibold truncate">{it.sku}</span>
-                                {it.size && it.size !== 'ALL' && it.size !== '-' && (
-                                  <span className="text-slate-400 dark:text-slate-500 shrink-0">• {it.size}</span>
+                                {effectiveSize && effectiveSize !== 'ALL' && effectiveSize !== '-' && (
+                                  <span className="text-slate-400 dark:text-slate-500 shrink-0">• {effectiveSize}</span>
                                 )}
                               </div>
 
@@ -9135,19 +9147,24 @@ _WMS Warehouse System_`;
 
                           {/* List Produk Store */}
                           <div className="space-y-1.5 bg-white dark:bg-slate-900/80 p-2 rounded-lg border border-blue-200 dark:border-blue-900/50">
-                            {displayItems.map((it, idx) => (
-                              <div key={it.id || idx} className="text-xs pb-1.5 border-b border-slate-100 dark:border-slate-800 last:border-0 last:pb-0">
-                                <div className="flex justify-between items-start gap-1">
-                                  <span className="font-bold text-slate-900 dark:text-white leading-tight">
-                                    {it.nama_produk}
-                                  </span>
-                                  <span className="font-bold text-[10px] bg-blue-100 dark:bg-blue-900/80 text-blue-900 dark:text-blue-100 px-1.5 py-0.5 rounded shrink-0">
-                                    x{it.qty}
-                                  </span>
-                                </div>
-                                <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-0.5 flex-wrap gap-1">
-                                  <span>{it.sku} {it.size && it.size !== 'ALL' && it.size !== '-' ? `| Size: ${it.size}` : ''}</span>
-                                  <div className="flex items-center gap-1 flex-wrap font-sans">
+                            {displayItems.map((it, idx) => {
+                              const cleanSku = String(it.sku || '').trim().toUpperCase();
+                              const master = cleanSku ? lookupProductBySku(cleanSku, productCatalog, it.nama_produk, it.size) : null;
+                              const effectiveName = (master && master.found) ? master.nama_produk : (it.nama_produk || it.sku || '-');
+                              const effectiveSize = (master && master.found && master.size && master.size !== '-') ? master.size : (it.size || '');
+                              return (
+                                <div key={it.id || idx} className="text-xs pb-1.5 border-b border-slate-100 dark:border-slate-800 last:border-0 last:pb-0">
+                                  <div className="flex justify-between items-start gap-1">
+                                    <span className="font-bold text-slate-900 dark:text-white leading-tight">
+                                      {effectiveName}
+                                    </span>
+                                    <span className="font-bold text-[10px] bg-blue-100 dark:bg-blue-900/80 text-blue-900 dark:text-blue-100 px-1.5 py-0.5 rounded shrink-0">
+                                      x{it.qty}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-0.5 flex-wrap gap-1">
+                                    <span>{it.sku} {effectiveSize && effectiveSize !== 'ALL' && effectiveSize !== '-' ? `| Size: ${effectiveSize}` : ''}</span>
+                                    <div className="flex items-center gap-1 flex-wrap font-sans">
                                     <span className="text-blue-800 dark:text-blue-200 font-extrabold bg-blue-100/70 dark:bg-blue-950 px-1.5 py-0.2 rounded border border-blue-300 dark:border-blue-800">
                                       🏬 {it.fulfillment || 'Store'}
                                     </span>
@@ -9198,9 +9215,10 @@ _WMS Warehouse System_`;
                                   </div>
                                 )}
                               </div>
-                            ))}
-                          </div>
+                            );
+                          })}
                         </div>
+                      </div>
                       );
                     })()}
 
@@ -9261,18 +9279,22 @@ _WMS Warehouse System_`;
                           <div className="space-y-1.5 bg-white dark:bg-slate-900/80 p-2 rounded-lg border border-amber-200 dark:border-amber-900/50">
                             {mktItems.map((it, idx) => {
                               const itemSj = getItemSj(it);
+                              const cleanSku = String(it.sku || '').trim().toUpperCase();
+                              const master = cleanSku ? lookupProductBySku(cleanSku, productCatalog, it.nama_produk, it.size) : null;
+                              const effectiveName = (master && master.found) ? master.nama_produk : (it.nama_produk || it.sku || '-');
+                              const effectiveSize = (master && master.found && master.size && master.size !== '-') ? master.size : (it.size || '');
                               return (
                                 <div key={it.id || idx} className="text-xs pb-1.5 border-b border-slate-100 dark:border-slate-800 last:border-0 last:pb-0">
                                   <div className="flex justify-between items-start gap-1">
                                     <span className="font-semibold text-slate-800 dark:text-slate-100 leading-tight">
-                                      {it.nama_produk}
+                                      {effectiveName}
                                     </span>
                                     <span className="font-bold text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-700 dark:text-slate-300 shrink-0">
                                       x{it.qty}
                                     </span>
                                   </div>
                                   <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-0.5 flex-wrap gap-1">
-                                    <span>{it.sku} {it.size && it.size !== 'ALL' && it.size !== '-' ? `| Size: ${it.size}` : ''}</span>
+                                    <span>{it.sku} {effectiveSize && effectiveSize !== 'ALL' && effectiveSize !== '-' ? `| Size: ${effectiveSize}` : ''}</span>
                                     <span className="text-amber-800 dark:text-amber-200 font-sans font-bold bg-amber-100/70 dark:bg-amber-950 px-1.5 py-0.2 rounded border border-amber-300 dark:border-amber-800 text-[9.5px]">
                                       📦 {it.fulfillment || (order.no_pesanan?.startsWith('AR-') ? 'Warehouse (Stok Gudang)' : 'Marketplace')}
                                     </span>

@@ -2,6 +2,7 @@ import { ManualShipmentOrder, ManualShipmentHistoryLog, ManualShipmentItem } fro
 import { supabaseFetch } from './supabase';
 import { hasValidArData, orderNeedsResi } from '../utils/alterationUtils';
 import { globalRealtimeStore } from './store';
+import { lookupProductBySku } from '../utils/productLookup';
 
 export const DEFAULT_MANUAL_SHIPMENT_GAS_URL = '';
 
@@ -1087,7 +1088,12 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
           it?.item_status !== 'cancelled' &&
           (explicitAdminReceived || isOrderShippedOrDone || isOrderWarehouseReceived);
 
-        const cleanedItem = { ...it };
+        const cleanSku = String(it?.sku || '').trim().toUpperCase();
+        const master = cleanSku ? lookupProductBySku(cleanSku, undefined, it?.nama_produk, it?.size) : null;
+        const resolvedNamaProduk = (master && master.found) ? master.nama_produk : (it?.nama_produk || it?.sku || '-');
+        const resolvedSize = (master && master.found && master.size && master.size !== '-') ? master.size : (it?.size || '-');
+
+        const cleanedItem = { ...it, nama_produk: resolvedNamaProduk, size: resolvedSize };
         if (wasAutoMarkedBefore && !isOrderShippedOrDone && !isOrderWarehouseReceived) {
           delete cleanedItem.received_at_warehouse;
           delete cleanedItem.received_by;
@@ -1117,11 +1123,15 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
           !fallbackFulLower.includes('marketplace') &&
           !fallbackFulLower.includes('gudang') &&
           !fallbackFulLower.includes('warehouse');
+        const cleanFallbackSku = String(item.sku || '').trim().toUpperCase();
+        const fallbackMaster = cleanFallbackSku ? lookupProductBySku(cleanFallbackSku, undefined, item.nama_produk, item.size) : null;
+        const resolvedFallbackName = (fallbackMaster && fallbackMaster.found) ? fallbackMaster.nama_produk : (item.nama_produk || item.sku || '');
+        const resolvedFallbackSize = (fallbackMaster && fallbackMaster.found && fallbackMaster.size && fallbackMaster.size !== '-') ? fallbackMaster.size : (item.size || 'Default');
         parsedItems = [{
           id: item.id || `item-1`,
           sku: item.sku || '',
-          nama_produk: item.nama_produk || '',
-          size: item.size || 'Default',
+          nama_produk: resolvedFallbackName,
+          size: resolvedFallbackSize,
           qty: Number(item.qty) || 1,
           fulfillment: fallbackFul,
           ...(isFallbackStore && (isOrderShippedOrDone || isOrderWarehouseReceived)
@@ -1139,6 +1149,13 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
         item.pic_store || alteration_repair_data?.pic_pemohon || alteration_repair_data?.nama_sa,
         item.nama_pengirim || alteration_repair_data?.nama_asal
       );
+
+      if (alteration_repair_data && parsedItems.length === 1 && parsedItems[0]?.nama_produk) {
+        alteration_repair_data.nama_produk = parsedItems[0].nama_produk;
+        if (parsedItems[0].size && parsedItems[0].size !== '-') {
+          alteration_repair_data.size = parsedItems[0].size;
+        }
+      }
 
       return {
         ...item,

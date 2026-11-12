@@ -1,14 +1,12 @@
 {
-  "version": "v2.11.3",
-  "versionCode": 313,
+  "version": "v2.11.4",
+  "versionCode": 314,
   "buildDate": "12 November 2026",
-  "buildHash": "wms-261112-v313-1152",
-  "releaseTitle": "WMS v2.11.3 — WMS vNEXT — Audit Lookup Produk: Master Produk Final, Larang Tebakan Size/Nama dari SKU",
+  "buildHash": "wms-261112-v314-1247",
+  "releaseTitle": "WMS v2.11.4 — Sinkronisasi Otomatis Nama Produk Pesanan Store & Koreksi Tiket Alteration Taylor Pants",
   "releaseNotes": [
-    "Fix size salah akibat tebakan akhiran SKU (YL/OL/EM = kode warna, bukan size)",
-    "Fix nama varian salah akibat tebakan prefix SKU saudara",
-    "Form Alter & Repair kini menyelaraskan nama/size ke Master Produk saat pilih dan simpan",
-    "Rule + Skill baru wms-product-lookup-integrity"
+    "Penyelarasan otomatis nama & size produk pada Pesanan Store (Split, Tabel, Kartu) dengan Master Produk via lookupProductBySku",
+    "Koreksi data tiket AR-BY -261108-P8Z5 di database Supabase menjadi Taylor Pants Denim Blue"
   ],
   "minSupportedVersion": "v2.0.0"
 }

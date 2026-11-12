@@ -15,21 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.11.3",
-  "versionCode": 313,
+  "version": "v2.11.4",
+  "versionCode": 314,
   "buildDate": "12 November 2026",
-  "buildHash": "wms-261112-v313-1152",
-  "releaseTitle": "WMS v2.11.3 — WMS vNEXT — Audit Lookup Produk: Master Produk Final, Larang Tebakan Size/Nama dari SKU",
+  "buildHash": "wms-261112-v314-1247",
+  "releaseTitle": "WMS v2.11.4 — Sinkronisasi Otomatis Nama Produk Pesanan Store & Koreksi Tiket Alteration Taylor Pants",
   "releaseNotes": [
-    "Fix size salah akibat tebakan akhiran SKU (YL/OL/EM = kode warna, bukan size)",
-    "Fix nama varian salah akibat tebakan prefix SKU saudara",
-    "Form Alter & Repair kini menyelaraskan nama/size ke Master Produk saat pilih dan simpan",
-    "Rule + Skill baru wms-product-lookup-integrity"
+    "Penyelarasan otomatis nama & size produk pada Pesanan Store (Split, Tabel, Kartu) dengan Master Produk via lookupProductBySku",
+    "Koreksi data tiket AR-BY -261108-P8Z5 di database Supabase menjadi Taylor Pants Denim Blue"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.11.3",
+    "versionCode": 313,
+    "buildDate": "12 November 2026",
+    "buildHash": "wms-261112-v313-1152",
+    "releaseTitle": "WMS v2.11.3 — WMS vNEXT — Audit Lookup Produk: Master Produk Final, Larang Tebakan Size/Nama dari SKU",
+    "releaseNotes": [
+      "Fix size salah akibat tebakan akhiran SKU (YL/OL/EM = kode warna, bukan size)",
+      "Fix nama varian salah akibat tebakan prefix SKU saudara",
+      "Form Alter & Repair kini menyelaraskan nama/size ke Master Produk saat pilih dan simpan",
+      "Rule + Skill baru wms-product-lookup-integrity"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.11.2",
     "versionCode": 312,
@@ -119,20 +131,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Fix Blank Page: Menambahkan missing useMemo import di App.tsx",
       "Proteksi Eksklusif: Tombol Token & Akses AI kini HANYA tampil untuk akun @warehouse selaku owner",
       "Pencegahan Akses Pengaturan AI dari Akun Lain (Superadmin non-owner)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.9.0",
-    "versionCode": 290,
-    "buildDate": "10 November 2026",
-    "buildHash": "wms-261110-v290-2145",
-    "releaseTitle": "WMS v2.9.0 — Asisten AI Multimodal: Olah Lampiran Excel/CSV, Vision Foto OCR & Top Bar Panel Nav",
-    "releaseNotes": [
-      "Multimodal Vision OCR: Ekstraksi Foto Dokumen & Surat Jalan",
-      "Pengolahan Lampiran Spreadsheet Excel (.xlsx/.xls) dan CSV (.csv)",
-      "Navigasi Fleksibel Tombol AI di Panel Atas (Desktop & Mobile Header)",
-      "Pembersihan Shortcut Panel Samping di Setiap Tab (Rapi & Minimalis)"
     ],
     "minSupportedVersion": "v2.0.0"
   }
