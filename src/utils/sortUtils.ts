@@ -652,18 +652,13 @@ export function resolveProductDisplaySize(
     }
   }
 
-  // 3. Fallback only if not in master product: record size or extracted suffix
+  // 3. Fallback only if SKU NOT in master product: record size
   const rawSize = extractCleanSizeToken(recordSize || '');
   if (rawSize && rawSize !== '-' && rawSize.toUpperCase() !== 'DEFAULT' && isRealSize(rawSize) && !isCorruptedColorCodeSize(cleanSku, rawSize)) {
     return rawSize;
   }
 
-  const fromSku = extractSizeFromSku(cleanSku);
-  if (fromSku && fromSku !== '-' && fromSku !== 'DEFAULT' && isRealSize(fromSku) && !isCorruptedColorCodeSize(cleanSku, fromSku)) {
-    return fromSku;
-  }
-
-  if (recordSize && (recordSize.toUpperCase() === 'DEFAULT' || recordSize.toUpperCase() === 'ALL SIZE' || fromSku === 'Default')) {
+  if (recordSize && (recordSize.toUpperCase() === 'DEFAULT' || recordSize.toUpperCase() === 'ALL SIZE')) {
     return 'Default';
   }
 

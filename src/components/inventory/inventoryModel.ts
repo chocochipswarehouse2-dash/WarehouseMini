@@ -195,18 +195,10 @@ function parseCatalogItem(item: ProductItem): CatalogBase | null {
     kategori = lookupCategoryByName(produk) || inferCategoryFromProductName(produk) || 'CLOTHING';
   }
 
-  // Size: ukuran master -> akhiran SKU -> '-'
+  // Pure VLOOKUP: ukuran dari master_produk. Jika Default/kosong/kode warna -> '-'
   const rawMasterSize = String(item.s || (item as any).size || '');
   let size = resolveProductDisplaySize(sku, rawMasterSize, rawMasterSize);
-  if (isCorruptedColorCodeSize(sku, size) || isCorruptedColorCodeSize(sku, rawMasterSize)) {
-    size = '-';
-  } else if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') {
-    const fromSku = extractSizeFromSku(sku);
-    if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT' && isRealSize(fromSku) && !isCorruptedColorCodeSize(sku, fromSku)) {
-      size = fromSku;
-    }
-  }
-  if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') {
+  if (!size || size === '-' || size.toUpperCase() === 'DEFAULT' || isCorruptedColorCodeSize(sku, size) || isCorruptedColorCodeSize(sku, rawMasterSize)) {
     const upperMaster = rawMasterSize.toUpperCase();
     if (upperMaster === 'ALL' || upperMaster === 'ALL SIZE' || upperMaster === 'ALLSIZE' || upperMaster === 'FS' || upperMaster === 'FREE SIZE') {
       size = 'ALL';
@@ -437,15 +429,9 @@ export function composeRows(bases: CatalogBase[], stockBySku: Map<string, StockR
     const first = stockRows[0];
     const produk = resolveProductName(sku, first?.nama_produk) || cleanProductName(first?.nama_produk || sku) || sku;
     let size = resolveProductDisplaySize(sku, first?.size);
-    if (isCorruptedColorCodeSize(sku, size)) {
+    if (!size || size === '-' || size.toUpperCase() === 'DEFAULT' || isCorruptedColorCodeSize(sku, size)) {
       size = '-';
-    } else if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') {
-      const fromSku = extractSizeFromSku(sku);
-      if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT' && isRealSize(fromSku) && !isCorruptedColorCodeSize(sku, fromSku)) {
-        size = fromSku;
-      }
     }
-    if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = '-';
 
     const pLower = produk.toLowerCase();
     const skuLower = sku.toLowerCase();
