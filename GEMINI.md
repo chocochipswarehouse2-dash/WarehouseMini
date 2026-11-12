@@ -239,3 +239,10 @@ Fitur **Multitasking / Multi-Tab Keep-Alive & Slide-Over Companion Drawer** (mis
 3. **Update Status Saat Selesai**: Setelah plan tersebut disetujui dan selesai diimplementasikan, agen wajib memperbarui statusnya di `docs/PENDING_PLANS.md` menjadi `✅ SELESAI`.
 
 
+
+## 15. Product Lookup Integrity (HARD CONSTRAINT)
+Setiap lookup nama produk / size WAJIB mengikuti `.agents/skills/wms-product-lookup-integrity/SKILL.md`:
+1. Master Produk (`master_produk`) = satu-satunya kebenaran; VLOOKUP SKU persis (`lookupProductBySku`).
+2. DILARANG menebak size dari akhiran SKU (regex) atau nama dari prefix SKU saudara; akhiran huruf SKU umumnya kode warna (YL, OL, EM, CM, DM, DD).
+3. Katalog marketing/Trello hanya untuk pencarian; nama & size yang disimpan/ditampilkan wajib disejajarkan ke master.
+4. Koreksi data master yang tercemar hanya setelah verifikasi fisik + approval user (lihat `docs/audits/`).

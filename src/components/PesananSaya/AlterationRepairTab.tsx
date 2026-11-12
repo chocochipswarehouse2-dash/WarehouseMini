@@ -81,6 +81,7 @@ import { StoreHelpModal } from './StoreHelpModal';
 import { compressImage } from '../../utils/imageCompressor';
 import { uploadImageToGdrive } from '../../services/gdriveUpload';
 import { partialSearchMatch } from '../../utils/sortUtils';
+import { lookupProductBySku } from '../../utils/productLookup';
 import { isStandaloneArOrder } from '../../utils/alterationUtils';
 import { searchActiveProductsLive } from '../../services/supabase';
 
@@ -243,11 +244,18 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
   };
 
   const handleSelectItemCatalog = (index: number, p: ProductItem) => {
+    const rawName = String(p.n || p.p || (p as any).deskripsi || (p as any).nomor || '');
+    const rawSku = String(p.k || (p as any).sku || '');
+    const rawSize = p.size && p.size !== '-' ? String(p.size) : '-';
+    // Master Produk = satu-satunya kebenaran nama & size (VLOOKUP SKU, tanpa tebakan regex).
+    const master = lookupProductBySku(rawSku, undefined, rawName, rawSize);
+    const finalName = master.found ? master.nama_produk : rawName;
+    const finalSize = master.found ? master.size : rawSize;
     handleUpdateItem(index, {
-      nama_produk: String(p.n || p.p || (p as any).deskripsi || (p as any).nomor || ''),
-      sku: String(p.k || (p as any).sku || ''),
-      size: p.size && p.size !== '-' ? String(p.size) : '-',
-      catalogSearch: String(p.n || p.p || (p as any).deskripsi || (p as any).nomor || ''),
+      nama_produk: finalName,
+      sku: rawSku,
+      size: finalSize,
+      catalogSearch: finalName,
       showDropdown: false,
     });
   };
@@ -700,8 +708,14 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
           : `Request dibuat oleh Store ${asalDisplayName} (${formItems.length} items, PIC: ${formPicPemohon.trim()}, WA: ${formPicStorePhone.trim()}) - ID Form Alter: ${finalIdFormAlter} - Menunggu pengiriman fisik ke Gudang`,
       };
 
+      // Final guard: selaraskan nama & size tiap item dengan Master Produk sebelum disimpan
+      const alignedItems = formItems.map((it) => {
+        const m = it.sku.trim() ? lookupProductBySku(it.sku.trim(), undefined, it.nama_produk, it.size) : null;
+        return m && m.found ? { ...it, nama_produk: m.nama_produk, size: m.size } : it;
+      });
+
       // Construct Multi-item payload
-      const orderItems: ManualShipmentItem[] = formItems.map((it, idx) => ({
+      const orderItems: ManualShipmentItem[] = alignedItems.map((it, idx) => ({
         id: `item-${idx + 1}-${Date.now()}`,
         sku: it.sku.trim() || 'ALTER-REPAIR',
         nama_produk: it.nama_produk.trim(),
@@ -720,9 +734,9 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
       const hasRepair = formItems.some((it) => it.layanan_type === 'repair' || it.layanan_type === 'both');
       const overallLayanan: AlterationLayananType = (hasAlter && hasRepair) ? 'both' : hasRepair ? 'repair' : 'alteration';
 
-      const primaryProductName = formItems.length === 1
-        ? formItems[0].nama_produk.trim()
-        : `${formItems[0].nama_produk.trim()} (+ ${formItems.length - 1} pakaian lainnya)`;
+      const primaryProductName = alignedItems.length === 1
+        ? alignedItems[0].nama_produk.trim()
+        : `${alignedItems[0].nama_produk.trim()} (+ ${alignedItems.length - 1} pakaian lainnya)`;
 
       const combinedSku = formItems.map((it) => it.sku.trim()).filter(Boolean).join(', ') || '-';
       const totalQty = formItems.reduce((sum, it) => sum + (Number(it.qty) || 1), 0);
@@ -759,7 +773,7 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
         toko: asalDisplayName,
         nama_produk: primaryProductName,
         sku: combinedSku,
-        size: formItems.length === 1 ? formItems[0].size : 'MULTI',
+        size: alignedItems.length === 1 ? alignedItems[0].size : 'MULTI',
         qty: totalQty,
         kondisi: combinedKondisi,
         perkiraan_selesai: formPerkiraanSelesai.trim(),

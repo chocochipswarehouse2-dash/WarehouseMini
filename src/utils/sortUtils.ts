@@ -141,28 +141,23 @@ export function extractSizeFromSku(sku: string): string {
   if (!clean || clean.length < 3) return '-';
 
   // 1. Authoritative O(1) VLOOKUP in Master Product Catalog FIRST!
+  //    Jika SKU ADA di master, master adalah satu-satunya kebenaran: kembalikan size master
+  //    atau '-' (TIDAK PERNAH menebak dari akhiran SKU).
   const { exact } = getMasterLookupMaps();
   const found = exact.get(clean);
-  if (found && found.size) {
-    const mSize = extractCleanSizeToken(found.size);
+  if (found) {
+    const mSize = extractCleanSizeToken(found.size || '');
     if (mSize && mSize !== '-' && isRealSize(mSize)) {
       return mSize;
     }
+    return '-';
   }
 
-  // 2. Explicit separator in SKU: -S, _M, /L, .XL, -ALL, -FS
+  // 2. SKU tidak ada di master: hanya terima size dengan separator EKSPLISIT (-S, _M, /L, .XL, -ALL, -FS).
+  //    DILARANG menebak dari akhiran huruf SKU tanpa separator (mis. "...YL" = Yellow, BUKAN size L;
+  //    "...OL" = Olive, "...EM" = Emerald, "...CM" = Caramel).
   const sepMatch = clean.match(/[-_/\s.](XXXL|3XL|XXL|2XL|XL|XS|[SML]|ALL|FS)$/i);
   if (sepMatch) return sepMatch[1].toUpperCase();
-
-  // 3. Trailing multi-character standard sizes
-  const multiMatch = clean.match(/(XXXL|3XL|XXL|2XL|XL|XS|ALL|FS)$/i);
-  if (multiMatch) return multiMatch[1].toUpperCase();
-
-  // 4. Trailing single letter size (S, M, L) preceded by standard separator/letter
-  if (clean.length >= 4) {
-    const singleMatch = clean.match(/[A-Z0-9]([SML])$/i);
-    if (singleMatch) return singleMatch[1].toUpperCase();
-  }
 
   return '-';
 }
@@ -539,13 +534,9 @@ export function resolveProductName(
         return foundName;
       }
     }
-    if (cleanSku.length >= 6) {
-      const prefName = prefix.get(cleanSku.slice(0, -2));
-      if (prefName) {
-        const cleanedPref = cleanProductName(prefName);
-        if (cleanedPref) return cleanedPref;
-      }
-    }
+    // DILARANG menebak nama dari prefix SKU saudara (sibling): beda warna/varian = beda nama
+    // (mis. DF26KBF03DDC = "Taylor Pants Denim Blue", bukan nama varian lain).
+    void prefix;
   }
 
   // 3. Fallback to record name only if SKU not found in master product
@@ -581,15 +572,20 @@ export function resolveProductDisplaySize(
     }
   }
 
-  // 2. O(1) Lookup SKU in cached master product Map
+  // 2. O(1) Lookup SKU in cached master product Map.
+  //    SKU ada di master => master final (size valid atau null). Tidak boleh ditimpa tebakan SKU/record.
   if (cleanSku) {
     const { exact } = getMasterLookupMaps();
     const found = exact.get(cleanSku);
-    if (found && found.size) {
-      const mSize = extractCleanSizeToken(found.size);
+    if (found) {
+      const mSize = extractCleanSizeToken(found.size || '');
       if (mSize && mSize !== '-' && isRealSize(mSize)) {
         return mSize;
       }
+      if (/^(ALL|ALL SIZE|ALLSIZE|FS|FREE SIZE|ONESIZE|ONE SIZE)$/i.test((found.size || '').trim())) {
+        return 'ALL';
+      }
+      return null;
     }
   }
 

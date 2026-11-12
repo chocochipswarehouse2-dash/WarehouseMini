@@ -15,20 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.11.2",
-  "versionCode": 312,
-  "buildDate": "11 November 2026",
-  "buildHash": "wms-261111-v312-2251",
-  "releaseTitle": "WMS v2.11.2 — Auto-Sync Notification Hub dari OS Notification Tray, Service Worker & Supabase",
+  "version": "v2.11.3",
+  "versionCode": 313,
+  "buildDate": "12 November 2026",
+  "buildHash": "wms-261112-v313-1152",
+  "releaseTitle": "WMS v2.11.3 — WMS vNEXT — Audit Lookup Produk: Master Produk Final, Larang Tebakan Size/Nama dari SKU",
   "releaseNotes": [
-    "Sinkronisasi Otomatis OS Notification Tray: Menarik seluruh notifikasi yang sedang tampil di panel notifikasi HP/Desktop (reg.getNotifications()) langsung ke dalam Notification Hub",
-    "Live Backfill Supabase Sesuai Role: Saat aplikasi dimuat atau Notification Hub dibuka, sistem otomatis menarik riwayat notifikasi terbaru (Lembur/Ijin/Cuti, Pesanan Store, Tugas Picking, SPS, Retur CS, Hitung Ulang, & Live Chat) yang sesuai dengan hak akses akun",
-    "Jembatan Service Worker Background (WMS_SW_NOTIFICATION_FIRED): Notifikasi yang masuk saat layar HP mati / aplikasi di background kini langsung tersimpan ke Notification Hub dan popup OS otomatis tertutup setelah 10 detik"
+    "Fix size salah akibat tebakan akhiran SKU (YL/OL/EM = kode warna, bukan size)",
+    "Fix nama varian salah akibat tebakan prefix SKU saudara",
+    "Form Alter & Repair kini menyelaraskan nama/size ke Master Produk saat pilih dan simpan",
+    "Rule + Skill baru wms-product-lookup-integrity"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.11.2",
+    "versionCode": 312,
+    "buildDate": "11 November 2026",
+    "buildHash": "wms-261111-v312-2251",
+    "releaseTitle": "WMS v2.11.2 — Auto-Sync Notification Hub dari OS Notification Tray, Service Worker & Supabase",
+    "releaseNotes": [
+      "Sinkronisasi Otomatis OS Notification Tray: Menarik seluruh notifikasi yang sedang tampil di panel notifikasi HP/Desktop (reg.getNotifications()) langsung ke dalam Notification Hub",
+      "Live Backfill Supabase Sesuai Role: Saat aplikasi dimuat atau Notification Hub dibuka, sistem otomatis menarik riwayat notifikasi terbaru (Lembur/Ijin/Cuti, Pesanan Store, Tugas Picking, SPS, Retur CS, Hitung Ulang, & Live Chat) yang sesuai dengan hak akses akun",
+      "Jembatan Service Worker Background (WMS_SW_NOTIFICATION_FIRED): Notifikasi yang masuk saat layar HP mati / aplikasi di background kini langsung tersimpan ke Notification Hub dan popup OS otomatis tertutup setelah 10 detik"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.11.1",
     "versionCode": 311,
@@ -119,20 +133,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Pengolahan Lampiran Spreadsheet Excel (.xlsx/.xls) dan CSV (.csv)",
       "Navigasi Fleksibel Tombol AI di Panel Atas (Desktop & Mobile Header)",
       "Pembersihan Shortcut Panel Samping di Setiap Tab (Rapi & Minimalis)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.8.1",
-    "versionCode": 281,
-    "buildDate": "10 November 2026",
-    "buildHash": "wms-261110-v281-2027",
-    "releaseTitle": "WMS v2.8.1 — Optimasi Batch Lookup AI & Anti-Missing Stok Fisik",
-    "releaseNotes": [
-      "Batch Multi-Product Lookup 1-Turn",
-      "Akurasi Word-Boundary Token Matching (Ruth Top Cherry 5 pcs)",
-      "Penghapusan Total Halusinasi Minta Kode SKU",
-      "Loop Headroom & Anti-Truncate Response"
     ],
     "minSupportedVersion": "v2.0.0"
   }
