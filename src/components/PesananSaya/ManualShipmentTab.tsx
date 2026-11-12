@@ -59,6 +59,7 @@ import {
 } from '../../utils/transactionGenerator';
 import { getUserPersonName, formatOperatorWithPersonName } from '../../utils/userResolver';
 import { lookupProductBySku } from '../../utils/productLookup';
+import { isCorruptedColorCodeSize } from '../../utils/sortUtils';
 import { globalRealtimeStore } from '../../services/store';
 import { liveChatManager } from '../../services/liveChatService';
 
@@ -1383,11 +1384,21 @@ _WMS Warehouse System_`;
       notes_paket: notesPaket.trim(),
       no_transaksi_customer: finalTransCustomer,
       jasa_kirim: finalJasaKirim,
-      items: items.map((it) => ({
-        ...it,
-        qty: Math.max(1, Number(it.qty) || 1),
-        no_sj_dealpos: editingOrder ? (it.no_sj_dealpos || '') : '',
-      })),
+      items: items.map((it) => {
+        const cleanSku = String(it.sku || '').trim().toUpperCase();
+        const master = cleanSku ? lookupProductBySku(cleanSku, productCatalog, it.nama_produk, it.size) : null;
+        const officialName = (master && master.found) ? master.nama_produk : (it.nama_produk || cleanSku);
+        const officialSize = (master && master.found)
+          ? (master.size && master.size !== '-' && master.size !== 'Default' ? master.size : 'Default')
+          : (!isCorruptedColorCodeSize(cleanSku, it.size) && it.size && it.size !== '-' && it.size !== 'Default' ? it.size : 'Default');
+        return {
+          ...it,
+          nama_produk: officialName,
+          size: officialSize,
+          qty: Math.max(1, Number(it.qty) || 1),
+          no_sj_dealpos: editingOrder ? (it.no_sj_dealpos || '') : '',
+        };
+      }),
       status: editingOrder ? editingOrder.status : 'diterima',
       no_resi: editingOrder ? (editingOrder.no_resi || '') : '',
       created_at: editingOrder ? editingOrder.created_at : new Date().toISOString(),
@@ -1646,8 +1657,11 @@ _WMS Warehouse System_`;
         return prev.map(i => i.id === existing.id ? { ...i, qty: (Number(i.qty) || 0) + 1 } : i);
       }
       
-      const displayNama = product!.p || (product as any).nama_produk || product!.n || 'Unknown Product';
-      const cleanSize = product!.s && product!.s !== 'ALL' && product!.s !== 'Default' ? product!.s : '';
+      const master = lookupProductBySku(product!.k, productCatalog, product!.p || (product as any).nama_produk, product!.s);
+      const displayNama = master.found ? master.nama_produk : (product!.p || (product as any).nama_produk || product!.n || 'Unknown Product');
+      const cleanSize = (master.found && master.size && master.size !== '-' && master.size !== 'Default')
+        ? master.size
+        : (!isCorruptedColorCodeSize(product!.k, product!.s) && product!.s && product!.s !== 'ALL' && product!.s !== 'Default' ? product!.s : '');
       return [...prev, {
         id: `item-${Date.now()}`,
         nama_produk: displayNama,
@@ -2787,10 +2801,10 @@ _WMS Warehouse System_`;
             const itemNum = idx + 1;
             const cleanSku = (it.sku || '-').trim();
             const lookup = lookupProductBySku(cleanSku, productCatalog, it.nama_produk, it.size);
-            const cleanName = lookup.nama_produk || it.nama_produk || cleanSku;
-            const cleanSize = (it.size && it.size !== '-' && it.size.toLowerCase() !== 'default')
-              ? it.size
-              : (lookup.size !== '-' ? lookup.size : '-');
+            const cleanName = (lookup && lookup.found) ? lookup.nama_produk : (it.nama_produk || cleanSku);
+            const cleanSize = (lookup && lookup.found)
+              ? (lookup.size && lookup.size !== '-' && lookup.size !== 'Default' ? lookup.size : '-')
+              : (!isCorruptedColorCodeSize(cleanSku, it.size) && it.size && it.size !== '-' && it.size.toLowerCase() !== 'default' ? it.size : '-');
 
             // Sama persis dengan Picking A4: jika fulfillment Store -> lokasi = kode/nama Store; jika Gudang/MKT -> lokasi rak
             const ful = (it.fulfillment || (it as any).toko_asal || (it as any).store_name || '').trim();
@@ -5631,10 +5645,10 @@ _WMS Warehouse System_`;
       if (o.items && o.items.length > 0) {
         o.items.forEach((it) => {
           const lookup = lookupProductBySku(it.sku, productCatalog, it.nama_produk, it.size);
-          const cleanName = lookup.nama_produk || it.nama_produk || '';
-          const size = (it.size && it.size !== '-' && it.size.toLowerCase() !== 'default')
-            ? it.size
-            : (lookup.size !== '-' ? lookup.size : '');
+          const cleanName = (lookup && lookup.found) ? lookup.nama_produk : (it.nama_produk || '');
+          const size = (lookup && lookup.found)
+            ? (lookup.size && lookup.size !== '-' && lookup.size !== 'Default' ? lookup.size : '')
+            : (!isCorruptedColorCodeSize(it.sku, it.size) && it.size && it.size !== '-' && it.size.toLowerCase() !== 'default' ? it.size : '');
 
           const rowCols = [
             ...baseOrderCols,
@@ -6971,7 +6985,9 @@ _WMS Warehouse System_`;
                     const cleanFirstSku = String(firstIt?.sku || '').trim().toUpperCase();
                     const firstMaster = cleanFirstSku ? lookupProductBySku(cleanFirstSku, productCatalog, firstIt?.nama_produk, firstIt?.size) : null;
                     const effectiveFirstName = (firstMaster && firstMaster.found) ? firstMaster.nama_produk : (firstIt?.nama_produk || firstIt?.sku || '-');
-                    const effectiveFirstSize = (firstMaster && firstMaster.found && firstMaster.size && firstMaster.size !== '-') ? firstMaster.size : (firstIt?.size || '');
+                    const effectiveFirstSize = (firstMaster && firstMaster.found)
+                      ? (firstMaster.size && firstMaster.size !== '-' && firstMaster.size !== 'Default' ? firstMaster.size : '')
+                      : (!isCorruptedColorCodeSize(cleanFirstSku, firstIt?.size) && firstIt?.size && firstIt?.size !== '-' && firstIt?.size !== 'Default' ? firstIt.size : '');
                     const firstItName = firstIt
                       ? `${effectiveFirstName}${
                           effectiveFirstSize &&
@@ -7452,7 +7468,9 @@ _WMS Warehouse System_`;
                             const cleanSku = String(it.sku || '').trim().toUpperCase();
                             const master = cleanSku ? lookupProductBySku(cleanSku, productCatalog, it.nama_produk, it.size) : null;
                             const effectiveName = (master && master.found) ? master.nama_produk : (it.nama_produk || it.sku || '-');
-                            const effectiveSize = (master && master.found && master.size && master.size !== '-') ? master.size : (it.size || '');
+                            const effectiveSize = (master && master.found)
+                              ? (master.size && master.size !== '-' && master.size !== 'Default' ? master.size : '')
+                              : (!isCorruptedColorCodeSize(cleanSku, it.size) && it.size && it.size !== '-' && it.size !== 'Default' ? it.size : '');
                             const itemDisplayName = `${effectiveName}${
                               effectiveSize &&
                               effectiveSize !== 'ALL' &&
@@ -8300,7 +8318,9 @@ _WMS Warehouse System_`;
                           const cleanSku = String(it.sku || '').trim().toUpperCase();
                           const master = cleanSku ? lookupProductBySku(cleanSku, productCatalog, it.nama_produk, it.size) : null;
                           const effectiveName = (master && master.found) ? master.nama_produk : (it.nama_produk || it.sku || '-');
-                          const effectiveSize = (master && master.found && master.size && master.size !== '-') ? master.size : (it.size || '');
+                          const effectiveSize = (master && master.found)
+                            ? (master.size && master.size !== '-' && master.size !== 'Default' ? master.size : '')
+                            : (!isCorruptedColorCodeSize(cleanSku, it.size) && it.size && it.size !== '-' && it.size !== 'Default' ? it.size : '');
                           return (
                             <div key={it.id || idx} className="p-2 text-[10.5px] leading-tight flex flex-col gap-1">
                               {/* Baris 1: Nama Produk & Qty */}
@@ -9151,7 +9171,9 @@ _WMS Warehouse System_`;
                               const cleanSku = String(it.sku || '').trim().toUpperCase();
                               const master = cleanSku ? lookupProductBySku(cleanSku, productCatalog, it.nama_produk, it.size) : null;
                               const effectiveName = (master && master.found) ? master.nama_produk : (it.nama_produk || it.sku || '-');
-                              const effectiveSize = (master && master.found && master.size && master.size !== '-') ? master.size : (it.size || '');
+                              const effectiveSize = (master && master.found)
+                              ? (master.size && master.size !== '-' && master.size !== 'Default' ? master.size : '')
+                              : (!isCorruptedColorCodeSize(cleanSku, it.size) && it.size && it.size !== '-' && it.size !== 'Default' ? it.size : '');
                               return (
                                 <div key={it.id || idx} className="text-xs pb-1.5 border-b border-slate-100 dark:border-slate-800 last:border-0 last:pb-0">
                                   <div className="flex justify-between items-start gap-1">
@@ -9282,7 +9304,9 @@ _WMS Warehouse System_`;
                               const cleanSku = String(it.sku || '').trim().toUpperCase();
                               const master = cleanSku ? lookupProductBySku(cleanSku, productCatalog, it.nama_produk, it.size) : null;
                               const effectiveName = (master && master.found) ? master.nama_produk : (it.nama_produk || it.sku || '-');
-                              const effectiveSize = (master && master.found && master.size && master.size !== '-') ? master.size : (it.size || '');
+                              const effectiveSize = (master && master.found)
+                              ? (master.size && master.size !== '-' && master.size !== 'Default' ? master.size : '')
+                              : (!isCorruptedColorCodeSize(cleanSku, it.size) && it.size && it.size !== '-' && it.size !== 'Default' ? it.size : '');
                               return (
                                 <div key={it.id || idx} className="text-xs pb-1.5 border-b border-slate-100 dark:border-slate-800 last:border-0 last:pb-0">
                                   <div className="flex justify-between items-start gap-1">
@@ -10414,10 +10438,10 @@ _WMS Warehouse System_`;
                             {order.items && order.items.length > 0 ? (
                               order.items.map((it, idx) => {
                                 const lookup = lookupProductBySku(it.sku, productCatalog, it.nama_produk, it.size);
-                                const cleanName = lookup.nama_produk || it.nama_produk;
-                                const size = (it.size && it.size !== '-' && it.size.toLowerCase() !== 'default')
-                                  ? it.size
-                                  : (lookup.size !== '-' ? lookup.size : '-');
+                                const cleanName = (lookup && lookup.found) ? lookup.nama_produk : (it.nama_produk || it.sku);
+                                const size = (lookup && lookup.found)
+                                  ? (lookup.size && lookup.size !== '-' && lookup.size !== 'Default' ? lookup.size : '-')
+                                  : (!isCorruptedColorCodeSize(it.sku, it.size) && it.size && it.size !== '-' && it.size.toLowerCase() !== 'default' ? it.size : '-');
                                 const isSold = it.item_status === 'sold_out' || it.item_status === 'cancelled';
                                 return (
                                   <tr key={idx} className={`border-b border-dashed border-black ${isSold ? 'opacity-50 line-through' : ''}`}>

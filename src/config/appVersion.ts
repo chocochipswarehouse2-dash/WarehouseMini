@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.11.5",
-  "versionCode": 315,
+  "version": "v2.11.6",
+  "versionCode": 316,
   "buildDate": "12 November 2026",
-  "buildHash": "wms-261112-v315-1331",
-  "releaseTitle": "WMS v2.11.5 — Sanitasi Menyeluruh Size Kode Warna (YL/OL/CM) di Seluruh Sistem & Master DB",
+  "buildHash": "wms-261112-v316-1940",
+  "releaseTitle": "WMS v2.11.6 — Penegakan Mutlak VLOOKUP Master Produk di Manual Shipment & Resolusi Retur",
   "releaseNotes": [
-    "Pembersihan 7.020 data master_produk dari pseudo-size kode warna",
-    "Runtime guard isCorruptedColorCodeSize di Inventory, Katalog, dan Lookup"
+    "Eliminasi fallback size lokal ke Master Produk VLOOKUP murni",
+    "Pembersihan data items di 17 order manual_shipment dan 7 tiket retur"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.11.5",
+    "versionCode": 315,
+    "buildDate": "12 November 2026",
+    "buildHash": "wms-261112-v315-1331",
+    "releaseTitle": "WMS v2.11.5 — Sanitasi Menyeluruh Size Kode Warna (YL/OL/CM) di Seluruh Sistem & Master DB",
+    "releaseNotes": [
+      "Pembersihan 7.020 data master_produk dari pseudo-size kode warna",
+      "Runtime guard isCorruptedColorCodeSize di Inventory, Katalog, dan Lookup"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.11.4",
     "versionCode": 314,
@@ -117,19 +129,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Konfirmasi Kode Produksi Mirip di AI: Jika pengguna menyebutkan kode seperti 6612 namun di Trello UP hanya ada kode varian/mirip seperti 6612-1, AI tidak langsung auto-match diam-diam melainkan bertanya terlebih dahulu kepada pengguna",
       "Lampiran Kartu Foto Produk Trello UP di Chat AI: Saat AI bertanya konfirmasi kode mirip (maupun saat cek kode produksi), AI otomatis melampirkan Kartu Foto Produk Trello di gelembung chat lengkap dengan fitur klik perbesar (Zoom Lightbox) dan tombol 1-klik 'Ya, Pakai Kode 6612-1'"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.10.0",
-    "versionCode": 300,
-    "buildDate": "11 November 2026",
-    "buildHash": "wms-261111-v300-0507",
-    "releaseTitle": "WMS v2.10.0 — Asisten AI Penerimaan Produksi (CMT & Kargo) & Auto-Draft Form Input",
-    "releaseNotes": [
-      "AI kini dapat membaca & mencari rincian penerimaan barang produksi (Lokal CMT maupun Kargo) per tanggal spesifik (hari ini, kemarin, rentang tanggal), per nomor surat jalan, atau per kode produksi beserta pencocokan otomatis Nama Produk & Kode UP dari Trello UP.",
-      "Fitur Bantu Input Penerimaan ke Form Input (prepare_production_receipt_form): AI menyiapkan draft Form Input Penerimaan (Kategori CMT/Kargo, Tanggal, No. Surat Jalan, Kode Produksi, Foto & UP Trello otomatis, serta matriks Warna, Size, dan Qty) sehingga Anda tinggal mengecek, melengkapi data yang kurang, dan menekan tombol Submit sendiri.",
-      "Skill Tanya Jawab (Q&A) Interaktif Produksi: Jika data input penerimaan belum lengkap (misal belum ada No. Surat Jalan, Warna, atau Qty per ukuran), AI secara proaktif bertanya jawab dengan ramah dan memperbarui draft form secara bertahap."
     ],
     "minSupportedVersion": "v2.0.0"
   }

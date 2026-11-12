@@ -52,6 +52,7 @@ import {
   searchActiveProductsLive,
 } from '../../services/supabase';
 import { lookupProductBySku } from '../../utils/productLookup';
+import { isCorruptedColorCodeSize } from '../../utils/sortUtils';
 import {
   ReturBarangOrder,
   ReturOriginalItem,
@@ -425,8 +426,10 @@ export default function ReturBarangTab({
   const handleSelectProductForOrig = (prod: ProductItem) => {
     const sku = prod.k || (prod as any).sku || '';
     const baseName = prod.p || (prod as any).nama_produk || prod.n || '';
-    const size = prod.s && prod.s !== 'ALL' && prod.s !== 'Default' ? prod.s : '-';
-    const fullName = size && size !== '-' && !baseName.endsWith(`- ${size}`) ? `${baseName} - ${size}` : baseName;
+    const master = lookupProductBySku(sku, productCatalog, baseName, prod.s);
+    const resolvedName = master.found ? master.nama_produk : baseName;
+    const size = (master.found && master.size && master.size !== '-' && master.size !== 'Default') ? master.size : '-';
+    const fullName = size && size !== '-' && !resolvedName.endsWith(`- ${size}`) ? `${resolvedName} - ${size}` : resolvedName;
 
     setProdukPesanan(prev => {
       // Jika baris pertama masih kosong, isi baris pertama
@@ -446,8 +449,10 @@ export default function ReturBarangTab({
   const handleSelectProductForRep = (prod: ProductItem) => {
     const sku = prod.k || (prod as any).sku || '';
     const baseName = prod.p || (prod as any).nama_produk || prod.n || '';
-    const size = prod.s && prod.s !== 'ALL' && prod.s !== 'Default' ? prod.s : '-';
-    const fullName = size && size !== '-' && !baseName.endsWith(`- ${size}`) ? `${baseName} - ${size}` : baseName;
+    const master = lookupProductBySku(sku, productCatalog, baseName, prod.s);
+    const resolvedName = master.found ? master.nama_produk : baseName;
+    const size = (master.found && master.size && master.size !== '-' && master.size !== 'Default') ? master.size : '-';
+    const fullName = size && size !== '-' && !resolvedName.endsWith(`- ${size}`) ? `${resolvedName} - ${size}` : resolvedName;
 
     setProdukPengganti(prev => {
       if (prev.length === 1 && !prev[0].sku && !prev[0].nama_produk) {
@@ -639,14 +644,34 @@ export default function ReturBarangTab({
       nama_customer: namaCustomer.trim(),
       no_hp: noHp.trim(),
       alamat_lengkap: alamatLengkap.trim(),
-      produk_pesanan: validOrig.map(it => ({
-        ...it,
-        qty: Math.max(1, Number(it.qty) || 1),
-      })),
-      produk_pengganti: validRep.map(it => ({
-        ...it,
-        qty: Math.max(1, Number(it.qty) || 1),
-      })),
+      produk_pesanan: validOrig.map(it => {
+        const cleanSku = String(it.sku || '').trim().toUpperCase();
+        const master = cleanSku ? lookupProductBySku(cleanSku, productCatalog, it.nama_produk, it.size) : null;
+        const officialName = (master && master.found) ? master.nama_produk : it.nama_produk;
+        const officialSize = (master && master.found)
+          ? (master.size && master.size !== '-' && master.size !== 'Default' ? master.size : 'Default')
+          : (!isCorruptedColorCodeSize(cleanSku, it.size) && it.size && it.size !== '-' && it.size !== 'Default' ? it.size : 'Default');
+        return {
+          ...it,
+          nama_produk: officialName,
+          size: officialSize,
+          qty: Math.max(1, Number(it.qty) || 1),
+        };
+      }),
+      produk_pengganti: validRep.map(it => {
+        const cleanSku = String(it.sku || '').trim().toUpperCase();
+        const master = cleanSku ? lookupProductBySku(cleanSku, productCatalog, it.nama_produk, it.size) : null;
+        const officialName = (master && master.found) ? master.nama_produk : it.nama_produk;
+        const officialSize = (master && master.found)
+          ? (master.size && master.size !== '-' && master.size !== 'Default' ? master.size : 'Default')
+          : (!isCorruptedColorCodeSize(cleanSku, it.size) && it.size && it.size !== '-' && it.size !== 'Default' ? it.size : 'Default');
+        return {
+          ...it,
+          nama_produk: officialName,
+          size: officialSize,
+          qty: Math.max(1, Number(it.qty) || 1),
+        };
+      }),
       penanggung_biaya: penanggungBiaya,
       selisih_harga: selisihHarga.trim() !== '' ? Number(selisihHarga.replace(/[^0-9.-]/g, '')) : null,
       ongkir_dibayar: ongkirDibayar.trim() !== '' ? Number(ongkirDibayar.replace(/[^0-9.-]/g, '')) : null,

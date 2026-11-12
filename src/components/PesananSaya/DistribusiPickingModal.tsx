@@ -8,7 +8,7 @@ import { PengecekanSJDraft, ProductItem, UserSession, ProductLocationInfo, Stock
 import { createPickingSuratJalanSupabase, fetchStockForSkus, isWarehouseLocation, getPickingPriority } from '../../services/supabase';
 import { getWhatsAppWebUrl, getFonnteConfig, sendFonnteMessage, generateRefillPickingGroupMessage } from '../../services/whatsapp';
 import { playSaveSuccessChime, playSuccessBeep } from '../../services/audio';
-import { extractSizeFromSku, cleanProductName, extractCleanSizeToken } from '../../utils/sortUtils';
+import { cleanProductName, extractCleanSizeToken } from '../../utils/sortUtils';
 import { lookupProductBySku } from '../../utils/productLookup';
 
 export type PickingTab = 'print' | 'whatsapp' | 'app';
@@ -310,13 +310,9 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
           );
 
         const lookup = lookupProductBySku(cleanSku, productCatalog, it.nama_produk, (it as any).size);
-        let size = (lookup.found && lookup.size !== '-') 
+        let size = (lookup.found && lookup.size !== '-' && lookup.size !== 'Default') 
           ? lookup.size 
-          : (extractCleanSizeToken(prod?.s) || extractCleanSizeToken((it as any).size));
-        if (!size || size === '-' || size === 'DEFAULT') {
-          const skuSize = extractSizeFromSku(cleanSku);
-          size = (skuSize && skuSize !== '-' && skuSize !== 'DEFAULT') ? skuSize : '-';
-        }
+          : '-';
 
         const locs = getProductLocations(cleanSku, (it as any).lokasi);
         const locsWithStock = locs.filter((l) => (l.qty || 0) > 0);

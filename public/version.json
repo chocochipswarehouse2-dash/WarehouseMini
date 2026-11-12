@@ -1,12 +1,12 @@
 {
-  "version": "v2.11.5",
-  "versionCode": 315,
+  "version": "v2.11.6",
+  "versionCode": 316,
   "buildDate": "12 November 2026",
-  "buildHash": "wms-261112-v315-1331",
-  "releaseTitle": "WMS v2.11.5 — Sanitasi Menyeluruh Size Kode Warna (YL/OL/CM) di Seluruh Sistem & Master DB",
+  "buildHash": "wms-261112-v316-1940",
+  "releaseTitle": "WMS v2.11.6 — Penegakan Mutlak VLOOKUP Master Produk di Manual Shipment & Resolusi Retur",
   "releaseNotes": [
-    "Pembersihan 7.020 data master_produk dari pseudo-size kode warna",
-    "Runtime guard isCorruptedColorCodeSize di Inventory, Katalog, dan Lookup"
+    "Eliminasi fallback size lokal ke Master Produk VLOOKUP murni",
+    "Pembersihan data items di 17 order manual_shipment dan 7 tiket retur"
   ],
   "minSupportedVersion": "v2.0.0"
 }
