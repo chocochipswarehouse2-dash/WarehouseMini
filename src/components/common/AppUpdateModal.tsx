@@ -23,7 +23,7 @@ import {
   isNewerVersion
 } from '../../config/appVersion';
 import { UserSession } from '../../types';
-import { isSuperadmin } from '../../services/permissions';
+import { canAccessUpdateDatabase } from '../../services/permissions';
 
 interface AppUpdateModalProps {
   isOpen: boolean;
@@ -58,7 +58,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
 
   const [isClearingCache, setIsClearingCache] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const userIsAdmin = isSuperadmin(session);
+  const userIsAdmin = canAccessUpdateDatabase(session);
 
   if (!isOpen) return null;
 

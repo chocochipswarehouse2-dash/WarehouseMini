@@ -1100,8 +1100,17 @@ export const canSessionReceiveNotification = (
     return canAccessLiveChat(session);
   }
 
+  // J. ATURAN KHUSUS UPDATE DATABASE MASTER & PENGATURAN SISTEM:
+  // Hanya untuk akun utama `warehouse` yang memiliki akses ke fitur Update Database!
+  if (tag.startsWith('update-db-') || page === 'pengaturan_sistem') {
+    return isWarehouseAccountOnly(session);
+  }
+
   return true;
 };
+
+export const canAccessUpdateDatabase = (session: UserSession | null): boolean =>
+  isWarehouseAccountOnly(session);
 
 export const canKatalogProduk = (session: UserSession | null) =>
   hasPermission(session, 'menu_ops_katalog_produk') || isSuperadmin(session);

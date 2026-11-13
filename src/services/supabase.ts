@@ -6555,7 +6555,7 @@ export async function importMasterProdukBatch(
     localStorage.removeItem('wms_product_cache');
     localStorage.removeItem('wms_cache_inventory_v38');
     localStorage.removeItem('wms_inventory_stock_cache');
-    bumpCloudCacheEpoch('MASTER_IMPORT').catch(() => {});
+    await bumpCloudCacheEpoch('MASTER_IMPORT');
   } catch {}
 
   return { success: true, totalUploaded: uploaded };

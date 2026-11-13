@@ -1852,10 +1852,10 @@ export default function App() {
             console.log('[REALTIME] Catalog updated broadcast received:', payload);
             syncSmartLowEgressCache().then((res) => {
               if (res.action === 'NONE') {
-                loadProducts(true);
+                loadProducts(false);
               }
             }).catch(() => {
-              loadProducts(true);
+              loadProducts(false);
             });
           }
         )
@@ -4996,15 +4996,16 @@ export default function App() {
         setThemeIconStyle={setThemeIconStyle}
       />
 
-      {/* Update Database Modal (Superadmin Only: 2 CSV Import to Supabase) */}
+      {/* Update Database Modal (Warehouse Only: 2 CSV Import to Supabase) */}
       <UpdateDatabaseModal
         isOpen={isUpdateDatabaseOpen}
         onClose={() => setIsUpdateDatabaseOpen(false)}
+        onExpand={() => setIsUpdateDatabaseOpen(true)}
         session={session}
-        onRefreshCatalog={loadProducts}
+        onRefreshCatalog={() => loadProducts(false)}
         onNotify={showToast}
         onSuccess={() => {
-          loadProducts(true).then(() => {
+          loadProducts(false).then(() => {
             if (typeof window !== 'undefined') {
               window.dispatchEvent(new CustomEvent('wms_catalog_updated'));
             }

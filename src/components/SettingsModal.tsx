@@ -69,7 +69,7 @@ import {
   ClipboardList
 } from 'lucide-react';
 import { CURRENT_APP_VERSION } from '../config/appVersion';
-import { canAccessSettings } from '../services/permissions';
+import { canAccessSettings, canAccessUpdateDatabase } from '../services/permissions';
 import { fetchOutlets, saveOutlet, deleteOutlet, OutletItem, getStoreContact } from '../services/gasManualShipment';
 import { UserSession, UserRole, UserPermissions, UserPermissionKey, LocalUserRecord, KaryawanRecord, ProductItem } from '../types';
 import { StockOpnameView } from './StockOpnameView';
@@ -2787,8 +2787,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* Master Database CSV Update Box (Superadmin Only) */}
-              {userIsSuperadmin && onOpenUpdateDatabase && (
+              {/* Master Database CSV Update Box (Warehouse Only) */}
+              {canAccessUpdateDatabase(session) && onOpenUpdateDatabase && (
                 <div className="p-4 rounded-2xl bg-gradient-to-r from-primary-500/10 via-primary-500/5 to-transparent border border-primary-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div className="p-2.5 rounded-xl bg-primary-600 text-white font-black shrink-0">
@@ -2800,7 +2800,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           Update Database Master (2 File CSV)
                         </h4>
                         <span className="text-[9px] px-1.5 py-0.2 bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300 font-extrabold rounded">
-                          SUPERADMIN
+                          WAREHOUSE ONLY
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">

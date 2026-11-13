@@ -1,13 +1,13 @@
 {
-  "version": "v2.11.8",
-  "versionCode": 318,
+  "version": "v2.11.9",
+  "versionCode": 319,
   "buildDate": "13 November 2026",
-  "buildHash": "wms-261113-v318-0759",
-  "releaseTitle": "WMS v2.11.8 — Fix Import Master CSV Verbatim & Hemat Egress",
+  "buildHash": "wms-261113-v319-0143",
+  "releaseTitle": "WMS v2.11.9 — Minimize Background Update Database & Notifikasi Eksklusif Warehouse",
   "releaseNotes": [
-    "UpdateDatabaseModal kini menyimpan size CSV DealPOS apa adanya (menutup sumber data karangan A->ALL, B->XS, G->XXL)",
-    "Pertahankan nilai Default apa adanya di Retur, Manual Shipment, Distribusi, dan AI",
-    "Optimasi egress: naikkan ambang logGap ke 2000, batasi select picking_list ke 800 baris, dan longgarkan interval polling"
+    "Fitur Update Database Master (CSV) kini dapat di-minimize ke latar belakang saat proses upload berjalan tanpa menghalangi aktivitas menu lain",
+    "Indikator mengambang (Floating Progress Widget) di pojok kanan bawah menampilkan progres persentase, jumlah SKU, dan tombol Buka Detail",
+    "Notifikasi selesai Update Database (Toast, Notification Hub & Push Notification) dikunci eksklusif hanya untuk akun utama Warehouse"
   ],
   "minSupportedVersion": "v2.0.0"
 }

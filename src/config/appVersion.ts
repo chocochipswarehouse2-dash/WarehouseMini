@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.11.8",
-  "versionCode": 318,
+  "version": "v2.11.9",
+  "versionCode": 319,
   "buildDate": "13 November 2026",
-  "buildHash": "wms-261113-v318-0759",
-  "releaseTitle": "WMS v2.11.8 — Fix Import Master CSV Verbatim & Hemat Egress",
+  "buildHash": "wms-261113-v319-0143",
+  "releaseTitle": "WMS v2.11.9 — Minimize Background Update Database & Notifikasi Eksklusif Warehouse",
   "releaseNotes": [
-    "UpdateDatabaseModal kini menyimpan size CSV DealPOS apa adanya (menutup sumber data karangan A->ALL, B->XS, G->XXL)",
-    "Pertahankan nilai Default apa adanya di Retur, Manual Shipment, Distribusi, dan AI",
-    "Optimasi egress: naikkan ambang logGap ke 2000, batasi select picking_list ke 800 baris, dan longgarkan interval polling"
+    "Fitur Update Database Master (CSV) kini dapat di-minimize ke latar belakang saat proses upload berjalan tanpa menghalangi aktivitas menu lain",
+    "Indikator mengambang (Floating Progress Widget) di pojok kanan bawah menampilkan progres persentase, jumlah SKU, dan tombol Buka Detail",
+    "Notifikasi selesai Update Database (Toast, Notification Hub & Push Notification) dikunci eksklusif hanya untuk akun utama Warehouse"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.11.8",
+    "versionCode": 318,
+    "buildDate": "13 November 2026",
+    "buildHash": "wms-261113-v318-0759",
+    "releaseTitle": "WMS v2.11.8 — Fix Import Master CSV Verbatim & Hemat Egress",
+    "releaseNotes": [
+      "UpdateDatabaseModal kini menyimpan size CSV DealPOS apa adanya (menutup sumber data karangan A->ALL, B->XS, G->XXL)",
+      "Pertahankan nilai Default apa adanya di Retur, Manual Shipment, Distribusi, dan AI",
+      "Optimasi egress: naikkan ambang logGap ke 2000, batasi select picking_list ke 800 baris, dan longgarkan interval polling"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.11.7",
     "versionCode": 317,
@@ -118,19 +131,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Akun Khusus Sesuai Role Akses (SPS / CS / Produksi): Hanya menerima notifikasi sesuai modul aksesnya (SPS hanya Peminjaman SPS, CS hanya Retur Pusat Resolusi & Chat, Produksi hanya Hitung Ulang Kargo/CMT)",
       "Admin & Warehouse: Admin dikecualikan dari seluruh notifikasi HR (Ijin/Cuti/Lembur); pengajuan HR karyawan baru hanya masuk ke akun Warehouse",
       "Perbaikan bug fallback permission Operator & pembersihan otomatis riwayat Notification Hub yang tidak relevan dengan role akun aktif"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.11.0",
-    "versionCode": 310,
-    "buildDate": "11 November 2026",
-    "buildHash": "wms-261111-v310-1234",
-    "releaseTitle": "WMS v2.11.0 — Ekspor Laporan AI (PDF & Excel) & Notification Hub (Popup Auto-Hide 10 Detik)",
-    "releaseNotes": [
-      "Fitur Ekspor Laporan AI ke Excel (.xlsx) & PDF (.pdf): AI kini memiliki skill generate_exportable_report untuk membuat laporan data stok, DealPOS, maupun penerimaan CMT/Kargo dalam bentuk file Excel (.xlsx) atau PDF (.pdf), ditambah tombol download 1-klik otomatis di setiap tabel AI",
-      "Notification Hub Terpusat (🔔): Seluruh notifikasi relevan sesuai role akun tersimpan otomatis di Notification Hub pada bar atas (Mobile & Desktop) dengan filter Belum Dibaca vs Semua, fitur Mark All Read, dan klik langsung menuju halaman/pesanan/ruang chat tujuan",
-      "Popup Notifikasi Auto-Hide 10 Detik: Semua popup notifikasi melayang (Toast, Banner Pesanan Baru, Banner Picking, dan OS Push Notification) kini otomatis menutup sendiri setelah 10 detik agar tidak menghalangi layar kerja"
     ],
     "minSupportedVersion": "v2.0.0"
   }

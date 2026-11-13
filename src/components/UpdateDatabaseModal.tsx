@@ -19,9 +19,11 @@ import {
   Store,
   Boxes,
   HelpCircle,
+  Minimize2,
+  Maximize2,
 } from 'lucide-react';
 import { UserSession, ProductItem } from '../types';
-import { isSuperadmin } from '../services/permissions';
+import { canAccessUpdateDatabase, isWarehouseAccountOnly } from '../services/permissions';
 import {
   getStoredSupabaseConfig,
   fetchMasterProdukCount,
@@ -31,10 +33,12 @@ import {
 } from '../services/supabase';
 import { playSuccessBeep, playErrorBeep, vibrateDevice } from '../services/audio';
 import { globalRealtimeStore } from '../services/store';
+import { addNotificationToHub } from '../services/notificationHubService';
 
 interface UpdateDatabaseModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onExpand?: () => void;
   session: UserSession | null;
   onRefreshCatalog?: () => Promise<void> | void;
   onSuccess?: () => void;
@@ -242,12 +246,13 @@ function parseCsvContent(text: string): string[][] {
 export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
   isOpen,
   onClose,
+  onExpand,
   session,
   onRefreshCatalog,
   onSuccess,
   onNotify,
 }) => {
-  const userIsSuperadmin = isSuperadmin(session);
+  const userCanAccessUpdateDb = canAccessUpdateDatabase(session);
 
   // Database stats
   const [currentDbCount, setCurrentDbCount] = useState<number | null>(null);
@@ -276,9 +281,11 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState<boolean>(false);
   const [showSqlDrawer, setShowSqlDrawer] = useState<boolean>(false);
   const [copiedSql, setCopiedSql] = useState<boolean>(false);
+  const [showMinimizedResult, setShowMinimizedResult] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<any>(null);
+  const elapsedSecondsRef = useRef<number>(0);
 
   // Load current cloud database count on open
   const loadDatabaseCount = async () => {
@@ -309,17 +316,20 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
   };
 
   useEffect(() => {
-    if (isOpen && userIsSuperadmin) {
+    if (isOpen && userCanAccessUpdateDb) {
+      setShowMinimizedResult(false);
       loadDatabaseCount();
     }
-  }, [isOpen, userIsSuperadmin]);
+  }, [isOpen, userCanAccessUpdateDb]);
 
   // Elapsed timer during upload
   useEffect(() => {
     if (isUpdating) {
       setElapsedSeconds(0);
+      elapsedSecondsRef.current = 0;
       timerRef.current = setInterval(() => {
-        setElapsedSeconds((prev) => prev + 1);
+        elapsedSecondsRef.current += 1;
+        setElapsedSeconds(elapsedSecondsRef.current);
       }, 1000);
     } else {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -329,10 +339,150 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
     };
   }, [isUpdating]);
 
-  if (!isOpen) return null;
+  const sendWarehouseExclusiveNotification = (title: string, body: string, isSuccess: boolean) => {
+    // HARD CONSTRAINT: Notifikasi Update Database KHUSUS untuk akun `warehouse` saja
+    if (!isWarehouseAccountOnly(session)) return;
 
-  // If user is not superadmin, show restricted access screen
-  if (!userIsSuperadmin) {
+    const notifTag = `update-db-${Date.now()}`;
+    addNotificationToHub({
+      title,
+      body,
+      category: 'system',
+      target: {
+        page: 'pengaturan_sistem',
+        tag: notifTag,
+      },
+    });
+
+    if (onNotify) {
+      onNotify(`${title}: ${body}`, isSuccess ? 'success' : 'error');
+    }
+
+    // Native OS / Browser Push Notification (jika diizinkan oleh perangkat Warehouse)
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      try {
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.ready
+            .then((reg) => {
+              reg.showNotification(title, {
+                body,
+                icon: '/pwa-192x192.png',
+                badge: '/pwa-192x192.png',
+                tag: notifTag,
+                data: { page: 'pengaturan_sistem', tag: notifTag },
+              });
+            })
+            .catch(() => {
+              new Notification(title, { body, icon: '/pwa-192x192.png', tag: notifTag });
+            });
+        } else {
+          new Notification(title, { body, icon: '/pwa-192x192.png', tag: notifTag });
+        }
+      } catch {}
+    }
+  };
+
+  // Floating Minimized Progress Widget (saat modal di-minimize selagi proses update berjalan atau baru selesai)
+  if (!isOpen) {
+    if (!userCanAccessUpdateDb || (!isUpdating && !showMinimizedResult)) {
+      return null;
+    }
+
+    const isDone = updateStep === 'completed' && !isUpdating;
+    const isErr = updateStep === 'failed' && !isUpdating;
+
+    return (
+      <div className="fixed bottom-4 right-4 z-[70] w-[calc(100vw-2rem)] sm:w-96 bg-slate-900/95 dark:bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-700/80 p-4 backdrop-blur-md animate-in slide-in-from-bottom-4 duration-200 print:hidden">
+        <div className="flex items-start justify-between gap-2.5 mb-2.5">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div
+              className={`p-2 rounded-xl shrink-0 ${
+                isDone
+                  ? 'bg-emerald-500/20 text-emerald-400'
+                  : isErr
+                  ? 'bg-rose-500/20 text-rose-400'
+                  : 'bg-indigo-500/20 text-indigo-400'
+              }`}
+            >
+              {isUpdating ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : isDone ? (
+                <CheckCircle2 className="w-4 h-4" />
+              ) : (
+                <AlertTriangle className="w-4 h-4" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-extrabold tracking-tight truncate flex items-center gap-1.5">
+                <span>
+                  {isUpdating
+                    ? updateStep === 'deleting'
+                      ? 'Menghapus Database Lama...'
+                      : updateStep === 'uploading'
+                      ? `Update Database (${progressPct}%)`
+                      : 'Menyinkronkan Katalog...'
+                    : isDone
+                    ? 'Update Database Selesai!'
+                    : 'Update Database Gagal'}
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-400 truncate font-mono">
+                {uploadedCount.toLocaleString()} / {parsedItems.length.toLocaleString()} SKU • {elapsedSeconds}s
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            {onExpand && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMinimizedResult(false);
+                  onExpand();
+                }}
+                title="Buka kembali tampilan penuh Update Database"
+                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-200 flex items-center gap-1 transition-colors cursor-pointer"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span>Buka</span>
+              </button>
+            )}
+            {!isUpdating && (
+              <button
+                type="button"
+                onClick={() => setShowMinimizedResult(false)}
+                title="Tutup indikator"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden mb-1.5">
+          <div
+            className={`h-full transition-all duration-300 rounded-full ${
+              isDone
+                ? 'bg-emerald-500'
+                : isErr
+                ? 'bg-rose-500'
+                : 'bg-gradient-to-r from-indigo-500 via-primary-500 to-emerald-500'
+            }`}
+            style={{ width: `${isDone ? 100 : progressPct}%` }}
+          />
+        </div>
+
+        <div className="text-[10px] text-slate-400 truncate">
+          {statusMessage || 'Memproses pembaruan database di latar belakang...'}
+        </div>
+      </div>
+    );
+  }
+
+  // If user is not warehouse account, show restricted access screen
+  if (!userCanAccessUpdateDb) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
         <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-primary-200 dark:border-primary-900 text-center">
@@ -340,10 +490,10 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
             <AlertTriangle className="w-6 h-6" />
           </div>
           <h3 className="text-lg font-black text-slate-900 dark:text-white mb-2">
-            Akses Terbatas: Superadmin Only
+            Akses Terbatas: Khusus Akun Warehouse
           </h3>
           <p className="text-xs text-slate-600 dark:text-slate-400 mb-6">
-            Fitur Update Database Master Produk hanya dapat diakses oleh akun dengan role Superadmin. Silakan hubungi administrator sistem.
+            Fitur Update Database Master Produk hanya dapat diakses oleh akun utama Warehouse.
           </p>
           <button
             type="button"
@@ -645,7 +795,9 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
 
       // Step 4: Complete
       setUpdateStep('completed');
+      setProgressPct(100);
       setStatusMessage(`Selesai! Database Supabase berhasil diperbarui (${uploadResult.totalUploaded.toLocaleString()} SKU).`);
+      setShowMinimizedResult(true);
       playSuccessBeep();
       vibrateDevice(200);
 
@@ -655,7 +807,7 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
       // Broadcast real-time catalog update event so all connected users/devices sync immediately
       globalRealtimeStore.broadcastEvent('catalog_updated', {
         timestamp: Date.now(),
-        updatedBy: session?.username || 'Superadmin',
+        updatedBy: session?.username || 'warehouse',
         totalUploaded: uploadResult.totalUploaded,
       }).catch(() => {});
 
@@ -667,18 +819,23 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
         onSuccess();
       }
 
-      if (onNotify) {
-        onNotify(`Database berhasil diperbarui dengan ${uploadResult.totalUploaded.toLocaleString()} SKU baru!`, 'success');
-      }
+      sendWarehouseExclusiveNotification(
+        '✅ Update Database Master Selesai',
+        `Berhasil memperbarui ${uploadResult.totalUploaded.toLocaleString()} SKU master produk & inventori cabang ke Supabase (${elapsedSecondsRef.current} detik).`,
+        true
+      );
     } catch (err: any) {
       console.error('Update Database Error:', err);
       setUpdateStep('failed');
       setStatusMessage(err.message || 'Terjadi kesalahan saat memperbarui database');
+      setShowMinimizedResult(true);
       playErrorBeep();
       vibrateDevice(500);
-      if (onNotify) {
-        onNotify(err.message || 'Gagal memperbarui database ke Supabase', 'error');
-      }
+      sendWarehouseExclusiveNotification(
+        '⚠️ Update Database Master Gagal',
+        err.message || 'Gagal memperbarui database ke Supabase.',
+        false
+      );
     } finally {
       setIsUpdating(false);
     }
@@ -778,7 +935,7 @@ CREATE POLICY "Allow public all access" ON public.ig_live_orders FOR ALL TO publ
                   Update Database Master (CSV)
                 </h2>
                 <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 bg-white/20 text-white rounded-full tracking-wider">
-                  Superadmin
+                  Warehouse Only
                 </span>
               </div>
               <p className="text-xs text-primary-100 font-medium">
@@ -786,14 +943,27 @@ CREATE POLICY "Allow public all access" ON public.ig_live_orders FOR ALL TO publ
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isUpdating}
-            className="p-2 text-primary-100 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            {isUpdating && (
+              <button
+                type="button"
+                onClick={onClose}
+                title="Minimize ke latar belakang — proses update tetap berjalan dan akan memberi notifikasi saat selesai"
+                className="px-3 py-1.5 bg-white/15 hover:bg-white/25 text-white rounded-xl text-xs font-extrabold transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Minimize2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Minimize</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              title={isUpdating ? 'Minimize proses update ke latar belakang' : 'Tutup'}
+              className="p-2 text-primary-100 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Content Body */}
@@ -1184,10 +1354,16 @@ CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (t
           <button
             type="button"
             onClick={onClose}
-            disabled={isUpdating}
-            className="px-4 py-2.5 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+            className="px-4 py-2.5 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
           >
-            Tutup
+            {isUpdating ? (
+              <>
+                <Minimize2 className="w-3.5 h-3.5" />
+                <span>Minimize (Jalan di Latar Belakang)</span>
+              </>
+            ) : (
+              <span>Tutup</span>
+            )}
           </button>
 
           <button
