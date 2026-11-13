@@ -259,7 +259,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({
                           className="py-2.5 px-2 align-top text-center border-r border-slate-100 dark:border-slate-800/40 bg-white/40 dark:bg-transparent"
                         >
                           <span className="inline-block px-1.5 py-0.5 rounded font-mono text-[10.5px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                            {group.size && group.size !== 'Default' && !isCorruptedColorCodeSize(group.sku, group.size) ? group.size : '-'}
+                            {group.size ? group.size : '-'}
                           </span>
                         </td>
 
@@ -388,7 +388,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({
                           className="py-2.5 px-2 align-top text-center border-r border-slate-100 dark:border-slate-800/40"
                         >
                           <span className="inline-block px-1.5 py-0.5 rounded font-mono text-[10.5px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                            {group.size && group.size !== 'Default' && !isCorruptedColorCodeSize(group.sku, group.size) ? group.size : '-'}
+                            {group.size ? group.size : '-'}
                           </span>
                         </td>
 

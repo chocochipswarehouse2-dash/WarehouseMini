@@ -781,8 +781,8 @@ SELECT
   lp.sku,
   lp.lokasi,
   lp.area,
-  MAX(lp.nama_produk) as nama_produk,
-  MAX(lp.size) as size,
+  COALESCE(m.nama_produk, MAX(lp.nama_produk)) as nama_produk,
+  COALESCE(m.size, MAX(lp.size)) as size,
   SUM(
     CASE 
       WHEN lp.type IN ('IN', 'ADJ_IN') THEN lp.qty
@@ -792,7 +792,8 @@ SELECT
   ) as sisa_stok,
   MAX(lp.created_at) as updated_at
 FROM public.log_produk lp
-GROUP BY lp.sku, lp.lokasi, lp.area
+LEFT JOIN public.master_produk m ON m.sku = lp.sku
+GROUP BY lp.sku, lp.lokasi, lp.area, m.nama_produk, m.size
 HAVING SUM(
   CASE 
     WHEN lp.type IN ('IN', 'ADJ_IN') THEN lp.qty
@@ -4410,10 +4411,9 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
                 existing.p = item.p;
                 existing.nama_produk = item.p;
               }
-              if (item.s && item.s !== '-') {
-                existing.s = item.s;
-                existing.size = item.s;
-              }
+              // Master selalu menimpa size lama (termasuk Default / kosong) - tanpa filter '-'
+              existing.s = item.s || '';
+              existing.size = item.s || '';
               if ((!existing.price || existing.price === 0) && item.price !== undefined && item.price > 0) existing.price = item.price;
               if (item.dealpos_channels) {
                 existing.dealpos_channels = {
@@ -4500,7 +4500,7 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
 
             const rawSize = r.size && String(r.size).trim();
             const isDef = !rawSize || rawSize === '-' || rawSize.toUpperCase() === 'DEFAULT';
-            const resolvedSize = !isDef && isRealSize(rawSize) ? rawSize : (extractSizeFromSku(sku) !== '-' ? extractSizeFromSku(sku) : '-');
+            const resolvedSize = rawSize || '-';
 
             item = {
               k: sku,
@@ -4864,7 +4864,7 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
         
         const lookup = lookupProductBySku(sku, undefined, r.nama_produk || r.nama, r.size || r.ukuran);
         const resolvedName = lookup.nama_produk || nama;
-        const resolvedSize = lookup.size && lookup.size !== '-' ? lookup.size : (extractSizeFromSku(sku) !== '-' ? extractSizeFromSku(sku) : '-');
+        const resolvedSize = lookup.found ? (lookup.size || '-') : '-';
 
         if (!stockMap.has(sku)) {
           stockMap.set(sku, {
@@ -4899,7 +4899,7 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
           const nama = String(m.nama_produk || m.nama || sku).trim();
           const lookup = lookupProductBySku(sku, undefined, m.nama_produk || m.nama, m.size || m.ukuran);
           const resolvedName = lookup.nama_produk || nama;
-          const resolvedSize = lookup.size && lookup.size !== '-' ? lookup.size : (extractSizeFromSku(sku) !== '-' ? extractSizeFromSku(sku) : '-');
+          const resolvedSize = lookup.found ? (lookup.size || '-') : '-';
 
           if (!stockMap.has(sku)) {
             stockMap.set(sku, {
@@ -5101,9 +5101,8 @@ export async function updatePeminjamanInSupabase(record: PeminjamanRecord): Prom
 
     const payload = (record.items || []).map((it, idx) => {
       const rawSize = (it.size || '').trim();
-      const cleanSize = (rawSize && rawSize !== '-') 
-        ? rawSize 
-        : (extractSizeFromSku(it.sku || '') !== '-' ? extractSizeFromSku(it.sku || '') : 'ALL');
+      const _mk = lookupProductBySku(it.sku || '');
+      const cleanSize = _mk.found ? (_mk.size || '-') : (rawSize || '-');
       const rawNama = it.produk || it.nama_produk || it.sku || 'Unknown';
       return {
         id: baseId + idx,
@@ -5268,9 +5267,8 @@ export async function savePeminjamanToSupabase(record: PeminjamanRecord): Promis
     const baseId = Math.floor(Date.now() / 1000) * 1000;
     const payload = (record.items || []).map((it, idx) => {
       const rawSize = (it.size || '').trim();
-      const cleanSize = (rawSize && rawSize !== '-') 
-        ? rawSize 
-        : (extractSizeFromSku(it.sku || '') !== '-' ? extractSizeFromSku(it.sku || '') : 'ALL');
+      const _mk = lookupProductBySku(it.sku || '');
+      const cleanSize = _mk.found ? (_mk.size || '-') : (rawSize || '-');
       const rawNama = it.produk || it.sku || 'Unknown';
       const formattedNama = rawNama;
       return {
@@ -5365,19 +5363,14 @@ export function extractPickingItemFromRow(row: any): PickingListItem | null {
   // Authoritative Master Product lookup (VLOOKUP / XLOOKUP)
   const cachedCat = memoryProductCache?.find(p => (p.k && p.k.trim().toUpperCase() === sku) || ((p as any).sku && String((p as any).sku).trim().toUpperCase() === sku));
   if (cachedCat) {
-    if (!rawSize || rawSize === '-' || rawSize === 'Default') {
-      const catSize = cachedCat.s || (cachedCat as any).size || (cachedCat as any).variant;
-      if (catSize && catSize !== '-') rawSize = catSize;
-    }
+    rawSize = String(cachedCat.s || (cachedCat as any).size || (cachedCat as any).variant || '').trim();
     if (!nama_produk || nama_produk === sku || nama_produk.toUpperCase() === sku) {
       const catName = cachedCat.p || (cachedCat as any).nama_produk || cachedCat.n;
       if (catName) nama_produk = catName;
     }
   }
 
-  if (!rawSize || rawSize === '-') {
-    rawSize = extractSizeFromSku(sku);
-  }
+  if (!rawSize) rawSize = '-';
   if (!nama_produk) {
     nama_produk = sku;
   }
@@ -5513,18 +5506,13 @@ export async function fetchPickingListFromSupabase(forceRefresh = false): Promis
         let pNama = String(p.nama_produk || sku).trim();
         const cachedCat = memoryProductCache?.find(prod => (prod.k && prod.k.trim().toUpperCase() === sku) || ((prod as any).sku && String((prod as any).sku).trim().toUpperCase() === sku));
         if (cachedCat) {
-          if (!pSize || pSize === '-' || pSize === 'Default') {
-            const catSize = cachedCat.s || (cachedCat as any).size || (cachedCat as any).variant;
-            if (catSize && catSize !== '-') pSize = catSize;
-          }
+          pSize = String(cachedCat.s || (cachedCat as any).size || (cachedCat as any).variant || '').trim();
           if (!pNama || pNama === sku || pNama.toUpperCase() === sku) {
             const catName = cachedCat.p || (cachedCat as any).nama_produk || cachedCat.n;
             if (catName) pNama = catName;
           }
         }
-        if (!pSize || pSize === '-') {
-          pSize = extractSizeFromSku(sku);
-        }
+        if (!pSize) pSize = '-';
 
         if (!invoiceMap.has(no_sj)) {
            const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -5944,15 +5932,7 @@ export async function createPickingSuratJalanSupabase(
     const cleanSku = it.sku.trim().toUpperCase();
     const cachedCat = memoryProductCache?.find(p => (p.k && p.k.trim().toUpperCase() === cleanSku) || ((p as any).sku && String((p as any).sku).trim().toUpperCase() === cleanSku));
     let rawSize = (it.size || '').trim();
-    if (!rawSize || rawSize === '-' || rawSize === 'Default') {
-      const catSize = cachedCat?.s || (cachedCat as any)?.size || (cachedCat as any)?.variant;
-      if (catSize && catSize !== '-') {
-        rawSize = catSize;
-      } else {
-        const fromSku = extractSizeFromSku(cleanSku);
-        rawSize = fromSku !== '-' ? fromSku : '-';
-      }
-    }
+    if (cachedCat) rawSize = String(cachedCat.s || (cachedCat as any).size || (cachedCat as any).variant || '').trim();
     const cleanSize = rawSize || '-';
 
     let rawNama = (it.nama_produk || '').trim();
@@ -6697,6 +6677,7 @@ export async function syncSmartLowEgressCache(): Promise<{
       const freshCatalog = await fetchMasterProductsFromSupabase(50000, true);
       try {
         localStorage.setItem('wms_last_master_import_epoch', String(cloudMasterImportEpoch));
+        localStorage.removeItem('wms_master_updated_watermark');
         if (cloudStockResetEpoch > 0) localStorage.setItem('wms_last_stock_reset_epoch', String(cloudStockResetEpoch));
         if (latestLogId > 0) localStorage.setItem('wms_last_seen_log_id', String(latestLogId));
         localStorage.setItem('wms_loc_sync_v6_done', 'true');
@@ -6738,6 +6719,60 @@ export async function syncSmartLowEgressCache(): Promise<{
       return { action: 'STOCK_LOCATIONS_REFRESH', updatedSkusCount: activeStocks?.length || 0 };
     }
 
+    // CASE 2.5: DELTA MASTER PRODUK (watermark `master_produk.updated_at`).
+    // Perubahan nama/size di master hanya menarik baris yang berubah (bukan 29.880 baris).
+    try {
+      const wmKey = 'wms_master_updated_watermark';
+      const localWm = localStorage.getItem(wmKey) || '';
+      const topRes = await supabaseFetch<Array<{ updated_at: string }>>(
+        'master_produk',
+        'GET',
+        null,
+        'select=updated_at&order=updated_at.desc&limit=1'
+      );
+      const cloudWm = topRes && topRes[0]?.updated_at ? String(topRes[0].updated_at) : '';
+      if (cloudWm) {
+        if (!localWm) {
+          localStorage.setItem(wmKey, cloudWm);
+        } else if (cloudWm > localWm) {
+          const changedRows = await supabaseFetch<any[]>(
+            'master_produk',
+            'GET',
+            null,
+            `select=sku,nama_produk,kategori,size,price,dealpos_channels,updated_at&updated_at=gt.${encodeURIComponent(localWm)}&order=updated_at.asc&limit=3000`
+          );
+          const fresh = (changedRows || [])
+            .map((r) => extractProductFromRow(r))
+            .filter((it): it is ProductItem => !!(it && it.k));
+          if (fresh.length > 0) {
+            const all = await getAllProductsFromLocalDb().catch(() => [] as ProductItem[]);
+            const byKey = new Map<string, ProductItem>();
+            for (const it of all || []) byKey.set(String(it.k || '').toUpperCase(), it);
+            const patched: ProductItem[] = [];
+            for (const m of fresh) {
+              const key = String(m.k).toUpperCase();
+              const ex = byKey.get(key);
+              // Master menimpa HANYA field master; lokasi/stok lokal (l, f, q) dipertahankan
+              const merged: ProductItem = ex
+                ? { ...ex, p: m.p, nama_produk: m.p as any, s: m.s || '', size: m.s || '', kategori: m.kategori ?? ex.kategori, price: m.price ?? ex.price, dealpos_channels: m.dealpos_channels ?? ex.dealpos_channels } as ProductItem
+                : m;
+              patched.push(merged);
+              byKey.set(key, merged);
+            }
+            await saveProductsToLocalDb(patched, 'merge');
+            memoryProductCache = Array.from(byKey.values());
+            memoryProductLastFetch = Date.now();
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('wms_full_locations_refreshed', { detail: memoryProductCache }));
+              window.dispatchEvent(new CustomEvent('wms_catalog_updated'));
+            }
+          }
+          localStorage.setItem(wmKey, cloudWm);
+        }
+      }
+    } catch (err) {
+      console.warn('master delta sync warning:', err);
+    }
     // CASE 3: Normal incremental warehouse mutations (`latestLogId > localLastLogId`)
     if (latestLogId > 0 && latestLogId !== localLastLogId) {
       if (localLastLogId > 0 && latestLogId > localLastLogId) {
@@ -8519,7 +8554,7 @@ export async function fetchChannelStocksBySkus(skus: string[]): Promise<import('
       
       const lookup = lookupProductBySku(sku, undefined, r.nama_produk || r.nama, r.size || r.ukuran);
       const resolvedName = lookup.nama_produk || nama;
-      const resolvedSize = lookup.size && lookup.size !== '-' ? lookup.size : (extractSizeFromSku(sku) !== '-' ? extractSizeFromSku(sku) : '-');
+      const resolvedSize = lookup.found ? (lookup.size || '-') : '-';
 
       if (!stockMap.has(sku)) {
         stockMap.set(sku, { sku, produk: resolvedName, size: resolvedSize, locations: new Map() });

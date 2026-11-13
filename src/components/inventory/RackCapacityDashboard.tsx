@@ -268,13 +268,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       const nama_produk = resolveProductName(sku, rawName, item as any) || cleanProductName(rawName) || rawName || sku;
       const rawMasterSize = String(item.s || (item as Record<string, unknown>).size || '');
       let size = resolveProductDisplaySize(sku, rawMasterSize, rawMasterSize);
-      if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') {
-        const fromSku = extractSizeFromSku(sku);
-        if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT' && isRealSize(fromSku)) {
-          size = fromSku;
-        }
-      }
-      if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = '-';
+      if (!size) size = '-';
       const rawCat = String(
         (item as Record<string, unknown>).kategori ||
           item.category ||

@@ -649,8 +649,8 @@ export default function ReturBarangTab({
         const master = cleanSku ? lookupProductBySku(cleanSku, productCatalog, it.nama_produk, it.size) : null;
         const officialName = (master && master.found) ? master.nama_produk : it.nama_produk;
         const officialSize = (master && master.found)
-          ? (master.size && master.size !== '-' && master.size !== 'Default' ? master.size : 'Default')
-          : (!isCorruptedColorCodeSize(cleanSku, it.size) && it.size && it.size !== '-' && it.size !== 'Default' ? it.size : 'Default');
+          ? (master.size ? master.size : 'Default')
+          : (!isCorruptedColorCodeSize(cleanSku, it.size) && it.size ? it.size : 'Default');
         return {
           ...it,
           nama_produk: officialName,
@@ -663,8 +663,8 @@ export default function ReturBarangTab({
         const master = cleanSku ? lookupProductBySku(cleanSku, productCatalog, it.nama_produk, it.size) : null;
         const officialName = (master && master.found) ? master.nama_produk : it.nama_produk;
         const officialSize = (master && master.found)
-          ? (master.size && master.size !== '-' && master.size !== 'Default' ? master.size : 'Default')
-          : (!isCorruptedColorCodeSize(cleanSku, it.size) && it.size && it.size !== '-' && it.size !== 'Default' ? it.size : 'Default');
+          ? (master.size ? master.size : 'Default')
+          : (!isCorruptedColorCodeSize(cleanSku, it.size) && it.size ? it.size : 'Default');
         return {
           ...it,
           nama_produk: officialName,

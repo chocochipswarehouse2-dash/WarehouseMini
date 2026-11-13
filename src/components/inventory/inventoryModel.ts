@@ -195,18 +195,8 @@ function parseCatalogItem(item: ProductItem): CatalogBase | null {
     kategori = lookupCategoryByName(produk) || inferCategoryFromProductName(produk) || 'CLOTHING';
   }
 
-  // Pure VLOOKUP: ukuran dari master_produk. Jika Default/kosong/kode warna -> '-'
-  const rawMasterSize = String(item.s || (item as any).size || '');
-  let size = resolveProductDisplaySize(sku, rawMasterSize, rawMasterSize);
-  if (!size || size === '-' || size.toUpperCase() === 'DEFAULT' || isCorruptedColorCodeSize(sku, size) || isCorruptedColorCodeSize(sku, rawMasterSize)) {
-    const upperMaster = rawMasterSize.toUpperCase();
-    if (upperMaster === 'ALL' || upperMaster === 'ALL SIZE' || upperMaster === 'ALLSIZE' || upperMaster === 'FS' || upperMaster === 'FREE SIZE') {
-      size = 'ALL';
-    } else {
-      size = '-';
-    }
-  }
-
+  // Pure VLOOKUP: ukuran = nilai master_produk APA ADANYA (Default tetap Default, ALL tetap ALL).
+  const size = String(item.s || (item as any).size || '').trim() || '-';
   const dpRaw = isObj(item.dealpos_channels) ? (item.dealpos_channels as Record<string, any>) : {};
   const dpD = isObj(dpRaw.d) ? dpRaw.d : undefined;
   const dpCabang = isObj(dpRaw.cabang) ? dpRaw.cabang : undefined;
@@ -429,9 +419,7 @@ export function composeRows(bases: CatalogBase[], stockBySku: Map<string, StockR
     const first = stockRows[0];
     const produk = resolveProductName(sku, first?.nama_produk) || cleanProductName(first?.nama_produk || sku) || sku;
     let size = resolveProductDisplaySize(sku, first?.size);
-    if (!size || size === '-' || size.toUpperCase() === 'DEFAULT' || isCorruptedColorCodeSize(sku, size)) {
-      size = '-';
-    }
+    if (!size) size = '-';
 
     const pLower = produk.toLowerCase();
     const skuLower = sku.toLowerCase();
@@ -942,13 +930,7 @@ export function composeAreaRows(
       base?.produk ||
       cleanSku;
     let size = resolveProductDisplaySize(cleanSku, stockRows[0]?.size, base?.size);
-    if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') {
-      const fromSku = extractSizeFromSku(cleanSku);
-      if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT' && isRealSize(fromSku)) {
-        size = fromSku;
-      }
-    }
-    if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = '-';
+    if (!size) size = '-';
 
     let kategori = base?.kategori || (stockRows[0] as any)?.kategori || (stockRows[0] as any)?.category || '';
     if (!kategori || kategori.toUpperCase() === 'PHYSICAL STOCK') {

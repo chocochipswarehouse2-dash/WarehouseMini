@@ -197,26 +197,11 @@ export function lookupProductBySku(
   ).trim();
   const officialName = cleanProductName(rawMasterName) || rawMasterName;
 
-  let officialSize = extractCleanSizeToken(
-    String(master.s || (master as any).size || (master as any).variant || (master as any).varian || (master as any).ukuran || '')
-  );
-
-  if (isCorruptedColorCodeSize(cleanSku, officialSize)) {
-    officialSize = '-';
-  }
-
-  // Pure VLOOKUP: Master product is single source of truth.
-  // If master records "Default", empty, or "-", size is "-" (All-Size/No variant).
-  // Strictly NO regex or heuristic guessing from SKU!
-  if (!officialSize || officialSize === '-' || officialSize.toUpperCase() === 'DEFAULT') {
-    const rawMasterVariant = String(master.s || (master as any).size || (master as any).variant || '').trim().toUpperCase();
-    if (rawMasterVariant === 'ALL' || rawMasterVariant === 'ALL SIZE' || rawMasterVariant === 'ALLSIZE' || rawMasterVariant === 'FS' || rawMasterVariant === 'FREE SIZE') {
-      officialSize = 'ALL';
-    } else {
-      officialSize = '-';
-    }
-  }
-
+  // VLOOKUP murni: size = nilai master_produk APA ADANYA (Default tetap Default, ALL tetap ALL).
+  // Tanpa regex, tanpa konversi, tanpa tebakan dari SKU.
+  const officialSize = String(
+    master.s || (master as any).size || (master as any).variant || (master as any).varian || (master as any).ukuran || ''
+  ).trim();
   const dealposQty = Number(master.q) || 0;
   let category = (master.c || master.category || (master as any).kategori || '') as string;
   if (!category || category.toUpperCase() === 'PHYSICAL STOCK') {
@@ -240,31 +225,17 @@ export function lookupProductBySku(
     }
   }
 
-  const normalizeComparableSize = (val: string): string => {
-    const token = extractCleanSizeToken(val).toUpperCase();
-    if (!token || token === '-' || token === 'DEFAULT' || token === 'ALL SIZE' || token === 'ALLSIZE') {
-      return 'ALL';
-    }
-    return token;
-  };
-
   let hasSizeMismatch = false;
   if (currentSize !== undefined && currentSize !== null) {
-    const cleanCurSize = String(currentSize).trim();
-    if (officialSize && officialSize !== '-') {
-      const normCur = normalizeComparableSize(cleanCurSize);
-      const normOff = normalizeComparableSize(officialSize);
-      if (!cleanCurSize || cleanCurSize === '-' || normCur !== normOff) {
-        hasSizeMismatch = true;
-      }
+    if (String(currentSize).trim().toUpperCase() !== officialSize.toUpperCase()) {
+      hasSizeMismatch = true;
     }
   }
-
   return {
     found: true,
     sku: cleanSku,
     nama_produk: officialName || cleanSku,
-    size: officialSize || '-',
+    size: officialSize,
     dealposQty,
     category,
     masterItem: master,

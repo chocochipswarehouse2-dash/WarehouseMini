@@ -137,31 +137,18 @@ export function fuzzySearchMultiple(query: string, targets: (string | undefined)
  * 3. Never attempts fragile regex guessing for complex/unseparated SKUs.
  */
 export function extractSizeFromSku(sku: string): string {
+  // VLOOKUP murni ke master_produk: size = nilai master APA ADANYA.
+  // SKU tidak ada di master => '-'. TIDAK ADA regex / tebakan dari akhiran SKU.
   const clean = (sku || '').trim().toUpperCase();
-  if (!clean || clean.length < 3) return '-';
-
-  // 1. Authoritative O(1) VLOOKUP in Master Product Catalog FIRST!
-  //    Jika SKU ADA di master, master adalah satu-satunya kebenaran: kembalikan size master
-  //    atau '-' (TIDAK PERNAH menebak dari akhiran SKU).
+  if (!clean) return '-';
   const { exact } = getMasterLookupMaps();
   const found = exact.get(clean);
   if (found) {
-    const mSize = extractCleanSizeToken(found.size || '');
-    if (mSize && mSize !== '-' && isRealSize(mSize) && !isCorruptedColorCodeSize(clean, mSize)) {
-      return mSize;
-    }
-    return '-';
+    const mSize = String(found.size || '').trim();
+    return mSize || '-';
   }
-
-  // 2. SKU tidak ada di master: hanya terima size dengan separator EKSPLISIT (-S, _M, /L, .XL, -ALL, -FS).
-  //    DILARANG menebak dari akhiran huruf SKU tanpa separator (mis. "...YL" = Yellow, BUKAN size L;
-  //    "...OL" = Olive, "...EM" = Emerald, "...CM" = Caramel).
-  const sepMatch = clean.match(/[-_/\s.](XXXL|3XL|XXL|2XL|XL|XS|[SML]|ALL|FS)$/i);
-  if (sepMatch) return sepMatch[1].toUpperCase();
-
   return '-';
 }
-
 /**
  * Format product name so the size is guaranteed to be visible in the name
  * if size is known and not already contained in the product name.
@@ -216,7 +203,7 @@ export function cleanProductName(name: string): string {
   }
 
   // 2. Comprehensive deduplication of multi-segment repetitive names (e.g. A - A - A)
-  const separatorRegex = /\s*[-–—|]\s*/;
+  const separatorRegex = /\s*[-â€“â€”|]\s*/;
   if (separatorRegex.test(cleaned)) {
     const rawParts = cleaned.split(separatorRegex).map((p) => p.trim()).filter(Boolean);
     if (rawParts.length > 1) {
@@ -627,31 +614,21 @@ export function resolveProductDisplaySize(
 ): string | null {
   const cleanSku = (sku || '').trim().toUpperCase();
 
-  // 1. Master catalog size (authoritative standard from master product)
-  if (catalogSize) {
-    const cleanCatSize = extractCleanSizeToken(catalogSize);
-    if (cleanCatSize && cleanCatSize !== '-' && isRealSize(cleanCatSize) && !isCorruptedColorCodeSize(cleanSku, cleanCatSize)) {
-      return cleanCatSize;
-    }
-  }
-
-  // 2. O(1) Lookup SKU in cached master product Map.
-  //    SKU ada di master => master final (size valid atau null). Tidak boleh ditimpa tebakan SKU/record.
+  // 1. VLOOKUP SKU -> master_produk. SKU ada di master => nilai master APA ADANYA
+  //    (Default tetap Default, ALL tetap ALL). Tanpa regex / konversi / tebakan.
   if (cleanSku) {
     const { exact } = getMasterLookupMaps();
     const found = exact.get(cleanSku);
     if (found) {
-      const mSize = extractCleanSizeToken(found.size || '');
-      if (mSize && mSize !== '-' && isRealSize(mSize) && !isCorruptedColorCodeSize(cleanSku, mSize)) {
-        return mSize;
-      }
-      if (/^(ALL|ALL SIZE|ALLSIZE|FS|FREE SIZE|ONESIZE|ONE SIZE)$/i.test((found.size || '').trim())) {
-        return 'ALL';
-      }
-      return null;
+      const mSize = String(found.size || '').trim();
+      return mSize || null;
     }
   }
 
+  // 2. Katalog (turunan master) hanya bila SKU belum ada di map master
+  if (catalogSize && String(catalogSize).trim()) {
+    return String(catalogSize).trim();
+  }
   // 3. Fallback only if SKU NOT in master product: record size
   const rawSize = extractCleanSizeToken(recordSize || '');
   if (rawSize && rawSize !== '-' && rawSize.toUpperCase() !== 'DEFAULT' && isRealSize(rawSize) && !isCorruptedColorCodeSize(cleanSku, rawSize)) {

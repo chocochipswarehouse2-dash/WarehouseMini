@@ -467,7 +467,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         prod?.s ? String(prod.s) : ((prod as any)?.size ? String((prod as any).size) : undefined)
       );
 
-      const effectiveSize = (resolvedSize && resolvedSize !== '-' && isRealSize(resolvedSize))
+      const effectiveSize = (resolvedSize && resolvedSize !== '-')
         ? resolvedSize
         : '-';
 
@@ -708,7 +708,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         undefined,
         masterProduct?.s ? String(masterProduct.s) : ((masterProduct as any)?.size ? String((masterProduct as any).size) : undefined)
       );
-      const effectiveSize = (detectedSize && detectedSize !== '-' && isRealSize(detectedSize)) ? detectedSize : '';
+      const effectiveSize = (detectedSize && detectedSize !== '-') ? detectedSize : '';
 
       const resolvedName = (effectiveSize && !baseName.toUpperCase().includes(effectiveSize.toUpperCase()) && baseName !== 'SKU tidak terdaftar')
         ? `${baseName} (Size: ${effectiveSize})`
@@ -2023,8 +2023,8 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                               <span className="inline-block px-2 py-0.5 rounded-md font-mono text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                                 {(() => {
                                   const lk = lookupProductBySku(item.sku, productCatalog, item.nama_produk, item.size);
-                                  return (lk.found && lk.size && lk.size !== '-' && lk.size !== 'Default')
-                                    ? lk.size
+                                  return lk.found
+                                    ? (lk.size || '-')
                                     : (isRealSize(item.size) && !isCorruptedColorCodeSize(item.sku, item.size) && item.size !== 'Default' ? item.size : '-');
                                 })()}
                               </span>
@@ -2870,8 +2870,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                           <span className="inline-block px-1.5 py-0.5 rounded font-mono text-[11px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
                                             {(() => {
                                               const lk = lookupProductBySku(item.sku, productCatalog, item.nama_produk, item.size);
-                                              return (lk.found && lk.size && lk.size !== '-' && lk.size !== 'Default')
-                                                ? lk.size
+                                              return lk.found ? (lk.size || '-')
                                                 : (isRealSize(item.size) && !isCorruptedColorCodeSize(item.sku, item.size) && item.size !== 'Default' ? item.size : '-');
                                             })()}
                                           </span>

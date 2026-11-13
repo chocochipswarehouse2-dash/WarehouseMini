@@ -15,19 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.11.6",
-  "versionCode": 316,
-  "buildDate": "12 November 2026",
-  "buildHash": "wms-261112-v316-1940",
-  "releaseTitle": "WMS v2.11.6 — Penegakan Mutlak VLOOKUP Master Produk di Manual Shipment & Resolusi Retur",
+  "version": "v2.11.7",
+  "versionCode": 317,
+  "buildDate": "13 November 2026",
+  "buildHash": "wms-261113-v317-0735",
+  "releaseTitle": "WMS v2.11.7 — Size & Nama Produk Murni dari Master + Delta Sync Master",
   "releaseNotes": [
-    "Eliminasi fallback size lokal ke Master Produk VLOOKUP murni",
-    "Pembersihan data items di 17 order manual_shipment dan 7 tiket retur"
+    "Size dan nama produk di semua modul kini VLOOKUP persis nilai master_produk (Default tetap Default, ALL tetap ALL)",
+    "Hapus semua tebakan size dari SKU (regex)",
+    "Merge katalog: master selalu menimpa cache lama",
+    "Delta sync master_produk berbasis updated_at (hemat egress)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.11.6",
+    "versionCode": 316,
+    "buildDate": "12 November 2026",
+    "buildHash": "wms-261112-v316-1940",
+    "releaseTitle": "WMS v2.11.6 — Penegakan Mutlak VLOOKUP Master Produk di Manual Shipment & Resolusi Retur",
+    "releaseNotes": [
+      "Eliminasi fallback size lokal ke Master Produk VLOOKUP murni",
+      "Pembersihan data items di 17 order manual_shipment dan 7 tiket retur"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.11.5",
     "versionCode": 315,
@@ -117,18 +131,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Pemisahan Ketat Nama Produk vs Size (S/M/L/XL/ALL): Mencegah AI menjumlahkan DealPOS lintas ukuran atau mencampur produk lain yang memiliki kata warna/size serupa (seperti Zilva Top White M & Posy Dress Blue S)",
       "Sinkronisasi Live dealpos_channels & Rumus Resmi InventoryModel: Pengambilan data DealPOS di AI kini mengambil langsung dealpos_channels terbaru dari tabel master_produk Supabase dan menggunakan rumus resmi Inventory (MAP + LIVE + STUDIO)",
       "Format Lokasi Rak Lengkap Tanpa Singkatan dll.: AI wajib menampilkan seluruh kode rak beserta jumlah pcs secara utuh tanpa menyingkat dengan kata dll."
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.10.1",
-    "versionCode": 301,
-    "buildDate": "11 November 2026",
-    "buildHash": "wms-261111-v301-0529",
-    "releaseTitle": "WMS v2.10.1 — Konfirmasi Kode Produksi Mirip (6612 vs 6612-1) & Lampiran Foto Produk Trello di Chat AI",
-    "releaseNotes": [
-      "Konfirmasi Kode Produksi Mirip di AI: Jika pengguna menyebutkan kode seperti 6612 namun di Trello UP hanya ada kode varian/mirip seperti 6612-1, AI tidak langsung auto-match diam-diam melainkan bertanya terlebih dahulu kepada pengguna",
-      "Lampiran Kartu Foto Produk Trello UP di Chat AI: Saat AI bertanya konfirmasi kode mirip (maupun saat cek kode produksi), AI otomatis melampirkan Kartu Foto Produk Trello di gelembung chat lengkap dengan fitur klik perbesar (Zoom Lightbox) dan tombol 1-klik 'Ya, Pakai Kode 6612-1'"
     ],
     "minSupportedVersion": "v2.0.0"
   }

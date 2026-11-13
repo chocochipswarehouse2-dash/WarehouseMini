@@ -1,12 +1,14 @@
 {
-  "version": "v2.11.6",
-  "versionCode": 316,
-  "buildDate": "12 November 2026",
-  "buildHash": "wms-261112-v316-1940",
-  "releaseTitle": "WMS v2.11.6 — Penegakan Mutlak VLOOKUP Master Produk di Manual Shipment & Resolusi Retur",
+  "version": "v2.11.7",
+  "versionCode": 317,
+  "buildDate": "13 November 2026",
+  "buildHash": "wms-261113-v317-0735",
+  "releaseTitle": "WMS v2.11.7 — Size & Nama Produk Murni dari Master + Delta Sync Master",
   "releaseNotes": [
-    "Eliminasi fallback size lokal ke Master Produk VLOOKUP murni",
-    "Pembersihan data items di 17 order manual_shipment dan 7 tiket retur"
+    "Size dan nama produk di semua modul kini VLOOKUP persis nilai master_produk (Default tetap Default, ALL tetap ALL)",
+    "Hapus semua tebakan size dari SKU (regex)",
+    "Merge katalog: master selalu menimpa cache lama",
+    "Delta sync master_produk berbasis updated_at (hemat egress)"
   ],
   "minSupportedVersion": "v2.0.0"
 }
