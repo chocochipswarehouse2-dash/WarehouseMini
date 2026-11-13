@@ -1,13 +1,12 @@
 {
-  "version": "v2.11.9",
-  "versionCode": 319,
+  "version": "v2.11.10",
+  "versionCode": 320,
   "buildDate": "13 November 2026",
-  "buildHash": "wms-261113-v319-0143",
-  "releaseTitle": "WMS v2.11.9 — Minimize Background Update Database & Notifikasi Eksklusif Warehouse",
+  "buildHash": "wms-261113-v320-0638",
+  "releaseTitle": "WMS v2.11.10 — Perbaikan VLOOKUP Size Master Produk (F25GBG278BNL/BNS & Akhiran Warna + S/M/L)",
   "releaseNotes": [
-    "Fitur Update Database Master (CSV) kini dapat di-minimize ke latar belakang saat proses upload berjalan tanpa menghalangi aktivitas menu lain",
-    "Indikator mengambang (Floating Progress Widget) di pojok kanan bawah menampilkan progres persentase, jumlah SKU, dan tombol Buka Detail",
-    "Notifikasi selesai Update Database (Toast, Notification Hub & Push Notification) dikunci eksklusif hanya untuk akun utama Warehouse"
+    "Menghapus override heuristik isCorruptedColorCodeSize terhadap data resmi master_produk sehingga SKU seperti F25GBG278BNL (L) dan F25GBG278BNS (S) tampil akurat sesuai database",
+    "Memperbaiki batas 1.000 baris PostgREST pada Delta Sync master_produk dan menaikkan versi IndexedDB ke v7 agar cache lokal tersinkronisasi 100%"
   ],
   "minSupportedVersion": "v2.0.0"
 }

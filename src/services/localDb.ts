@@ -7,7 +7,7 @@ import { ProductItem, StockRealtimeItem, PengecekanSJDraft } from '../types';
 import { isDummyProduct, isWarehouseLocation, getPickingPriority, getAreaFromLokasi } from './supabase';
 
 const DB_NAME = 'WMS_LOCAL_DB';
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 
 let dbInstance: IDBDatabase | null = null;
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -70,8 +70,8 @@ export async function getLocalDb(): Promise<IDBDatabase> {
       const db = (event.target as IDBOpenDBRequest).result;
       const oldVersion = event.oldVersion;
 
-      // v6: Clear stale cached locations/stocks after rack reorganization & SO resets
-      if (oldVersion < 6) {
+      // v7: Clear stale/partially-patched cached products & stocks so 100% of master_produk sizes (S/M/L/XL/Default) load verbatim
+      if (oldVersion < 7) {
         if (db.objectStoreNames.contains('products')) {
           db.deleteObjectStore('products');
         }

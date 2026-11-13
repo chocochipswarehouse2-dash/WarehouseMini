@@ -15,20 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.11.9",
-  "versionCode": 319,
+  "version": "v2.11.10",
+  "versionCode": 320,
   "buildDate": "13 November 2026",
-  "buildHash": "wms-261113-v319-0143",
-  "releaseTitle": "WMS v2.11.9 — Minimize Background Update Database & Notifikasi Eksklusif Warehouse",
+  "buildHash": "wms-261113-v320-0638",
+  "releaseTitle": "WMS v2.11.10 — Perbaikan VLOOKUP Size Master Produk (F25GBG278BNL/BNS & Akhiran Warna + S/M/L)",
   "releaseNotes": [
-    "Fitur Update Database Master (CSV) kini dapat di-minimize ke latar belakang saat proses upload berjalan tanpa menghalangi aktivitas menu lain",
-    "Indikator mengambang (Floating Progress Widget) di pojok kanan bawah menampilkan progres persentase, jumlah SKU, dan tombol Buka Detail",
-    "Notifikasi selesai Update Database (Toast, Notification Hub & Push Notification) dikunci eksklusif hanya untuk akun utama Warehouse"
+    "Menghapus override heuristik isCorruptedColorCodeSize terhadap data resmi master_produk sehingga SKU seperti F25GBG278BNL (L) dan F25GBG278BNS (S) tampil akurat sesuai database",
+    "Memperbaiki batas 1.000 baris PostgREST pada Delta Sync master_produk dan menaikkan versi IndexedDB ke v7 agar cache lokal tersinkronisasi 100%"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.11.9",
+    "versionCode": 319,
+    "buildDate": "13 November 2026",
+    "buildHash": "wms-261113-v319-0143",
+    "releaseTitle": "WMS v2.11.9 — Minimize Background Update Database & Notifikasi Eksklusif Warehouse",
+    "releaseNotes": [
+      "Fitur Update Database Master (CSV) kini dapat di-minimize ke latar belakang saat proses upload berjalan tanpa menghalangi aktivitas menu lain",
+      "Indikator mengambang (Floating Progress Widget) di pojok kanan bawah menampilkan progres persentase, jumlah SKU, dan tombol Buka Detail",
+      "Notifikasi selesai Update Database (Toast, Notification Hub & Push Notification) dikunci eksklusif hanya untuk akun utama Warehouse"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.11.8",
     "versionCode": 318,
@@ -116,21 +128,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Sinkronisasi Otomatis OS Notification Tray: Menarik seluruh notifikasi yang sedang tampil di panel notifikasi HP/Desktop (reg.getNotifications()) langsung ke dalam Notification Hub",
       "Live Backfill Supabase Sesuai Role: Saat aplikasi dimuat atau Notification Hub dibuka, sistem otomatis menarik riwayat notifikasi terbaru (Lembur/Ijin/Cuti, Pesanan Store, Tugas Picking, SPS, Retur CS, Hitung Ulang, & Live Chat) yang sesuai dengan hak akses akun",
       "Jembatan Service Worker Background (WMS_SW_NOTIFICATION_FIRED): Notifikasi yang masuk saat layar HP mati / aplikasi di background kini langsung tersimpan ke Notification Hub dan popup OS otomatis tertutup setelah 10 detik"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.11.1",
-    "versionCode": 311,
-    "buildDate": "11 November 2026",
-    "buildHash": "wms-261111-v311-1435",
-    "releaseTitle": "WMS v2.11.1 — Isolasi Ketat Notifikasi Tepat Sasaran Per Role & Hak Akses",
-    "releaseNotes": [
-      "Akun Store: Hanya menerima notifikasi Pesanan / Manual Shipment / Alterasi milik store sendiri & Live Chat",
-      "Akun Karyawan / Picker: Hanya menerima notifikasi Tugas Picking, pengajuan & status Ijin/Cuti/Lembur milik dirinya sendiri (tidak menerima pengajuan karyawan lain), & Live Chat",
-      "Akun Khusus Sesuai Role Akses (SPS / CS / Produksi): Hanya menerima notifikasi sesuai modul aksesnya (SPS hanya Peminjaman SPS, CS hanya Retur Pusat Resolusi & Chat, Produksi hanya Hitung Ulang Kargo/CMT)",
-      "Admin & Warehouse: Admin dikecualikan dari seluruh notifikasi HR (Ijin/Cuti/Lembur); pengajuan HR karyawan baru hanya masuk ke akun Warehouse",
-      "Perbaikan bug fallback permission Operator & pembersihan otomatis riwayat Notification Hub yang tidak relevan dengan role akun aktif"
     ],
     "minSupportedVersion": "v2.0.0"
   }

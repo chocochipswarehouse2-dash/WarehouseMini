@@ -312,6 +312,27 @@ export function isCorruptedColorCodeSize(sku?: string | null, size?: unknown): b
   // Only S, M, L are vulnerable to false positive color suffix collisions
   if (cleanSize !== 'S' && cleanSize !== 'M' && cleanSize !== 'L') return false;
 
+  // 1. Authoritative VLOOKUP check against master_produk:
+  // If SKU exists in master_produk, master_produk.size is 100% the single source of truth!
+  // Example: F25GBG278BNL has size 'L' and F25GBG278BNS has size 'S' in master_produk -> NEVER treat as corrupted!
+  // Example: F26CTN698YL has size 'Default' in master_produk -> 'L' from a legacy row IS corrupted!
+  const masterEntry = masterExactMap?.get(cleanSku);
+  if (masterEntry && masterEntry.size) {
+    const masterSizeUpper = String(masterEntry.size).trim().toUpperCase();
+    if (masterSizeUpper === cleanSize) return false;
+    if (masterSizeUpper === 'DEFAULT' || masterSizeUpper === '-') return true;
+    return masterSizeUpper !== cleanSize;
+  }
+  if (typeof window !== 'undefined' && (window as any).__wms_global_catalog_map instanceof Map) {
+    const gItem = ((window as any).__wms_global_catalog_map as Map<string, any>).get(cleanSku);
+    if (gItem) {
+      const gSizeUpper = String(gItem.s || gItem.size || '').trim().toUpperCase();
+      if (gSizeUpper === cleanSize) return false;
+      if (gSizeUpper === 'DEFAULT' || gSizeUpper === '-') return true;
+      if (gSizeUpper) return gSizeUpper !== cleanSize;
+    }
+  }
+
   // Genuine multi-size SKUs with explicit separators (-S, _M, /L, .XL) are ALWAYS legitimate
   if (/[-_/\s.](S|M|L)$/i.test(cleanSku)) return false;
 
@@ -369,20 +390,21 @@ let masterPrefixMap: Map<string, string> | null = null;
 let lastMasterMapBuild = 0;
 
 /**
- * Directly populate master lookup maps from in-memory catalog
+ * Directly populate master lookup maps from in-memory catalog.
+ * Pure VLOOKUP: stores official `master_produk` size verbatim without heuristic overrides.
  */
 export function setSortUtilsMasterCatalog(catalog: any[], lookupMap?: Map<string, any>): void {
   if (!masterExactMap) masterExactMap = new Map();
+  else masterExactMap.clear();
   if (!masterPrefixMap) masterPrefixMap = new Map();
+  else masterPrefixMap.clear();
+  lastMasterMapBuild = Date.now();
 
   if (lookupMap && lookupMap instanceof Map) {
     for (const [k, p] of lookupMap.entries()) {
       if (!p) continue;
       const rawName = String(p.p || p.nama_produk || p.n || p.nama || '').trim();
-      let rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
-      if (isCorruptedColorCodeSize(k, rawSize)) {
-        rawSize = 'Default';
-      }
+      const rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
       const rawCat = String(p.kategori || p.category || (p as any).c || (p as any).jenis || '').trim();
       masterExactMap.set(k, { name: rawName, size: rawSize, category: rawCat });
     }
@@ -393,10 +415,7 @@ export function setSortUtilsMasterCatalog(catalog: any[], lookupMap?: Map<string
       const k = String(p.k || p.sku || '').trim().toUpperCase();
       if (!k) continue;
       const rawName = String(p.p || p.nama_produk || p.n || p.nama || '').trim();
-      let rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
-      if (isCorruptedColorCodeSize(k, rawSize)) {
-        rawSize = 'Default';
-      }
+      const rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
       const rawCat = String(p.kategori || p.category || (p as any).c || (p as any).jenis || '').trim();
       masterExactMap.set(k, { name: rawName, size: rawSize, category: rawCat });
     }
@@ -419,10 +438,7 @@ function getMasterLookupMaps(): { exact: Map<string, CachedMasterEntry>; prefix:
       for (const [k, p] of gMap.entries()) {
         if (!p) continue;
         const rawName = String(p.p || p.nama_produk || p.n || p.nama || '').trim();
-        let rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
-        if (isCorruptedColorCodeSize(k, rawSize)) {
-          rawSize = 'Default';
-        }
+        const rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
         const rawCat = String(p.kategori || p.category || (p as any).c || (p as any).jenis || '').trim();
         masterExactMap.set(k, { name: rawName, size: rawSize, category: rawCat });
       }
@@ -445,10 +461,7 @@ function getMasterLookupMaps(): { exact: Map<string, CachedMasterEntry>; prefix:
             const k = String(p.k || p.sku || '').trim().toUpperCase();
             if (!k) continue;
             const rawName = String(p.p || p.nama_produk || p.n || p.nama || '').trim();
-            let rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
-            if (isCorruptedColorCodeSize(k, rawSize)) {
-              rawSize = 'Default';
-            }
+            const rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
             const rawCat = String(p.kategori || p.category || (p as any).c || (p as any).jenis || '').trim();
             if (!masterExactMap.has(k)) {
               masterExactMap.set(k, {

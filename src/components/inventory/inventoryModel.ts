@@ -929,7 +929,10 @@ export function composeAreaRows(
       resolveProductName(cleanSku, stockRows[0]?.nama_produk) ||
       base?.produk ||
       cleanSku;
-    let size = resolveProductDisplaySize(cleanSku, stockRows[0]?.size, base?.size);
+    let size =
+      (base?.size && base.size !== '-')
+        ? base.size
+        : resolveProductDisplaySize(cleanSku, stockRows[0]?.size, base?.size);
     if (!size) size = '-';
 
     let kategori = base?.kategori || (stockRows[0] as any)?.kategori || (stockRows[0] as any)?.category || '';

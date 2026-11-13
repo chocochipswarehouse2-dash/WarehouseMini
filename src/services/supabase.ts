@@ -6739,35 +6739,46 @@ export async function syncSmartLowEgressCache(): Promise<{
             'master_produk',
             'GET',
             null,
-            `select=sku,nama_produk,kategori,size,price,dealpos_channels,updated_at&updated_at=gt.${encodeURIComponent(localWm)}&order=updated_at.asc&limit=3000`
+            `select=sku,nama_produk,kategori,size,price,dealpos_channels,updated_at&updated_at=gt.${encodeURIComponent(localWm)}&order=updated_at.asc&limit=1000`
           );
-          const fresh = (changedRows || [])
-            .map((r) => extractProductFromRow(r))
-            .filter((it): it is ProductItem => !!(it && it.k));
-          if (fresh.length > 0) {
-            const all = await getAllProductsFromLocalDb().catch(() => [] as ProductItem[]);
-            const byKey = new Map<string, ProductItem>();
-            for (const it of all || []) byKey.set(String(it.k || '').toUpperCase(), it);
-            const patched: ProductItem[] = [];
-            for (const m of fresh) {
-              const key = String(m.k).toUpperCase();
-              const ex = byKey.get(key);
-              // Master menimpa HANYA field master; lokasi/stok lokal (l, f, q) dipertahankan
-              const merged: ProductItem = ex
-                ? { ...ex, p: m.p, nama_produk: m.p as any, s: m.s || '', size: m.s || '', kategori: m.kategori ?? ex.kategori, price: m.price ?? ex.price, dealpos_channels: m.dealpos_channels ?? ex.dealpos_channels } as ProductItem
-                : m;
-              patched.push(merged);
-              byKey.set(key, merged);
-            }
-            await saveProductsToLocalDb(patched, 'merge');
-            memoryProductCache = Array.from(byKey.values());
-            memoryProductLastFetch = Date.now();
-            if (typeof window !== 'undefined') {
-              window.dispatchEvent(new CustomEvent('wms_full_locations_refreshed', { detail: memoryProductCache }));
+          // PostgREST caps single responses at 1,000 rows; if 1,000 rows returned, more than 1,000 rows changed -> run full master refresh so zero rows are missed
+          if (Array.isArray(changedRows) && changedRows.length >= 1000) {
+            const freshCatalog = await fetchMasterProductsFromSupabase(50000, true);
+            localStorage.setItem(wmKey, cloudWm);
+            if (typeof window !== 'undefined' && freshCatalog.length > 0) {
+              window.dispatchEvent(new CustomEvent('wms_full_locations_refreshed', { detail: freshCatalog }));
               window.dispatchEvent(new CustomEvent('wms_catalog_updated'));
             }
+          } else {
+            const fresh = (changedRows || [])
+              .map((r) => extractProductFromRow(r))
+              .filter((it): it is ProductItem => !!(it && it.k));
+            if (fresh.length > 0) {
+              const all = await getAllProductsFromLocalDb().catch(() => [] as ProductItem[]);
+              const byKey = new Map<string, ProductItem>();
+              for (const it of all || []) byKey.set(String(it.k || '').toUpperCase(), it);
+              const patched: ProductItem[] = [];
+              for (const m of fresh) {
+                const key = String(m.k).toUpperCase();
+                const ex = byKey.get(key);
+                // Master menimpa HANYA field master; lokasi/stok lokal (l, f, q) dipertahankan
+                const merged: ProductItem = ex
+                  ? { ...ex, p: m.p, nama_produk: m.p as any, s: m.s || '', size: m.s || '', kategori: m.kategori ?? ex.kategori, price: m.price ?? ex.price, dealpos_channels: m.dealpos_channels ?? ex.dealpos_channels } as ProductItem
+                  : m;
+                patched.push(merged);
+                byKey.set(key, merged);
+              }
+              await saveProductsToLocalDb(patched, 'merge');
+              memoryProductCache = Array.from(byKey.values());
+              memoryProductLastFetch = Date.now();
+              setGlobalProductCatalog(memoryProductCache);
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('wms_full_locations_refreshed', { detail: memoryProductCache }));
+                window.dispatchEvent(new CustomEvent('wms_catalog_updated'));
+              }
+            }
+            localStorage.setItem(wmKey, cloudWm);
           }
-          localStorage.setItem(wmKey, cloudWm);
         }
       }
     } catch (err) {
