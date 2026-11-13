@@ -310,9 +310,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
           );
 
         const lookup = lookupProductBySku(cleanSku, productCatalog, it.nama_produk, (it as any).size);
-        let size = (lookup.found && lookup.size !== '-' && lookup.size !== 'Default') 
-          ? lookup.size 
-          : '-';
+        let size = lookup.found ? (lookup.size || '-') : '-';
 
         const locs = getProductLocations(cleanSku, (it as any).lokasi);
         const locsWithStock = locs.filter((l) => (l.qty || 0) > 0);

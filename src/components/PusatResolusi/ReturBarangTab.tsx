@@ -428,7 +428,7 @@ export default function ReturBarangTab({
     const baseName = prod.p || (prod as any).nama_produk || prod.n || '';
     const master = lookupProductBySku(sku, productCatalog, baseName, prod.s);
     const resolvedName = master.found ? master.nama_produk : baseName;
-    const size = (master.found && master.size && master.size !== '-' && master.size !== 'Default') ? master.size : '-';
+    const size = master.found ? (master.size || '-') : '-';
     const fullName = size && size !== '-' && !resolvedName.endsWith(`- ${size}`) ? `${resolvedName} - ${size}` : resolvedName;
 
     setProdukPesanan(prev => {
@@ -451,7 +451,7 @@ export default function ReturBarangTab({
     const baseName = prod.p || (prod as any).nama_produk || prod.n || '';
     const master = lookupProductBySku(sku, productCatalog, baseName, prod.s);
     const resolvedName = master.found ? master.nama_produk : baseName;
-    const size = (master.found && master.size && master.size !== '-' && master.size !== 'Default') ? master.size : '-';
+    const size = master.found ? (master.size || '-') : '-';
     const fullName = size && size !== '-' && !resolvedName.endsWith(`- ${size}`) ? `${resolvedName} - ${size}` : resolvedName;
 
     setProdukPengganti(prev => {

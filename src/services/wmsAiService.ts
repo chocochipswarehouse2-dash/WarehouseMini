@@ -914,7 +914,7 @@ async function searchSingleProductDetail(rawQuery: string, masterProducts: Produ
     const cleanP = cleanProductName(rawP) || rawP || sku;
 
     const rawSize = String(mergedItem.size || mergedItem.s || '');
-    const resolvedSize = resolveProductDisplaySize(sku, rawSize, rawSize) || extractSizeFromSku(sku) || rawSize || '-';
+    const resolvedSize = resolveProductDisplaySize(sku, rawSize, rawSize) || rawSize || '-';
     const normalizedVariantSize = normalizeSizeTokenForMatch(resolvedSize);
 
     const dpInfo = computeOfficialDealposBreakdown(mergedItem);
@@ -923,7 +923,7 @@ async function searchSingleProductDetail(rawQuery: string, masterProducts: Produ
     return {
       nama_produk: cleanP,
       sku,
-      size: resolvedSize === 'Default' ? 'ALL' : resolvedSize,
+      size: resolvedSize,
       normalized_size: normalizedVariantSize,
       kategori: mergedItem.kategori || mergedItem.category || mergedItem.c || '-',
       stok_fisik_rak: rackInfo.totalFisik,

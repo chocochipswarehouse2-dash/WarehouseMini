@@ -17,7 +17,11 @@ description: Standar WAJIB lookup nama produk & size di WMS Inventory. Master Pr
    - Jika suatu item memiliki kode akhiran warna tersebut dan terbaca size 'S', 'M', atau 'L' tanpa separator eksplisit, fungsi otomatis menolak dan mengembalikan size '-' / 'Default'.
 4. **DILARANG menebak nama dari prefix SKU saudara** (`sku.slice(0,-2)`). Beda warna = beda produk.
    - Contoh nyata: `DF26KBF03DDC` harus **Taylor Pants Denim Blue** (S), bukan "Dark Denim".
-5. **Jika SKU ada di master dan size master `Default`/kosong → hasil size `-`/`Default`**, jangan diisi tebakan.
+5. **Tampilkan nilai `master_produk` APA ADANYA (Verbatim)**:
+   - Jika di `master_produk` tertulis `Default`, tampilkan `Default` (JANGAN diubah ke `-` atau `ALL`).
+   - Jika tertulis `ALL`, tampilkan `ALL`.
+   - Saat import CSV Master Produk di `UpdateDatabaseModal.tsx`, WAJIB simpan kolom Variant/Size apa adanya (kosong → `'Default'`), DILARANG KERAS menjalankan regex/sanitizer/extractSizeFromSku yang mengarang size (`A->ALL`, `B->XS`, `G->XXL`, dll.).
+6. Setiap perubahan `master_produk` (import CSV atau skrip) WAJIB menaikkan epoch (`bumpCloudCacheEpoch('MASTER_IMPORT')`) atau `updated_at` agar delta sync di semua perangkat aktif.
 6. Nama dari katalog marketing (`katalogBatch.deskripsi`, `initial325bData`) hanyalah bantuan pencarian. Saat user memilih produk dan sebelum menyimpan, WAJIB disejajarkan ke master via `lookupProductBySku(sku)` / `alignItemWithMasterProduct`.
 7. Pencarian berdasarkan NAMA (AI/UI) boleh fuzzy untuk menemukan kandidat, tetapi nama & size yang DITAMPILKAN harus berasal dari baris master untuk SKU kandidat.
 

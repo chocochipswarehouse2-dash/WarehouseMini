@@ -1659,9 +1659,9 @@ _WMS Warehouse System_`;
       
       const master = lookupProductBySku(product!.k, productCatalog, product!.p || (product as any).nama_produk, product!.s);
       const displayNama = master.found ? master.nama_produk : (product!.p || (product as any).nama_produk || product!.n || 'Unknown Product');
-      const cleanSize = (master.found && master.size && master.size !== '-' && master.size !== 'Default')
-        ? master.size
-        : (!isCorruptedColorCodeSize(product!.k, product!.s) && product!.s && product!.s !== 'ALL' && product!.s !== 'Default' ? product!.s : '');
+      const cleanSize = master.found
+        ? (master.size || '')
+        : (!isCorruptedColorCodeSize(product!.k, product!.s) && product!.s ? product!.s : '');
       return [...prev, {
         id: `item-${Date.now()}`,
         nama_produk: displayNama,

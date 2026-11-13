@@ -15,21 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.11.7",
-  "versionCode": 317,
+  "version": "v2.11.8",
+  "versionCode": 318,
   "buildDate": "13 November 2026",
-  "buildHash": "wms-261113-v317-0735",
-  "releaseTitle": "WMS v2.11.7 — Size & Nama Produk Murni dari Master + Delta Sync Master",
+  "buildHash": "wms-261113-v318-0759",
+  "releaseTitle": "WMS v2.11.8 — Fix Import Master CSV Verbatim & Hemat Egress",
   "releaseNotes": [
-    "Size dan nama produk di semua modul kini VLOOKUP persis nilai master_produk (Default tetap Default, ALL tetap ALL)",
-    "Hapus semua tebakan size dari SKU (regex)",
-    "Merge katalog: master selalu menimpa cache lama",
-    "Delta sync master_produk berbasis updated_at (hemat egress)"
+    "UpdateDatabaseModal kini menyimpan size CSV DealPOS apa adanya (menutup sumber data karangan A->ALL, B->XS, G->XXL)",
+    "Pertahankan nilai Default apa adanya di Retur, Manual Shipment, Distribusi, dan AI",
+    "Optimasi egress: naikkan ambang logGap ke 2000, batasi select picking_list ke 800 baris, dan longgarkan interval polling"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.11.7",
+    "versionCode": 317,
+    "buildDate": "13 November 2026",
+    "buildHash": "wms-261113-v317-0735",
+    "releaseTitle": "WMS v2.11.7 — Size & Nama Produk Murni dari Master + Delta Sync Master",
+    "releaseNotes": [
+      "Size dan nama produk di semua modul kini VLOOKUP persis nilai master_produk (Default tetap Default, ALL tetap ALL)",
+      "Hapus semua tebakan size dari SKU (regex)",
+      "Merge katalog: master selalu menimpa cache lama",
+      "Delta sync master_produk berbasis updated_at (hemat egress)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.11.6",
     "versionCode": 316,
@@ -118,19 +131,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Fitur Ekspor Laporan AI ke Excel (.xlsx) & PDF (.pdf): AI kini memiliki skill generate_exportable_report untuk membuat laporan data stok, DealPOS, maupun penerimaan CMT/Kargo dalam bentuk file Excel (.xlsx) atau PDF (.pdf), ditambah tombol download 1-klik otomatis di setiap tabel AI",
       "Notification Hub Terpusat (🔔): Seluruh notifikasi relevan sesuai role akun tersimpan otomatis di Notification Hub pada bar atas (Mobile & Desktop) dengan filter Belum Dibaca vs Semua, fitur Mark All Read, dan klik langsung menuju halaman/pesanan/ruang chat tujuan",
       "Popup Notifikasi Auto-Hide 10 Detik: Semua popup notifikasi melayang (Toast, Banner Pesanan Baru, Banner Picking, dan OS Push Notification) kini otomatis menutup sendiri setelah 10 detik agar tidak menghalangi layar kerja"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.10.2",
-    "versionCode": 302,
-    "buildDate": "11 November 2026",
-    "buildHash": "wms-261111-v302-1033",
-    "releaseTitle": "WMS v2.10.2 — Audit & Perbaikan Akurasi Data DealPOS & Stok Fisik per Ukuran di AI",
-    "releaseNotes": [
-      "Pemisahan Ketat Nama Produk vs Size (S/M/L/XL/ALL): Mencegah AI menjumlahkan DealPOS lintas ukuran atau mencampur produk lain yang memiliki kata warna/size serupa (seperti Zilva Top White M & Posy Dress Blue S)",
-      "Sinkronisasi Live dealpos_channels & Rumus Resmi InventoryModel: Pengambilan data DealPOS di AI kini mengambil langsung dealpos_channels terbaru dari tabel master_produk Supabase dan menggunakan rumus resmi Inventory (MAP + LIVE + STUDIO)",
-      "Format Lokasi Rak Lengkap Tanpa Singkatan dll.: AI wajib menampilkan seluruh kode rak beserta jumlah pcs secara utuh tanpa menyingkat dengan kata dll."
     ],
     "minSupportedVersion": "v2.0.0"
   }

@@ -1,14 +1,13 @@
 {
-  "version": "v2.11.7",
-  "versionCode": 317,
+  "version": "v2.11.8",
+  "versionCode": 318,
   "buildDate": "13 November 2026",
-  "buildHash": "wms-261113-v317-0735",
-  "releaseTitle": "WMS v2.11.7 — Size & Nama Produk Murni dari Master + Delta Sync Master",
+  "buildHash": "wms-261113-v318-0759",
+  "releaseTitle": "WMS v2.11.8 — Fix Import Master CSV Verbatim & Hemat Egress",
   "releaseNotes": [
-    "Size dan nama produk di semua modul kini VLOOKUP persis nilai master_produk (Default tetap Default, ALL tetap ALL)",
-    "Hapus semua tebakan size dari SKU (regex)",
-    "Merge katalog: master selalu menimpa cache lama",
-    "Delta sync master_produk berbasis updated_at (hemat egress)"
+    "UpdateDatabaseModal kini menyimpan size CSV DealPOS apa adanya (menutup sumber data karangan A->ALL, B->XS, G->XXL)",
+    "Pertahankan nilai Default apa adanya di Retur, Manual Shipment, Distribusi, dan AI",
+    "Optimasi egress: naikkan ambang logGap ke 2000, batasi select picking_list ke 800 baris, dan longgarkan interval polling"
   ],
   "minSupportedVersion": "v2.0.0"
 }

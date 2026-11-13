@@ -5432,7 +5432,7 @@ export function invalidatePickingListCache(): void {
 }
 
 export async function fetchPickingListFromSupabase(forceRefresh = false): Promise<PickingListItem[]> {
-  if (!forceRefresh && memoryPickingListCache && memoryPickingListCache.length > 0 && Date.now() - memoryPickingListLastFetch < 3 * 60 * 1000) {
+  if (!forceRefresh && memoryPickingListCache && memoryPickingListCache.length > 0 && Date.now() - memoryPickingListLastFetch < 5 * 60 * 1000) {
     return memoryPickingListCache;
   }
 
@@ -5455,7 +5455,7 @@ export async function fetchPickingListFromSupabase(forceRefresh = false): Promis
   // Fetch from picking_list and peminjaman concurrently to avoid sequential bottlenecks
   // Bypass fetchWithDeltaSync temporarily to ensure all fresh rows are fetched properly
   const [pickingRes, peminjamanRes] = await Promise.allSettled([
-    supabaseFetch<any[]>('picking_list', 'GET', null, 'select=*&order=created_at.desc&limit=2000'),
+    supabaseFetch<any[]>('picking_list', 'GET', null, 'select=id,no_sj,tanggal,tujuan,sku,nama_produk,qty_req,qty_picked,lokasi,status,picker_name,created_at,invoice_picking&order=created_at.desc&limit=800'),
     supabaseFetch<any[]>('peminjaman', 'GET', null, 'select=*&order=created_at.desc&limit=100')
   ]);
 
@@ -6694,7 +6694,7 @@ export async function syncSmartLowEgressCache(): Promise<{
     const needsFullStockLocationRefresh =
       !hasInitialLocationSync ||
       (cloudStockResetEpoch > 0 && cloudStockResetEpoch > localStockResetEpoch) ||
-      logGap > 400;
+      logGap > 2000;
 
     if (needsFullStockLocationRefresh) {
       // Fetch ONLY active stok_real_fisik (skipping the 28,000 rows of master_produk -> saves >93% egress!)
@@ -6781,7 +6781,7 @@ export async function syncSmartLowEgressCache(): Promise<{
           'log_produk',
           'GET',
           null,
-          `id=gt.${localLastLogId}&select=sku&order=id.asc&limit=500`
+          `id=gt.${localLastLogId}&select=sku&order=id.asc&limit=2000`
         );
         const changedSkus = Array.from(
           new Set(

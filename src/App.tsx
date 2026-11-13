@@ -1451,10 +1451,10 @@ export default function App() {
     window.addEventListener('wms_sku_locations_patched', handleSkuPatched);
     window.addEventListener('wms_full_locations_refreshed', handleFullLocationsRefreshed);
 
-    // Periodic & Tab-Focus Low-Egress Watermark Check (every 3 minutes + on tab focus)
+    // Periodic & Tab-Focus Low-Egress Watermark Check (every 5 minutes + on tab focus throttled 2 min)
     let lastFocusCheck = 0;
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && Date.now() - lastFocusCheck > 60 * 1000) {
+      if (document.visibilityState === 'visible' && Date.now() - lastFocusCheck > 2 * 60 * 1000) {
         lastFocusCheck = Date.now();
         syncSmartLowEgressCache().catch(() => {});
       }
@@ -1465,7 +1465,7 @@ export default function App() {
       if (document.visibilityState === 'visible') {
         syncSmartLowEgressCache().catch(() => {});
       }
-    }, 3 * 60 * 1000);
+    }, 5 * 60 * 1000);
 
     return () => {
       window.removeEventListener('wms_sku_locations_patched', handleSkuPatched);
@@ -3371,8 +3371,12 @@ export default function App() {
 
     seedExistingOrders();
 
-    // Polling responsif setiap 20 detik agar Pesanan Store, Retur, SPS, dan Live Chat muncul instan di Notification Bar HP
-    const intervalId = setInterval(checkNewStoreOrdersDelta, 35000); // 35s hemat request & egress
+    // Polling responsif setiap 45 detik (pause otomatis saat tab hidden untuk hemat egress)
+    const intervalId = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void checkNewStoreOrdersDelta();
+      }
+    }, 45000);
     const handleVisibilityOrOnline = () => {
       if (document.visibilityState === 'visible') {
         setNotificationPermission(getNotificationPermissionStatus());
