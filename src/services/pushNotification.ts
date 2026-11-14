@@ -61,6 +61,33 @@ export function getNotificationPermissionStatus(): NotificationPermission {
 
 const NOTIFIED_IDS_STORAGE_KEY = 'wms_notified_order_ids_v1';
 const LAST_CHECK_TS_STORAGE_KEY = 'wms_last_order_check_ts_v1';
+export const DEVICE_NOTIF_PREF_KEY = 'wms_device_notifications_enabled';
+export const DEVICE_NOTIF_PREF_EVENT = 'wms_device_notif_pref_changed';
+
+export function isDeviceNotificationEnabled(): boolean {
+  if (typeof window === 'undefined') return true;
+  try {
+    return localStorage.getItem(DEVICE_NOTIF_PREF_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+}
+
+export function setDeviceNotificationEnabled(enabled: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(DEVICE_NOTIF_PREF_KEY, enabled ? 'true' : 'false');
+    window.dispatchEvent(
+      new CustomEvent(DEVICE_NOTIF_PREF_EVENT, { detail: { enabled } })
+    );
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function isDeviceNotificationEffectivelyOn(): boolean {
+  return isDeviceNotificationEnabled() && getNotificationPermissionStatus() === 'granted';
+}
 
 export function loadPersistedNotifiedOrderIds(): string[] {
   try {
@@ -126,7 +153,7 @@ async function getActiveServiceWorkerRegistration(): Promise<ServiceWorkerRegist
  * Registers Periodic Background Sync & Background Sync on supported PWA browsers (Chrome/Edge Android & Desktop)
  */
 export async function registerBackgroundOrderSync(): Promise<void> {
-  if (!('serviceWorker' in navigator)) return;
+  if (!('serviceWorker' in navigator) || !isDeviceNotificationEnabled()) return;
   try {
     const registration = await getActiveServiceWorkerRegistration();
     if (!registration) return;
@@ -181,7 +208,9 @@ export async function configureServiceWorkerOrderWatcher(params: {
 }): Promise<void> {
   if (!('serviceWorker' in navigator)) return;
   try {
-    await registerBackgroundOrderSync();
+    if (params.enabled && isDeviceNotificationEnabled()) {
+      await registerBackgroundOrderSync();
+    }
     const registration = await getActiveServiceWorkerRegistration();
     const targetSw =
       navigator.serviceWorker.controller ||
@@ -295,6 +324,9 @@ export async function showPushNotification(
   } catch (err) {
     console.warn('Failed to add notification to hub:', err);
   }
+
+  // Jika pengguna mematikan Notifikasi Perangkat (OFF), simpan ke Hub saja & hentikan pop-up OS/perangkat
+  if (!isDeviceNotificationEnabled()) return;
 
   if (!('Notification' in window)) return;
 

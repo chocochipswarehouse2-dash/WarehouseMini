@@ -160,12 +160,15 @@ import {
 } from './services/audio';
 import {
   configureServiceWorkerOrderWatcher,
+  DEVICE_NOTIF_PREF_EVENT,
   getLastOrderCheckTimestamp,
   getNotificationPermissionStatus,
+  isDeviceNotificationEnabled,
   isNotificationSupported,
   loadPersistedNotifiedOrderIds,
   requestNotificationPermission,
   savePersistedNotifiedOrderIds,
+  setDeviceNotificationEnabled,
   setLastOrderCheckTimestamp,
   showPushNotification,
   needsIosHomeScreenInstall,
@@ -428,6 +431,13 @@ export default function App() {
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(() =>
     getNotificationPermissionStatus()
   );
+  const [deviceNotificationEnabled, setDeviceNotificationEnabledState] = useState<boolean>(() =>
+    isDeviceNotificationEnabled()
+  );
+  const deviceNotificationEnabledRef = useRef<boolean>(deviceNotificationEnabled);
+  deviceNotificationEnabledRef.current = deviceNotificationEnabled;
+  const notificationPermissionRef = useRef<NotificationPermission>(notificationPermission);
+  notificationPermissionRef.current = notificationPermission;
   const [dismissedNotifPrompt, setDismissedNotifPrompt] = useState<boolean>(() => {
     try {
       return sessionStorage.getItem('wms_dismiss_notif_prompt') === 'true';
@@ -435,6 +445,19 @@ export default function App() {
       return false;
     }
   });
+
+  useEffect(() => {
+    const syncPref = () => {
+      setDeviceNotificationEnabledState(isDeviceNotificationEnabled());
+      setNotificationPermission(getNotificationPermissionStatus());
+    };
+    window.addEventListener(DEVICE_NOTIF_PREF_EVENT, syncPref);
+    window.addEventListener('storage', syncPref);
+    return () => {
+      window.removeEventListener(DEVICE_NOTIF_PREF_EVENT, syncPref);
+      window.removeEventListener('storage', syncPref);
+    };
+  }, []);
 
   // Realtime Incoming Picking Task Alert
   const [newPickingTaskAlert, setNewPickingTaskAlert] = useState<{
@@ -2751,18 +2774,22 @@ export default function App() {
   const handleIncomingSpsRef = useRef(handleIncomingSpsNotification);
   handleIncomingSpsRef.current = handleIncomingSpsNotification;
 
-  // Web Push (VAPID): daftarkan perangkat sesuai role masing-masing
+  // Web Push (VAPID): daftarkan atau hentikan perangkat sesuai toggle ON/OFF & izin browser
   useEffect(() => {
-    if (!session?.username || notificationPermission !== 'granted') return;
+    if (!session?.username) return;
+    if (!deviceNotificationEnabled || notificationPermission !== 'granted') {
+      void unsubscribeFromWebPush();
+      return;
+    }
     void subscribeToWebPush({
       username: session.username,
       isAdmin: Boolean(canReceiveAdminOrderNotif(session)),
       isPicker: Boolean(canReceivePickingAndSpsNotif(session)),
       storeName: session.store_name || session.store_code || '',
     });
-  }, [session, notificationPermission]);
+  }, [session, notificationPermission, deviceNotificationEnabled]);
 
-  // Background, Service Worker & Screen-Wake Delta Poller (Strict Role-Aware Matrix)
+  // Service Worker background watcher toggle sync
   useEffect(() => {
     const userIsAdmin = Boolean(session && canReceiveAdminOrderNotif(session));
     const userIsPicker = Boolean(session && canReceivePickingAndSpsNotif(session));
@@ -2770,7 +2797,7 @@ export default function App() {
     const userCanProduksi = Boolean(session && canReceiveRecountNotif(session));
     const userIsCustomerService = Boolean(session && isCustomerServiceSession(session));
 
-    if (!session) {
+    if (!session || !deviceNotificationEnabled || notificationPermission !== 'granted') {
       configureServiceWorkerOrderWatcher({
         enabled: false,
         supabaseUrl: DEFAULT_SUPABASE_URL,
@@ -2802,6 +2829,16 @@ export default function App() {
       notifiedIds: Array.from(notifiedOrderIdsRef.current),
       lastCheckedAt: getLastOrderCheckTimestamp() || Date.now(),
     });
+  }, [session, deviceNotificationEnabled, notificationPermission]);
+
+  // Background, Service Worker & Screen-Wake Delta Poller (Strict Role-Aware Matrix)
+  useEffect(() => {
+    if (!session) return;
+    const userIsAdmin = Boolean(canReceiveAdminOrderNotif(session));
+    const userIsPicker = Boolean(canReceivePickingAndSpsNotif(session));
+    const userIsWarehouseOnly = Boolean(isWarehouseAccountOnly(session));
+    const userCanProduksi = Boolean(canReceiveRecountNotif(session));
+    const userIsCustomerService = Boolean(isCustomerServiceSession(session));
 
     const handleSwMessage = (event: MessageEvent) => {
       const data = event.data;
@@ -2873,20 +2910,33 @@ export default function App() {
     } catch {}
 
     const handleFirstGesturePermission = () => {
-      if (isNotificationSupported() && getNotificationPermissionStatus() === 'default') {
+      if (
+        deviceNotificationEnabledRef.current &&
+        isNotificationSupported() &&
+        getNotificationPermissionStatus() === 'default'
+      ) {
         requestNotificationPermission()
           .then((perm) => setNotificationPermission(perm))
           .catch(() => {});
       }
       window.removeEventListener('pointerdown', handleFirstGesturePermission);
     };
-    if (isNotificationSupported() && getNotificationPermissionStatus() === 'default') {
+    if (
+      deviceNotificationEnabledRef.current &&
+      isNotificationSupported() &&
+      getNotificationPermissionStatus() === 'default'
+    ) {
       window.addEventListener('pointerdown', handleFirstGesturePermission, { once: true });
     }
 
     if (!userIsAdmin && !userIsPicker && !userIsWarehouseOnly && !userCanProduksi && !userIsCustomerService) {
       const swChatKeepAlive = setInterval(() => {
-        if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        if (
+          deviceNotificationEnabledRef.current &&
+          notificationPermissionRef.current === 'granted' &&
+          typeof document !== 'undefined' &&
+          document.visibilityState !== 'visible'
+        ) {
           void triggerServiceWorkerCheckNow();
         }
       }, 20000);
@@ -3636,6 +3686,80 @@ export default function App() {
     showToast('Berhasil keluar dari akun.', 'info');
   };
 
+  // Toggle Notifikasi Perangkat ON / OFF secara penuh (Pop-up OS, Suara, SW Watcher & Web Push)
+  const handleToggleDeviceNotification = async (nextEnabled?: boolean) => {
+    const currentlyOn = deviceNotificationEnabled && notificationPermission === 'granted';
+    const target = typeof nextEnabled === 'boolean' ? nextEnabled : !currentlyOn;
+
+    if (!target) {
+      setDeviceNotificationEnabled(false);
+      setDeviceNotificationEnabledState(false);
+      void unsubscribeFromWebPush();
+      await configureServiceWorkerOrderWatcher({
+        enabled: false,
+        supabaseUrl: localStorage.getItem('wms_supabase_url') || DEFAULT_SUPABASE_URL,
+        supabaseAnonKey: localStorage.getItem('wms_supabase_key') || DEFAULT_SUPABASE_ANON_KEY,
+        isAdmin: false,
+        isPicker: false,
+        isWarehouseOnly: false,
+        canProduksi: false,
+        isCustomerService: false,
+      });
+      showToast('Notifikasi perangkat dimatikan (OFF) untuk HP/Laptop ini.', 'info');
+      return;
+    }
+
+    if (needsIosHomeScreenInstall()) {
+      showToast(
+        "iPhone/iPad: ketuk tombol Bagikan (kotak panah) di Safari lalu pilih \"Tambah ke Layar Utama\", buka aplikasi dari ikon Layar Utama, lalu aktifkan notifikasi lagi (butuh iOS 16.4+).",
+        'warning'
+      );
+      return;
+    }
+
+    const prevPerm = getNotificationPermissionStatus();
+    const perm = prevPerm === 'granted' ? 'granted' : await requestNotificationPermission();
+    setNotificationPermission(perm);
+
+    if (perm === 'granted') {
+      setDeviceNotificationEnabled(true);
+      setDeviceNotificationEnabledState(true);
+      playNewTaskChime(true);
+      vibrateDevice([180, 80, 180]);
+      if (session?.username) {
+        void subscribeToWebPush({
+          username: session.username,
+          isAdmin: Boolean(canReceiveAdminOrderNotif(session)),
+          isPicker: Boolean(canReceivePickingAndSpsNotif(session)),
+          storeName: session.store_name || session.store_code || '',
+        });
+      }
+      showToast('Notifikasi perangkat aktif (ON)!', 'success');
+      if (prevPerm !== 'granted') {
+        await showPushNotification('🔔 Notifikasi WMS Aktif (Gaya WhatsApp)!', {
+          body: isSuperadmin(session)
+            ? 'HP / Laptop Anda siap menerima bunyi & pop-up otomatis saat Pesanan Baru, Retur, atau Live Chat masuk.'
+            : 'HP / Laptop Anda siap menerima bunyi & pop-up otomatis saat Pesan Live Chat atau Update Resi masuk.',
+          tag: `wms-test-notif-${Date.now()}`,
+          page: isSuperadmin(session) ? 'pesanan_saya' : 'live_chat',
+          actions: [
+            {
+              action: 'chat_mark_read',
+              title: '✓✓ Mengerti',
+            },
+          ],
+        });
+      }
+    } else {
+      setDeviceNotificationEnabled(false);
+      setDeviceNotificationEnabledState(false);
+      showToast(
+        'Izin notifikasi belum diizinkan di browser Laptop/HP Anda. Silakan klik ikon gembok/pengaturan di sebelah URL lalu izinkan Notifications (Allow).',
+        'warning'
+      );
+    }
+  };
+
   // Notification permission requester & live test trigger
   const handleRequestNotification = async () => {
     if (needsIosHomeScreenInstall()) {
@@ -3648,9 +3772,11 @@ export default function App() {
     const perm = await requestNotificationPermission();
     setNotificationPermission(perm);
     if (perm === 'granted') {
-      playNewTaskChime();
+      setDeviceNotificationEnabled(true);
+      setDeviceNotificationEnabledState(true);
+      playNewTaskChime(true);
       vibrateDevice([200, 100, 200]);
-      showToast('Notifikasi HP / Browser aktif! Mengirim tes notifikasi...', 'success');
+      showToast('Notifikasi HP / Browser aktif (ON)! Mengirim tes notifikasi...', 'success');
       await showPushNotification('🔔 Notifikasi WMS Aktif (Gaya WhatsApp)!', {
         body: isSuperadmin(session)
           ? 'HP / Laptop Anda siap menerima bunyi & pop-up otomatis saat Pesanan Baru, Retur, atau Live Chat masuk.'
@@ -4388,6 +4514,8 @@ export default function App() {
         onToggleCollapse={toggleSidebarCollapse}
         notificationPermission={notificationPermission}
         onRequestNotification={handleRequestNotification}
+        deviceNotificationEnabled={deviceNotificationEnabled}
+        onToggleDeviceNotification={handleToggleDeviceNotification}
         isRealtimeConnected={isRealtimeConnected}
         onOpenSettings={handleOpenSettings}
         onOpenApkModal={() => setIsApkModalOpen(true)}
@@ -4411,6 +4539,7 @@ export default function App() {
           {/* Push Notification Activation Prompt Bar (Semua User untuk Live Chat & Pesanan) */}
           {session &&
             isNotificationSupported() &&
+            deviceNotificationEnabled &&
             notificationPermission !== 'granted' &&
             !dismissedNotifPrompt && (
               <div className="bg-amber-50 dark:bg-amber-950/50 border-b border-amber-200 dark:border-amber-800/70 px-3 sm:px-5 py-2 flex items-center justify-between gap-2">
@@ -4870,6 +4999,8 @@ export default function App() {
                             onRefreshCatalog={() => loadProducts(true)}
                             notificationPermission={notificationPermission}
                             onRequestNotification={handleRequestNotification}
+                            deviceNotificationEnabled={deviceNotificationEnabled}
+                            onToggleDeviceNotification={handleToggleDeviceNotification}
                             isRealtimeConnected={isRealtimeConnected}
                             onOpenUpdateDatabase={() => setIsUpdateDatabaseOpen(true)}
                             onOpenLocationPurge={() => setIsLocationPurgeOpen(true)}
@@ -5038,6 +5169,8 @@ export default function App() {
                       onRefreshCatalog={() => loadProducts(true)}
                       notificationPermission={notificationPermission}
                       onRequestNotification={handleRequestNotification}
+                      deviceNotificationEnabled={deviceNotificationEnabled}
+                      onToggleDeviceNotification={handleToggleDeviceNotification}
                       isRealtimeConnected={isRealtimeConnected}
                       onOpenUpdateDatabase={() => setIsUpdateDatabaseOpen(true)}
                       onOpenLocationPurge={() => setIsLocationPurgeOpen(true)}
@@ -5165,6 +5298,8 @@ export default function App() {
         onRefreshCatalog={() => loadProducts(true)}
         notificationPermission={notificationPermission}
         onRequestNotification={handleRequestNotification}
+        deviceNotificationEnabled={deviceNotificationEnabled}
+        onToggleDeviceNotification={handleToggleDeviceNotification}
         isRealtimeConnected={isRealtimeConnected}
         onOpenUpdateDatabase={() => setIsUpdateDatabaseOpen(true)}
         onOpenLocationPurge={() => {
@@ -5241,6 +5376,9 @@ export default function App() {
         isOpen={isNotificationHubOpen}
         onClose={() => setIsNotificationHubOpen(false)}
         username={session?.username}
+        notificationPermission={notificationPermission}
+        deviceNotificationEnabled={deviceNotificationEnabled}
+        onToggleDeviceNotification={handleToggleDeviceNotification}
         onNavigateTarget={(target) => {
           navigateToNotificationTarget(target);
         }}

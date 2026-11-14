@@ -133,7 +133,14 @@ export function playErrorBeep() {
 /**
  * Play clear, attention-grabbing melodic chime when new picking task arrives from admin
  */
-export function playNewTaskChime() {
+export function playNewTaskChime(forcePlay: boolean = false) {
+  if (!forcePlay && typeof window !== 'undefined') {
+    try {
+      if (localStorage.getItem('wms_device_notifications_enabled') === 'false') {
+        return;
+      }
+    } catch {}
+  }
   try {
     const ctx = getAudioContext();
     if (!ctx) return;

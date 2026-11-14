@@ -1022,6 +1022,10 @@ self.addEventListener('push', (event) => {
 
   event.waitUntil(
     (async () => {
+      try {
+        const cfg = await getSwConfig();
+        if (cfg && cfg.enabled === false) return;
+      } catch {}
       // Jika aplikasi sedang terbuka & terlihat, tab utama sudah menampilkan toast + bunyi sendiri → hindari notifikasi ganda
       try {
         const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });

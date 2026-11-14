@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Bell,
+  BellOff,
+  BellRing,
   CheckCheck,
   Trash2,
   X,
@@ -31,12 +33,21 @@ import {
   syncNotificationHubWithLiveSources,
 } from '../../services/notificationHubService';
 import { canSessionReceiveNotification } from '../../services/permissions';
+import {
+  DEVICE_NOTIF_PREF_EVENT,
+  getNotificationPermissionStatus,
+  isDeviceNotificationEnabled,
+  setDeviceNotificationEnabled,
+} from '../../services/pushNotification';
 
 interface NotificationHubModalProps {
   isOpen: boolean;
   onClose: () => void;
   onNavigateTarget: (target: WmsNotificationTarget) => void;
   username?: string;
+  notificationPermission?: NotificationPermission;
+  deviceNotificationEnabled?: boolean;
+  onToggleDeviceNotification?: (enabled?: boolean) => void;
 }
 
 function formatRelativeTime(ts: number): string {
@@ -178,11 +189,30 @@ export const NotificationHubModal: React.FC<NotificationHubModalProps> = ({
   onClose,
   onNavigateTarget,
   username,
+  notificationPermission,
+  deviceNotificationEnabled,
+  onToggleDeviceNotification,
 }) => {
   const [items, setItems] = useState<WmsNotificationHubItem[]>([]);
   const [filterTab, setFilterTab] = useState<'unread' | 'all'>('unread');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [localNotifEnabled, setLocalNotifEnabled] = useState<boolean>(() => isDeviceNotificationEnabled());
+
+  useEffect(() => {
+    const syncPref = () => setLocalNotifEnabled(isDeviceNotificationEnabled());
+    syncPref();
+    window.addEventListener(DEVICE_NOTIF_PREF_EVENT, syncPref);
+    window.addEventListener('storage', syncPref);
+    return () => {
+      window.removeEventListener(DEVICE_NOTIF_PREF_EVENT, syncPref);
+      window.removeEventListener('storage', syncPref);
+    };
+  }, []);
+
+  const effectivePrefOn = deviceNotificationEnabled !== undefined ? deviceNotificationEnabled : localNotifEnabled;
+  const effectivePerm = notificationPermission ?? getNotificationPermissionStatus();
+  const isDeviceNotifActive = effectivePrefOn && effectivePerm === 'granted';
 
   const handleManualRefresh = async () => {
     setIsSyncing(true);
@@ -286,7 +316,38 @@ export const NotificationHubModal: React.FC<NotificationHubModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={isDeviceNotifActive}
+              onClick={() => {
+                const target = !isDeviceNotifActive;
+                if (onToggleDeviceNotification) {
+                  onToggleDeviceNotification(target);
+                } else {
+                  setDeviceNotificationEnabled(target);
+                  setLocalNotifEnabled(target);
+                }
+              }}
+              title={
+                isDeviceNotifActive
+                  ? 'Notifikasi Perangkat: ON — Klik untuk mematikan (OFF)'
+                  : 'Notifikasi Perangkat: OFF — Klik untuk mengaktifkan (ON)'
+              }
+              className={`inline-flex items-center gap-1 px-2 py-1.5 rounded-xl border text-[11px] font-extrabold transition-all cursor-pointer ${
+                isDeviceNotifActive
+                  ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+              }`}
+            >
+              {isDeviceNotifActive ? (
+                <BellRing className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              ) : (
+                <BellOff className="w-3.5 h-3.5 text-slate-400" />
+              )}
+              <span>{isDeviceNotifActive ? 'ON' : 'OFF'}</span>
+            </button>
             <button
               type="button"
               onClick={handleManualRefresh}

@@ -13,6 +13,7 @@ import {
   Smartphone,
   Monitor,
   Bell,
+  BellOff,
   BellRing,
   User,
   Clock,
@@ -67,6 +68,8 @@ interface SidebarProps {
   onOpenThemePicker: () => void;
   notificationPermission: NotificationPermission;
   onRequestNotification: () => void;
+  deviceNotificationEnabled?: boolean;
+  onToggleDeviceNotification?: (enabled?: boolean) => void;
   isRealtimeConnected: boolean;
   onOpenSettings: () => void;
   onOpenApkModal: () => void;
@@ -95,6 +98,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenThemePicker,
   notificationPermission,
   onRequestNotification,
+  deviceNotificationEnabled = true,
+  onToggleDeviceNotification,
   isRealtimeConnected,
   onOpenSettings,
   onOpenApkModal,
@@ -596,60 +601,138 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
 
-      {/* Notifikasi Perangkat (HP / Laptop) - Untuk Semua Pengguna */}
-      <button
-        type="button"
-        onClick={() => {
-          onRequestNotification();
-          onCloseMobile();
-        }}
-        title={
-          notificationPermission === 'granted'
-            ? 'Notifikasi Perangkat (HP/Laptop) Aktif — Klik untuk tes bunyi & pop-up notifikasi'
-            : 'Aktifkan Notifikasi di HP/Laptop untuk Chat, Pesanan & Tugas Picking'
+      {/* Notifikasi Perangkat (HP / Laptop) - Toggle ON/OFF & Tes untuk Semua Pengguna */}
+      {(() => {
+        const isNotifOn = Boolean(deviceNotificationEnabled) && notificationPermission === 'granted';
+        const isPermissionBlocked = notificationPermission === 'denied';
+        const handleToggle = () => {
+          if (onToggleDeviceNotification) {
+            onToggleDeviceNotification(!isNotifOn);
+          } else {
+            onRequestNotification();
+          }
+        };
+
+        if (effectiveCollapsed) {
+          return (
+            <button
+              type="button"
+              onClick={() => {
+                handleToggle();
+                onCloseMobile();
+              }}
+              title={
+                isNotifOn
+                  ? 'Notifikasi Perangkat: ON — Klik untuk mematikan (OFF)'
+                  : isPermissionBlocked
+                  ? 'Izin notifikasi diblokir browser — Klik untuk panduan aktifkan'
+                  : 'Notifikasi Perangkat: OFF — Klik untuk mengaktifkan (ON)'
+              }
+              className="w-full flex items-center justify-center px-2 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              <div
+                className={`p-1.5 rounded-lg shrink-0 relative ${
+                  isNotifOn
+                    ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
+                    : !deviceNotificationEnabled
+                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500'
+                    : 'bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400'
+                }`}
+              >
+                {isNotifOn ? (
+                  <BellRing className="w-4 h-4" />
+                ) : !deviceNotificationEnabled ? (
+                  <BellOff className="w-4 h-4" />
+                ) : (
+                  <Bell className="w-4 h-4 animate-bounce" />
+                )}
+              </div>
+            </button>
+          );
         }
-        className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
-          collapsed ? 'justify-center px-2' : ''
-        }`}
-      >
-        <div
-          className={`p-1.5 rounded-lg shrink-0 relative ${
-            notificationPermission === 'granted'
-              ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
-              : 'bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400'
-          }`}
-        >
-          {notificationPermission === 'granted' ? (
-            <BellRing className="w-4 h-4" />
-          ) : (
-            <Bell className="w-4 h-4 animate-bounce" />
-          )}
-          {notificationPermission !== 'granted' && (
-            <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-500 rounded-full animate-ping" />
-          )}
-        </div>
-        {!collapsed && (
-          <div className="flex-1 text-left truncate flex items-center justify-between">
-            <div>
-              <div className="font-extrabold text-slate-800 dark:text-slate-200">
-                Notifikasi Perangkat
+
+        return (
+          <div className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100/80 dark:hover:bg-slate-800/80 transition-colors">
+            <button
+              type="button"
+              onClick={() => {
+                if (isNotifOn) {
+                  onRequestNotification();
+                } else {
+                  handleToggle();
+                }
+                onCloseMobile();
+              }}
+              title={
+                isNotifOn
+                  ? 'Notifikasi Perangkat Aktif — Klik untuk tes bunyi & pop-up'
+                  : 'Aktifkan Notifikasi Perangkat di HP/Laptop ini'
+              }
+              className="flex-1 min-w-0 flex items-center gap-3 text-left cursor-pointer"
+            >
+              <div
+                className={`p-1.5 rounded-lg shrink-0 relative ${
+                  isNotifOn
+                    ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
+                    : !deviceNotificationEnabled
+                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500'
+                    : 'bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400'
+                }`}
+              >
+                {isNotifOn ? (
+                  <BellRing className="w-4 h-4" />
+                ) : !deviceNotificationEnabled ? (
+                  <BellOff className="w-4 h-4" />
+                ) : (
+                  <Bell className="w-4 h-4 animate-bounce" />
+                )}
+                {deviceNotificationEnabled && notificationPermission !== 'granted' && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-500 rounded-full animate-ping" />
+                )}
               </div>
-              <div className="text-[10px] text-slate-400 font-normal">
-                Chat, Pesanan & Picking
+              <div className="min-w-0 flex-1">
+                <div className="font-extrabold text-slate-800 dark:text-slate-200 truncate">
+                  Notifikasi Perangkat
+                </div>
+                <div className="text-[10px] text-slate-400 font-normal truncate">
+                  {isNotifOn
+                    ? 'Aktif · Klik di sini untuk tes'
+                    : isPermissionBlocked
+                    ? 'Izin diblokir browser'
+                    : !deviceNotificationEnabled
+                    ? 'Nonaktif di perangkat ini'
+                    : 'Belum diaktifkan'}
+                </div>
               </div>
-            </div>
-            <span
-              className={`text-[9px] px-1.5 py-0.2 rounded font-black border ${
-                notificationPermission === 'granted'
-                  ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                  : 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800 animate-pulse'
+            </button>
+
+            <button
+              type="button"
+              role="switch"
+              aria-checked={isNotifOn}
+              aria-label={isNotifOn ? 'Matikan Notifikasi Perangkat' : 'Aktifkan Notifikasi Perangkat'}
+              onClick={handleToggle}
+              title={isNotifOn ? 'Matikan Notifikasi Perangkat (OFF)' : 'Nyalakan Notifikasi Perangkat (ON)'}
+              className={`shrink-0 inline-flex items-center gap-1.5 px-1.5 py-1 rounded-full border transition-all cursor-pointer select-none ${
+                isNotifOn
+                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-slate-200/80 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400'
               }`}
             >
-              {notificationPermission === 'granted' ? 'AKTIF · TES' : 'AKTIFKAN'}
-            </span>
+              <span className="text-[9px] font-black tracking-wide pl-1">
+                {isNotifOn ? 'ON' : 'OFF'}
+              </span>
+              <span
+                className={`w-7 h-4 rounded-full p-0.5 transition-colors flex items-center ${
+                  isNotifOn ? 'bg-emerald-500 justify-end' : 'bg-slate-400 dark:bg-slate-600 justify-start'
+                }`}
+              >
+                <span className="w-3 h-3 rounded-full bg-white shadow-xs" />
+              </span>
+            </button>
           </div>
-        )}
-      </button>
+        );
+      })()}
 
       {/* Tema & Tampilan (Untuk Semua Pengguna) */}
       <button

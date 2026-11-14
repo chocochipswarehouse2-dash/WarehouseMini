@@ -4,6 +4,7 @@
  * server (api/push.js) saat trigger database mendeteksi pesanan / retur / SPS / chat baru.
  */
 import { supabaseFetch } from './supabase';
+import { isDeviceNotificationEnabled } from './pushNotification';
 
 const SUBSCRIBED_ENDPOINT_KEY = 'wms_push_endpoint_v1';
 
@@ -57,7 +58,14 @@ export interface WebPushIdentity {
  * Mengembalikan true bila perangkat terdaftar di server.
  */
 export async function subscribeToWebPush(identity: WebPushIdentity): Promise<boolean> {
-  if (!isWebPushSupported() || Notification.permission !== 'granted' || !identity.username) return false;
+  if (
+    !isWebPushSupported() ||
+    !isDeviceNotificationEnabled() ||
+    Notification.permission !== 'granted' ||
+    !identity.username
+  ) {
+    return false;
+  }
   try {
     const reg = await Promise.race([
       navigator.serviceWorker.ready,
@@ -121,6 +129,9 @@ export async function unsubscribeFromWebPush(): Promise<void> {
       await supabaseFetch('push_subscriptions', 'DELETE', undefined, `endpoint=eq.${encodeURIComponent(endpoint)}`).catch(
         () => {}
       );
+    }
+    if (sub) {
+      await sub.unsubscribe().catch(() => {});
     }
     localStorage.removeItem(SUBSCRIBED_ENDPOINT_KEY);
   } catch {}

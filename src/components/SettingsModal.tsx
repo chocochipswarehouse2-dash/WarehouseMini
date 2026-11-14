@@ -126,6 +126,8 @@ export interface SettingsModalProps {
   onRefreshCatalog: (endpoint?: string, token?: string) => Promise<void>;
   notificationPermission: NotificationPermission;
   onRequestNotification: () => void;
+  deviceNotificationEnabled?: boolean;
+  onToggleDeviceNotification?: (enabled?: boolean) => void;
   isRealtimeConnected: boolean;
   onOpenUpdateDatabase?: () => void;
   onOpenLocationPurge?: () => void;
@@ -167,6 +169,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onRefreshCatalog,
   notificationPermission,
   onRequestNotification,
+  deviceNotificationEnabled = true,
+  onToggleDeviceNotification,
   isRealtimeConnected,
   onOpenUpdateDatabase,
   onOpenLocationPurge,
@@ -3167,7 +3171,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      playNewTaskChime();
+                      playNewTaskChime(true);
                     }}
                     className="px-3 py-1.5 bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 rounded-xl text-xs font-bold hover:bg-amber-200 cursor-pointer"
                   >
@@ -3177,29 +3181,82 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
 
               {/* Push Notifications */}
-              <div className="p-3.5 bg-slate-50 dark:bg-[#0f172a] rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-purple-500/10 text-purple-500 flex items-center justify-center">
-                    <Bell className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-800 dark:text-white">
-                      Push Notifikasi Real-time
-                    </h4>
-                    <p className="text-[11px] text-slate-500">
-                      Status: <b>{notificationPermission.toUpperCase()}</b>
-                    </p>
-                  </div>
-                </div>
+              {(() => {
+                const isPushOn = Boolean(deviceNotificationEnabled) && notificationPermission === 'granted';
+                const isBlocked = notificationPermission === 'denied';
+                return (
+                  <div className="p-3.5 bg-slate-50 dark:bg-[#0f172a] rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                          isPushOn
+                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                            : !deviceNotificationEnabled
+                            ? 'bg-slate-200 dark:bg-slate-800 text-slate-500'
+                            : 'bg-purple-500/10 text-purple-500'
+                        }`}
+                      >
+                        <Bell className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-bold text-slate-800 dark:text-white">
+                          Notifikasi Perangkat (Push &amp; Suara)
+                        </h4>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          Status:{' '}
+                          <b className={isPushOn ? 'text-emerald-600 dark:text-emerald-400' : isBlocked ? 'text-rose-600 dark:text-rose-400' : ''}>
+                            {isPushOn
+                              ? 'AKTIF (ON)'
+                              : isBlocked
+                              ? 'DIBLOKIR BROWSER'
+                              : !deviceNotificationEnabled
+                              ? 'NONAKTIF (OFF)'
+                              : 'BELUM DIAKTIFKAN'}
+                          </b>
+                        </p>
+                      </div>
+                    </div>
 
-                <button
-                  type="button"
-                  onClick={onRequestNotification}
-                  className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 hover:border-primary-500 cursor-pointer"
-                >
-                  {notificationPermission === 'granted' ? '🔔 Aktif' : 'Minta Izin'}
-                </button>
-              </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {isPushOn && (
+                        <button
+                          type="button"
+                          onClick={onRequestNotification}
+                          className="px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 hover:border-primary-500 cursor-pointer"
+                        >
+                          Tes Pop-up
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={isPushOn}
+                        onClick={() => {
+                          if (onToggleDeviceNotification) {
+                            onToggleDeviceNotification(!isPushOn);
+                          } else {
+                            onRequestNotification();
+                          }
+                        }}
+                        className={`inline-flex items-center gap-2 px-2.5 py-1.5 rounded-xl border text-xs font-black transition-all cursor-pointer ${
+                          isPushOn
+                            ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs hover:bg-emerald-500'
+                            : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-primary-500'
+                        }`}
+                      >
+                        <span>{isPushOn ? 'ON' : 'OFF'}</span>
+                        <span
+                          className={`w-7 h-4 rounded-full p-0.5 flex items-center transition-colors ${
+                            isPushOn ? 'bg-white/30 justify-end' : 'bg-slate-300 dark:bg-slate-600 justify-start'
+                          }`}
+                        >
+                          <span className="w-3 h-3 rounded-full bg-white shadow-xs" />
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Pusat Pembaruan Sistem (OTA Update ala Android) */}
               <div className="p-4 bg-gradient-to-r from-emerald-500/10 via-primary-500/10 to-transparent rounded-2xl border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
