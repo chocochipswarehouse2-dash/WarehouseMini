@@ -55,6 +55,7 @@ export interface ExecuteLocationRelocationItem {
 
 export interface ExecuteLocationRelocationParams {
   sourceLokasi: string;
+  sourceLokasis?: string[];
   targetLokasi: string;
   items: ExecuteLocationRelocationItem[];
   operatorName: string;
@@ -259,6 +260,172 @@ export async function fetchLocationRelocationPreview(
   };
 }
 
+/**
+ * Fetches live authoritative stock from Supabase `stok_real_fisik` across multiple selected source locations.
+ */
+export async function fetchMultiLocationRelocationPreview(
+  sourceLokasis: string[],
+  catalogMap?: Map<string, EnrichedCatalogEntry>,
+  extraKnownVariants: string[] = []
+): Promise<RelocationPreviewResult> {
+  const cleanSources = Array.from(
+    new Set(
+      (sourceLokasis || [])
+        .map((l) => {
+          const raw = (l || '').trim().toUpperCase();
+          return (normalizeLokasi(raw) || raw).toUpperCase();
+        })
+        .filter((l) => l && !isInvalidLocationToken(l))
+    )
+  );
+
+  if (cleanSources.length === 0) {
+    return {
+      sourceLokasi: '',
+      sourceArea: '',
+      items: [],
+      negativeAnomalyItems: [],
+      totalSkus: 0,
+      totalPcs: 0,
+      pendingSoCount: 0,
+      matchingLocationsFound: [],
+    };
+  }
+
+  if (cleanSources.length === 1) {
+    return fetchLocationRelocationPreview(cleanSources[0], catalogMap, extraKnownVariants);
+  }
+
+  const variantSet = new Set<string>();
+  for (const src of cleanSources) {
+    buildLocationCaseVariants(src).forEach((v) => variantSet.add(v));
+  }
+  extraKnownVariants.forEach((v) => {
+    const trimmed = (v || '').trim();
+    if (trimmed) variantSet.add(trimmed);
+  });
+  const allVariants = Array.from(variantSet);
+
+  const CHUNK_SIZE = 35;
+  let rawRows: StockRealtimeItem[] = [];
+  let pendingSoCount = 0;
+
+  for (let i = 0; i < allVariants.length; i += CHUNK_SIZE) {
+    const chunk = allVariants.slice(i, i + CHUNK_SIZE);
+    const locParam = chunk.map((l) => `"${encodeURIComponent(l)}"`).join(',');
+    const rows = await supabaseFetch<StockRealtimeItem[]>(
+      'stok_real_fisik',
+      'GET',
+      null,
+      `lokasi=in.(${locParam})&sisa_stok=neq.0&select=sku,nama_produk,size,lokasi,area,sisa_stok,updated_at&limit=5000`
+    );
+    if (Array.isArray(rows)) {
+      rawRows = rawRows.concat(rows);
+    }
+
+    try {
+      const pendingQueues = await supabaseFetch<Array<{ id: string }>>(
+        'stock_opname_queue',
+        'GET',
+        null,
+        `lokasi=in.(${locParam})&status=eq.PENDING&select=id&limit=500`
+      );
+      if (Array.isArray(pendingQueues)) {
+        pendingSoCount += pendingQueues.length;
+      }
+    } catch {
+      // Non-blocking
+    }
+  }
+
+  const positiveMap = new Map<string, RelocationPreviewItem>();
+  const negativeAnomalyItems: RelocationNegativeAnomalyItem[] = [];
+  const matchingLocSet = new Set<string>();
+
+  for (const row of rawRows) {
+    const sku = String(row.sku || '').trim().toUpperCase();
+    if (!sku) continue;
+    const lokasiExact = String(row.lokasi || '').trim();
+    const areaExact = String(row.area || getAreaFromLokasi(lokasiExact));
+    const qty = Number(row.sisa_stok) || 0;
+    if (qty === 0 || !lokasiExact) continue;
+
+    matchingLocSet.add(lokasiExact);
+
+    const catEntry = catalogMap?.get(sku);
+    const rawName = catEntry?.nama_produk || String(row.nama_produk || row.nama || sku).trim();
+    const resolvedName = resolveProductName(sku, rawName) || rawName || sku;
+    const rawSize = catEntry?.size || String(row.size || row.ukuran || '').trim();
+    const resolvedSize = resolveProductDisplaySize(sku, rawSize, rawSize) || '-';
+
+    if (qty < 0) {
+      negativeAnomalyItems.push({
+        sku,
+        nama_produk: resolvedName,
+        size: resolvedSize,
+        lokasi: lokasiExact,
+        area: areaExact,
+        sisa_stok: qty,
+      });
+      continue;
+    }
+
+    const existing = positiveMap.get(sku);
+    const bucket: RelocationSourceBucket = {
+      lokasiExact,
+      areaExact,
+      qty,
+    };
+
+    if (!existing) {
+      positiveMap.set(sku, {
+        sku,
+        nama_produk: resolvedName,
+        size: resolvedSize,
+        totalQty: qty,
+        buckets: [bucket],
+        updated_at: row.updated_at,
+      });
+    } else {
+      existing.totalQty += qty;
+      const sameBucket = existing.buckets.find(
+        (b) => b.lokasiExact === bucket.lokasiExact && b.areaExact === bucket.areaExact
+      );
+      if (sameBucket) {
+        sameBucket.qty += bucket.qty;
+      } else {
+        existing.buckets.push(bucket);
+      }
+      if (row.updated_at && (!existing.updated_at || row.updated_at > existing.updated_at)) {
+        existing.updated_at = row.updated_at;
+      }
+    }
+  }
+
+  const items = Array.from(positiveMap.values()).sort((a, b) => {
+    const nameCmp = a.nama_produk.localeCompare(b.nama_produk, 'id', { sensitivity: 'base' });
+    if (nameCmp !== 0) return nameCmp;
+    return a.sku.localeCompare(b.sku, 'id', { numeric: true });
+  });
+
+  const totalPcs = items.reduce((sum, it) => sum + it.totalQty, 0);
+  const label =
+    cleanSources.length <= 3
+      ? cleanSources.join(', ')
+      : `${cleanSources.slice(0, 3).join(', ')} (+${cleanSources.length - 3} rak)`;
+
+  return {
+    sourceLokasi: label,
+    sourceArea: 'Multi-Rak',
+    items,
+    negativeAnomalyItems,
+    totalSkus: items.length,
+    totalPcs,
+    pendingSoCount,
+    matchingLocationsFound: Array.from(matchingLocSet),
+  };
+}
+
 export function generateRelocationInvoice(): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -275,8 +442,25 @@ export function generateRelocationInvoice(): string {
 export async function executeLocationRelocation(
   params: ExecuteLocationRelocationParams
 ): Promise<ExecuteLocationRelocationResult> {
-  const rawSource = (params.sourceLokasi || '').trim().toUpperCase();
-  const cleanSource = normalizeLokasi(rawSource) || rawSource;
+  const rawSources =
+    params.sourceLokasis && params.sourceLokasis.length > 0
+      ? params.sourceLokasis
+      : [params.sourceLokasi];
+  const cleanSources = Array.from(
+    new Set(
+      rawSources
+        .map((l) => {
+          const r = (l || '').trim().toUpperCase();
+          return (normalizeLokasi(r) || r).toUpperCase();
+        })
+        .filter((l) => l && !isInvalidLocationToken(l))
+    )
+  );
+  const sourceSet = new Set(cleanSources);
+  const cleanSource =
+    cleanSources.length <= 3
+      ? cleanSources.join(', ')
+      : `${cleanSources.slice(0, 3).join(', ')} (+${cleanSources.length - 3} rak)`;
   const rawTarget = (params.targetLokasi || '').trim().toUpperCase();
   const cleanTarget = normalizeLokasi(rawTarget) || rawTarget;
   const targetArea = getAreaFromLokasi(cleanTarget);
@@ -284,7 +468,7 @@ export async function executeLocationRelocation(
   const invoice = generateRelocationInvoice();
   const createdAt = new Date().toISOString();
 
-  if (!cleanSource || isInvalidLocationToken(cleanSource)) {
+  if (cleanSources.length === 0) {
     return {
       success: false,
       invoice,
@@ -314,7 +498,7 @@ export async function executeLocationRelocation(
     };
   }
 
-  if (cleanSource === cleanTarget) {
+  if (sourceSet.has(cleanTarget)) {
     return {
       success: false,
       invoice,
@@ -325,7 +509,7 @@ export async function executeLocationRelocation(
       totalPcs: 0,
       movedItems: [],
       createdAt,
-      error: 'Lokasi asal dan lokasi tujuan tidak boleh sama.',
+      error: 'Lokasi tujuan tidak boleh sama dengan salah satu lokasi asal.',
     };
   }
 
@@ -397,7 +581,7 @@ export async function executeLocationRelocation(
         lokasi: bucket.lokasiExact,
         qty: take,
         operator,
-        keterangan: `${modeLabel} ${cleanSource} -> ${cleanTarget}${noteSuffix}`,
+        keterangan: `${modeLabel} ${bucket.lokasiExact || cleanSource} -> ${cleanTarget}${noteSuffix}`,
         created_at: createdAt,
       });
 

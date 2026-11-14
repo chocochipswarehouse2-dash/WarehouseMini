@@ -27,6 +27,8 @@ import {
   Boxes,
   FileText,
   Archive,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import type { StockRealtimeItem, UserSession, LogProdukItem, ProductItem } from '../../types';
 import { supabaseFetch } from '../../services/supabase';
@@ -254,16 +256,23 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   );
   const [showEvacConfig, setShowEvacConfig] = useState(false);
 
-  // Relokasi Lokasi Rak Modal State
+  // Relokasi Lokasi Rak & Multi-Select State
   const [isRelocationModalOpen, setIsRelocationModalOpen] = useState(false);
   const [relocationInitialFromLoc, setRelocationInitialFromLoc] = useState('');
+  const [relocationInitialFromLocations, setRelocationInitialFromLocations] = useState<string[]>([]);
+  const userIsSuperadmin = isSuperadmin(session ?? null);
   const canRelocateRack =
     !isStoreAccountSession(session ?? null) &&
     (!session ||
-      isSuperadmin(session) ||
+      userIsSuperadmin ||
       hasPermission(session, 'menu_ops_inventory') ||
       hasPermission(session, 'tab_ops_mutasi_scanner') ||
       hasPermission(session, 'menu_ops_mutasi'));
+  const canMultiSelectRacks = canRelocateRack || userIsSuperadmin;
+
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
+  const [selectedMultiLocs, setSelectedMultiLocs] = useState<Set<string>>(() => new Set());
+  const [lastMultiClickedLoc, setLastMultiClickedLoc] = useState<string | null>(null);
 
   // Build Master Produk lookup map (SKU -> { nama_produk, size, kategori })
   const catalogMap = useMemo(() => {
@@ -782,6 +791,157 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     isKoliSlot,
     isBlokFSlot,
   ]);
+
+  const filteredFilledSlots = useMemo(
+    () => filteredSlots.filter((s) => s.currentQty > 0),
+    [filteredSlots]
+  );
+
+  // Multi-select summary statistics
+  const selectedMultiStats = useMemo(() => {
+    let totalQty = 0;
+    let totalSkuCount = 0;
+    let filledRackCount = 0;
+    const allSelectedList: string[] = [];
+    const filledSelectedList: string[] = [];
+
+    for (const loc of selectedMultiLocs) {
+      allSelectedList.push(loc);
+      const slot = slotByLokasi.get(loc);
+      if (slot && slot.currentQty > 0) {
+        filledRackCount += 1;
+        totalQty += slot.currentQty;
+        totalSkuCount += slot.skuCount;
+        filledSelectedList.push(loc);
+      }
+    }
+
+    return {
+      rackCount: allSelectedList.length,
+      filledRackCount,
+      totalQty,
+      totalSkuCount,
+      allSelectedList,
+      filledSelectedList,
+    };
+  }, [selectedMultiLocs, slotByLokasi]);
+
+  // Clear multi-selection cleanly after external stock reset / relocation completes
+  useEffect(() => {
+    const handleClearOnStockReset = () => {
+      setSelectedMultiLocs(new Set());
+      setLastMultiClickedLoc(null);
+      setIsMultiSelectMode(false);
+    };
+    window.addEventListener('wms_stock_updated', handleClearOnStockReset);
+    return () => window.removeEventListener('wms_stock_updated', handleClearOnStockReset);
+  }, []);
+
+  const handleToggleMultiRack = useCallback(
+    (lokasi: string, shiftKey: boolean = false) => {
+      const upperLoc = lokasi.toUpperCase();
+      setIsMultiSelectMode(true);
+      setSelectedMultiLocs((prev) => {
+        const next = new Set(prev);
+        if (shiftKey && lastMultiClickedLoc) {
+          const startIdx = filteredSlots.findIndex(
+            (s) => s.lokasi.toUpperCase() === lastMultiClickedLoc.toUpperCase()
+          );
+          const endIdx = filteredSlots.findIndex(
+            (s) => s.lokasi.toUpperCase() === upperLoc
+          );
+          if (startIdx !== -1 && endIdx !== -1) {
+            const lo = Math.min(startIdx, endIdx);
+            const hi = Math.max(startIdx, endIdx);
+            for (let i = lo; i <= hi; i++) {
+              next.add(filteredSlots[i].lokasi.toUpperCase());
+            }
+            return next;
+          }
+        }
+        if (next.has(upperLoc)) {
+          next.delete(upperLoc);
+        } else {
+          next.add(upperLoc);
+        }
+        return next;
+      });
+      setLastMultiClickedLoc(upperLoc);
+    },
+    [filteredSlots, lastMultiClickedLoc]
+  );
+
+  const handleSelectAllFiltered = useCallback(() => {
+    setIsMultiSelectMode(true);
+    setSelectedMultiLocs((prev) => {
+      const next = new Set(prev);
+      for (const s of filteredSlots) {
+        next.add(s.lokasi.toUpperCase());
+      }
+      return next;
+    });
+  }, [filteredSlots]);
+
+  const handleSelectFilledFiltered = useCallback(() => {
+    setIsMultiSelectMode(true);
+    setSelectedMultiLocs((prev) => {
+      const next = new Set(prev);
+      for (const s of filteredFilledSlots) {
+        next.add(s.lokasi.toUpperCase());
+      }
+      return next;
+    });
+  }, [filteredFilledSlots]);
+
+  const handleClearMultiSelection = useCallback(() => {
+    setSelectedMultiLocs(new Set());
+    setLastMultiClickedLoc(null);
+  }, []);
+
+  const handleExitMultiSelectMode = useCallback(() => {
+    setSelectedMultiLocs(new Set());
+    setLastMultiClickedLoc(null);
+    setIsMultiSelectMode(false);
+  }, []);
+
+  const handleOpenMultiPurge = useCallback(
+    (locationsOverride?: string[]) => {
+      if (!userIsSuperadmin) {
+        onNotify?.('Fitur Kosongkan Rak (Reset 0) hanya dapat digunakan oleh Superadmin.', 'warning');
+        return;
+      }
+      const targets =
+        locationsOverride && locationsOverride.length > 0
+          ? locationsOverride
+          : selectedMultiStats.allSelectedList;
+      if (targets.length === 0) {
+        onNotify?.('Pilih minimal 1 rak terlebih dahulu untuk dikosongkan.', 'warning');
+        return;
+      }
+      window.dispatchEvent(
+        new CustomEvent('wms_open_location_purge', {
+          detail: { locations: targets },
+        })
+      );
+    },
+    [userIsSuperadmin, selectedMultiStats.allSelectedList, onNotify]
+  );
+
+  const handleOpenMultiRelocation = useCallback(() => {
+    const filledLocs = selectedMultiStats.filledSelectedList;
+    if (filledLocs.length === 0) {
+      onNotify?.('Tidak ada stok fisik (> 0 pcs) pada rak yang dipilih untuk direlokasi.', 'warning');
+      return;
+    }
+    if (filledLocs.length === 1) {
+      setRelocationInitialFromLocations([]);
+      setRelocationInitialFromLoc(filledLocs[0]);
+    } else {
+      setRelocationInitialFromLoc('');
+      setRelocationInitialFromLocations(filledLocs);
+    }
+    setIsRelocationModalOpen(true);
+  }, [selectedMultiStats.filledSelectedList, onNotify]);
 
   // Nearby empty/available recommendations for selected rack
   const recommendedRacks = useMemo(() => {
@@ -1857,6 +2017,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  setRelocationInitialFromLocations([]);
                   setRelocationInitialFromLoc('');
                   setIsRelocationModalOpen(true);
                 }}
@@ -2055,6 +2216,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    setRelocationInitialFromLocations([]);
                     setRelocationInitialFromLoc('');
                     setIsRelocationModalOpen(true);
                   }}
@@ -2693,6 +2855,32 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               </button>
             </div>
 
+            {canMultiSelectRacks && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (isMultiSelectMode) {
+                    handleExitMultiSelectMode();
+                  } else {
+                    setIsMultiSelectMode(true);
+                  }
+                }}
+                className={`px-3 py-2 text-xs font-extrabold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 shadow-2xs ${
+                  isMultiSelectMode || selectedMultiLocs.size > 0
+                    ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-700'
+                    : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+                }`}
+                title="Aktifkan mode pilih banyak rak untuk dikosongkan (Reset 0) atau direlokasi sekaligus"
+              >
+                <CheckSquare className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  {isMultiSelectMode || selectedMultiLocs.size > 0
+                    ? `Pilih Banyak (${selectedMultiLocs.size})`
+                    : 'Pilih Banyak'}
+                </span>
+              </button>
+            )}
+
             {onRefreshStock && (
               <button
                 type="button"
@@ -2710,6 +2898,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  setRelocationInitialFromLocations([]);
                   setRelocationInitialFromLoc('');
                   setIsRelocationModalOpen(true);
                 }}
@@ -2723,6 +2912,121 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
           </div>
         </div>
       </div>
+
+      {/* ============================================================================
+          4B. STICKY MULTI-SELECT ACTION BAR (Kosongkan Rak / Relokasi Multi-Rak)
+          ============================================================================ */}
+      {canMultiSelectRacks && (isMultiSelectMode || selectedMultiLocs.size > 0) && (
+        <div className="sticky top-2 z-30 bg-white/95 dark:bg-[#131d31]/95 backdrop-blur-md border-2 border-indigo-400/70 dark:border-indigo-700 rounded-2xl p-3 sm:px-4 shadow-lg flex flex-col xl:flex-row xl:items-center justify-between gap-2.5 animate-in fade-in duration-150">
+          <div className="min-w-0 space-y-1">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-600 text-white font-black text-[11px] font-mono tabular-nums">
+                <CheckSquare className="w-3 h-3 shrink-0" />
+                <span>{selectedMultiStats.rackCount} rak dipilih</span>
+              </span>
+              {selectedMultiStats.rackCount > 0 ? (
+                <span className="text-slate-600 dark:text-slate-300 font-mono tabular-nums text-[11px] font-bold">
+                  {selectedMultiStats.filledRackCount} terisi · {selectedMultiStats.totalSkuCount} SKU ·{' '}
+                  {selectedMultiStats.totalQty.toLocaleString('id-ID')} pcs
+                </span>
+              ) : (
+                <span className="text-slate-500 dark:text-slate-400 text-[11px]">
+                  Klik kartu atau baris rak untuk memilih. Tahan <kbd className="px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-mono text-[10px]">Shift</kbd> + klik untuk pilih rentang rak.
+                </span>
+              )}
+            </div>
+
+            {selectedMultiStats.rackCount > 0 && (
+              <div className="flex flex-wrap items-center gap-1">
+                {selectedMultiStats.allSelectedList.slice(0, 8).map((loc) => (
+                  <button
+                    key={loc}
+                    type="button"
+                    onClick={() => handleToggleMultiRack(loc, false)}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-rose-100 dark:hover:bg-rose-950/60 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[10px] font-mono font-bold cursor-pointer"
+                    title={`Klik untuk batalkan pilihan ${loc}`}
+                  >
+                    <span>{loc}</span>
+                    <X className="w-2.5 h-2.5 text-slate-400" />
+                  </button>
+                ))}
+                {selectedMultiStats.allSelectedList.length > 8 && (
+                  <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 px-1">
+                    +{selectedMultiStats.allSelectedList.length - 8} rak lainnya
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+            {filteredFilledSlots.length > 0 && (
+              <button
+                type="button"
+                onClick={handleSelectFilledFiltered}
+                className="px-2.5 py-1.5 text-[11px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 rounded-xl cursor-pointer whitespace-nowrap"
+                title="Pilih semua rak yang sedang tampil dan memiliki stok (> 0 pcs)"
+              >
+                Pilih Terisi ({filteredFilledSlots.length})
+              </button>
+            )}
+            {filteredSlots.length > 0 && (
+              <button
+                type="button"
+                onClick={handleSelectAllFiltered}
+                className="px-2.5 py-1.5 text-[11px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 rounded-xl cursor-pointer whitespace-nowrap"
+                title="Pilih semua rak yang sedang tampil di filter"
+              >
+                Pilih Semua ({filteredSlots.length})
+              </button>
+            )}
+            {selectedMultiLocs.size > 0 && (
+              <button
+                type="button"
+                onClick={handleClearMultiSelection}
+                className="px-2.5 py-1.5 text-[11px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/60 rounded-xl cursor-pointer whitespace-nowrap"
+              >
+                Bersihkan
+              </button>
+            )}
+
+            {canRelocateRack && (
+              <button
+                type="button"
+                disabled={selectedMultiStats.filledRackCount === 0}
+                onClick={handleOpenMultiRelocation}
+                className="px-3 py-1.5 text-xs font-extrabold bg-white dark:bg-slate-800 border border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 rounded-xl flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+                title="Pindahkan isi seluruh rak terpilih ke satu rak tujuan (#OUT + #IN)"
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" />
+                <span>Pindah ke Rak ({selectedMultiStats.filledRackCount})</span>
+              </button>
+            )}
+
+            {userIsSuperadmin && (
+              <button
+                type="button"
+                disabled={selectedMultiLocs.size === 0}
+                onClick={() => handleOpenMultiPurge()}
+                className="px-3.5 py-1.5 text-xs font-extrabold bg-rose-600 hover:bg-rose-500 text-white rounded-xl flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap shadow-xs"
+                title="Kosongkan & reset stok seluruh rak terpilih ke 0 (hapus log lokasi + backup JSON)"
+              >
+                <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                <span>Kosongkan Rak ({selectedMultiLocs.size})</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleExitMultiSelectMode}
+              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              title="Tutup mode pilih banyak"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ============================================================================
           5. MAIN RACK VISUALIZATION (GRID MODE OR TABLE MODE)
@@ -2747,13 +3051,36 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             const vis = getStatusVisual(activeStatus);
             const clampedHeightPct = Math.min(100, Math.max(0, activePct));
             const hasPendingTask = simulationMoves.length > 0 && slot.simulatedQty !== slot.currentQty;
+            const upperLoc = slot.lokasi.toUpperCase();
+            const isMultiSelected = selectedMultiLocs.has(upperLoc);
 
             return (
-              <button
+              <div
                 key={slot.lokasi}
-                type="button"
-                onClick={() => setSelectedRackLokasi(slot.lokasi)}
-                className={`group relative overflow-hidden rounded-xl border bg-white dark:bg-[#131d31] p-3 text-left transition-transform duration-150 hover:-translate-y-0.5 cursor-pointer flex flex-col justify-between min-h-[116px] ${vis.cardBorder}`}
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  if (isMultiSelectMode || e.ctrlKey || e.metaKey || (e.shiftKey && canMultiSelectRacks)) {
+                    handleToggleMultiRack(upperLoc, e.shiftKey);
+                  } else {
+                    setSelectedRackLokasi(slot.lokasi);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    if (isMultiSelectMode) {
+                      handleToggleMultiRack(upperLoc, e.shiftKey);
+                    } else {
+                      setSelectedRackLokasi(slot.lokasi);
+                    }
+                  }
+                }}
+                className={`group relative overflow-hidden rounded-xl border bg-white dark:bg-[#131d31] p-3 text-left transition-transform duration-150 hover:-translate-y-0.5 cursor-pointer flex flex-col justify-between min-h-[116px] select-none ${
+                  isMultiSelected
+                    ? 'ring-2 ring-indigo-600 dark:ring-amber-400 border-indigo-600 dark:border-amber-400'
+                    : vis.cardBorder
+                }`}
               >
                 {/* Animated vertical liquid-fill backdrop using transform scaleY */}
                 <div
@@ -2763,10 +3090,32 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                   }}
                 />
 
-                {/* Top row: Rack Code & Status / Task Badge */}
+                {/* Top row: Checkbox + Rack Code & Status / Task Badge */}
                 <div className="relative z-10 flex items-start justify-between gap-1 w-full">
-                  <div>
-                    <div className="text-sm font-black font-mono text-slate-900 dark:text-white tracking-tight flex items-center gap-1">
+                  <div className="min-w-0">
+                    <div className="text-sm font-black font-mono text-slate-900 dark:text-white tracking-tight flex items-center gap-1.5">
+                      {canMultiSelectRacks && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleMultiRack(upperLoc, e.shiftKey);
+                          }}
+                          className={`shrink-0 rounded transition-opacity cursor-pointer ${
+                            isMultiSelectMode || isMultiSelected
+                              ? 'opacity-100'
+                              : 'opacity-0 group-hover:opacity-100 focus:opacity-100'
+                          }`}
+                          title={isMultiSelected ? `Batalkan pilih ${slot.lokasi}` : `Pilih ${slot.lokasi}`}
+                          aria-label={`Pilih rak ${slot.lokasi}`}
+                        >
+                          {isMultiSelected ? (
+                            <CheckSquare className="w-4 h-4 text-indigo-600 dark:text-amber-400" />
+                          ) : (
+                            <Square className="w-4 h-4 text-slate-400 hover:text-indigo-600 dark:hover:text-amber-400" />
+                          )}
+                        </button>
+                      )}
                       <span>{slot.lokasi}</span>
                       {hasPendingTask && (
                         <span
@@ -2822,7 +3171,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                     </span>
                   </div>
                 </div>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -2833,6 +3182,36 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-[#0E1420] text-[11px] font-extrabold text-slate-500 dark:text-slate-400">
+                  {canMultiSelectRacks && (
+                    <th className="py-2.5 px-3 w-10 text-center">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const allVisibleSelected =
+                            filteredSlots.length > 0 &&
+                            filteredSlots.every((s) => selectedMultiLocs.has(s.lokasi.toUpperCase()));
+                          if (allVisibleSelected) {
+                            setSelectedMultiLocs((prev) => {
+                              const next = new Set(prev);
+                              for (const s of filteredSlots) next.delete(s.lokasi.toUpperCase());
+                              return next;
+                            });
+                          } else {
+                            handleSelectAllFiltered();
+                          }
+                        }}
+                        className="inline-flex items-center justify-center cursor-pointer text-slate-500 hover:text-indigo-600 dark:hover:text-amber-400"
+                        title="Pilih / batalkan semua rak yang tampil"
+                      >
+                        {filteredSlots.length > 0 &&
+                        filteredSlots.every((s) => selectedMultiLocs.has(s.lokasi.toUpperCase())) ? (
+                          <CheckSquare className="w-4 h-4 text-indigo-600 dark:text-amber-400" />
+                        ) : (
+                          <Square className="w-4 h-4" />
+                        )}
+                      </button>
+                    </th>
+                  )}
                   <th className="py-2.5 px-3.5">KODE RAK</th>
                   <th className="py-2.5 px-3.5">AREA &amp; KATEGORI</th>
                   <th className="py-2.5 px-3.5 text-right">TERISI (PCS)</th>
@@ -2848,13 +3227,35 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 {filteredSlots.map((slot) => {
                   const vis = getStatusVisual(slot.status);
                   const isEditingThis = inlineEditingLoc === slot.lokasi;
+                  const upperLoc = slot.lokasi.toUpperCase();
+                  const isMultiSelected = selectedMultiLocs.has(upperLoc);
                   return (
                     <tr
                       key={slot.lokasi}
                       className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors ${
-                        slot.status === 'OVERLOAD' ? 'bg-rose-50/40 dark:bg-rose-950/15' : ''
+                        isMultiSelected
+                          ? 'bg-indigo-50/70 dark:bg-indigo-950/30'
+                          : slot.status === 'OVERLOAD'
+                          ? 'bg-rose-50/40 dark:bg-rose-950/15'
+                          : ''
                       }`}
                     >
+                      {canMultiSelectRacks && (
+                        <td className="py-2.5 px-3 text-center">
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleMultiRack(upperLoc, e.shiftKey)}
+                            className="inline-flex items-center justify-center cursor-pointer"
+                            title={isMultiSelected ? `Batalkan pilih ${slot.lokasi}` : `Pilih ${slot.lokasi}`}
+                          >
+                            {isMultiSelected ? (
+                              <CheckSquare className="w-4 h-4 text-indigo-600 dark:text-amber-400" />
+                            ) : (
+                              <Square className="w-4 h-4 text-slate-400 hover:text-indigo-600 dark:hover:text-amber-400" />
+                            )}
+                          </button>
+                        </td>
+                      )}
                       <td className="py-2.5 px-3.5 font-mono font-black text-slate-900 dark:text-white">
                         <button
                           type="button"
@@ -2962,6 +3363,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                             <button
                               type="button"
                               onClick={() => {
+                                setRelocationInitialFromLocations([]);
                                 setRelocationInitialFromLoc(slot.lokasi);
                                 setIsRelocationModalOpen(true);
                               }}
@@ -2969,6 +3371,16 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                               title={`Relokasi isi rak ${slot.lokasi} ke rak lain`}
                             >
                               <ArrowRightLeft className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {userIsSuperadmin && slot.currentQty > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenMultiPurge([upperLoc])}
+                              className="p-1.5 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/60 rounded-lg cursor-pointer"
+                              title={`Kosongkan rak ${slot.lokasi} (Reset ke 0)`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           )}
                           <button
@@ -3048,12 +3460,28 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                {userIsSuperadmin && selectedSlot.currentQty > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const loc = selectedSlot.lokasi.toUpperCase();
+                      setSelectedRackLokasi(null);
+                      handleOpenMultiPurge([loc]);
+                    }}
+                    className="px-3.5 py-2 rounded-xl text-xs font-extrabold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/50 transition-colors cursor-pointer flex items-center gap-1.5"
+                    title="Kosongkan seluruh stok rak ini ke 0 (Reset Log Lokasi)"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Kosongkan (Reset 0)</span>
+                  </button>
+                )}
                 {canRelocateRack && selectedSlot.currentQty > 0 && (
                   <button
                     type="button"
                     onClick={() => {
                       const loc = selectedSlot.lokasi;
                       setSelectedRackLokasi(null);
+                      setRelocationInitialFromLocations([]);
                       setRelocationInitialFromLoc(loc);
                       setIsRelocationModalOpen(true);
                     }}
@@ -4443,8 +4871,12 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
           productCatalog={productCatalog}
           rackSlots={allSlots}
           initialFromLocation={relocationInitialFromLoc}
+          initialFromLocations={relocationInitialFromLocations}
           onNotify={onNotify}
           onSuccess={() => {
+            setSelectedMultiLocs(new Set());
+            setLastMultiClickedLoc(null);
+            setIsMultiSelectMode(false);
             onRefreshStock?.();
           }}
         />

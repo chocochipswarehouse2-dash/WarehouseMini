@@ -42,6 +42,8 @@ interface LocationPurgeModalProps {
   onNotify?: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
   onSuccess?: () => void;
   allExistingLocations?: string[];
+  initialMode?: LocationPurgeSelection['mode'];
+  initialLocations?: string[];
 }
 
 export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
@@ -52,6 +54,8 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
   onNotify = () => {},
   onSuccess = () => {},
   allExistingLocations = [],
+  initialMode,
+  initialLocations,
 }) => {
   const userIsSuperadmin = isSuperadmin(session);
 
@@ -153,9 +157,25 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
           setMinimizedStatus('idle');
           setMinimizedSummary('');
         }
+        if (Array.isArray(initialLocations) && initialLocations.length > 0) {
+          const uniqueLocs = Array.from(
+            new Set(
+              initialLocations
+                .map((l) => String(l || '').trim().toUpperCase())
+                .filter(Boolean)
+            )
+          );
+          const nextMode = initialMode || 'custom';
+          prevModeRef.current = nextMode;
+          setMode(nextMode);
+          setCustomInput(uniqueLocs.join(', '));
+        } else if (initialMode) {
+          prevModeRef.current = initialMode;
+          setMode(initialMode);
+        }
       }
     }
-  }, [isOpen]);
+  }, [isOpen, initialLocations, initialMode]);
 
   useEffect(() => {
     if (prevModeRef.current !== mode) {
@@ -187,7 +207,7 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
 
   // Auto trigger preview on mode selection change
   useEffect(() => {
-    if (isOpen && targetLocations.length > 0 && targetLocations.length <= 100) {
+    if (isOpen && targetLocations.length > 0 && targetLocations.length <= 200) {
       const timer = setTimeout(() => {
         handleCalculatePreview();
       }, 350);
@@ -721,9 +741,22 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
                 targetLocations.map((loc) => (
                   <span
                     key={loc}
-                    className="px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900 text-[11px] font-mono font-bold"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900 text-[11px] font-mono font-bold"
                   >
-                    {loc}
+                    <span>{loc}</span>
+                    {mode === 'custom' && !isExecuting && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const remaining = targetLocations.filter((x) => x !== loc);
+                          setCustomInput(remaining.join(', '));
+                        }}
+                        className="text-rose-500 hover:text-rose-700 dark:hover:text-rose-200 cursor-pointer"
+                        title={`Hapus ${loc} dari daftar`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
                   </span>
                 ))
               )}

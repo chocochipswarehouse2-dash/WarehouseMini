@@ -35,6 +35,7 @@ import {
 } from '../../utils/sortUtils';
 import {
   fetchLocationRelocationPreview,
+  fetchMultiLocationRelocationPreview,
   executeLocationRelocation,
   isInvalidLocationToken,
   type RelocationPreviewResult,
@@ -49,6 +50,7 @@ export interface LocationRelocationModalProps {
   productCatalog?: ProductItem[];
   rackSlots?: ComputedRackSlot[];
   initialFromLocation?: string;
+  initialFromLocations?: string[];
   initialToLocation?: string;
   onNotify?: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
   onSuccess?: (result: ExecuteLocationRelocationResult) => void;
@@ -84,6 +86,7 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
   productCatalog = [],
   rackSlots,
   initialFromLocation = '',
+  initialFromLocations,
   initialToLocation = '',
   onNotify = () => {},
   onSuccess,
@@ -153,6 +156,7 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
 
   // Form states
   const [fromInput, setFromInput] = useState('');
+  const [multiFromLocations, setMultiFromLocations] = useState<string[]>([]);
   const [toInput, setToInput] = useState('');
   const [mode, setMode] = useState<RelocationMode>('FULL');
   const [notes, setNotes] = useState('');
@@ -181,9 +185,28 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
   // Initialize inputs on open
   useEffect(() => {
     if (!isOpen) return;
-    const initFrom = (initialFromLocation || '').trim().toUpperCase();
+    const multiList = Array.isArray(initialFromLocations)
+      ? Array.from(
+          new Set(
+            initialFromLocations
+              .map((l) => {
+                const r = (l || '').trim().toUpperCase();
+                return (normalizeLokasi(r) || r).toUpperCase();
+              })
+              .filter((l) => l && !isInvalidLocationToken(l))
+          )
+        )
+      : [];
+
+    if (multiList.length > 1) {
+      setMultiFromLocations(multiList);
+      setFromInput(multiList.join(', '));
+    } else {
+      setMultiFromLocations([]);
+      const initFrom = (multiList[0] || initialFromLocation || '').trim().toUpperCase();
+      setFromInput(initFrom);
+    }
     const initTo = (initialToLocation || '').trim().toUpperCase();
-    setFromInput(initFrom);
     setToInput(initTo);
     setMode('FULL');
     setNotes('');
@@ -197,7 +220,7 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
     setCopiedWa(false);
     setShowFromDropdown(false);
     setShowToDropdown(false);
-  }, [isOpen, initialFromLocation, initialToLocation]);
+  }, [isOpen, initialFromLocation, initialFromLocations, initialToLocation]);
 
   // Outside click closes location dropdowns
   useEffect(() => {
@@ -226,9 +249,46 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
   const fromArea = useMemo(() => (cleanFrom ? getAreaFromLokasi(cleanFrom) : ''), [cleanFrom]);
   const toArea = useMemo(() => (cleanTo ? getAreaFromLokasi(cleanTo) : ''), [cleanTo]);
 
+  const isMultiSourceMode = multiFromLocations.length > 1;
+  const multiSourceKey = multiFromLocations.join(',');
+  const effectiveMode: RelocationMode = isMultiSourceMode ? 'FULL' : mode;
+  const sourceDisplayLabel = useMemo(() => {
+    if (!isMultiSourceMode) return cleanFrom;
+    if (multiFromLocations.length <= 3) return multiFromLocations.join(', ');
+    return `${multiFromLocations.slice(0, 3).join(', ')} (+${multiFromLocations.length - 3})`;
+  }, [isMultiSourceMode, multiFromLocations, cleanFrom]);
+
   // Load live authoritative source stock preview
   const loadSourcePreview = useCallback(
-    async (locValue: string) => {
+    async (locValue: string, multiLocs: string[] = []) => {
+      if (multiLocs.length > 1) {
+        setIsLoadingPreview(true);
+        setPreviewError(null);
+        setIsConfirming(false);
+        try {
+          const multiSet = new Set(multiLocs.map((m) => m.toUpperCase()));
+          const extraVariants: string[] = [];
+          for (const r of stockRows) {
+            const rLoc = String(r.lokasi || '').trim();
+            const rNorm = (normalizeLokasi(rLoc.toUpperCase()) || rLoc.toUpperCase());
+            if (rLoc && (multiSet.has(rLoc.toUpperCase()) || multiSet.has(rNorm))) {
+              extraVariants.push(rLoc);
+            }
+          }
+          const res = await fetchMultiLocationRelocationPreview(multiLocs, catalogMap, extraVariants);
+          setPreview(res);
+          const nextPartial: Record<string, number> = {};
+          for (const it of res.items) nextPartial[it.sku] = it.totalQty;
+          setPartialQtys(nextPartial);
+        } catch (err: any) {
+          setPreviewError(err?.message || 'Gagal memuat isi lokasi asal dari database.');
+          setPreview(null);
+        } finally {
+          setIsLoadingPreview(false);
+        }
+        return;
+      }
+
       const trimmed = (locValue || '').trim().toUpperCase();
       if (!trimmed || isInvalidLocationToken(trimmed)) {
         setPreview(null);
@@ -275,19 +335,25 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
     [catalogMap, stockRows, dbLocations]
   );
 
-  // Auto-load preview when fromInput changes (debounced)
+  // Auto-load preview when fromInput or multiFromLocations changes (debounced)
   useEffect(() => {
     if (!isOpen || executionResult) return;
+    if (multiFromLocations.length > 1) {
+      const timer = setTimeout(() => {
+        loadSourcePreview('', multiFromLocations);
+      }, 200);
+      return () => clearTimeout(timer);
+    }
     if (!cleanFrom || isInvalidLocationToken(cleanFrom)) {
       setPreview(null);
       setPreviewError(null);
       return;
     }
     const timer = setTimeout(() => {
-      loadSourcePreview(fromInput);
+      loadSourcePreview(fromInput, []);
     }, 380);
     return () => clearTimeout(timer);
-  }, [isOpen, fromInput, cleanFrom, executionResult, loadSourcePreview]);
+  }, [isOpen, fromInput, cleanFrom, multiSourceKey, executionResult, loadSourcePreview]);
 
   // Source dropdown options (prioritize locations with currentQty > 0)
   const sourceSuggestions = useMemo(() => {
@@ -341,9 +407,10 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
       { lokasi: string; area: string; currentQty: number; maxCapacity: number; availableSpace: number }
     >();
 
+    const multiSet = new Set(multiFromLocations);
     for (const s of effectiveSlots) {
       const loc = s.lokasi.toUpperCase();
-      if (loc === cleanFrom) continue;
+      if (isMultiSourceMode ? multiSet.has(loc) : loc === cleanFrom) continue;
       if (s.area === 'Anomali') continue;
       map.set(loc, {
         lokasi: loc,
@@ -405,7 +472,7 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
 
     const itemsToMove = preview.items.map((it) => {
       const moveQty =
-        mode === 'FULL'
+        effectiveMode === 'FULL'
           ? it.totalQty
           : Math.max(0, Math.min(it.totalQty, Math.floor(Number(partialQtys[it.sku]) || 0)));
       return {
@@ -428,7 +495,7 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
       movedTotalPcs,
       remainingAtSourcePcs,
     };
-  }, [preview, mode, partialQtys]);
+  }, [preview, effectiveMode, partialQtys]);
 
   const filteredPreviewItems = useMemo(() => {
     const q = itemSearch.trim().toUpperCase();
@@ -462,16 +529,23 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
 
   // Validation
   const validationError = useMemo(() => {
-    if (!cleanFrom || isInvalidLocationToken(cleanFrom)) return 'Pilih atau ketik lokasi rak asal.';
+    if (!isMultiSourceMode && (!cleanFrom || isInvalidLocationToken(cleanFrom))) {
+      return 'Pilih atau ketik lokasi rak asal.';
+    }
+    if (isMultiSourceMode && multiFromLocations.length === 0) {
+      return 'Pilih minimal 1 lokasi rak asal.';
+    }
     if (!preview || preview.items.length === 0) return 'Tidak ada stok fisik positif di lokasi asal.';
     if (relocationPlan.movedTotalPcs <= 0) return 'Pilih minimal 1 barang dengan qty pindah > 0.';
     if (!cleanTo || isInvalidLocationToken(cleanTo)) return 'Masukkan kode rak lokasi tujuan.';
-    if (cleanFrom === cleanTo) return 'Lokasi asal dan tujuan tidak boleh sama.';
+    if (isMultiSourceMode ? multiFromLocations.includes(cleanTo) : cleanFrom === cleanTo) {
+      return 'Lokasi asal dan tujuan tidak boleh sama.';
+    }
     if (toArea === 'Anomali') {
       return `Kode rak tujuan "${cleanTo}" tidak dikenali denah (Anomali). Periksa format (misal: V004, A001, R012).`;
     }
     return null;
-  }, [cleanFrom, cleanTo, toArea, preview, relocationPlan.movedTotalPcs]);
+  }, [isMultiSourceMode, multiFromLocations, cleanFrom, cleanTo, toArea, preview, relocationPlan.movedTotalPcs]);
 
   const handleSwapLocations = () => {
     const prevFrom = fromInput;
@@ -513,11 +587,12 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
 
       const res = await executeLocationRelocation({
         sourceLokasi: cleanFrom,
+        sourceLokasis: isMultiSourceMode ? multiFromLocations : undefined,
         targetLokasi: cleanTo,
         items: activeItems,
         operatorName,
         notes,
-        mode,
+        mode: isMultiSourceMode ? 'FULL' : mode,
       });
 
       if (res.success) {
@@ -551,7 +626,11 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
       `*RELOKASI LOKASI RAK GUDANG*`,
       `No. Dokumen: *${executionResult.invoice}*`,
       `Tanggal: ${dateStr}`,
-      `Dari Rak: *${executionResult.sourceLokasi}* (${fromArea || getAreaFromLokasi(executionResult.sourceLokasi)})`,
+      `Dari Rak: *${executionResult.sourceLokasi}* (${
+        executionResult.sourceLokasi.includes(',')
+          ? 'Multi-Rak'
+          : fromArea || getAreaFromLokasi(executionResult.sourceLokasi)
+      })`,
       `Ke Rak: *${executionResult.targetLokasi}* (${executionResult.targetArea})`,
       `Total: *${executionResult.totalSkus} SKU / ${executionResult.totalPcs} pcs*`,
       notes.trim() ? `Catatan: ${notes.trim()}` : '',
@@ -876,46 +955,97 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
                   <div className="flex items-center justify-between gap-2">
                     <label className="text-[11px] font-extrabold uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
                       <MapPin className="w-3.5 h-3.5 text-rose-500" />
-                      <span>1. Lokasi Asal (#OUT)</span>
-                    </label>
-                    {cleanFrom && !isInvalidLocationToken(cleanFrom) && (
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold border ${getAreaBadgeClass(
-                          fromArea
-                        )}`}
-                      >
-                        {fromArea}
+                      <span>
+                        {isMultiSourceMode
+                          ? `1. Multi-Rak Asal (${multiFromLocations.length} rak)`
+                          : '1. Lokasi Asal (#OUT)'}
                       </span>
-                    )}
-                  </div>
-
-                  <div className="relative flex items-center gap-1.5">
-                    <input
-                      type="text"
-                      value={fromInput}
-                      onFocus={() => setShowFromDropdown(true)}
-                      onChange={(e) => {
-                        setFromInput(e.target.value.toUpperCase());
-                        setShowFromDropdown(true);
-                        setIsConfirming(false);
-                      }}
-                      placeholder="Ketik rak asal, misal: X105"
-                      className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 uppercase"
-                    />
-                    {fromInput && (
+                    </label>
+                    {isMultiSourceMode ? (
                       <button
                         type="button"
-                        onClick={() => loadSourcePreview(fromInput)}
-                        disabled={isLoadingPreview}
-                        className="p-2 rounded-xl bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-indigo-600 cursor-pointer shrink-0"
-                        title="Muat ulang stok rak asal"
+                        onClick={() => {
+                          setMultiFromLocations([]);
+                          setFromInput('');
+                          setPreview(null);
+                        }}
+                        className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
                       >
-                        <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPreview ? 'animate-spin' : ''}`} />
+                        Ubah ke 1 Rak
                       </button>
+                    ) : (
+                      cleanFrom &&
+                      !isInvalidLocationToken(cleanFrom) && (
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold border ${getAreaBadgeClass(
+                            fromArea
+                          )}`}
+                        >
+                          {fromArea}
+                        </span>
+                      )
                     )}
                   </div>
 
-                  {showFromDropdown && sourceSuggestions.length > 0 && (
+                  {isMultiSourceMode ? (
+                    <div className="flex flex-wrap items-center gap-1.5 p-2 rounded-xl bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 max-h-24 overflow-y-auto">
+                      {multiFromLocations.map((loc) => (
+                        <span
+                          key={loc}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[11px] font-mono font-bold"
+                        >
+                          <span>{loc}</span>
+                          {!isExecuting && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = multiFromLocations.filter((x) => x !== loc);
+                                if (next.length <= 1) {
+                                  setMultiFromLocations([]);
+                                  setFromInput(next[0] || '');
+                                } else {
+                                  setMultiFromLocations(next);
+                                  setFromInput(next.join(', '));
+                                }
+                              }}
+                              className="text-indigo-500 hover:text-rose-600 cursor-pointer"
+                              title={`Keluarkan ${loc}`}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="relative flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={fromInput}
+                        onFocus={() => setShowFromDropdown(true)}
+                        onChange={(e) => {
+                          setFromInput(e.target.value.toUpperCase());
+                          setShowFromDropdown(true);
+                          setIsConfirming(false);
+                        }}
+                        placeholder="Ketik rak asal, misal: X105"
+                        className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 uppercase"
+                      />
+                      {fromInput && (
+                        <button
+                          type="button"
+                          onClick={() => loadSourcePreview(fromInput, [])}
+                          disabled={isLoadingPreview}
+                          className="p-2 rounded-xl bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-indigo-600 cursor-pointer shrink-0"
+                          title="Muat ulang stok rak asal"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPreview ? 'animate-spin' : ''}`} />
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {!isMultiSourceMode && showFromDropdown && sourceSuggestions.length > 0 && (
                     <div className="absolute left-3 right-3 top-[78px] z-30 bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl max-h-52 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
                       {sourceSuggestions.map((s) => (
                         <button
@@ -968,9 +1098,10 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
                 <div className="md:col-span-1 flex items-center justify-center">
                   <button
                     type="button"
+                    disabled={isMultiSourceMode}
                     onClick={handleSwapLocations}
-                    className="w-9 h-9 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 text-slate-600 dark:text-slate-300 flex items-center justify-center transition-colors cursor-pointer shadow-2xs"
-                    title="Tukar lokasi asal dan tujuan"
+                    className="w-9 h-9 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 text-slate-600 dark:text-slate-300 flex items-center justify-center transition-colors cursor-pointer shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
+                    title={isMultiSourceMode ? 'Mode multi-rak asal' : 'Tukar lokasi asal dan tujuan'}
                   >
                     <ArrowRight className="w-4 h-4 hidden md:block" />
                     <ArrowDown className="w-4 h-4 md:hidden" />
@@ -1119,7 +1250,7 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
                   <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                   <div>
                     Terdapat <strong className="font-mono">{preview.pendingSoCount}</strong> antrian Stock Opname (SO) berstatus PENDING di lokasi{' '}
-                    <strong className="font-mono">{cleanFrom}</strong>. Pastikan tim sudah mengetahui pemindahan ini sebelum approve SO lama.
+                    <strong className="font-mono">{sourceDisplayLabel}</strong>. Pastikan tim sudah mengetahui pemindahan ini sebelum approve SO lama.
                   </div>
                 </div>
               )}
@@ -1129,7 +1260,7 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
                   <ShieldAlert className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
                   <div className="space-y-1">
                     <div className="font-bold">
-                      {preview.negativeAnomalyItems.length} SKU di {cleanFrom} memiliki stok minus (anomali) dan tidak ikut dipindahkan:
+                      {preview.negativeAnomalyItems.length} SKU di {sourceDisplayLabel} memiliki stok minus (anomali) dan tidak ikut dipindahkan:
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       {preview.negativeAnomalyItems.slice(0, 6).map((neg, i) => (
@@ -1162,32 +1293,34 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
                         setIsConfirming(false);
                       }}
                       className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
-                        mode === 'FULL'
+                        effectiveMode === 'FULL'
                           ? 'bg-white dark:bg-[#131d31] text-indigo-600 dark:text-indigo-400 shadow-xs'
                           : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                       }`}
                     >
                       Pindah Full (100%)
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMode('PARTIAL');
-                        setIsConfirming(false);
-                      }}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
-                        mode === 'PARTIAL'
-                          ? 'bg-white dark:bg-[#131d31] text-indigo-600 dark:text-indigo-400 shadow-xs'
-                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                    >
-                      Pilih Sebagian
-                    </button>
+                    {!isMultiSourceMode && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMode('PARTIAL');
+                          setIsConfirming(false);
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                          effectiveMode === 'PARTIAL'
+                            ? 'bg-white dark:bg-[#131d31] text-indigo-600 dark:text-indigo-400 shadow-xs'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        Pilih Sebagian
+                      </button>
+                    )}
                   </div>
 
                   {/* Filter items + partial quick helpers */}
                   <div className="flex flex-wrap items-center gap-2">
-                    {mode === 'PARTIAL' && preview && preview.items.length > 0 && (
+                    {effectiveMode === 'PARTIAL' && preview && preview.items.length > 0 && (
                       <div className="flex items-center gap-1.5">
                         <button
                           type="button"
@@ -1223,13 +1356,13 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
                 {isLoadingPreview ? (
                   <div className="p-10 flex flex-col items-center justify-center gap-2 text-xs text-slate-500">
                     <Loader2 className="w-5 h-5 animate-spin text-indigo-500" />
-                    <span>Mengambil stok fisik terkini dari lokasi {cleanFrom}...</span>
+                    <span>Mengambil stok fisik terkini dari {sourceDisplayLabel}...</span>
                   </div>
                 ) : previewError ? (
                   <div className="p-6 text-center text-xs text-rose-600 dark:text-rose-400">
                     {previewError}
                   </div>
-                ) : !cleanFrom || isInvalidLocationToken(cleanFrom) ? (
+                ) : !isMultiSourceMode && (!cleanFrom || isInvalidLocationToken(cleanFrom)) ? (
                   <div className="p-10 text-center space-y-1.5">
                     <Boxes className="w-8 h-8 text-slate-300 dark:text-slate-700 mx-auto" />
                     <div className="text-xs font-bold text-slate-600 dark:text-slate-300">
@@ -1243,10 +1376,10 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
                   <div className="p-10 text-center space-y-1.5">
                     <Package className="w-8 h-8 text-slate-300 dark:text-slate-700 mx-auto" />
                     <div className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                      Lokasi {cleanFrom} Kosong (0 pcs)
+                      Lokasi {sourceDisplayLabel} Kosong (0 pcs)
                     </div>
                     <p className="text-[11px] text-slate-400">
-                      Tidak ditemukan stok fisik positif (&gt; 0 pcs) di lokasi {cleanFrom}.
+                      Tidak ditemukan stok fisik positif (&gt; 0 pcs) di lokasi {sourceDisplayLabel}.
                     </p>
                   </div>
                 ) : filteredPreviewItems.length === 0 ? (
@@ -1292,7 +1425,7 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
                                 {it.maxQty}
                               </td>
                               <td className="py-2 px-2.5 text-right">
-                                {mode === 'FULL' ? (
+                                {effectiveMode === 'FULL' ? (
                                   <span className="font-mono tabular-nums font-black text-indigo-600 dark:text-indigo-400">
                                     {it.moveQty} pcs
                                   </span>
@@ -1361,8 +1494,8 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder={
-                    cleanFrom && cleanTo
-                      ? `Contoh: Pindah ${mode === 'FULL' ? 'full' : 'sebagian'} isi rak ${cleanFrom} ke ${cleanTo}`
+                    sourceDisplayLabel && cleanTo
+                      ? `Contoh: Pindah ${effectiveMode === 'FULL' ? 'full' : 'sebagian'} isi rak ${sourceDisplayLabel} ke ${cleanTo}`
                       : 'Contoh: Penataan ulang area / konsolidasi koli'
                   }
                   className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
@@ -1377,11 +1510,11 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
                     <strong className="font-mono">
                       {relocationPlan.movedSkuCount} SKU ({relocationPlan.movedTotalPcs} pcs)
                     </strong>{' '}
-                    dari <strong className="font-mono">{cleanFrom}</strong> ke{' '}
+                    dari <strong className="font-mono">{sourceDisplayLabel}</strong> ke{' '}
                     <strong className="font-mono">{cleanTo}</strong>?
                     {relocationPlan.remainingAtSourcePcs === 0 && (
                       <span className="ml-1 text-emerald-700 dark:text-emerald-300 font-bold">
-                        (Rak {cleanFrom} akan menjadi 0 pcs)
+                        ({isMultiSourceMode ? `${multiFromLocations.length} rak asal` : `Rak ${cleanFrom}`} akan menjadi 0 pcs)
                       </span>
                     )}
                   </div>
@@ -1411,6 +1544,7 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
                   type="button"
                   onClick={() => {
                     setExecutionResult(null);
+                    setMultiFromLocations([]);
                     setFromInput('');
                     setToInput('');
                     setPreview(null);
@@ -1439,7 +1573,7 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
                   </span>
                 ) : (
                   <span>
-                    {cleanFrom} (Sisa {relocationPlan.remainingAtSourcePcs} pcs) → {cleanTo} (+
+                    {sourceDisplayLabel} (Sisa {relocationPlan.remainingAtSourcePcs} pcs) → {cleanTo} (+
                     {relocationPlan.movedTotalPcs} pcs)
                   </span>
                 )}
@@ -1478,7 +1612,7 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
                     <>
                       <ArrowRightLeft className="w-4 h-4" />
                       <span>
-                        {mode === 'FULL' ? 'Pindah Full' : 'Pindah Terpilih'} (
+                        {effectiveMode === 'FULL' ? 'Pindah Full' : 'Pindah Terpilih'} (
                         {relocationPlan.movedTotalPcs} pcs)
                       </span>
                     </>

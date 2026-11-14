@@ -976,6 +976,20 @@ export default function App() {
   const [isThemePickerOpen, setIsThemePickerOpen] = useState<boolean>(false);
   const [isUpdateDatabaseOpen, setIsUpdateDatabaseOpen] = useState<boolean>(false);
   const [isLocationPurgeOpen, setIsLocationPurgeOpen] = useState<boolean>(false);
+  const [locationPurgeInitialLocations, setLocationPurgeInitialLocations] = useState<string[]>([]);
+
+  useEffect(() => {
+    const handleOpenPurge = (e: Event) => {
+      const detail = (e as CustomEvent<{ locations?: string[] }>)?.detail;
+      const locs = Array.isArray(detail?.locations)
+        ? detail.locations.map((l) => String(l || '').trim().toUpperCase()).filter(Boolean)
+        : [];
+      setLocationPurgeInitialLocations(locs);
+      setIsLocationPurgeOpen(true);
+    };
+    window.addEventListener('wms_open_location_purge', handleOpenPurge);
+    return () => window.removeEventListener('wms_open_location_purge', handleOpenPurge);
+  }, []);
   const [isApkModalOpen, setIsApkModalOpen] = useState<boolean>(false);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState<boolean>(false);
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
@@ -4978,7 +4992,10 @@ export default function App() {
         onRequestNotification={handleRequestNotification}
         isRealtimeConnected={isRealtimeConnected}
         onOpenUpdateDatabase={() => setIsUpdateDatabaseOpen(true)}
-        onOpenLocationPurge={() => setIsLocationPurgeOpen(true)}
+        onOpenLocationPurge={() => {
+          setLocationPurgeInitialLocations([]);
+          setIsLocationPurgeOpen(true);
+        }}
         onOpenUpdateModal={() => setIsUpdateModalOpen(true)}
         onNotify={showToast}
         themeColor={themeColor}
@@ -5023,6 +5040,7 @@ export default function App() {
           loadProducts(true);
         }}
         allExistingLocations={activeLocations}
+        initialLocations={locationPurgeInitialLocations}
       />
 
       {/* Asisten AI Pintar WMS Modal (Gemini Flash) */}
