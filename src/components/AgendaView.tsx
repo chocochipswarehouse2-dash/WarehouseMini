@@ -8,11 +8,12 @@ import {
   PanelLeft, PanelLeftClose, LayoutGrid, Columns, CalendarRange, GripVertical
 } from 'lucide-react';
 import { compressImage } from '../utils/imageCompressor';
+import { uploadImageToGdrive } from '../services/gdriveUpload';
 import { 
   getAgendaEvents, saveAgendaEvent, deleteAgendaEvent, 
   getProjects, saveProject, deleteProject, getNotes, saveNote, deleteNote, reorderNotes,
   getSupabaseClient } from '../services/supabase';
-import { fetchWmsSettings, saveWmsSettings } from '../services/settings';
+import { fetchWmsSettings } from '../services/settings';
 import { AgendaCategoryModal } from './AgendaCategoryModal';
 import { 
   syncEventToGoogleCalendar, 
@@ -518,8 +519,18 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
     urgent: true,
     umum: true
   });
-    const [searchQuery, setSearchQuery] = useState('');
-  
+  const [calendarSearch, setCalendarSearch] = useState('');
+  const [projectSearch, setProjectSearch] = useState('');
+  const [notesSearch, setNotesSearch] = useState('');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{
+    type: 'agenda' | 'project' | 'note';
+    id: string;
+    title: string;
+  } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null);
+
   const [categoryConfig, setCategoryConfig] = useState<Record<string, any>>(DEFAULT_CATEGORY_CONFIG);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
 
@@ -639,9 +650,11 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
   const [editingEvent, setEditingEvent] = useState<Partial<AgendaEvent> | null>(null);
   const [editingProject, setEditingProject] = useState<Partial<ProjectItem> | null>(null);
 
-  // Attachment upload ref
+  // Attachment upload refs
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const projectFileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Detect mobile screen for optimal initial view
   useEffect(() => {
@@ -723,8 +736,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
   };
 
   // Fetch initial data
-  const loadData = async () => {
-    setIsLoading(true);
+  const loadData = async (silent = false) => {
+    if (!silent) setIsLoading(true);
     try {
       const [agendaData, projectData, noteData] = await Promise.all([
         getAgendaEvents(),
@@ -734,20 +747,29 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
       setEvents(agendaData);
       setProjects(projectData);
       setNotes(noteData);
+      setLoadError(null);
     } catch (err) {
       console.error('Error loading agenda/projects:', err);
+      setLoadError('Sebagian data gagal dimuat dari server. Menampilkan cache lokal.');
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
+  };
+
+  const scheduleReloadData = () => {
+    if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+    reloadTimerRef.current = setTimeout(() => {
+      loadData(true);
+    }, 300);
   };
 
   useEffect(() => {
     loadData();
 
-    // Listen to local window events
-    const handleAgendaUpdate = () => loadData();
-    const handleProjectUpdate = () => loadData();
-    const handleNoteUpdate = () => loadData();
+    // Listen to local window events (debounced agar tidak spam fetch berulang kali)
+    const handleAgendaUpdate = () => scheduleReloadData();
+    const handleProjectUpdate = () => scheduleReloadData();
+    const handleNoteUpdate = () => scheduleReloadData();
 
     window.addEventListener('wms_agenda_updated', handleAgendaUpdate);
     window.addEventListener('wms_projects_updated', handleProjectUpdate);
@@ -760,13 +782,13 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
       channel = client
         .channel('wms-agenda-projects-realtime')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'wms_agenda' }, () => {
-          loadData();
+          scheduleReloadData();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'wms_projects' }, () => {
-          loadData();
+          scheduleReloadData();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'wms_notes' }, () => {
-          loadData();
+          scheduleReloadData();
         })
         .subscribe();
     } catch (e) {
@@ -774,6 +796,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
     }
 
     return () => {
+      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
       window.removeEventListener('wms_agenda_updated', handleAgendaUpdate);
       window.removeEventListener('wms_projects_updated', handleProjectUpdate);
       window.removeEventListener('wms_notes_updated', handleNoteUpdate);
@@ -921,8 +944,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
       const catKey = e.category || 'umum';
       if (selectedCategories[catKey] === false) return false;
       // Search filter
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
+      if (calendarSearch.trim()) {
+        const q = calendarSearch.toLowerCase();
         const matchTitle = e.title.toLowerCase().includes(q);
         const matchDesc = e.description?.toLowerCase().includes(q);
         const matchLoc = e.location?.toLowerCase().includes(q);
@@ -931,7 +954,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
       }
       return true;
     });
-  }, [events, selectedCategories, searchQuery]);
+  }, [events, selectedCategories, calendarSearch]);
 
 
   // Status counts for Project & Task 6-Tab Navigation
@@ -957,8 +980,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
     return projects.filter(p => {
       if (projectPriorityFilter !== 'all' && p.priority !== projectPriorityFilter) return false;
       if (creatorFilter !== 'all' && p.created_by !== creatorFilter) return false;
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
+      if (projectSearch.trim()) {
+        const q = projectSearch.toLowerCase();
         const matchTitle = p.title.toLowerCase().includes(q);
         const matchDesc = p.description?.toLowerCase().includes(q);
         const matchPic = p.pic?.toLowerCase().includes(q);
@@ -967,7 +990,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
       }
       return true;
     });
-  }, [projects, projectPriorityFilter, creatorFilter, searchQuery]);
+  }, [projects, projectPriorityFilter, creatorFilter, projectSearch]);
 
   // Filtered Projects (including status tab filter)
   const filteredProjects = useMemo(() => {
@@ -980,8 +1003,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
   const filteredNotes = useMemo(() => {
     return notes.filter(n => {
       if (creatorFilter !== 'all' && n.created_by !== creatorFilter) return false;
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
+      if (notesSearch.trim()) {
+        const q = notesSearch.toLowerCase();
         const matchTitle = (n.title || '').toLowerCase().includes(q);
         const matchContent = (n.content || '').toLowerCase().includes(q);
         const matchChecklist = (n.checklist || []).some(item => (item.text || '').toLowerCase().includes(q));
@@ -989,7 +1012,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
       }
       return true;
     });
-  }, [notes, creatorFilter, searchQuery]);
+  }, [notes, creatorFilter, notesSearch]);
 
   // Event occurrences mapped by date
   const eventsByDate = useMemo(() => {
@@ -1054,8 +1077,12 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
     let eTime = '10:00';
     if (presetHour !== undefined) {
       sTime = `${String(presetHour).padStart(2, '0')}:00`;
-      eTime = `${String(presetHour + 1).padStart(2, '0')}:00`;
+      eTime = `${String(Math.min(23, presetHour + 1)).padStart(2, '0')}:00`;
     }
+
+    const defaultCategory = categoryConfig.operasional
+      ? 'operasional'
+      : (Object.keys(categoryConfig)[0] || 'umum');
 
     setEditingEvent({
       title: '',
@@ -1065,10 +1092,11 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
       is_all_day: false,
       start_time: sTime,
       end_time: eTime,
-      category: 'operasional',
+      category: defaultCategory,
       color: undefined,
       location: '',
       pic: session?.name || session?.username || '',
+      created_by: session?.name || session?.username || 'Warehouse',
       attachments: []
     });
     setAgendaModalOpen(true);
@@ -1084,13 +1112,11 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
     if (!detailEvent) return;
     const updated: AgendaEvent = { ...detailEvent, color: colorId || undefined };
     setDetailEvent(updated);
-    // Optimistic UI update
     setEvents(prev => prev.map(e => e.id === updated.id ? updated : e));
     setIsSyncing(true);
     try {
       await saveAgendaEvent(updated);
       onShowToast?.('Warna agenda berhasil diperbarui!', 'success');
-      loadData();
     } catch {
       onShowToast?.('Gagal memperbarui warna agenda', 'error');
     } finally {
@@ -1098,27 +1124,13 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
     }
   };
 
-  const handleDeleteEvent = async (id: string) => {
-    if (!window.confirm('Yakin ingin menghapus agenda ini?')) return;
-    try {
-      const targetToDelete = events.find(e => e.id === id);
-      // Optimistic delete
-      setEvents(prev => prev.filter(e => e.id !== id));
-      await deleteAgendaEvent(id);
-      onShowToast?.('Agenda berhasil dihapus', 'info');
-      setDetailEvent(null);
-      loadData();
-
-      if (targetToDelete?.google_event_id) {
-        syncEventToGoogleCalendar(targetToDelete, true).then((gRes) => {
-          if (gRes.success) {
-            onShowToast?.('🗑️ Event juga dihapus dari Google Calendar.', 'info');
-          }
-        }).catch(console.warn);
-      }
-    } catch (err) {
-      onShowToast?.('Gagal menghapus agenda', 'error');
-    }
+  const handleDeleteEvent = (id: string) => {
+    const target = events.find(e => e.id === id);
+    setConfirmDelete({
+      type: 'agenda',
+      id,
+      title: target?.title || 'agenda ini'
+    });
   };
 
   const handleSaveAgenda = async (e: React.FormEvent) => {
@@ -1132,7 +1144,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
       return;
     }
 
-    // Normalisasi cerdas jika user memilih rentang lintas tahun (misal: mulai Nov 2026, selesai Feb 2026 -> diset ke Feb 2027)
+    // Normalisasi cerdas jika user memilih rentang lintas tahun
     let sDate = editingEvent.start_date;
     let eDate = editingEvent.end_date || sDate;
     if (sDate && eDate && sDate > eDate) {
@@ -1147,17 +1159,24 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
       }
     }
 
+    if (!editingEvent.is_all_day && sDate === eDate && editingEvent.start_time && editingEvent.end_time) {
+      if (editingEvent.end_time < editingEvent.start_time) {
+        onShowToast?.('Jam selesai tidak boleh lebih awal dari jam mulai pada tanggal yang sama.', 'warning');
+        return;
+      }
+    }
+
     const eventToSave: Partial<AgendaEvent> = {
       ...editingEvent,
       start_date: sDate,
-      end_date: eDate
+      end_date: eDate,
+      created_by: editingEvent.created_by || session?.name || session?.username || 'Warehouse',
     };
 
     setIsSyncing(true);
     try {
       const saved = await saveAgendaEvent(eventToSave);
 
-      // Pastikan kategori agenda baru aktif di filter & kalender fokus pada tanggal agenda tersebut
       if (saved.category) {
         setSelectedCategories(prev => ({ ...prev, [saved.category]: true }));
       }
@@ -1170,7 +1189,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
         }
       }
       
-      // OPTIMISTIC UPDATE: Langsung update state kalender di layar tanpa menunggu query asinkron
+      // OPTIMISTIC UPDATE
       setEvents(prev => {
         const oldId = editingEvent.id;
         const exists = prev.some(ev => ev.id === saved.id || (oldId && ev.id === oldId));
@@ -1183,26 +1202,25 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
       onShowToast?.(`Agenda "${saved.title}" (${saved.start_date}) berhasil disimpan!`, 'success');
       setAgendaModalOpen(false);
       setEditingEvent(null);
-      await loadData();
 
-      // Background 2-way sync ke Google Calendar dengan konfirmasi visual
+      // Background 2-way sync ke Google Calendar
       syncEventToGoogleCalendar(saved, false).then(async (gRes) => {
         if (gRes.success) {
           if (gRes.google_event_id && gRes.google_event_id !== saved.google_event_id) {
-            saved.google_event_id = gRes.google_event_id;
-            await saveAgendaEvent(saved);
-            loadData();
+            const linked = { ...saved, google_event_id: gRes.google_event_id };
+            await saveAgendaEvent(linked);
+            setEvents(prev => prev.map(ev => ev.id === linked.id ? linked : ev));
           }
           setLastGcalSync(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
-          onShowToast?.('📅 Event berhasil disinkronkan ke Google Calendar!', 'info');
+          onShowToast?.('Event berhasil disinkronkan ke Google Calendar!', 'info');
         } else {
-          onShowToast?.(`⚠️ Event tersimpan di WMS, namun gagal sync ke Google Calendar: ${gRes.error || 'Timeout'}`, 'warning');
+          onShowToast?.(`Event tersimpan di WMS, namun gagal sync ke Google Calendar: ${gRes.error || 'Timeout'}`, 'warning');
         }
       }).catch((err) => {
         console.warn('GCal sync error:', err);
       });
 
-    } catch (err) {
+    } catch {
       onShowToast?.('Gagal menyimpan agenda', 'error');
     } finally {
       setIsSyncing(false);
@@ -1243,12 +1261,13 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
     try {
       await saveNote({
         ...editingNote,
-        checklist: cleanChecklist
+        checklist: cleanChecklist,
+        created_by: editingNote?.created_by || session?.name || session?.username || 'Warehouse'
       });
       onShowToast?.('Catatan berhasil disimpan!', 'success');
       setNoteModalOpen(false);
-      loadData();
-    } catch (err) {
+      setEditingNote(null);
+    } catch {
       onShowToast?.('Gagal menyimpan catatan', 'error');
     } finally {
       setIsSyncing(false);
@@ -1292,15 +1311,13 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
     }
   };
 
-  const handleDeleteNote = async (id: string) => {
-    if (!window.confirm('Yakin ingin menghapus catatan ini?')) return;
-    try {
-      await deleteNote(id);
-      onShowToast?.('Catatan berhasil dihapus', 'info');
-      loadData();
-    } catch (err) {
-      onShowToast?.('Gagal menghapus catatan', 'error');
-    }
+  const handleDeleteNote = (id: string) => {
+    const target = notes.find(n => n.id === id);
+    setConfirmDelete({
+      type: 'note',
+      id,
+      title: target?.title || 'catatan ini'
+    });
   };
 
   const handleOpenAddProject = (existing?: ProjectItem, initialStatus?: ProjectStatus) => {
@@ -1308,6 +1325,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
       setEditingProject({
         ...existing,
         start_date: existing.start_date || (existing.created_at ? existing.created_at.slice(0, 10) : formatIsoDate(new Date())),
+        attachments: Array.isArray(existing.attachments) ? existing.attachments : [],
       });
     } else {
       setEditingProject({
@@ -1317,6 +1335,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
         priority: 'medium',
         category: 'Infrastruktur',
         pic: session?.name || session?.username || '',
+        created_by: session?.name || session?.username || 'Warehouse',
         start_date: formatIsoDate(new Date()),
         deadline: formatIsoDate(new Date(Date.now() + 14 * 86400000)),
         progress: initialStatus === 'completed' ? 100 : 0,
@@ -1342,11 +1361,10 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
       await saveProject(updatedProj);
       const label = PROJECT_STATUS_CONFIG[newStatus]?.label || newStatus;
       onShowToast?.(`Status "${proj.title}" dipindahkan ke ${label}`, 'success');
-      loadData();
     } catch (err) {
       console.error(err);
       onShowToast?.('Gagal memperbarui status project', 'error');
-      loadData();
+      loadData(true);
     }
   };
 
@@ -1357,28 +1375,90 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
       return;
     }
 
+    const startDate = editingProject.start_date || formatIsoDate(new Date());
+    let deadline = editingProject.deadline || startDate;
+    if (deadline < startDate) {
+      deadline = startDate;
+      onShowToast?.('Tenggat waktu disesuaikan agar tidak lebih awal dari tanggal mulai.', 'info');
+    }
+
+    const cleanTasks = (editingProject.tasks || []).filter(t => t.title.trim().length > 0);
+    const clampedProgress = Math.max(0, Math.min(100, Number(editingProject.progress) || 0));
+
     setIsSyncing(true);
     try {
-      await saveProject(editingProject);
+      const saved = await saveProject({
+        ...editingProject,
+        start_date: startDate,
+        deadline,
+        tasks: cleanTasks,
+        progress: clampedProgress,
+        created_by: editingProject.created_by || session?.name || session?.username || 'Warehouse',
+      });
+      setProjects(prev => {
+        const oldId = editingProject.id;
+        const exists = prev.some(p => p.id === saved.id || (oldId && p.id === oldId));
+        if (exists) {
+          return prev.map(p => (p.id === saved.id || (oldId && p.id === oldId)) ? saved : p);
+        }
+        return [saved, ...prev];
+      });
       onShowToast?.('Project berhasil disimpan!', 'success');
       setProjectModalOpen(false);
       setEditingProject(null);
-      loadData();
-    } catch (err) {
+    } catch {
       onShowToast?.('Gagal menyimpan project', 'error');
     } finally {
       setIsSyncing(false);
     }
   };
 
-  const handleDeleteProject = async (id: string) => {
-    if (!window.confirm('Yakin ingin menghapus project ini beserta seluruh tugasnya?')) return;
+  const handleDeleteProject = (id: string) => {
+    const target = projects.find(p => p.id === id);
+    setConfirmDelete({
+      type: 'project',
+      id,
+      title: target?.title || 'project ini beserta seluruh tugasnya'
+    });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!confirmDelete || isDeleting) return;
+    setIsDeleting(true);
     try {
-      await deleteProject(id);
-      onShowToast?.('Project berhasil dihapus', 'info');
-      loadData();
-    } catch (err) {
-      onShowToast?.('Gagal menghapus project', 'error');
+      if (confirmDelete.type === 'agenda') {
+        const targetToDelete = events.find(e => e.id === confirmDelete.id);
+        setEvents(prev => prev.filter(e => e.id !== confirmDelete.id));
+        await deleteAgendaEvent(confirmDelete.id);
+        setDetailEvent(null);
+        setAgendaModalOpen(false);
+        setEditingEvent(null);
+        onShowToast?.('Agenda berhasil dihapus', 'info');
+        if (targetToDelete?.google_event_id) {
+          syncEventToGoogleCalendar(targetToDelete, true).then((gRes) => {
+            if (gRes.success) {
+              onShowToast?.('Event juga dihapus dari Google Calendar.', 'info');
+            }
+          }).catch(console.warn);
+        }
+      } else if (confirmDelete.type === 'project') {
+        setProjects(prev => prev.filter(p => p.id !== confirmDelete.id));
+        await deleteProject(confirmDelete.id);
+        setProjectModalOpen(false);
+        setEditingProject(null);
+        onShowToast?.('Project berhasil dihapus', 'info');
+      } else if (confirmDelete.type === 'note') {
+        setNotes(prev => prev.filter(n => n.id !== confirmDelete.id));
+        await deleteNote(confirmDelete.id);
+        setNoteModalOpen(false);
+        setEditingNote(null);
+        onShowToast?.('Catatan berhasil dihapus', 'info');
+      }
+      setConfirmDelete(null);
+    } catch {
+      onShowToast?.('Gagal menghapus data', 'error');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -1399,41 +1479,48 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
       status: newProgress === 100 ? ('completed' as ProjectStatus) : project.status
     };
 
-    // Optimistic UI update
     setProjects(prev => prev.map(p => p.id === project.id ? updated : p));
 
     try {
       await saveProject(updated);
       if (newProgress === 100 && project.progress !== 100) {
-        onShowToast?.(`Selamat! Semua tugas di "${project.title}" telah selesai! 🎉`, 'success');
+        onShowToast?.(`Semua tugas di "${project.title}" telah selesai!`, 'success');
       }
     } catch (err) {
       console.error('Failed to update task:', err);
     }
   };
 
-  // Attachment upload handler
+  // Attachment upload handler (foto disimpan ke Google Drive, bukan Base64 mentah)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
     setIsUploading(true);
     const newAttachments: AgendaAttachment[] = [];
+    let failedImageCount = 0;
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       if (file.type.startsWith('image/')) {
         try {
-          const res = await compressImage(file, 1024, 0.7);
-          newAttachments.push({
-            id: 'att-' + Date.now() + '-' + i,
-            name: file.name,
-            size: res.compressedSize,
-            type: 'image',
-            url: res.dataUrl
-          });
+          const res = await compressImage(file, 1024, 0.75);
+          const safeName = `Agenda_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+          const gdriveRes = await uploadImageToGdrive(res.dataUrl, safeName);
+          if (gdriveRes.success && gdriveRes.url) {
+            newAttachments.push({
+              id: 'att-' + Date.now() + '-' + i,
+              name: file.name,
+              size: res.compressedSize,
+              type: 'image',
+              url: gdriveRes.url
+            });
+          } else {
+            failedImageCount++;
+          }
         } catch (err) {
-          console.warn('Compress failed, using original', err);
+          console.warn('Image upload failed:', err);
+          failedImageCount++;
         }
       } else {
         newAttachments.push({
@@ -1445,20 +1532,28 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
       }
     }
 
-    if (isAgendaModalOpen && editingEvent) {
-      setEditingEvent({
-        ...editingEvent,
-        attachments: [...(editingEvent.attachments || []), ...newAttachments]
-      });
-    } else if (isProjectModalOpen && editingProject) {
-      setEditingProject({
-        ...editingProject,
-        attachments: [...(editingProject.attachments || []), ...newAttachments]
-      });
+    if (failedImageCount > 0) {
+      onShowToast?.(`${failedImageCount} foto gagal diunggah ke Google Drive. Periksa koneksi atau konfigurasi GAS.`, 'error');
+    }
+
+    if (newAttachments.length > 0) {
+      if (isAgendaModalOpen && editingEvent) {
+        setEditingEvent(prev => prev ? {
+          ...prev,
+          attachments: [...(prev.attachments || []), ...newAttachments]
+        } : prev);
+      } else if (isProjectModalOpen && editingProject) {
+        setEditingProject(prev => prev ? {
+          ...prev,
+          attachments: [...(prev.attachments || []), ...newAttachments]
+        } : prev);
+      }
+      onShowToast?.(`${newAttachments.length} lampiran berhasil ditambahkan.`, 'success');
     }
 
     setIsUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (projectFileInputRef.current) projectFileInputRef.current.value = '';
   };
 
   const removeAttachment = (id: string, isProj = false) => {
@@ -1514,16 +1609,16 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
         {/* Row 1: Brand & Action Button */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-tr from-primary-500 to-amber-500 flex items-center justify-center text-white shadow-md shadow-primary-500/20 shrink-0">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-sm shrink-0">
               {activeTab === 'calendar' ? <Calendar className="w-5 h-5 sm:w-6 sm:h-6" /> : activeTab === 'project' ? <Briefcase className="w-5 h-5 sm:w-6 sm:h-6" /> : <StickyNote className="w-5 h-5 sm:w-6 sm:h-6" />}
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight">
-                  Agenda & Project
+                <h1 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">
+                  Agenda &amp; Project
                 </h1>
-                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                   Cloud Sync
                 </span>
               </div>
@@ -1533,30 +1628,45 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
             </div>
           </div>
 
-          {/* Primary Action Button (Cleanly positioned on right side / full-width on mobile) */}
-          <button
-            onClick={() => {
-              if (activeTab === 'calendar') handleOpenAddEvent();
-              else if (activeTab === 'notes') handleOpenAddNote();
-              else handleOpenAddProject();
-            }}
-            className="w-full sm:w-auto px-4 py-2.5 bg-gradient-to-r from-primary-500 via-rose-500 to-amber-500 hover:opacity-95 text-white rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md shadow-primary-500/20 active:scale-98 transition-all shrink-0 cursor-pointer"
-            title={activeTab === 'calendar' ? 'Tambah Agenda Baru' : activeTab === 'notes' ? 'Tambah Catatan Baru' : 'Tambah Project Baru'}
-          >
-            <Plus className="w-4 h-4 stroke-[2.5]" />
-            <span>
-              {activeTab === 'calendar' ? 'Tambah Agenda' : activeTab === 'notes' ? 'Tambah Catatan' : 'Tambah Project'}
-            </span>
-          </button>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={() => loadData(false)}
+              disabled={isLoading}
+              className="px-3 py-2.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs transition-colors shrink-0 cursor-pointer disabled:opacity-50"
+              title="Muat ulang data terbaru dari server"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-indigo-600' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+
+            {/* Primary Action Button (Max 1 solid primary button per toolbar) */}
+            <button
+              type="button"
+              onClick={() => {
+                if (activeTab === 'calendar') handleOpenAddEvent();
+                else if (activeTab === 'notes') handleOpenAddNote();
+                else handleOpenAddProject();
+              }}
+              className="flex-1 sm:flex-initial px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm active:scale-98 transition-all shrink-0 cursor-pointer"
+              title={activeTab === 'calendar' ? 'Tambah Agenda Baru' : activeTab === 'notes' ? 'Tambah Catatan Baru' : 'Tambah Project Baru'}
+            >
+              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <span>
+                {activeTab === 'calendar' ? 'Tambah Agenda' : activeTab === 'notes' ? 'Tambah Catatan' : 'Tambah Project'}
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* Row 2: Segmented Tabs (Evenly distributed, zero overlap) */}
         <div className="flex items-center bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/60 dark:border-slate-700/60 gap-1">
           <button
+            type="button"
             onClick={() => setActiveTab('calendar')}
-            className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-lg text-xs font-bold transition-all ${
+            className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeTab === 'calendar'
-                ? 'bg-white dark:bg-[#101726] text-primary-600 dark:text-primary-400 shadow-xs font-black'
+                ? 'bg-white dark:bg-[#101726] text-indigo-600 dark:text-indigo-400 shadow-xs font-black'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
@@ -1565,47 +1675,72 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
               <span className="hidden sm:inline">Kalender Kerja</span>
               <span className="sm:hidden">Kalender</span>
             </span>
-            <span className="text-[10px] bg-slate-200 dark:bg-slate-700 px-1.5 py-0.2 rounded-full font-bold shrink-0">
+            <span className="text-[10px] font-mono tabular-nums bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">
               {filteredEvents.length}
             </span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('project')}
-            className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-lg text-xs font-bold transition-all ${
+            className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeTab === 'project'
-                ? 'bg-white dark:bg-[#101726] text-primary-600 dark:text-primary-400 shadow-xs font-black'
+                ? 'bg-white dark:bg-[#101726] text-indigo-600 dark:text-indigo-400 shadow-xs font-black'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
             <Briefcase className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
             <span className="truncate">
-              <span className="hidden sm:inline">Project & Task</span>
+              <span className="hidden sm:inline">Project &amp; Task</span>
               <span className="sm:hidden">Project</span>
             </span>
-            <span className="text-[10px] bg-slate-200 dark:bg-slate-700 px-1.5 py-0.2 rounded-full font-bold shrink-0">
+            <span className="text-[10px] font-mono tabular-nums bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">
               {filteredProjects.length}
             </span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('notes')}
-            className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-lg text-xs font-bold transition-all ${
+            className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeTab === 'notes'
-                ? 'bg-white dark:bg-[#101726] text-primary-600 dark:text-primary-400 shadow-xs font-black'
+                ? 'bg-white dark:bg-[#101726] text-indigo-600 dark:text-indigo-400 shadow-xs font-black'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
             <StickyNote className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-            <span className="truncate">
-              <span className="hidden sm:inline">Catatan</span>
-              <span className="sm:hidden">Catatan</span>
-            </span>
-            <span className="text-[10px] bg-slate-200 dark:bg-slate-700 px-1.5 py-0.2 rounded-full font-bold shrink-0">
+            <span className="truncate">Catatan</span>
+            <span className="text-[10px] font-mono tabular-nums bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">
               {filteredNotes.length}
             </span>
           </button>
         </div>
+
+        {loadError && (
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 text-xs text-amber-800 dark:text-amber-300">
+            <div className="flex items-center gap-2 min-w-0">
+              <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span className="font-medium truncate">{loadError}</span>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => loadData(false)}
+                className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 text-[11px] font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-100/60 cursor-pointer"
+              >
+                Coba Lagi
+              </button>
+              <button
+                type="button"
+                onClick={() => setLoadError(null)}
+                className="p-1 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50 rounded-lg cursor-pointer"
+                title="Tutup peringatan"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Main Content Body */}
@@ -1621,17 +1756,11 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
               <button
                 type="button"
                 onClick={() => setCreateDropdownOpen(!createDropdownOpen)}
-                className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-full px-5 py-3 font-semibold text-sm flex items-center gap-3 shadow-md hover:shadow-lg active:scale-95 transition-all cursor-pointer"
+                className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 font-bold text-xs flex items-center gap-2.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
               >
-                <svg className="w-6 h-6 shrink-0" viewBox="0 0 36 36">
-                  <path fill="#4285F4" d="M16 16v14h4V20z" />
-                  <path fill="#34A853" d="M30 16H20l-4 4h14z" />
-                  <path fill="#FBBC05" d="M6 16h10l4-4H6z" />
-                  <path fill="#EA4335" d="M20 16V6h-4v14z" />
-                  <path fill="none" d="M0 0h36v36H0z" />
-                </svg>
-                <span className="font-semibold text-slate-800 dark:text-slate-100">Buat</span>
-                <ChevronDown className="w-4 h-4 text-slate-400" />
+                <Plus className="w-4 h-4 text-indigo-600 dark:text-indigo-400 stroke-[2.5] shrink-0" />
+                <span>Buat</span>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
               </button>
 
               {createDropdownOpen && (
@@ -1644,7 +1773,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                     }}
                     className="w-full px-4 py-2.5 text-left text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2.5 cursor-pointer"
                   >
-                    <Calendar className="w-4 h-4 text-primary-500 shrink-0" />
+                    <Calendar className="w-4 h-4 text-indigo-500 shrink-0" />
                     <span>Acara / Agenda Baru</span>
                   </button>
                   <button
@@ -1652,35 +1781,19 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                     onClick={() => {
                       setCreateDropdownOpen(false);
                       setActiveTab('project');
-                      setEditingProject({
-                        title: '',
-                        description: '',
-                        status: 'planned',
-                        priority: 'medium',
-                        progress: 0,
-                        start_date: formatIsoDate(new Date()),
-                        deadline: formatIsoDate(new Date(Date.now() + 7 * 86400000)),
-                        tasks: [],
-                        pic: session?.name || session?.username || ''
-                      });
-                      setProjectModalOpen(true);
+                      handleOpenAddProject();
                     }}
                     className="w-full px-4 py-2.5 text-left text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2.5 cursor-pointer"
                   >
                     <Briefcase className="w-4 h-4 text-amber-500 shrink-0" />
-                    <span>Project & Task Baru</span>
+                    <span>Project &amp; Task Baru</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => {
                       setCreateDropdownOpen(false);
                       setActiveTab('notes');
-                      setEditingNote({
-                        title: '',
-                        content: '',
-                        color: 'yellow'
-                      });
-                      setNoteModalOpen(true);
+                      handleOpenAddNote(undefined, false);
                     }}
                     className="w-full px-4 py-2.5 text-left text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2.5 cursor-pointer"
                   >
@@ -1860,7 +1973,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                           </span>
                         </div>
                       </div>
-                      <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-full">
+                      <span className="text-[10px] font-mono tabular-nums font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-full">
                         {count}
                       </span>
                     </button>
@@ -1953,63 +2066,60 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
               </div>
 
               {/* Right View Switchers & Search */}
-              <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2">
+              <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 w-full lg:w-auto">
                 
-                {/* Search input */}
-                <div className="relative hidden sm:block w-44 md:w-52">
+                {/* Search input (accessible on mobile & desktop) */}
+                <div className="relative w-full sm:w-44 md:w-52 order-last sm:order-none">
                   <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
                     placeholder="Telusuri agenda..."
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-primary-500 outline-none"
+                    value={calendarSearch}
+                    onChange={e => setCalendarSearch(e.target.value)}
+                    className="w-full pl-8 pr-7 py-1.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
                   />
-                  {searchQuery && (
+                  {calendarSearch && (
                     <button 
-                      onClick={() => setSearchQuery('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                      type="button"
+                      onClick={() => setCalendarSearch('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
                     >
                       <X className="w-3 h-3" />
                     </button>
                   )}
                 </div>
 
-                {/* Mobile Quick Add Button */}
-                <button
-                  onClick={() => handleOpenAddEvent()}
-                  className="sm:hidden px-2.5 py-1.5 rounded-xl bg-primary-500 hover:bg-primary-600 text-white text-xs font-bold flex items-center gap-1 shadow-sm active:scale-95 transition-all"
-                  title="Tambah Agenda"
-                >
-                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                  <span>+ Agenda</span>
-                </button>
-
                 {/* Mobile Filter Drawer Button */}
                 <button
+                  type="button"
                   onClick={() => setMobileFilterOpen(!mobileFilterOpen)}
-                  className="lg:hidden p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold flex items-center gap-1.5"
+                  className={`lg:hidden px-2.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    mobileFilterOpen
+                      ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                  }`}
                 >
-                  <ListFilter className="w-4 h-4" />
+                  <ListFilter className="w-3.5 h-3.5" />
                   <span>Filter</span>
                 </button>
 
                 {/* Tombol Sinkron Google Calendar */}
                 <button
+                  type="button"
                   onClick={handleSyncGoogleCalendar}
                   disabled={isGcalSyncing}
                   className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
                     isGcalSyncing
-                      ? 'bg-primary-50 dark:bg-primary-950/40 text-primary-600 border-primary-200 dark:border-primary-800 animate-pulse'
-                      : 'bg-white dark:bg-[#1a2332] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-primary-400 dark:hover:border-primary-500 shadow-2xs'
+                      ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
+                      : 'bg-white dark:bg-[#1a2332] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500 shadow-2xs'
                   }`}
                   title="Sinkronisasi 2-arah dengan Google Calendar Akun Utama"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isGcalSyncing ? 'animate-spin text-primary-500' : 'text-primary-600 dark:text-primary-400'}`} />
+                  <RefreshCw className={`w-3.5 h-3.5 ${isGcalSyncing ? 'animate-spin text-indigo-500' : 'text-indigo-600 dark:text-indigo-400'}`} />
                   <span className="hidden sm:inline">{isGcalSyncing ? 'Menyinkronkan...' : 'Sync G-Calendar'}</span>
                   <span className="sm:hidden">{isGcalSyncing ? 'Sync...' : 'G-Cal'}</span>
                   {lastGcalSync && !isGcalSyncing && (
-                    <span className="hidden xl:inline text-[10px] text-slate-400 font-normal">
+                    <span className="hidden xl:inline text-[10px] font-mono tabular-nums text-slate-400 font-normal">
                       ({lastGcalSync})
                     </span>
                   )}
@@ -2355,7 +2465,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                                         setCurrentDate(item.date);
                                         handleOpenAddEvent(item.dateStr);
                                       }}
-                                      className={`${isSel ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} w-5 h-5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 flex items-center justify-center transition-all cursor-pointer`}
+                                      className={`${isSel ? 'opacity-100' : 'opacity-75 sm:opacity-0 sm:group-hover:opacity-100'} w-5 h-5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center justify-center transition-all cursor-pointer`}
                                       title={`+ Tambah agenda pada ${item.dateStr}`}
                                     >
                                       <Plus className="w-3 h-3 stroke-[2.5]" />
@@ -2467,24 +2577,30 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                     return (
                       <div className="space-y-2">
                         {selEvents.map(evt => {
-                          const cfg = categoryConfig[evt.category] || Object.values(categoryConfig)[0] || { label: evt.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', border: 'border-slate-300', cardBg: 'bg-white' };
+                          const colorStyle = resolveEventColorStyle(evt, categoryConfig);
+                          const hasDateSpan = evt.end_date && evt.end_date !== evt.start_date;
                           return (
                             <div
                               key={evt.id}
                               onClick={() => setDetailEvent(evt)}
-                              className={`p-3 rounded-xl border ${cfg.cardBg} ${cfg.border} border-l-4 cursor-pointer hover:shadow-xs transition-all`}
+                              className={`p-3 rounded-xl border ${colorStyle.cardBg} ${colorStyle.border} border-l-4 cursor-pointer hover:shadow-xs transition-all`}
                             >
                               <div className="flex justify-between items-start gap-2">
                                 <h5 className="text-xs font-black text-slate-800 dark:text-slate-100">{evt.title}</h5>
-                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${cfg.badgeBg} ${cfg.badgeText} shrink-0`}>
-                                  {cfg.label}
+                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 ${colorStyle.badgeBg} ${colorStyle.badgeText} shrink-0`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${colorStyle.dot}`} />
+                                  {colorStyle.label}
                                 </span>
                               </div>
                               <div className="flex flex-wrap items-center gap-3 mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
                                 {evt.is_all_day ? (
-                                  <span className="text-amber-600 font-bold">☀️ Sepanjang Hari</span>
+                                  <span className="text-amber-600 dark:text-amber-400 font-bold">
+                                    ☀️ Sepanjang Hari{hasDateSpan ? ` (${evt.start_date} s/d ${evt.end_date})` : ''}
+                                  </span>
                                 ) : (
-                                  <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {evt.start_time} - {evt.end_time || ''}</span>
+                                  <span className="flex items-center gap-1 font-mono tabular-nums">
+                                    <Clock className="w-3 h-3" /> {evt.start_time} - {evt.end_time || 'Selesai'}
+                                  </span>
                                 )}
                                 {evt.location && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {evt.location}</span>}
                                 {evt.pic && <span className="flex items-center gap-1"><User className="w-3 h-3" /> {evt.pic}</span>}
@@ -2507,11 +2623,12 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                     Jadwal {headerTitle}
                   </h3>
                   <button
+                    type="button"
                     onClick={() => handleOpenAddEvent(formatIsoDate(currentDate))}
-                    className="bg-primary-500 hover:bg-primary-600 text-white text-xs px-3.5 py-1.5 rounded-xl font-bold flex items-center gap-1.5 shadow-sm"
+                    className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 text-xs px-3.5 py-1.5 rounded-xl font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer transition-colors"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    Tambah Agenda
+                    <Plus className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <span>Tambah Agenda</span>
                   </button>
                 </div>
 
@@ -2546,7 +2663,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
 
                     return (
                       <div key={hour} className="flex min-h-[60px] hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                        <div className="w-20 p-3 text-right text-xs font-bold text-slate-400 border-r border-slate-200 dark:border-slate-800 shrink-0">
+                        <div className="w-20 p-3 text-right text-xs font-mono tabular-nums font-bold text-slate-400 border-r border-slate-200 dark:border-slate-800 shrink-0">
                           {String(hour).padStart(2, '0')}:00
                         </div>
                         <div 
@@ -2571,7 +2688,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                                   </span>
                                 </div>
                                 <div className="flex flex-wrap gap-2 mt-2 text-xs text-slate-500 dark:text-slate-400">
-                                  <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> {evt.start_time} - {evt.end_time}</span>
+                                  <span className="flex items-center gap-1 font-mono tabular-nums"><Clock className="w-3.5 h-3.5" /> {evt.start_time} - {evt.end_time}</span>
                                   {evt.location && <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> {evt.location}</span>}
                                   {evt.pic && <span className="flex items-center gap-1"><User className="w-3.5 h-3.5" /> {evt.pic}</span>}
                                 </div>
@@ -2599,11 +2716,12 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                       Belum ada jadwal yang cocok dengan filter atau pencarian Anda.
                     </p>
                     <button
+                      type="button"
                       onClick={() => handleOpenAddEvent()}
-                      className="bg-primary-500 hover:bg-primary-600 text-white px-2 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-2 shadow-sm"
+                      className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 px-4 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-2 shadow-2xs cursor-pointer transition-colors"
                     >
-                      <Plus className="w-4 h-4" />
-                      Tambah Agenda Sekarang
+                      <Plus className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      <span>Tambah Agenda Sekarang</span>
                     </button>
                   </div>
                 ) : (
@@ -2855,17 +2973,26 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                 <input
                   type="text"
                   placeholder="Cari project / PIC / kategori..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-primary-500"
+                  value={projectSearch}
+                  onChange={e => setProjectSearch(e.target.value)}
+                  className="w-full pl-8 pr-7 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
                 />
+                {projectSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setProjectSearch('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
               </div>
               <button
                 type="button"
                 onClick={() => handleOpenAddProject()}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer transition-all active:scale-95"
+                className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 text-slate-700 dark:text-slate-200 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs shrink-0 cursor-pointer transition-all active:scale-95"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                 <span>Buat Project</span>
               </button>
             </div>
@@ -2884,16 +3011,17 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                   Tidak ada project pada status ini
                 </h3>
                 <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                  {searchQuery
-                    ? `Tidak ada project yang cocok dengan pencarian "${searchQuery}"`
+                  {projectSearch
+                    ? `Tidak ada project yang cocok dengan pencarian "${projectSearch}"`
                     : 'Belum ada project yang terdaftar dalam status ini.'}
                 </p>
                 <button
                   type="button"
                   onClick={() => handleOpenAddProject()}
-                  className="mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer"
+                  className="mt-4 px-4 py-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition-all shadow-2xs cursor-pointer inline-flex items-center gap-1.5"
                 >
-                  + Buat Project Baru
+                  <Plus className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                  <span>Buat Project Baru</span>
                 </button>
               </div>
             ) : (
@@ -2935,6 +3063,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                           </div>
                           <div className="flex items-center gap-1">
                             <button
+                              type="button"
                               onClick={() => handleOpenAddProject(proj)}
                               className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg cursor-pointer"
                               title="Edit Project"
@@ -2942,6 +3071,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                               <Edit3 className="w-3.5 h-3.5" />
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleDeleteProject(proj.id)}
                               className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg cursor-pointer"
                               title="Hapus Project"
@@ -2963,11 +3093,11 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                         <div className="space-y-1.5 mb-2 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
                           <div className="flex justify-between text-xs font-bold">
                             <span className="text-slate-500">Progres Pelaksanaan</span>
-                            <span className="text-primary-600 dark:text-primary-400 font-mono tabular-nums">{proj.progress}%</span>
+                            <span className="text-indigo-600 dark:text-indigo-400 font-mono tabular-nums">{proj.progress}%</span>
                           </div>
                           <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
                             <div
-                              className="h-full bg-gradient-to-r from-primary-500 to-amber-500 rounded-full transition-all duration-500"
+                              className="h-full bg-indigo-600 rounded-full transition-all duration-500"
                               style={{ width: `${proj.progress}%` }}
                             ></div>
                           </div>
@@ -3006,9 +3136,17 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
 
                       {/* Project Footer Meta */}
                       <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
-                        <div className="flex items-center gap-1.5 text-slate-500">
-                          <User className="w-3.5 h-3.5" />
-                          <span className="font-bold">{proj.pic || 'Tim Gudang'}</span>
+                        <div className="flex items-center gap-2 text-slate-500">
+                          <span className="flex items-center gap-1">
+                            <User className="w-3.5 h-3.5" />
+                            <span className="font-bold">{proj.pic || 'Tim Gudang'}</span>
+                          </span>
+                          {proj.attachments && proj.attachments.length > 0 && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold font-mono tabular-nums text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded">
+                              <FileText className="w-3 h-3" />
+                              {proj.attachments.length}
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-1.5 font-mono tabular-nums text-[11px]">
                           {proj.start_date && (
@@ -3581,13 +3719,14 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                     </p>
                   </div>
                 ) : (
-                  <div className="flex flex-col md:flex-row w-full overflow-hidden">
-                    {/* Left Fixed Column: Project & Sub-task List */}
-                    <div className="w-full md:w-72 lg:w-80 shrink-0 border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1a2332] z-10">
+                  <div className="w-full overflow-x-auto">
+                    <div className="flex flex-row min-w-max w-full">
+                    {/* Left Sticky Column: Project & Sub-task List (always aligned horizontally with timeline) */}
+                    <div className="w-44 sm:w-64 md:w-72 lg:w-80 shrink-0 sticky left-0 z-30 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1a2332] shadow-[4px_0_12px_-4px_rgba(0,0,0,0.08)]">
                       {/* Left Column Header (matches height of 2-tier right header: 60px) */}
-                      <div className="h-[60px] px-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#131c2b] flex items-center justify-between text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        <span>Daftar Project ({filteredProjects.length})</span>
-                        <span>Progres</span>
+                      <div className="h-[60px] px-3 sm:px-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#131c2b] flex items-center justify-between text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        <span className="truncate">Project ({filteredProjects.length})</span>
+                        <span className="shrink-0">Progres</span>
                       </div>
 
                       {/* Left Column Rows */}
@@ -3599,7 +3738,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
 
                           return (
                             <React.Fragment key={proj.id}>
-                              <div className="h-[52px] px-3 flex items-center justify-between gap-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                              <div className="h-[52px] px-2.5 sm:px-3 flex items-center justify-between gap-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                                 <div className="flex items-center gap-1.5 min-w-0 flex-1">
                                   {hasTasks ? (
                                     <button
@@ -3641,7 +3780,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                                 <div
                                   key={task.id}
                                   onClick={() => handleToggleTask(proj, task.id)}
-                                  className="h-[36px] pl-9 pr-3 bg-slate-50/70 dark:bg-[#131c2b]/70 flex items-center justify-between gap-2 text-[11px] hover:bg-slate-100/80 dark:hover:bg-slate-800/60 cursor-pointer transition-colors"
+                                  className="h-[36px] pl-6 sm:pl-9 pr-3 bg-slate-50/70 dark:bg-[#131c2b]/70 flex items-center justify-between gap-2 text-[11px] hover:bg-slate-100/80 dark:hover:bg-slate-800/60 cursor-pointer transition-colors"
                                 >
                                   <div className="flex items-center gap-1.5 min-w-0">
                                     {task.is_completed ? (
@@ -3653,7 +3792,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                                       {task.title}
                                     </span>
                                   </div>
-                                  <span className={`text-[10px] font-mono tabular-nums shrink-0 ${task.is_completed ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-slate-400'}`}>
+                                  <span className={`hidden sm:inline text-[10px] font-mono tabular-nums shrink-0 ${task.is_completed ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-slate-400'}`}>
                                     {task.is_completed ? 'Selesai' : 'Pending'}
                                   </span>
                                 </div>
@@ -3665,7 +3804,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                     </div>
 
                     {/* Right Scrollable Timeline Area */}
-                    <div className="flex-1 overflow-x-auto relative">
+                    <div className="flex-1 relative">
                       <div
                         className="relative"
                         style={{ width: `${timelineDays.length * dayWidth}px`, minWidth: '100%' }}
@@ -3765,7 +3904,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                                       width: `${Math.max(24, barWidth - 4)}px`
                                     }}
                                     className={`absolute h-[30px] rounded-lg border ${barStyle.track} ${barStyle.border} shadow-2xs hover:shadow-md transition-all cursor-pointer overflow-hidden flex items-center z-10 group`}
-                                    title={`${proj.title} (${ formatIsoDate(actualStart) } s/d ${ formatIsoDate(actualEnd) } • ${durationDays} hari • Progres ${proj.progress}%)`}
+                                    title={`${proj.title} (${formatIsoDate(actualStart)} s/d ${formatIsoDate(actualEnd)} • ${durationDays} hari • Progres ${proj.progress}%)`}
                                   >
                                     {/* Inner Progress Fill */}
                                     <div
@@ -3833,6 +3972,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                         </div>
                       </div>
                     </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -3855,6 +3995,25 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <div className="relative w-full sm:w-52">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Cari judul / isi / checklist..."
+                  value={notesSearch}
+                  onChange={e => setNotesSearch(e.target.value)}
+                  className="w-full pl-8 pr-7 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                {notesSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setNotesSearch('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => handleOpenAddNote(undefined, true)}
@@ -3866,15 +4025,15 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
               <button
                 type="button"
                 onClick={() => handleOpenAddNote(undefined, false)}
-                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer"
+                className="px-3.5 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 text-slate-700 dark:text-slate-200 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
               >
-                <Plus className="w-4 h-4 stroke-[2.5]" />
+                <Plus className="w-4 h-4 text-indigo-600 dark:text-indigo-400 stroke-[2.5]" />
                 <span>+ Buat Catatan Baru</span>
               </button>
               <select
                 value={creatorFilter}
                 onChange={(e) => setCreatorFilter(e.target.value)}
-                className="px-3.5 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-primary-500/50 outline-none min-w-[140px] bg-slate-50 dark:bg-[#0f172a] text-slate-700 dark:text-slate-300 font-bold"
+                className="px-3.5 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/50 outline-none min-w-[140px] bg-slate-50 dark:bg-[#0f172a] text-slate-700 dark:text-slate-300 font-bold"
               >
                 <option value="all">Semua Pembuat</option>
                 {[...new Set(notes.map(n => n.created_by).filter(Boolean))].map(c => (
@@ -3993,7 +4152,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                               e.stopPropagation();
                               handleMoveNoteOrder(note.id, prevNote.id);
                             }}
-                            className="p-1 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-black/10 text-black/50 hover:text-black transition-all cursor-pointer"
+                            className="p-1 rounded-lg opacity-85 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-black/10 text-black/50 hover:text-black transition-all cursor-pointer"
                             title="Geser maju / ke kiri"
                           >
                             <ChevronLeft className="w-3.5 h-3.5" />
@@ -4006,7 +4165,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                               e.stopPropagation();
                               handleMoveNoteOrder(note.id, nextNote.id);
                             }}
-                            className="p-1 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-black/10 text-black/50 hover:text-black transition-all cursor-pointer"
+                            className="p-1 rounded-lg opacity-85 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-black/10 text-black/50 hover:text-black transition-all cursor-pointer"
                             title="Geser mundur / ke kanan"
                           >
                             <ChevronRight className="w-3.5 h-3.5" />
@@ -4015,7 +4174,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); handleDeleteNote(note.id); }}
-                          className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-black/10 text-black/40 hover:text-red-600 transition-all cursor-pointer"
+                          className="p-1.5 rounded-lg opacity-85 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-black/10 text-black/40 hover:text-red-600 transition-all cursor-pointer"
                           title="Hapus Catatan"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -4092,16 +4251,17 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
           <div className="bg-white dark:bg-[#1a2332] rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[92vh] border border-slate-200 dark:border-slate-800">
             
             {/* Modal Header */}
-            <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/80 dark:bg-slate-800/50">
-              <div className="flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-primary-500" />
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/80 dark:bg-slate-800/50 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <Calendar className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 <h2 className="text-base sm:text-lg font-black dark:text-white">
                   {editingEvent.id ? 'Edit Agenda' : 'Tambah Agenda Baru'}
                 </h2>
               </div>
               <button 
+                type="button"
                 onClick={() => setAgendaModalOpen(false)} 
-                className="p-1.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 transition-colors"
+                className="p-1.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -4122,7 +4282,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                   placeholder="Contoh: Meeting evaluasi stock opname atau serah terima kontainer"
                   value={editingEvent.title || ''}
                   onChange={e => setEditingEvent({ ...editingEvent, title: e.target.value })}
-                  className="w-full px-2 py-2.5 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                 />
               </div>
 
@@ -4131,6 +4291,11 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
                   Kategori Agenda
                 </label>
+                {editingEvent.category && !categoryConfig[editingEvent.category] && (
+                  <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1.5 rounded-lg border border-amber-200 dark:border-amber-800">
+                    Kategori sebelumnya (&quot;{editingEvent.category}&quot;) telah dihapus. Pilih kategori aktif di bawah jika ingin menggantinya.
+                  </p>
+                )}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {(Object.keys(categoryConfig) as AgendaCategory[]).map(catKey => {
                     const cfg = categoryConfig[catKey];
@@ -4141,9 +4306,9 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                         type="button"
                         key={catKey}
                         onClick={() => setEditingEvent({ ...editingEvent, category: catKey })}
-                        className={`p-2 rounded-xl text-xs font-bold border text-left flex items-center gap-2 transition-all ${
+                        className={`p-2 rounded-xl text-xs font-bold border text-left flex items-center gap-2 transition-all cursor-pointer ${
                           isSelected
-                            ? `${cfg.badgeBg} ${cfg.badgeText} ${cfg.border} ring-2 ring-primary-500/50`
+                            ? `${cfg.badgeBg} ${cfg.badgeText} ${cfg.border} ring-2 ring-indigo-500/50`
                             : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
                         }`}
                       >
@@ -4256,7 +4421,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                     onChange={e => setEditingEvent({ ...editingEvent, is_all_day: e.target.checked })}
                     className="sr-only peer"
                   />
-                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:width after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
                 </label>
               </div>
 
@@ -4447,21 +4612,29 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                         key={att.id}
                         className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs"
                       >
-                        <div className="flex items-center gap-2.5 overflow-hidden">
+                        <div
+                          onClick={() => {
+                            if (att.type === 'image' && att.url) {
+                              setPreviewImage({ url: att.url, name: att.name });
+                            }
+                          }}
+                          className={`flex items-center gap-2.5 overflow-hidden ${att.type === 'image' && att.url ? 'cursor-pointer hover:opacity-85' : ''}`}
+                        >
                           {att.type === 'image' && att.url ? (
-                            <img src={att.url} alt={att.name} className="w-8 h-8 rounded-lg object-cover border" />
+                            <img src={att.url} alt={att.name} className="w-9 h-9 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0" />
                           ) : (
-                            <FileText className="w-5 h-5 text-slate-400" />
+                            <FileText className="w-5 h-5 text-slate-400 shrink-0" />
                           )}
                           <div className="truncate">
                             <p className="font-bold text-slate-800 dark:text-slate-200 truncate">{att.name}</p>
-                            <p className="text-[10px] text-slate-400">{formatFileSize(att.size)}</p>
+                            <p className="text-[10px] font-mono tabular-nums text-slate-400">{formatFileSize(att.size)}</p>
                           </div>
                         </div>
                         <button
                           type="button"
                           onClick={() => removeAttachment(att.id)}
-                          className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg"
+                          className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg cursor-pointer"
+                          title="Hapus lampiran"
                         >
                           <X className="w-4 h-4" />
                         </button>
@@ -4479,7 +4652,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                   <button
                     type="button"
                     onClick={() => handleDeleteEvent(editingEvent.id!)}
-                    className="px-3 py-2 rounded-xl font-bold text-xs text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 transition-colors"
+                    className="px-3 py-2 rounded-xl font-bold text-xs text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-950/60 transition-colors cursor-pointer"
                   >
                     Hapus
                   </button>
@@ -4489,17 +4662,17 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                   <button
                     type="button"
                     onClick={() => setAgendaModalOpen(false)}
-                    className="px-4 py-2 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 transition-colors"
+                    className="px-4 py-2 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
                   >
                     Batal
                   </button>
                   <button
                     type="submit"
                     disabled={isSyncing}
-                    className="px-5 py-2 rounded-xl font-bold text-xs text-white bg-primary-500 hover:bg-primary-600 shadow-md shadow-primary-500/20 transition-all flex items-center gap-2"
+                    className="px-5 py-2 rounded-xl font-bold text-xs text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
                   >
                     {isSyncing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                    Simpan Agenda
+                    <span>Simpan Agenda</span>
                   </button>
                 </div>
               </div>
@@ -4508,23 +4681,20 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
         </div>
       )}
 
-      {/* ===================================================================== */}
-      {/* MODAL TAMBAH / EDIT PROJECT */}
-      {/* ===================================================================== */}
-      
       {/* Note Modal */}
       {isNoteModalOpen && editingNote && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/60 backdrop-blur-xs overflow-y-auto">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-2 sm:p-4 bg-slate-950/60 backdrop-blur-xs overflow-y-auto">
           <div className="bg-white dark:bg-[#1a2332] rounded-3xl w-full max-w-2xl lg:max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] border border-slate-200 dark:border-slate-800">
             {/* Modal Header */}
             <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/80 dark:bg-slate-800/50 shrink-0">
               <div className="flex items-center gap-2.5">
-                <StickyNote className="w-5 h-5 text-primary-500" />
+                <StickyNote className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
                   {editingNote.id ? 'Edit Catatan' : 'Buat Catatan Baru'}
                 </h2>
               </div>
               <button 
+                type="button"
                 onClick={() => setNoteModalOpen(false)} 
                 className="p-1.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
               >
@@ -4686,42 +4856,58 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                 </div>
               </div>
               
-              <div className="shrink-0 px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/60 flex justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setNoteModalOpen(false)}
-                  className="px-4 py-2.5 text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSyncing}
-                  className="px-5 py-2.5 text-xs font-bold text-white bg-primary-500 hover:bg-primary-600 rounded-xl flex items-center gap-1.5 shadow-md shadow-primary-500/20 transition-all cursor-pointer"
-                >
-                  {isSyncing ? <RefreshCw className="w-4 h-4 mr-1 animate-spin" /> : <Check className="w-4 h-4 mr-1" />}
-                  Simpan Catatan
-                </button>
+              <div className="shrink-0 px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/60 flex items-center justify-between gap-2.5">
+                {editingNote.id ? (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteNote(editingNote.id!)}
+                    className="px-3 py-2 text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-950/60 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Hapus
+                  </button>
+                ) : <div />}
+
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setNoteModalOpen(false)}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSyncing}
+                    className="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl flex items-center gap-1.5 shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {isSyncing ? <RefreshCw className="w-4 h-4 mr-1 animate-spin" /> : <Check className="w-4 h-4 mr-1" />}
+                    <span>Simpan Catatan</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>
         </div>
       )}
 
+      {/* ===================================================================== */}
+      {/* MODAL TAMBAH / EDIT PROJECT */}
+      {/* ===================================================================== */}
       {isProjectModalOpen && editingProject && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-xs overflow-y-auto">
           <div className="bg-white dark:bg-[#1a2332] rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[92vh] border border-slate-200 dark:border-slate-800">
             
-            <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/80 dark:bg-slate-800/50">
-              <div className="flex items-center gap-2">
-                <Briefcase className="w-5 h-5 text-primary-500" />
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/80 dark:bg-slate-800/50 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <Briefcase className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 <h2 className="text-base sm:text-lg font-black dark:text-white">
                   {editingProject.id ? 'Edit Project WMS' : 'Buat Project Baru'}
                 </h2>
               </div>
               <button 
+                type="button"
                 onClick={() => setProjectModalOpen(false)}
-                className="p-1.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400"
+                className="p-1.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -4742,7 +4928,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                   placeholder="Contoh: Relokasi Rak Gudang B atau Upgrade Scanner"
                   value={editingProject.title || ''}
                   onChange={e => setEditingProject({ ...editingProject, title: e.target.value })}
-                  className="w-full px-2 py-2.5 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
 
@@ -4808,7 +4994,14 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                   <input
                     type="date"
                     value={editingProject.start_date || ''}
-                    onChange={e => setEditingProject({ ...editingProject, start_date: e.target.value })}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setEditingProject(prev => {
+                        if (!prev) return prev;
+                        const nextDeadline = prev.deadline && prev.deadline < val ? val : prev.deadline;
+                        return { ...prev, start_date: val, deadline: nextDeadline };
+                      });
+                    }}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono"
                   />
                 </div>
@@ -4825,10 +5018,14 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Progres (%)</label>
                   <input
                     type="number"
-                    min="0"
-                    max="100"
+                    min={0}
+                    max={100}
                     value={editingProject.progress ?? 0}
-                    onChange={e => setEditingProject({ ...editingProject, progress: parseInt(e.target.value, 10) || 0 })}
+                    onChange={e => {
+                      const raw = parseInt(e.target.value, 10);
+                      const clamped = Number.isNaN(raw) ? 0 : Math.max(0, Math.min(100, raw));
+                      setEditingProject({ ...editingProject, progress: clamped });
+                    }}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono tabular-nums"
                   />
                 </div>
@@ -4844,7 +5041,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                     type="button"
                     onClick={() => {
                       const newTask: ProjectTask = {
-                        id: 'task-' + Date.now(),
+                        id: 'task-' + Date.now() + '-' + Math.random().toString(36).slice(2, 5),
                         title: '',
                         is_completed: false
                       };
@@ -4853,7 +5050,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                         tasks: [...(editingProject.tasks || []), newTask]
                       });
                     }}
-                    className="text-xs text-primary-500 font-bold hover:underline flex items-center gap-1"
+                    className="text-xs text-indigo-600 dark:text-indigo-400 font-bold hover:underline flex items-center gap-1 cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" /> Tambah Baris Tugas
                   </button>
@@ -4870,7 +5067,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                           );
                           setEditingProject({ ...editingProject, tasks: updated });
                         }}
-                        className="text-slate-400 hover:text-emerald-500"
+                        className="text-slate-400 hover:text-emerald-500 cursor-pointer"
                       >
                         {t.is_completed ? (
                           <CheckSquare className="w-4 h-4 text-emerald-500" />
@@ -4880,7 +5077,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                       </button>
                       <input
                         type="text"
-                        placeholder="Uraian tugas..."
+                        placeholder="Uraian tugas... (Tekan Enter untuk baris baru)"
                         value={t.title}
                         onChange={e => {
                           const updated = (editingProject.tasks || []).map((item, i) => 
@@ -4888,7 +5085,20 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                           );
                           setEditingProject({ ...editingProject, tasks: updated });
                         }}
-                        className="flex-1 px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const newTask: ProjectTask = {
+                              id: 'task-' + Date.now() + '-' + Math.random().toString(36).slice(2, 5),
+                              title: '',
+                              is_completed: false
+                            };
+                            const nextList = [...(editingProject.tasks || [])];
+                            nextList.splice(idx + 1, 0, newTask);
+                            setEditingProject({ ...editingProject, tasks: nextList });
+                          }
+                        }}
+                        className="flex-1 px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500"
                       />
                       <button
                         type="button"
@@ -4896,49 +5106,126 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                           const updated = (editingProject.tasks || []).filter((_, i) => i !== idx);
                           setEditingProject({ ...editingProject, tasks: updated });
                         }}
-                        className="p-1.5 text-slate-400 hover:text-rose-500"
+                        className="p-1.5 text-slate-400 hover:text-rose-500 cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   ))}
                   {(!editingProject.tasks || editingProject.tasks.length === 0) && (
-                    <p className="text-xs text-slate-400 italic">Belum ada tugas dibuat. Klik "Tambah Baris Tugas".</p>
+                    <p className="text-xs text-slate-400 italic">Belum ada tugas dibuat. Klik &quot;Tambah Baris Tugas&quot;.</p>
                   )}
                 </div>
               </div>
 
               {/* Deskripsi */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Deskripsi & Target Output</label>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Deskripsi &amp; Target Output</label>
                 <textarea
                   rows={3}
                   placeholder="Target pencapaian proyek..."
                   value={editingProject.description || ''}
                   onChange={e => setEditingProject({ ...editingProject, description: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
                 ></textarea>
+              </div>
+
+              {/* Lampiran Project */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Lampiran (Foto ke Google Drive / Dokumen)
+                </label>
+                <input
+                  type="file"
+                  multiple
+                  ref={projectFileInputRef}
+                  onChange={handleFileUpload}
+                  className="hidden"
+                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+                />
+                <div
+                  onClick={() => projectFileInputRef.current?.click()}
+                  className="w-full border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-indigo-500 rounded-2xl p-3.5 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors"
+                >
+                  <UploadCloud className="w-6 h-6 text-indigo-500 mb-1" />
+                  <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                    {isUploading ? 'Sedang mengunggah file...' : 'Klik untuk unggah lampiran project'}
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Foto otomatis dikompres &amp; disimpan ke Google Drive
+                  </p>
+                </div>
+
+                {editingProject.attachments && editingProject.attachments.length > 0 && (
+                  <div className="space-y-1.5 mt-2">
+                    {editingProject.attachments.map(att => (
+                      <div
+                        key={att.id}
+                        className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs"
+                      >
+                        <div
+                          onClick={() => {
+                            if (att.type === 'image' && att.url) {
+                              setPreviewImage({ url: att.url, name: att.name });
+                            }
+                          }}
+                          className={`flex items-center gap-2.5 overflow-hidden ${att.type === 'image' && att.url ? 'cursor-pointer hover:opacity-85' : ''}`}
+                        >
+                          {att.type === 'image' && att.url ? (
+                            <img src={att.url} alt={att.name} className="w-9 h-9 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0" />
+                          ) : (
+                            <FileText className="w-5 h-5 text-slate-400 shrink-0" />
+                          )}
+                          <div className="truncate">
+                            <p className="font-bold text-slate-800 dark:text-slate-200 truncate">{att.name}</p>
+                            <p className="text-[10px] font-mono tabular-nums text-slate-400">{formatFileSize(att.size)}</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeAttachment(att.id, true)}
+                          className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg cursor-pointer"
+                          title="Hapus lampiran"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               </div>
 
               {/* Footer (Docked / Sticky) */}
-              <div className="shrink-0 px-5 py-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/60 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setProjectModalOpen(false)}
-                  className="px-4 py-2 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 transition-colors"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSyncing}
-                  className="px-5 py-2 rounded-xl font-bold text-xs text-white bg-primary-500 hover:bg-primary-600 shadow-md shadow-primary-500/20 transition-all flex items-center gap-1.5"
-                >
-                  {isSyncing ? <RefreshCw className="w-4 h-4 mr-1 animate-spin" /> : <Check className="w-4 h-4 mr-1" />}
-                  Simpan Project
-                </button>
+              <div className="shrink-0 px-5 py-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/60 flex items-center justify-between gap-2">
+                {editingProject.id ? (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteProject(editingProject.id!)}
+                    className="px-3 py-2 rounded-xl font-bold text-xs text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-950/60 transition-colors cursor-pointer"
+                  >
+                    Hapus
+                  </button>
+                ) : <div />}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setProjectModalOpen(false)}
+                    className="px-4 py-2 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSyncing}
+                    className="px-5 py-2 rounded-xl font-bold text-xs text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {isSyncing ? <RefreshCw className="w-4 h-4 mr-1 animate-spin" /> : <Check className="w-4 h-4 mr-1" />}
+                    <span>Simpan Project</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -4950,12 +5237,17 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
       {/* ===================================================================== */}
       {detailEvent && (() => {
         const detailColorStyle = resolveEventColorStyle(detailEvent, categoryConfig);
+        const linkedProject = detailEvent.project_id
+          ? projects.find(p => p.id === detailEvent.project_id)
+          : undefined;
+        const hasMultiDay = detailEvent.end_date && detailEvent.end_date !== detailEvent.start_date;
 
         return (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
-            <div className="bg-white dark:bg-[#1a2332] rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 p-6 space-y-3">
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-xs">
+            <div className="bg-white dark:bg-[#1a2332] rounded-3xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800">
               
-              <div className="flex justify-between items-start gap-2">
+              {/* Docked Modal Header */}
+              <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-start gap-2 bg-slate-50/70 dark:bg-slate-800/40 shrink-0">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider flex items-center gap-1.5 ${detailColorStyle.badgeBg} ${detailColorStyle.badgeText}`}>
                     <span className={`w-2 h-2 rounded-full ${detailColorStyle.dot}`}></span>
@@ -4974,123 +5266,166 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                   )}
                 </div>
                 <button 
+                  type="button"
                   onClick={() => setDetailEvent(null)}
-                  className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                  className="p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-700 cursor-pointer shrink-0"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <div>
-                <h2 className="text-xl font-black text-slate-900 dark:text-white leading-tight">
-                  {detailEvent.title}
-                </h2>
-                <div className="flex items-center gap-2 mt-2 text-xs font-bold text-slate-500 dark:text-slate-400">
-                  {detailEvent.is_all_day ? (
-                    <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-bold bg-amber-50 dark:bg-amber-950/50 px-2.5 py-1 rounded-lg">
-                      <Sun className="w-3.5 h-3.5" /> Sepanjang Hari ({detailEvent.start_date})
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg text-slate-700 dark:text-slate-300">
-                      <Clock className="w-3.5 h-3.5 text-primary-500" />
-                      {detailEvent.start_date} • {detailEvent.start_time} - {detailEvent.end_time || 'Selesai'}
-                    </span>
+              {/* Scrollable Body */}
+              <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6 space-y-3.5">
+                <div>
+                  <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white leading-tight">
+                    {detailEvent.title}
+                  </h2>
+                  <div className="flex flex-wrap items-center gap-2 mt-2 text-xs font-bold text-slate-500 dark:text-slate-400">
+                    {detailEvent.is_all_day ? (
+                      <span className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-bold bg-amber-50 dark:bg-amber-950/50 px-2.5 py-1 rounded-lg font-mono tabular-nums">
+                        <Sun className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                        <span>
+                          Sepanjang Hari ({detailEvent.start_date}
+                          {hasMultiDay ? ` s/d ${detailEvent.end_date}` : ''})
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg text-slate-700 dark:text-slate-300 font-mono tabular-nums">
+                        <Clock className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                        <span>
+                          {detailEvent.start_date}
+                          {hasMultiDay ? ` s/d ${detailEvent.end_date}` : ''} • {detailEvent.start_time} - {detailEvent.end_time || 'Selesai'}
+                        </span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {detailEvent.description && (
+                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800 whitespace-pre-wrap">
+                    {detailEvent.description}
+                  </p>
+                )}
+
+                <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
+                  {detailEvent.location && (
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-indigo-500 shrink-0" />
+                      <span>Lokasi: <strong>{detailEvent.location}</strong></span>
+                    </div>
+                  )}
+                  {detailEvent.pic && (
+                    <div className="flex items-center gap-2">
+                      <User className="w-4 h-4 text-slate-400 shrink-0" />
+                      <span>PIC: <strong>{detailEvent.pic}</strong></span>
+                    </div>
+                  )}
+                  {linkedProject && (
+                    <div className="flex items-center gap-2">
+                      <Briefcase className="w-4 h-4 text-amber-500 shrink-0" />
+                      <span>
+                        Project:{' '}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDetailEvent(null);
+                            setActiveTab('project');
+                            setProjectSearch(linkedProject.title);
+                          }}
+                          className="font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                        >
+                          {linkedProject.title}
+                        </button>
+                      </span>
+                    </div>
                   )}
                 </div>
-              </div>
 
-              {detailEvent.description && (
-                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800 whitespace-pre-wrap">
-                  {detailEvent.description}
-                </p>
-              )}
-
-              <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
-                {detailEvent.location && (
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-primary-500 shrink-0" />
-                    <span>Lokasi: <strong>{detailEvent.location}</strong></span>
+                {/* Attachments preview */}
+                {detailEvent.attachments && detailEvent.attachments.length > 0 && (
+                  <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">
+                      Lampiran ({detailEvent.attachments.length})
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {detailEvent.attachments.map(att => (
+                        <div
+                          key={att.id}
+                          onClick={() => {
+                            if (att.type === 'image' && att.url) {
+                              setPreviewImage({ url: att.url, name: att.name });
+                            }
+                          }}
+                          className={`p-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-2 ${
+                            att.type === 'image' && att.url ? 'cursor-pointer hover:border-indigo-400 transition-colors' : ''
+                          }`}
+                        >
+                          {att.type === 'image' && att.url ? (
+                            <img src={att.url} alt={att.name} className="w-9 h-9 rounded-lg object-cover shrink-0 border border-slate-200 dark:border-slate-700" />
+                          ) : (
+                            <FileText className="w-5 h-5 text-slate-400 shrink-0" />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-bold">{att.name}</p>
+                            <p className="text-[10px] font-mono tabular-nums text-slate-400">{formatFileSize(att.size)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
-                {detailEvent.pic && (
-                  <div className="flex items-center gap-2">
-                    <User className="w-4 h-4 text-slate-400 shrink-0" />
-                    <span>PIC: <strong>{detailEvent.pic}</strong></span>
-                  </div>
-                )}
-              </div>
 
-              {/* Attachments preview */}
-              {detailEvent.attachments && detailEvent.attachments.length > 0 && (
-                <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
-                  <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">
-                    Lampiran ({detailEvent.attachments.length})
-                  </span>
-                  <div className="grid grid-cols-2 gap-2">
-                    {detailEvent.attachments.map(att => (
-                      <div key={att.id} className="p-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-2">
-                        {att.type === 'image' && att.url ? (
-                          <img src={att.url} alt={att.name} className="w-8 h-8 rounded object-cover" />
-                        ) : (
-                          <FileText className="w-5 h-5 text-slate-400" />
-                        )}
-                        <span className="truncate font-bold">{att.name}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Quick Color Switcher (1-Click) */}
-              <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 dark:text-slate-400">
-                  <span className="flex items-center gap-1.5">
-                    <Palette className="w-3.5 h-3.5 text-primary-500" />
-                    <span>Ganti Warna Cepat (1-Klik):</span>
-                  </span>
-                  {detailEvent.color && (
-                    <button
-                      type="button"
-                      onClick={() => handleQuickChangeColor('')}
-                      className="text-[10px] text-primary-600 dark:text-primary-400 hover:underline cursor-pointer"
-                    >
-                      Reset Kategori
-                    </button>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                  {AGENDA_COLOR_OPTIONS.map(opt => {
-                    const isSelected = detailEvent.color === opt.id || detailEvent.color === opt.hex;
-                    return (
+                {/* Quick Color Switcher (1-Click) */}
+                <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                    <span className="flex items-center gap-1.5">
+                      <Palette className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>Ganti Warna Cepat (1-Klik):</span>
+                    </span>
+                    {detailEvent.color && (
                       <button
-                        key={opt.id}
                         type="button"
-                        onClick={() => handleQuickChangeColor(opt.id)}
-                        className={`w-6 h-6 rounded-full flex items-center justify-center transition-all cursor-pointer ${opt.dot} ${
-                          isSelected ? 'ring-2 ring-primary-500 ring-offset-2 scale-110 shadow-sm' : 'hover:scale-110 opacity-80 hover:opacity-100'
-                        }`}
-                        title={`Ubah ke ${opt.label}`}
+                        onClick={() => handleQuickChangeColor('')}
+                        className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
                       >
-                        {isSelected && <Check className="w-3 h-3 text-white stroke-[3]" />}
+                        Reset Kategori
                       </button>
-                    );
-                  })}
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                    {AGENDA_COLOR_OPTIONS.map(opt => {
+                      const isSelected = detailEvent.color === opt.id || detailEvent.color === opt.hex;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => handleQuickChangeColor(opt.id)}
+                          className={`w-6 h-6 rounded-full flex items-center justify-center transition-all cursor-pointer ${opt.dot} ${
+                            isSelected ? 'ring-2 ring-indigo-500 ring-offset-2 scale-110 shadow-sm' : 'hover:scale-110 opacity-80 hover:opacity-100'
+                          }`}
+                          title={`Ubah ke ${opt.label}`}
+                        >
+                          {isSelected && <Check className="w-3 h-3 text-white stroke-[3]" />}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
-              {/* Actions */}
-              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+              {/* Docked Footer Actions */}
+              <div className="shrink-0 px-5 py-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/60 flex items-center justify-between gap-2">
                 <button
                   type="button"
                   onClick={() => handleDeleteEvent(detailEvent.id)}
-                  className="text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 px-3 py-2 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 px-3 py-2 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" /> Hapus
                 </button>
                 <button
                   type="button"
                   onClick={() => handleEditEvent(detailEvent)}
-                  className="text-xs font-bold text-white bg-primary-600 hover:bg-primary-700 px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-md shadow-primary-500/20 active:scale-95 transition-all cursor-pointer"
+                  className="text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer"
                 >
                   <Edit3 className="w-3.5 h-3.5" /> Edit Agenda Lengkap
                 </button>
@@ -5099,6 +5434,88 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
           </div>
         );
       })()}
+
+      {/* ===================================================================== */}
+      {/* MODAL KONFIRMASI HAPUS (IN-APP, TANPA WINDOW.CONFIRM) */}
+      {/* ===================================================================== */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/65 backdrop-blur-xs">
+          <div className="bg-white dark:bg-[#1a2332] rounded-2xl w-full max-w-sm shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div className="p-5 space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                    Konfirmasi Hapus {confirmDelete.type === 'agenda' ? 'Agenda' : confirmDelete.type === 'project' ? 'Project' : 'Catatan'}
+                  </h3>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
+                    Apakah Anda yakin ingin menghapus <strong className="text-slate-900 dark:text-white">&quot;{confirmDelete.title}&quot;</strong>? Tindakan ini tidak dapat dibatalkan.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="px-5 py-3 bg-slate-50 dark:bg-slate-800/60 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setConfirmDelete(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                {isDeleting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                <span>{isDeleting ? 'Menghapus...' : 'Ya, Hapus'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* LIGHTBOX PREVIEW FOTO LAMPIRAN */}
+      {/* ===================================================================== */}
+      {previewImage && (
+        <div
+          onClick={() => setPreviewImage(null)}
+          className="fixed inset-0 z-[75] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm"
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            className="bg-white dark:bg-[#1a2332] rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden shadow-2xl border border-slate-200 dark:border-slate-800"
+          >
+            <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <ImageIcon className="w-4 h-4 text-indigo-500 shrink-0" />
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+                  {previewImage.name}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewImage(null)}
+                className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-4 flex items-center justify-center overflow-auto bg-slate-100 dark:bg-slate-900/80">
+              <img
+                src={previewImage.url}
+                alt={previewImage.name}
+                className="max-h-[75vh] max-w-full object-contain rounded-lg"
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ===================================================================== */}
       {/* MODAL KELOLA KATEGORI AGENDA */}

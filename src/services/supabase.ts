@@ -11150,10 +11150,10 @@ export async function getAgendaEvents(): Promise<AgendaEvent[]> {
         } catch {}
       }
 
-      // Deduplikasi cerdas (anti duplikat id, anti duplikat google_event_id, anti duplikat title+start_date)
+      // Deduplikasi cerdas (anti duplikat id & google_event_id; title+date+time hanya jika tanpa ID unik / tabrakan cache)
       const seenIds = new Set<string>();
       const seenGoogleIds = new Set<string>();
-      const seenTitleDates = new Set<string>();
+      const seenSignatures = new Set<string>();
       const deduplicated: AgendaEvent[] = [];
 
       for (const item of merged) {
@@ -11165,9 +11165,14 @@ export async function getAgendaEvents(): Promise<AgendaEvent[]> {
           seenGoogleIds.add(item.google_event_id);
         }
 
-        const titleKey = `${(item.title || '').trim().toLowerCase().replace(/\s+/g, ' ')}_${item.start_date}`;
-        if (titleKey && seenTitleDates.has(titleKey)) continue;
-        seenTitleDates.add(titleKey);
+        // Hanya deduplikasi berdasarkan judul+tanggal+waktu jika sumbernya google_calendar / seed tanpa google_event_id unik
+        // agar 2 agenda WMS di hari yang sama (misal pagi & sore) tetap aman tersimpan.
+        const timeSig = item.is_all_day ? 'allday' : `${item.start_time || ''}-${item.end_time || ''}`;
+        const sigKey = `${(item.title || '').trim().toLowerCase().replace(/\s+/g, ' ')}_${item.start_date}_${timeSig}`;
+        if (!isValidUUID(item.id) || item.source === 'google_calendar') {
+          if (sigKey && seenSignatures.has(sigKey)) continue;
+        }
+        seenSignatures.add(sigKey);
 
         deduplicated.push(item);
       }
@@ -11405,9 +11410,21 @@ export async function getProjects(): Promise<ProjectItem[]> {
  * Menyimpan / memperbarui proyek ke Supabase dan local cache
  */
 export async function saveProject(item: Partial<ProjectItem>): Promise<ProjectItem> {
-  const isExistingUuid = Boolean(item.id && isValidUUID(item.id));
-  const id = isExistingUuid ? (item.id as string) : generateUUID();
+  const SEED_PROJECT_UUID_MAP: Record<string, string> = {
+    'seed-project-1': 'b0000000-0000-4000-8000-000000000001',
+    'seed-project-2': 'b0000000-0000-4000-8000-000000000002',
+    'seed-project-3': 'b0000000-0000-4000-8000-000000000003',
+  };
+  const effectiveId = item.id ? (SEED_PROJECT_UUID_MAP[item.id] || item.id) : undefined;
+  const isExistingUuid = Boolean(effectiveId && isValidUUID(effectiveId));
+  const id = isExistingUuid ? (effectiveId as string) : generateUUID();
   const nowIso = new Date().toISOString();
+
+  let startDate = item.start_date || getRelativeDateStr(0);
+  let deadline = item.deadline || getRelativeDateStr(14);
+  if (startDate && deadline && deadline < startDate) {
+    deadline = startDate;
+  }
 
   const payload: ProjectItem = {
     id,
@@ -11417,24 +11434,46 @@ export async function saveProject(item: Partial<ProjectItem>): Promise<ProjectIt
     priority: item.priority || 'medium',
     category: item.category || 'Infrastruktur',
     pic: item.pic || '',
-    start_date: item.start_date || getRelativeDateStr(0),
-    deadline: item.deadline || getRelativeDateStr(14),
+    start_date: startDate,
+    deadline,
     progress: typeof item.progress === 'number' ? Math.max(0, Math.min(100, item.progress)) : 0,
-    tasks: Array.isArray(item.tasks) ? item.tasks : [],
+    tasks: Array.isArray(item.tasks) ? item.tasks.filter(t => t && typeof t.title === 'string' && t.title.trim().length > 0) : [],
     attachments: Array.isArray(item.attachments) ? item.attachments : [],
-    created_by: item.created_by || 'User',
+    created_by: item.created_by || 'Warehouse',
     created_at: item.created_at || nowIso,
     updated_at: nowIso,
+  };
+
+  // Strict DB column whitelist matching public.wms_projects schema
+  const dbPayload: Record<string, any> = {
+    id: payload.id,
+    title: payload.title,
+    description: payload.description,
+    status: payload.status,
+    priority: payload.priority,
+    category: payload.category,
+    pic: payload.pic,
+    start_date: payload.start_date,
+    deadline: payload.deadline,
+    progress: payload.progress,
+    tasks: payload.tasks,
+    attachments: payload.attachments,
+    created_by: payload.created_by,
+    created_at: payload.created_at,
+    updated_at: payload.updated_at,
   };
 
   // 1. Simpan ke Supabase
   try {
     if (!isExistingUuid) {
-      await supabaseFetch('wms_projects', 'POST', [payload]);
+      await supabaseFetch('wms_projects', 'POST', [dbPayload]);
     } else {
-      const updateData = { ...payload };
-      delete (updateData as any).id;
-      await supabaseFetch('wms_projects', 'PATCH', updateData, `id=eq.${encodeURIComponent(id)}`);
+      const updateData = { ...dbPayload };
+      delete updateData.id;
+      const patchRes = await supabaseFetch<any[]>('wms_projects', 'PATCH', updateData, `id=eq.${encodeURIComponent(id)}`);
+      if (!Array.isArray(patchRes) || patchRes.length === 0) {
+        await supabaseFetch('wms_projects', 'POST', [dbPayload]);
+      }
     }
   } catch (err) {
     console.warn('Gagal sync project ke Supabase (disimpan ke cache lokal):', err);
@@ -11446,7 +11485,7 @@ export async function saveProject(item: Partial<ProjectItem>): Promise<ProjectIt
       const cached = localStorage.getItem(LOCAL_PROJECTS_KEY);
       let list: ProjectItem[] = cached ? JSON.parse(cached) : [];
       const oldId = item.id;
-      const idx = list.findIndex(p => p.id === id || (oldId && p.id === oldId));
+      const idx = list.findIndex(p => p.id === id || (oldId && (p.id === oldId || p.id === effectiveId)));
       if (idx >= 0) {
         list[idx] = payload;
       } else {
@@ -11466,9 +11505,16 @@ export async function saveProject(item: Partial<ProjectItem>): Promise<ProjectIt
  * Menghapus proyek dari Supabase dan local cache
  */
 export async function deleteProject(id: string): Promise<void> {
-  if (isValidUUID(id)) {
+  const SEED_PROJECT_UUID_MAP: Record<string, string> = {
+    'seed-project-1': 'b0000000-0000-4000-8000-000000000001',
+    'seed-project-2': 'b0000000-0000-4000-8000-000000000002',
+    'seed-project-3': 'b0000000-0000-4000-8000-000000000003',
+  };
+  const targetId = SEED_PROJECT_UUID_MAP[id] || id;
+
+  if (isValidUUID(targetId)) {
     try {
-      await supabaseFetch('wms_projects', 'DELETE', null, `id=eq.${encodeURIComponent(id)}`);
+      await supabaseFetch('wms_projects', 'DELETE', null, `id=eq.${encodeURIComponent(targetId)}`);
     } catch (err) {
       console.warn('Gagal hapus project di Supabase:', err);
     }
@@ -11479,7 +11525,7 @@ export async function deleteProject(id: string): Promise<void> {
       const cached = localStorage.getItem(LOCAL_PROJECTS_KEY);
       if (cached) {
         let list: ProjectItem[] = JSON.parse(cached);
-        list = list.filter(p => p.id !== id);
+        list = list.filter(p => p.id !== id && p.id !== targetId);
         safeSetLocalStorage(LOCAL_PROJECTS_KEY, list);
         window.dispatchEvent(new CustomEvent('wms_projects_updated', { detail: { deletedId: id } }));
       }

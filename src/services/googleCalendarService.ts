@@ -204,7 +204,7 @@ export async function reconcileGoogleCalendarTwoWay(
       } else if (wmsMapByGoogleId.has(gEv.google_event_id)) {
         existing = wmsMapByGoogleId.get(gEv.google_event_id);
       } else {
-        // Fallback matching cerdas: Judul dan tanggal mulai (anti duplikasi)
+        // Fallback matching cerdas: Judul, tanggal mulai, dan jam mulai / status all-day (anti salah timpa agenda berbeda di jam berbeda)
         const gTitleNorm = normalizeTitle(gEv.title);
         existing = currentWmsEvents.find((wEv) => {
           const wTitleNorm = normalizeTitle(wEv.title);
@@ -212,7 +212,9 @@ export async function reconcileGoogleCalendarTwoWay(
             wTitleNorm === gTitleNorm ||
             wTitleNorm.replace(/[^a-z0-9]/g, '') === gTitleNorm.replace(/[^a-z0-9]/g, '');
           const isDateMatch = wEv.start_date === gEv.start_date;
-          return isTitleMatch && isDateMatch;
+          const isTimeMatch = Boolean(wEv.is_all_day) === Boolean(gEv.is_all_day) &&
+            (Boolean(wEv.is_all_day) || (wEv.start_time || '') === (gEv.start_time || ''));
+          return isTitleMatch && isDateMatch && isTimeMatch;
         });
       }
 
