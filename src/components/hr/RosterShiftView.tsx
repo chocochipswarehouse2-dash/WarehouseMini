@@ -178,6 +178,11 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
   const [bulkMonthOffRule, setBulkMonthOffRule] = useState<string>('OFF_0'); // Default Pola Reguler: Libur Hari Minggu ('OFF_0')
   const [employeeOffDayPref, setEmployeeOffDayPref] = useState<Record<string, string>>({});
   const [isSavingMatrixDrafts, setIsSavingMatrixDrafts] = useState<boolean>(false);
+  const [monthlyDisplayStyle, setMonthlyDisplayStyle] = useState<'grid' | 'staff_calendar'>('grid');
+  const [monthlyDayRangeFilter, setMonthlyDayRangeFilter] = useState<'ALL' | 'W1' | 'W2' | 'W3' | 'W4'>('ALL');
+  const [isMobileGeneratorOpen, setIsMobileGeneratorOpen] = useState<boolean>(false);
+  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState<boolean>(false);
+  const lastPaintedByPointerRef = useRef<boolean>(false);
 
   // Weekly View Date Anchor (start of current week)
   const [weeklyAnchorDate, setWeeklyAnchorDate] = useState<Date>(() => {
@@ -619,6 +624,22 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
     }
     return result;
   }, [selectedMonthYear]);
+
+  // Filtered days in Monthly Matrix when user selects a 7-day week slice (e.g., on mobile)
+  const visibleMonthlyDays = useMemo(() => {
+    if (monthlyDayRangeFilter === 'W1') return monthlyDays.filter((d) => d.dayNum >= 1 && d.dayNum <= 7);
+    if (monthlyDayRangeFilter === 'W2') return monthlyDays.filter((d) => d.dayNum >= 8 && d.dayNum <= 14);
+    if (monthlyDayRangeFilter === 'W3') return monthlyDays.filter((d) => d.dayNum >= 15 && d.dayNum <= 21);
+    if (monthlyDayRangeFilter === 'W4') return monthlyDays.filter((d) => d.dayNum >= 22);
+    return monthlyDays;
+  }, [monthlyDays, monthlyDayRangeFilter]);
+
+  // Leading empty slots (Monday = 0 .. Sunday = 6) for 7-column Staff Monthly Calendar view
+  const monthlyLeadingEmptySlots = useMemo(() => {
+    if (monthlyDays.length === 0) return 0;
+    const firstDow = monthlyDays[0].dayOfWeek; // 0 = Sun, 1 = Mon ... 6 = Sat
+    return firstDow === 0 ? 6 : firstDow - 1;
+  }, [monthlyDays]);
 
   // Filtered employees for Weekly & Monthly Matrix
   const matrixEmployees = useMemo(() => {
@@ -1815,110 +1836,134 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
       </div>
 
       {/* FILTER & VIEW CONTROLS */}
-      <div className="bg-white dark:bg-[#131d31] rounded-3xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      <div className="bg-white dark:bg-[#131d31] rounded-3xl p-3.5 sm:p-5 border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         {/* Left: Search & Filter dropdowns */}
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3 flex-1">
-          {/* Search Box */}
-          <div className="relative flex-1 min-w-[180px] max-w-sm">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari NIK, Nama staf, Divisi..."
-              className="w-full pl-9 pr-3.5 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-primary-500 text-slate-800 dark:text-slate-100 font-medium"
-            />
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3 flex-1">
+          {/* Primary Mobile Row: Search Box + Filter Toggle Button */}
+          <div className="flex items-center gap-2 w-full sm:w-auto sm:flex-1 sm:min-w-[200px] sm:max-w-sm">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Cari NIK, Nama staf, Divisi..."
+                className="w-full pl-9 pr-3.5 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-primary-500 text-slate-800 dark:text-slate-100 font-medium"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsMobileFilterOpen((prev) => !prev)}
+              className={`sm:hidden px-3 py-2 rounded-xl text-xs font-bold border flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors ${
+                isMobileFilterOpen || selectedShift !== 'all' || selectedDepartment !== 'all'
+                  ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'
+                  : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
+              }`}
+            >
+              <Filter className="w-3.5 h-3.5" />
+              <span>Filter</span>
+              {(selectedShift !== 'all' || selectedDepartment !== 'all') && (
+                <span className="w-2 h-2 rounded-full bg-indigo-600" />
+              )}
+            </button>
           </div>
 
-          {/* Date Picker & Quick Toggles */}
-          <div className="flex items-center gap-1.5">
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
+          {/* Collapsible Secondary Filters on Mobile, Always Visible on Desktop (sm:flex) */}
+          <div
+            className={`${
+              isMobileFilterOpen ? 'flex' : 'hidden sm:flex'
+            } flex-wrap items-center gap-2 sm:gap-2.5 pt-1 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800/80`}
+          >
+            {/* Date Picker & Quick Toggles */}
+            <div className="flex items-center gap-1.5">
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-primary-500 text-slate-800 dark:text-slate-100 font-bold"
+              />
+              {selectedDate ? (
+                <button
+                  type="button"
+                  onClick={() => setSelectedDate('')}
+                  className="px-2.5 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                  title="Tampilkan semua jadwal tanpa filter tanggal"
+                >
+                  Semua
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const now = new Date();
+                    const y = now.getFullYear();
+                    const m = String(now.getMonth() + 1).padStart(2, '0');
+                    const d = String(now.getDate()).padStart(2, '0');
+                    setSelectedDate(`${y}-${m}-${d}`);
+                  }}
+                  className="px-2.5 py-2 rounded-xl text-xs font-bold bg-primary-50 dark:bg-primary-950/50 text-primary-600 dark:text-primary-400 border border-primary-200 dark:border-primary-800 hover:bg-primary-100 transition-colors cursor-pointer"
+                  title="Kembali ke hari ini"
+                >
+                  Hari Ini
+                </button>
+              )}
+            </div>
+
+            {/* Shift Filter Dropdown */}
+            <select
+              value={selectedShift}
+              onChange={(e) => setSelectedShift(e.target.value)}
               className="px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-primary-500 text-slate-800 dark:text-slate-100 font-bold"
-            />
-            {selectedDate ? (
-              <button
-                type="button"
-                onClick={() => setSelectedDate('')}
-                className="px-2.5 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-                title="Tampilkan semua jadwal tanpa filter tanggal"
+            >
+              <option value="all">Semua Shift</option>
+              <option value="Shift 1">Shift 1 (08:00 - 17:00)</option>
+              <option value="Shift 2">Shift 2 (09:00 - 18:00)</option>
+              <option value="Shift 3a">Shift 3a (12:00 - 21:00)</option>
+              <option value="Shift 3b">Shift 3b (11:00 - 20:00)</option>
+              <option value="Libur">Libur (Off)</option>
+              <option value="Cuti">Cuti / Izin</option>
+            </select>
+
+            {/* Department Filter */}
+            {departments.length > 0 && (
+              <select
+                value={selectedDepartment}
+                onChange={(e) => setSelectedDepartment(e.target.value)}
+                className="px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-primary-500 text-slate-800 dark:text-slate-100 font-bold"
               >
-                Semua
-              </button>
-            ) : (
+                <option value="all">Semua Divisi</option>
+                {departments.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {/* Reset Filters */}
+            {(searchQuery || selectedShift !== 'all' || selectedDepartment !== 'all') && (
               <button
                 type="button"
                 onClick={() => {
-                  const now = new Date();
-                  const y = now.getFullYear();
-                  const m = String(now.getMonth() + 1).padStart(2, '0');
-                  const d = String(now.getDate()).padStart(2, '0');
-                  setSelectedDate(`${y}-${m}-${d}`);
+                  setSearchQuery('');
+                  setSelectedShift('all');
+                  setSelectedDepartment('all');
                 }}
-                className="px-2.5 py-2 rounded-xl text-xs font-bold bg-primary-50 dark:bg-primary-950/50 text-primary-600 dark:text-primary-400 border border-primary-200 dark:border-primary-800 hover:bg-primary-100 transition-colors cursor-pointer"
-                title="Kembali ke hari ini"
+                className="p-2 rounded-xl text-xs text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 font-bold flex items-center gap-1 cursor-pointer"
               >
-                Hari Ini
+                <X className="w-3.5 h-3.5" />
+                <span>Reset</span>
               </button>
             )}
           </div>
-
-          {/* Shift Filter Dropdown */}
-          <select
-            value={selectedShift}
-            onChange={(e) => setSelectedShift(e.target.value)}
-            className="px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-primary-500 text-slate-800 dark:text-slate-100 font-bold"
-          >
-            <option value="all">Semua Shift</option>
-            <option value="Shift 1">Shift 1 (08:00 - 17:00)</option>
-            <option value="Shift 2">Shift 2 (09:00 - 18:00)</option>
-            <option value="Shift 3a">Shift 3a (12:00 - 21:00)</option>
-            <option value="Shift 3b">Shift 3b (11:00 - 20:00)</option>
-            <option value="Libur">Libur (Off)</option>
-            <option value="Cuti">Cuti / Izin</option>
-          </select>
-
-          {/* Department Filter */}
-          {departments.length > 0 && (
-            <select
-              value={selectedDepartment}
-              onChange={(e) => setSelectedDepartment(e.target.value)}
-              className="px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-primary-500 text-slate-800 dark:text-slate-100 font-bold"
-            >
-              <option value="all">Semua Divisi</option>
-              {departments.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-          )}
-
-          {/* Reset Filters */}
-          {(searchQuery || selectedShift !== 'all' || selectedDepartment !== 'all') && (
-            <button
-              type="button"
-              onClick={() => {
-                setSearchQuery('');
-                setSelectedShift('all');
-                setSelectedDepartment('all');
-              }}
-              className="p-2 rounded-xl text-xs text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 font-bold flex items-center gap-1 cursor-pointer"
-            >
-              <X className="w-3.5 h-3.5" />
-              <span>Reset</span>
-            </button>
-          )}
         </div>
 
-        {/* Right: View Mode Toggle */}
-        <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 self-start md:self-auto">
+        {/* Right: View Mode Toggle (Swipe Horizontal on Mobile, Never Stack Vertically) */}
+        <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-x-auto no-scrollbar whitespace-nowrap w-full md:w-auto">
           <button
             type="button"
             onClick={() => setViewMode('monthly')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 shrink-0 transition-all cursor-pointer ${
               viewMode === 'monthly'
                 ? 'bg-indigo-600 text-white shadow-xs'
                 : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
@@ -1930,7 +1975,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
           <button
             type="button"
             onClick={() => setViewMode('weekly')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all cursor-pointer ${
               viewMode === 'weekly'
                 ? 'bg-white dark:bg-[#131d31] text-primary-600 dark:text-primary-400 shadow-xs'
                 : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
@@ -1942,7 +1987,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
           <button
             type="button"
             onClick={() => setViewMode('table')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all cursor-pointer ${
               viewMode === 'table'
                 ? 'bg-white dark:bg-[#131d31] text-primary-600 dark:text-primary-400 shadow-xs'
                 : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
@@ -1954,7 +1999,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
           <button
             type="button"
             onClick={() => setViewMode('cards')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all cursor-pointer ${
               viewMode === 'cards'
                 ? 'bg-white dark:bg-[#131d31] text-primary-600 dark:text-primary-400 shadow-xs'
                 : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
@@ -2287,116 +2332,163 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
         </div>
       ) : viewMode === 'monthly' ? (
         /* INTERACTIVE MONTHLY SPREADSHEET MATRIX (1 BULAN PENUH x BANYAK KARYAWAN) */
-        <div className="bg-white dark:bg-[#131d31] rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm p-3 sm:p-5 space-y-4 overflow-hidden select-none relative">
-          {/* Pola Reguler Information Banner */}
-          <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/70 dark:border-indigo-800/60 text-xs">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-700 dark:text-slate-200">
-              <span className="font-black text-indigo-700 dark:text-indigo-300">📋 Aturan Pola Reguler Bulanan:</span>
-              <span className="font-bold">• Libur Rutin: <strong className="text-rose-600 dark:text-rose-400">Hari Minggu (OFF)</strong></span>
-              <span className="font-mono font-bold text-blue-700 dark:text-blue-300">• Shift 1: 08:00 - 17:00</span>
-              <span className="font-mono font-bold text-indigo-700 dark:text-indigo-300">• Shift 2: 09:00 - 18:00</span>
-              <span className="font-mono font-bold text-purple-700 dark:text-purple-300">
-                • Shift 3: <span className="underline">3a</span> 12:00 - 21:00 (Senin–Jumat) &amp; <span className="underline text-teal-700 dark:text-teal-300">3b</span> 11:00 - 20:00 (Sabtu)
-              </span>
-            </div>
-            {!userIsAdmin && (
-              <span className="text-[11px] font-bold text-slate-500 italic">
-                🔒 Pengaturan jadwal dikunci khusus Admin / Superadmin
-              </span>
-            )}
-          </div>
-
-          {/* Row 1: Month Selector & Unsaved Drafts Action Bar */}
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => handleChangeMonth(-1)}
-                className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer"
-                title="Bulan Sebelumnya"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <input
-                type="month"
-                value={selectedMonthYear}
-                onChange={(e) => e.target.value && setSelectedMonthYear(e.target.value)}
-                className="px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-black bg-indigo-50/70 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 font-mono cursor-pointer"
-              />
-              <button
-                type="button"
-                onClick={() => handleChangeMonth(1)}
-                className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer"
-                title="Bulan Berikutnya"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const now = new Date();
-                  setSelectedMonthYear(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
-                }}
-                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 cursor-pointer"
-              >
-                Bulan Ini
-              </button>
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 ml-1">
-                ({monthlyDays.length} Hari × {matrixEmployees.length} Karyawan)
-              </span>
-            </div>
-
-            {/* Save / Reset Drafts Buttons */}
-            {userIsAdmin && (
-              <div className="flex flex-wrap items-center gap-2">
-                {Object.keys(matrixDrafts).length > 0 && (
-                  <>
-                    <span className="px-2.5 py-1.5 rounded-xl bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 text-xs font-extrabold">
-                      ⚡ {Object.keys(matrixDrafts).length} Jadwal Belum Disimpan
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setMatrixDrafts({})}
-                      disabled={isSavingMatrixDrafts}
-                      className="px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
-                    >
-                      Batal / Reset Draft
-                    </button>
-                  </>
-                )}
+        <div className="bg-white dark:bg-[#131d31] rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm p-2.5 sm:p-5 space-y-3 sm:space-y-4 overflow-hidden select-none relative">
+          {/* Row 1: Month Selector, Display Style Switcher & Unsaved Drafts Action Bar */}
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5 pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex flex-wrap items-center justify-between sm:justify-start gap-1.5 sm:gap-2">
+              <div className="flex items-center gap-1 sm:gap-1.5">
                 <button
                   type="button"
-                  onClick={() => handleSaveAllMatrixDrafts()}
-                  disabled={isSavingMatrixDrafts || Object.keys(matrixDrafts).length === 0}
-                  className={`px-4 py-2 rounded-xl text-xs font-black text-white shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-40 transition-all ${
-                    Object.keys(matrixDrafts).length > 0
-                      ? 'bg-emerald-600 hover:bg-emerald-500 ring-2 ring-emerald-400/50'
-                      : 'bg-indigo-600 hover:bg-indigo-500'
-                  }`}
+                  onClick={() => handleChangeMonth(-1)}
+                  className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer"
+                  title="Bulan Sebelumnya"
                 >
-                  {isSavingMatrixDrafts ? (
-                    <>
-                      <RotateCcw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Menyimpan {Object.keys(matrixDrafts).length} Jadwal...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-4 h-4" />
-                      <span>
-                        💾 Simpan Data Shift ({Object.keys(matrixDrafts).length})
-                      </span>
-                    </>
-                  )}
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <input
+                  type="month"
+                  value={selectedMonthYear}
+                  onChange={(e) => e.target.value && setSelectedMonthYear(e.target.value)}
+                  className="px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-black bg-indigo-50/70 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 font-mono cursor-pointer"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleChangeMonth(1)}
+                  className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer"
+                  title="Bulan Berikutnya"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const now = new Date();
+                    setSelectedMonthYear(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+                  }}
+                  className="px-2.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 cursor-pointer"
+                >
+                  Bulan Ini
                 </button>
               </div>
-            )}
+
+              {/* Dual Monthly Display Style Switcher: Tabel Geser vs Kalender per Staf (Sangat Nyaman di HP) */}
+              <div className="flex items-center gap-1 p-0.5 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setMonthlyDisplayStyle('grid')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold flex items-center gap-1 transition-all cursor-pointer ${
+                    monthlyDisplayStyle === 'grid'
+                      ? 'bg-white dark:bg-[#131d31] text-indigo-600 dark:text-indigo-400 shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                  title="Tampilan Tabel Matriks 1–31 (Kolom nama kompak di HP)"
+                >
+                  <TableIcon className="w-3 h-3" />
+                  <span>Tabel Geser</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMonthlyDisplayStyle('staff_calendar')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold flex items-center gap-1 transition-all cursor-pointer ${
+                    monthlyDisplayStyle === 'staff_calendar'
+                      ? 'bg-white dark:bg-[#131d31] text-indigo-600 dark:text-indigo-400 shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                  title="Tampilan Kalender Bulanan per Staf (7 Kolom Sen–Min, 100% terbaca di layar HP tanpa geser samping)"
+                >
+                  <CalendarDays className="w-3 h-3" />
+                  <span>Kalender Staf</span>
+                </button>
+              </div>
+
+              <span className="hidden sm:inline text-xs font-bold text-slate-500 dark:text-slate-400">
+                ({monthlyDays.length} Hari × {matrixEmployees.length} Staf)
+              </span>
+            </div>
+
+            {/* Save / Reset Drafts + Mobile Generator Toggle */}
+            <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2">
+              {userIsAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setIsMobileGeneratorOpen((prev) => !prev)}
+                  className={`lg:hidden px-3 py-1.5 rounded-xl text-[11px] font-extrabold border flex items-center gap-1.5 cursor-pointer transition-colors ${
+                    isMobileGeneratorOpen
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>{isMobileGeneratorOpen ? 'Tutup Generator Massal' : '⚡ Generator Massal & Info Pola'}</span>
+                </button>
+              )}
+
+              {userIsAdmin && (
+                <div className="flex flex-wrap items-center gap-2 ml-auto sm:ml-0">
+                  {Object.keys(matrixDrafts).length > 0 && (
+                    <>
+                      <span className="hidden sm:inline-flex px-2.5 py-1.5 rounded-xl bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 text-xs font-extrabold">
+                        ⚡ {Object.keys(matrixDrafts).length} Belum Disimpan
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setMatrixDrafts({})}
+                        disabled={isSavingMatrixDrafts}
+                        className="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
+                      >
+                        Reset Draft
+                      </button>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleSaveAllMatrixDrafts()}
+                    disabled={isSavingMatrixDrafts || Object.keys(matrixDrafts).length === 0}
+                    className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-black text-white shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-40 transition-all ${
+                      Object.keys(matrixDrafts).length > 0
+                        ? 'bg-emerald-600 hover:bg-emerald-500 ring-2 ring-emerald-400/50'
+                        : 'bg-indigo-600 hover:bg-indigo-500'
+                    }`}
+                  >
+                    {isSavingMatrixDrafts ? (
+                      <>
+                        <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Menyimpan ({Object.keys(matrixDrafts).length})...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>💾 Simpan ({Object.keys(matrixDrafts).length})</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Row 2: SMART BULK GENERATOR SEBULAN PENUH + KUAS SHIFT INTERAKTIF (ADMIN ONLY) */}
-          {userIsAdmin && (
-            <div className="grid grid-cols-1 xl:grid-cols-12 gap-3 bg-slate-50/90 dark:bg-slate-900/70 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800">
-              {/* Left 7 Cols: Generator Massal 1 Bulan untuk Semua Karyawan yang Dicentang */}
-              <div className="xl:col-span-7 space-y-2.5 pr-0 xl:pr-3 xl:border-r border-slate-200/80 dark:border-slate-800">
+          {/* Collapsible on Mobile (<1024px), Always Visible on Desktop (lg:block): Pola Reguler Banner + Bulk Month Generator */}
+          <div className={`${isMobileGeneratorOpen ? 'block' : 'hidden lg:block'} space-y-3`}>
+            {/* Pola Reguler Information Banner */}
+            <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/70 dark:border-indigo-800/60 text-xs">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-700 dark:text-slate-200">
+                <span className="font-black text-indigo-700 dark:text-indigo-300">📋 Aturan Pola Reguler Bulanan:</span>
+                <span className="font-bold">• Libur Rutin: <strong className="text-rose-600 dark:text-rose-400">Hari Minggu (OFF)</strong></span>
+                <span className="font-mono font-bold text-blue-700 dark:text-blue-300">• Shift 1: 08:00 - 17:00</span>
+                <span className="font-mono font-bold text-indigo-700 dark:text-indigo-300">• Shift 2: 09:00 - 18:00</span>
+                <span className="font-mono font-bold text-purple-700 dark:text-purple-300">
+                  • Shift 3: <span className="underline">3a</span> 12:00 - 21:00 (Senin–Jumat) &amp; <span className="underline text-teal-700 dark:text-teal-300">3b</span> 11:00 - 20:00 (Sabtu)
+                </span>
+              </div>
+              {!userIsAdmin && (
+                <span className="text-[11px] font-bold text-slate-500 italic">
+                  🔒 Pengaturan jadwal dikunci khusus Admin / Superadmin
+                </span>
+              )}
+            </div>
+
+            {userIsAdmin && (
+              <div className="bg-slate-50/90 dark:bg-slate-900/70 p-3 sm:p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 space-y-2.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs font-black text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
@@ -2424,7 +2516,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                   <select
                     value={bulkMonthShiftPattern}
                     onChange={(e) => setBulkMonthShiftPattern(e.target.value)}
-                    className="px-3 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100"
+                    className="w-full sm:w-auto px-3 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100"
                     title="Pilih Pola Shift Bulanan"
                   >
                     <option value="Shift 1">Pola Reguler: Shift 1 (08:00 - 17:00)</option>
@@ -2439,7 +2531,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                   <select
                     value={bulkMonthOffRule}
                     onChange={(e) => setBulkMonthOffRule(e.target.value)}
-                    className="px-3 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100"
+                    className="w-full sm:w-auto px-3 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100"
                     title="Pilih Aturan Hari Libur Rutin"
                   >
                     <option value="OFF_0">Libur Setiap Hari Minggu (Pola Reguler)</option>
@@ -2457,7 +2549,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                   <button
                     type="button"
                     onClick={() => handleBulkFillMonthlyMatrix(undefined, false)}
-                    className="px-3.5 py-2 rounded-xl text-xs font-black bg-indigo-600 hover:bg-indigo-500 text-white shadow-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                    className="flex-1 sm:flex-initial justify-center px-3.5 py-2 rounded-xl text-xs font-black bg-indigo-600 hover:bg-indigo-500 text-white shadow-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
                     title="Isi ke tabel matriks untuk ditinjau/diedit sebelum disimpan"
                   >
                     <Sparkles className="w-3.5 h-3.5" />
@@ -2468,7 +2560,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                     type="button"
                     onClick={() => handleBulkFillMonthlyMatrix(undefined, true)}
                     disabled={isSavingMatrixDrafts}
-                    className="px-3.5 py-2 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 disabled:opacity-50"
+                    className="flex-1 sm:flex-initial justify-center px-3.5 py-2 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 disabled:opacity-50"
                     title="Isi jadwal sebulan penuh dan langsung simpan ke database"
                   >
                     <Check className="w-3.5 h-3.5" />
@@ -2476,226 +2568,452 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                   </button>
                 </div>
               </div>
+            )}
+          </div>
 
-              {/* Right 5 Cols: Mode Kuas Cepat (Klik / Tahan-Geser pada Sel Tanggal) */}
-              <div className="xl:col-span-5 space-y-2">
-                <div className="text-xs font-black text-slate-800 dark:text-slate-100 flex items-center justify-between">
-                  <span>2. Kuas Klik / Geser Cepat di Sel Tanggal:</span>
-                  <span className="text-[10px] font-normal text-slate-500">
-                    Klik atau tahan-geser mouse di kotak tanggal 1–31
-                  </span>
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {[
-                    { key: 'Shift 1', code: 'S1 (08-17)' },
-                    { key: 'Shift 2', code: 'S2 (09-18)' },
-                    { key: 'Shift 3', code: 'S3 Auto (3a/3b)' },
-                    { key: 'Shift 3a', code: 'S3a (12-21)' },
-                    { key: 'Shift 3b', code: 'S3b (11-20)' },
-                    { key: 'Libur', code: 'OFF (Libur)' },
-                    { key: 'Cuti', code: 'CT (Cuti)' },
-                    { key: 'Izin', code: 'IZN (Izin)' },
-                    { key: 'MODAL', code: '🔍 Edit Detail' },
-                  ].map((b) => {
-                    const isActive = activeBrushShift === b.key;
-                    const bStyle = getShiftBadgeStyle(b.key === 'Shift 3' ? 'Shift 3a' : b.key);
-                    return (
-                      <button
-                        key={b.key}
-                        type="button"
-                        onClick={() => setActiveBrushShift(b.key)}
-                        className={`px-2.5 py-1 rounded-xl text-[11px] font-extrabold border transition-all cursor-pointer ${
-                          isActive
-                            ? 'ring-2 ring-indigo-500 border-indigo-600 bg-indigo-600 text-white shadow-xs'
-                            : b.key === 'MODAL'
-                            ? 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
-                            : `${bStyle.bg} ${bStyle.text} opacity-80 hover:opacity-100`
-                        }`}
-                      >
-                        {b.code}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Row 3: Spreadsheet Table 1..31 */}
-          <div className="overflow-x-auto border border-slate-200/80 dark:border-slate-800 rounded-2xl">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
-                  {/* Sticky Left Column: Employee + Quick 1-Month Row Controls */}
-                  <th className="sticky left-0 z-20 bg-slate-50 dark:bg-slate-900 py-2.5 px-3 font-black text-slate-600 dark:text-slate-300 uppercase text-[10px] min-w-[265px] sm:min-w-[310px] border-r border-slate-200 dark:border-slate-800 shadow-2xs">
-                    <div className="flex items-center justify-between gap-2">
-                      <span>Karyawan &amp; Shift Bulanan</span>
-                      <span className="text-[9px] text-slate-400 font-normal">Klik S1 / S2 / S3 (Minggu Off)</span>
-                    </div>
-                  </th>
-
-                  {/* Columns 1..31 */}
-                  {monthlyDays.map((d) => {
-                    const isToday = d.dateStr === new Date().toISOString().slice(0, 10);
-                    return (
-                      <th
-                        key={d.dateStr}
-                        onClick={() => userIsAdmin && handleFillDayColumn(d.dateStr)}
-                        title={
-                          userIsAdmin
-                            ? `Klik tanggal ${d.dayNum} untuk mengisi "${activeBrushShift}" ke seluruh staf terpilih pada hari ini`
-                            : d.dateStr
-                        }
-                        className={`py-2 px-1 text-center min-w-[38px] border-r border-slate-100 dark:border-slate-800/70 transition-colors ${
-                          userIsAdmin ? 'cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/40' : ''
-                        } ${
-                          isToday
-                            ? 'bg-indigo-600/15 text-indigo-700 dark:text-indigo-300 font-black'
-                            : d.isWeekend
-                            ? 'bg-rose-50/70 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 font-extrabold'
-                            : 'text-slate-600 dark:text-slate-400 font-bold'
-                        }`}
-                      >
-                        <div className="text-[9px] uppercase opacity-75">{d.shortDay}</div>
-                        <div className="text-[11px] font-mono">{String(d.dayNum).padStart(2, '0')}</div>
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-sans">
-                {matrixEmployees.map((k, empIdx) => {
-                  const isSelected = selectedMatrixNiks.includes(k.nik);
-                  // Default Pola Reguler: Libur Hari Minggu ('OFF_0')
-                  const currentOffPref = employeeOffDayPref[k.nik] || 'OFF_0';
-
+          {/* Always-Accessible Compact Bar: Kuas Shift Cepat + Filter Rentang Tanggal (Swipe Horizontal di HP) */}
+          <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-2.5 bg-slate-50/90 dark:bg-slate-900/70 p-2.5 sm:p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800">
+            {userIsAdmin && (
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap pb-0.5 xl:pb-0">
+                <span className="text-[11px] font-black text-slate-700 dark:text-slate-200 shrink-0 mr-1">
+                  🖌️ Kuas Shift:
+                </span>
+                {[
+                  { key: 'Shift 1', code: 'S1 (08-17)' },
+                  { key: 'Shift 2', code: 'S2 (09-18)' },
+                  { key: 'Shift 3', code: 'S3 Auto' },
+                  { key: 'Shift 3a', code: 'S3a (12-21)' },
+                  { key: 'Shift 3b', code: 'S3b (11-20)' },
+                  { key: 'Libur', code: 'OFF (Libur)' },
+                  { key: 'Cuti', code: 'CT (Cuti)' },
+                  { key: 'Izin', code: 'IZN (Izin)' },
+                  { key: 'MODAL', code: '🔍 Detail' },
+                ].map((b) => {
+                  const isActive = activeBrushShift === b.key;
+                  const bStyle = getShiftBadgeStyle(b.key === 'Shift 3' ? 'Shift 3a' : b.key);
                   return (
-                    <tr
-                      key={k.nik}
-                      className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors"
+                    <button
+                      key={b.key}
+                      type="button"
+                      onClick={() => setActiveBrushShift(b.key)}
+                      className={`px-2.5 py-1 rounded-xl text-[11px] font-extrabold border shrink-0 transition-all cursor-pointer ${
+                        isActive
+                          ? 'ring-2 ring-indigo-500 border-indigo-600 bg-indigo-600 text-white shadow-xs'
+                          : b.key === 'MODAL'
+                          ? 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                          : `${bStyle.bg} ${bStyle.text} opacity-85 hover:opacity-100`
+                      }`}
                     >
-                      {/* Sticky Left Employee & Row Quick-Fill Controls */}
-                      <td className="sticky left-0 z-10 bg-white dark:bg-[#131d31] py-2 px-2.5 border-r border-slate-200 dark:border-slate-800 shadow-2xs">
-                        <div className="flex items-center justify-between gap-2">
-                          <label className="flex items-center gap-2 min-w-0 cursor-pointer">
-                            {userIsAdmin && (
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedMatrixNiks((prev) => [...prev, k.nik]);
-                                  } else {
-                                    setSelectedMatrixNiks((prev) => prev.filter((id) => id !== k.nik));
-                                  }
-                                }}
-                                className="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 dark:border-slate-700 cursor-pointer shrink-0"
-                              />
-                            )}
-                            <div className="min-w-0">
-                              <div className="font-extrabold text-xs text-slate-900 dark:text-white truncate max-w-[125px] sm:max-w-[150px]">
-                                {k.nama}
-                              </div>
-                              <div className="text-[10px] font-mono text-slate-400 truncate">
-                                {k.nik} • {k.divisi || 'Warehouse'}
-                              </div>
-                            </div>
-                          </label>
+                      {b.code}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
-                          {/* Per-Employee 1-Click Full Month Fill Buttons (S1, S2, S3 Auto 3a/3b) */}
-                          {userIsAdmin && (
-                            <div className="flex items-center gap-1 shrink-0">
-                              {[
-                                { label: 'S1', pattern: 'Shift 1', desc: 'Set 1 bulan penuh Shift 1 (08:00-17:00, Minggu Libur)' },
-                                { label: 'S2', pattern: 'Shift 2', desc: 'Set 1 bulan penuh Shift 2 (09:00-18:00, Minggu Libur)' },
-                                { label: 'S3', pattern: 'Shift 3', desc: 'Set 1 bulan penuh Shift 3 (Sen-Jum 3a 12:00-21:00, Sabtu 3b 11:00-20:00, Minggu Libur)' },
-                              ].map((sOpt) => (
-                                <button
-                                  key={sOpt.pattern}
-                                  type="button"
-                                  onClick={() => fillSingleEmployeeMonth(k.nik, empIdx, sOpt.pattern)}
-                                  title={`${k.nama}: ${sOpt.desc}`}
-                                  className="px-1.5 py-0.5 rounded-md text-[10px] font-black bg-slate-100 dark:bg-slate-800 hover:bg-indigo-600 hover:text-white text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
-                                >
-                                  {sOpt.label}
-                                </button>
-                              ))}
-                              <select
-                                value={currentOffPref}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setEmployeeOffDayPref((prev) => ({ ...prev, [k.nik]: val }));
-                                  fillSingleEmployeeMonth(k.nik, empIdx, bulkMonthShiftPattern, val);
-                                }}
-                                title={`Pilih hari libur rutin untuk ${k.nama} (Default: Hari Minggu)`}
-                                className="px-1 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 cursor-pointer"
-                              >
-                                <option value="OFF_0">Off Min</option>
-                                <option value="OFF_1">Off Sen</option>
-                                <option value="OFF_2">Off Sel</option>
-                                <option value="OFF_3">Off Rab</option>
-                                <option value="OFF_4">Off Kam</option>
-                                <option value="OFF_5">Off Jum</option>
-                                <option value="OFF_6">Off Sab</option>
-                                <option value="OFF_WEEKEND">Sab-Min</option>
-                                <option value="NO_OFF">Full</option>
-                              </select>
-                            </div>
-                          )}
-                        </div>
-                      </td>
+            {/* Quick Date-Range Filter for Tabel Geser (Memudahkan Baca per Minggu di HP tanpa Scroll Panjang) */}
+            {monthlyDisplayStyle === 'grid' && (
+              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar whitespace-nowrap">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0 mr-1">
+                  Rentang:
+                </span>
+                {[
+                  { id: 'ALL' as const, label: `Semua (1–${monthlyDays.length})` },
+                  { id: 'W1' as const, label: 'Tgl 1–7' },
+                  { id: 'W2' as const, label: 'Tgl 8–14' },
+                  { id: 'W3' as const, label: 'Tgl 15–21' },
+                  { id: 'W4' as const, label: `Tgl 22–${monthlyDays.length}` },
+                ].map((rng) => (
+                  <button
+                    key={rng.id}
+                    type="button"
+                    onClick={() => setMonthlyDayRangeFilter(rng.id)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold shrink-0 transition-colors cursor-pointer ${
+                      monthlyDayRangeFilter === rng.id
+                        ? 'bg-indigo-600 text-white shadow-2xs'
+                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-indigo-400'
+                    }`}
+                  >
+                    {rng.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
-                      {/* 30/31 Day Cells */}
-                      {monthlyDays.map((day) => {
-                        const cellKey = `${k.nik}_${day.dateStr}`;
-                        const draft = matrixDrafts[cellKey];
-                        const savedRec = rosterByNikDate.get(cellKey);
-                        const effectiveShift = draft ? draft.shift : savedRec?.shift || '';
-                        const shortCode = getShortShiftCode(effectiveShift);
-                        const badgeStyle = getShiftBadgeStyle(effectiveShift);
-                        const isDraft = Boolean(draft);
+          {/* Row 3A: MONTHLY STAFF CALENDAR CARDS (7-Column Sen..Min Full Month per Employee — 100% Terbaca di HP Tanpa Geser Samping) */}
+          {monthlyDisplayStyle === 'staff_calendar' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
+              {matrixEmployees.map((k, empIdx) => {
+                const isSelected = selectedMatrixNiks.includes(k.nik);
+                const currentOffPref = employeeOffDayPref[k.nik] || 'OFF_0';
 
-                        return (
-                          <td
-                            key={day.dateStr}
-                            onMouseDown={() => {
-                              if (!userIsAdmin) return;
-                              setIsMousePainting(true);
-                              paintMatrixCell(k.nik, day.dateStr);
-                            }}
-                            onMouseEnter={() => {
-                              if (isMousePainting && userIsAdmin && activeBrushShift !== 'MODAL') {
-                                paintMatrixCell(k.nik, day.dateStr);
+                // Calculate monthly stats for this employee
+                let countS1 = 0;
+                let countS2 = 0;
+                let countS3 = 0;
+                let countOff = 0;
+                monthlyDays.forEach((d) => {
+                  const ck = `${k.nik}_${d.dateStr}`;
+                  const eff = matrixDrafts[ck]?.shift ?? rosterByNikDate.get(ck)?.shift ?? '';
+                  const sc = getShortShiftCode(eff);
+                  if (sc === 'S1') countS1++;
+                  else if (sc === 'S2') countS2++;
+                  else if (sc === 'S3a' || sc === 'S3b') countS3++;
+                  else if (sc === 'OFF' || sc === 'CT' || sc === 'IZN' || sc === 'SKT') countOff++;
+                });
+
+                return (
+                  <div
+                    key={k.nik}
+                    className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-3 sm:p-3.5 shadow-2xs flex flex-col gap-2.5"
+                  >
+                    {/* Employee Card Header */}
+                    <div className="flex items-start justify-between gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
+                      <label className="flex items-center gap-2 min-w-0 cursor-pointer">
+                        {userIsAdmin && (
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedMatrixNiks((prev) => [...prev, k.nik]);
+                              } else {
+                                setSelectedMatrixNiks((prev) => prev.filter((id) => id !== k.nik));
                               }
                             }}
-                            className={`p-1 text-center border-r border-slate-100 dark:border-slate-800/50 ${
-                              day.isWeekend ? 'bg-rose-50/20 dark:bg-rose-950/10' : ''
+                            className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 dark:border-slate-700 cursor-pointer shrink-0"
+                          />
+                        )}
+                        <div className="min-w-0">
+                          <div className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white truncate">
+                            {k.nama}
+                          </div>
+                          <div className="text-[10px] font-mono text-slate-400 truncate">
+                            {k.nik} • {k.divisi || 'Warehouse'}
+                          </div>
+                        </div>
+                      </label>
+
+                      {/* Mini Stats Badges */}
+                      <div className="flex flex-wrap items-center justify-end gap-1 shrink-0">
+                        {countS1 > 0 && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                            S1:{countS1}
+                          </span>
+                        )}
+                        {countS2 > 0 && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                            S2:{countS2}
+                          </span>
+                        )}
+                        {countS3 > 0 && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                            S3:{countS3}
+                          </span>
+                        )}
+                        {countOff > 0 && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                            OFF:{countOff}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Quick 1-Month Fill Row for Admin */}
+                    {userIsAdmin && (
+                      <div className="flex items-center justify-between gap-1.5 bg-slate-50 dark:bg-slate-800/50 px-2.5 py-1.5 rounded-xl">
+                        <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                          Isi 1 Bulan:
+                        </span>
+                        <div className="flex items-center gap-1">
+                          {[
+                            { label: 'Full S1', pattern: 'Shift 1' },
+                            { label: 'Full S2', pattern: 'Shift 2' },
+                            { label: 'Full S3', pattern: 'Shift 3' },
+                          ].map((sOpt) => (
+                            <button
+                              key={sOpt.pattern}
+                              type="button"
+                              onClick={() => fillSingleEmployeeMonth(k.nik, empIdx, sOpt.pattern)}
+                              className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-indigo-600 hover:text-white text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                            >
+                              {sOpt.label}
+                            </button>
+                          ))}
+                          <select
+                            value={currentOffPref}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setEmployeeOffDayPref((prev) => ({ ...prev, [k.nik]: val }));
+                              fillSingleEmployeeMonth(k.nik, empIdx, bulkMonthShiftPattern, val);
+                            }}
+                            className="px-1.5 py-0.5 rounded-lg text-[10px] font-bold bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 cursor-pointer"
+                          >
+                            <option value="OFF_0">Off Min</option>
+                            <option value="OFF_1">Off Sen</option>
+                            <option value="OFF_2">Off Sel</option>
+                            <option value="OFF_3">Off Rab</option>
+                            <option value="OFF_4">Off Kam</option>
+                            <option value="OFF_5">Off Jum</option>
+                            <option value="OFF_6">Off Sab</option>
+                            <option value="OFF_WEEKEND">Sab-Min</option>
+                            <option value="NO_OFF">Full</option>
+                          </select>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 7-Column Calendar Grid (Sen .. Min) */}
+                    <div>
+                      <div className="grid grid-cols-7 gap-1 mb-1 text-center">
+                        {['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'].map((dn, idx) => (
+                          <div
+                            key={dn}
+                            className={`text-[9px] font-black uppercase py-0.5 ${
+                              idx >= 5 ? 'text-rose-500 dark:text-rose-400' : 'text-slate-400 dark:text-slate-500'
                             }`}
                           >
-                            <div
-                              title={`${k.nama} (${day.dateStr}): ${effectiveShift || 'Belum diatur'}${
-                                isDraft ? ' [Draft Belum Disimpan]' : ''
-                              }`}
-                              className={`w-full py-1.5 px-0.5 rounded-lg text-[10px] font-black border transition-all relative ${
+                            {dn}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-7 gap-1">
+                        {Array.from({ length: monthlyLeadingEmptySlots }).map((_, emptyIdx) => (
+                          <div key={`empty_${emptyIdx}`} className="h-11 rounded-lg bg-slate-50/40 dark:bg-slate-900/20" />
+                        ))}
+                        {monthlyDays.map((day) => {
+                          const cellKey = `${k.nik}_${day.dateStr}`;
+                          const draft = matrixDrafts[cellKey];
+                          const savedRec = rosterByNikDate.get(cellKey);
+                          const effectiveShift = draft ? draft.shift : savedRec?.shift || '';
+                          const shortCode = getShortShiftCode(effectiveShift);
+                          const badgeStyle = getShiftBadgeStyle(effectiveShift);
+                          const isDraft = Boolean(draft);
+
+                          return (
+                            <button
+                              key={day.dateStr}
+                              type="button"
+                              onClick={() => {
+                                if (!userIsAdmin) return;
+                                paintMatrixCell(k.nik, day.dateStr);
+                              }}
+                              className={`h-11 rounded-lg border p-1 flex flex-col items-center justify-between transition-all ${
                                 effectiveShift
                                   ? `${badgeStyle.bg} ${badgeStyle.text}`
-                                  : 'border-dashed border-slate-200 dark:border-slate-800 text-slate-300 dark:text-slate-600 hover:border-indigo-400'
-                              } ${userIsAdmin ? 'cursor-pointer hover:scale-105' : ''} ${
+                                  : 'bg-slate-50/60 dark:bg-slate-800/40 border-dashed border-slate-200 dark:border-slate-800 text-slate-400'
+                              } ${userIsAdmin ? 'cursor-pointer active:scale-95' : 'cursor-default'} ${
                                 isDraft ? 'ring-2 ring-amber-400 dark:ring-amber-500' : ''
                               }`}
                             >
-                              {shortCode}
-                            </div>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                              <span
+                                className={`text-[9px] font-mono leading-none self-start ${
+                                  day.isWeekend ? 'font-black text-rose-600 dark:text-rose-400' : 'opacity-75'
+                                }`}
+                              >
+                                {String(day.dayNum).padStart(2, '0')}
+                              </span>
+                              <span className="text-[10px] font-black leading-none">{shortCode}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            /* Row 3B: Spreadsheet Table 1..31 (With Compact 112px Sticky Column on Mobile so 6–7 Day Columns Are Visible at Once!) */
+            <div className="overflow-x-auto overscroll-x-contain border border-slate-200/80 dark:border-slate-800 rounded-2xl">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
+                    {/* Sticky Left Column: Compact 112px on Mobile (<640px), Full 310px on Desktop (sm:) */}
+                    <th className="sticky left-0 z-20 bg-slate-50 dark:bg-slate-900 py-2 px-2 sm:py-2.5 sm:px-3 font-black text-slate-600 dark:text-slate-300 uppercase text-[10px] w-[112px] min-w-[112px] max-w-[112px] sm:w-auto sm:min-w-[310px] sm:max-w-none border-r border-slate-200 dark:border-slate-800 shadow-2xs">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="truncate">Staf ({matrixEmployees.length})</span>
+                        <span className="hidden sm:inline text-[9px] text-slate-400 font-normal">
+                          Klik S1 / S2 / S3 (Minggu Off)
+                        </span>
+                      </div>
+                    </th>
+
+                    {/* Columns 1..31 (or selected week slice) */}
+                    {visibleMonthlyDays.map((d) => {
+                      const isToday = d.dateStr === new Date().toISOString().slice(0, 10);
+                      return (
+                        <th
+                          key={d.dateStr}
+                          onClick={() => userIsAdmin && handleFillDayColumn(d.dateStr)}
+                          title={
+                            userIsAdmin
+                              ? `Klik tanggal ${d.dayNum} untuk mengisi "${activeBrushShift}" ke seluruh staf terpilih pada hari ini`
+                              : d.dateStr
+                          }
+                          className={`py-2 px-1 text-center min-w-[40px] sm:min-w-[38px] border-r border-slate-100 dark:border-slate-800/70 transition-colors ${
+                            userIsAdmin ? 'cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/40' : ''
+                          } ${
+                            isToday
+                              ? 'bg-indigo-600/15 text-indigo-700 dark:text-indigo-300 font-black'
+                              : d.isWeekend
+                              ? 'bg-rose-50/70 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 font-extrabold'
+                              : 'text-slate-600 dark:text-slate-400 font-bold'
+                          }`}
+                        >
+                          <div className="text-[9px] uppercase opacity-75">{d.shortDay}</div>
+                          <div className="text-[11px] font-mono">{String(d.dayNum).padStart(2, '0')}</div>
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-sans">
+                  {matrixEmployees.map((k, empIdx) => {
+                    const isSelected = selectedMatrixNiks.includes(k.nik);
+                    // Default Pola Reguler: Libur Hari Minggu ('OFF_0')
+                    const currentOffPref = employeeOffDayPref[k.nik] || 'OFF_0';
+
+                    return (
+                      <tr
+                        key={k.nik}
+                        className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors"
+                      >
+                        {/* Sticky Left Employee & Row Quick-Fill Controls (Compact 112px on Mobile, Full 310px on Desktop) */}
+                        <td className="sticky left-0 z-10 bg-white dark:bg-[#131d31] py-1.5 px-1.5 sm:py-2 sm:px-2.5 w-[112px] min-w-[112px] max-w-[112px] sm:w-auto sm:min-w-[310px] sm:max-w-none border-r border-slate-200 dark:border-slate-800 shadow-2xs">
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2">
+                            <label className="flex items-start sm:items-center gap-1.5 sm:gap-2 min-w-0 cursor-pointer">
+                              {userIsAdmin && (
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedMatrixNiks((prev) => [...prev, k.nik]);
+                                    } else {
+                                      setSelectedMatrixNiks((prev) => prev.filter((id) => id !== k.nik));
+                                    }
+                                  }}
+                                  className="w-3.5 h-3.5 mt-0.5 sm:mt-0 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 dark:border-slate-700 cursor-pointer shrink-0"
+                                />
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <div className="font-extrabold text-[11px] sm:text-xs text-slate-900 dark:text-white truncate leading-tight">
+                                  {k.nama}
+                                </div>
+                                <div className="text-[9px] sm:text-[10px] font-mono text-slate-400 truncate leading-tight">
+                                  {k.nik} <span className="hidden sm:inline">• {k.divisi || 'Warehouse'}</span>
+                                </div>
+                              </div>
+                            </label>
+
+                            {/* Per-Employee 1-Click Full Month Fill Buttons (Compact row under name on mobile, right-aligned on desktop) */}
+                            {userIsAdmin && (
+                              <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+                                {[
+                                  { label: 'S1', pattern: 'Shift 1', desc: 'Set 1 bulan penuh Shift 1 (08:00-17:00, Minggu Libur)' },
+                                  { label: 'S2', pattern: 'Shift 2', desc: 'Set 1 bulan penuh Shift 2 (09:00-18:00, Minggu Libur)' },
+                                  { label: 'S3', pattern: 'Shift 3', desc: 'Set 1 bulan penuh Shift 3 (Sen-Jum 3a 12:00-21:00, Sabtu 3b 11:00-20:00, Minggu Libur)' },
+                                ].map((sOpt) => (
+                                  <button
+                                    key={sOpt.pattern}
+                                    type="button"
+                                    onClick={() => fillSingleEmployeeMonth(k.nik, empIdx, sOpt.pattern)}
+                                    title={`${k.nama}: ${sOpt.desc}`}
+                                    className="px-1 sm:px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-black bg-slate-100 dark:bg-slate-800 hover:bg-indigo-600 hover:text-white text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+                                  >
+                                    {sOpt.label}
+                                  </button>
+                                ))}
+                                <select
+                                  value={currentOffPref}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setEmployeeOffDayPref((prev) => ({ ...prev, [k.nik]: val }));
+                                    fillSingleEmployeeMonth(k.nik, empIdx, bulkMonthShiftPattern, val);
+                                  }}
+                                  title={`Pilih hari libur rutin untuk ${k.nama} (Default: Hari Minggu)`}
+                                  className="hidden sm:inline-block px-1 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 cursor-pointer"
+                                >
+                                  <option value="OFF_0">Off Min</option>
+                                  <option value="OFF_1">Off Sen</option>
+                                  <option value="OFF_2">Off Sel</option>
+                                  <option value="OFF_3">Off Rab</option>
+                                  <option value="OFF_4">Off Kam</option>
+                                  <option value="OFF_5">Off Jum</option>
+                                  <option value="OFF_6">Off Sab</option>
+                                  <option value="OFF_WEEKEND">Sab-Min</option>
+                                  <option value="NO_OFF">Full</option>
+                                </select>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Day Cells (Touch-Safe: Scrolling horizontally on mobile will NOT accidentally paint cells) */}
+                        {visibleMonthlyDays.map((day) => {
+                          const cellKey = `${k.nik}_${day.dateStr}`;
+                          const draft = matrixDrafts[cellKey];
+                          const savedRec = rosterByNikDate.get(cellKey);
+                          const effectiveShift = draft ? draft.shift : savedRec?.shift || '';
+                          const shortCode = getShortShiftCode(effectiveShift);
+                          const badgeStyle = getShiftBadgeStyle(effectiveShift);
+                          const isDraft = Boolean(draft);
+
+                          return (
+                            <td
+                              key={day.dateStr}
+                              onPointerDown={(e) => {
+                                if (!userIsAdmin) return;
+                                if (e.pointerType === 'mouse') {
+                                  lastPaintedByPointerRef.current = true;
+                                  setIsMousePainting(true);
+                                  paintMatrixCell(k.nik, day.dateStr);
+                                }
+                              }}
+                              onClick={() => {
+                                if (!userIsAdmin) return;
+                                if (lastPaintedByPointerRef.current) {
+                                  lastPaintedByPointerRef.current = false;
+                                  return;
+                                }
+                                paintMatrixCell(k.nik, day.dateStr);
+                              }}
+                              onMouseEnter={() => {
+                                if (isMousePainting && userIsAdmin && activeBrushShift !== 'MODAL') {
+                                  paintMatrixCell(k.nik, day.dateStr);
+                                }
+                              }}
+                              className={`p-1 text-center border-r border-slate-100 dark:border-slate-800/50 ${
+                                day.isWeekend ? 'bg-rose-50/20 dark:bg-rose-950/10' : ''
+                              }`}
+                            >
+                              <div
+                                title={`${k.nama} (${day.dateStr}): ${effectiveShift || 'Belum diatur'}${
+                                  isDraft ? ' [Draft Belum Disimpan]' : ''
+                                }`}
+                                className={`w-full py-1.5 px-0.5 rounded-lg text-[10px] font-black border transition-all relative ${
+                                  effectiveShift
+                                    ? `${badgeStyle.bg} ${badgeStyle.text}`
+                                    : 'border-dashed border-slate-200 dark:border-slate-800 text-slate-300 dark:text-slate-600 hover:border-indigo-400'
+                                } ${userIsAdmin ? 'cursor-pointer hover:scale-105' : ''} ${
+                                  isDraft ? 'ring-2 ring-amber-400 dark:ring-amber-500' : ''
+                                }`}
+                              >
+                                {shortCode}
+                              </div>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {/* Bottom Save Footer inside Card */}
           {userIsAdmin && (
@@ -2707,7 +3025,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                   </span>
                 ) : (
                   <span>
-                    Pilih tombol <strong>S1 / S2 / S3</strong> pada baris karyawan atau klik <strong>Isi ke Tabel Sebulan</strong>, lalu klik tombol <strong>Simpan Data Shift</strong>.
+                    Pilih tombol <strong>S1 / S2 / S3</strong> pada baris karyawan atau ketuk kotak tanggal dengan <strong>Kuas Shift</strong>, lalu klik <strong>Simpan Data Shift</strong>.
                   </span>
                 )}
               </div>
@@ -2791,7 +3109,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
         </div>
       ) : (
         /* WEEKLY MATRIX VIEW */
-        <div className="bg-white dark:bg-[#131d31] rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm p-4 sm:p-5 overflow-hidden">
+        <div className="bg-white dark:bg-[#131d31] rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm p-3 sm:p-5 overflow-hidden">
           {/* Weekly Header Navigator */}
           <div className="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
             <div className="flex items-center gap-2">
@@ -2826,17 +3144,17 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
           </div>
 
           {/* Weekly Matrix Grid */}
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overscroll-x-contain border border-slate-200/80 dark:border-slate-800 rounded-2xl">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
-                  <th className="py-3 px-3 font-black text-slate-500 uppercase text-[10px] min-w-[140px]">
+                  <th className="sticky left-0 z-20 bg-slate-50 dark:bg-slate-900 py-2.5 px-2.5 sm:px-3 font-black text-slate-500 uppercase text-[10px] w-[112px] min-w-[112px] max-w-[112px] sm:w-auto sm:min-w-[150px] sm:max-w-none border-r border-slate-200 dark:border-slate-800 shadow-2xs">
                     Staf Karyawan
                   </th>
                   {weeklyDays.map((d) => (
                     <th
                       key={d.dateStr}
-                      className={`py-3 px-2 text-center min-w-[100px] ${
+                      className={`py-2.5 px-1.5 sm:px-2 text-center min-w-[76px] sm:min-w-[100px] border-r border-slate-100 dark:border-slate-800/70 ${
                         d.dateStr === new Date().toISOString().slice(0, 10)
                           ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400 font-black'
                           : 'text-slate-500 font-bold'
@@ -2851,11 +3169,11 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-sans">
                 {matrixEmployees.map((k) => (
                   <tr key={k.nik} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20">
-                    <td className="py-2.5 px-3">
-                      <div className="font-extrabold text-slate-900 dark:text-white truncate max-w-[130px]">
+                    <td className="sticky left-0 z-10 bg-white dark:bg-[#131d31] py-2 px-2.5 sm:px-3 w-[112px] min-w-[112px] max-w-[112px] sm:w-auto sm:min-w-[150px] sm:max-w-none border-r border-slate-200 dark:border-slate-800 shadow-2xs">
+                      <div className="font-extrabold text-[11px] sm:text-xs text-slate-900 dark:text-white truncate">
                         {k.nama}
                       </div>
-                      <div className="text-[10px] font-mono text-slate-400">{k.nik}</div>
+                      <div className="text-[9px] sm:text-[10px] font-mono text-slate-400 truncate">{k.nik}</div>
                     </td>
 
                     {weeklyDays.map((day) => {
@@ -2864,12 +3182,12 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                       const badgeStyle = getShiftBadgeStyle(sName);
 
                       return (
-                        <td key={day.dateStr} className="py-2.5 px-1.5 text-center">
+                        <td key={day.dateStr} className="py-2 px-1 sm:px-1.5 text-center border-r border-slate-100 dark:border-slate-800/50">
                           {shiftRec ? (
                             <button
                               type="button"
                               onClick={() => userIsAdmin && handleOpenEdit(shiftRec)}
-                              className={`w-full py-1.5 px-1 rounded-xl text-[11px] font-extrabold border transition-all truncate block ${badgeStyle.bg} ${badgeStyle.text} ${
+                              className={`w-full py-1.5 px-1 rounded-xl text-[10px] sm:text-[11px] font-extrabold border transition-all truncate block ${badgeStyle.bg} ${badgeStyle.text} ${
                                 userIsAdmin ? 'cursor-pointer hover:opacity-80' : 'cursor-default'
                               }`}
                               title={
