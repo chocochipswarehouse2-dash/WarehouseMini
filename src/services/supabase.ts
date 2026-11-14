@@ -8438,7 +8438,7 @@ export async function fetchPresensiRange(
   nik?: string
 ): Promise<PresensiRecord[]> {
   try {
-    let query = `select=*&tanggal=gte.${encodeURIComponent(startDate)}&tanggal=lte.${encodeURIComponent(endDate)}&order=tanggal.desc&limit=1000`;
+    let query = `select=*&tanggal=gte.${encodeURIComponent(startDate)}&tanggal=lte.${encodeURIComponent(endDate)}&order=tanggal.desc&limit=5000`;
     if (nik && nik !== 'ALL') {
       query += `&nik=eq.${encodeURIComponent(nik)}`;
     }

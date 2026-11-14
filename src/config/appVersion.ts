@@ -15,19 +15,44 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.11.10",
-  "versionCode": 320,
-  "buildDate": "13 November 2026",
-  "buildHash": "wms-261113-v320-0638",
-  "releaseTitle": "WMS v2.11.10 — Perbaikan VLOOKUP Size Master Produk (F25GBG278BNL/BNS & Akhiran Warna + S/M/L)",
+  "version": "v2.12.1",
+  "versionCode": 321,
+  "buildDate": "14 November 2026",
+  "buildHash": "wms-261114-v321-1123",
+  "releaseTitle": "WMS v2.12.1 — Penandaan Otomatis Status BOLOS pada Jadwal Roster Shift",
   "releaseNotes": [
-    "Menghapus override heuristik isCorruptedColorCodeSize terhadap data resmi master_produk sehingga SKU seperti F25GBG278BNL (L) dan F25GBG278BNS (S) tampil akurat sesuai database",
-    "Memperbaiki batas 1.000 baris PostgREST pada Delta Sync master_produk dan menaikkan versi IndexedDB ke v7 agar cache lokal tersinkronisasi 100%"
+    "Karyawan yang tidak melakukan absensi datang dan pulang pada hari kerja otomatis ditandai sebagai BOLOS pada Jadwal Roster Shift (Matriks Sebulan, Kalender Staf, Mingguan, Tabel Harian & Kartu)",
+    "Menambahkan indikator statistik Bolos (Alpha), filter khusus Bolos, serta detail keterangan audit (Tidak Absen Datang & Pulang / Tidak Absen Pulang) beserta jadwal shift awalnya"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.12.0",
+    "versionCode": 320,
+    "buildDate": "14 November 2026",
+    "buildHash": "wms-261114-v320-1106",
+    "releaseTitle": "WMS v2.12.0 — Relokasi & Multi-Select Kosongkan Rak, Minimize Background & Roster Shift Bulanan Responsif HP",
+    "releaseNotes": [
+      "Fitur Relokasi Rak Penuh (contoh X105 ke V004) & Multi-Select Kosongkan Rak langsung dari Dashboard Interaktif Kapasitas",
+      "Fitur Minimize ke latar belakang untuk Reset Lokasi & Relokasi Rak serta optimasi chunking anti-freeze (bebas Page Not Responding)",
+      "Perbaikan tampilan Roster Shift Matriks Bulanan (1-31) di HP: kolom sticky kompak 112px, filter rentang mingguan, proteksi sentuh geser, dan Mode Kalender Staf 7 kolom"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
+  {
+    "version": "v2.11.10",
+    "versionCode": 320,
+    "buildDate": "13 November 2026",
+    "buildHash": "wms-261113-v320-0638",
+    "releaseTitle": "WMS v2.11.10 — Perbaikan VLOOKUP Size Master Produk (F25GBG278BNL/BNS & Akhiran Warna + S/M/L)",
+    "releaseNotes": [
+      "Menghapus override heuristik isCorruptedColorCodeSize terhadap data resmi master_produk sehingga SKU seperti F25GBG278BNL (L) dan F25GBG278BNS (S) tampil akurat sesuai database",
+      "Memperbaiki batas 1.000 baris PostgREST pada Delta Sync master_produk dan menaikkan versi IndexedDB ke v7 agar cache lokal tersinkronisasi 100%"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.11.9",
     "versionCode": 319,
@@ -101,33 +126,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Penyelarasan otomatis nama & size produk pada Pesanan Store (Split, Tabel, Kartu) dengan Master Produk via lookupProductBySku",
       "Koreksi data tiket AR-BY -261108-P8Z5 di database Supabase menjadi Taylor Pants Denim Blue"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.11.3",
-    "versionCode": 313,
-    "buildDate": "12 November 2026",
-    "buildHash": "wms-261112-v313-1152",
-    "releaseTitle": "WMS v2.11.3 — WMS vNEXT — Audit Lookup Produk: Master Produk Final, Larang Tebakan Size/Nama dari SKU",
-    "releaseNotes": [
-      "Fix size salah akibat tebakan akhiran SKU (YL/OL/EM = kode warna, bukan size)",
-      "Fix nama varian salah akibat tebakan prefix SKU saudara",
-      "Form Alter & Repair kini menyelaraskan nama/size ke Master Produk saat pilih dan simpan",
-      "Rule + Skill baru wms-product-lookup-integrity"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.11.2",
-    "versionCode": 312,
-    "buildDate": "11 November 2026",
-    "buildHash": "wms-261111-v312-2251",
-    "releaseTitle": "WMS v2.11.2 — Auto-Sync Notification Hub dari OS Notification Tray, Service Worker & Supabase",
-    "releaseNotes": [
-      "Sinkronisasi Otomatis OS Notification Tray: Menarik seluruh notifikasi yang sedang tampil di panel notifikasi HP/Desktop (reg.getNotifications()) langsung ke dalam Notification Hub",
-      "Live Backfill Supabase Sesuai Role: Saat aplikasi dimuat atau Notification Hub dibuka, sistem otomatis menarik riwayat notifikasi terbaru (Lembur/Ijin/Cuti, Pesanan Store, Tugas Picking, SPS, Retur CS, Hitung Ulang, & Live Chat) yang sesuai dengan hak akses akun",
-      "Jembatan Service Worker Background (WMS_SW_NOTIFICATION_FIRED): Notifikasi yang masuk saat layar HP mati / aplikasi di background kini langsung tersimpan ke Notification Hub dan popup OS otomatis tertutup setelah 10 detik"
     ],
     "minSupportedVersion": "v2.0.0"
   }

@@ -33,7 +33,7 @@ import {
   Square,
   Layers,
 } from 'lucide-react';
-import { UserSession, RosterShiftRecord, KaryawanRecord, MasterShiftRecord, PerijinanCutiRecord } from '../../types';
+import { UserSession, RosterShiftRecord, KaryawanRecord, MasterShiftRecord, PerijinanCutiRecord, PresensiRecord } from '../../types';
 import { hasPermission, isSuperadmin } from '../../services/permissions';
 import {
   fetchRosterShiftList,
@@ -43,6 +43,7 @@ import {
   deleteRosterShift,
   fetchMasterShiftList,
   fetchCutiRecords,
+  fetchPresensiRange,
 } from '../../services/supabase';
 
 interface RosterShiftViewProps {
@@ -125,6 +126,14 @@ const DEFAULT_SHIFTS: Record<string, ShiftPreset> = {
     label: 'Izin / Sakit',
     badgeBg: 'bg-teal-50 dark:bg-teal-950/60 border-teal-200 dark:border-teal-800',
     badgeText: 'text-teal-700 dark:text-teal-300',
+  },
+  'Bolos': {
+    masuk: '',
+    pulang: '',
+    color: 'red',
+    label: 'Bolos (Tanpa Absen Datang/Pulang)',
+    badgeBg: 'bg-red-100 dark:bg-red-950/80 border-red-400 dark:border-red-700 ring-1 ring-red-400/40',
+    badgeText: 'text-red-800 dark:text-red-200',
   },
 };
 
@@ -271,11 +280,12 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
   const loadData = async () => {
     setLoading(true);
     try {
-      const [roster, employees, shifts, cutis] = await Promise.all([
+      const [roster, employees, shifts, cutis, presensis] = await Promise.all([
         fetchRosterShiftList(),
         fetchKaryawanDirectory(),
         fetchMasterShiftList(),
         fetchCutiRecords(),
+        fetchPresensiRange('2025-01-01', '2027-12-31'),
       ]);
       setCutiList(cutis || []);
       setKaryawanList(employees);
@@ -288,7 +298,8 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
       for (let i = 0; i < mergedRoster.length; i++) {
         const item = mergedRoster[i];
         if (item.nik && item.tanggal) {
-          rosterIdxMap.set(`${item.nik}_${item.tanggal}`, i);
+          const normKey = `${String(item.nik).trim().toUpperCase()}_${String(item.tanggal).trim()}`;
+          rosterIdxMap.set(normKey, i);
         }
       }
 
@@ -313,7 +324,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
             const m = String(cur.getMonth() + 1).padStart(2, '0');
             const d = String(cur.getDate()).padStart(2, '0');
             const dateStr = `${y}-${m}-${d}`;
-            const mapKey = `${cuti.nik}_${dateStr}`;
+            const mapKey = `${String(cuti.nik).trim().toUpperCase()}_${dateStr}`;
 
             const existingIdx = rosterIdxMap.get(mapKey);
 
@@ -344,6 +355,101 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
           console.warn('Gagal parsing rentang cuti:', eDate);
         }
       });
+
+      // Auto-mark Bolos pada jadwal hari kerja yang telah lewat apabila karyawan tidak melakukan absensi datang & pulang
+      const presensiMap = new Map<string, PresensiRecord>();
+      for (const p of presensis || []) {
+        if (p.nik && p.tanggal) {
+          const normKey = `${String(p.nik).trim().toUpperCase()}_${String(p.tanggal).trim()}`;
+          if (!presensiMap.has(normKey)) {
+            presensiMap.set(normKey, p);
+          }
+        }
+      }
+
+      const now = new Date();
+      const todayLocalStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+      for (let i = 0; i < mergedRoster.length; i++) {
+        const r = mergedRoster[i];
+        if (!r.nik || !r.tanggal) continue;
+
+        const rawShift = String(r.shift || '').trim();
+        const sLower = rawShift.toLowerCase();
+
+        // Lewati jika hari tersebut adalah Libur/Off, Cuti, Izin, Sakit, atau sudah berstatus Bolos
+        if (
+          !sLower ||
+          sLower === '-' ||
+          sLower.includes('libur') ||
+          sLower.includes('off') ||
+          sLower.includes('cuti') ||
+          sLower.includes('izin') ||
+          sLower.includes('ijin') ||
+          sLower.includes('sakit') ||
+          sLower.includes('bolos') ||
+          sLower.includes('alpha')
+        ) {
+          continue;
+        }
+
+        const normKey = `${String(r.nik).trim().toUpperCase()}_${String(r.tanggal).trim()}`;
+        const p = presensiMap.get(normKey);
+        const pStatusLower = String(p?.status || '').trim().toLowerCase();
+
+        // Jika di log presensi tercatat resmi sebagai Libur/Cuti/Izin/Sakit, jangan tandai bolos
+        if (['libur', 'off', 'cuti', 'izin', 'ijin', 'sakit'].some((k) => pStatusLower.includes(k))) {
+          continue;
+        }
+
+        const isExplicitAlpha = pStatusLower === 'alpha' || pStatusLower.includes('bolos');
+
+        // Evaluasi apakah hari kerja tersebut sudah selesai/berlalu
+        let isWorkdayElapsed = false;
+        if (r.tanggal < todayLocalStr) {
+          isWorkdayElapsed = true;
+        } else if (r.tanggal === todayLocalStr) {
+          if (isExplicitAlpha) {
+            isWorkdayElapsed = true;
+          } else {
+            let endHour = 17;
+            let endMin = 0;
+            const jpRaw = r.jam_pulang || (sLower.includes('3b') ? '20:00' : sLower.includes('3') ? '21:00' : sLower.includes('2') ? '18:00' : '17:00');
+            const [pH, pM] = jpRaw.split(':').map(Number);
+            if (Number.isFinite(pH)) endHour = pH;
+            if (Number.isFinite(pM)) endMin = pM;
+            const shiftEndMins = endHour * 60 + endMin;
+            // Tandai bolos hari ini apabila jam pulang shift + 60 menit toleransi sudah lewat namun belum absen datang & pulang lengkap
+            if (nowMinutes >= shiftEndMins + 60) {
+              isWorkdayElapsed = true;
+            }
+          }
+        }
+
+        if (!isWorkdayElapsed) continue;
+
+        const hasMasuk = Boolean(p && p.jam_masuk && p.jam_masuk.trim() !== '' && p.jam_masuk.trim() !== '-');
+        const hasPulang = Boolean(p && p.jam_pulang && p.jam_pulang.trim() !== '' && p.jam_pulang.trim() !== '-');
+
+        if (isExplicitAlpha || !hasMasuk || !hasPulang) {
+          let reason = 'Tidak Absen Datang & Pulang';
+          if (hasMasuk && !hasPulang) {
+            reason = `Absen Datang (${p!.jam_masuk}), Tidak Absen Pulang`;
+          } else if (!hasMasuk && hasPulang) {
+            reason = `Tidak Absen Datang, Absen Pulang (${p!.jam_pulang})`;
+          } else if (p?.catatan) {
+            reason = `Tidak Absen Datang & Pulang (${p.catatan})`;
+          }
+
+          const cleanOrigKet = (r.keterangan || '').replace(/^\[BOLOS:[^\]]*\]\s*(Eks Jadwal:\s*[^•]+\s*•?\s*)?/i, '').trim();
+          mergedRoster[i] = {
+            ...r,
+            shift: 'Bolos',
+            keterangan: `[BOLOS: ${reason}] Eks Jadwal: ${rawShift}${cleanOrigKet ? ` • ${cleanOrigKet}` : ''}`,
+          };
+        }
+      }
 
       setRosterList(mergedRoster);
     } catch (err) {
@@ -405,6 +511,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
     if (lower === 'libur' || lower === 'off' || lower === 'libur (off)') return 'Libur';
     if (lower === 'cuti' || lower === 'cuti tahunan') return 'Cuti';
     if (lower === 'izin' || lower === 'ijin' || lower === 'sakit') return 'Izin';
+    if (lower === 'bolos' || lower === 'alpha' || lower.includes('bolos')) return 'Bolos';
     return s || 'Shift 1';
   };
 
@@ -417,14 +524,16 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
     const std = standardizeShiftName(shiftName);
     const sLower = std.toLowerCase();
 
-    // 1. Jika Libur / Off / Cuti / Izin / Sakit -> jam kerja kosong
+    // 1. Jika Libur / Off / Cuti / Izin / Sakit / Bolos -> jam kerja kosong
     if (
       sLower.includes('libur') ||
       sLower.includes('off') ||
       sLower.includes('cuti') ||
       sLower.includes('izin') ||
       sLower.includes('ijin') ||
-      sLower.includes('sakit')
+      sLower.includes('sakit') ||
+      sLower.includes('bolos') ||
+      sLower.includes('alpha')
     ) {
       return { jamMasuk: '', jamPulang: '' };
     }
@@ -558,10 +667,12 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
     let s3b = 0;
     let libur = 0;
     let cuti = 0;
+    let bolos = 0;
 
     active.forEach((r) => {
       const s = (r.shift || '').toLowerCase();
-      if (s.includes('3b')) s3b++;
+      if (s.includes('bolos') || s.includes('alpha')) bolos++;
+      else if (s.includes('3b')) s3b++;
       else if (s.includes('3a') || s.includes('shift 3') || s === '3') s3a++;
       else if (s.includes('shift 2') || s === '2') s2++;
       else if (s.includes('shift 1') || s === '1') s1++;
@@ -569,7 +680,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
       else if (s.includes('cuti') || s.includes('izin') || s.includes('ijin') || s.includes('sakit')) cuti++;
     });
 
-    return { total: active.length, s1, s2, s3a, s3b, libur, cuti };
+    return { total: active.length, s1, s2, s3a, s3b, libur, cuti, bolos };
   }, [rosterList, selectedDate]);
 
   // Days in current weekly view
@@ -676,6 +787,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
     const s = String(shiftName || '').trim();
     if (!s || s === '-') return '+';
     const lower = s.toLowerCase();
+    if (lower.includes('bolos') || lower.includes('alpha')) return 'BOLOS';
     if (lower.includes('3b')) return 'S3b';
     if (lower.includes('3a') || lower.includes('shift 3') || lower === '3') return 'S3a';
     if (lower.includes('shift 2') || lower === '2') return 'S2';
@@ -1627,6 +1739,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
       return { bg: match.badgeBg, text: match.badgeText };
     }
     const sLower = safeShift.toLowerCase();
+    if (sLower.includes('bolos') || sLower.includes('alpha')) return { bg: DEFAULT_SHIFTS['Bolos'].badgeBg, text: DEFAULT_SHIFTS['Bolos'].badgeText };
     if (sLower.includes('3b')) return { bg: DEFAULT_SHIFTS['Shift 3b'].badgeBg, text: DEFAULT_SHIFTS['Shift 3b'].badgeText };
     if (sLower.includes('3a') || sLower.includes('3')) return { bg: DEFAULT_SHIFTS['Shift 3a'].badgeBg, text: DEFAULT_SHIFTS['Shift 3a'].badgeText };
     if (sLower.includes('1')) return { bg: DEFAULT_SHIFTS['Shift 1'].badgeBg, text: DEFAULT_SHIFTS['Shift 1'].badgeText };
@@ -1778,7 +1891,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
         </div>
 
         {/* SUMMARY STATS TILES */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 mt-5 pt-5 border-t border-slate-100 dark:border-slate-800/80">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 mt-5 pt-5 border-t border-slate-100 dark:border-slate-800/80">
           <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-2xl border border-slate-200/60 dark:border-slate-800">
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-0.5">
               Total Jadwal
@@ -1830,6 +1943,15 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
             </span>
             <span className="text-base sm:text-lg font-black text-rose-700 dark:text-rose-300">
               {summaryStats.libur + summaryStats.cuti}
+            </span>
+          </div>
+
+          <div className="bg-red-50/80 dark:bg-red-950/50 p-3 rounded-2xl border border-red-200 dark:border-red-900/60">
+            <span className="text-[10px] font-black text-red-600 dark:text-red-400 uppercase tracking-wider block mb-0.5">
+              Bolos (Alpha)
+            </span>
+            <span className="text-base sm:text-lg font-black text-red-700 dark:text-red-300">
+              {summaryStats.bolos}
             </span>
           </div>
         </div>
@@ -1922,6 +2044,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
               <option value="Shift 3b">Shift 3b (11:00 - 20:00)</option>
               <option value="Libur">Libur (Off)</option>
               <option value="Cuti">Cuti / Izin</option>
+              <option value="Bolos">Bolos (Tanpa Absen Datang/Pulang)</option>
             </select>
 
             {/* Department Filter */}
@@ -2587,6 +2710,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                   { key: 'Libur', code: 'OFF (Libur)' },
                   { key: 'Cuti', code: 'CT (Cuti)' },
                   { key: 'Izin', code: 'IZN (Izin)' },
+                  { key: 'Bolos', code: 'BOLOS (Alpha)' },
                   { key: 'MODAL', code: '🔍 Detail' },
                 ].map((b) => {
                   const isActive = activeBrushShift === b.key;
@@ -2653,11 +2777,13 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                 let countS2 = 0;
                 let countS3 = 0;
                 let countOff = 0;
+                let countBolos = 0;
                 monthlyDays.forEach((d) => {
                   const ck = `${k.nik}_${d.dateStr}`;
                   const eff = matrixDrafts[ck]?.shift ?? rosterByNikDate.get(ck)?.shift ?? '';
                   const sc = getShortShiftCode(eff);
-                  if (sc === 'S1') countS1++;
+                  if (sc === 'BOLOS') countBolos++;
+                  else if (sc === 'S1') countS1++;
                   else if (sc === 'S2') countS2++;
                   else if (sc === 'S3a' || sc === 'S3b') countS3++;
                   else if (sc === 'OFF' || sc === 'CT' || sc === 'IZN' || sc === 'SKT') countOff++;
@@ -2715,6 +2841,11 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                         {countOff > 0 && (
                           <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
                             OFF:{countOff}
+                          </span>
+                        )}
+                        {countBolos > 0 && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-black bg-red-100 dark:bg-red-950/80 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-700">
+                            BOLOS:{countBolos}
                           </span>
                         )}
                       </div>
@@ -2795,6 +2926,9 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                             <button
                               key={day.dateStr}
                               type="button"
+                              title={`${k.nama} (${day.dateStr}): ${effectiveShift || 'Belum diatur'}${
+                                savedRec?.keterangan ? ` — ${savedRec.keterangan}` : ''
+                              }${isDraft ? ' [Draft Belum Disimpan]' : ''}`}
                               onClick={() => {
                                 if (!userIsAdmin) return;
                                 paintMatrixCell(k.nik, day.dateStr);
@@ -2814,7 +2948,13 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                               >
                                 {String(day.dayNum).padStart(2, '0')}
                               </span>
-                              <span className="text-[10px] font-black leading-none">{shortCode}</span>
+                              <span
+                                className={`font-black leading-none ${
+                                  shortCode === 'BOLOS' ? 'text-[8.5px] tracking-tighter' : 'text-[10px]'
+                                }`}
+                              >
+                                {shortCode}
+                              </span>
                             </button>
                           );
                         })}
@@ -2992,9 +3132,11 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                             >
                               <div
                                 title={`${k.nama} (${day.dateStr}): ${effectiveShift || 'Belum diatur'}${
-                                  isDraft ? ' [Draft Belum Disimpan]' : ''
-                                }`}
-                                className={`w-full py-1.5 px-0.5 rounded-lg text-[10px] font-black border transition-all relative ${
+                                  savedRec?.keterangan ? ` — ${savedRec.keterangan}` : ''
+                                }${isDraft ? ' [Draft Belum Disimpan]' : ''}`}
+                                className={`w-full py-1.5 px-0.5 rounded-lg font-black border transition-all relative ${
+                                  shortCode === 'BOLOS' ? 'text-[8.5px] sm:text-[9px] tracking-tighter' : 'text-[10px]'
+                                } ${
                                   effectiveShift
                                     ? `${badgeStyle.bg} ${badgeStyle.text}`
                                     : 'border-dashed border-slate-200 dark:border-slate-800 text-slate-300 dark:text-slate-600 hover:border-indigo-400'
