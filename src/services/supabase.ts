@@ -1712,7 +1712,8 @@ export async function purgeLogsByLocations(
       if (localStocks && localStocks.length > 0) {
         const locSet = new Set(cleanLocs.map((l) => l.toUpperCase()));
         const filtered = localStocks.filter((s) => !locSet.has((s.lokasi || '').toUpperCase()));
-        await replaceAllProductLocationsInLocalDb(filtered);
+        await saveInventoryStocksToLocalDb(filtered).catch(() => {});
+        replaceAllProductLocationsInLocalDb(filtered).catch(() => {});
       }
     } catch {}
 

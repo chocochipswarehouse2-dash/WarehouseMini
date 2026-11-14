@@ -16,6 +16,8 @@ import {
   FileSpreadsheet,
   Info,
   Check,
+  Minimize2,
+  Maximize2,
 } from 'lucide-react';
 import { UserSession, StockRealtimeItem } from '../../types';
 import { isSuperadmin } from '../../services/permissions';
@@ -35,6 +37,7 @@ import {
 interface LocationPurgeModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onExpand?: () => void;
   session?: UserSession | null;
   onNotify?: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
   onSuccess?: () => void;
@@ -44,6 +47,7 @@ interface LocationPurgeModalProps {
 export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
   isOpen,
   onClose,
+  onExpand,
   session,
   onNotify = () => {},
   onSuccess = () => {},
@@ -88,11 +92,29 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
   const [isLoadingPreview, setIsLoadingPreview] = useState<boolean>(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
-  // Execution state
+  // Execution & Minimize state
   const [confirmPhrase, setConfirmPhrase] = useState<string>('');
   const [deletePendingSo, setDeletePendingSo] = useState<boolean>(true);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [hasDownloadedBackup, setHasDownloadedBackup] = useState<boolean>(false);
+  const [isMinimized, setIsMinimized] = useState<boolean>(false);
+  const [minimizedStatus, setMinimizedStatus] = useState<'idle' | 'running' | 'completed' | 'failed'>('idle');
+  const [minimizedSummary, setMinimizedSummary] = useState<string>('');
+  const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
+
+  const wasMinimizedRef = React.useRef<boolean>(false);
+  const isMinimizedRef = React.useRef<boolean>(false);
+  const prevModeRef = React.useRef<LocationPurgeSelection['mode']>(mode);
+
+  // Elapsed timer while purge is running
+  useEffect(() => {
+    if (!isExecuting) return;
+    setElapsedSeconds(0);
+    const timer = setInterval(() => {
+      setElapsedSeconds((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isExecuting]);
 
   // Resolved list of target locations based on current selection
   const targetLocations = useMemo(() => {
@@ -115,13 +137,33 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
     setPreviewError(null);
   }, [targetLocations.join(',')]);
 
-  // Reset confirmation input when modal opens or mode changes
+  // Reset confirmation input ONLY on fresh open (not when restoring from minimize) or mode switch
   useEffect(() => {
     if (isOpen) {
+      if (wasMinimizedRef.current) {
+        wasMinimizedRef.current = false;
+        isMinimizedRef.current = false;
+        setIsMinimized(false);
+      } else {
+        setConfirmPhrase('');
+        setHasDownloadedBackup(false);
+        setIsMinimized(false);
+        isMinimizedRef.current = false;
+        if (!isExecuting) {
+          setMinimizedStatus('idle');
+          setMinimizedSummary('');
+        }
+      }
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (prevModeRef.current !== mode) {
+      prevModeRef.current = mode;
       setConfirmPhrase('');
       setHasDownloadedBackup(false);
     }
-  }, [isOpen, mode]);
+  }, [mode]);
 
   // Load impact preview
   const handleCalculatePreview = async () => {
@@ -210,6 +252,34 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  // Minimize modal to floating background widget
+  const handleMinimize = () => {
+    wasMinimizedRef.current = true;
+    isMinimizedRef.current = true;
+    setIsMinimized(true);
+    const locSummary =
+      targetLocations.length > 0
+        ? `${targetLocations.slice(0, 3).join(', ')}${targetLocations.length > 3 ? ` +${targetLocations.length - 3} rak` : ''}`
+        : 'Belum ada rak dipilih';
+    setMinimizedSummary(locSummary);
+    setMinimizedStatus(isExecuting ? 'running' : 'idle');
+    onClose();
+  };
+
+  const handleCloseOrMinimize = () => {
+    if (isExecuting) {
+      handleMinimize();
+      onNotify('Proses reset lokasi di-minimize ke latar belakang dan tetap berjalan.', 'info');
+      return;
+    }
+    wasMinimizedRef.current = false;
+    isMinimizedRef.current = false;
+    setIsMinimized(false);
+    setMinimizedStatus('idle');
+    setMinimizedSummary('');
+    onClose();
+  };
+
   // Execute purge
   const handleExecutePurge = async () => {
     if (targetLocations.length === 0) {
@@ -228,6 +298,10 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
     }
 
     setIsExecuting(true);
+    setMinimizedStatus('running');
+    const locSummary = `${targetLocations.length} lokasi (${targetLocations.slice(0, 2).join(', ')}${targetLocations.length > 2 ? '...' : ''})`;
+    setMinimizedSummary(locSummary);
+
     try {
       const operator = session?.name || session?.username || 'Superadmin';
       const result = await purgeLogsByLocations(targetLocations, operator, deletePendingSo);
@@ -238,39 +312,149 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
           'success'
         );
         onSuccess();
-        onClose();
+        if (isMinimizedRef.current) {
+          setMinimizedStatus('completed');
+          setMinimizedSummary(`${targetLocations.length} lokasi bersih 0 pcs`);
+        } else {
+          wasMinimizedRef.current = false;
+          isMinimizedRef.current = false;
+          setIsMinimized(false);
+          setMinimizedStatus('idle');
+          onClose();
+        }
       } else {
-        onNotify(result.error || 'Gagal mereset log lokasi', 'error');
+        const errMsg = result.error || 'Gagal mereset log lokasi';
+        onNotify(errMsg, 'error');
+        if (isMinimizedRef.current) {
+          setMinimizedStatus('failed');
+          setMinimizedSummary(errMsg);
+        }
       }
     } catch (err: any) {
       console.error('Error during purge execution:', err);
-      onNotify(err.message || 'Terjadi kesalahan sistem saat mereset lokasi', 'error');
+      const errMsg = err.message || 'Terjadi kesalahan sistem saat mereset lokasi';
+      onNotify(errMsg, 'error');
+      if (isMinimizedRef.current) {
+        setMinimizedStatus('failed');
+        setMinimizedSummary(errMsg);
+      }
     } finally {
       setIsExecuting(false);
     }
   };
 
-  if (!isOpen) return null;
+  // Render floating minimized pill when modal is minimized (before or during/after execution)
+  if (!isOpen) {
+    const showPill =
+      isMinimized ||
+      isExecuting ||
+      minimizedStatus === 'running' ||
+      minimizedStatus === 'completed' ||
+      minimizedStatus === 'failed';
+    if (!showPill) return null;
+
+    const isDone = minimizedStatus === 'completed' && !isExecuting;
+    const isErr = minimizedStatus === 'failed' && !isExecuting;
+
+    return (
+      <div className="fixed bottom-4 right-4 z-[9998] w-[calc(100vw-2rem)] sm:w-96 bg-slate-900/95 text-white rounded-2xl shadow-2xl border border-slate-700/80 p-3.5 backdrop-blur-md animate-in slide-in-from-bottom-4 duration-200 print:hidden">
+        <div className="flex items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div
+              className={`p-2 rounded-xl shrink-0 ${
+                isDone
+                  ? 'bg-emerald-500/20 text-emerald-400'
+                  : isErr
+                  ? 'bg-rose-500/20 text-rose-400'
+                  : isExecuting
+                  ? 'bg-amber-500/20 text-amber-400'
+                  : 'bg-rose-500/20 text-rose-400'
+              }`}
+            >
+              {isExecuting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : isDone ? (
+                <CheckCircle2 className="w-4 h-4" />
+              ) : isErr ? (
+                <AlertTriangle className="w-4 h-4" />
+              ) : (
+                <Trash2 className="w-4 h-4" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-extrabold tracking-tight truncate">
+                {isExecuting
+                  ? `Mereset Lokasi... (${elapsedSeconds}s)`
+                  : isDone
+                  ? 'Reset Lokasi Selesai!'
+                  : isErr
+                  ? 'Reset Lokasi Gagal'
+                  : `Reset Lokasi (${targetLocations.length} rak)`}
+              </div>
+              <div className="text-[11px] text-slate-300 truncate font-mono">
+                {minimizedSummary || 'Berjalan di latar belakang'}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            {onExpand && (
+              <button
+                type="button"
+                onClick={() => {
+                  wasMinimizedRef.current = true;
+                  isMinimizedRef.current = false;
+                  setIsMinimized(false);
+                  onExpand();
+                }}
+                title="Buka kembali modal Reset Lokasi"
+                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-100 flex items-center gap-1 transition-colors cursor-pointer"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span>Buka</span>
+              </button>
+            )}
+            {!isExecuting && (
+              <button
+                type="button"
+                onClick={() => {
+                  wasMinimizedRef.current = false;
+                  isMinimizedRef.current = false;
+                  setIsMinimized(false);
+                  setMinimizedStatus('idle');
+                  setMinimizedSummary('');
+                }}
+                title="Tutup indikator"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const isConfirmed = confirmPhrase.trim().toUpperCase() === 'RESET-LOKASI';
 
   return (
     <div
       className="fixed inset-0 z-[9999] bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-in fade-in duration-200"
-      onClick={onClose}
+      onClick={handleCloseOrMinimize}
     >
       <div
         className="bg-white dark:bg-[#131d31] rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-[#0f172a]/80 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-600 dark:text-rose-400">
+        <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 bg-slate-50/80 dark:bg-[#0f172a]/80 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
               <Trash2 className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">
                   Pembersihan Log & Reset Stok Lokasi (0)
                 </h2>
@@ -283,13 +467,25 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={handleMinimize}
+              title="Minimize ke latar belakang (draft & proses tetap berjalan)"
+              className="px-2.5 py-1.5 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-200/60 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+            >
+              <Minimize2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Minimize</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleCloseOrMinimize}
+              title={isExecuting ? 'Minimize proses ke latar belakang' : 'Tutup'}
+              className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Modal Body */}
@@ -680,12 +876,22 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <button
               type="button"
-              onClick={onClose}
-              disabled={isExecuting}
-              className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
+              onClick={handleMinimize}
+              className="flex-1 sm:flex-none px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-all cursor-pointer flex items-center justify-center gap-1.5"
             >
-              Batal
+              <Minimize2 className="w-3.5 h-3.5" />
+              <span>{isExecuting ? 'Minimize (Latar Belakang)' : 'Minimize'}</span>
             </button>
+
+            {!isExecuting && (
+              <button
+                type="button"
+                onClick={handleCloseOrMinimize}
+                className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
+              >
+                Batal
+              </button>
+            )}
 
             <button
               type="button"
@@ -700,7 +906,7 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
               {isExecuting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin text-white" />
-                  <span>Mereset Data...</span>
+                  <span>Mereset Data ({elapsedSeconds}s)...</span>
                 </>
               ) : (
                 <>

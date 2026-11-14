@@ -24,7 +24,6 @@ import {
   LayoutList,
   ShoppingCart,
   ArrowRight,
-  ArrowRightLeft,
 } from 'lucide-react';
 import {
   InventoryPickingCartDrawer,
@@ -35,9 +34,8 @@ import { DistribusiPickingModal } from './PesananSaya/DistribusiPickingModal';
 import type { PengecekanSJDraft } from '../types';
 import type { ProductItem, UserSession } from '../types';
 import type { ScannerLayoutMode } from './OperasiStokView';
-import { hasPermission, isStoreAccountSession, isSuperadmin } from '../services/permissions';
+import { hasPermission, isSuperadmin } from '../services/permissions';
 import { InventoryLokasiExportModal } from './InventoryLokasiExportModal';
-import { LocationRelocationModal } from './inventory/LocationRelocationModal';
 import {
   buildCatalogBases,
   composeAreaRows,
@@ -156,10 +154,6 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   // 4. Modal Lokasi Export & Print PDF
   const [isLokasiExportModalOpen, setIsLokasiExportModalOpen] = useState(false);
   const [selectedExportLocation, setSelectedExportLocation] = useState('CC001');
-  const [isRelocationModalOpen, setIsRelocationModalOpen] = useState(false);
-  const canRelocateRack =
-    !isStoreAccountSession(session ?? null) &&
-    (userIsAdmin || canViewInventory || canUseScanner);
 
   const handleOpenLokasiExport = useCallback((locName?: string) => {
     if (locName) setSelectedExportLocation(locName);
@@ -823,19 +817,6 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
               <span className="hidden sm:inline">LOKASI &amp; PRINT</span>
             </button>
 
-            {/* RELOKASI LOKASI RAK BUTTON */}
-            {canRelocateRack && (
-              <button
-                type="button"
-                onClick={() => setIsRelocationModalOpen(true)}
-                className="px-3 py-2 text-xs font-extrabold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                title="Pindahkan isi stok antar lokasi rak (Full / Sebagian)"
-              >
-                <ArrowRightLeft className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                <span className="hidden sm:inline">RELOKASI RAK</span>
-              </button>
-            )}
-
             {/* KERANJANG PICKING BUTTON */}
             <button
               type="button"
@@ -1025,23 +1006,6 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           currentLocations={currentLocations}
           session={session}
           onNotify={onNotify}
-        />
-      )}
-
-      {/* ========================================================
-          6B. MODAL RELOKASI LOKASI RAK
-          ======================================================== */}
-      {isRelocationModalOpen && (
-        <LocationRelocationModal
-          isOpen={isRelocationModalOpen}
-          onClose={() => setIsRelocationModalOpen(false)}
-          session={session}
-          stockRows={flatStockSnapshot}
-          productCatalog={productCatalog}
-          onNotify={onNotify}
-          onSuccess={() => {
-            reload(true);
-          }}
         />
       )}
 

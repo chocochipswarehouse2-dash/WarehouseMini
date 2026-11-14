@@ -5016,6 +5016,7 @@ export default function App() {
       <LocationPurgeModal
         isOpen={isLocationPurgeOpen}
         onClose={() => setIsLocationPurgeOpen(false)}
+        onExpand={() => setIsLocationPurgeOpen(true)}
         session={session}
         onNotify={showToast}
         onSuccess={() => {

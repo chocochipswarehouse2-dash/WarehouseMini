@@ -259,10 +259,11 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   const [relocationInitialFromLoc, setRelocationInitialFromLoc] = useState('');
   const canRelocateRack =
     !isStoreAccountSession(session ?? null) &&
-    (isSuperadmin(session ?? null) ||
-      hasPermission(session ?? null, 'menu_ops_inventory') ||
-      hasPermission(session ?? null, 'tab_ops_mutasi_scanner') ||
-      hasPermission(session ?? null, 'menu_ops_mutasi'));
+    (!session ||
+      isSuperadmin(session) ||
+      hasPermission(session, 'menu_ops_inventory') ||
+      hasPermission(session, 'tab_ops_mutasi_scanner') ||
+      hasPermission(session, 'menu_ops_mutasi'));
 
   // Build Master Produk lookup map (SKU -> { nama_produk, size, kategori })
   const catalogMap = useMemo(() => {
@@ -1859,10 +1860,10 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                   setRelocationInitialFromLoc('');
                   setIsRelocationModalOpen(true);
                 }}
-                className="px-3 py-1.5 text-xs font-extrabold rounded-xl border bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-                title="Pindahkan isi stok dari satu rak ke rak lain secara langsung"
+                className="px-3 py-1.5 text-xs font-extrabold rounded-xl border bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/70 transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-2xs"
+                title="Pindahkan isi stok dari satu rak ke rak lain secara langsung (#OUT + #IN)"
               >
-                <ArrowRightLeft className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" />
                 <span>Relokasi Rak</span>
               </button>
             )}
@@ -2049,40 +2050,56 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             </div>
 
             {/* Secondary / Export Actions (Shown on Right) */}
-            {simulationMoves.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {canRelocateRack && (
                 <button
                   type="button"
-                  onClick={handleCopySimulationTask}
-                  className="px-3 py-2 text-xs font-extrabold bg-purple-600 hover:bg-purple-500 text-white rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs transition-colors"
+                  onClick={() => {
+                    setRelocationInitialFromLoc('');
+                    setIsRelocationModalOpen(true);
+                  }}
+                  className="px-3 py-2 text-xs font-extrabold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-2xs transition-colors"
+                  title="Eksekusi pindah rak langsung ke log mutasi (#OUT & #IN)"
                 >
-                  {copiedSimText ? (
-                    <Check className="w-3.5 h-3.5" />
-                  ) : (
-                    <Copy className="w-3.5 h-3.5" />
-                  )}
-                  <span>{copiedSimText ? 'Teks WA Tersalin!' : 'Salin Tugas WA'}</span>
+                  <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" />
+                  <span>Relokasi Rak Langsung</span>
                 </button>
+              )}
+              {simulationMoves.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleCopySimulationTask}
+                    className="px-3 py-2 text-xs font-extrabold bg-purple-600 hover:bg-purple-500 text-white rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs transition-colors"
+                  >
+                    {copiedSimText ? (
+                      <Check className="w-3.5 h-3.5" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                    <span>{copiedSimText ? 'Teks WA Tersalin!' : 'Salin Tugas WA'}</span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => setIsSjPrintModalOpen(true)}
-                  className="px-3 py-2 text-xs font-extrabold bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs transition-colors"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>Cetak SJ Tugas Picker (A4)</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsSjPrintModalOpen(true)}
+                    className="px-3 py-2 text-xs font-extrabold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-2xs transition-colors"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Cetak SJ Tugas Picker (A4)</span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => setSimulationMoves([])}
-                  className="px-3 py-2 text-xs font-bold bg-white dark:bg-slate-900 text-rose-600 border border-rose-200 dark:border-rose-900 rounded-xl hover:bg-rose-50 cursor-pointer flex items-center gap-1.5 whitespace-nowrap transition-colors"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Reset</span>
-                </button>
-              </div>
-            )}
+                  <button
+                    type="button"
+                    onClick={() => setSimulationMoves([])}
+                    className="px-3 py-2 text-xs font-bold bg-white dark:bg-slate-900 text-rose-600 border border-rose-200 dark:border-rose-900 rounded-xl hover:bg-rose-50 cursor-pointer flex items-center gap-1.5 whitespace-nowrap transition-colors"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Reset</span>
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
           {/* Generator Action Cards Row: 1. Auto-Refill Koli -> ABCD, 2. Rapikan Overload, 3. Satukan SKU Terpencar, 4. Evakuasi ABCD -> Koli */}
@@ -2681,10 +2698,26 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 type="button"
                 onClick={onRefreshStock}
                 disabled={isRefreshingStock}
-                className="px-3 py-2 text-xs font-extrabold bg-amber-500 hover:bg-amber-600 text-black rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 whitespace-nowrap shrink-0"
+                className="px-3 py-2 text-xs font-extrabold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 whitespace-nowrap shrink-0 shadow-2xs"
+                title="Sinkronkan data stok fisik terbaru dari database"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingStock ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-3.5 h-3.5 text-amber-500 ${isRefreshingStock ? 'animate-spin' : ''}`} />
                 <span className="hidden sm:inline">Sinkron Stok</span>
+              </button>
+            )}
+
+            {canRelocateRack && (
+              <button
+                type="button"
+                onClick={() => {
+                  setRelocationInitialFromLoc('');
+                  setIsRelocationModalOpen(true);
+                }}
+                className="px-3.5 py-2 text-xs font-extrabold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 shadow-2xs"
+                title="Pindahkan isi stok dari satu rak ke rak lain secara langsung (#OUT + #IN)"
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" />
+                <span>Relokasi Rak</span>
               </button>
             )}
           </div>
@@ -2925,6 +2958,19 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                       </td>
                       <td className="py-2.5 px-3.5 text-right">
                         <div className="inline-flex items-center gap-1.5">
+                          {canRelocateRack && slot.currentQty > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRelocationInitialFromLoc(slot.lokasi);
+                                setIsRelocationModalOpen(true);
+                              }}
+                              className="p-1.5 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 rounded-lg cursor-pointer"
+                              title={`Relokasi isi rak ${slot.lokasi} ke rak lain`}
+                            >
+                              <ArrowRightLeft className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => {
@@ -2958,7 +3004,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       <div className="flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-400 px-2 gap-1">
         <span>
           Menampilkan <strong className="font-mono tabular-nums text-slate-700 dark:text-slate-300">{filteredSlots.length}</strong> dari{' '}
-          <strong className="font-mono tabular-nums text-slate-700 dark:text-slate-300">{allSlots.length}</strong> titik lokasi rak gudang. Klik kartu rak untuk melihat isi SKU, rekomendasi rak kosong terdekat, dan ubah kapasitas.
+          <strong className="font-mono tabular-nums text-slate-700 dark:text-slate-300">{allSlots.length}</strong> titik lokasi rak gudang. Klik kartu rak untuk melihat isi SKU, relokasi stok antar rak, rekomendasi rak kosong terdekat, dan ubah kapasitas.
         </span>
         <span>Terhubung langsung ke stok fisik nyata (stok_real_fisik &amp; log_produk)</span>
       </div>
