@@ -68,6 +68,7 @@ import {
   type ScatteredSkuSummary,
   getAbcdToKoliEvacuationSummary,
   generateConsolidatedAbcdToKoliMoves,
+  buildEnrichedCatalogMap,
   type AbcdToKoliRuleConfig,
   DEFAULT_ABCD_TO_KOLI_RULE,
 } from '../../services/rackCapacityService';
@@ -79,6 +80,7 @@ interface RackCapacityDashboardProps {
   onNotify?: (msg: string, type: 'success' | 'error' | 'info' | 'warning') => void;
   onOpenPrintModal?: (lokasi: string) => void;
   onRefreshStock?: () => void;
+  onRelocationSuccess?: () => void;
   isRefreshingStock?: boolean;
 }
 
@@ -197,6 +199,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   onNotify,
   onOpenPrintModal,
   onRefreshStock,
+  onRelocationSuccess,
   isRefreshingStock,
 }) => {
   const [config, setConfig] = useState<RackCapacityConfig>(() => loadLocalRackCapacityConfig());
@@ -274,37 +277,8 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   const [selectedMultiLocs, setSelectedMultiLocs] = useState<Set<string>>(() => new Set());
   const [lastMultiClickedLoc, setLastMultiClickedLoc] = useState<string | null>(null);
 
-  // Build Master Produk lookup map (SKU -> { nama_produk, size, kategori })
-  const catalogMap = useMemo(() => {
-    const map = new Map<string, EnrichedCatalogEntry>();
-    for (let i = 0; i < productCatalog.length; i++) {
-      const item = productCatalog[i];
-      if (!item) continue;
-      const sku = String(item.k || (item as Record<string, unknown>).sku || '')
-        .trim()
-        .toUpperCase();
-      if (!sku) continue;
-      const rawName = String(
-        item.n || item.p || (item as Record<string, unknown>).nama_produk || sku
-      ).trim();
-      const nama_produk = resolveProductName(sku, rawName, item as any) || cleanProductName(rawName) || rawName || sku;
-      const rawMasterSize = String(item.s || (item as Record<string, unknown>).size || '');
-      let size = resolveProductDisplaySize(sku, rawMasterSize, rawMasterSize);
-      if (!size) size = '-';
-      const rawCat = String(
-        (item as Record<string, unknown>).kategori ||
-          item.category ||
-          item.c ||
-          (item as Record<string, unknown>).jenis ||
-          ''
-      ).trim();
-      const kategori = rawCat && rawCat !== '-' && rawCat.toUpperCase() !== 'PHYSICAL STOCK'
-        ? rawCat
-        : (lookupCategoryByName(nama_produk) || inferCategoryFromProductName(nama_produk) || 'CLOTHING');
-      map.set(sku, { sku, nama_produk, size, kategori });
-    }
-    return map;
-  }, [productCatalog]);
+  // Build Master Produk lookup map (shared WeakMap cache across RackCapacityDashboard & LocationRelocationModal)
+  const catalogMap = useMemo(() => buildEnrichedCatalogMap(productCatalog), [productCatalog]);
 
   // Load remote config on mount
   useEffect(() => {
@@ -4877,7 +4851,11 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             setSelectedMultiLocs(new Set());
             setLastMultiClickedLoc(null);
             setIsMultiSelectMode(false);
-            onRefreshStock?.();
+            if (onRelocationSuccess) {
+              onRelocationSuccess();
+            } else {
+              onRefreshStock?.();
+            }
           }}
         />
       )}

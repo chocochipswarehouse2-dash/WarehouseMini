@@ -387,7 +387,14 @@ interface CachedMasterEntry {
 
 let masterExactMap: Map<string, CachedMasterEntry> | null = null;
 let masterPrefixMap: Map<string, string> | null = null;
+let masterNameCatMap: Map<string, string> | null = null;
 let lastMasterMapBuild = 0;
+
+function isValidMasterCat(cat: string): boolean {
+  if (!cat) return false;
+  const upper = cat.trim().toUpperCase();
+  return upper !== '' && upper !== '-' && upper !== 'PHYSICAL STOCK';
+}
 
 /**
  * Directly populate master lookup maps from in-memory catalog.
@@ -398,6 +405,8 @@ export function setSortUtilsMasterCatalog(catalog: any[], lookupMap?: Map<string
   else masterExactMap.clear();
   if (!masterPrefixMap) masterPrefixMap = new Map();
   else masterPrefixMap.clear();
+  if (!masterNameCatMap) masterNameCatMap = new Map();
+  else masterNameCatMap.clear();
   lastMasterMapBuild = Date.now();
 
   if (lookupMap && lookupMap instanceof Map) {
@@ -407,6 +416,10 @@ export function setSortUtilsMasterCatalog(catalog: any[], lookupMap?: Map<string
       const rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
       const rawCat = String(p.kategori || p.category || (p as any).c || (p as any).jenis || '').trim();
       masterExactMap.set(k, { name: rawName, size: rawSize, category: rawCat });
+      if (rawName && isValidMasterCat(rawCat)) {
+        const lowerName = rawName.toLowerCase();
+        if (!masterNameCatMap.has(lowerName)) masterNameCatMap.set(lowerName, rawCat);
+      }
     }
   } else if (Array.isArray(catalog)) {
     for (let i = 0; i < catalog.length; i++) {
@@ -418,17 +431,22 @@ export function setSortUtilsMasterCatalog(catalog: any[], lookupMap?: Map<string
       const rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
       const rawCat = String(p.kategori || p.category || (p as any).c || (p as any).jenis || '').trim();
       masterExactMap.set(k, { name: rawName, size: rawSize, category: rawCat });
+      if (rawName && isValidMasterCat(rawCat)) {
+        const lowerName = rawName.toLowerCase();
+        if (!masterNameCatMap.has(lowerName)) masterNameCatMap.set(lowerName, rawCat);
+      }
     }
   }
 }
 
-function getMasterLookupMaps(): { exact: Map<string, CachedMasterEntry>; prefix: Map<string, string> } {
+function getMasterLookupMaps(): { exact: Map<string, CachedMasterEntry>; prefix: Map<string, string>; nameCat: Map<string, string> } {
   const now = Date.now();
-  if (masterExactMap && masterExactMap.size > 0 && masterPrefixMap && now - lastMasterMapBuild < 60000) {
-    return { exact: masterExactMap, prefix: masterPrefixMap };
+  if (masterExactMap && masterExactMap.size > 0 && masterPrefixMap && masterNameCatMap && now - lastMasterMapBuild < 60000) {
+    return { exact: masterExactMap, prefix: masterPrefixMap, nameCat: masterNameCatMap };
   }
   if (!masterExactMap) masterExactMap = new Map();
   if (!masterPrefixMap) masterPrefixMap = new Map();
+  if (!masterNameCatMap) masterNameCatMap = new Map();
   lastMasterMapBuild = now;
 
   // 1. High-speed check: global in-memory catalog Map
@@ -441,8 +459,12 @@ function getMasterLookupMaps(): { exact: Map<string, CachedMasterEntry>; prefix:
         const rawSize = String(p.s || p.size || p.ukuran || p.varian || p.variant || '').trim();
         const rawCat = String(p.kategori || p.category || (p as any).c || (p as any).jenis || '').trim();
         masterExactMap.set(k, { name: rawName, size: rawSize, category: rawCat });
+        if (rawName && isValidMasterCat(rawCat)) {
+          const lowerName = rawName.toLowerCase();
+          if (!masterNameCatMap.has(lowerName)) masterNameCatMap.set(lowerName, rawCat);
+        }
       }
-      return { exact: masterExactMap, prefix: masterPrefixMap };
+      return { exact: masterExactMap, prefix: masterPrefixMap, nameCat: masterNameCatMap };
     }
   }
 
@@ -470,6 +492,10 @@ function getMasterLookupMaps(): { exact: Map<string, CachedMasterEntry>; prefix:
                 category: rawCat,
               });
             }
+            if (rawName && isValidMasterCat(rawCat)) {
+              const lowerName = rawName.toLowerCase();
+              if (!masterNameCatMap.has(lowerName)) masterNameCatMap.set(lowerName, rawCat);
+            }
             if (k.length >= 6 && rawName && rawName.toUpperCase() !== k) {
               const pref = k.slice(0, -2);
               if (!masterPrefixMap.has(pref)) {
@@ -484,7 +510,7 @@ function getMasterLookupMaps(): { exact: Map<string, CachedMasterEntry>; prefix:
     }
   }
 
-  return { exact: masterExactMap, prefix: masterPrefixMap };
+  return { exact: masterExactMap, prefix: masterPrefixMap, nameCat: masterNameCatMap };
 }
 
 /**
@@ -511,7 +537,7 @@ export function inferCategoryFromProductName(name: string): string {
 }
 
 /**
- * Look up official DealPOS category by matching product name against master products.
+ * Look up official DealPOS category by matching product name against master products in O(1).
  * If sibling variants exist in master catalog (e.g. Timora Top Brown in S/M with CLOTHING/TOP/BLOUSE),
  * returns the authoritative master category.
  */
@@ -523,14 +549,19 @@ export function lookupCategoryByName(
   const cleanName = productName.trim().toLowerCase();
   if (!cleanName) return null;
 
-  // 1. Check passed-in map or catalog
+  // 1. O(1) lookup from pre-indexed masterNameCatMap
+  const { nameCat } = getMasterLookupMaps();
+  const cachedDirect = nameCat.get(cleanName);
+  if (cachedDirect) return cachedDirect;
+
+  // 2. Check passed-in map or catalog only if explicitly supplied
   if (catalogOrMap instanceof Map) {
     for (const item of catalogOrMap.values()) {
       if (!item) continue;
       const pName = String(item.p || item.n || item.nama_produk || item.nama || '').trim().toLowerCase();
       if (pName === cleanName || (cleanName.length > 5 && pName.startsWith(cleanName))) {
         const cat = String(item.kategori || item.category || item.c || '').trim();
-        if (cat && cat !== '-' && cat.toUpperCase() !== 'PHYSICAL STOCK') return cat;
+        if (isValidMasterCat(cat)) return cat;
       }
     }
   } else if (Array.isArray(catalogOrMap)) {
@@ -540,19 +571,8 @@ export function lookupCategoryByName(
       const pName = String(item.p || item.n || item.nama_produk || item.nama || '').trim().toLowerCase();
       if (pName === cleanName || (cleanName.length > 5 && pName.startsWith(cleanName))) {
         const cat = String(item.kategori || item.category || item.c || '').trim();
-        if (cat && cat !== '-' && cat.toUpperCase() !== 'PHYSICAL STOCK') return cat;
+        if (isValidMasterCat(cat)) return cat;
       }
-    }
-  }
-
-  // 2. Check cached master lookup
-  const { exact } = getMasterLookupMaps();
-  for (const item of exact.values()) {
-    if (!item) continue;
-    const pName = String(item.name || '').trim().toLowerCase();
-    if (pName === cleanName || (cleanName.length > 5 && pName.startsWith(cleanName))) {
-      const cat = String(item.category || '').trim();
-      if (cat && cat !== '-' && cat.toUpperCase() !== 'PHYSICAL STOCK') return cat;
     }
   }
 

@@ -21,18 +21,12 @@ import {
 import type { ProductItem, StockRealtimeItem, UserSession } from '../../types';
 import { getAreaFromLokasi, normalizeLokasi, fetchDistinctDatabaseLocations } from '../../services/supabase';
 import {
+  buildEnrichedCatalogMap,
   computeAllRackSlots,
   loadLocalRackCapacityConfig,
   type ComputedRackSlot,
   type EnrichedCatalogEntry,
 } from '../../services/rackCapacityService';
-import {
-  cleanProductName,
-  inferCategoryFromProductName,
-  lookupCategoryByName,
-  resolveProductDisplaySize,
-  resolveProductName,
-} from '../../utils/sortUtils';
 import {
   fetchLocationRelocationPreview,
   fetchMultiLocationRelocationPreview,
@@ -91,53 +85,28 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
   onNotify = () => {},
   onSuccess,
 }) => {
-  // Build catalog map if needed
+  // Build catalog map ONLY when modal is open, backed by shared WeakMap cache
   const catalogMap = useMemo(() => {
-    const map = new Map<string, EnrichedCatalogEntry>();
-    for (let i = 0; i < productCatalog.length; i++) {
-      const item = productCatalog[i];
-      if (!item) continue;
-      const sku = String(item.k || (item as Record<string, unknown>).sku || '')
-        .trim()
-        .toUpperCase();
-      if (!sku) continue;
-      const rawName = String(
-        item.n || item.p || (item as Record<string, unknown>).nama_produk || sku
-      ).trim();
-      const nama_produk =
-        resolveProductName(sku, rawName, item as any) || cleanProductName(rawName) || rawName || sku;
-      const rawMasterSize = String(item.s || (item as Record<string, unknown>).size || '');
-      const size = resolveProductDisplaySize(sku, rawMasterSize, rawMasterSize) || '-';
-      const rawCat = String(
-        (item as Record<string, unknown>).kategori ||
-          item.category ||
-          item.c ||
-          (item as Record<string, unknown>).jenis ||
-          ''
-      ).trim();
-      const kategori =
-        rawCat && rawCat !== '-' && rawCat.toUpperCase() !== 'PHYSICAL STOCK'
-          ? rawCat
-          : lookupCategoryByName(nama_produk) || inferCategoryFromProductName(nama_produk) || 'CLOTHING';
-      map.set(sku, { sku, nama_produk, size, kategori });
-    }
-    return map;
-  }, [productCatalog]);
+    if (!isOpen) return new Map<string, EnrichedCatalogEntry>();
+    return buildEnrichedCatalogMap(productCatalog);
+  }, [isOpen, productCatalog]);
 
-  // Compute slots fallback when not supplied by RackCapacityDashboard
+  // Compute slots fallback when not supplied by RackCapacityDashboard (guarded when closed)
   const effectiveSlots = useMemo(() => {
+    if (!isOpen) return [];
     if (rackSlots && rackSlots.length > 0) return rackSlots;
     const config = loadLocalRackCapacityConfig();
     return computeAllRackSlots(config, stockRows, [], catalogMap);
-  }, [rackSlots, stockRows, catalogMap]);
+  }, [isOpen, rackSlots, stockRows, catalogMap]);
 
   const slotByLokasi = useMemo(() => {
     const map = new Map<string, ComputedRackSlot>();
+    if (!isOpen) return map;
     for (const s of effectiveSlots) {
       map.set(s.lokasi.toUpperCase(), s);
     }
     return map;
-  }, [effectiveSlots]);
+  }, [isOpen, effectiveSlots]);
 
   // Fetch extra known DB locations for autocomplete
   const [dbLocations, setDbLocations] = useState<string[]>([]);
@@ -357,6 +326,7 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
 
   // Source dropdown options (prioritize locations with currentQty > 0)
   const sourceSuggestions = useMemo(() => {
+    if (!isOpen) return [];
     const map = new Map<string, { lokasi: string; area: string; qty: number; skuCount: number }>();
 
     for (const s of effectiveSlots) {
@@ -398,10 +368,11 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
     });
 
     return list.slice(0, 40);
-  }, [effectiveSlots, stockRows, fromInput]);
+  }, [isOpen, effectiveSlots, stockRows, fromInput]);
 
   // Target dropdown options (prioritize empty / available slots, exclude source location)
   const targetSuggestions = useMemo(() => {
+    if (!isOpen) return [];
     const map = new Map<
       string,
       { lokasi: string; area: string; currentQty: number; maxCapacity: number; availableSpace: number }
@@ -457,11 +428,11 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
     });
 
     return list.slice(0, 40);
-  }, [effectiveSlots, dbLocations, cleanFrom, toInput]);
+  }, [isOpen, effectiveSlots, dbLocations, cleanFrom, toInput, isMultiSourceMode, multiFromLocations]);
 
   // Calculate active items to relocate
   const relocationPlan = useMemo(() => {
-    if (!preview) {
+    if (!isOpen || !preview) {
       return {
         itemsToMove: [] as Array<{ sku: string; nama_produk: string; size: string; moveQty: number; maxQty: number; buckets: any[] }>,
         movedSkuCount: 0,
@@ -495,9 +466,10 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
       movedTotalPcs,
       remainingAtSourcePcs,
     };
-  }, [preview, effectiveMode, partialQtys]);
+  }, [isOpen, preview, effectiveMode, partialQtys]);
 
   const filteredPreviewItems = useMemo(() => {
+    if (!isOpen) return [];
     const q = itemSearch.trim().toUpperCase();
     if (!q) return relocationPlan.itemsToMove;
     return relocationPlan.itemsToMove.filter(
@@ -506,11 +478,11 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
         it.nama_produk.toUpperCase().includes(q) ||
         it.size.toUpperCase().includes(q)
     );
-  }, [relocationPlan.itemsToMove, itemSearch]);
+  }, [isOpen, relocationPlan.itemsToMove, itemSearch]);
 
   // Target rack capacity simulation
   const targetSlotInfo = useMemo(() => {
-    if (!cleanTo || toArea === 'Anomali') return null;
+    if (!isOpen || !cleanTo || toArea === 'Anomali') return null;
     const slot = slotByLokasi.get(cleanTo);
     const currentQty = slot?.currentQty ?? 0;
     const maxCapacity = slot?.maxCapacity ?? (toArea === 'Kolian' || toArea === 'Transit' ? 40 : 75);
@@ -525,10 +497,11 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
       afterPct,
       isOverloadAfter: afterQty > maxCapacity,
     };
-  }, [cleanTo, toArea, slotByLokasi, relocationPlan.movedTotalPcs]);
+  }, [isOpen, cleanTo, toArea, slotByLokasi, relocationPlan.movedTotalPcs]);
 
   // Validation
   const validationError = useMemo(() => {
+    if (!isOpen) return null;
     if (!isMultiSourceMode && (!cleanFrom || isInvalidLocationToken(cleanFrom))) {
       return 'Pilih atau ketik lokasi rak asal.';
     }
@@ -545,7 +518,7 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
       return `Kode rak tujuan "${cleanTo}" tidak dikenali denah (Anomali). Periksa format (misal: V004, A001, R012).`;
     }
     return null;
-  }, [isMultiSourceMode, multiFromLocations, cleanFrom, cleanTo, toArea, preview, relocationPlan.movedTotalPcs]);
+  }, [isOpen, isMultiSourceMode, multiFromLocations, cleanFrom, cleanTo, toArea, preview, relocationPlan.movedTotalPcs]);
 
   const handleSwapLocations = () => {
     const prevFrom = fromInput;

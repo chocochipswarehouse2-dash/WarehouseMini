@@ -29,6 +29,7 @@ import {
   fetchMasterProdukCount,
   deleteEntireMasterProduk,
   importMasterProdukBatch,
+  setBulkMasterImportActive,
   MasterProdukRecord,
 } from '../services/supabase';
 import { playSuccessBeep, playErrorBeep, vibrateDevice } from '../services/audio';
@@ -194,47 +195,76 @@ function resolveChannelKey(headerName: string): string | null {
   return null;
 }
 
+const yieldToMain = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
 /**
- * Fast RFC 4180 CSV parser supporting quoted text, commas within quotes, CRLF/LF
+ * Fast slice-based RFC 4180 CSV parser supporting quoted text, commas within quotes, CRLF/LF.
+ * Periodically yields to the main thread so large 20MB+ CSV files never trigger "Page Not Responding".
  */
-function parseCsvContent(text: string): string[][] {
-  const clean = text.replace(/^\uFEFF/, ''); // Remove UTF-8 BOM if present
+async function parseCsvContentAsync(text: string): Promise<string[][]> {
+  const clean = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  const len = clean.length;
   const rows: string[][] = [];
   let currentRow: string[] = [];
-  let currentVal = '';
   let insideQuotes = false;
+  let hasEscapedQuote = false;
+  let fieldStart = 0;
+  let rowCountSinceYield = 0;
 
-  for (let i = 0; i < clean.length; i++) {
-    const char = clean[i];
-    const nextChar = clean[i + 1];
+  const pushField = (endIdx: number) => {
+    let val = clean.slice(fieldStart, endIdx).trim();
+    if (val.length >= 2 && val.charCodeAt(0) === 34 && val.charCodeAt(val.length - 1) === 34) {
+      val = val.slice(1, -1);
+      if (hasEscapedQuote) {
+        val = val.replace(/""/g, '"');
+      }
+      val = val.trim();
+    } else if (hasEscapedQuote) {
+      val = val.replace(/""/g, '"');
+    }
+    currentRow.push(val);
+    hasEscapedQuote = false;
+  };
 
-    if (char === '"') {
-      if (insideQuotes && nextChar === '"') {
-        currentVal += '"';
-        i++; // skip escaped quote
+  for (let i = 0; i < len; i++) {
+    const code = clean.charCodeAt(i);
+    if (code === 34) { // '"'
+      if (insideQuotes && clean.charCodeAt(i + 1) === 34) {
+        hasEscapedQuote = true;
+        i++;
       } else {
         insideQuotes = !insideQuotes;
       }
-    } else if (char === ',' && !insideQuotes) {
-      currentRow.push(currentVal.trim());
-      currentVal = '';
-    } else if ((char === '\r' || char === '\n') && !insideQuotes) {
-      if (char === '\r' && nextChar === '\n') {
-        i++; // skip \n of \r\n
+    } else if (code === 44 && !insideQuotes) { // ','
+      pushField(i);
+      fieldStart = i + 1;
+    } else if ((code === 13 || code === 10) && !insideQuotes) { // '\r' or '\n'
+      pushField(i);
+      if (code === 13 && clean.charCodeAt(i + 1) === 10) {
+        i++;
       }
-      currentRow.push(currentVal.trim());
-      currentVal = '';
-      if (currentRow.some((c) => c !== '')) {
+      fieldStart = i + 1;
+      let hasNonEmpty = false;
+      for (let c = 0; c < currentRow.length; c++) {
+        if (currentRow[c] !== '') {
+          hasNonEmpty = true;
+          break;
+        }
+      }
+      if (hasNonEmpty) {
         rows.push(currentRow);
       }
       currentRow = [];
-    } else {
-      currentVal += char;
+      rowCountSinceYield++;
+      if (rowCountSinceYield >= 2500) {
+        rowCountSinceYield = 0;
+        await yieldToMain();
+      }
     }
   }
 
-  if (currentVal || currentRow.length > 0) {
-    currentRow.push(currentVal.trim());
+  if (fieldStart < len || currentRow.length > 0) {
+    pushField(len);
     if (currentRow.some((c) => c !== '')) {
       rows.push(currentRow);
     }
@@ -545,7 +575,8 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
       for (let fIdx = 0; fIdx < files.length; fIdx++) {
         const file = files[fIdx];
         const text = await file.text();
-        const parsed = parseCsvContent(text);
+        await yieldToMain();
+        const parsed = await parseCsvContentAsync(text);
 
         if (parsed.length < 2) {
           continue;
@@ -698,6 +729,10 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
               }
             }
           });
+
+          if (rIdx % 1500 === 0) {
+            await yieldToMain();
+          }
         }
       }
 
@@ -706,8 +741,9 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
         throw new Error('Tidak ditemukan data SKU yang valid di dalam file CSV yang diupload');
       }
 
-      // Calculate total_stok for each record
-      finalRecords.forEach((rec) => {
+      // Calculate total_stok for each record (chunked with yield)
+      for (let idx = 0; idx < finalRecords.length; idx++) {
+        const rec = finalRecords[idx];
         if (rec.dealpos_channels) {
           let tot = 0;
           const dp = rec.dealpos_channels;
@@ -736,7 +772,10 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
           }
           dp.total_stok = tot;
         }
-      });
+        if (idx > 0 && idx % 3000 === 0) {
+          await yieldToMain();
+        }
+      }
 
       setParsedHeaders(Array.from(allHeadersSet));
       setParsedItems(finalRecords);
@@ -759,6 +798,7 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
     if (parsedItems.length === 0) return;
 
     setIsUpdating(true);
+    setBulkMasterImportActive(true);
     setUpdateStep('deleting');
     setProgressPct(0);
     setUploadedCount(0);
@@ -786,7 +826,7 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
         throw new Error(uploadResult.error || 'Gagal mengupload master produk ke Supabase');
       }
 
-      // Step 3: Refresh in-app catalog and local caches
+      // Step 3: Refresh in-app catalog and local caches ONCE
       setUpdateStep('syncing');
       setStatusMessage('Memperbarui katalog dan cache lokal aplikasi...');
       if (onRefreshCatalog) {
@@ -811,10 +851,6 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
         totalUploaded: uploadResult.totalUploaded,
       }).catch(() => {});
 
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('wms_catalog_updated'));
-      }
-
       if (onSuccess) {
         onSuccess();
       }
@@ -837,6 +873,7 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
         false
       );
     } finally {
+      setBulkMasterImportActive(false);
       setIsUpdating(false);
     }
   };

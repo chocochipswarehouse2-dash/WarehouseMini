@@ -1,6 +1,12 @@
 import { getSystemDocs, saveSystemDoc, getAreaFromLokasi } from './supabase';
-import { resolveProductName, resolveProductDisplaySize } from '../utils/sortUtils';
-import type { StockRealtimeItem } from '../types';
+import {
+  cleanProductName,
+  inferCategoryFromProductName,
+  lookupCategoryByName,
+  resolveProductName,
+  resolveProductDisplaySize,
+} from '../utils/sortUtils';
+import type { ProductItem, StockRealtimeItem } from '../types';
 
 export const RACK_CAPACITY_DOC_ID = 'rack_capacity_config_v1';
 const LOCAL_STORAGE_KEY = 'wms_rack_capacity_config_v1';
@@ -107,6 +113,76 @@ export interface EnrichedCatalogEntry {
   nama_produk: string;
   size: string;
   kategori: string;
+}
+
+const enrichedCatalogCache = new WeakMap<ProductItem[], Map<string, EnrichedCatalogEntry>>();
+
+export function buildEnrichedCatalogMap(productCatalog: ProductItem[] = []): Map<string, EnrichedCatalogEntry> {
+  if (Array.isArray(productCatalog)) {
+    const cached = enrichedCatalogCache.get(productCatalog);
+    if (cached) return cached;
+  }
+
+  const map = new Map<string, EnrichedCatalogEntry>();
+  if (!Array.isArray(productCatalog) || productCatalog.length === 0) {
+    return map;
+  }
+
+  const nameToCat = new Map<string, string>();
+  for (let i = 0; i < productCatalog.length; i++) {
+    const item = productCatalog[i];
+    if (!item) continue;
+    const rawCat = String(
+      (item as Record<string, unknown>).kategori ||
+        item.category ||
+        item.c ||
+        (item as Record<string, unknown>).jenis ||
+        ''
+    ).trim();
+    if (rawCat && rawCat !== '-' && rawCat.toUpperCase() !== 'PHYSICAL STOCK') {
+      const rawName = String(
+        item.n || item.p || (item as Record<string, unknown>).nama_produk || ''
+      ).trim().toLowerCase();
+      if (rawName && !nameToCat.has(rawName)) {
+        nameToCat.set(rawName, rawCat);
+      }
+    }
+  }
+
+  for (let i = 0; i < productCatalog.length; i++) {
+    const item = productCatalog[i];
+    if (!item) continue;
+    const sku = String(item.k || (item as Record<string, unknown>).sku || '')
+      .trim()
+      .toUpperCase();
+    if (!sku) continue;
+    const rawName = String(
+      item.n || item.p || (item as Record<string, unknown>).nama_produk || sku
+    ).trim();
+    const nama_produk =
+      resolveProductName(sku, rawName, item as any) || cleanProductName(rawName) || rawName || sku;
+    const rawMasterSize = String(item.s || (item as Record<string, unknown>).size || '');
+    const size = resolveProductDisplaySize(sku, rawMasterSize, rawMasterSize) || '-';
+    const rawCat = String(
+      (item as Record<string, unknown>).kategori ||
+        item.category ||
+        item.c ||
+        (item as Record<string, unknown>).jenis ||
+        ''
+    ).trim();
+    const lowerName = nama_produk.trim().toLowerCase();
+    const kategori =
+      rawCat && rawCat !== '-' && rawCat.toUpperCase() !== 'PHYSICAL STOCK'
+        ? rawCat
+        : nameToCat.get(lowerName) ||
+          lookupCategoryByName(nama_produk) ||
+          inferCategoryFromProductName(nama_produk) ||
+          'CLOTHING';
+    map.set(sku, { sku, nama_produk, size, kategori });
+  }
+
+  enrichedCatalogCache.set(productCatalog, map);
+  return map;
 }
 
 export const DEFAULT_RACK_ZONES: RackZoneRule[] = [

@@ -202,12 +202,13 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     return computeAreaStats(filteredAreaRows);
   }, [filteredAreaRows]);
 
-  // For Detail Drawer (when operator wants full SKU audit)
+  // For Detail Drawer (only compute 28k SKU composition when a SKU drawer is actually opened)
   const allSkuRows = useMemo(() => {
+    if (!selectedSku) return [];
     void stockVersion;
     const map = getStockBySku();
     return composeRows(catalogBases, map);
-  }, [catalogBases, stockVersion]);
+  }, [selectedSku, catalogBases, stockVersion]);
 
   const selectedRow = useMemo(() => {
     if (!selectedSku) return null;
@@ -389,8 +390,9 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     if (onNotify) onNotify('Keranjang picking telah dikosongkan', 'info');
   }, [onNotify]);
 
-  // Derived available rows for Quick Search in Cart
+  // Derived available rows for Quick Search in Cart (only built when cart drawer is open)
   const availableRowsForCart = useMemo(() => {
+    if (!isCartDrawerOpen) return [];
     const map = new Map<string, {
       sku: string;
       produk: string;
@@ -416,7 +418,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       }
     }
     return Array.from(map.values());
-  }, [allAreaRows]);
+  }, [isCartDrawerOpen, allAreaRows]);
 
   const handleProceedToPicking = useCallback((details: InventoryOrderPickingDetails) => {
     if (cartItems.length === 0) return;
@@ -650,6 +652,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           onNotify={onNotify}
           onOpenPrintModal={handleOpenLokasiExport}
           onRefreshStock={handleManualRefresh}
+          onRelocationSuccess={() => reload(true)}
           isRefreshingStock={isRefreshing || phase === 'syncing'}
         />
       )}

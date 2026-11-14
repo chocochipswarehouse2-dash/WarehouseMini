@@ -126,6 +126,7 @@ import {
   syncSmartLowEgressCache,
   getPickingPriority,
   isWarehouseLocation,
+  isBulkMasterImportActive,
 } from './services/supabase';
 import { WmsUser } from './types';
 import {
@@ -1542,7 +1543,68 @@ export default function App() {
 
     let debounceCatalogTimer: any = null;
     let pickingDebounceTimer: any = null;
+    let logDeltaFlushTimer: any = null;
+    let masterUpsertFlushTimer: any = null;
     let incomingPickingRows: Array<{ no_sj: string; tujuan?: string; nama_produk?: string; sku?: string }> = [];
+    const pendingLogDeltaMap = new Map<string, number>();
+    const pendingMasterUpsertMap = new Map<string, ProductItem>();
+
+    const flushLogDeltas = () => {
+      logDeltaFlushTimer = null;
+      if (pendingLogDeltaMap.size === 0) return;
+      const deltas = new Map(pendingLogDeltaMap);
+      pendingLogDeltaMap.clear();
+
+      const changedForIdb: ProductItem[] = [];
+      setProductDatabase((prev) => {
+        if (!prev || prev.length === 0) return prev;
+        let mutated = false;
+        const next = prev.map((p) => {
+          const skuUpper = String(p.k || '').toUpperCase();
+          const delta = deltas.get(skuUpper);
+          if (delta === undefined || delta === 0 || typeof p.q !== 'number') return p;
+          mutated = true;
+          const updated = { ...p, q: Math.max(0, p.q + delta) };
+          changedForIdb.push(updated);
+          return updated;
+        });
+        return mutated ? next : prev;
+      });
+      if (changedForIdb.length > 0) {
+        bulkUpsertProductsInLocalDb(changedForIdb).catch(() => {});
+      }
+    };
+
+    const flushMasterUpserts = () => {
+      masterUpsertFlushTimer = null;
+      if (pendingMasterUpsertMap.size === 0) return;
+      if (isBulkMasterImportActive()) {
+        pendingMasterUpsertMap.clear();
+        return;
+      }
+      const batch = new Map(pendingMasterUpsertMap);
+      pendingMasterUpsertMap.clear();
+
+      bulkUpsertProductsInLocalDb(Array.from(batch.values())).catch(() => {});
+      setProductDatabase((prev) => {
+        const indexBySku = new Map<string, number>();
+        for (let i = 0; i < prev.length; i++) {
+          const key = String(prev[i]?.k || '').toUpperCase();
+          if (key) indexBySku.set(key, i);
+        }
+        const next = [...prev];
+        for (const [sku, item] of batch.entries()) {
+          const idx = indexBySku.get(sku);
+          if (idx !== undefined) {
+            next[idx] = { ...next[idx], ...item };
+          } else {
+            next.push(item);
+          }
+        }
+        return next;
+      });
+    };
+
     try {
       const supabase = getSupabaseClient();
       const channel = supabase
@@ -1571,27 +1633,22 @@ export default function App() {
 
               void processPickingSync(newLog).catch(console.error);
 
-              // Local State Mutation to save egress: update locally instead of fetching the whole database
+              // Queue local state delta (batched so bulk relocations/deletes never clone 28k arrays per row)
               if (newLog.sku && newLog.lokasi && newLog.qty) {
-                setProductDatabase(prev => {
-                  const skuUpper = newLog.sku!.toUpperCase();
-                  return prev.map(p => {
-                    if (p.k.toUpperCase() === skuUpper) {
-                      const updated = { ...p };
-                      const qty = Number(newLog.qty) || 0;
-                      if (typeof updated.q === 'number') {
-                        if (newLog.type === 'IN' || newLog.type === 'ADJ_IN') {
-                          updated.q += qty;
-                        } else if (newLog.type === 'OUT' || newLog.type === 'ADJ_OUT') {
-                          updated.q = Math.max(0, updated.q - qty);
-                        }
-                      }
-                      upsertProductInLocalDb(updated).catch((_val: boolean) => {});
-                      return updated;
-                    }
-                    return p;
-                  });
-                });
+                const skuUpper = newLog.sku.toUpperCase();
+                const qty = Number(newLog.qty) || 0;
+                const signed =
+                  newLog.type === 'IN' || newLog.type === 'ADJ_IN'
+                    ? qty
+                    : newLog.type === 'OUT' || newLog.type === 'ADJ_OUT'
+                    ? -qty
+                    : 0;
+                if (signed !== 0) {
+                  pendingLogDeltaMap.set(skuUpper, (pendingLogDeltaMap.get(skuUpper) || 0) + signed);
+                  if (!logDeltaFlushTimer) {
+                    logDeltaFlushTimer = setTimeout(flushLogDeltas, 500);
+                  }
+                }
               }
             }
             if (payload.eventType === 'INSERT') {
@@ -1607,6 +1664,9 @@ export default function App() {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'master_produk' },
           (payload) => {
+            if (isBulkMasterImportActive()) {
+              return;
+            }
             globalRealtimeStore.notify('master_produk', payload);
             if (payload.new) {
               const raw = payload.new as any;
@@ -1621,16 +1681,10 @@ export default function App() {
                   category: raw.kategori || raw.category || 'IN',
                   price: Number(raw.harga || raw.price) || 0,
                 };
-                upsertProductInLocalDb(item).catch((_val: boolean) => {});
-                setProductDatabase(prev => {
-                  const idx = prev.findIndex(p => p.k.toUpperCase() === sku);
-                  if (idx >= 0) {
-                    const next = [...prev];
-                    next[idx] = { ...next[idx], ...item };
-                    return next;
-                  }
-                  return [...prev, item];
-                });
+                pendingMasterUpsertMap.set(sku, item);
+                if (!masterUpsertFlushTimer) {
+                  masterUpsertFlushTimer = setTimeout(flushMasterUpserts, 700);
+                }
               }
             }
           }
@@ -2248,6 +2302,8 @@ export default function App() {
       return () => {
         if (debounceCatalogTimer) clearTimeout(debounceCatalogTimer);
         if (pickingDebounceTimer) clearTimeout(pickingDebounceTimer);
+        if (logDeltaFlushTimer) clearTimeout(logDeltaFlushTimer);
+        if (masterUpsertFlushTimer) clearTimeout(masterUpsertFlushTimer);
         globalRealtimeStore.setActiveChannel(null);
         supabase.removeChannel(channel);
       };
@@ -4055,16 +4111,20 @@ export default function App() {
     }
   };
 
-  const activeLocations = Array.from(
-    new Set(
-      [
-        currentLocation,
-        ...scannedData.map((i) => i.location).filter(Boolean),
-        ...scannedData
-          .filter((i) => i.isLocation)
-          .map((i) => i.text.replace(/^#?LOK:?\s*/i, '').trim()),
-      ].filter(Boolean) as string[]
-    )
+  const activeLocations = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [
+            currentLocation,
+            ...scannedData.map((i) => i.location).filter(Boolean),
+            ...scannedData
+              .filter((i) => i.isLocation)
+              .map((i) => i.text.replace(/^#?LOK:?\s*/i, '').trim()),
+          ].filter(Boolean) as string[]
+        )
+      ),
+    [currentLocation, scannedData]
   );
 
   return (
@@ -5021,13 +5081,6 @@ export default function App() {
         session={session}
         onRefreshCatalog={() => loadProducts(false)}
         onNotify={showToast}
-        onSuccess={() => {
-          loadProducts(false).then(() => {
-            if (typeof window !== 'undefined') {
-              window.dispatchEvent(new CustomEvent('wms_catalog_updated'));
-            }
-          });
-        }}
       />
 
       <LocationPurgeModal
@@ -5037,7 +5090,7 @@ export default function App() {
         session={session}
         onNotify={showToast}
         onSuccess={() => {
-          loadProducts(true);
+          invalidateStokFisikCache();
         }}
         allExistingLocations={activeLocations}
         initialLocations={locationPurgeInitialLocations}

@@ -278,8 +278,10 @@ export async function getProductBySkuFromLocalDb(sku: string): Promise<ProductIt
   }
 }
 
+const yieldToMain = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
 /**
- * Save products in bulk into Local Database
+ * Save products in bulk into Local Database (chunked + yielding so 28k+ items never freeze the main thread)
  * @param products Array of ProductItem
  * @param mode 'replace' to overwrite existing catalog, or 'merge' to update existing and add new
  */
@@ -291,11 +293,15 @@ export async function saveProductsToLocalDb(
     return 0;
   }
 
+  const SANITIZE_CHUNK = 2500;
   const cleanProducts: ProductItem[] = [];
-  for (const p of products) {
-    const sanitized = sanitizeProduct(p);
+  for (let i = 0; i < products.length; i++) {
+    const sanitized = sanitizeProduct(products[i]);
     if (sanitized) {
       cleanProducts.push(sanitized);
+    }
+    if (i > 0 && i % SANITIZE_CHUNK === 0) {
+      await yieldToMain();
     }
   }
 
@@ -303,35 +309,50 @@ export async function saveProductsToLocalDb(
 
   try {
     const db = await getLocalDb();
-    return new Promise<number>((resolve, reject) => {
-      const transaction = db.transaction(['products', 'meta'], 'readwrite');
-      const prodStore = transaction.objectStore('products');
-      const metaStore = transaction.objectStore('meta');
+    const WRITE_CHUNK = 2500;
 
-      if (mode === 'replace') {
-        prodStore.clear();
-      }
+    if (mode === 'replace') {
+      await new Promise<void>((resolve, reject) => {
+        const clearTx = db.transaction('products', 'readwrite');
+        clearTx.objectStore('products').clear();
+        clearTx.oncomplete = () => resolve();
+        clearTx.onerror = () => reject(clearTx.error);
+      });
+      await yieldToMain();
+    }
 
-      for (const item of cleanProducts) {
-        prodStore.put(item);
-      }
+    for (let offset = 0; offset < cleanProducts.length; offset += WRITE_CHUNK) {
+      const slice = cleanProducts.slice(offset, offset + WRITE_CHUNK);
+      const isLastChunk = offset + WRITE_CHUNK >= cleanProducts.length;
+      await new Promise<void>((resolve, reject) => {
+        const stores = isLastChunk ? ['products', 'meta'] : ['products'];
+        const transaction = db.transaction(stores, 'readwrite');
+        const prodStore = transaction.objectStore('products');
 
-      // Record sync metadata
-      metaStore.put({
-        key: 'products_sync_meta',
-        lastSync: Date.now(),
-        count: cleanProducts.length,
-        updatedAt: new Date().toISOString(),
+        for (let j = 0; j < slice.length; j++) {
+          prodStore.put(slice[j]);
+        }
+
+        if (isLastChunk) {
+          const metaStore = transaction.objectStore('meta');
+          metaStore.put({
+            key: 'products_sync_meta',
+            lastSync: Date.now(),
+            count: cleanProducts.length,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
       });
 
-      transaction.oncomplete = () => {
-        resolve(cleanProducts.length);
-      };
+      if (!isLastChunk) {
+        await yieldToMain();
+      }
+    }
 
-      transaction.onerror = () => {
-        reject(transaction.error);
-      };
-    });
+    return cleanProducts.length;
   } catch (err) {
     console.warn('Error saving products to local database:', err);
     // Fallback: save a small safe portion to localStorage so old functionality stays alive
@@ -705,7 +726,8 @@ export async function patchProductStockLocationsInLocalDb(
  * using ONLY `allActiveStocks` (`stok_real_fisik`), WITHOUT re-downloading 28,000 rows of `master_produk`!
  */
 export async function replaceAllProductLocationsInLocalDb(
-  allActiveStocks: StockRealtimeItem[]
+  allActiveStocks: StockRealtimeItem[],
+  options?: { skipSaveStocks?: boolean }
 ): Promise<ProductItem[]> {
   try {
     const existingProducts = await getAllProductsFromLocalDb();
@@ -733,7 +755,8 @@ export async function replaceAllProductLocationsInLocalDb(
       }
     }
 
-    for (const item of existingProducts) {
+    for (let i = 0; i < existingProducts.length; i++) {
+      const item = existingProducts[i];
       const sku = String(item.k || (item as any).sku || '').trim().toUpperCase();
       const skuLocMap = locMapBySku.get(sku);
       if (skuLocMap && skuLocMap.size > 0) {
@@ -750,10 +773,15 @@ export async function replaceAllProductLocationsInLocalDb(
         item.locList = [];
         item.lokasi = '';
       }
+      if (i > 0 && i % 2500 === 0) {
+        await yieldToMain();
+      }
     }
 
     await saveProductsToLocalDb(existingProducts, 'replace');
-    await saveInventoryStocksToLocalDb(allActiveStocks);
+    if (!options?.skipSaveStocks) {
+      await saveInventoryStocksToLocalDb(allActiveStocks);
+    }
     return existingProducts;
   } catch (err) {
     console.warn('Failed to replace all product locations in IndexedDB:', err);

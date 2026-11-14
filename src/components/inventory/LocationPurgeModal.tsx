@@ -80,8 +80,9 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
   }, [isOpen]);
 
   const effectiveLocations = useMemo(() => {
+    if (!isOpen) return [];
     return Array.from(new Set([...dbLocations, ...allExistingLocations].filter(Boolean)));
-  }, [dbLocations, allExistingLocations]);
+  }, [isOpen, dbLocations, allExistingLocations]);
 
   // Selection state
   const [mode, setMode] = useState<LocationPurgeSelection['mode']>('range');
@@ -120,8 +121,10 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
     return () => clearInterval(timer);
   }, [isExecuting]);
 
-  // Resolved list of target locations based on current selection
+  // Resolved list of target locations based on current selection (guarded when modal & pill are inactive)
+  const isModalOrPillActive = isOpen || isMinimized || isExecuting || minimizedStatus !== 'idle';
   const targetLocations = useMemo(() => {
+    if (!isModalOrPillActive) return [];
     return resolveLocationsFromSelection(
       {
         mode,
@@ -133,7 +136,7 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
       },
       effectiveLocations
     );
-  }, [mode, blockKey, fromRange, toRange, singleLocation, customInput, effectiveLocations]);
+  }, [isModalOrPillActive, mode, blockKey, fromRange, toRange, singleLocation, customInput, effectiveLocations]);
 
   // Reset preview when locations change
   useEffect(() => {
@@ -261,7 +264,9 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
   };
 
   const triggerJsonDownload = (data: any, fileName: string) => {
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const logCount = Array.isArray(data?.logs) ? data.logs.length : 0;
+    const serialized = logCount > 500 ? JSON.stringify(data) : JSON.stringify(data, null, 2);
+    const blob = new Blob([serialized], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -269,7 +274,7 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   // Minimize modal to floating background widget
@@ -321,6 +326,9 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
     setMinimizedStatus('running');
     const locSummary = `${targetLocations.length} lokasi (${targetLocations.slice(0, 2).join(', ')}${targetLocations.length > 2 ? '...' : ''})`;
     setMinimizedSummary(locSummary);
+
+    // Yield 1 frame so spinner & minimized UI paint immediately without blocking
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
     try {
       const operator = session?.name || session?.username || 'Superadmin';

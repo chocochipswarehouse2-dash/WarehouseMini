@@ -1713,7 +1713,14 @@ export async function purgeLogsByLocations(
         const locSet = new Set(cleanLocs.map((l) => l.toUpperCase()));
         const filtered = localStocks.filter((s) => !locSet.has((s.lokasi || '').toUpperCase()));
         await saveInventoryStocksToLocalDb(filtered).catch(() => {});
-        replaceAllProductLocationsInLocalDb(filtered).catch(() => {});
+        const updatedProducts = await replaceAllProductLocationsInLocalDb(filtered, { skipSaveStocks: true }).catch(() => [] as ProductItem[]);
+        if (updatedProducts && updatedProducts.length > 0) {
+          memoryProductCache = updatedProducts;
+          memoryProductLastFetch = Date.now();
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('wms_full_locations_refreshed', { detail: updatedProducts }));
+          }
+        }
       }
     } catch {}
 
@@ -6466,6 +6473,20 @@ export async function deleteEntireMasterProduk(): Promise<{ success: boolean; er
   }
 }
 
+let _bulkMasterImportActive = false;
+
+export function setBulkMasterImportActive(active: boolean): void {
+  _bulkMasterImportActive = active;
+  if (typeof window !== 'undefined') {
+    (window as any).__wms_bulk_master_import_active = active;
+  }
+}
+
+export function isBulkMasterImportActive(): boolean {
+  if (_bulkMasterImportActive) return true;
+  return typeof window !== 'undefined' && Boolean((window as any).__wms_bulk_master_import_active);
+}
+
 /**
  * Import a full batch of Master Produk items into Supabase with chunked upsert & live progress reporting
  */
@@ -6552,6 +6573,8 @@ export async function importMasterProdukBatch(
 
   // Clear local product caches so new dataset is freshly reloaded & notify all other laptops via cloud epoch
   try {
+    memoryProductCache = null;
+    memoryProductLastFetch = 0;
     await clearLocalDb();
     localStorage.removeItem('wms_product_cache');
     localStorage.removeItem('wms_cache_inventory_v38');
