@@ -379,11 +379,33 @@ export default function App() {
       try {
         if (permissionsStr) permissions = JSON.parse(permissionsStr);
       } catch (e) {}
-      const nik = localStorage.getItem('wms_user_nik') || undefined;
-      const storedName = localStorage.getItem('wms_session_name');
-      const name = storedName || getUserPersonName(username);
+      const lowerU = username.trim().toLowerCase();
+      const lowerRole = role.trim().toLowerCase();
       const store_code = localStorage.getItem('wms_user_store_code') || undefined;
       const store_name = localStorage.getItem('wms_user_store_name') || undefined;
+      const isStoreLocal =
+        lowerRole === 'store' ||
+        lowerRole === 'outlet' ||
+        lowerRole === 'toko' ||
+        (lowerU.startsWith('choco') && lowerU !== 'chocoadm') ||
+        (Boolean(store_code || store_name) && !['warehouse', 'admin', 'admin2', 'chocoadm'].includes(lowerU));
+
+      const rawNik = localStorage.getItem('wms_user_nik') || undefined;
+      const nik = isStoreLocal ? undefined : rawNik;
+      if (isStoreLocal && rawNik) {
+        localStorage.removeItem('wms_user_nik');
+      }
+
+      const storedName = localStorage.getItem('wms_session_name');
+      const isPoisonedStoreName =
+        isStoreLocal &&
+        Boolean(storedName) &&
+        ['warehouse', 'warehouse admin', 'wh0001'].includes((storedName || '').trim().toLowerCase());
+      const name = (isPoisonedStoreName ? '' : storedName) || store_name || getUserPersonName(username);
+      if (isPoisonedStoreName && name) {
+        localStorage.setItem('wms_session_name', name);
+      }
+
       return { token, username, name, role: role as any, permissions, nik, store_code, store_name, endpointUrl: endpointUrl || '' };
     }
     return null;
@@ -648,21 +670,42 @@ export default function App() {
 
         const u = data[0];
         const newRole = u.role || session.role || 'Operator';
+        const lowerU = u.username.trim().toLowerCase();
+        const isStoreAccount =
+          newRole.toLowerCase() === 'store' ||
+          newRole.toLowerCase() === 'outlet' ||
+          newRole.toLowerCase() === 'toko' ||
+          (lowerU.startsWith('choco') && lowerU !== 'chocoadm');
+
         const isUserSuper =
-          newRole.toLowerCase() === 'superadmin' ||
-          newRole.toLowerCase() === 'admin' ||
-          u.username.toLowerCase() === 'admin' ||
-          u.username.toLowerCase() === 'admin2' ||
-          u.username.toLowerCase() === 'warehouse' ||
-          u.username.toLowerCase() === 'chocoadm' ||
-          (u.nik && u.nik.toLowerCase() === 'wh0001');
+          !isStoreAccount &&
+          (newRole.toLowerCase() === 'superadmin' ||
+            newRole.toLowerCase() === 'admin' ||
+            lowerU === 'admin' ||
+            lowerU === 'admin2' ||
+            lowerU === 'warehouse' ||
+            lowerU === 'chocoadm' ||
+            (u.nik && u.nik.toLowerCase() === 'wh0001'));
+
+        const cleanDbNik = isStoreAccount ? undefined : (u.nik || undefined);
+        const rawDbName = (u.name || '').trim();
+        const isPoisonedStoreName =
+          isStoreAccount &&
+          ['warehouse', 'warehouse admin', 'wh0001'].includes(rawDbName.toLowerCase());
+        const isPoisonedSessionName =
+          isStoreAccount &&
+          ['warehouse', 'warehouse admin', 'wh0001'].includes((session.name || '').trim().toLowerCase());
+        const resolvedDbName =
+          (!isPoisonedStoreName && rawDbName && rawDbName.toLowerCase() !== lowerU
+            ? rawDbName
+            : u.store_name || session.store_name || getUserPersonName(u.username) || (!isPoisonedSessionName ? session.name : '')) || u.username;
 
         const hasExplicitUserPerms =
           u.permissions && typeof u.permissions === 'object' && Object.keys(u.permissions).length > 0;
         const userDefaultPerms = resolveRoleDefaultPermissions({
           ...session,
           role: newRole as any,
-          nik: u.nik || session.nik,
+          nik: cleanDbNik,
         });
         const newPermissions = isUserSuper
           ? { ...ALL_PERMISSIONS }
@@ -670,19 +713,30 @@ export default function App() {
           ? { menu_ops_live_chat: true, ...u.permissions }
           : { ...userDefaultPerms };
 
-        const roleChanged = newRole !== session.role;
+        const targetRole = isUserSuper ? 'Superadmin' : newRole;
+        const roleChanged = targetRole !== session.role;
         const permsChanged = JSON.stringify(newPermissions || {}) !== JSON.stringify(session.permissions || {});
+        const nikChanged = (cleanDbNik || '') !== (session.nik || '');
+        const poisonedNameActive =
+          isStoreAccount &&
+          ['warehouse', 'warehouse admin', 'wh0001'].includes((session.name || '').trim().toLowerCase());
 
-        if (roleChanged || permsChanged) {
+        if (roleChanged || permsChanged || nikChanged || poisonedNameActive) {
           const updatedSession: UserSession = {
             ...session,
-            role: isUserSuper ? 'Superadmin' : newRole,
+            role: targetRole as any,
             permissions: newPermissions,
-            name: u.name || session.name,
-            nik: u.nik || session.nik,
+            name: resolvedDbName,
+            nik: cleanDbNik,
           };
           setSession(updatedSession);
-          localStorage.setItem('wms_user_role', isUserSuper ? 'Superadmin' : newRole);
+          localStorage.setItem('wms_user_role', targetRole);
+          localStorage.setItem('wms_session_name', resolvedDbName);
+          if (cleanDbNik) {
+            localStorage.setItem('wms_user_nik', cleanDbNik);
+          } else {
+            localStorage.removeItem('wms_user_nik');
+          }
           if (newPermissions) {
             localStorage.setItem('wms_user_permissions', JSON.stringify(newPermissions));
           } else {
@@ -4298,7 +4352,30 @@ export default function App() {
 
       {/* Modern Collapsible Sidebar (Mobile Drawer + Desktop Sidebar) */}
       <Sidebar
-        onSessionUpdate={(patch) => setSession((prev) => (prev ? { ...prev, ...patch } : prev))}
+        onSessionUpdate={(patch) => {
+          setSession((prev) => {
+            if (!prev) return prev;
+            const next = { ...prev, ...patch };
+            try {
+              if ('name' in patch && patch.name) {
+                localStorage.setItem('wms_session_name', patch.name);
+              }
+              if ('nik' in patch) {
+                if (patch.nik) localStorage.setItem('wms_user_nik', patch.nik);
+                else localStorage.removeItem('wms_user_nik');
+              }
+              if ('store_code' in patch) {
+                if (patch.store_code) localStorage.setItem('wms_user_store_code', patch.store_code);
+                else localStorage.removeItem('wms_user_store_code');
+              }
+              if ('store_name' in patch) {
+                if (patch.store_name) localStorage.setItem('wms_user_store_name', patch.store_name);
+                else localStorage.removeItem('wms_user_store_name');
+              }
+            } catch {}
+            return next;
+          });
+        }}
         onOpenThemePicker={() => setIsThemePickerOpen(true)}
         session={session}
         activePage={activePage}

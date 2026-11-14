@@ -3363,11 +3363,37 @@ export async function verifySupabaseLogin(
       const u = data[0];
       
       const role = u.role || 'Operator';
+      const lowerU = u.username.toLowerCase().trim();
+      const p = (u.permissions || {}) as any;
+
+      // Resolve linked store and contact details
+      let storeCode = u.store_code || p.store_code || p._store_code || '';
+      let storeName = u.store_name || p.store_name || p._store_name || '';
+      const isCsAccount = role === 'Customer Service' || lowerU.startsWith('chococs');
+      if (isCsAccount && (storeName.toLowerCase() === lowerU || storeCode.toLowerCase() === lowerU)) {
+        storeCode = '';
+        storeName = '';
+      }
+      if (!storeName && !isCsAccount && (role === 'Store' || (lowerU.startsWith('choco') && lowerU !== 'chocoadm'))) {
+        const auto = resolveStoreDetails(u.name || u.username, u.username);
+        storeCode = auto.store_code;
+        storeName = auto.store_name;
+      }
+
+      const isStoreAccount =
+        !isCsAccount &&
+        (role.toLowerCase() === 'store' ||
+          role.toLowerCase() === 'outlet' ||
+          role.toLowerCase() === 'toko' ||
+          (lowerU.startsWith('choco') && lowerU !== 'chocoadm') ||
+          Boolean(storeCode || storeName));
+
       const isUserSuper =
-        role.toLowerCase() === 'superadmin' ||
-        u.username.toLowerCase() === 'warehouse' ||
-        u.username.toLowerCase() === 'chocoadm' ||
-        (u.nik && u.nik.toLowerCase() === 'wh0001');
+        !isStoreAccount &&
+        (role.toLowerCase() === 'superadmin' ||
+          lowerU === 'warehouse' ||
+          lowerU === 'chocoadm' ||
+          (u.nik && u.nik.toLowerCase() === 'wh0001'));
 
       // Password verification
       // A password is valid ONLY if input is not empty and matches plaintext or SHA-256 hash in DB.
@@ -3390,35 +3416,36 @@ export async function verifySupabaseLogin(
         };
       }
 
-      if (typeof window !== 'undefined' && u.nik) {
-        localStorage.setItem('wms_user_nik', u.nik);
+      const effectiveUserNik = isStoreAccount ? undefined : (u.nik || undefined);
+      if (typeof window !== 'undefined') {
+        if (effectiveUserNik) {
+          localStorage.setItem('wms_user_nik', effectiveUserNik);
+        } else {
+          localStorage.removeItem('wms_user_nik');
+        }
       }
 
+      const rawDbName = (u.name || '').trim();
+      const isPoisonedWarehouseName =
+        isStoreAccount &&
+        ['warehouse', 'warehouse admin', 'wh0001'].includes(rawDbName.toLowerCase());
       const resolvedName =
-        u.name && u.name.toLowerCase() !== u.username.toLowerCase() && !u.name.toLowerCase().startsWith('wh00')
-          ? u.name
-          : getUserPersonName(u.username) || getUserPersonName(u.nik) || u.name || u.username;
+        rawDbName &&
+        !isPoisonedWarehouseName &&
+        rawDbName.toLowerCase() !== lowerU &&
+        !rawDbName.toLowerCase().startsWith('wh00')
+          ? rawDbName
+          : (isStoreAccount ? storeName : '') ||
+            getUserPersonName(u.username) ||
+            (!isStoreAccount ? getUserPersonName(u.nik) : '') ||
+            (!isPoisonedWarehouseName ? rawDbName : '') ||
+            u.username;
 
       const userDefaultPerms = ROLE_DEFAULT_PERMISSIONS[role] || ROLE_DEFAULT_PERMISSIONS['Operator'] || {};
       const resolvedPerms = isUserSuper
         ? { ...ALL_PERMISSIONS }
         : { ...userDefaultPerms, ...(u.permissions || {}) };
 
-      // Resolve linked store and contact details
-      const p = (u.permissions || {}) as any;
-      let storeCode = u.store_code || p.store_code || p._store_code || '';
-      let storeName = u.store_name || p.store_name || p._store_name || '';
-      const lowerU = u.username.toLowerCase();
-      const isCsAccount = role === 'Customer Service' || lowerU.startsWith('chococs');
-      if (isCsAccount && (storeName.toLowerCase() === lowerU || storeCode.toLowerCase() === lowerU)) {
-        storeCode = '';
-        storeName = '';
-      }
-      if (!storeName && !isCsAccount && (role === 'Store' || (lowerU.startsWith('choco') && lowerU !== 'chocoadm'))) {
-        const auto = resolveStoreDetails(u.name || u.username, u.username);
-        storeCode = auto.store_code;
-        storeName = auto.store_name;
-      }
       const phone = u.no_hp || u.phone || p.phone || p.no_hp || '';
       const email = u.email || p.email || '';
 
@@ -3430,7 +3457,7 @@ export async function verifySupabaseLogin(
         name: resolvedName,
         role: isUserSuper ? 'Superadmin' : role,
         permissions: resolvedPerms,
-        nik: u.nik,
+        nik: effectiveUserNik,
         store_code: storeCode || undefined,
         store_name: storeName || undefined,
         no_hp: phone || undefined,

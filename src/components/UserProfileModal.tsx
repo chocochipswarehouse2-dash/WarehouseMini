@@ -8,9 +8,11 @@ import {
 import { UserSession, KaryawanRecord, KpiAbsensiSummary } from '../types';
 import {
   supabaseFetch, computeSha256, fetchKaryawanDirectory, fetchPresensiRange,
-  fetchRosterShiftList, fetchLemburRecords, fetchCutiRecords, fetchIzinPulangAwalList
+  fetchRosterShiftList, fetchLemburRecords, fetchCutiRecords, fetchIzinPulangAwalList,
+  resolveStoreDetails,
 } from '../services/supabase';
-import { getUserPersonName, getUserNik } from '../utils/userResolver';
+import { isStoreAccountSession } from '../services/permissions';
+import { getUserPersonName, resolveStrictEmployeeNik, registerUserNames } from '../utils/userResolver';
 import { calculateKpiAbsensi } from '../utils/kpiCalculator';
 import { getStoreContact, saveStoreContact, fetchOutlets } from '../services/gasManualShipment';
 
@@ -208,8 +210,39 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
     return () => clearTimeout(t);
   }, [logoutCountdown, onClose, onLogout]);
 
-  const displayName = session.name || getUserPersonName(session.username) || session.username;
-  const storeName = session.role === 'Store' ? session.store_name || '' : '';
+  const unameLower = (session.username || '').trim().toLowerCase();
+  const isStoreAccount = isStoreAccountSession(session);
+  const isSystemSharedAccount = [
+    'warehouse',
+    'admin',
+    'admin2',
+    'superadmin',
+    'chocoadm',
+    'system',
+    'cs1',
+    'cs2',
+    'chococs1',
+    'chococs2',
+    'chocolive',
+    'chocostyling',
+  ].includes(unameLower);
+
+  const fallbackStoreInfo = React.useMemo(
+    () => (isStoreAccount ? resolveStoreDetails(session.store_name || session.store_code, session.username) : { store_code: '', store_name: '' }),
+    [isStoreAccount, session.store_name, session.store_code, session.username]
+  );
+
+  const rawSessionName = (session.name || '').trim();
+  const isPoisonedName =
+    (isStoreAccount || unameLower !== 'warehouse') &&
+    ['warehouse', 'warehouse admin', 'wh0001'].includes(rawSessionName.toLowerCase());
+  const storeName = isStoreAccount ? (session.store_name || fallbackStoreInfo.store_name || '') : '';
+  const storeCode = isStoreAccount ? (session.store_code || fallbackStoreInfo.store_code || '') : '';
+  const displayName =
+    (!isPoisonedName && rawSessionName) ||
+    storeName ||
+    getUserPersonName(session.username) ||
+    session.username;
 
   React.useEffect(() => {
     if (!isOpen) return;
@@ -219,54 +252,151 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
     setPhone(session.no_hp || '');
     setEmail(session.email || '');
     setAvatar(getStoredAvatar(session.username));
+    if (isStoreAccount || isSystemSharedAccount) {
+      setEffectiveNik('');
+      setKaryawanData(null);
+      setKpiSummary(null);
+    }
     setLoading(true);
 
     Promise.all([
       supabaseFetch<any[]>('wms_users', 'GET', null, `username=eq.${encodeURIComponent(session.username)}&limit=1`),
-      fetchKaryawanDirectory().catch(() => [] as KaryawanRecord[]),
-      storeName ? fetchOutlets().catch(() => []) : Promise.resolve([]),
+      !isStoreAccount && !isSystemSharedAccount
+        ? fetchKaryawanDirectory().catch(() => [] as KaryawanRecord[])
+        : Promise.resolve([] as KaryawanRecord[]),
+      isStoreAccount ? fetchOutlets().catch(() => []) : Promise.resolve([]),
     ])
       .then(([rows, karyawanList]) => {
         const u = rows?.[0];
-        const sc = storeName ? getStoreContact(storeName) : null;
         const p = ((u && u.permissions) || {}) as Record<string, any>;
         setRowPerms(p);
 
-        // Resolve NIK & KaryawanRecord
-        const unameLower = (session.username || '').trim().toLowerCase();
-        const candidateNik = (u?.nik || p.nik || session.nik || (unameLower !== 'warehouse' ? getUserNik(session.username) : '') || '').trim();
-        const matched = (karyawanList || []).find(
-          (k) =>
-            (candidateNik && k.nik.toLowerCase() === candidateNik.toLowerCase()) ||
-            (k.username && k.username.toLowerCase() === unameLower) ||
-            k.nik.toLowerCase() === unameLower
-        ) || null;
+        const dbRoleLower = String(u?.role || session.role || '').trim().toLowerCase();
+        const confirmedStore =
+          isStoreAccount ||
+          dbRoleLower === 'store' ||
+          dbRoleLower === 'outlet' ||
+          dbRoleLower === 'toko';
 
-        const finalNik = matched?.nik || candidateNik || '';
+        const resolvedStoreDetails = confirmedStore
+          ? resolveStoreDetails(u?.store_name || u?.store_code || storeName || storeCode, session.username)
+          : { store_code: '', store_name: '' };
+        const finalStoreName = confirmedStore
+          ? (u?.store_name || p.store_name || storeName || resolvedStoreDetails.store_name || '')
+          : '';
+        const finalStoreCode = confirmedStore
+          ? (u?.store_code || p.store_code || storeCode || resolvedStoreDetails.store_code || '')
+          : '';
+        const sc = finalStoreName ? getStoreContact(finalStoreName) : null;
+
+        let matched: KaryawanRecord | null = null;
+        let finalNik = '';
+
+        // Akun Store & Akun Sistem/Shared (non-karyawan) TIDAK PERNAH di-link ke NIK/Karyawan/KPI
+        if (!confirmedStore && !isSystemSharedAccount) {
+          const explicitNikFromDb = String(u?.nik || p.nik || '').trim().toUpperCase();
+          const candidateNik =
+            (explicitNikFromDb && (explicitNikFromDb !== 'WH0001' || unameLower === 'wh0001')
+              ? explicitNikFromDb
+              : '') ||
+            resolveStrictEmployeeNik({
+              username: session.username,
+              nik: session.nik,
+              role: session.role,
+              store_code: finalStoreCode,
+              store_name: finalStoreName,
+            });
+
+          const list = Array.isArray(karyawanList) ? karyawanList : [];
+          matched =
+            list.find((k) => {
+              const kNik = String(k.nik || '').trim().toUpperCase();
+              const kUser = String(k.username || '').trim().toLowerCase();
+              if (kNik === 'WH0001' && unameLower !== 'wh0001') return false;
+              if (kUser && kUser === unameLower) return true;
+              if (candidateNik && kNik === candidateNik) return true;
+              return false;
+            }) || null;
+
+          // Hanya anggap Karyawan jika benar-benar terdaftar di Master Karyawan (atau punya NIK personal eksplisit saat list gagal dimuat)
+          if (matched) {
+            finalNik = matched.nik;
+          } else if (list.length === 0 && candidateNik) {
+            finalNik = candidateNik;
+          }
+        }
+
         setEffectiveNik(finalNik);
         setKaryawanData(matched);
+        if (!finalNik) setKpiSummary(null);
 
-        const resolvedName = matched?.nama || u?.name || displayName;
-        const resolvedPhone = matched?.no_hp || u?.no_hp || u?.phone || p.no_hp || p.phone || session.no_hp || sc?.no_wa || '';
-        const resolvedEmail = matched?.email || u?.email || p.email || session.email || sc?.email_store || '';
+        const rawDbUserName = String(u?.name || '').trim();
+        const isDbNamePoisoned =
+          confirmedStore &&
+          ['warehouse', 'warehouse admin', 'wh0001'].includes(rawDbUserName.toLowerCase());
+        const resolvedName =
+          matched?.nama ||
+          (!isDbNamePoisoned && rawDbUserName && rawDbUserName.toLowerCase() !== unameLower
+            ? rawDbUserName
+            : '') ||
+          finalStoreName ||
+          displayName;
+        const resolvedPhone =
+          matched?.no_hp || u?.no_hp || u?.phone || p.no_hp || p.phone || session.no_hp || sc?.no_wa || '';
+        const resolvedEmail =
+          matched?.email || u?.email || p.email || session.email || sc?.email_store || '';
 
         setName(resolvedName);
         setPhone(resolvedPhone);
         setEmail(resolvedEmail);
         if (p._avatar !== undefined) setAvatar(p._avatar || '');
 
-        if (finalNik && session.nik !== finalNik) {
-          onSessionUpdate?.({ nik: finalNik, name: resolvedName });
+        // Self-heal session state jika sebelumnya tercemar NIK/nama Warehouse atau store metadata belum terisi
+        const patch: Partial<UserSession> = {};
+        if (confirmedStore) {
+          if (session.nik) patch.nik = undefined;
+          if (finalStoreName && session.store_name !== finalStoreName) patch.store_name = finalStoreName;
+          if (finalStoreCode && session.store_code !== finalStoreCode) patch.store_code = finalStoreCode;
+          if (
+            resolvedName &&
+            (session.name !== resolvedName ||
+              ['warehouse', 'warehouse admin', 'wh0001'].includes((session.name || '').trim().toLowerCase()))
+          ) {
+            patch.name = resolvedName;
+          }
+        } else {
+          if (!isSystemSharedAccount && (finalNik || undefined) !== session.nik) {
+            patch.nik = finalNik || undefined;
+          }
+          if (resolvedName && session.name !== resolvedName) patch.name = resolvedName;
+        }
+        if (Object.keys(patch).length > 0) {
+          onSessionUpdate?.(patch);
         }
       })
-      .catch(() => { /* offline: keep session values */ })
+      .catch(() => {
+        if (isStoreAccount || isSystemSharedAccount) {
+          setEffectiveNik('');
+          setKaryawanData(null);
+          setKpiSummary(null);
+        }
+      })
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, session.username]);
 
-  // Load KPI Absensi whenever user has effectiveNik and opens modal / changes selectedMonth
+  const hasEmployeeNik = Boolean(!isStoreAccount && !isSystemSharedAccount && effectiveNik);
+
+  // Pastikan tab Performa & KPI tidak pernah aktif untuk akun Store / Non-Karyawan
   React.useEffect(() => {
-    if (!isOpen || !effectiveNik) {
+    if (!hasEmployeeNik && tab === 'performa') {
+      setTab('profil');
+    }
+  }, [hasEmployeeNik, tab]);
+
+  // Load KPI Absensi HANYA untuk user karyawan resmi dengan NIK valid
+  React.useEffect(() => {
+    if (!isOpen || !hasEmployeeNik || !effectiveNik) {
       setKpiSummary(null);
       return;
     }
@@ -303,7 +433,7 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
       });
 
     return () => { cancelled = true; };
-  }, [isOpen, effectiveNik, selectedMonth, karyawanData?.nama, karyawanData?.divisi, name, displayName, session.role]);
+  }, [isOpen, hasEmployeeNik, effectiveNik, selectedMonth, karyawanData?.nama, karyawanData?.divisi, name, displayName, session.role]);
 
   React.useEffect(() => {
     if (!isOpen) return;
@@ -313,8 +443,6 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
-
-  const hasEmployeeNik = Boolean(effectiveNik);
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -365,7 +493,7 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
     const cleanPhone = phone.replace(/[^\d+]/g, '');
     const cleanEmail = email.trim();
     if (!cleanName) { setMsg({ ok: false, text: 'Nama tidak boleh kosong.' }); return; }
-    if (cleanPhone && !/^(\+?62|0)8\d{7,12}$/.test(cleanPhone)) { setMsg({ ok: false, text: 'Format No. HP tidak valid (contoh: 08123456789).' }); return; }
+    if (cleanPhone && !/^(\+?62|0)\d{7,13}$/.test(cleanPhone)) { setMsg({ ok: false, text: 'Format No. HP / Telepon tidak valid (contoh: 08123456789 atau 02156980000).' }); return; }
     if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) { setMsg({ ok: false, text: 'Format email tidak valid.' }); return; }
     setSaving(true); setMsg(null);
     const perms = { ...rowPerms, no_hp: cleanPhone, phone: cleanPhone, email: cleanEmail, _avatar: avatar };
@@ -376,10 +504,11 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
       );
       setRowPerms(perms);
       storeAvatar(session.username, avatar);
+      registerUserNames([{ username: session.username, name: cleanName }]);
       if (storeName) {
         try {
           const sc = getStoreContact(storeName);
-          saveStoreContact(storeName, cleanPhone, sc?.alamat_store, cleanEmail, sc?.pic_default, sc?.kode);
+          saveStoreContact(storeName, cleanPhone, sc?.alamat_store, cleanEmail, sc?.pic_default || cleanName, sc?.kode || storeCode);
         } catch (e) { console.warn('Sync kontak store gagal:', e); }
       }
       localStorage.setItem('wms_session_name', cleanName);
@@ -416,7 +545,7 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
   const strengthLabel = ['', 'Lemah', 'Lemah', 'Sedang', 'Kuat', 'Sangat Kuat'][strength];
   const strengthColor = ['bg-slate-200', 'bg-rose-500', 'bg-rose-500', 'bg-amber-500', 'bg-emerald-500', 'bg-emerald-600'][strength];
 
-  const PassInput = ({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) => (
+  const renderPassInput = ({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) => (
     <div className="relative">
       <Lock className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
       <input type={showPass ? 'text' : 'password'} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} autoComplete="new-password" className={`${inputCls} pr-9`} />
@@ -448,13 +577,25 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
       <div onClick={(e) => e.stopPropagation()} className="w-full sm:max-w-lg max-h-[92vh] flex flex-col bg-white dark:bg-[#0f1523] rounded-t-2xl sm:rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
         {/* Header */}
         <div className="relative px-4 pt-4 pb-3 bg-gradient-to-br from-primary-500/10 via-transparent to-transparent border-b border-slate-200 dark:border-slate-800">
-          <button type="button" onClick={onClose} title="Tutup" className="absolute top-3 right-3 p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Tutup Profil"
+            title="Tutup"
+            className="absolute top-3 right-3 w-9 h-9 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+          >
             <X className="w-4 h-4" />
           </button>
-          <div className="flex items-center gap-3 pr-8">
-            <div className="relative">
+          <div className="flex items-center gap-3 pr-10">
+            <div className="relative shrink-0">
               <UserAvatar username={session.username} name={karyawanData?.nama || name || displayName} value={avatar} className="w-16 h-16 rounded-2xl" textClass="text-xl" />
-              <button type="button" onClick={() => { setTab('profil'); fileRef.current?.click(); }} title="Ganti foto" className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-primary-600 text-white flex items-center justify-center shadow-md border-2 border-white dark:border-[#0f1523] cursor-pointer hover:bg-primary-700">
+              <button
+                type="button"
+                onClick={() => { setTab('profil'); fileRef.current?.click(); }}
+                aria-label="Ganti foto profil"
+                title="Ganti foto"
+                className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-primary-600 text-white flex items-center justify-center shadow-md border-2 border-white dark:border-[#0f1523] cursor-pointer hover:bg-primary-700"
+              >
                 <Camera className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -464,30 +605,28 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
                   {karyawanData?.nama || name || displayName}
                 </h2>
                 {hasEmployeeNik && kpiSummary && (
-                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-extrabold border ${gradeBadgeStyle(kpiSummary.grade)}`}>
+                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-extrabold font-mono border ${gradeBadgeStyle(kpiSummary.grade)}`}>
                     <Award className="w-3 h-3" />
                     KPI {kpiSummary.nilaiKpiAbsensi} ({kpiSummary.grade})
                   </span>
                 )}
               </div>
-              <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono truncate">@{session.username}</div>
-              <div className="mt-1 flex flex-wrap gap-1">
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-primary-500/10 text-primary-600 dark:text-primary-400">
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono truncate mt-0.5">
+                @{session.username}
+                {storeName ? ` · ${storeName}` : karyawanData?.divisi ? ` · ${karyawanData.divisi}` : ''}
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-primary-500/10 text-primary-600 dark:text-primary-400">
                   <ShieldCheck className="w-3 h-3" />{session.role}
                 </span>
-                {effectiveNik && (
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60">
+                {hasEmployeeNik && effectiveNik && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60">
                     NIK: {effectiveNik}
                   </span>
                 )}
-                {karyawanData?.divisi && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                    {karyawanData.divisi}
-                  </span>
-                )}
-                {session.store_name && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                    {session.store_name}
+                {isStoreAccount && storeCode && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700">
+                    OUTLET: {storeCode}
                   </span>
                 )}
               </div>
@@ -495,7 +634,7 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
           </div>
 
           {/* Tabs */}
-          <div className="mt-3 flex gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-800/60 overflow-x-auto no-scrollbar">
+          <div className="mt-3 flex gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/60 overflow-x-auto no-scrollbar">
             {(hasEmployeeNik
               ? ([
                   ['profil', 'Profil Karyawan', User],
@@ -503,7 +642,7 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
                   ['password', 'Ganti Password', KeyRound],
                 ] as const)
               : ([
-                  ['profil', 'Data Profil', User],
+                  ['profil', isStoreAccount ? 'Profil Store' : 'Data Profil', User],
                   ['password', 'Ganti Password', KeyRound],
                 ] as const)
             ).map(([id, label, Icon]) => (
@@ -511,7 +650,7 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
                 key={id}
                 type="button"
                 onClick={() => { setTab(id); setMsg(null); }}
-                className={`flex-1 min-w-[105px] h-8 px-2 rounded-md text-xs font-bold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                className={`flex-1 min-w-[105px] h-8 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
                   tab === id
                     ? 'bg-white dark:bg-slate-900 text-primary-600 dark:text-primary-400 shadow-sm'
                     : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'
@@ -689,12 +828,37 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
                 </div>
               ) : (
                 /* ============================================================
-                 * EDITABLE PROFILE (Akun Store / Non-NIK)
+                 * EDITABLE PROFILE (Akun Store / Non-Karyawan)
                  * ============================================================ */
-                <>
+                <div className="space-y-3">
+                  {isStoreAccount && (
+                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-9 h-9 rounded-xl bg-primary-500/10 text-primary-600 dark:text-primary-400 flex items-center justify-center shrink-0">
+                          <Building2 className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Outlet / Store Terhubung
+                          </div>
+                          <div className="text-xs font-extrabold text-slate-800 dark:text-slate-100 truncate">
+                            {storeName || displayName}
+                          </div>
+                        </div>
+                      </div>
+                      {storeCode && (
+                        <span className="px-2 py-1 rounded-lg text-[11px] font-mono font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 shrink-0">
+                          {storeCode}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                   <div>
-                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Nama Lengkap</label>
-                    <div className="relative mt-1"><User className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder="Nama lengkap" /></div>
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                      {isStoreAccount ? 'Nama Store / PIC' : 'Nama Lengkap'}
+                    </label>
+                    <div className="relative mt-1"><User className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder={isStoreAccount ? 'Nama Store / PIC' : 'Nama lengkap'} /></div>
                   </div>
                   <div>
                     <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">No. HP / WhatsApp</label>
@@ -707,9 +871,9 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
                   <div>
                     <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Username</label>
                     <div className="relative mt-1"><ShieldCheck className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={session.username} disabled className={`${inputCls} font-mono`} /></div>
-                    <p className="mt-1 text-[10px] text-slate-400">Username & role hanya bisa diubah oleh Superadmin.</p>
+                    <p className="mt-1 text-[10px] text-slate-400">Username &amp; role hanya bisa diubah oleh Superadmin.</p>
                   </div>
-                </>
+                </div>
               )}
             </>
           )}
@@ -717,16 +881,16 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
           {tab === 'performa' && hasEmployeeNik && (
             <div className="space-y-3">
               {/* Filter Periode Bulan */}
-              <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800">
                 <div className="flex items-center gap-1.5">
                   <Calendar className="w-3.5 h-3.5 text-primary-600 dark:text-primary-400" />
                   <span className="text-xs font-bold text-slate-700 dark:text-slate-200">Periode Penilaian</span>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <button
                     type="button"
                     onClick={() => setSelectedMonth(thisMonthYm)}
-                    className={`h-7 px-2.5 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer ${
+                    className={`h-8 px-2.5 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer whitespace-nowrap ${
                       selectedMonth === thisMonthYm
                         ? 'bg-primary-600 text-white border-primary-600'
                         : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
@@ -737,7 +901,7 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
                   <button
                     type="button"
                     onClick={() => setSelectedMonth(lastMonthYm)}
-                    className={`h-7 px-2.5 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer ${
+                    className={`h-8 px-2.5 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer whitespace-nowrap ${
                       selectedMonth === lastMonthYm
                         ? 'bg-primary-600 text-white border-primary-600'
                         : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
@@ -749,7 +913,7 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
                     type="month"
                     value={selectedMonth}
                     onChange={(e) => e.target.value && setSelectedMonth(e.target.value)}
-                    className="h-7 px-2 rounded-lg text-[11px] font-mono font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200"
+                    className="h-8 min-w-[152px] flex-1 sm:flex-initial px-2.5 rounded-lg text-[11px] font-mono font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200"
                   />
                 </div>
               </div>
@@ -921,10 +1085,10 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
 
           {tab === 'password' && (
             <>
-              <div><label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Password Lama</label><div className="mt-1">{PassInput({ value: oldPass, onChange: setOldPass, placeholder: 'Password saat ini' })}</div></div>
+              <div><label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Password Lama</label><div className="mt-1">{renderPassInput({ value: oldPass, onChange: setOldPass, placeholder: 'Password saat ini' })}</div></div>
               <div>
                 <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Password Baru</label>
-                <div className="mt-1">{PassInput({ value: newPass, onChange: setNewPass, placeholder: 'Minimal 6 karakter' })}</div>
+                <div className="mt-1">{renderPassInput({ value: newPass, onChange: setNewPass, placeholder: 'Minimal 6 karakter' })}</div>
                 {newPass && (
                   <div className="mt-1.5 flex items-center gap-2">
                     <div className="flex-1 flex gap-1">{[1, 2, 3, 4, 5].map((i) => <div key={i} className={`h-1 flex-1 rounded-full ${i <= strength ? strengthColor : 'bg-slate-200 dark:bg-slate-700'}`} />)}</div>
@@ -934,7 +1098,7 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
               </div>
               <div>
                 <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Konfirmasi Password Baru</label>
-                <div className="mt-1">{PassInput({ value: confirmPass, onChange: setConfirmPass, placeholder: 'Ulangi password baru' })}</div>
+                <div className="mt-1">{renderPassInput({ value: confirmPass, onChange: setConfirmPass, placeholder: 'Ulangi password baru' })}</div>
                 {confirmPass && newPass === confirmPass && <p className="mt-1 text-[10px] font-bold text-emerald-600 flex items-center gap-1"><Check className="w-3 h-3" />Password cocok</p>}
               </div>
               <button type="button" onClick={() => setShowPass((s) => !s)} className="text-[11px] font-bold text-slate-500 hover:text-primary-600 flex items-center gap-1.5 cursor-pointer">
@@ -951,8 +1115,8 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
         </div>
 
         {/* Footer */}
-        <div className="p-3 border-t border-slate-200 dark:border-slate-800 flex gap-2 bg-slate-50/60 dark:bg-slate-900/40">
-          <button type="button" onClick={onClose} className="h-9 px-4 rounded-lg text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer">
+        <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-3 border-t border-slate-200 dark:border-slate-800 flex gap-2 bg-slate-50/60 dark:bg-slate-900/40">
+          <button type="button" onClick={onClose} className="h-10 px-4 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer">
             Tutup
           </button>
           {tab !== 'performa' && (
@@ -960,7 +1124,7 @@ export const UserProfileModal: React.FC<Props> = ({ isOpen, onClose, session, on
               type="button"
               disabled={saving || loading || logoutCountdown !== null}
               onClick={tab === 'profil' ? saveProfile : savePassword}
-              className="flex-1 h-9 rounded-lg text-xs font-bold bg-primary-600 hover:bg-primary-700 text-white flex items-center justify-center gap-1.5 disabled:opacity-60 cursor-pointer"
+              className="flex-1 h-10 rounded-xl text-xs font-bold bg-primary-600 hover:bg-primary-700 text-white flex items-center justify-center gap-1.5 disabled:opacity-60 cursor-pointer"
             >
               {saving ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />

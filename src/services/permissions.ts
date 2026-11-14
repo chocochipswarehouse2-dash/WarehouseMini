@@ -3,13 +3,20 @@ import { UserSession, UserPermissions, ActivePage } from '../types';
 export const isSuperadmin = (session: UserSession | null): boolean => {
   if (!session) return false;
   const user = String(session.username || '').trim().toLowerCase();
-  
+  const role = String(session.role || '').trim().toLowerCase().replace(/[\s_-]/g, '');
+
   // Akun outlet / store (seperti chococpj, chocogaia, chocobts, dll.) adalah akun toko, bukan superadmin gudang
   if (user.startsWith('choco') && user !== 'chocoadm') return false;
   const div = String(session.divisi || '').trim().toLowerCase();
-  if (div === 'store' || div === 'outlet') return false;
+  if (div === 'store' || div === 'outlet' || div === 'toko') return false;
+  if (role === 'store' || role === 'outlet' || role === 'toko') return false;
+  if (
+    (String(session.store_code || '').trim() || String(session.store_name || '').trim()) &&
+    !['warehouse', 'admin', 'admin2', 'chocoadm'].includes(user)
+  ) {
+    return false;
+  }
 
-  const role = String(session.role || '').trim().toLowerCase().replace(/[\s_-]/g, '');
   const email = String(session.email || '').trim().toLowerCase();
   const nik = String(session.nik || '').trim().toLowerCase();
 
@@ -33,6 +40,7 @@ export const isSuperadmin = (session: UserSession | null): boolean => {
  */
 export const isWarehouseAccountOnly = (session: UserSession | null): boolean => {
   if (!session) return false;
+  if (isStoreAccountSession(session)) return false;
   const user = String(session.username || '').trim().toLowerCase();
   const nik = String(session.nik || '').trim().toLowerCase();
   const email = String(session.email || '').trim().toLowerCase();
@@ -670,6 +678,9 @@ export const canAccessPage = (session: UserSession | null, page: ActivePage): bo
 
 export const canAccessSettings = (session: UserSession | null): boolean => {
   if (!session) return false;
+  if (isStoreAccountSession(session)) return false;
+  if (!isSuperadmin(session)) return false;
+
   const user = String(session.username || '').trim().toLowerCase();
   const nik = String(session.nik || '').trim().toLowerCase();
   const email = String(session.email || '').trim().toLowerCase();

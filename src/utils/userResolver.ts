@@ -196,18 +196,92 @@ export function formatOperatorWithPersonName(rawOperator?: string | null): strin
   return getUserPersonName(trimmed);
 }
 
+const NON_EMPLOYEE_SYSTEM_USERNAMES = new Set([
+  'warehouse',
+  'admin',
+  'admin2',
+  'superadmin',
+  'chocoadm',
+  'system',
+  'chocolive',
+  'chocostyling',
+  'cs1',
+  'cs2',
+  'chococs1',
+  'chococs2',
+]);
+
+function isStoreLikeSessionOrUser(
+  sessionOrUser?: { nik?: string | null; username?: string | null; role?: string | null; store_code?: string | null; store_name?: string | null } | string | null
+): boolean {
+  if (!sessionOrUser) return false;
+  if (typeof sessionOrUser === 'string') {
+    const clean = sessionOrUser.trim().toLowerCase();
+    return clean.startsWith('choco') && clean !== 'chocoadm';
+  }
+  const u = (sessionOrUser.username || '').trim().toLowerCase();
+  const role = (sessionOrUser.role || '').trim().toLowerCase();
+  if (u.startsWith('choco') && u !== 'chocoadm') return true;
+  if (role === 'store' || role === 'outlet' || role === 'toko') return true;
+  if ((sessionOrUser.store_code || '').trim() || (sessionOrUser.store_name || '').trim()) return true;
+  return false;
+}
+
 /**
- * Resolves a UserSession, username, or identifier to the correct standardized NIK (e.g. "WH0004").
+ * Strict personal employee NIK resolver for Profile & KPI gating.
+ * NEVER falls back to 'WH0001' for Store accounts, system/shared accounts, or non-employees.
  */
-export function getUserNik(sessionOrUser?: { nik?: string | null; username?: string | null } | string | null): string {
-  if (!sessionOrUser) return 'WH0001';
+export function resolveStrictEmployeeNik(
+  sessionOrUser?: { nik?: string | null; username?: string | null; role?: string | null; store_code?: string | null; store_name?: string | null } | string | null
+): string {
+  if (!sessionOrUser) return '';
+  if (isStoreLikeSessionOrUser(sessionOrUser)) return '';
+
+  const rawUsername = typeof sessionOrUser === 'string' ? sessionOrUser : (sessionOrUser.username || '');
+  const u = rawUsername.trim().toLowerCase();
+  if (NON_EMPLOYEE_SYSTEM_USERNAMES.has(u)) return '';
+
+  if (typeof sessionOrUser === 'object' && sessionOrUser.nik && sessionOrUser.nik.trim()) {
+    const cleanNik = sessionOrUser.nik.trim().toUpperCase();
+    if (cleanNik !== 'WH0001' || u === 'wh0001') {
+      return cleanNik;
+    }
+    return '';
+  }
+
+  if (/^wh\d+$/i.test(u)) {
+    const num = u.replace(/\D/g, '');
+    if (num) {
+      return `WH${num.padStart(4, '0')}`;
+    }
+    return u.toUpperCase();
+  }
+  if (u === 'yesinta') return 'WH0004';
+  if (u === 'sasi') return 'WH0002';
+  if (u === 'irma') return 'WH0003';
+  if (u === 'nanang') return 'WH0010';
+  return '';
+}
+
+/**
+ * Resolves a UserSession, username, or identifier to a standardized NIK when applicable.
+ * Never returns 'WH0001' for Store or unrecognized non-employee accounts.
+ */
+export function getUserNik(
+  sessionOrUser?: { nik?: string | null; username?: string | null; role?: string | null; store_code?: string | null; store_name?: string | null } | string | null
+): string {
+  if (!sessionOrUser) return '';
+  if (isStoreLikeSessionOrUser(sessionOrUser)) return '';
 
   if (typeof sessionOrUser === 'object') {
-    if (sessionOrUser.nik && sessionOrUser.nik.trim()) {
-      return sessionOrUser.nik.trim().toUpperCase();
-    }
     const u = (sessionOrUser.username || '').trim().toLowerCase();
-    if (u.startsWith('wh')) {
+    if (sessionOrUser.nik && sessionOrUser.nik.trim()) {
+      const cleanNik = sessionOrUser.nik.trim().toUpperCase();
+      if (cleanNik !== 'WH0001' || ['wh0001', 'warehouse', 'admin', 'admin2', 'chocoadm'].includes(u)) {
+        return cleanNik;
+      }
+    }
+    if (/^wh\d+$/i.test(u)) {
       const num = u.replace(/\D/g, '');
       if (num) {
         return `WH${num.padStart(4, '0')}`;
@@ -218,11 +292,12 @@ export function getUserNik(sessionOrUser?: { nik?: string | null; username?: str
     if (u === 'sasi') return 'WH0002';
     if (u === 'irma') return 'WH0003';
     if (u === 'nanang') return 'WH0010';
-    return 'WH0001';
+    if (['warehouse', 'admin', 'admin2', 'chocoadm'].includes(u)) return 'WH0001';
+    return '';
   }
 
   const clean = String(sessionOrUser).trim().toLowerCase();
-  if (clean.startsWith('wh')) {
+  if (/^wh\d+$/i.test(clean)) {
     const num = clean.replace(/\D/g, '');
     if (num) {
       return `WH${num.padStart(4, '0')}`;
@@ -233,5 +308,6 @@ export function getUserNik(sessionOrUser?: { nik?: string | null; username?: str
   if (clean === 'sasi') return 'WH0002';
   if (clean === 'irma') return 'WH0003';
   if (clean === 'nanang') return 'WH0010';
-  return 'WH0001';
+  if (['warehouse', 'admin', 'admin2', 'chocoadm'].includes(clean)) return 'WH0001';
+  return '';
 }
