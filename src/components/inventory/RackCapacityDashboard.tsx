@@ -30,6 +30,8 @@ import {
 } from 'lucide-react';
 import type { StockRealtimeItem, UserSession, LogProdukItem, ProductItem } from '../../types';
 import { supabaseFetch } from '../../services/supabase';
+import { hasPermission, isStoreAccountSession, isSuperadmin } from '../../services/permissions';
+import { LocationRelocationModal } from './LocationRelocationModal';
 import {
   cleanProductName,
   extractCleanSizeToken,
@@ -251,6 +253,16 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     () => config.evacuationRule || DEFAULT_ABCD_TO_KOLI_RULE
   );
   const [showEvacConfig, setShowEvacConfig] = useState(false);
+
+  // Relokasi Lokasi Rak Modal State
+  const [isRelocationModalOpen, setIsRelocationModalOpen] = useState(false);
+  const [relocationInitialFromLoc, setRelocationInitialFromLoc] = useState('');
+  const canRelocateRack =
+    !isStoreAccountSession(session ?? null) &&
+    (isSuperadmin(session ?? null) ||
+      hasPermission(session ?? null, 'menu_ops_inventory') ||
+      hasPermission(session ?? null, 'tab_ops_mutasi_scanner') ||
+      hasPermission(session ?? null, 'menu_ops_mutasi'));
 
   // Build Master Produk lookup map (SKU -> { nama_produk, size, kategori })
   const catalogMap = useMemo(() => {
@@ -1840,6 +1852,20 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 Tampilkan Semua Zona
               </button>
             )}
+            {canRelocateRack && (
+              <button
+                type="button"
+                onClick={() => {
+                  setRelocationInitialFromLoc('');
+                  setIsRelocationModalOpen(true);
+                }}
+                className="px-3 py-1.5 text-xs font-extrabold rounded-xl border bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                title="Pindahkan isi stok dari satu rak ke rak lain secara langsung"
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                <span>Relokasi Rak</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setIsSimPanelOpen((prev) => !prev)}
@@ -2975,7 +3001,23 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {canRelocateRack && selectedSlot.currentQty > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const loc = selectedSlot.lokasi;
+                      setSelectedRackLokasi(null);
+                      setRelocationInitialFromLoc(loc);
+                      setIsRelocationModalOpen(true);
+                    }}
+                    className="px-3.5 py-2 rounded-xl text-xs font-extrabold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-colors cursor-pointer flex items-center gap-1.5"
+                    title="Pindahkan isi rak ini ke lokasi lain"
+                  >
+                    <ArrowRightLeft className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <span>Relokasi Rak Ini</span>
+                  </button>
+                )}
                 {onOpenPrintModal && (
                   <button
                     type="button"
@@ -4342,6 +4384,24 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             </div>
           </div>
         </div>
+      )}
+      {/* ============================================================================
+          9. MODAL RELOKASI / PINDAH LOKASI RAK
+          ============================================================================ */}
+      {isRelocationModalOpen && (
+        <LocationRelocationModal
+          isOpen={isRelocationModalOpen}
+          onClose={() => setIsRelocationModalOpen(false)}
+          session={session}
+          stockRows={stockRows}
+          productCatalog={productCatalog}
+          rackSlots={allSlots}
+          initialFromLocation={relocationInitialFromLoc}
+          onNotify={onNotify}
+          onSuccess={() => {
+            onRefreshStock?.();
+          }}
+        />
       )}
     </div>
   );
