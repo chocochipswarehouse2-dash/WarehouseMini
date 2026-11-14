@@ -1,12 +1,13 @@
 {
-  "version": "v2.12.1",
-  "versionCode": 321,
+  "version": "v2.12.2",
+  "versionCode": 322,
   "buildDate": "14 November 2026",
-  "buildHash": "wms-261114-v321-1123",
-  "releaseTitle": "WMS v2.12.1 — Penandaan Otomatis Status BOLOS pada Jadwal Roster Shift",
+  "buildHash": "wms-261114-v322-2316",
+  "releaseTitle": "WMS v2.12.2 — Audit Header, Isolasi Profil & Akses Store, serta Kontrol ON/OFF Notifikasi Perangkat",
   "releaseNotes": [
-    "Karyawan yang tidak melakukan absensi datang dan pulang pada hari kerja otomatis ditandai sebagai BOLOS pada Jadwal Roster Shift (Matriks Sebulan, Kalender Staf, Mingguan, Tabel Harian & Kartu)",
-    "Menambahkan indikator statistik Bolos (Alpha), filter khusus Bolos, serta detail keterangan audit (Tidak Absen Datang & Pulang / Tidak Absen Pulang) beserta jadwal shift awalnya"
+    "Perbaikan tampilan & responsivitas Header aplikasi di seluler dan desktop",
+    "Audit Profil User: akun Store & non-karyawan tidak lagi masuk profil Warehouse (WH0001), bebas KPI, dan memblokir kebocoran menu Pengaturan Sistem [ADMIN]",
+    "Kontrol switch ON/OFF Notifikasi Perangkat di Sidebar, Notification Hub & Settings (menghentikan pop-up OS, Web Push, Service Worker watcher & suara chime saat OFF)"
   ],
   "minSupportedVersion": "v2.0.0"
 }

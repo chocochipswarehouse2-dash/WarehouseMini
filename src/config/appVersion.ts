@@ -15,19 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.12.1",
-  "versionCode": 321,
+  "version": "v2.12.2",
+  "versionCode": 322,
   "buildDate": "14 November 2026",
-  "buildHash": "wms-261114-v321-1123",
-  "releaseTitle": "WMS v2.12.1 — Penandaan Otomatis Status BOLOS pada Jadwal Roster Shift",
+  "buildHash": "wms-261114-v322-2316",
+  "releaseTitle": "WMS v2.12.2 — Audit Header, Isolasi Profil & Akses Store, serta Kontrol ON/OFF Notifikasi Perangkat",
   "releaseNotes": [
-    "Karyawan yang tidak melakukan absensi datang dan pulang pada hari kerja otomatis ditandai sebagai BOLOS pada Jadwal Roster Shift (Matriks Sebulan, Kalender Staf, Mingguan, Tabel Harian & Kartu)",
-    "Menambahkan indikator statistik Bolos (Alpha), filter khusus Bolos, serta detail keterangan audit (Tidak Absen Datang & Pulang / Tidak Absen Pulang) beserta jadwal shift awalnya"
+    "Perbaikan tampilan & responsivitas Header aplikasi di seluler dan desktop",
+    "Audit Profil User: akun Store & non-karyawan tidak lagi masuk profil Warehouse (WH0001), bebas KPI, dan memblokir kebocoran menu Pengaturan Sistem [ADMIN]",
+    "Kontrol switch ON/OFF Notifikasi Perangkat di Sidebar, Notification Hub & Settings (menghentikan pop-up OS, Web Push, Service Worker watcher & suara chime saat OFF)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.12.1",
+    "versionCode": 321,
+    "buildDate": "14 November 2026",
+    "buildHash": "wms-261114-v321-1123",
+    "releaseTitle": "WMS v2.12.1 — Penandaan Otomatis Status BOLOS pada Jadwal Roster Shift",
+    "releaseNotes": [
+      "Karyawan yang tidak melakukan absensi datang dan pulang pada hari kerja otomatis ditandai sebagai BOLOS pada Jadwal Roster Shift (Matriks Sebulan, Kalender Staf, Mingguan, Tabel Harian & Kartu)",
+      "Menambahkan indikator statistik Bolos (Alpha), filter khusus Bolos, serta detail keterangan audit (Tidak Absen Datang & Pulang / Tidak Absen Pulang) beserta jadwal shift awalnya"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.12.0",
     "versionCode": 320,
@@ -114,18 +127,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Pembersihan 7.020 data master_produk dari pseudo-size kode warna",
       "Runtime guard isCorruptedColorCodeSize di Inventory, Katalog, dan Lookup"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.11.4",
-    "versionCode": 314,
-    "buildDate": "12 November 2026",
-    "buildHash": "wms-261112-v314-1247",
-    "releaseTitle": "WMS v2.11.4 — Sinkronisasi Otomatis Nama Produk Pesanan Store & Koreksi Tiket Alteration Taylor Pants",
-    "releaseNotes": [
-      "Penyelarasan otomatis nama & size produk pada Pesanan Store (Split, Tabel, Kartu) dengan Master Produk via lookupProductBySku",
-      "Koreksi data tiket AR-BY -261108-P8Z5 di database Supabase menjadi Taylor Pants Denim Blue"
     ],
     "minSupportedVersion": "v2.0.0"
   }
