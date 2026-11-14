@@ -1280,7 +1280,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
             {activeTab === 'riwayat' && records.length > 0 && (
               <button
                 type="button"
-                onClick={() => exportPengecekanToCsv(records, `Semua_Riwayat_Pengecekan_SJ_${new Date().toISOString().slice(0, 10)}.csv`)}
+                onClick={() => exportPengecekanToCsv(records, `Semua_Riwayat_Pengecekan_SJ_${new Date().toISOString().slice(0, 10)}.csv`, productCatalog)}
                 className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
@@ -2658,7 +2658,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                               {/* EXPORT DATA SJ INI */}
                               <button
                                 type="button"
-                                onClick={() => exportPengecekanToCsv([rec], `Pengecekan_SJ_${rec.no_sj}_${rec.tanggal_sj}.csv`)}
+                                onClick={() => exportPengecekanToCsv([rec], `Pengecekan_SJ_${rec.no_sj}_${rec.tanggal_sj}.csv`, productCatalog)}
                                 className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-slate-200 dark:border-slate-700 cursor-pointer"
                               >
                                 <Download className="w-3.5 h-3.5 text-slate-500" />

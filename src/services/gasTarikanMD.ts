@@ -1,8 +1,9 @@
-import { PengecekanSJRecord, PengecekanSJItem, PengecekanSJDraft, TarikanMDRecord } from '../types';
+import { PengecekanSJRecord, PengecekanSJItem, PengecekanSJDraft, TarikanMDRecord, ProductItem } from '../types';
 import { supabaseFetch } from './supabase';
 import { fetchWithDeltaSync } from './gasSync';
 import { saveSJDraftsToDb, loadSJDraftsFromDb, deleteSJDraftFromDb } from './localDb';
-import { resolveProductName, extractSizeFromSku, isRealSize } from '../utils/sortUtils';
+import { resolveProductName, extractSizeFromSku, isRealSize, isCorruptedColorCodeSize } from '../utils/sortUtils';
+import { lookupProductBySku } from '../utils/productLookup';
 
 const CACHE_KEY_RECORDS = 'wms_cached_pengecekan_sj_records';
 const CACHE_KEY_LEGACY = 'wms_cached_tarikan_md';
@@ -545,19 +546,59 @@ export async function syncPendingOfflinePengecekanSJ(): Promise<{ successCount: 
   return { successCount, failCount };
 }
 
-export function exportPengecekanToCsv(records: PengecekanSJRecord[], filename: string): void {
-  let csv = 'No SJ,Tanggal SJ,Source,Destination,Status,Status Komparasi,SKU,Nama Barang,Qty SJ,Qty Terima,Selisih,PIC\n';
+export function exportPengecekanToCsv(
+  records: PengecekanSJRecord[],
+  filename: string,
+  productCatalog?: ProductItem[]
+): void {
+  const esc = (v: unknown): string => {
+    const s = String(v ?? '');
+    if (/[",\n\r]/.test(s)) {
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+  };
+
+  let csv = 'No SJ,Tanggal SJ,Source,Destination,Status,Status Komparasi,SKU,Nama Barang,Size,Qty SJ,Qty Terima,Selisih,PIC\n';
   records.forEach(r => {
     (r.items || []).forEach(it => {
-      const selisih = (it.qty_scan || 0) - (it.qty_sj || 0);
-      csv += `${r.no_sj},${r.tanggal_sj},${r.source},${r.destination},${r.status},${r.status_komparasi},${it.sku},"${it.nama_produk}",${it.qty_sj},${it.qty_scan},${selisih},"${r.submitted_by}"\n`;
+      const qtySj = Number(it.qty_sj || 0);
+      const qtyScan = Number(it.qty_scan || 0);
+      const selisih = qtyScan - qtySj;
+      const lk = lookupProductBySku(it.sku, productCatalog, it.nama_produk, it.size);
+      const resolvedName = lk.found
+        ? lk.nama_produk
+        : resolveProductName(it.sku, it.nama_produk);
+      const resolvedSize = lk.found
+        ? (lk.size || '-')
+        : (isRealSize(it.size) && !isCorruptedColorCodeSize(it.sku, it.size) && it.size !== 'Default' ? it.size : '-');
+
+      csv += [
+        esc(r.no_sj),
+        esc(r.tanggal_sj),
+        esc(r.source),
+        esc(r.destination),
+        esc(r.status),
+        esc(r.status_komparasi),
+        esc(it.sku),
+        `"${String(resolvedName || '').replace(/"/g, '""')}"`,
+        esc(resolvedSize),
+        qtySj,
+        qtyScan,
+        selisih,
+        `"${String(r.submitted_by || '').replace(/"/g, '""')}"`,
+      ].join(',') + '\n';
     });
   });
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
+  link.href = url;
   link.download = filename;
+  document.body.appendChild(link);
   link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 export async function submitTarikanMD(record: PengecekanSJRecord): Promise<{ success: boolean; offline?: boolean; message?: string }> {
