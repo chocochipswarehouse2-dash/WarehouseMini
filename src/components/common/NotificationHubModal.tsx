@@ -138,22 +138,35 @@ export const NotificationHubButton: React.FC<{
     return subscribeNotificationHub(sync);
   }, [username]);
 
+  const badgeText = unreadCount > 99 ? '99+' : String(unreadCount);
+
   return (
     <button
       type="button"
       onClick={onClick}
+      aria-label={
+        unreadCount > 0
+          ? `Buka Notification Hub (${unreadCount} notifikasi belum dibaca)`
+          : 'Buka Notification Hub'
+      }
       title="Buka Notification Hub (Riwayat Notifikasi & Belum Dibaca)"
-      className={`relative flex items-center gap-1.5 rounded-xl border transition-all cursor-pointer active:scale-95 ${
+      className={`relative inline-flex items-center justify-center rounded-xl border transition-all cursor-pointer active:scale-95 shrink-0 ${
         unreadCount > 0
           ? 'bg-indigo-50/90 dark:bg-indigo-950/50 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60'
           : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700'
-      } ${compact ? 'p-2' : 'px-2.5 py-1.5 text-xs font-bold'}`}
+      } ${compact ? 'w-10 h-10' : 'h-8 px-2.5 gap-1.5 text-xs font-semibold'}`}
     >
-      <Bell className={`w-4 h-4 ${unreadCount > 0 ? 'text-indigo-600 dark:text-indigo-400 animate-bounce' : ''}`} />
-      {!compact && <span className="hidden xl:inline">Notifikasi</span>}
+      <Bell className={`w-4 h-4 shrink-0 ${unreadCount > 0 ? 'text-indigo-600 dark:text-indigo-400' : ''}`} />
+      {!compact && <span className="hidden xl:inline whitespace-nowrap">Notifikasi</span>}
       {unreadCount > 0 && (
-        <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-black flex items-center justify-center shadow-xs">
-          {unreadCount > 99 ? '99+' : unreadCount}
+        <span
+          className={
+            compact
+              ? 'absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-bold font-mono tabular-nums flex items-center justify-center shadow-xs ring-2 ring-white dark:ring-[#101726]'
+              : 'min-w-[18px] h-[18px] px-1.5 rounded-full bg-rose-600 text-white text-[10px] font-bold font-mono tabular-nums flex items-center justify-center shadow-xs'
+          }
+        >
+          {badgeText}
         </span>
       )}
     </button>

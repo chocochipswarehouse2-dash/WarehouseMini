@@ -20,7 +20,7 @@ import {
 } from './types';
 import RoadmapView from "./components/RoadmapView";
 import { Sidebar } from './components/Sidebar';
-import { Navbar } from './components/Navbar';
+import { UserAvatar } from './components/UserProfileModal';
 import { KatalogProdukView } from './components/KatalogProdukView';
 import { OperasiStokView } from './components/OperasiStokView';
 import { ImportStokModal, ImportRow } from './components/ImportStokModal';
@@ -4336,28 +4336,33 @@ export default function App() {
             isNotificationSupported() &&
             notificationPermission !== 'granted' &&
             !dismissedNotifPrompt && (
-              <div className="bg-amber-50 dark:bg-amber-950/50 border-b border-amber-200 dark:border-amber-800/70 px-3 sm:px-5 py-2.5 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2.5 text-xs text-amber-900 dark:text-amber-200">
-                  <div className="p-1.5 rounded-lg bg-amber-500 text-white shrink-0 animate-bounce">
+              <div className="bg-amber-50 dark:bg-amber-950/50 border-b border-amber-200 dark:border-amber-800/70 px-3 sm:px-5 py-2 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-xs text-amber-900 dark:text-amber-200 min-w-0">
+                  <div className="p-1.5 rounded-lg bg-amber-500 text-white shrink-0">
                     <BellRing className="w-3.5 h-3.5" />
                   </div>
-                  <span>
-                    <strong>Notifikasi HP / Browser Belum Aktif:</strong> Aktifkan agar muncul pop-up &amp; nada dering layaknya WhatsApp saat ada{' '}
-                    <strong>
-                      {isSuperadmin(session)
-                        ? 'Pesanan Baru Store, Tiket Retur, atau Pesan Live Chat masuk'
-                        : 'Pesan Live Chat / Ruang Diskusi atau Update Resi masuk'}
-                    </strong>
-                    .
+                  <span className="leading-snug truncate sm:whitespace-normal">
+                    <strong className="font-bold">Notifikasi HP Belum Aktif:</strong>{' '}
+                    <span className="hidden sm:inline">
+                      Aktifkan agar muncul pop-up &amp; nada dering saat ada{' '}
+                      <strong>
+                        {isSuperadmin(session)
+                          ? 'Pesanan Baru Store, Tiket Retur, atau Pesan Live Chat masuk'
+                          : 'Pesan Live Chat atau Update Resi masuk'}
+                      </strong>
+                      .
+                    </span>
+                    <span className="sm:hidden">Aktifkan pop-up pesan &amp; pesanan masuk.</span>
                   </span>
                 </div>
-                <div className="flex items-center gap-2 ml-auto">
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
                     onClick={handleRequestNotification}
-                    className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-amber-500 hover:bg-amber-600 text-black shadow-xs cursor-pointer transition-all active:scale-95"
+                    className="px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-xs cursor-pointer transition-all active:scale-95 whitespace-nowrap"
                   >
-                    Aktifkan Notifikasi HP
+                    <span className="sm:hidden">Aktifkan</span>
+                    <span className="hidden sm:inline">Aktifkan Notifikasi</span>
                   </button>
                   <button
                     type="button"
@@ -4367,8 +4372,9 @@ export default function App() {
                         sessionStorage.setItem('wms_dismiss_notif_prompt', 'true');
                       } catch {}
                     }}
-                    className="p-1 text-amber-700 dark:text-amber-400 hover:opacity-75 cursor-pointer"
+                    className="w-8 h-8 flex items-center justify-center rounded-lg text-amber-700 dark:text-amber-400 hover:bg-amber-100/80 dark:hover:bg-amber-900/40 cursor-pointer"
                     title="Sembunyikan sementara"
+                    aria-label="Sembunyikan banner notifikasi"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -4377,27 +4383,47 @@ export default function App() {
             )}
         </div>
 
-        {/* Sticky Mobile Top Header Bar (< 1024px) — 100% Untouched for Mobile */}
-        <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between px-3 sm:px-4 py-2 bg-white/95 dark:bg-[#101726]/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 shadow-2xs print:hidden">
-          <div className="flex items-center gap-2 min-w-0">
+        {/* Sticky Mobile & Tablet Top Header Bar (< 1024px) */}
+        <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between gap-2 px-3 sm:px-4 min-h-[56px] py-1.5 bg-white/95 dark:bg-[#101726]/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 shadow-2xs print:hidden">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
             <button
               type="button"
               onClick={() => setIsMobileSidebarOpen(true)}
-              className="p-1.5 -ml-1 rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 transition-all cursor-pointer border border-slate-200/60 dark:border-slate-700/60 shrink-0"
+              className="relative w-10 h-10 flex items-center justify-center rounded-xl text-slate-700 dark:text-slate-200 bg-slate-50/80 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 transition-all cursor-pointer border border-slate-200/80 dark:border-slate-700/70 shrink-0"
               title="Buka Menu Navigasi"
               aria-label="Buka Menu Navigasi"
             >
               <Menu className="w-5 h-5" />
+              {(newPickingTaskAlert || newManualShipmentAlert) && (
+                <span
+                  className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white dark:ring-[#101726]"
+                  aria-hidden="true"
+                />
+              )}
             </button>
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="font-black text-sm text-slate-900 dark:text-white tracking-tight truncate">Chocochips</span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-primary-50 dark:bg-primary-950/60 text-primary-700 dark:text-primary-300 border border-primary-200/60 dark:border-primary-800/60 shrink-0 truncate max-w-[130px]">
-                {activePage.replace(/_/g, ' ')}
-              </span>
+
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span
+                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                    isRealtimeConnected ? 'bg-emerald-500' : 'bg-amber-500'
+                  }`}
+                  title={isRealtimeConnected ? 'Live Database Terhubung' : 'Menghubungkan Database...'}
+                />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 truncate leading-none">
+                  Chocochips WMS
+                </span>
+              </div>
+              <h1
+                className="text-[15px] font-extrabold text-slate-900 dark:text-white tracking-tight truncate leading-snug"
+                title={getWorkspacePageMeta(activePage).label}
+              >
+                {getWorkspacePageMeta(activePage).label}
+              </h1>
             </div>
           </div>
+
           <div className="flex items-center gap-1.5 shrink-0">
-            {/* Tombol Notification Hub di Header Mobile */}
             {session && (
               <NotificationHubButton
                 onClick={() => setIsNotificationHubOpen(true)}
@@ -4405,22 +4431,34 @@ export default function App() {
                 compact
               />
             )}
-            {/* Tombol AI di Header Mobile (Khusus Superadmin & Whitelisted User) */}
+
             {userCanAccessAi && (
               <button
                 type="button"
                 onClick={() => setIsAiModalOpen(true)}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-black bg-gradient-to-r from-purple-600 via-indigo-600 to-primary-600 text-white shadow-xs active:scale-95 transition-all cursor-pointer"
+                className="inline-flex items-center justify-center gap-1 h-10 px-3 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs active:scale-95 transition-all cursor-pointer whitespace-nowrap shrink-0"
                 title="Buka Asisten AI Pintar WMS"
+                aria-label="Buka Asisten AI"
               >
-                <Sparkles className="w-3.5 h-3.5" />
+                <Sparkles className="w-3.5 h-3.5 shrink-0" />
                 <span>AI</span>
               </button>
             )}
+
             {session && (
-              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 truncate max-w-[120px]">
-                {session.name || getUserPersonName(session.username) || session.username}
-              </span>
+              <div
+                className="hidden sm:inline-flex items-center gap-2 h-10 pl-1.5 pr-2.5 rounded-xl bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/70 dark:border-slate-700/70 max-w-[170px]"
+                title={`${session.name || getUserPersonName(session.username) || session.username} (@${session.username})`}
+              >
+                <UserAvatar
+                  username={session.username}
+                  name={session.name}
+                  className="w-7 h-7 rounded-lg"
+                />
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
+                  {session.name || getUserPersonName(session.username) || session.username}
+                </span>
+              </div>
             )}
           </div>
         </header>

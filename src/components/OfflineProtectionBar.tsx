@@ -110,46 +110,49 @@ export const OfflineProtectionBar: React.FC<OfflineProtectionBarProps> = ({ onNo
   }
 
   return (
-    <aside 
+    <aside
       aria-label="Status Koneksi & Proteksi Offline"
-      className={`w-full px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2 border-b transition-colors shadow-2xs print:hidden ${
-      !isOnline
-        ? 'bg-amber-500 text-amber-950 dark:bg-amber-600/90 dark:text-white border-amber-600/30'
-        : 'bg-blue-600 text-white dark:bg-blue-700 border-blue-800/40'
-    }`}>
-      <div className="flex items-center gap-2 font-medium">
+      className={`w-full px-3 sm:px-4 py-1.5 text-xs flex flex-wrap items-center justify-between gap-2 border-b transition-colors shadow-2xs print:hidden ${
+        !isOnline
+          ? 'bg-amber-500 text-amber-950 dark:bg-amber-600/95 dark:text-white border-amber-600/30'
+          : 'bg-blue-600 text-white dark:bg-blue-700 border-blue-800/40'
+      }`}
+    >
+      <div className="flex items-center gap-2 font-medium min-w-0">
         {!isOnline ? (
           <>
-            <WifiOff className="w-4 h-4 shrink-0 animate-pulse text-amber-950 dark:text-white" />
-            <span>
-              <strong>Mode Offline Aktif</strong> — Internet terputus. Status pekerjaan Anda tetap aman tersimpan di perangkat (IndexedDB & Cache Lokal).
+            <WifiOff className="w-4 h-4 shrink-0 text-amber-950 dark:text-white" />
+            <span className="leading-snug">
+              <strong>Mode Offline</strong>
+              <span className="hidden sm:inline"> — Internet terputus. Pekerjaan tersimpan aman di perangkat (IndexedDB &amp; Cache Lokal).</span>
+              <span className="sm:hidden"> — Data tersimpan aman di perangkat.</span>
             </span>
           </>
         ) : (
           <>
             <CloudUpload className="w-4 h-4 shrink-0" />
-            <span>
-              <strong>{totalPending} pekerjaan offline</strong> siap disinkronkan ke Database Supabase.
+            <span className="leading-snug">
+              <strong className="font-mono tabular-nums">{totalPending}</strong> pekerjaan offline siap disinkronkan.
             </span>
           </>
         )}
       </div>
 
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-2 shrink-0 ml-auto">
         {totalPending > 0 && isOnline && (
           <button
             type="button"
             onClick={syncAllOfflineData}
             disabled={isSyncing}
-            className="px-3 py-1 bg-white text-blue-700 hover:bg-blue-50 font-bold rounded-lg shadow-xs inline-flex items-center gap-1.5 transition-all cursor-pointer text-[11px] disabled:opacity-50"
+            className="px-2.5 py-1 bg-white text-blue-700 hover:bg-blue-50 font-bold rounded-lg shadow-xs inline-flex items-center gap-1.5 transition-all cursor-pointer text-[11px] disabled:opacity-50 whitespace-nowrap"
           >
             <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
-            <span>{isSyncing ? 'Menyinkronkan...' : 'Sinkronkan Sekarang'}</span>
+            <span>{isSyncing ? 'Menyinkronkan...' : 'Sinkronkan'}</span>
           </button>
         )}
         {!isOnline && totalPending > 0 && (
-          <span className="bg-amber-600/30 dark:bg-black/20 px-2 py-0.5 rounded font-mono text-[10.5px]">
-            {totalPending} draft tersimpan offline
+          <span className="bg-amber-600/30 dark:bg-black/20 px-2 py-0.5 rounded font-mono tabular-nums text-[10.5px] whitespace-nowrap">
+            {totalPending} draft
           </span>
         )}
       </div>
