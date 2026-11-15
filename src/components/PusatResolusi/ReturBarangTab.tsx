@@ -341,6 +341,73 @@ export default function ReturBarangTab({
 
   useEffect(() => {
     loadAllData();
+
+    const applyReturDraft = (draft: any) => {
+      if (!draft || typeof draft !== 'object') return;
+      setEditingOrder(null);
+      setSubTab('form');
+      if (draft.no_pesanan_asal) setNoPesananAsal(String(draft.no_pesanan_asal));
+      if (draft.outlet_order) {
+        setOutletOrder(String(draft.outlet_order));
+        setNoRetur(generateReturOrderId(String(draft.outlet_order)));
+      }
+      if (
+        draft.kategori_alasan &&
+        ['tukar_size_model', 'defect_reject', 'salah_kirim', 'lainnya'].includes(draft.kategori_alasan)
+      ) {
+        setKategoriAlasan(draft.kategori_alasan);
+      }
+      if (draft.alasan_retur) setAlasanRetur(String(draft.alasan_retur));
+      if (draft.opsi_pengiriman) setOpsiPengiriman(String(draft.opsi_pengiriman));
+      if (draft.nama_customer) setNamaCustomer(String(draft.nama_customer));
+      if (draft.no_hp) setNoHp(String(draft.no_hp));
+      if (draft.alamat_lengkap) setAlamatLengkap(String(draft.alamat_lengkap));
+      if (draft.no_resi_customer) setNoResiCustomer(String(draft.no_resi_customer));
+      if (draft.penanggung_biaya === 'toko_free' || draft.penanggung_biaya === 'customer') {
+        setPenanggungBiaya(draft.penanggung_biaya);
+      }
+      if (Array.isArray(draft.produk_pesanan) && draft.produk_pesanan.length > 0) {
+        setProdukPesanan(
+          draft.produk_pesanan.map((it: any, idx: number) => ({
+            id: `ai-orig-${Date.now()}-${idx}`,
+            sku: String(it.sku || '').toUpperCase().trim(),
+            nama_produk: String(it.nama_produk || '').trim(),
+            size: String(it.size || '-').trim(),
+            qty: Math.max(1, Number(it.qty) || 1),
+          }))
+        );
+      }
+      if (Array.isArray(draft.produk_pengganti) && draft.produk_pengganti.length > 0) {
+        setProdukPengganti(
+          draft.produk_pengganti.map((it: any, idx: number) => ({
+            id: `ai-rep-${Date.now()}-${idx}`,
+            sku: String(it.sku || '').toUpperCase().trim(),
+            nama_produk: String(it.nama_produk || '').trim(),
+            size: String(it.size || '-').trim(),
+            qty: Math.max(1, Number(it.qty) || 1),
+            fulfillment: String(it.fulfillment || 'Marketplace').trim(),
+          }))
+        );
+      }
+      onNotify?.('✨ Draft Pengajuan Retur Barang dari AI berhasil diisikan. Silakan periksa & Submit.', 'info');
+      if (typeof window !== 'undefined') {
+        delete (window as any).__wms_pending_retur_target;
+      }
+    };
+
+    if (typeof window !== 'undefined' && (window as any).__wms_pending_retur_target) {
+      applyReturDraft((window as any).__wms_pending_retur_target);
+    }
+
+    const handlePrefillRetur = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (detail) applyReturDraft(detail);
+    };
+
+    window.addEventListener('wms_prefill_retur_barang_form', handlePrefillRetur);
+    return () => {
+      window.removeEventListener('wms_prefill_retur_barang_form', handlePrefillRetur);
+    };
   }, []);
 
   // Pilihan Outlet Order (Marketplace + Store Outlets)

@@ -5346,7 +5346,7 @@ export default function App() {
         initialLocations={locationPurgeInitialLocations}
       />
 
-      {/* Asisten AI Pintar WMS Modal (Gemini Flash) */}
+      {/* Asisten AI Pintar WMS Modal */}
       <WmsAiModal
         isOpen={isAiModalOpen}
         onClose={() => setIsAiModalOpen(false)}
@@ -5368,6 +5368,15 @@ export default function App() {
             );
           }
           handleSelectPage('produksi');
+        }}
+        onNavigateToManualShipmentForm={() => {
+          handleSelectPage('pesanan_saya');
+        }}
+        onNavigateToReturForm={() => {
+          handleSelectPage('pusat_resolusi');
+        }}
+        onNavigateToAgendaDraft={() => {
+          handleSelectPage('agenda');
         }}
       />
 

@@ -1007,11 +1007,54 @@ _WMS Warehouse System_`;
       }, 600);
     });
 
+    const applyManualShipmentDraft = (draft: any) => {
+      if (!draft || typeof draft !== 'object') return;
+      setEditingOrder(null);
+      setActiveTab('form');
+      if (draft.nama_pengirim && userIsAdmin) {
+        setPengirim(String(draft.nama_pengirim));
+      } else if (draft.nama_pengirim && !userAssignedStore) {
+        setPengirim(String(draft.nama_pengirim));
+      }
+      if (draft.delivery_method === 'drop_store') {
+        setDeliveryMethod('drop_store');
+        if (draft.drop_store_target) setDropStoreTarget(String(draft.drop_store_target));
+      } else {
+        setDeliveryMethod('expedition');
+      }
+      if (draft.jasa_kirim) {
+        setIsCustomJasaKirim(false);
+        setJasaKirim(String(draft.jasa_kirim));
+      }
+      if (draft.nama_tujuan) setTujuan(String(draft.nama_tujuan));
+      if (draft.no_telp_tujuan) setTelpTujuan(String(draft.no_telp_tujuan));
+      if (draft.email_customer) setEmailCustomer(String(draft.email_customer));
+      if (draft.alamat_tujuan) setAlamatTujuan(String(draft.alamat_tujuan));
+      if (draft.notes_paket) setNotesPaket(String(draft.notes_paket));
+      if (Array.isArray(draft.items) && draft.items.length > 0) {
+        setItems(
+          draft.items.map((it: any, idx: number) => ({
+            id: `ai-ms-${Date.now()}-${idx}`,
+            sku: String(it.sku || '').toUpperCase().trim(),
+            nama_produk: String(it.nama_produk || '').trim(),
+            size: String(it.size || '-').trim(),
+            qty: Math.max(1, Number(it.qty) || 1),
+            fulfillment: String(it.fulfillment || 'Gudang').trim(),
+            lokasi: String(it.lokasi || '').trim(),
+          }))
+        );
+      }
+      onShowToast('✨ Draft Manual Shipment dari AI berhasil diisikan ke formulir. Silakan cek lalu Submit.', 'info');
+    };
+
     const applyPesananTarget = (target: any) => {
       if (!target) return;
       const targetSubTab = target.manualSubTab || 'rekap';
       if (targetSubTab === 'rekap' || targetSubTab === 'form' || targetSubTab === 'alteration_repair') {
         setActiveTab(targetSubTab);
+      }
+      if (targetSubTab === 'form' && target.draft) {
+        applyManualShipmentDraft(target.draft);
       }
       if (targetSubTab === 'rekap') {
         setStageTab('semua');
@@ -1041,12 +1084,24 @@ _WMS Warehouse System_`;
       applyPesananTarget(detail);
     };
 
+    const handlePrefillManualDraft = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (detail) {
+        applyManualShipmentDraft(detail);
+        if (typeof window !== 'undefined') {
+          delete (window as any).__wms_pending_pesanan_target;
+        }
+      }
+    };
+
     window.addEventListener('wms_open_pesanan_target', handleOpenPesananTarget);
+    window.addEventListener('wms_prefill_manual_shipment_form', handlePrefillManualDraft);
 
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       unsubscribe();
       window.removeEventListener('wms_open_pesanan_target', handleOpenPesananTarget);
+      window.removeEventListener('wms_prefill_manual_shipment_form', handlePrefillManualDraft);
     };
   }, []);
 

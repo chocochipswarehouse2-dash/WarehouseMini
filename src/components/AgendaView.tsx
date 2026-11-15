@@ -766,11 +766,97 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
   useEffect(() => {
     loadData();
 
+    const applyAiAgendaDraft = (rawDraft: any) => {
+      if (!rawDraft || typeof rawDraft !== 'object') return;
+      const draftType = rawDraft.draft_type || 'agenda';
+      const payload = rawDraft.payload || rawDraft;
+      const actor = session?.name || session?.username || 'Warehouse';
+      const todayIso = formatIsoDate(new Date());
+
+      if (draftType === 'project') {
+        setActiveTab('project');
+        const rawTasks = Array.isArray(payload.tasks) ? payload.tasks : [];
+        setEditingProject({
+          title: String(payload.title || '').trim(),
+          description: String(payload.description || '').trim(),
+          status: payload.status || 'in_progress',
+          priority: payload.priority || 'medium',
+          category: String(payload.category || 'Operasional').trim(),
+          pic: String(payload.pic || actor).trim(),
+          created_by: actor,
+          start_date: String(payload.start_date || todayIso).slice(0, 10),
+          deadline: String(payload.deadline || formatIsoDate(new Date(Date.now() + 7 * 86400000))).slice(0, 10),
+          progress: 0,
+          tasks: rawTasks.map((t: any, idx: number) => ({
+            id: `ai-task-${Date.now()}-${idx}`,
+            title: typeof t === 'string' ? t : String(t?.title || '').trim(),
+            completed: false,
+            assignee: typeof t === 'object' && t?.assignee ? String(t.assignee) : String(payload.pic || actor),
+          })).filter((t: any) => t.title),
+          attachments: [],
+        });
+        setProjectModalOpen(true);
+        onShowToast?.('✨ Draft Project dari AI siap direview & disimpan!', 'info');
+      } else if (draftType === 'note') {
+        setActiveTab('notes');
+        const rawChecklist = Array.isArray(payload.checklist) ? payload.checklist : [];
+        setEditingNote({
+          title: String(payload.title || '').trim(),
+          content: String(payload.content || '').trim(),
+          color: (['yellow', 'blue', 'green', 'pink', 'purple'].includes(payload.color) ? payload.color : 'yellow') as NoteColor,
+          checklist: rawChecklist.map((c: any, idx: number) => ({
+            id: `ai-chk-${Date.now()}-${idx}`,
+            text: typeof c === 'string' ? c : String(c?.text || '').trim(),
+            is_completed: false,
+          })).filter((c: any) => c.text),
+          created_by: actor,
+        });
+        setNoteModalOpen(true);
+        onShowToast?.('✨ Draft Catatan dari AI siap direview & disimpan!', 'info');
+      } else {
+        setActiveTab('calendar');
+        const sDate = String(payload.start_date || todayIso).slice(0, 10);
+        const eDate = String(payload.end_date || sDate).slice(0, 10);
+        setEditingEvent({
+          title: String(payload.title || '').trim(),
+          description: String(payload.description || '').trim(),
+          start_date: sDate,
+          end_date: eDate < sDate ? sDate : eDate,
+          is_all_day: Boolean(payload.is_all_day),
+          start_time: String(payload.start_time || '09:00'),
+          end_time: String(payload.end_time || '10:00'),
+          category: String(payload.category || 'operasional'),
+          color: payload.color || undefined,
+          location: String(payload.location || '').trim(),
+          pic: String(payload.pic || actor).trim(),
+          project_id: payload.project_id ? String(payload.project_id) : undefined,
+          created_by: actor,
+          attachments: [],
+        });
+        setAgendaModalOpen(true);
+        onShowToast?.('✨ Draft Agenda dari AI siap direview & disimpan!', 'info');
+      }
+
+      if (typeof window !== 'undefined') {
+        delete (window as any).__wms_pending_agenda_target;
+      }
+    };
+
+    if (typeof window !== 'undefined' && (window as any).__wms_pending_agenda_target) {
+      applyAiAgendaDraft((window as any).__wms_pending_agenda_target);
+    }
+
+    const handleOpenAgendaDraft = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (detail) applyAiAgendaDraft(detail);
+    };
+
     // Listen to local window events (debounced agar tidak spam fetch berulang kali)
     const handleAgendaUpdate = () => scheduleReloadData();
     const handleProjectUpdate = () => scheduleReloadData();
     const handleNoteUpdate = () => scheduleReloadData();
 
+    window.addEventListener('wms_open_agenda_draft', handleOpenAgendaDraft);
     window.addEventListener('wms_agenda_updated', handleAgendaUpdate);
     window.addEventListener('wms_projects_updated', handleProjectUpdate);
     window.addEventListener('wms_notes_updated', handleNoteUpdate);
@@ -797,6 +883,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
 
     return () => {
       if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+      window.removeEventListener('wms_open_agenda_draft', handleOpenAgendaDraft);
       window.removeEventListener('wms_agenda_updated', handleAgendaUpdate);
       window.removeEventListener('wms_projects_updated', handleProjectUpdate);
       window.removeEventListener('wms_notes_updated', handleNoteUpdate);

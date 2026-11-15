@@ -12,7 +12,25 @@
  * 4. Cek status resi dan pengiriman pesanan toko / resolusi.
  */
 
-import { supabaseFetch, fetchStockForSkus, fetchPenerimaanProduksiFromSupabase } from './supabase';
+import {
+  supabaseFetch,
+  fetchStockForSkus,
+  fetchSupabaseStokFisikDirect,
+  fetchPenerimaanProduksiFromSupabase,
+  fetchLogsBySearch,
+  fetchQcReportsFromSupabase,
+  fetchPerbaikanTicketsFromSupabase,
+  fetchPeminjamanFromSupabase,
+  fetchRosterShiftList,
+  fetchPresensiRange,
+  fetchKaryawanDirectory,
+  fetchLemburRecords,
+  fetchCutiRecords,
+  fetchIzinPulangAwalList,
+  getAgendaEvents,
+  getProjects,
+  getNotes
+} from './supabase';
 import { getGlobalProductCatalogMap, lookupProductBySku, setGlobalProductCatalog, ProductLookupResult } from '../utils/productLookup';
 import { cleanProductName, resolveProductDisplaySize, extractSizeFromSku } from '../utils/sortUtils';
 import { getAllProductsFromLocalDb } from './localDb';
@@ -24,11 +42,24 @@ import {
   embedTrelloMetadataIntoKeterangan
 } from '../utils/trelloProduksiMatcher';
 import { getLocalCachedTrelloItems, extractBaseItemCode } from './trelloSyncService';
-import { ProductItem, PenerimaanProduksiItem, TrelloUpItem } from '../types';
+import { fetchRackCapacityConfig, computeAllRackSlots, buildEnrichedCatalogMap } from './rackCapacityService';
+import { fetchReturOrders } from './returBarangService';
+import { fetchJneRecordsFromGas, getLocalCachedJneRecords } from './jneRekapService';
+import { fetchIgLiveOrdersFromSupabase } from './igLiveService';
+import {
+  ProductItem,
+  PenerimaanProduksiItem,
+  TrelloUpItem,
+  UserSession,
+  UserPermissions,
+  PickingListItem
+} from '../types';
 import { AiAttachment } from '../utils/aiAttachmentParser';
 export type { AiAttachment };
 
 export const SYSTEM_DOC_AI_CONFIG_ID = 'wms_ai_config';
+
+export type AiUserRole = 'superadmin' | 'hr' | 'warehouse_ops' | 'store';
 
 export interface TrelloCandidatePreview {
   requestedCode: string;
@@ -61,61 +92,74 @@ export interface AiChatMessage {
   };
 }
 
+export interface AiChatSession {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: AiChatMessage[];
+}
+
 export interface WmsAiConfig {
-  apiKey?: string;
   allowedUsers: string[];
   enabled: boolean;
   model: string;
 }
 
-let inMemoryGeminiApiKey = '';
+export function resolveAiUserRole(session?: UserSession | null): AiUserRole {
+  if (!session) return 'warehouse_ops';
+  const role = String(session.role || '').toLowerCase().trim();
+  const uname = String(session.username || '').toLowerCase().trim();
+  const perms: Partial<UserPermissions> = session.permissions || {};
 
-/**
- * Mengambil API Key aktif (dari in-memory, localStorage, Supabase, atau env)
- */
-export function getActiveGeminiApiKey(): string {
-  if (inMemoryGeminiApiKey && inMemoryGeminiApiKey.trim()) {
-    return inMemoryGeminiApiKey.trim();
+  if (
+    role === 'superadmin' ||
+    role === 'owner' ||
+    uname === 'warehouse' ||
+    uname === 'admin' ||
+    uname === 'chocoadm'
+  ) {
+    return 'superadmin';
   }
-  if (typeof window !== 'undefined') {
-    const customKey = localStorage.getItem('wms_gemini_api_key');
-    if (customKey && customKey.trim()) {
-      inMemoryGeminiApiKey = customKey.trim();
-      return inMemoryGeminiApiKey;
-    }
+  if (
+    role === 'hr & admin' ||
+    Boolean(perms.menu_hr_approval) ||
+    Boolean(perms.menu_hr_karyawan) ||
+    Boolean(perms.menu_hr_roster) ||
+    Boolean(perms.menu_hr_presensi) ||
+    Boolean(perms.menu_hr_lembur_cuti)
+  ) {
+    return 'hr';
   }
-  const envKey = (import.meta as any).env?.VITE_GEMINI_API_KEY;
-  if (envKey && String(envKey).trim()) {
-    inMemoryGeminiApiKey = String(envKey).trim();
-    return inMemoryGeminiApiKey;
+  if (role === 'store' || Boolean(session.store_name) || Boolean(session.store_code)) {
+    return 'store';
   }
-  return '';
+  return 'warehouse_ops';
 }
 
-/**
- * Menyimpan custom API Key secara lokal & in-memory
- */
-export function setActiveGeminiApiKey(key: string): void {
-  inMemoryGeminiApiKey = (key || '').trim();
-  if (typeof window !== 'undefined') {
-    if (inMemoryGeminiApiKey) {
-      localStorage.setItem('wms_gemini_api_key', inMemoryGeminiApiKey);
-    } else {
-      localStorage.removeItem('wms_gemini_api_key');
-    }
+export async function checkServerAiHealth(): Promise<{ ok: boolean; configured: boolean; models: string[] }> {
+  try {
+    const res = await fetch('/api/ai', { method: 'GET', headers: { Accept: 'application/json' } });
+    if (!res.ok) return { ok: false, configured: false, models: [] };
+    const data = await res.json();
+    return {
+      ok: Boolean(data?.ok),
+      configured: Boolean(data?.configured),
+      models: Array.isArray(data?.models) ? data.models : ['gemini-4-hydrogen', 'gemini-3.1-flash-lite']
+    };
+  } catch {
+    return { ok: false, configured: false, models: [] };
   }
 }
 
 /**
  * Mengambil konfigurasi AI & daftar whitelist pengguna dari Supabase wms_system_docs
- * (Tersinkronisasi otomatis ke semua perangkat: HP, Laptop, PC Toko)
  */
 export async function fetchAiConfig(): Promise<WmsAiConfig> {
   const defaultConfig: WmsAiConfig = {
-    apiKey: getActiveGeminiApiKey() || '',
     allowedUsers: ['admin', 'warehouse', 'chocoadm'],
     enabled: true,
-    model: 'gemini-3.5-flash'
+    model: 'gemini-4-hydrogen'
   };
 
   if (typeof window !== 'undefined') {
@@ -138,14 +182,11 @@ export async function fetchAiConfig(): Promise<WmsAiConfig> {
     if (docs && docs[0] && docs[0].content) {
       const parsed = JSON.parse(docs[0].content);
       const config: WmsAiConfig = {
-        ...defaultConfig,
-        ...parsed,
-        allowedUsers: Array.isArray(parsed.allowedUsers) ? parsed.allowedUsers : defaultConfig.allowedUsers
+        allowedUsers: Array.isArray(parsed.allowedUsers) ? parsed.allowedUsers : defaultConfig.allowedUsers,
+        enabled: parsed.enabled !== undefined ? Boolean(parsed.enabled) : true,
+        model: 'gemini-4-hydrogen'
       };
 
-      if (config.apiKey) {
-        setActiveGeminiApiKey(config.apiKey);
-      }
       if (typeof window !== 'undefined') {
         localStorage.setItem('wms_ai_allowed_users', JSON.stringify(config.allowedUsers));
       }
@@ -159,21 +200,16 @@ export async function fetchAiConfig(): Promise<WmsAiConfig> {
 }
 
 /**
- * Menyimpan konfigurasi AI, API Key, & whitelist pengguna ke Supabase wms_system_docs
- * (Cukup Superadmin simpan 1 kali, otomatis aktif di seluruh perangkat dan user)
+ * Menyimpan konfigurasi whitelist pengguna ke Supabase wms_system_docs
  */
 export async function saveAiConfig(config: Partial<WmsAiConfig>): Promise<boolean> {
   try {
     const current = await fetchAiConfig();
     const updated: WmsAiConfig = {
-      ...current,
-      ...config,
-      allowedUsers: config.allowedUsers || current.allowedUsers
+      allowedUsers: config.allowedUsers || current.allowedUsers,
+      enabled: config.enabled !== undefined ? config.enabled : current.enabled,
+      model: 'gemini-4-hydrogen'
     };
-
-    if (updated.apiKey !== undefined) {
-      setActiveGeminiApiKey(updated.apiKey);
-    }
 
     if (typeof window !== 'undefined') {
       localStorage.setItem('wms_ai_allowed_users', JSON.stringify(updated.allowedUsers));
@@ -198,6 +234,76 @@ export async function saveAiConfig(config: Partial<WmsAiConfig>): Promise<boolea
     return true;
   } catch (err) {
     console.error('[WMS AI] Gagal menyimpan konfigurasi AI ke Supabase:', err);
+    return false;
+  }
+}
+
+function sanitizeSessionsForCloud(sessions: AiChatSession[]): AiChatSession[] {
+  return (sessions || []).slice(0, 20).map((s) => ({
+    ...s,
+    messages: (s.messages || []).slice(-30).map((m) => ({
+      ...m,
+      attachments: m.attachments
+        ? m.attachments.map((att) => ({
+            id: att.id,
+            name: att.name,
+            type: att.type,
+            mimeType: att.mimeType,
+            sizeBytes: att.sizeBytes,
+            rowCount: att.rowCount,
+            extractedText: att.extractedText ? att.extractedText.slice(0, 2500) : undefined
+          }))
+        : undefined
+    }))
+  }));
+}
+
+export async function fetchAiChatSessionsFromCloud(username: string): Promise<AiChatSession[]> {
+  const cleanUser = String(username || '').trim().toLowerCase();
+  if (!cleanUser) return [];
+  const docKey = `wms_ai_sessions_${cleanUser}`;
+  try {
+    const rows = await supabaseFetch<any[]>(
+      'wms_system_docs',
+      'GET',
+      null,
+      `or=(section_id.eq.${encodeURIComponent(docKey)},doc_key.eq.${encodeURIComponent(docKey)})&limit=1`
+    );
+    if (Array.isArray(rows) && rows[0]?.content) {
+      const parsed = JSON.parse(rows[0].content);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (err) {
+    console.warn('[WMS AI] Gagal mengambil riwayat sesi cloud:', err);
+  }
+  return [];
+}
+
+export async function saveAiChatSessionsToCloud(username: string, sessions: AiChatSession[]): Promise<boolean> {
+  const cleanUser = String(username || '').trim().toLowerCase();
+  if (!cleanUser) return false;
+  const docKey = `wms_ai_sessions_${cleanUser}`;
+  const leanSessions = sanitizeSessionsForCloud(sessions);
+  try {
+    await supabaseFetch(
+      'wms_system_docs',
+      'POST',
+      [
+        {
+          section_id: docKey,
+          doc_key: docKey,
+          title: `Riwayat Sesi AI (${cleanUser})`,
+          content: JSON.stringify(leanSessions),
+          updated_by: cleanUser,
+          updated_at: new Date().toISOString()
+        }
+      ],
+      'on_conflict=doc_key',
+      true
+    );
+    return true;
+  } catch (err) {
+    console.warn('[WMS AI] Gagal menyinkronkan riwayat sesi ke cloud:', err);
     return false;
   }
 }
@@ -452,10 +558,322 @@ const AI_TOOLS = [
           },
           required: ['title', 'headers', 'rows']
         }
+      },
+      {
+        name: 'audit_stock_and_mutations',
+        description: 'Mengaudit histori pergerakan barang (IN, OUT, SO, ADJ_IN, ADJ_OUT) di log_produk, memeriksa selisih/anomali stok fisik vs kuota DealPOS, atau memeriksa kapasitas rak gudang (rak kosong, rak tersedia, rak overload).',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            mode: {
+              type: 'STRING',
+              description: 'Mode audit: "mutations" (riwayat mutasi SKU/lokasi/invoice), "discrepancy" (audit selisih fisik vs DealPOS), atau "rack_capacity" (cek rak kosong/tersedia/overload). Default "mutations".'
+            },
+            keyword: {
+              type: 'STRING',
+              description: 'Nama produk, kode rak (misal "A012"), nomor invoice/SJ, atau SKU (untuk mode mutations/discrepancy)'
+            },
+            area: {
+              type: 'STRING',
+              description: 'Filter area rak untuk mode rack_capacity, misal "Warehouse", "Kolian", "Blok F", "Transit"'
+            },
+            rack_filter: {
+              type: 'STRING',
+              description: 'Filter status kapasitas rak: "empty", "available", "overload", atau "all"'
+            },
+            limit: {
+              type: 'NUMBER',
+              description: 'Batas maksimum baris hasil (default 25)'
+            }
+          }
+        }
+      },
+      {
+        name: 'check_picking_and_channel_orders',
+        description: 'Memeriksa antrean tugas picking gudang (picking_list berdasarkan invoice_picking atau no_sj, termasuk status under-pick/over-pick) serta status pesanan channel IG Live (ig_live_orders).',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            source: {
+              type: 'STRING',
+              description: '"picking", "ig_live", atau "all" (default "all")'
+            },
+            keyword: {
+              type: 'STRING',
+              description: 'Opsional: nomor SJ, invoice_picking (WA...), nama produk, tujuan, atau username IG'
+            },
+            only_incomplete: {
+              type: 'BOOLEAN',
+              description: 'Jika true, fokus tampilkan tugas picking yang belum selesai/kurang ambil atau order IG Live yang masih pending/picking'
+            }
+          }
+        }
+      },
+      {
+        name: 'check_qc_repair_and_loans',
+        description: 'Memeriksa laporan inspeksi Quality Control (qc_reports), antrean tiket Perbaikan/Cuci/Permak/Defect (perbaikan_tickets), serta daftar Peminjaman SPS barang yang masih dipinjam/telat kembali.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            scope: {
+              type: 'STRING',
+              description: '"qc", "perbaikan", "peminjaman", atau "all" (default "all")'
+            },
+            keyword: {
+              type: 'STRING',
+              description: 'Opsional: kode produksi, nama produk, no tiket, PIC, atau nama peminjam'
+            },
+            only_active: {
+              type: 'BOOLEAN',
+              description: 'Jika true, prioritaskan tiket perbaikan aktif atau barang yang belum dikembalikan'
+            }
+          }
+        }
+      },
+      {
+        name: 'check_retur_and_jne_rekap',
+        description: 'Memeriksa daftar tiket Retur Barang Pusat Resolusi (RTR-...) beserta status DealPOS/resinya, serta memeriksa data Rekap Tagihan Ongkir JNE.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            scope: {
+              type: 'STRING',
+              description: '"retur", "jne", atau "all" (default "all")'
+            },
+            keyword: {
+              type: 'STRING',
+              description: 'Opsional: no_retur, no_pesanan_asal, no_resi, nama customer, atau outlet'
+            },
+            status: {
+              type: 'STRING',
+              description: 'Opsional filter status retur: "diterima", "diproses", "dikirim", "batal"'
+            }
+          }
+        }
+      },
+      {
+        name: 'query_hr_operations',
+        description: 'Khusus akun HR & Superadmin: mengecek jadwal Roster Shift karyawan, rekap Presensi masuk/pulang, serta daftar pengajuan Lembur, Cuti, dan Izin Pulang Awal (termasuk yang statusnya masih Diajukan / menunggu approval).',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            scope: {
+              type: 'STRING',
+              description: '"roster", "presensi", "approvals", "karyawan", atau "summary" (default "summary")'
+            },
+            start_date: {
+              type: 'STRING',
+              description: 'Tanggal awal YYYY-MM-DD (default hari ini)'
+            },
+            end_date: {
+              type: 'STRING',
+              description: 'Tanggal akhir YYYY-MM-DD (default hari ini)'
+            },
+            keyword: {
+              type: 'STRING',
+              description: 'Opsional: nama karyawan, NIK, atau divisi'
+            },
+            only_pending_approvals: {
+              type: 'BOOLEAN',
+              description: 'Jika true, hanya tampilkan pengajuan Lembur/Cuti/Izin dengan status Diajukan'
+            }
+          }
+        }
+      },
+      {
+        name: 'prepare_manual_shipment_draft',
+        description: 'Membantu mengekstrak detail pesanan dari teks chat WhatsApp/lampiran ke dalam Draft Form Input Manual Shipment (Pesanan Saya). AI hanya menyiapkan draft untuk dicek & disubmit manusia, tidak langsung menyimpan ke database.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            nama_pengirim: { type: 'STRING', description: 'Nama store pengirim (misal PIM, GI, PIK, Gudang)' },
+            delivery_method: { type: 'STRING', description: '"expedition" atau "drop_store"' },
+            drop_store_target: { type: 'STRING', description: 'Store tujuan jika drop_store' },
+            jasa_kirim: { type: 'STRING', description: 'Nama ekspedisi, misal JNE Regular, J&T Express, GoSend Instant' },
+            nama_tujuan: { type: 'STRING', description: 'Nama customer penerima' },
+            no_telp_tujuan: { type: 'STRING', description: 'No HP / WhatsApp penerima' },
+            email_customer: { type: 'STRING', description: 'Email customer (opsional)' },
+            alamat_tujuan: { type: 'STRING', description: 'Alamat lengkap pengiriman' },
+            notes_paket: { type: 'STRING', description: 'Catatan tambahan paket' },
+            items: {
+              type: 'ARRAY',
+              description: 'Daftar produk yang dipesan (akan otomatis dilookup ke Master Produk berdasarkan nama/SKU)',
+              items: {
+                type: 'OBJECT',
+                properties: {
+                  product_query: { type: 'STRING', description: 'Nama produk + warna + size atau SKU dari teks pesanan' },
+                  sku: { type: 'STRING', description: 'Opsional kode SKU bila sudah diketahui' },
+                  size: { type: 'STRING', description: 'Opsional size permintaan' },
+                  qty: { type: 'NUMBER', description: 'Jumlah pcs (default 1)' },
+                  fulfillment: { type: 'STRING', description: 'Sumber pemenuhan, default "Gudang" atau nama Store' }
+                }
+              }
+            }
+          },
+          required: ['nama_tujuan', 'items']
+        }
+      },
+      {
+        name: 'prepare_retur_barang_draft',
+        description: 'Membantu mengekstrak komplain/permintaan retur customer dari chat WhatsApp/lampiran ke Draft Form Input Retur Barang (Pusat Resolusi). AI hanya menyiapkan draft untuk dicek & disubmit tim CS/Admin.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            no_pesanan_asal: { type: 'STRING', description: 'Nomor pesanan asal Shopee/Tiktok/Website/IG' },
+            outlet_order: { type: 'STRING', description: 'Outlet asal order: Shopee, Tiktok, Tokped, Website, IGlive, dll' },
+            kategori_alasan: { type: 'STRING', description: '"tukar_size_model", "defect_reject", "salah_kirim", atau "lainnya"' },
+            alasan_retur: { type: 'STRING', description: 'Penjelasan alasan retur customer' },
+            opsi_pengiriman: { type: 'STRING', description: 'Ekspedisi pengiriman barang pengganti' },
+            nama_customer: { type: 'STRING', description: 'Nama customer' },
+            no_hp: { type: 'STRING', description: 'Nomor HP/WA customer' },
+            alamat_lengkap: { type: 'STRING', description: 'Alamat lengkap customer' },
+            no_resi_customer: { type: 'STRING', description: 'No resi barang retur yang dikirim customer ke gudang (opsional)' },
+            penanggung_biaya: { type: 'STRING', description: '"customer" atau "toko_free"' },
+            produk_pesanan: {
+              type: 'ARRAY',
+              description: 'Daftar barang awal yang diretur customer',
+              items: {
+                type: 'OBJECT',
+                properties: {
+                  product_query: { type: 'STRING', description: 'Nama/SKU produk yang diretur' },
+                  sku: { type: 'STRING' },
+                  size: { type: 'STRING' },
+                  qty: { type: 'NUMBER' }
+                }
+              }
+            },
+            produk_pengganti: {
+              type: 'ARRAY',
+              description: 'Daftar barang pengganti yang akan dikirim ke customer',
+              items: {
+                type: 'OBJECT',
+                properties: {
+                  product_query: { type: 'STRING', description: 'Nama/SKU produk pengganti' },
+                  sku: { type: 'STRING' },
+                  size: { type: 'STRING' },
+                  qty: { type: 'NUMBER' },
+                  fulfillment: { type: 'STRING', description: 'Default "Marketplace" atau nama Store' }
+                }
+              }
+            }
+          },
+          required: ['nama_customer', 'alasan_retur']
+        }
+      },
+      {
+        name: 'query_agenda_and_projects',
+        description: 'Membaca dan menganalisis data Kalender Agenda (wms_agenda), Roadmap/Daftar Project & Sub-Tasks (wms_projects), serta Sticky Notes & Checklist (wms_notes). Gunakan saat pengguna bertanya jadwal kegiatan, agenda hari ini/minggu ini, progress project, deadline terlambat/mendekat, atau catatan tim.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            scope: {
+              type: 'STRING',
+              description: '"agenda", "projects", "notes", atau "all" (default "all")'
+            },
+            start_date: {
+              type: 'STRING',
+              description: 'Filter tanggal mulai Agenda/Project YYYY-MM-DD'
+            },
+            end_date: {
+              type: 'STRING',
+              description: 'Filter tanggal akhir Agenda/Project YYYY-MM-DD'
+            },
+            category: {
+              type: 'STRING',
+              description: 'Filter kategori Agenda atau Project'
+            },
+            status: {
+              type: 'STRING',
+              description: 'Filter status Project: "planning", "in_progress", "review", "completed", "on_hold"'
+            },
+            priority: {
+              type: 'STRING',
+              description: 'Filter prioritas Project: "low", "medium", "high", "urgent"'
+            },
+            keyword: {
+              type: 'STRING',
+              description: 'Kata kunci judul, deskripsi, lokasi, atau nama PIC'
+            }
+          }
+        }
+      },
+      {
+        name: 'prepare_agenda_or_project_draft',
+        description: 'Membantu membuatkan Draft Agenda Kalender baru, Project baru (beserta daftar sub-tasks), atau Sticky Note / Checklist baru untuk direview dan disimpan oleh pengguna di modul Agenda & Project. AI hanya membuka draft di modal, manusia yang mengecek & klik Simpan.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            draft_type: {
+              type: 'STRING',
+              description: '"agenda", "project", atau "note"'
+            },
+            title: { type: 'STRING', description: 'Judul Agenda, Project, atau Catatan' },
+            description: { type: 'STRING', description: 'Deskripsi detail Agenda/Project atau isi konten Note' },
+            start_date: { type: 'STRING', description: 'Tanggal mulai format YYYY-MM-DD (default hari ini)' },
+            end_date: { type: 'STRING', description: 'Tanggal selesai Agenda format YYYY-MM-DD' },
+            deadline: { type: 'STRING', description: 'Tanggal deadline Project format YYYY-MM-DD' },
+            is_all_day: { type: 'BOOLEAN', description: 'True jika agenda seharian penuh' },
+            start_time: { type: 'STRING', description: 'Jam mulai agenda HH:mm, misal "09:00"' },
+            end_time: { type: 'STRING', description: 'Jam selesai agenda HH:mm, misal "10:00"' },
+            category: { type: 'STRING', description: 'Kategori Agenda (misal "operasional", "meeting", "deadline") atau kategori Project' },
+            location: { type: 'STRING', description: 'Lokasi kegiatan/meeting (opsional)' },
+            pic: { type: 'STRING', description: 'Nama PIC / penanggung jawab' },
+            priority: { type: 'STRING', description: 'Prioritas Project: "low", "medium", "high", "urgent"' },
+            status: { type: 'STRING', description: 'Status Project: "planning", "in_progress", "review", "completed", "on_hold"' },
+            project_id: { type: 'STRING', description: 'Opsional ID project yang ditautkan ke Agenda' },
+            tasks: {
+              type: 'ARRAY',
+              description: 'Daftar sub-task (checklist) untuk Project baru',
+              items: { type: 'STRING' }
+            },
+            checklist: {
+              type: 'ARRAY',
+              description: 'Daftar item checklist untuk Sticky Note baru',
+              items: { type: 'STRING' }
+            },
+            color: {
+              type: 'STRING',
+              description: 'Warna Sticky Note ("yellow", "blue", "green", "pink", "purple") atau warna Agenda'
+            }
+          },
+          required: ['draft_type', 'title']
+        }
       }
     ]
   }
 ];
+
+const ALL_TOOL_DECLARATIONS = AI_TOOLS[0].functionDeclarations;
+
+export function getToolsForRole(role: AiUserRole, session?: UserSession | null) {
+  const perms: Partial<UserPermissions> = session?.permissions || {};
+  const canHr =
+    role === 'superadmin' ||
+    role === 'hr' ||
+    Boolean(
+      perms.menu_hr_approval ||
+        perms.menu_hr_karyawan ||
+        perms.menu_hr_roster ||
+        perms.menu_hr_presensi ||
+        perms.menu_hr_lembur_cuti
+    );
+
+  const allowedDeclarations = ALL_TOOL_DECLARATIONS.filter((decl: any) => {
+    if (decl.name === 'query_hr_operations' && !canHr) return false;
+    if (role === 'store') {
+      const storeHiddenTools = new Set([
+        'query_hr_operations',
+        'prepare_production_receipt_form',
+        'view_production_receipt_form_draft',
+        'audit_stock_and_mutations'
+      ]);
+      if (storeHiddenTools.has(decl.name)) return false;
+    }
+    return true;
+  });
+
+  return [{ functionDeclarations: allowedDeclarations }];
+}
 
 // =============================================================================
 // LOCAL TOOL EXECUTORS
@@ -2130,92 +2548,1018 @@ async function executeViewInventoryCart(): Promise<any> {
   }
 }
 
+/**
+ * Helper internal: resolve 1 product query ke Master Produk Katalog (anti-anomali nama & size)
+ */
+async function resolveMasterProductItem(queryOrSku: string, requestedSize?: string): Promise<{
+  sku: string;
+  nama_produk: string;
+  size: string;
+  matched: boolean;
+}> {
+  const raw = String(queryOrSku || '').trim();
+  if (!raw) return { sku: '', nama_produk: '', size: requestedSize || '-', matched: false };
+
+  const catalog = await getResolvedMasterProducts();
+  const upperRaw = raw.toUpperCase();
+  const bySku = lookupProductBySku(upperRaw);
+  if (bySku && bySku.found && bySku.nama_produk && bySku.nama_produk !== upperRaw) {
+    return {
+      sku: upperRaw,
+      nama_produk: bySku.nama_produk,
+      size: resolveProductDisplaySize(upperRaw, bySku.size, requestedSize) || bySku.size || '-',
+      matched: true
+    };
+  }
+
+  const tokens = raw.toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').split(/\s+/).filter(Boolean);
+  let best: ProductItem | null = null;
+  let bestScore = -1;
+
+  for (const p of catalog) {
+    const sku = String(p.k || '').trim().toUpperCase();
+    const name = cleanProductName(String(p.n || p.p || '')).trim();
+    const size = resolveProductDisplaySize(sku, p.s || '');
+    const haystack = `${sku} ${name} ${size}`.toLowerCase();
+
+    let score = 0;
+    for (const tk of tokens) {
+      if (haystack.includes(tk)) score += 10;
+    }
+    if (requestedSize && size.toUpperCase() === requestedSize.trim().toUpperCase()) {
+      score += 15;
+    }
+    if (score > bestScore && score > 0) {
+      bestScore = score;
+      best = p;
+    }
+  }
+
+  if (best) {
+    const sku = String(best.k || '').trim().toUpperCase();
+    const masterInfo = lookupProductBySku(sku);
+    return {
+      sku,
+      nama_produk: masterInfo?.nama_produk || cleanProductName(String(best.n || best.p || raw)),
+      size: resolveProductDisplaySize(sku, masterInfo?.size || best.s || requestedSize),
+      matched: true
+    };
+  }
+
+  return { sku: '', nama_produk: raw, size: requestedSize || '-', matched: false };
+}
+
+/**
+ * 7. Eksekusi tool: audit_stock_and_mutations
+ */
+async function executeAuditStockAndMutations(args: {
+  mode?: string;
+  keyword?: string;
+  area?: string;
+  rack_filter?: string;
+  limit?: number;
+}): Promise<any> {
+  const mode = String(args.mode || 'mutations').toLowerCase().trim();
+  const kw = String(args.keyword || '').trim();
+  const limit = Math.max(5, Math.min(50, Number(args.limit) || 25));
+
+  if (mode === 'rack_capacity') {
+    const [config, allStock, catalog] = await Promise.all([
+      fetchRackCapacityConfig(),
+      fetchSupabaseStokFisikDirect(),
+      getResolvedMasterProducts()
+    ]);
+    const catalogMap = buildEnrichedCatalogMap(catalog);
+    const slots = computeAllRackSlots(config, allStock, [], catalogMap);
+    const areaFilter = String(args.area || '').trim().toLowerCase();
+    const rackFilter = String(args.rack_filter || 'all').trim().toLowerCase();
+
+    let filtered = slots;
+    if (areaFilter && areaFilter !== 'all' && areaFilter !== 'semua') {
+      filtered = filtered.filter((s) => s.area.toLowerCase().includes(areaFilter));
+    }
+    if (kw) {
+      const kwLower = kw.toLowerCase();
+      filtered = filtered.filter(
+        (s) =>
+          s.lokasi.toLowerCase().includes(kwLower) ||
+          s.items.some((it) => it.sku.toLowerCase().includes(kwLower) || it.nama_produk.toLowerCase().includes(kwLower))
+      );
+    }
+
+    const emptyCount = filtered.filter((s) => s.status === 'EMPTY').length;
+    const overloadCount = filtered.filter((s) => s.status === 'OVERLOAD').length;
+    const fullCount = filtered.filter((s) => s.status === 'FULL').length;
+    const availableCount = filtered.filter((s) => s.status === 'SAFE' || s.status === 'EMPTY').length;
+
+    if (rackFilter === 'empty') filtered = filtered.filter((s) => s.status === 'EMPTY');
+    else if (rackFilter === 'available') filtered = filtered.filter((s) => s.status === 'EMPTY' || s.status === 'SAFE');
+    else if (rackFilter === 'overload') filtered = filtered.filter((s) => s.status === 'OVERLOAD' || s.status === 'FULL');
+
+    return {
+      mode: 'rack_capacity',
+      ringkasan: {
+        total_slot_dievaluasi: slots.length,
+        rak_kosong: emptyCount,
+        rak_tersedia_aman: availableCount,
+        rak_penuh: fullCount,
+        rak_overload: overloadCount
+      },
+      daftar_rak: filtered.slice(0, limit).map((s) => ({
+        lokasi: s.lokasi,
+        area: s.area,
+        kategori: s.category,
+        stok_saat_ini: s.currentQty,
+        kapasitas_maks: s.maxCapacity,
+        keterisian_persen: s.fillPercent,
+        sisa_kapasitas: s.availableSpace,
+        status: s.status,
+        sample_produk: s.items.slice(0, 4).map((i) => `${i.sku} - ${i.nama_produk} (${i.size}): ${i.qty} pcs`)
+      }))
+    };
+  }
+
+  if (mode === 'discrepancy') {
+    const [allStock, catalog] = await Promise.all([fetchSupabaseStokFisikDirect(), getResolvedMasterProducts()]);
+    const kwLower = kw.toLowerCase();
+    const fisikMap = new Map<string, { qty: number; locations: string[] }>();
+    for (const st of allStock) {
+      const sku = String(st.sku || '').toUpperCase().trim();
+      const q = Number(st.sisa_stok) || 0;
+      if (!sku) continue;
+      const cur = fisikMap.get(sku) || { qty: 0, locations: [] };
+      cur.qty += q;
+      if (q !== 0 && st.lokasi) cur.locations.push(`${st.lokasi} (${q})`);
+      fisikMap.set(sku, cur);
+    }
+
+    const anomalies: any[] = [];
+    for (const p of catalog) {
+      const sku = String(p.k || '').toUpperCase().trim();
+      if (!sku) continue;
+      const master = lookupProductBySku(sku);
+      const nama = master?.nama_produk || cleanProductName(String(p.n || p.p || sku));
+      const size = resolveProductDisplaySize(sku, master?.size || p.s || '');
+      if (kwLower && !`${sku} ${nama}`.toLowerCase().includes(kwLower)) continue;
+
+      const dealpos = Number(p.q ?? (p as any).qty_dealpos ?? 0) || 0;
+      const f = fisikMap.get(sku) || { qty: 0, locations: [] };
+      const diff = f.qty - dealpos;
+      if (diff !== 0 || f.qty < 0) {
+        anomalies.push({
+          sku,
+          nama_produk: nama,
+          size,
+          stok_fisik: f.qty,
+          stok_dealpos: dealpos,
+          selisih_fisik_minus_dealpos: diff,
+          lokasi_rak: f.locations.join(', ') || '-'
+        });
+      }
+    }
+
+    anomalies.sort((a, b) => Math.abs(b.selisih_fisik_minus_dealpos) - Math.abs(a.selisih_fisik_minus_dealpos));
+    return {
+      mode: 'discrepancy',
+      total_sku_selisih: anomalies.length,
+      daftar_selisih: anomalies.slice(0, limit)
+    };
+  }
+
+  // Default: mutations (log_produk)
+  const catalog = await getResolvedMasterProducts();
+  const kwLower = kw.toLowerCase();
+  const matchingSkus = kw
+    ? catalog
+        .filter((p) => {
+          const sku = String(p.k || '').toLowerCase();
+          const nm = String(p.n || p.p || '').toLowerCase();
+          return sku.includes(kwLower) || nm.includes(kwLower);
+        })
+        .slice(0, 30)
+        .map((p) => String(p.k || '').toUpperCase())
+    : [];
+
+  const logs = await fetchLogsBySearch(kw, Math.max(limit * 2, 50), matchingSkus);
+  return {
+    mode: 'mutations',
+    kata_kunci: kw || '(Terbaru)',
+    total_ditemukan: logs.length,
+    mutasi: logs.slice(0, limit).map((l) => {
+      const m = lookupProductBySku(l.sku);
+      return {
+        waktu: l.created_at,
+        tipe: l.type,
+        invoice: l.invoice,
+        sku: l.sku,
+        nama_produk: m?.nama_produk || l.nama_produk,
+        size: resolveProductDisplaySize(l.sku, m?.size || l.size),
+        area: l.area,
+        lokasi: l.lokasi,
+        qty: l.qty,
+        operator: l.operator,
+        keterangan: l.keterangan || '-'
+      };
+    })
+  };
+}
+
+/**
+ * 8. Eksekusi tool: check_picking_and_channel_orders
+ */
+async function executeCheckPickingAndChannelOrders(args: {
+  source?: string;
+  keyword?: string;
+  only_incomplete?: boolean;
+}): Promise<any> {
+  const src = String(args.source || 'all').toLowerCase();
+  const kw = String(args.keyword || '').trim().toLowerCase();
+  const onlyIncomplete = Boolean(args.only_incomplete);
+
+  const result: any = {};
+
+  if (src === 'all' || src === 'picking') {
+    const rows = await supabaseFetch<PickingListItem[]>(
+      'picking_list',
+      'GET',
+      null,
+      'select=*&order=created_at.desc&limit=250'
+    ).catch(() => []);
+
+    let filtered = rows || [];
+    if (kw) {
+      filtered = filtered.filter((r) =>
+        `${r.invoice_picking || ''} ${r.no_sj || ''} ${r.tujuan || ''} ${r.sku || ''} ${r.nama_produk || ''} ${r.picker_name || ''}`
+          .toLowerCase()
+          .includes(kw)
+      );
+    }
+    if (onlyIncomplete) {
+      filtered = filtered.filter((r) => r.status !== 'SELESAI' || Number(r.qty_picked) !== Number(r.qty_req));
+    }
+
+    const totalReq = filtered.reduce<number>((s, r) => s + (Number(r.qty_req) || 0), 0);
+    const totalPicked = filtered.reduce<number>((s, r) => s + (Number(r.qty_picked) || 0), 0);
+
+    result.picking = {
+      total_baris: filtered.length,
+      total_qty_req: totalReq,
+      total_qty_picked: totalPicked,
+      selisih_qty: totalPicked - totalReq,
+      daftar_tugas: filtered.slice(0, 30).map((r) => {
+        const m = lookupProductBySku(r.sku);
+        const selisih = (Number(r.qty_picked) || 0) - (Number(r.qty_req) || 0);
+        return {
+          invoice_picking: r.invoice_picking || '-',
+          no_sj: r.no_sj,
+          tanggal: r.tanggal,
+          tujuan: r.tujuan,
+          sku: r.sku,
+          nama_produk: m?.nama_produk || r.nama_produk,
+          size: resolveProductDisplaySize(r.sku, m?.size || r.size),
+          lokasi_target: r.lokasi,
+          qty_req: r.qty_req,
+          qty_picked: r.qty_picked,
+          selisih,
+          status: r.status,
+          picker: r.picker_name || '-'
+        };
+      })
+    };
+  }
+
+  if (src === 'all' || src === 'ig_live') {
+    const orders = await fetchIgLiveOrdersFromSupabase().catch(() => []);
+    let filtered = orders || [];
+    if (kw) {
+      filtered = filtered.filter((o) =>
+        `${o.no_pesanan} ${o.username_ig} ${o.nama_pembeli} ${o.no_resi} ${o.session_live || ''}`
+          .toLowerCase()
+          .includes(kw)
+      );
+    }
+    if (onlyIncomplete) {
+      filtered = filtered.filter((o) => !['DIKIRIM', 'SELESAI', 'BATAL'].includes(String(o.status || '').toUpperCase()));
+    }
+    result.ig_live = {
+      total_order: filtered.length,
+      daftar_order: filtered.slice(0, 25).map((o) => ({
+        no_pesanan: o.no_pesanan,
+        tanggal: o.tanggal,
+        username_ig: o.username_ig,
+        nama_pembeli: o.nama_pembeli,
+        status: o.status,
+        ekspedisi: o.ekspedisi,
+        no_resi: o.no_resi || 'Belum ada resi',
+        total_item: (Array.isArray(o.items) ? o.items : []).reduce((s: number, it: any) => s + (Number(it.qty) || 0), 0)
+      }))
+    };
+  }
+
+  return result;
+}
+
+/**
+ * 9. Eksekusi tool: check_qc_repair_and_loans
+ */
+async function executeCheckQcRepairAndLoans(args: {
+  scope?: string;
+  keyword?: string;
+  only_active?: boolean;
+}): Promise<any> {
+  const scope = String(args.scope || 'all').toLowerCase();
+  const kw = String(args.keyword || '').trim().toLowerCase();
+  const onlyActive = Boolean(args.only_active);
+  const out: any = {};
+
+  if (scope === 'all' || scope === 'qc') {
+    const qcList = await fetchQcReportsFromSupabase({ limit: 150 }).catch(() => []);
+    let filtered = qcList || [];
+    if (kw) {
+      filtered = filtered.filter((q) =>
+        `${q.report_no} ${q.sku} ${q.nama_produk} ${q.kode_produksi || ''} ${q.pic_qc || ''} ${q.sumber_batch || ''}`
+          .toLowerCase()
+          .includes(kw)
+      );
+    }
+    out.qc = {
+      total_laporan: filtered.length,
+      total_diperiksa_pcs: filtered.reduce<number>((s, q: any) => s + (Number(q.qty_diperiksa) || 0), 0),
+      total_oke_pcs: filtered.reduce<number>((s, q: any) => s + (Number(q.qty_oke) || 0), 0),
+      total_reject_pcs: filtered.reduce<number>((s, q: any) => s + (Number(q.qty_reject) || 0), 0),
+      laporan_terbaru: filtered.slice(0, 20).map((q) => ({
+        report_no: q.report_no,
+        tanggal: q.tanggal,
+        kode_atau_sku: q.kode_produksi || q.sku,
+        nama_produk: q.nama_produk,
+        size: q.size || '-',
+        status: q.status,
+        qty_diperiksa: q.qty_diperiksa,
+        qty_oke: q.qty_oke,
+        qty_reject: q.qty_reject,
+        pic_qc: q.pic_qc,
+        target_penanganan: q.target_penanganan || '-'
+      }))
+    };
+  }
+
+  if (scope === 'all' || scope === 'perbaikan') {
+    const tickets = await fetchPerbaikanTicketsFromSupabase({ limit: 150 }).catch(() => []);
+    let filtered = tickets || [];
+    if (kw) {
+      filtered = filtered.filter((t) =>
+        `${t.ticket_no} ${t.sku} ${t.nama_produk} ${t.tahap} ${t.lokasi_sekarang} ${t.kategori_rusak}`
+          .toLowerCase()
+          .includes(kw)
+      );
+    }
+    if (onlyActive) {
+      filtered = filtered.filter((t) => !String(t.tahap || '').startsWith('SELESAI_'));
+    }
+    out.perbaikan = {
+      total_tiket_aktif: filtered.length,
+      total_pcs: filtered.reduce<number>((s, t: any) => s + (Number(t.qty) || 0), 0),
+      daftar_tiket: filtered.slice(0, 25).map((t) => {
+        const m = lookupProductBySku(t.sku);
+        return {
+          ticket_no: t.ticket_no,
+          tanggal: t.tanggal,
+          sku: t.sku,
+          nama_produk: m?.nama_produk || t.nama_produk,
+          size: resolveProductDisplaySize(t.sku, m?.size || t.size),
+          qty: t.qty,
+          tahap: t.tahap,
+          status_pengerjaan: t.status_pengerjaan,
+          lokasi_sekarang: t.lokasi_sekarang,
+          kategori_rusak: t.kategori_rusak,
+          petugas: t.petugas_reparasi || t.qc_pic || '-'
+        };
+      })
+    };
+  }
+
+  if (scope === 'all' || scope === 'peminjaman') {
+    const loans = await fetchPeminjamanFromSupabase(150).catch(() => []);
+    let filtered = loans || [];
+    if (kw) {
+      filtered = filtered.filter((l) =>
+        `${l.noPeminjaman || l.no_sps || ''} ${l.namaPeminjam || l.nama_peminjam || ''} ${l.keperluan || ''}`
+          .toLowerCase()
+          .includes(kw)
+      );
+    }
+    if (onlyActive) {
+      filtered = filtered.filter((l) => {
+        const st = String(l.status || '').toUpperCase();
+        return st.includes('DIPINJAM') || st.includes('SEBAGIAN');
+      });
+    }
+    out.peminjaman = {
+      total_dokumen: filtered.length,
+      daftar_peminjaman: filtered.slice(0, 25).map((l) => ({
+        no_sps: l.noPeminjaman || l.no_sps || l.id,
+        peminjam: l.namaPeminjam || l.nama_peminjam || '-',
+        keperluan: l.keperluan || '-',
+        tgl_pinjam: l.tglPinjam || l.tanggal_pinjam || '-',
+        estimasi_kembali: l.estimasiKembali || '-',
+        status: l.status || 'Dipinjam',
+        jumlah_sku: Array.isArray(l.items) ? l.items.length : 1
+      }))
+    };
+  }
+
+  return out;
+}
+
+/**
+ * 10. Eksekusi tool: check_retur_and_jne_rekap
+ */
+async function executeCheckReturAndJneRekap(args: {
+  scope?: string;
+  keyword?: string;
+  status?: string;
+}): Promise<any> {
+  const scope = String(args.scope || 'all').toLowerCase();
+  const kw = String(args.keyword || '').trim().toLowerCase();
+  const statusFilter = String(args.status || '').trim().toLowerCase();
+  const out: any = {};
+
+  if (scope === 'all' || scope === 'retur') {
+    const returs = await fetchReturOrders().catch(() => []);
+    let filtered = returs || [];
+    if (kw) {
+      filtered = filtered.filter((r) =>
+        `${r.no_retur} ${r.no_pesanan_asal} ${r.nama_customer} ${r.outlet_order} ${r.no_resi} ${r.no_resi_customer}`
+          .toLowerCase()
+          .includes(kw)
+      );
+    }
+    if (statusFilter && statusFilter !== 'all') {
+      filtered = filtered.filter((r) => String(r.status || '').toLowerCase() === statusFilter);
+    }
+    out.retur_barang = {
+      total_tiket: filtered.length,
+      baru_diterima: filtered.filter((r) => r.status === 'diterima').length,
+      diproses: filtered.filter((r) => r.status === 'diproses').length,
+      selesai_dikirim: filtered.filter((r) => r.status === 'dikirim').length,
+      daftar_tiket: filtered.slice(0, 25).map((r) => ({
+        no_retur: r.no_retur,
+        no_pesanan_asal: r.no_pesanan_asal,
+        outlet_order: r.outlet_order,
+        nama_customer: r.nama_customer,
+        kategori_alasan: r.kategori_alasan,
+        alasan_retur: r.alasan_retur,
+        status: r.status,
+        no_sj_gudang_retur: r.no_sj_gudang_retur || '-',
+        no_invoice_return: r.no_invoice_return || '-',
+        no_resi_pengganti: r.no_resi || 'Belum ada resi',
+        produk_pengganti: (r.produk_pengganti || []).map((it) => `${it.sku} (${it.size}) x${it.qty}`)
+      }))
+    };
+  }
+
+  if (scope === 'all' || scope === 'jne') {
+    const gasRes = await fetchJneRecordsFromGas().catch(() => ({
+      success: false,
+      records: getLocalCachedJneRecords(),
+      total: 0
+    }));
+    let records = gasRes.records || [];
+    if (kw) {
+      records = records.filter((j) =>
+        `${j.no_resi} ${j.nama_tujuan} ${j.alamat_tujuan} ${j.layanan} ${j.deskripsi || ''}`
+          .toLowerCase()
+          .includes(kw)
+      );
+    }
+    const totalTagihan = records.reduce<number>((s, j: any) => s + (Number(j.nominal) || 0), 0);
+    out.jne_rekap = {
+      sumber_live: gasRes.success,
+      total_resi: records.length,
+      total_nominal_rp: totalTagihan,
+      daftar_resi: records.slice(0, 25).map((j) => ({
+        no_resi: j.no_resi,
+        tanggal: j.tanggal,
+        layanan: j.layanan,
+        nominal_rp: j.nominal,
+        nama_tujuan: j.nama_tujuan,
+        deskripsi: j.deskripsi || '-'
+      }))
+    };
+  }
+
+  return out;
+}
+
+/**
+ * 11. Eksekusi tool: query_hr_operations (Role-Gated: Superadmin & HR only)
+ */
+async function executeQueryHrOperations(
+  args: {
+    scope?: string;
+    start_date?: string;
+    end_date?: string;
+    keyword?: string;
+    only_pending_approvals?: boolean;
+  },
+  session?: UserSession | null
+): Promise<any> {
+  const aiRole = resolveAiUserRole(session);
+  if (aiRole !== 'superadmin' && aiRole !== 'hr') {
+    return {
+      error: 'Akses ditolak: Data HR (Roster, Presensi, Lembur, Cuti, Karyawan) hanya dapat diakses oleh akun HR atau Superadmin.'
+    };
+  }
+
+  const today = formatLocalYmd(new Date());
+  const startDate = args.start_date || today;
+  const endDate = args.end_date || startDate;
+  const scope = String(args.scope || 'summary').toLowerCase();
+  const kw = String(args.keyword || '').trim().toLowerCase();
+  const onlyPending = Boolean(args.only_pending_approvals);
+
+  const out: any = { periode: { start_date: startDate, end_date: endDate } };
+
+  if (scope === 'summary' || scope === 'karyawan') {
+    const karyawans = await fetchKaryawanDirectory().catch(() => []);
+    const activeOnly = karyawans.filter((k) => k.status_aktif !== false);
+    const filtered = kw
+      ? activeOnly.filter((k) => `${k.nik} ${k.nama} ${k.divisi} ${k.jabatan || ''}`.toLowerCase().includes(kw))
+      : activeOnly;
+    out.karyawan = {
+      total_aktif: activeOnly.length,
+      daftar: filtered.slice(0, 30).map((k) => ({
+        nik: k.nik,
+        nama: k.nama,
+        divisi: k.divisi,
+        jabatan: k.jabatan || '-',
+        role: k.role
+      }))
+    };
+  }
+
+  if (scope === 'summary' || scope === 'roster') {
+    const roster = await fetchRosterShiftList(undefined, startDate, endDate).catch(() => []);
+    const filtered = kw
+      ? roster.filter((r) => `${r.nik} ${r.nama || ''} ${r.shift}`.toLowerCase().includes(kw))
+      : roster;
+    out.roster_shift = {
+      total_entri: filtered.length,
+      jadwal: filtered.slice(0, 35).map((r) => ({
+        tanggal: r.tanggal,
+        nik: r.nik,
+        nama: r.nama || r.nik,
+        shift: r.shift,
+        jam_masuk: r.jam_masuk || '-',
+        jam_pulang: r.jam_pulang || '-'
+      }))
+    };
+  }
+
+  if (scope === 'summary' || scope === 'presensi') {
+    const presensi = await fetchPresensiRange(startDate, endDate).catch(() => []);
+    const filtered = kw
+      ? presensi.filter((p) => `${p.nik} ${p.nama || ''} ${p.status}`.toLowerCase().includes(kw))
+      : presensi;
+    out.presensi = {
+      total_record: filtered.length,
+      hadir_atau_log: filtered.slice(0, 35).map((p) => ({
+        tanggal: p.tanggal,
+        nik: p.nik,
+        nama: p.nama || p.nik,
+        shift: p.shift,
+        status: p.status,
+        jam_masuk: p.jam_masuk || '-',
+        jam_pulang: p.jam_pulang || '-'
+      }))
+    };
+  }
+
+  if (scope === 'summary' || scope === 'approvals') {
+    const [lembur, cuti, izin] = await Promise.all([
+      fetchLemburRecords().catch(() => []),
+      fetchCutiRecords().catch(() => []),
+      fetchIzinPulangAwalList().catch(() => [])
+    ]);
+
+    const filterFn = (list: any[]) =>
+      list.filter((r) => {
+        if (onlyPending && r.status !== 'Diajukan') return false;
+        if (kw && !`${r.nik} ${r.nama} ${r.divisi || ''} ${r.alasan || r.deskripsi || ''}`.toLowerCase().includes(kw)) {
+          return false;
+        }
+        return true;
+      });
+
+    const fLembur = filterFn(lembur);
+    const fCuti = filterFn(cuti);
+    const fIzin = filterFn(izin);
+
+    out.approvals = {
+      pending_lembur: lembur.filter((r) => r.status === 'Diajukan').length,
+      pending_cuti: cuti.filter((r) => r.status === 'Diajukan').length,
+      pending_izin_pulang_awal: izin.filter((r) => r.status === 'Diajukan').length,
+      daftar_lembur: fLembur.slice(0, 15).map((r) => ({
+        id: r.id,
+        tanggal: r.tanggal,
+        nama: r.nama,
+        durasi_jam: r.durasi_jam,
+        status: r.status,
+        deskripsi: r.deskripsi
+      })),
+      daftar_cuti: fCuti.slice(0, 15).map((r) => ({
+        id: r.id,
+        nama: r.nama,
+        jenis: r.jenis,
+        tgl_mulai: r.tgl_mulai,
+        tgl_selesai: r.tgl_selesai,
+        jumlah_hari: r.jumlah_hari,
+        status: r.status
+      })),
+      daftar_izin_pulang_awal: fIzin.slice(0, 15).map((r) => ({
+        id: r.id,
+        tanggal: r.tanggal,
+        nama: r.nama,
+        jam_pulang_rencana: r.jam_pulang_rencana,
+        status: r.status,
+        alasan: r.alasan
+      }))
+    };
+  }
+
+  return out;
+}
+
+/**
+ * 12. Eksekusi tool: prepare_manual_shipment_draft (Human-in-the-loop)
+ */
+async function executePrepareManualShipmentDraft(args: {
+  nama_pengirim?: string;
+  delivery_method?: string;
+  drop_store_target?: string;
+  jasa_kirim?: string;
+  nama_tujuan: string;
+  no_telp_tujuan?: string;
+  email_customer?: string;
+  alamat_tujuan?: string;
+  notes_paket?: string;
+  items: Array<{ product_query?: string; sku?: string; size?: string; qty?: number; fulfillment?: string }>;
+}): Promise<any> {
+  const resolvedItems: any[] = [];
+  for (const it of args.items || []) {
+    const master = await resolveMasterProductItem(it.sku || it.product_query || '', it.size);
+    resolvedItems.push({
+      sku: master.sku || it.sku || '',
+      nama_produk: master.nama_produk || it.product_query || 'Produk',
+      size: master.size || it.size || '-',
+      qty: Math.max(1, Number(it.qty) || 1),
+      fulfillment: it.fulfillment || 'Gudang',
+      matched_master: master.matched
+    });
+  }
+
+  const draft = {
+    nama_pengirim: args.nama_pengirim || '',
+    delivery_method: args.delivery_method === 'drop_store' ? 'drop_store' : 'expedition',
+    drop_store_target: args.drop_store_target || '',
+    jasa_kirim: args.jasa_kirim || '',
+    nama_tujuan: args.nama_tujuan || '',
+    no_telp_tujuan: args.no_telp_tujuan || '',
+    email_customer: args.email_customer || '',
+    alamat_tujuan: args.alamat_tujuan || '',
+    notes_paket: args.notes_paket || '',
+    items: resolvedItems,
+    updatedAt: Date.now()
+  };
+
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('wms_manual_shipment_ai_draft', JSON.stringify(draft));
+      (window as any).__wms_pending_pesanan_target = { manualSubTab: 'form', draft };
+    } catch {}
+  }
+
+  return {
+    status: 'draft_ready',
+    pesan: 'Draft Form Manual Shipment telah disiapkan. Silakan klik tombol "Buka Form Manual Shipment" untuk memeriksa & menekan Submit.',
+    draft
+  };
+}
+
+/**
+ * 13. Eksekusi tool: prepare_retur_barang_draft (Human-in-the-loop)
+ */
+async function executePrepareReturBarangDraft(args: {
+  no_pesanan_asal?: string;
+  outlet_order?: string;
+  kategori_alasan?: string;
+  alasan_retur?: string;
+  opsi_pengiriman?: string;
+  nama_customer: string;
+  no_hp?: string;
+  alamat_lengkap?: string;
+  no_resi_customer?: string;
+  penanggung_biaya?: string;
+  produk_pesanan?: Array<{ product_query?: string; sku?: string; size?: string; qty?: number }>;
+  produk_pengganti?: Array<{ product_query?: string; sku?: string; size?: string; qty?: number; fulfillment?: string }>;
+}): Promise<any> {
+  const origResolved: any[] = [];
+  for (const it of args.produk_pesanan || []) {
+    const master = await resolveMasterProductItem(it.sku || it.product_query || '', it.size);
+    origResolved.push({
+      sku: master.sku || it.sku || '',
+      nama_produk: master.nama_produk || it.product_query || 'Produk Retur',
+      size: master.size || it.size || '-',
+      qty: Math.max(1, Number(it.qty) || 1)
+    });
+  }
+
+  const repResolved: any[] = [];
+  for (const it of args.produk_pengganti || []) {
+    const master = await resolveMasterProductItem(it.sku || it.product_query || '', it.size);
+    repResolved.push({
+      sku: master.sku || it.sku || '',
+      nama_produk: master.nama_produk || it.product_query || 'Produk Pengganti',
+      size: master.size || it.size || '-',
+      qty: Math.max(1, Number(it.qty) || 1),
+      fulfillment: it.fulfillment || 'Marketplace'
+    });
+  }
+
+  const draft = {
+    no_pesanan_asal: args.no_pesanan_asal || '',
+    outlet_order: args.outlet_order || 'Shopee',
+    kategori_alasan: args.kategori_alasan || 'tukar_size_model',
+    alasan_retur: args.alasan_retur || '',
+    opsi_pengiriman: args.opsi_pengiriman || 'JNE Regular',
+    nama_customer: args.nama_customer || '',
+    no_hp: args.no_hp || '',
+    alamat_lengkap: args.alamat_lengkap || '',
+    no_resi_customer: args.no_resi_customer || '',
+    penanggung_biaya: args.penanggung_biaya === 'toko_free' ? 'toko_free' : 'customer',
+    produk_pesanan: origResolved,
+    produk_pengganti: repResolved,
+    updatedAt: Date.now()
+  };
+
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('wms_retur_barang_ai_draft', JSON.stringify(draft));
+      (window as any).__wms_pending_retur_target = draft;
+    } catch {}
+  }
+
+  return {
+    status: 'draft_ready',
+    pesan: 'Draft Form Retur Barang telah disiapkan. Silakan klik tombol "Buka Form Retur Barang" di Pusat Resolusi untuk memeriksa & Submit.',
+    draft
+  };
+}
+
+/**
+ * 14. Eksekusi tool: query_agenda_and_projects
+ */
+async function executeQueryAgendaAndProjects(args: {
+  scope?: string;
+  start_date?: string;
+  end_date?: string;
+  category?: string;
+  status?: string;
+  priority?: string;
+  keyword?: string;
+}): Promise<any> {
+  const scope = String(args.scope || 'all').toLowerCase();
+  const kw = String(args.keyword || '').trim().toLowerCase();
+  const cat = String(args.category || '').trim().toLowerCase();
+  const today = formatLocalYmd(new Date());
+  const nextThreeDays = formatLocalYmd(new Date(Date.now() + 3 * 86400000));
+
+  const out: any = { tanggal_hari_ini: today };
+
+  if (scope === 'all' || scope === 'agenda') {
+    const events = await getAgendaEvents().catch(() => []);
+    let filtered = events || [];
+    if (args.start_date) {
+      filtered = filtered.filter((ev) => (ev.end_date || ev.start_date) >= args.start_date!);
+    }
+    if (args.end_date) {
+      filtered = filtered.filter((ev) => ev.start_date <= args.end_date!);
+    }
+    if (cat) {
+      filtered = filtered.filter((ev) => String(ev.category || '').toLowerCase().includes(cat));
+    }
+    if (kw) {
+      filtered = filtered.filter((ev) =>
+        `${ev.title} ${ev.description || ''} ${ev.location || ''} ${ev.pic || ''} ${ev.category}`
+          .toLowerCase()
+          .includes(kw)
+      );
+    }
+    filtered.sort((a, b) => (a.start_date || '').localeCompare(b.start_date || ''));
+    out.agenda = {
+      total_agenda: filtered.length,
+      daftar: filtered.slice(0, 30).map((ev) => ({
+        id: ev.id,
+        judul: ev.title,
+        tanggal_mulai: ev.start_date,
+        tanggal_selesai: ev.end_date || ev.start_date,
+        jam: ev.is_all_day ? 'Seharian' : `${ev.start_time || '-'} - ${ev.end_time || '-'}`,
+        kategori: ev.category,
+        lokasi: ev.location || '-',
+        pic: ev.pic || '-',
+        project_id: ev.project_id || null,
+        deskripsi: ev.description || '-'
+      }))
+    };
+  }
+
+  if (scope === 'all' || scope === 'projects') {
+    const projects = await getProjects().catch(() => []);
+    let filtered = projects || [];
+    if (args.status) {
+      filtered = filtered.filter((p) => String(p.status || '').toLowerCase() === String(args.status).toLowerCase());
+    }
+    if (args.priority) {
+      filtered = filtered.filter((p) => String(p.priority || '').toLowerCase() === String(args.priority).toLowerCase());
+    }
+    if (cat) {
+      filtered = filtered.filter((p) => String(p.category || '').toLowerCase().includes(cat));
+    }
+    if (kw) {
+      filtered = filtered.filter((p) =>
+        `${p.title} ${p.description || ''} ${p.pic || ''} ${p.category}`.toLowerCase().includes(kw)
+      );
+    }
+
+    const enriched = filtered.map((p) => {
+      const tasks = Array.isArray(p.tasks) ? p.tasks : [];
+      const doneTasks = tasks.filter((t) => t.completed).length;
+      const computedProgress = tasks.length > 0 ? Math.round((doneTasks / tasks.length) * 100) : Number(p.progress) || 0;
+      const isOverdue = Boolean(p.deadline && p.deadline < today && p.status !== 'completed');
+      const isNearDeadline = Boolean(p.deadline && p.deadline >= today && p.deadline <= nextThreeDays && p.status !== 'completed');
+      return {
+        id: p.id,
+        judul: p.title,
+        status: p.status,
+        prioritas: p.priority,
+        kategori: p.category,
+        pic: p.pic || '-',
+        start_date: p.start_date || '-',
+        deadline: p.deadline || '-',
+        progress_persen: computedProgress,
+        task_selesai: doneTasks,
+        total_task: tasks.length,
+        is_overdue: isOverdue,
+        is_near_deadline: isNearDeadline,
+        tasks_tertunda: tasks.filter((t) => !t.completed).slice(0, 6).map((t) => t.title)
+      };
+    });
+
+    out.projects = {
+      total_project: enriched.length,
+      overdue_count: enriched.filter((p) => p.is_overdue).length,
+      near_deadline_count: enriched.filter((p) => p.is_near_deadline).length,
+      daftar: enriched.slice(0, 25)
+    };
+  }
+
+  if (scope === 'all' || scope === 'notes') {
+    const notes = await getNotes().catch(() => []);
+    let filtered = notes || [];
+    if (kw) {
+      filtered = filtered.filter((n) =>
+        `${n.title || ''} ${n.content || ''} ${(n.checklist || []).map((c) => c.text).join(' ')}`
+          .toLowerCase()
+          .includes(kw)
+      );
+    }
+    out.notes = {
+      total_catatan: filtered.length,
+      daftar: filtered.slice(0, 20).map((n) => {
+        const chk = Array.isArray(n.checklist) ? n.checklist : [];
+        return {
+          id: n.id,
+          judul: n.title || '(Tanpa Judul)',
+          isi: (n.content || '').slice(0, 180),
+          checklist_total: chk.length,
+          checklist_selesai: chk.filter((c) => c.is_completed).length,
+          checklist_belum: chk.filter((c) => !c.is_completed).map((c) => c.text),
+          pinned: Boolean(n.is_pinned),
+          created_by: n.created_by || '-'
+        };
+      })
+    };
+  }
+
+  return out;
+}
+
+/**
+ * 15. Eksekusi tool: prepare_agenda_or_project_draft (Human-in-the-loop)
+ */
+async function executePrepareAgendaOrProjectDraft(args: {
+  draft_type: 'agenda' | 'project' | 'note';
+  title: string;
+  description?: string;
+  start_date?: string;
+  end_date?: string;
+  deadline?: string;
+  is_all_day?: boolean;
+  start_time?: string;
+  end_time?: string;
+  category?: string;
+  location?: string;
+  pic?: string;
+  priority?: string;
+  status?: string;
+  project_id?: string;
+  tasks?: string[];
+  checklist?: string[];
+  color?: string;
+}): Promise<any> {
+  const today = formatLocalYmd(new Date());
+  const draftType = args.draft_type || 'agenda';
+
+  const payload = {
+    draft_type: draftType,
+    payload: {
+      title: args.title || '',
+      description: args.description || '',
+      content: args.description || '',
+      start_date: args.start_date || today,
+      end_date: args.end_date || args.start_date || today,
+      deadline: args.deadline || args.end_date || formatLocalYmd(new Date(Date.now() + 7 * 86400000)),
+      is_all_day: Boolean(args.is_all_day),
+      start_time: args.start_time || '09:00',
+      end_time: args.end_time || '10:00',
+      category: args.category || (draftType === 'project' ? 'Operasional' : 'operasional'),
+      location: args.location || '',
+      pic: args.pic || '',
+      priority: args.priority || 'medium',
+      status: args.status || 'in_progress',
+      project_id: args.project_id || undefined,
+      tasks: Array.isArray(args.tasks) ? args.tasks : [],
+      checklist: Array.isArray(args.checklist) ? args.checklist : [],
+      color: args.color || undefined
+    },
+    updatedAt: Date.now()
+  };
+
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('wms_agenda_ai_draft', JSON.stringify(payload));
+      (window as any).__wms_pending_agenda_target = payload;
+    } catch {}
+  }
+
+  const label = draftType === 'project' ? 'Project' : draftType === 'note' ? 'Sticky Note' : 'Agenda Kalender';
+  return {
+    status: 'draft_ready',
+    draft_type: draftType,
+    pesan: `Draft ${label} "${args.title}" telah disiapkan. Silakan klik tombol "Buka Draft di Agenda & Project" untuk mereview dan menyimpannya.`,
+    draft: payload
+  };
+}
+
 // =============================================================================
 // MAIN CHAT COMPLETION CONTROLLER
 // =============================================================================
 
 const BASE_SYSTEM_INSTRUCTION = `Anda adalah Asisten AI Cerdas resmi untuk sistem WMS Inventory (Chocochips Warehouse).
-Tugas utama Anda adalah membantu staf gudang, produksi, store, operasional, dan manajemen dengan cepat, akurat, dan ramah dalam Bahasa Indonesia.
+Tugas utama Anda adalah membantu staf gudang, produksi, store, HR, operasional, dan manajemen dengan cepat, akurat, dan ramah dalam Bahasa Indonesia.
 
 PANDUAN & ATURAN UTAMA:
-1. PENCARIAN BERBASIS NAMA PRODUK (DILARANG KERAS MEREKOMENDASIKAN / MEMINTA KODE SKU!):
-   - Saat mencari stok rak gudang, pengguna biasa menyebut NAMA BAJU / PAKAIAN (contoh: "Ruth Top Cherry", "Sailor Top", "Taylor Pants", "Celana Kulot"), BUKAN Kode SKU barcode.
+1. PENCARIAN BERBASIS NAMA PRODUK & INTEGRITAS MASTER PRODUK:
+   - Saat mencari stok rak gudang, pengguna biasa menyebut NAMA BAJU / PAKAIAN (contoh: "Ruth Top Cherry", "Sailor Top", "Taylor Pants"), BUKAN Kode SKU barcode.
    - DILARANG KERAS menyuruh, meminta, atau merekomendasikan pengguna untuk memberikan Kode SKU!
-   - Jika suatu produk berstatus tidak ditemukan di rak gudang, cukup laporkan statusnya dengan jelas: "❌ Stok Kosong / Belum Ada di Rak" tanpa pernah menyebut kata "Kode SKU".
+   - Selalu gunakan Nama Produk dan Size resmi hasil lookup Master Produk (tidak boleh menebak nama/size di luar master data).
 
-2. BATCH & SINGLE LOOKUP STOK (PRESISI PER UKURAN/VARIAN, ANTI-CAMPUR PRODUK & ANTI-SINGKAT "dll."):
-   - Jika pengguna memberikan daftar banyak nama produk sekaligus, WAJIB gunakan SATU KALI panggilan tool "lookup_product_stock" dengan parameter "queries" berupa array seluruh nama produk tersebut (sertakan ukuran/size pada masing-masing item jika pengguna menyebutkannya, contoh: ["Zilva Top White (M)", "Posy Dress Blue (S)"]).
-   - Sajikan hasil dalam format TABEL MARKDOWN LENGKAP dengan menyalin angka persis dari hasil tool tanpa mengubah atau menjumlahkan antar baris:
-     | No | Nama Produk & Varian | Status Stok Fisik di Rak | Stok Fisik | Stok DealPOS | Lokasi Rak Lengkap |
-   - ATURAN KETAT PELAPORAN STOK & DEALPOS:
-     * **DILARANG KERAS menyingkat lokasi rak dengan kata "dll."**! Tuliskan seluruh kode rak beserta jumlah pcs-nya secara lengkap sesuai field "lokasi_rak" (contoh: "C044 (2 pcs), STUDIO (1 pcs)").
-     * Selalu tampilkan nilai "stok_dealpos" dari hasil tool secara konsisten untuk setiap produk/size (jangan dikosongkan dan jangan digabung dengan ukuran lain).
-     * Jika tool mengembalikan "catatan_size" (misal pengguna meminta ukuran M tetapi produk tersebut di sistem hanya terdaftar ukuran "ALL" atau ukuran lain), tampilkan informasi "catatan_size" tersebut pada kolom Lokasi Rak / Catatan agar pengguna mengetahui varian ukuran yang sebenarnya ada di sistem.
+2. BATCH & SINGLE LOOKUP STOK:
+   - Jika pengguna memberikan daftar banyak produk sekaligus, gunakan SATU KALI panggilan tool "lookup_product_stock" dengan parameter "queries" berupa array seluruh nama produk.
+   - Sajikan dalam format TABEL MARKDOWN LENGKAP dan DILARANG menyingkat lokasi rak dengan kata "dll." — tampilkan seluruh rak dan jumlah pcs-nya secara lengkap.
 
-3. BACA & CARI DATA PENERIMAAN PRODUKSI (LOKAL CMT & KARGO) + TANYA JAWAB PINTAR:
-   - Anda memiliki akses penuh ke database Penerimaan Barang Produksi (kategori "Lokal CMT" maupun "Kargo") melalui tool "query_production_receipts" dan "generate_production_recap".
-   - Ketika pengguna bertanya seperti:
-     * "Kemarin ada masuk kargo apa aja dan berapa aja?"
-     * "Hari ini ada penerimaan CMT apa aja?"
-     * "Minggu ini kargo yang masuk kode apa aja?"
-     * "Surat jalan X isinya apa aja?"
-     WAJIB panggil tool "query_production_receipts" dengan mengisi "start_date", "end_date" (sesuai referensi tanggal Hari Ini / Kemarin di bawah), dan "category" ("Kargo" atau "Lokal CMT").
-   - Sajikan jawaban yang informatif dan rapi mencakup:
-     a. Ringkasan Total (Total Surat Jalan, Total Kode Produksi, dan Total Pcs diterima).
-     b. Tabel Rincian: | No | Tanggal | Kategori | No. Surat Jalan | Kode & Nama Produk (UP) | Rincian Warna & Size | Total Pcs | Status Hitung Ulang |
-     c. Jika pada tanggal yang ditanyakan ternyata kosong (0 pcs), informasikan dengan sopan bahwa pada tanggal tersebut tidak ada kedatangan tercatat, lalu sebutkan informasi "tanggal_kedatangan_terakhir_di_database" yang dikembalikan oleh tool dan tanyakan apakah pengguna ingin melihat detail tanggal terakhir tersebut.
-     d. Akhiri dengan kalimat tanya jawab interaktif (misal menawarkan cek kategori satunya, cek detail per ukuran, atau bantu buatkan rekap).
+3. AUDIT STOK, KAPASITAS RAK, PICKING, QC, PERBAIKAN, RETUR & JNE:
+   - Gunakan "audit_stock_and_mutations" untuk mengecek mutasi log_produk (IN/OUT/SO/ADJ), selisih stok fisik vs DealPOS, serta rak kosong/tersedia/overload.
+   - Gunakan "check_picking_and_channel_orders" untuk memantau tugas picking (invoice_picking, no_sj, under/over-pick) dan order IG Live.
+   - Gunakan "check_qc_repair_and_loans" untuk inspeksi QC, antrean Perbaikan (Cuci/Permak/Defect), dan Peminjaman SPS.
+   - Gunakan "check_retur_and_jne_rekap" untuk tiket Retur Barang (RTR-...) di Pusat Resolusi dan Rekap Tagihan Ongkir JNE.
+   - Gunakan "query_hr_operations" (khusus HR & Superadmin) untuk Roster Shift, Presensi, dan pengajuan Lembur/Cuti/Izin Pulang Awal.
 
-4. BANTU INPUT PENERIMAAN KE FORM INPUT PRODUKSI & KONFIRMASI KODE MIRIP + FOTO TRELLO (TETAP USER YANG CEK & SUBMIT!):
-   - Anda dapat membantu pengguna menyiapkan dan mengisi Form Input Penerimaan Barang Produksi (CMT maupun Kargo) menggunakan tool "prepare_production_receipt_form" dan melihat draft aktif dengan "view_production_receipt_form_draft".
-   - PRINSIP UTAMA: AI HANYA mengisikan data ke dalam Draft Form Input di layar. Pengguna yang akan mengecek kembali di layar, melengkapi bagian yang kurang, dan menekan tombol Submit / Simpan Penerimaan sendiri.
-   - ATURAN WAJIB KONFIRMASI KODE MIRIP (CONTOH: USER SEBUT "6612", TAPI DI TRELLO ADANYA "6612-1") & LAMPIRAN FOTO PRODUK:
-     * Jika pengguna menyebut kode produksi (misal "6612"), namun di Trello UP kode persis "6612" TIDAK ADA dan yang ditemukan adalah kode varian/mirip (seperti "6612-1", "6612-2", atau "6612A"):
-     * Sistem TIDAK AKAN langsung auto-match diam-diam ke dalam form! Tool akan mengembalikan status "waiting_similar_code_confirmation" / "perlu_konfirmasi_kode_mirip" dan UI Chat akan OTOMATIS MELAMPIRKAN KARTU FOTO PRODUK TRELLO di bawah balasan Anda!
-     * Tugas Anda saat status tersebut muncul:
-       1. Beritahu pengguna dengan ramah bahwa kode persis yang disebut (misal "6612") tidak ditemukan di Trello UP, namun ditemukan kode yang mirip yaitu **"6612-1 — [Nama Produk] ([Kode UP])"**.
-       2. Persilakan pengguna melihat **Foto Produk Trello** yang sudah Anda lampirkan di bawah pesan chat ini untuk memastikan apakah benar baju/artikel tersebut yang dimaksud.
-       3. Tanyakan apakah pengguna setuju menggunakan kode **"6612-1"** tersebut (pengguna bisa langsung klik tombol **"✅ Ya, Pakai Kode 6612-1"** pada kartu foto atau membalas lewat chat).
-       4. Begitu pengguna mengonfirmasi ("Ya pakai 6612-1"), panggil kembali "prepare_production_receipt_form" dengan menggunakan kode yang sudah dikonfirmasi tersebut ("6612-1") agar langsung masuk ke Draft Form Input beserta Nama Produk, UP, dan Fotonya!
-     * Jika kode produksi COCOK PERSIS 100% di Trello UP, UI Chat juga otomatis menampilkan Kartu Foto Produk Trello sebagai verifikasi visual bagi pengguna.
-   - ALUR TANYA JAWAB (Q&A SKILL) SAAT BANTU INPUT PENERIMAAN:
-     a. Ketika pengguna meminta bantuan input penerimaan (baik lewat ketikan teks seperti "bantu input kargo kode 6612" maupun mengirim FOTO Surat Jalan / Nota / Packing List / File Excel):
-        - Jika kode cocok persis di Trello UP, tool "prepare_production_receipt_form" akan otomatis mengisi Nama Produk, Kode UP Vendor, dan Foto Produk ke dalam Draft Form Input.
-     b. LAKUKAN TANYA JAWAB PROAKTIF UNTUK DATA YANG BELUM LENGKAP:
-        Periksa kelengkapan 5 komponen Form Input Penerimaan berikut:
-        1. **Kategori**: Apakah penerimaan **Lokal CMT** atau **Kargo**?
-        2. **Tanggal Penerimaan**: Default hari ini (atau sesuai tanggal yang tertulis di foto surat jalan).
-        3. **No. Surat Jalan / Resi**: Nomor surat jalan vendor CMT atau resi kargo.
-        4. **Kode Produksi**: Kode artikel barang (misal 6612, 6612-1, 7312).
-        5. **Rincian Warna, Ukuran (S/M/L/XL atau ALL SIZE), dan Qty (pcs)**.
-        Jika masih ada data di atas yang belum disebutkan oleh pengguna (atau di foto surat jalan ada bagian yang buram/belum jelas), TANYAKAN secara ramah dan terstruktur dalam poin-poin singkat agar pengguna bisa menjawab lewat chat (atau pengguna bisa langsung klik tombol **"Buka Form Input Produksi"** di bawah pesan Anda untuk melengkapi & klik Simpan sendiri).
-     c. UPDATE BERTAHAP VIA TANYA JAWAB:
-        - Ketika pengguna membalas dengan informasi tambahan (misal: "Ya pakai 6612-1, No SJ-nya KRG-102, warna Hitam S 10 M 15 L 10"), panggil kembali "prepare_production_receipt_form" (gunakan mode "replace" untuk memperbarui keseluruhan surat jalan tersebut, atau mode "append" jika pengguna minta "tambahkan lagi kode 8810").
-        - Tampilkan tabel ringkasan draft form yang sudah terisi lengkap, lalu persilakan pengguna menekan tombol **"Buka Form Input Produksi"** untuk mengecek dan menekan tombol **Simpan Penerimaan**.
+4. INTEGRASI KALENDER AGENDA, PROJECT ROADMAP & STICKY NOTES:
+   - Gunakan "query_agenda_and_projects" untuk memeriksa jadwal Agenda, deadline & progress Project, sub-tasks tertunda, serta Sticky Notes/Checklists.
+   - Gunakan "prepare_agenda_or_project_draft" ketika pengguna meminta dibuatkan Agenda baru, Project baru dengan checklist tasks, atau Sticky Note — data hanya disiapkan sebagai draft modal agar pengguna mereview & klik Simpan sendiri.
 
-5. EKSTRAKSI LAMPIRAN MULTIMODAL (FOTO SURAT JALAN CMT/KARGO, NOTA, FILE EXCEL & CSV):
-   - Jika pengguna melampirkan FOTO surat jalan / nota kedatangan CMT atau Kargo:
-     Baca secara teliti Tanggal, Nomor Surat Jalan, Kategori (CMT/Kargo), daftar Kode Produksi, Warna, Size, dan Qty per ukuran.
-     Jika pengguna meminta bantu input ke form penerimaan, langsung panggil "prepare_production_receipt_form" dengan seluruh data hasil ekstraksi foto tersebut, lalu laporkan hasilnya dan tanyakan jika ada bagian yang ingin dikoreksi!
-   - Jika pengguna melampirkan foto atau Excel untuk cek stok / keranjang order inventory, gunakan "lookup_product_stock" atau "add_to_inventory_cart".
+5. HUMAN-IN-THE-LOOP DRAFT ASSISTANT (PRODUKSI, MANUAL SHIPMENT, RETUR BARANG, AGENDA & PROJECT):
+   - AI TIDAK BOLEH langsung memodifikasi stok fisik rak/log_produk atau langsung menyimpan pesanan/retur/agenda permanen tanpa konfirmasi.
+   - Gunakan "prepare_production_receipt_form", "prepare_manual_shipment_draft", "prepare_retur_barang_draft", dan "prepare_agenda_or_project_draft" untuk mengisi Draft Form agar pengguna mengecek & menekan Submit/Simpan sendiri.
 
-6. FITUR KERANJANG ORDER INVENTORY (INTERAKTIF & TANYA JAWAB NEGOSIASI):
-   - Ketika pengguna meminta memasukkan barang ke keranjang order inventory:
-     a. Panggil "lookup_product_stock" terlebih dahulu untuk memeriksa varian warna, size, dan stok fisik rak.
-     b. Tanyakan qty jika belum disebutkan, dan tawarkan alternatif warna/size lain yang ready di rak jika yang diminta kosong (0 pcs).
-     c. Setelah jelas/dikonfirmasi, panggil "add_to_inventory_cart".
+6. EKSPOR LAPORAN EXCEL & PDF + EKSTRAKSI MULTIMODAL (FOTO, PDF, EXCEL/CSV):
+   - Anda dapat membaca foto dokumen, dokumen PDF invoice/SJ/tagihan, serta spreadsheet Excel/CSV hingga 250 baris beserta ringkasan totalnya.
+   - Ketika pengguna meminta laporan Excel (.xlsx) atau PDF (.pdf), panggil "generate_exportable_report" setelah data terverifikasi.
 
-7. PEMBUATAN & EKSPOR LAPORAN DATA DALAM FORMAT PDF ATAU EXCEL (.XLSX):
-   - Anda MEMILIKI KEMAMPUAN PENUH untuk membuatkan laporan data dalam format **Excel (.xlsx)** maupun **PDF (.pdf)**!
-   - Ketika pengguna meminta laporan dalam bentuk PDF atau Excel (contoh: "Tolong buatkan laporan tadi dalam bentuk Excel/PDF", "Bisa export ke PDF?", "Buatkan rekap penerimaan kargo minggu ini dalam file Excel"):
-     a. Jika data belum diambil, panggil dulu tool data yang relevan ("lookup_product_stock", "query_production_receipts", "generate_production_recap", atau "search_manual_shipment").
-     b. Selanjutnya WAJIB panggil tool **"generate_exportable_report"** dengan menyusun "title", "headers", "rows", "summary", dan "preferred_format" ("excel", "pdf", atau "both").
-     c. Setelah tool "generate_exportable_report" dieksekusi, sistem otomatis menampilkan **Kartu Dokumen Siap Unduh (Tombol Download Excel .xlsx & Download PDF .pdf)** di bawah pesan Anda (dan juga menempelkan tombol **Excel** & **PDF** di atas setiap tabel Markdown).
-     d. Beritahu pengguna dengan ramah bahwa laporan telah siap dan mereka dapat langsung menekan tombol **"📊 Unduh Excel (.xlsx)"** atau **"📄 Unduh PDF (.pdf)"** yang tersedia di bawah pesan chat!
+7. TONE OF VOICE: Ramah, ringkas, komunikatif, proaktif bertanya jika data form belum lengkap, dan solutif.`;
 
-8. TONE OF VOICE: Ramah, komunikatif, proaktif bertanya jika data belum lengkap, solutif, dan profesional.`;
-
-function buildFullSystemInstruction(): string {
+function buildFullSystemInstruction(session?: UserSession | null): string {
   const now = new Date();
   const todayStr = formatLocalYmd(now);
 
@@ -2237,6 +3581,12 @@ function buildFullSystemInstruction(): string {
     'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
   ];
 
+  const aiRole = resolveAiUserRole(session);
+  const userName = session?.name || session?.username || 'Pengguna';
+  const userContext = `\n\nKONTEKS PENGGUNA AKTIF:
+- Nama / Username: ${userName} (${session?.username || '-'})
+- Role AI: ${aiRole}${session?.store_name ? ` (Store: ${session.store_name})` : ''}`;
+
   const dateContext = `\n\nKONTEKS WAKTU REAL-TIME SAAT INI (WAJIB DIGUNAKAN UNTUK FILTER TANGGAL):
 - Hari Ini: ${dayNames[now.getDay()]}, ${now.getDate()} ${monthNames[now.getMonth()]} ${now.getFullYear()} (Format YYYY-MM-DD: "${todayStr}")
 - Kemarin: ${dayNames[yesterday.getDay()]}, ${yesterday.getDate()} ${monthNames[yesterday.getMonth()]} ${yesterday.getFullYear()} (Format YYYY-MM-DD: "${yesterdayStr}")
@@ -2244,62 +3594,40 @@ function buildFullSystemInstruction(): string {
 - 7 Hari Terakhir (Minggu Ini): start_date="${sevenDaysAgoStr}" s/d end_date="${todayStr}"
 - Bulan Ini: Bulan ke-${now.getMonth() + 1} (${monthNames[now.getMonth()]}) Tahun ${now.getFullYear()}`;
 
-  return BASE_SYSTEM_INSTRUCTION + dateContext;
+  return BASE_SYSTEM_INSTRUCTION + userContext + dateContext;
 }
 
 /**
- * Mengirim pesan ke Google Gemini dengan multi-turn Tool Execution loop
- * Mendukung Multimodal Vision (Foto/Gambar) dan Ekstraksi Dokumen Spreadsheet (Excel/CSV)
+ * Mengirim pesan ke server /api/ai (@google/genai) dengan multi-turn Tool Execution loop
+ * Mendukung Multimodal Vision (Foto & PDF) dan Ekstraksi Spreadsheet (Excel/CSV)
  */
 export async function sendChatMessageToGemini(
   conversationHistory: AiChatMessage[],
   userPrompt: string,
   onToolCallStart?: (toolName: string) => void,
-  attachments?: AiAttachment[]
+  attachments?: AiAttachment[],
+  session?: UserSession | null
 ): Promise<{
   text: string;
   executedTools: string[];
   trelloCandidates?: TrelloCandidatePreview[];
   reportTable?: AiChatMessage['reportTable'];
+  modelUsed?: string;
 }> {
-  let apiKey = getActiveGeminiApiKey();
-
-  // Jika belum ada di memory/localStorage, ambil otomatis dari Supabase cloud config
-  if (!apiKey) {
-    try {
-      const cfg = await fetchAiConfig();
-      if (cfg && cfg.apiKey) {
-        apiKey = cfg.apiKey;
-        setActiveGeminiApiKey(apiKey);
-      }
-    } catch (e) {
-      console.warn('[WMS AI] Gagal auto-fetch API key dari Supabase:', e);
-    }
-  }
-
-  if (!apiKey) {
-    throw new Error('API Key Google Gemini belum dikonfigurasi. Hubungi Superadmin.');
-  }
-
-  // Pilih model (prioritas gemini-3.5-flash, fallback gemini-3.5-flash-lite)
-  const modelsToTry = ['gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-flash-latest'];
-  let currentModelIndex = 0;
-
-  // Bangun riwayat contents
+  const aiRole = resolveAiUserRole(session);
+  const roleTools = getToolsForRole(aiRole, session);
   const contents: any[] = [];
 
-  // Sisipkan beberapa percakapan sebelumnya jika ada
   const recentHistory = conversationHistory.slice(-8);
   recentHistory.forEach((msg) => {
     if (msg.role === 'user') {
       const histParts: any[] = [];
-      // Jika ada lampiran gambar di riwayat user sebelumnya
       if (msg.attachments && msg.attachments.length > 0) {
         msg.attachments.forEach((att) => {
-          if (att.type === 'image' && att.base64Data) {
+          if ((att.type === 'image' || att.type === 'pdf') && att.base64Data) {
             histParts.push({
               inlineData: {
-                mimeType: att.mimeType || 'image/jpeg',
+                mimeType: att.mimeType || (att.type === 'pdf' ? 'application/pdf' : 'image/jpeg'),
                 data: att.base64Data
               }
             });
@@ -2313,16 +3641,15 @@ export async function sendChatMessageToGemini(
     }
   });
 
-  // Tambahkan prompt & lampiran baru dari user
   const userParts: any[] = [];
 
-  // 1. Sisipkan Gambar (Vision inlineData base64) jika ada
+  // 1. Sisipkan Gambar & PDF (Multimodal inlineData base64) jika ada
   if (attachments && attachments.length > 0) {
     attachments.forEach((att) => {
-      if (att.type === 'image' && att.base64Data) {
+      if ((att.type === 'image' || att.type === 'pdf') && att.base64Data) {
         userParts.push({
           inlineData: {
-            mimeType: att.mimeType || 'image/jpeg',
+            mimeType: att.mimeType || (att.type === 'pdf' ? 'application/pdf' : 'image/jpeg'),
             data: att.base64Data
           }
         });
@@ -2330,29 +3657,31 @@ export async function sendChatMessageToGemini(
     });
   }
 
-  // 2. Sisipkan Teks Prompt beserta Ekstraksi Tabel Excel / CSV
+  // 2. Sisipkan Teks Prompt beserta Ekstraksi Tabel Excel / CSV / File Teks
   let fullPromptText = (userPrompt || '').trim();
   if (attachments && attachments.length > 0) {
     const docAttachments = attachments.filter((a) => a.type === 'excel' || a.type === 'csv' || a.type === 'file');
     if (docAttachments.length > 0) {
-      const docSummaries = docAttachments.map((doc) => {
-        return `\n\n--- LAMPIRAN FILE: "${doc.name}" (${doc.rowCount || 0} baris data) ---\n${doc.extractedText || ''}`;
-      }).join('\n');
+      const docSummaries = docAttachments
+        .map((doc) => `\n\n--- LAMPIRAN FILE: "${doc.name}" (${doc.rowCount || 0} baris data) ---\n${doc.extractedText || ''}`)
+        .join('\n');
       fullPromptText = `${fullPromptText}\n${docSummaries}`.trim();
     }
   }
 
   userParts.push({
-    text: fullPromptText || (attachments && attachments.length > 0 ? 'Tolong periksa, ekstrak data dari lampiran di atas, dan analisis dengan database WMS.' : 'Halo')
+    text:
+      fullPromptText ||
+      (attachments && attachments.length > 0
+        ? 'Tolong periksa, ekstrak data dari lampiran di atas, dan analisis dengan database WMS.'
+        : 'Halo')
   });
 
-  contents.push({
-    role: 'user',
-    parts: userParts
-  });
+  contents.push({ role: 'user', parts: userParts });
 
   const executedTools: string[] = [];
   let generatedReportTable: AiChatMessage['reportTable'] | undefined = undefined;
+  let modelUsed = 'gemini-4-hydrogen';
   const collectedCandidatesMap = new Map<string, TrelloCandidatePreview>();
   const handleCollectTrelloPreviews = (previews: TrelloCandidatePreview[]) => {
     previews.forEach((p) => {
@@ -2362,78 +3691,56 @@ export async function sendChatMessageToGemini(
       }
     });
   };
-  const activeSystemInstruction = buildFullSystemInstruction();
+  const activeSystemInstruction = buildFullSystemInstruction(session);
 
-  // Helper kirim request ke Gemini API
-  const postToGemini = async (modelName: string, bodyPayload: any): Promise<any> => {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-    const response = await fetch(url, {
+  const postToServerAi = async (payload: any): Promise<any> => {
+    const response = await fetch('/api/ai', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(bodyPayload)
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
     });
-
     const data = await response.json();
     if (!response.ok) {
-      const errMsg = data.error?.message || `HTTP ${response.status}`;
-      throw new Error(errMsg);
+      throw new Error(data?.error || `HTTP ${response.status}`);
     }
+    if (data?.model) modelUsed = data.model;
     return data;
   };
 
-  // Loop tool calling (maksimal 8 iterasi untuk fleksibilitas percakapan)
   let loopCount = 0;
   const MAX_LOOPS = 8;
 
   while (loopCount < MAX_LOOPS) {
     loopCount++;
-    const currentModel = modelsToTry[currentModelIndex] || 'gemini-3.5-flash';
 
-    let geminiResponse: any = null;
-    try {
-      geminiResponse = await postToGemini(currentModel, {
-        contents: contents,
-        tools: AI_TOOLS,
-        systemInstruction: {
-          parts: [{ text: activeSystemInstruction }]
-        }
-      });
-    } catch (apiError: any) {
-      console.warn(`[WMS AI] Gagal pada model ${currentModel}:`, apiError);
-      // Jika model ini 503 atau limit, coba fallback model berikutnya
-      if (currentModelIndex < modelsToTry.length - 1) {
-        currentModelIndex++;
-        continue;
-      }
-      throw apiError;
-    }
+    const geminiResponse = await postToServerAi({
+      contents,
+      tools: roleTools,
+      systemInstruction: activeSystemInstruction,
+      requestedModel: 'gemini-4-hydrogen'
+    });
 
     const candidate = geminiResponse.candidates?.[0];
     if (!candidate || !candidate.content) {
-      throw new Error('Tidak ada respon yang diterima dari Gemini API.');
+      throw new Error('Tidak ada respon yang diterima dari server AI.');
     }
 
     const modelContent = candidate.content;
     const parts = modelContent.parts || [];
-
-    // Cari apakah model meminta satu atau beberapa Function Call
     const functionCallParts = parts.filter((p: any) => p.functionCall);
 
     if (functionCallParts.length === 0) {
-      // Tidak ada function call, kita mendapatkan jawaban teks akhir!
       const textParts = parts.filter((p: any) => p.text).map((p: any) => p.text).join('\n');
       const finalCandidates = Array.from(collectedCandidatesMap.values());
       return {
-        text: textParts || 'Selesai memproses.',
+        text: textParts || geminiResponse.text || 'Selesai memproses.',
         executedTools,
         trelloCandidates: finalCandidates.length > 0 ? finalCandidates : undefined,
-        reportTable: generatedReportTable
+        reportTable: generatedReportTable,
+        modelUsed
       };
     }
 
-    // Eksekusi SEMUA Tool Calls yang diminta model dalam turn ini
     const functionResponseParts: any[] = [];
 
     for (const fcPart of functionCallParts) {
@@ -2462,6 +3769,24 @@ export async function sendChatMessageToGemini(
           toolResult = await executeAddToInventoryCart(fnArgs);
         } else if (fnName === 'view_inventory_cart') {
           toolResult = await executeViewInventoryCart();
+        } else if (fnName === 'audit_stock_and_mutations') {
+          toolResult = await executeAuditStockAndMutations(fnArgs);
+        } else if (fnName === 'check_picking_and_channel_orders') {
+          toolResult = await executeCheckPickingAndChannelOrders(fnArgs);
+        } else if (fnName === 'check_qc_repair_and_loans') {
+          toolResult = await executeCheckQcRepairAndLoans(fnArgs);
+        } else if (fnName === 'check_retur_and_jne_rekap') {
+          toolResult = await executeCheckReturAndJneRekap(fnArgs);
+        } else if (fnName === 'query_hr_operations') {
+          toolResult = await executeQueryHrOperations(fnArgs, session);
+        } else if (fnName === 'prepare_manual_shipment_draft') {
+          toolResult = await executePrepareManualShipmentDraft(fnArgs);
+        } else if (fnName === 'prepare_retur_barang_draft') {
+          toolResult = await executePrepareReturBarangDraft(fnArgs);
+        } else if (fnName === 'query_agenda_and_projects') {
+          toolResult = await executeQueryAgendaAndProjects(fnArgs);
+        } else if (fnName === 'prepare_agenda_or_project_draft') {
+          toolResult = await executePrepareAgendaOrProjectDraft(fnArgs);
         } else if (fnName === 'generate_exportable_report') {
           const rawHeaders = Array.isArray(fnArgs.headers) ? fnArgs.headers.map((h: any) => String(h ?? '')) : [];
           const rawRows = Array.isArray(fnArgs.rows)
@@ -2498,28 +3823,24 @@ export async function sendChatMessageToGemini(
       });
     }
 
-    // Sisipkan modelContent lengkap (termasuk thoughtSignature) ke riwayat
     contents.push(modelContent);
-
-    // Sisipkan SEMUA functionResponse dari user
-    contents.push({
-      role: 'user',
-      parts: functionResponseParts
-    });
+    contents.push({ role: 'user', parts: functionResponseParts });
   }
 
-  // Jika mencapai batas maksimal loop, minta model memberikan kesimpulan teks akhir (tanpa tool)
   const finalCandidates = Array.from(collectedCandidatesMap.values());
   try {
-    const finalModel = modelsToTry[currentModelIndex] || 'gemini-3.5-flash';
     contents.push({
       role: 'user',
-      parts: [{ text: 'Berdasarkan data database yang sudah diperiksa di atas, tolong langsung tuliskan jawaban akhir dan tabel rincian lengkapnya sekarang tanpa memanggil tool lagi.' }]
+      parts: [
+        {
+          text: 'Berdasarkan data database yang sudah diperiksa di atas, tolong langsung tuliskan jawaban akhir dan tabel rincian lengkapnya sekarang tanpa memanggil tool lagi.'
+        }
+      ]
     });
-    // Kuncinya: TIDAK mengirimkan `tools` di turn ini agar Gemini dipaksa menghasilkan jawaban teks akhir
-    const finalRes = await postToGemini(finalModel, {
+    const finalRes = await postToServerAi({
       contents,
-      systemInstruction: { parts: [{ text: activeSystemInstruction }] }
+      systemInstruction: activeSystemInstruction,
+      requestedModel: 'gemini-4-hydrogen'
     });
     const candidate = finalRes.candidates?.[0];
     const textParts = candidate?.content?.parts?.filter((p: any) => p.text).map((p: any) => p.text).join('\n');
@@ -2528,7 +3849,8 @@ export async function sendChatMessageToGemini(
         text: textParts.trim(),
         executedTools,
         trelloCandidates: finalCandidates.length > 0 ? finalCandidates : undefined,
-        reportTable: generatedReportTable
+        reportTable: generatedReportTable,
+        modelUsed
       };
     }
   } catch (err) {
@@ -2536,11 +3858,13 @@ export async function sendChatMessageToGemini(
   }
 
   return {
-    text: executedTools.length > 0
-      ? `Pemeriksaan database selesai untuk ${executedTools.length} langkah data. Seluruh hasil pencarian telah dicocokkan dengan data fisik live rak gudang.`
-      : 'Selesai memproses.',
+    text:
+      executedTools.length > 0
+        ? `Pemeriksaan database selesai untuk ${executedTools.length} langkah data. Seluruh hasil pencarian telah dicocokkan dengan data live WMS.`
+        : 'Selesai memproses.',
     executedTools,
     trelloCandidates: finalCandidates.length > 0 ? finalCandidates : undefined,
-    reportTable: generatedReportTable
+    reportTable: generatedReportTable,
+    modelUsed
   };
 }

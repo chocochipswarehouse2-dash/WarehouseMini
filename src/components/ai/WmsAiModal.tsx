@@ -31,10 +31,18 @@ import {
   Camera,
   Image as ImageIcon,
   Loader2,
-  Download
+  Download,
+  Mic,
+  MicOff,
+  Calendar,
+  Cloud,
+  CloudOff,
+  RefreshCw,
+  Truck,
+  RotateCcw as ReturIcon
 } from 'lucide-react';
 import { UserSession } from '../../types';
-import { isSuperadmin, isWarehouseAccountOnly } from '../../services/permissions';
+import { isWarehouseAccountOnly } from '../../services/permissions';
 import { parseAiAttachmentFile, AiAttachment } from '../../utils/aiAttachmentParser';
 import {
   exportAiTableToExcel,
@@ -44,22 +52,20 @@ import {
 import { TrelloImage } from '../Trello/TrelloImage';
 import {
   AiChatMessage,
+  AiChatSession,
+  AiUserRole,
   TrelloCandidatePreview,
   sendChatMessageToGemini,
   fetchAiConfig,
   saveAiConfig,
   WmsAiConfig,
-  getActiveGeminiApiKey,
-  setActiveGeminiApiKey
+  resolveAiUserRole,
+  checkServerAiHealth,
+  fetchAiChatSessionsFromCloud,
+  saveAiChatSessionsToCloud
 } from '../../services/wmsAiService';
 
-export interface AiChatSession {
-  id: string;
-  title: string;
-  createdAt: number;
-  updatedAt: number;
-  messages: AiChatMessage[];
-}
+export type { AiChatSession };
 
 interface WmsAiModalProps {
   isOpen: boolean;
@@ -68,34 +74,126 @@ interface WmsAiModalProps {
   onNotify?: (message: string, type: 'success' | 'error' | 'info') => void;
   onNavigateToInventoryCart?: () => void;
   onNavigateToProduksiInput?: () => void;
+  onNavigateToManualShipmentForm?: () => void;
+  onNavigateToReturForm?: () => void;
+  onNavigateToAgendaDraft?: () => void;
 }
 
-const SUGGESTED_PROMPTS = [
-  {
-    icon: FileSpreadsheet,
-    label: 'Cek Kedatangan Kargo / CMT',
-    prompt: 'Kemarin ada masuk kargo apa aja dan berapa aja?',
-    desc: 'Baca rincian penerimaan barang CMT & Kargo per tanggal'
-  },
-  {
-    icon: FileText,
-    label: 'Bantu Input Form Produksi',
-    prompt: 'Tolong bantu input penerimaan kargo hari ini ke form input',
-    desc: 'AI tanya jawab & isikan ke draft form, Anda tinggal cek & submit'
-  },
-  {
-    icon: ShoppingCart,
-    label: 'Order ke Keranjang',
-    prompt: 'Tolong masukkan ke keranjang order: Sailor Top Blue S 2 pcs dan Taylor Pants M 1 pcs',
-    desc: 'AI cek stok & masukkan otomatis ke keranjang order'
-  },
-  {
-    icon: Boxes,
-    label: 'Cek Stok Produk',
-    prompt: 'Stok sailor top sekarang berapa ya?',
-    desc: 'Cek total fisik, DealPOS, dan posisi rak'
+function getSuggestedPrompts(role: AiUserRole) {
+  if (role === 'hr') {
+    return [
+      {
+        icon: FileSpreadsheet,
+        label: 'Cek Pengajuan & Presensi HR',
+        prompt: 'Cek pengajuan cuti, lembur, dan izin pulang awal yang masih pending hari ini',
+        desc: 'Pantau roster shift, presensi, dan approval HR'
+      },
+      {
+        icon: Calendar,
+        label: 'Cek Agenda & Project HR',
+        prompt: 'Tampilkan agenda minggu ini dan project yang deadline-nya dekat atau overdue',
+        desc: 'Sinkron langsung dengan Kalender Agenda & Project'
+      },
+      {
+        icon: FileText,
+        label: 'Draft Agenda / Catatan Tim',
+        prompt: 'Buatkan draft agenda review tim dan catatan checklist tugas untuk besok jam 10:00',
+        desc: 'AI siapkan draft ke modul Agenda & Project untuk Anda review'
+      },
+      {
+        icon: Boxes,
+        label: 'Cek Stok Produk',
+        prompt: 'Stok sailor top sekarang berapa ya?',
+        desc: 'Cek total fisik, DealPOS, dan posisi rak'
+      }
+    ];
   }
-];
+
+  if (role === 'store') {
+    return [
+      {
+        icon: ShoppingCart,
+        label: 'Order ke Keranjang',
+        prompt: 'Tolong masukkan ke keranjang order: Sailor Top Blue S 2 pcs dan Taylor Pants M 1 pcs',
+        desc: 'AI cek stok & masukkan otomatis ke keranjang order'
+      },
+      {
+        icon: Truck,
+        label: 'Siapkan Draft Manual Shipment',
+        prompt: 'Bantu siapkan draft Manual Shipment untuk customer dengan produk Sailor Top Blue S 1 pcs',
+        desc: 'Validasi SKU master & siapkan draft di Form Manual Shipment'
+      },
+      {
+        icon: ReturIcon,
+        label: 'Siapkan Draft Retur Barang',
+        prompt: 'Tolong bantu siapkan draft tiket Retur Barang di Pusat Resolusi',
+        desc: 'Prefill produk asal & pengganti sesuai Master Produk'
+      },
+      {
+        icon: Calendar,
+        label: 'Cek Agenda & Project',
+        prompt: 'Tampilkan agenda minggu ini dan checklist catatan penting yang masih aktif',
+        desc: 'Lihat jadwal agenda, deadline project, dan catatan kerja'
+      }
+    ];
+  }
+
+  if (role === 'superadmin') {
+    return [
+      {
+        icon: Database,
+        label: 'Audit Stok, Selisih & Rak',
+        prompt: 'Lakukan audit stok minus, selisih stok fisik vs DealPOS, dan rak yang overload hari ini',
+        desc: 'Audit log mutasi, selisih sistem, dan kapasitas rak gudang'
+      },
+      {
+        icon: Calendar,
+        label: 'Cek Agenda & Project Aktif',
+        prompt: 'Tampilkan agenda minggu ini, deadline project terdekat, dan project yang overdue',
+        desc: 'Pantau jadwal operasional, progres task, dan catatan tim'
+      },
+      {
+        icon: FileText,
+        label: 'Buat Draft Agenda / Project',
+        prompt: 'Buatkan draft agenda Stock Opname gudang besok jam 09:00 beserta checklist persiapannya',
+        desc: 'Prefill draft ke modul Agenda & Project untuk Anda konfirmasi'
+      },
+      {
+        icon: FileSpreadsheet,
+        label: 'Cek Kedatangan Kargo / CMT',
+        prompt: 'Kemarin ada masuk kargo apa aja dan berapa aja?',
+        desc: 'Baca rincian penerimaan barang CMT & Kargo per tanggal'
+      }
+    ];
+  }
+
+  return [
+    {
+      icon: FileSpreadsheet,
+      label: 'Cek Kedatangan Kargo / CMT',
+      prompt: 'Kemarin ada masuk kargo apa aja dan berapa aja?',
+      desc: 'Baca rincian penerimaan barang CMT & Kargo per tanggal'
+    },
+    {
+      icon: FileText,
+      label: 'Bantu Input Form Produksi',
+      prompt: 'Tolong bantu input penerimaan kargo hari ini ke form input',
+      desc: 'AI tanya jawab & isikan ke draft form, Anda tinggal cek & submit'
+    },
+    {
+      icon: Boxes,
+      label: 'Cek Picking, QC & Stok',
+      prompt: 'Cek tugas picking yang masih kurang, tiket perbaikan aktif, dan stok sailor top',
+      desc: 'Pantau picking queue, perbaikan, pinjaman, dan rak gudang'
+    },
+    {
+      icon: Calendar,
+      label: 'Agenda & Project Gudang',
+      prompt: 'Tampilkan agenda gudang minggu ini dan project yang deadline-nya paling dekat',
+      desc: 'Cek jadwal operasional, deadline project, & catatan tim'
+    }
+  ];
+}
 
 export const WmsAiModal: React.FC<WmsAiModalProps> = ({
   isOpen,
@@ -103,7 +201,10 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
   session,
   onNotify,
   onNavigateToInventoryCart,
-  onNavigateToProduksiInput
+  onNavigateToProduksiInput,
+  onNavigateToManualShipmentForm,
+  onNavigateToReturForm,
+  onNavigateToAgendaDraft
 }) => {
   const sessionUser = session?.username || 'default_user';
   const sessionsStorageKey = `wms_ai_sessions_${sessionUser}`;
@@ -284,16 +385,161 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
     }
   };
 
-  // Superadmin Access & Settings Popover
+  const handleOpenManualShipmentForm = (minimizeInsteadOfClose = true) => {
+    if (typeof window !== 'undefined') {
+      let draft: any = null;
+      try {
+        const raw = localStorage.getItem('wms_manual_shipment_ai_draft');
+        if (raw) draft = JSON.parse(raw);
+      } catch {}
+      (window as any).__wms_pending_pesanan_target = {
+        tab: 'manual',
+        manualSubTab: 'form',
+        draft
+      };
+      window.dispatchEvent(
+        new CustomEvent('wms_open_pesanan_tab', {
+          detail: { tab: 'manual', manualSubTab: 'form' }
+        })
+      );
+      if (draft) {
+        window.dispatchEvent(new CustomEvent('wms_prefill_manual_shipment_form', { detail: draft }));
+      }
+    }
+    onNavigateToManualShipmentForm?.();
+    if (minimizeInsteadOfClose) {
+      setIsMinimized(true);
+    } else {
+      onClose();
+    }
+  };
+
+  const handleOpenReturForm = (minimizeInsteadOfClose = true) => {
+    if (typeof window !== 'undefined') {
+      let draft: any = null;
+      try {
+        const raw = localStorage.getItem('wms_retur_barang_ai_draft');
+        if (raw) draft = JSON.parse(raw);
+      } catch {}
+      (window as any).__wms_pending_retur_target = {
+        tab: 'retur',
+        subTab: 'form',
+        draft
+      };
+      window.dispatchEvent(
+        new CustomEvent('wms_open_resolusi_tab', {
+          detail: { tab: 'retur' }
+        })
+      );
+      if (draft) {
+        window.dispatchEvent(new CustomEvent('wms_prefill_retur_barang_form', { detail: draft }));
+      }
+    }
+    onNavigateToReturForm?.();
+    if (minimizeInsteadOfClose) {
+      setIsMinimized(true);
+    } else {
+      onClose();
+    }
+  };
+
+  const handleOpenAgendaDraft = (minimizeInsteadOfClose = true) => {
+    if (typeof window !== 'undefined') {
+      let draft: any = null;
+      try {
+        const raw = localStorage.getItem('wms_agenda_ai_draft');
+        if (raw) draft = JSON.parse(raw);
+      } catch {}
+      if (draft) {
+        (window as any).__wms_pending_agenda_target = draft;
+        window.dispatchEvent(new CustomEvent('wms_open_agenda_draft', { detail: draft }));
+      }
+    }
+    onNavigateToAgendaDraft?.();
+    if (minimizeInsteadOfClose) {
+      setIsMinimized(true);
+    } else {
+      onClose();
+    }
+  };
+
+  // Role, Model Status, Cloud Sync, Voice-to-Text & Superadmin Access Settings
+  const aiUserRole = useMemo(() => resolveAiUserRole(session), [session]);
+  const suggestedPrompts = useMemo(() => getSuggestedPrompts(aiUserRole), [aiUserRole]);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [aiConfig, setAiConfig] = useState<WmsAiConfig>({
     allowedUsers: ['admin', 'warehouse', 'chocoadm'],
     enabled: true,
-    model: 'gemini-3.5-flash'
+    model: 'gemini-4-hydrogen'
   });
   const [newUserWhitelisted, setNewUserWhitelisted] = useState<string>('');
-  const [customKeyInput, setCustomKeyInput] = useState<string>('');
   const [isSavingConfig, setIsSavingConfig] = useState<boolean>(false);
+  const [lastModelUsed, setLastModelUsed] = useState<string>('Gemini 4 Hydrogen');
+  const [serverAiHealth, setServerAiHealth] = useState<{
+    checked: boolean;
+    ok: boolean;
+    configured: boolean;
+    models: string[];
+  }>({
+    checked: false,
+    ok: true,
+    configured: true,
+    models: ['gemini-4-hydrogen', 'gemini-3.1-flash-lite']
+  });
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
+  const cloudHydratedUserRef = useRef<string | null>(null);
+  const cloudSaveTimerRef = useRef<number | null>(null);
+
+  // Voice-to-Text (Web Speech API, Bahasa Indonesia)
+  const speechSupported = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    return Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+  }, []);
+  const [isListening, setIsListening] = useState<boolean>(false);
+  const recognitionRef = useRef<any>(null);
+
+  const toggleVoiceInput = () => {
+    if (!speechSupported || typeof window === 'undefined') return;
+    if (isListening) {
+      try {
+        recognitionRef.current?.stop();
+      } catch {}
+      setIsListening(false);
+      return;
+    }
+
+    const SpeechRecognitionCtor =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) return;
+
+    try {
+      const recognition = new SpeechRecognitionCtor();
+      recognition.lang = 'id-ID';
+      recognition.interimResults = false;
+      recognition.continuous = false;
+      recognition.onresult = (event: any) => {
+        const transcript = Array.from(event.results || [])
+          .map((res: any) => res?.[0]?.transcript || '')
+          .join(' ')
+          .trim();
+        if (transcript) {
+          setInputPrompt((prev) => (prev.trim() ? `${prev.trim()} ${transcript}` : transcript));
+        }
+      };
+      recognition.onerror = () => {
+        setIsListening(false);
+      };
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+      recognitionRef.current = recognition;
+      setIsListening(true);
+      recognition.start();
+    } catch {
+      setIsListening(false);
+      onNotify?.('Mikrofon tidak dapat diaktifkan di browser ini', 'error');
+    }
+  };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -351,12 +597,18 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
     }
   }, [messages, currentSessionId, sessionsStorageKey, activeSessionStorageKey]);
 
-  // Reset minimize state saat modal ditutup total
+  // Reset minimize & voice state saat modal ditutup total
   useEffect(() => {
     if (!isOpen) {
       setIsMinimized(false);
       setIsHistoryOpen(false);
       setIsSettingsOpen(false);
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {}
+      }
+      setIsListening(false);
     }
   }, [isOpen]);
 
@@ -367,15 +619,76 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
     }
   }, [messages, isOpen, isMinimized, isLoading]);
 
-  // Muat konfigurasi AI saat modal atau settings dibuka
+  // Muat konfigurasi AI, status server /api/ai, dan sinkronisasi sesi cloud Supabase
   useEffect(() => {
-    if (isOpen) {
-      fetchAiConfig().then((cfg) => {
-        setAiConfig(cfg);
-        setCustomKeyInput(cfg.apiKey || getActiveGeminiApiKey() || '');
-      });
+    if (!isOpen) return;
+    fetchAiConfig().then((cfg) => {
+      setAiConfig(cfg);
+    });
+    checkServerAiHealth().then((health) => {
+      setServerAiHealth({ checked: true, ...health });
+    });
+
+    const uname = session?.username;
+    if (uname && cloudHydratedUserRef.current !== uname) {
+      setCloudSyncStatus('syncing');
+      fetchAiChatSessionsFromCloud(uname)
+        .then((cloudSessions) => {
+          cloudHydratedUserRef.current = uname;
+          if (cloudSessions.length > 0) {
+            setSessions((prevLocal) => {
+              const mergedMap = new Map<string, AiChatSession>();
+              prevLocal.forEach((s) => mergedMap.set(s.id, s));
+              cloudSessions.forEach((cs) => {
+                const existing = mergedMap.get(cs.id);
+                if (!existing || (cs.updatedAt || 0) > (existing.updatedAt || 0)) {
+                  mergedMap.set(cs.id, cs);
+                }
+              });
+              const merged = Array.from(mergedMap.values())
+                .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+                .slice(0, 40);
+              try {
+                localStorage.setItem(sessionsStorageKey, JSON.stringify(merged));
+              } catch {}
+              const curMerged = merged.find((m) => m.id === currentSessionId);
+              if (curMerged && curMerged.messages && curMerged.messages.length > messages.length) {
+                setMessages(curMerged.messages);
+              }
+              return merged;
+            });
+          }
+          setCloudSyncStatus('synced');
+        })
+        .catch(() => {
+          cloudHydratedUserRef.current = uname;
+          setCloudSyncStatus('error');
+        });
     }
-  }, [isOpen]);
+  }, [isOpen, session?.username, sessionsStorageKey, currentSessionId, messages.length]);
+
+  // Debounce push riwayat sesi ke cloud Supabase saat ada perubahan
+  useEffect(() => {
+    const uname = session?.username;
+    if (!isOpen || !uname || cloudHydratedUserRef.current !== uname) return;
+    if (sessions.length === 0) return;
+
+    if (cloudSaveTimerRef.current) {
+      window.clearTimeout(cloudSaveTimerRef.current);
+    }
+    cloudSaveTimerRef.current = window.setTimeout(() => {
+      setCloudSyncStatus('syncing');
+      saveAiChatSessionsToCloud(uname, sessions)
+        .then((ok) => setCloudSyncStatus(ok ? 'synced' : 'error'))
+        .catch(() => setCloudSyncStatus('error'));
+    }, 1500);
+
+    return () => {
+      if (cloudSaveTimerRef.current) {
+        window.clearTimeout(cloudSaveTimerRef.current);
+      }
+    };
+  }, [sessions, session?.username, isOpen]);
 
   // Handler: Mulai Percakapan Baru (+ New Chat)
   const handleNewChat = () => {
@@ -475,11 +788,31 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
           else if (toolName === 'search_manual_shipment') toolLabel = 'Mencari data resi pengiriman...';
           else if (toolName === 'add_to_inventory_cart') toolLabel = 'Memasukkan barang ke Keranjang Order...';
           else if (toolName === 'view_inventory_cart') toolLabel = 'Melihat isi Keranjang Order...';
+          else if (toolName === 'audit_stock_and_mutations') toolLabel = 'Mengaudit mutasi stok, selisih DealPOS & kapasitas rak...';
+          else if (toolName === 'check_picking_and_channel_orders') toolLabel = 'Mengecek antrean picking & pesanan IG Live...';
+          else if (toolName === 'check_qc_repair_and_loans') toolLabel = 'Mengecek laporan QC, perbaikan & peminjaman...';
+          else if (toolName === 'check_retur_and_jne_rekap') toolLabel = 'Mengecek tiket Retur Barang & rekap tagihan JNE...';
+          else if (toolName === 'query_hr_operations') toolLabel = 'Mengambil data Roster, Presensi & Approval HR...';
+          else if (toolName === 'prepare_manual_shipment_draft') toolLabel = 'Menyiapkan Draft Form Manual Shipment...';
+          else if (toolName === 'prepare_retur_barang_draft') toolLabel = 'Menyiapkan Draft Tiket Retur Barang...';
+          else if (toolName === 'query_agenda_and_projects') toolLabel = 'Membaca jadwal Agenda, Project & Catatan...';
+          else if (toolName === 'prepare_agenda_or_project_draft') toolLabel = 'Menyiapkan Draft Agenda / Project / Catatan...';
           else if (toolName === 'generate_exportable_report') toolLabel = 'Menyusun dokumen laporan PDF & Excel...';
           setActiveToolName(toolLabel);
         },
-        currentAtts
+        currentAtts,
+        session
       );
+
+      if (result.modelUsed) {
+        const prettyModel =
+          result.modelUsed === 'gemini-3.1-flash-lite'
+            ? 'Gemini 3.1 Flash Lite'
+            : result.modelUsed === 'gemini-4-hydrogen'
+            ? 'Gemini 4 Hydrogen'
+            : result.modelUsed;
+        setLastModelUsed(prettyModel);
+      }
 
       const botMsg: AiChatMessage = {
         id: `model_${Date.now()}`,
@@ -497,7 +830,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
       const errorMsg: AiChatMessage = {
         id: `err_${Date.now()}`,
         role: 'model',
-        text: `⚠️ **Terjadi kendala saat memproses permintaan:**\n${err?.message || 'Gagal menghubungi server Gemini.'}\n\nSilakan coba lagi atau cek konfigurasi API Key.`,
+        text: `⚠️ **Terjadi kendala saat memproses permintaan:**\n${err?.message || 'Gagal menghubungi server AI.'}\n\nSilakan coba lagi atau periksa koneksi & status layanan AI server.`,
         timestamp: Date.now()
       };
       setMessages((prev) => [...prev, errorMsg]);
@@ -558,17 +891,15 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
     onNotify?.(`Akses AI untuk "${u}" telah dicabut`, 'info');
   };
 
-  const handleSaveApiKey = async () => {
-    if (!isOwnerWarehouse) {
-      onNotify?.('Akses ditolak: Hanya akun @warehouse yang dapat mengelola token API Key', 'error');
-      return;
-    }
-    setIsSavingConfig(true);
-    const key = customKeyInput.trim();
-    setActiveGeminiApiKey(key);
-    await saveAiConfig({ apiKey: key });
-    setIsSavingConfig(false);
-    onNotify?.('API Key Gemini berhasil diperbarui', 'success');
+  const handleRefreshServerHealth = async () => {
+    const health = await checkServerAiHealth();
+    setServerAiHealth({ checked: true, ...health });
+    onNotify?.(
+      health.configured
+        ? 'Layanan server AI terhubung dan siap digunakan'
+        : 'Server aktif, menunggu konfigurasi GEMINI_API_KEY di environment server',
+      health.configured ? 'success' : 'info'
+    );
   };
 
   // Render teks markdown sederhana (bold, list, code, headings, table)
@@ -811,11 +1142,36 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                   Asisten AI Pintar WMS
                 </h3>
                 <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-gradient-to-r from-primary-500/15 to-purple-500/15 text-primary-600 dark:text-primary-400 border border-primary-500/20">
-                  Gemini 3.5 Flash
+                  {lastModelUsed || 'Gemini 4 Hydrogen'}
                 </span>
+                {session?.username && (
+                  <span
+                    title={
+                      cloudSyncStatus === 'synced'
+                        ? 'Riwayat chat tersinkron ke cloud'
+                        : cloudSyncStatus === 'syncing'
+                        ? 'Menyinkronkan riwayat chat...'
+                        : cloudSyncStatus === 'error'
+                        ? 'Sinkronisasi cloud tertunda (tersimpan lokal)'
+                        : 'Siap sinkronisasi cloud'
+                    }
+                    className={`hidden md:inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-bold ${
+                      cloudSyncStatus === 'error'
+                        ? 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40'
+                        : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40'
+                    }`}
+                  >
+                    {cloudSyncStatus === 'error' ? (
+                      <CloudOff className="w-3 h-3" />
+                    ) : (
+                      <Cloud className="w-3 h-3" />
+                    )}
+                    <span>{cloudSyncStatus === 'syncing' ? 'Sync...' : 'Cloud'}</span>
+                  </span>
+                )}
               </div>
               <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate hidden xs:block">
-                Tanya stok real, posisi rak, lookup kode produksi, dan laporan rekapitulasi otomatis
+                Stok, picking, produksi, agenda & project, retur, HR, dan laporan otomatis
               </p>
             </div>
           </div>
@@ -881,7 +1237,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
               )}
             </button>
 
-            {/* Owner Settings & Token Button (Khusus Akun @warehouse / Pemilik Sistem) */}
+            {/* Owner Settings & Whitelist Button (Khusus Akun @warehouse / Pemilik Sistem) */}
             {isOwnerWarehouse && (
               <button
                 type="button"
@@ -889,7 +1245,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                   setIsSettingsOpen(!isSettingsOpen);
                   setIsHistoryOpen(false);
                 }}
-                title="Kelola Whitelist User & API Key Token (Khusus Akun @warehouse / Owner)"
+                title="Kelola Whitelist User & Status Layanan Server AI (Khusus Akun @warehouse)"
                 className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   isSettingsOpen
                     ? 'bg-primary-600 text-white shadow-xs'
@@ -897,7 +1253,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                 }`}
               >
                 <Settings2 className="w-4 h-4" />
-                <span className="hidden lg:inline text-[11px]">Token & Akses</span>
+                <span className="hidden lg:inline text-[11px]">Akses & Server</span>
               </button>
             )}
 
@@ -932,7 +1288,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 <h4 className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">
-                  Pengaturan Akses AI & API Key Token (Khusus Akun @warehouse)
+                  Pengaturan Akses AI & Status Layanan Server (Khusus Akun @warehouse)
                 </h4>
               </div>
               <button
@@ -992,37 +1348,45 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                 </div>
               </div>
 
-              {/* Gemini API Key */}
+              {/* Status Layanan Server AI (/api/ai) */}
               <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700/80 flex flex-col justify-between">
                 <div>
-                  <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center justify-between mb-1.5">
                     <label className="block text-[11px] font-extrabold text-slate-700 dark:text-slate-300 uppercase">
-                      Google Gemini API Key
+                      Status Server AI (/api/ai)
                     </label>
-                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
-                      ☁️ Sinkron Semua Perangkat
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                        serverAiHealth.ok && serverAiHealth.configured
+                          ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800'
+                          : 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800'
+                      }`}
+                    >
+                      {serverAiHealth.ok && serverAiHealth.configured
+                        ? 'Aktif & Sinkron Semua Perangkat'
+                        : 'Cek GEMINI_API_KEY di Server'}
                     </span>
                   </div>
-                  <p className="text-[10px] text-slate-400 mb-2 leading-relaxed">
-                    Cukup disimpan <strong>1 kali oleh Superadmin</strong>. API Key tersimpan aman di database cloud Supabase dan otomatis aktif di semua perangkat (HP, Laptop, PC) untuk seluruh user yang diizinkan tanpa perlu input berulang.
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    Seluruh permintaan Gemini diproses terpusat lewat endpoint server <span className="font-mono font-bold text-slate-700 dark:text-slate-200">/api/ai</span> menggunakan kunci environment <span className="font-mono font-bold text-slate-700 dark:text-slate-200">GEMINI_API_KEY</span> (konfigurasi melalui <span className="font-bold">Settings &gt; Secrets</span> atau environment Vercel/server).
                   </p>
-                  <input
-                    type="password"
-                    value={customKeyInput}
-                    onChange={(e) => setCustomKeyInput(e.target.value)}
-                    placeholder="Masukkan Gemini API Key..."
-                    className="w-full px-3 py-1.5 text-xs font-mono bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
-                  />
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <span className="px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 font-mono text-[10px] font-bold">
+                      Primary: gemini-4-hydrogen
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-mono text-[10px] font-bold">
+                      Fallback: gemini-3.1-flash-lite
+                    </span>
+                  </div>
                 </div>
                 <div className="mt-3 flex justify-end">
                   <button
                     type="button"
-                    onClick={handleSaveApiKey}
-                    disabled={isSavingConfig}
-                    className="px-3 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
+                    onClick={handleRefreshServerHealth}
+                    className="px-3 py-1.5 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
                   >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    Simpan Terpusat
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Cek Status Server
                   </button>
                 </div>
               </div>
@@ -1155,7 +1519,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
 
               {/* Suggestions Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full text-left">
-                {SUGGESTED_PROMPTS.map((item, idx) => {
+                {suggestedPrompts.map((item, idx) => {
                   const Icon = item.icon;
                   return (
                     <button
@@ -1237,6 +1601,14 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                                 alt={att.name}
                                 className="w-16 h-16 object-cover rounded-md border border-white/30"
                               />
+                            ) : att.type === 'pdf' ? (
+                              <div className="flex items-center gap-1.5 px-1 font-bold">
+                                <FileText className="w-4 h-4 text-rose-200 shrink-0" />
+                                <span className="truncate max-w-[140px]">{att.name}</span>
+                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/20 font-mono">
+                                  PDF
+                                </span>
+                              </div>
                             ) : (
                               <div className="flex items-center gap-1.5 px-1 font-bold">
                                 <FileSpreadsheet className="w-4 h-4 text-emerald-300 shrink-0" />
@@ -1408,6 +1780,66 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                         </div>
                       )}
 
+                    {/* Direct CTA: Buka Form Manual Shipment */}
+                    {!isUser &&
+                      msg.toolCallsExecuted?.includes('prepare_manual_shipment_draft') &&
+                      onNavigateToManualShipmentForm && (
+                        <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 bg-sky-50/70 dark:bg-sky-950/30 p-2.5 rounded-xl border border-sky-200/80 dark:border-sky-800/80">
+                          <div className="flex items-center gap-1.5 text-[11px] font-bold text-sky-700 dark:text-sky-300">
+                            <Truck className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
+                            <span>Draft Form Manual Shipment siap dicek & dikirim (Anda tetap mengontrol submit)</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenManualShipmentForm(true)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-black bg-sky-600 hover:bg-sky-700 text-white flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer shrink-0"
+                          >
+                            <span>Buka Form Manual Shipment</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+
+                    {/* Direct CTA: Buka Form Retur Barang */}
+                    {!isUser &&
+                      msg.toolCallsExecuted?.includes('prepare_retur_barang_draft') &&
+                      onNavigateToReturForm && (
+                        <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 bg-rose-50/70 dark:bg-rose-950/30 p-2.5 rounded-xl border border-rose-200/80 dark:border-rose-800/80">
+                          <div className="flex items-center gap-1.5 text-[11px] font-bold text-rose-700 dark:text-rose-300">
+                            <ReturIcon className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                            <span>Draft Tiket Retur Barang siap direview di Pusat Resolusi</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenReturForm(true)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-black bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer shrink-0"
+                          >
+                            <span>Buka Form Retur Barang</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+
+                    {/* Direct CTA: Buka Draft di Agenda & Project */}
+                    {!isUser &&
+                      msg.toolCallsExecuted?.includes('prepare_agenda_or_project_draft') &&
+                      onNavigateToAgendaDraft && (
+                        <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 bg-violet-50/70 dark:bg-violet-950/30 p-2.5 rounded-xl border border-violet-200/80 dark:border-violet-800/80">
+                          <div className="flex items-center gap-1.5 text-[11px] font-bold text-violet-700 dark:text-violet-300">
+                            <Calendar className="w-4 h-4 text-violet-600 dark:text-violet-400 shrink-0" />
+                            <span>Draft Agenda / Project / Catatan siap Anda review & simpan</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenAgendaDraft(true)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-black bg-violet-600 hover:bg-violet-700 text-white flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer shrink-0"
+                          >
+                            <span>Buka Draft di Agenda & Project</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+
                     {/* Kartu Laporan Siap Unduh (PDF & Excel) jika tool generate_exportable_report dieksekusi */}
                     {!isUser && msg.reportTable && msg.reportTable.rows && msg.reportTable.rows.length > 0 && (
                       <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/70 p-3 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2.5">
@@ -1520,6 +1952,10 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                       alt={att.name}
                       className="w-10 h-10 object-cover rounded-md border border-slate-200 dark:border-slate-700 shrink-0"
                     />
+                  ) : att.type === 'pdf' ? (
+                    <div className="p-1 rounded bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 shrink-0">
+                      <FileText className="w-4 h-4" />
+                    </div>
                   ) : (
                     <div className="p-1 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 shrink-0">
                       <FileSpreadsheet className="w-4 h-4" />
@@ -1528,7 +1964,11 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                   <div className="min-w-0 max-w-[160px]">
                     <p className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate">{att.name}</p>
                     <p className="text-[9px] text-slate-400">
-                      {att.type === 'image' ? 'Foto Dokumen (Vision)' : `${att.rowCount || 0} baris data`}
+                      {att.type === 'image'
+                        ? 'Foto Dokumen (Vision)'
+                        : att.type === 'pdf'
+                        ? 'Dokumen PDF'
+                        : `${att.rowCount || 0} baris data`}
                     </p>
                   </div>
                   <button
@@ -1561,7 +2001,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
             <input
               type="file"
               ref={fileInputRef}
-              accept=".xlsx,.xls,.csv,image/jpeg,image/png,image/webp"
+              accept=".xlsx,.xls,.csv,.pdf,application/pdf,image/jpeg,image/png,image/webp"
               multiple
               onChange={handleFileSelect}
               className="hidden"
@@ -1575,13 +2015,13 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
               className="hidden"
             />
 
-            {/* Action Buttons: Paperclip & Camera */}
+            {/* Action Buttons: Paperclip, Camera & Voice */}
             <div className="flex items-center gap-1 shrink-0 pb-0.5">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isLoading || isParsingAttachment}
-                title="Lampirkan File Excel (.xlsx, .xls), CSV (.csv), atau Foto Dokumen"
+                title="Lampirkan File Excel (.xlsx, .xls), CSV (.csv), PDF (.pdf), atau Foto Dokumen"
                 className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:text-indigo-600 hover:border-indigo-400 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/40 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
               >
                 <Paperclip className="w-4 h-4" />
@@ -1595,6 +2035,21 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
               >
                 <Camera className="w-4 h-4" />
               </button>
+              {speechSupported && (
+                <button
+                  type="button"
+                  onClick={toggleVoiceInput}
+                  disabled={isLoading}
+                  title={isListening ? 'Hentikan rekaman suara' : 'Bicara ke teks (Voice-to-Text Bahasa Indonesia)'}
+                  className={`p-2.5 rounded-xl border transition-all cursor-pointer active:scale-95 disabled:opacity-50 ${
+                    isListening
+                      ? 'border-rose-400 bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 animate-pulse'
+                      : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:text-indigo-600 hover:border-indigo-400 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/40'
+                  }`}
+                >
+                  {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                </button>
+              )}
             </div>
 
             <div className="flex-1 relative">
@@ -1610,9 +2065,11 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                 }}
                 rows={1}
                 placeholder={
-                  pendingAttachments.length > 0
+                  isListening
+                    ? 'Mendengarkan suara Anda (Bahasa Indonesia)...'
+                    : pendingAttachments.length > 0
                     ? 'Ketik instruksi untuk lampiran ini... (atau Enter langsung untuk analisis)'
-                    : 'Tanya stok, minta rekap, atau lampirkan Excel/Foto... (Enter kirim)'
+                    : 'Tanya stok, agenda/project, atau lampirkan Excel/PDF/Foto... (Enter kirim)'
                 }
                 disabled={isLoading}
                 className="w-full px-3.5 py-2.5 text-xs sm:text-sm bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-primary-500 text-slate-900 dark:text-white placeholder-slate-400 resize-none max-h-32 transition-all"

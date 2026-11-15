@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   RefreshCcw,
   Banknote,
@@ -37,6 +37,22 @@ export default function PusatResolusiView({
   onNotify = () => {},
 }: PusatResolusiViewProps) {
   const [activeTab, setActiveTab] = useState(tabs[0].id);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && (window as any).__wms_pending_retur_target) {
+      setActiveTab('retur');
+    }
+    const handleOpenResolusi = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (detail?.tab && tabs.some(t => t.id === detail.tab)) {
+        setActiveTab(detail.tab);
+      } else {
+        setActiveTab('retur');
+      }
+    };
+    window.addEventListener('wms_open_resolusi_tab', handleOpenResolusi);
+    return () => window.removeEventListener('wms_open_resolusi_tab', handleOpenResolusi);
+  }, []);
 
   return (
     <div className="flex flex-col h-full bg-slate-50 dark:bg-[#0b1324] space-y-2 sm:space-y-3 p-2 sm:p-4 print:p-0 print:m-0 print:bg-white print:space-y-0">
