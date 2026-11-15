@@ -62,6 +62,18 @@ import { lookupProductBySku } from '../../utils/productLookup';
 import { isCorruptedColorCodeSize } from '../../utils/sortUtils';
 import { globalRealtimeStore } from '../../services/store';
 import { liveChatManager } from '../../services/liveChatService';
+import {
+  notifyOrderSubmittedToChat,
+  notifyAlterSpkToChat,
+  notifyOrderResiUpdatedToChat,
+  notifyBulkResiUpdatedToChat,
+  notifyOrderCancelledToChat,
+  notifySjMarketplaceUpdatedToChat,
+  notifyWarehouseReceivedStoreItemToChat,
+  notifyOrderSoldOutToChat,
+  notifySoldItemRestoredToChat,
+  notifyStoreScheduleToChat,
+} from '../../services/orderChatNotificationService';
 
 interface ManualShipmentViewProps {
   session: UserSession | null;
@@ -562,7 +574,7 @@ _WMS Warehouse & Tailor Management System_`;
   };
 
   /**
-   * Action Handler: Kirim notifikasi WA Alterasi via Fonnte langsung
+   * Action Handler: Kirim SPK Alterasi ke Grup Live Chat WMS Store
    */
   const handleSendAlterWaFonnte = async (order: ManualShipmentOrder) => {
     const alterItems = (order.items || []).filter(isRealAlterItem);
@@ -571,46 +583,17 @@ _WMS Warehouse & Tailor Management System_`;
       return;
     }
 
-    const cfg = getFonnteConfig();
-    if (!cfg.token) {
-      onShowToast('Token Fonnte belum diatur. Silakan atur di menu Pengaturan > WhatsApp.', 'error');
-      return;
-    }
-
-    const msg = formatAlterationWorkOrderWaMessage(order);
     setIsSendingAlterWa(true);
-
     try {
-      let sentCount = 0;
-      let errors: string[] = [];
-
-      // 1. Kirim ke Store Pengirim
-      if (order.no_telp_store && order.no_telp_store.trim()) {
-        const resStore = await sendFonnteMessage(order.no_telp_store, msg, cfg.token);
-        if (resStore.success) {
-          sentCount++;
-        } else {
-          errors.push(`Store: ${resStore.message}`);
-        }
-      }
-
-      // 2. Kirim ke Group Target Gudang / Penjahit
-      if (cfg.groupTarget && cfg.groupTarget.trim()) {
-        const resGroup = await sendFonnteMessage(cfg.groupTarget, msg, cfg.token);
-        if (resGroup.success) {
-          sentCount++;
-        } else {
-          errors.push(`Grup: ${resGroup.message}`);
-        }
-      }
-
-      if (sentCount > 0) {
-        onShowToast(`✅ SPK Alterasi berhasil dikirim ke ${sentCount} tujuan WhatsApp via Fonnte!`, 'success');
+      const actorName = session?.name || getUserPersonName(session?.username) || session?.username || 'Admin Gudang';
+      const sent = await notifyAlterSpkToChat(order, actorName);
+      if (sent) {
+        onShowToast(`SPK Alterasi berhasil dikirim ke Grup Live Chat WMS (${order.nama_pengirim || 'Store'})!`, 'success');
       } else {
-        onShowToast(`Gagal kirim via Fonnte: ${errors.join(', ') || 'Periksa nomor & kuota'}`, 'error');
+        onShowToast('Gagal mengirim SPK Alterasi ke Grup Live Chat WMS (pastikan nama Store pengirim valid).', 'error');
       }
     } catch (err: any) {
-      onShowToast(`Error kirim Fonnte: ${err?.message || 'Koneksi gagal'}`, 'error');
+      onShowToast(`Error kirim Live Chat: ${err?.message || 'Koneksi gagal'}`, 'error');
     } finally {
       setIsSendingAlterWa(false);
     }
@@ -1483,178 +1466,37 @@ _WMS Warehouse System_`;
         }
       }).catch((err) => console.warn('Email notification error:', err));
 
-      // OTOMATIS FONNTE: Kirim notifikasi WhatsApp ke No. Telp Store (Pengirim) & Group Gudang
-      const fonnteCfg = getFonnteConfig();
-      const alterItems = (orderData.items || []).filter(isRealAlterItem);
-      const isAlterationOrder = alterItems.length > 0 || orderData.order_type === 'alteration_repair';
+      // OTOMATIS LIVE CHAT WMS: Buat / perbarui grup Store Ops (@warehouse + @chocoadm + Store) & kirim update pesanan / inter-store
+      const actorName = session?.name || getUserPersonName(session?.username) || session?.username || 'Tim WMS';
 
-      if (!fonnteCfg.token) {
-        onShowToast('ℹ️ Token Fonnte belum diisi di Pengaturan WhatsApp. Notif WA otomatis dilewati.', 'info');
+      if (editingOrder) {
+        const changes = generateOrderUpdateDiff(editingOrder, orderData);
+        const updateMsg = formatOrderUpdateMessage(editingOrder, orderData, changes, actorName);
+
+        setUpdateSuccessModal({
+          order: orderData,
+          message: updateMsg,
+          changes,
+        });
+
+        void notifyOrderSubmittedToChat(orderData, {
+          isEdit: true,
+          diffChanges: changes,
+          actorName,
+        }).then((ok) => {
+          if (ok) {
+            onShowToast('Pembaruan pesanan dikirim ke Grup Live Chat WMS!', 'info');
+          }
+        });
       } else {
-        // 1. Jika pesanan disertai alterasi, kirim pesan SPK Alterasi khusus ke Store & Group Tim Penjahit
-        if (isAlterationOrder) {
-          const alterSpkMsg = formatAlterationWorkOrderWaMessage(orderData);
-          if (alterSpkMsg) {
-            // Kirim ke Store
-            if (orderData.no_telp_store && orderData.no_telp_store.trim()) {
-              sendFonnteMessage(orderData.no_telp_store, alterSpkMsg, fonnteCfg.token)
-                .then((res) => {
-                  if (res.success) {
-                    onShowToast('✅ Notif SPK Alterasi berhasil dikirim otomatis ke WA Store via Fonnte!', 'success');
-                  } else {
-                    onShowToast(`⚠️ Fonnte ke Store gagal: ${res.message}`, 'warning');
-                  }
-                })
-                .catch((err) => console.warn('Fonnte alter notice error:', err));
-            }
-            // Kirim ke Grup Gudang / Tim Penjahit jika group target diatur
-            if (fonnteCfg.groupTarget && fonnteCfg.groupTarget.trim()) {
-              sendFonnteMessage(fonnteCfg.groupTarget, alterSpkMsg, fonnteCfg.token)
-                .then((res) => {
-                  if (res.success) {
-                    onShowToast('✅ Notif SPK Alterasi berhasil dikirim ke Grup Tim Jahit via Fonnte!', 'success');
-                  }
-                })
-                .catch((err) => console.warn('Fonnte group alter notice error:', err));
-            }
+        void notifyOrderSubmittedToChat(orderData, {
+          isEdit: false,
+          actorName,
+        }).then((ok) => {
+          if (ok) {
+            onShowToast(`Notifikasi pesanan dikirim ke Grup Live Chat WMS (${orderData.nama_pengirim})`, 'info');
           }
-        }
-
-        // 2. Kirim pesan notifikasi pesanan utama ke No. Telp Store
-        if (orderData.no_telp_store && orderData.no_telp_store.trim()) {
-          const totalQty = orderData.items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
-          const dealposStr = Array.isArray(orderData.no_transaksi_pengirim)
-            ? orderData.no_transaksi_pengirim.join(', ')
-            : (orderData.no_transaksi_pengirim || '-');
-
-          if (editingOrder) {
-            const editorName = session?.name || getUserPersonName(session?.username) || 'Admin Gudang';
-            const changes = generateOrderUpdateDiff(editingOrder, orderData);
-            const updateMsg = formatOrderUpdateMessage(editingOrder, orderData, changes, editorName);
-
-            setUpdateSuccessModal({
-              order: orderData,
-              message: updateMsg,
-              changes,
-            });
-
-            sendFonnteMessage(orderData.no_telp_store, updateMsg, fonnteCfg.token)
-              .then((res) => {
-                if (res.success) {
-                  onShowToast('✅ Notif pembaruan pesanan terkirim ke WA Store via Fonnte!', 'success');
-                }
-              })
-              .catch((err) => console.warn('WA update notice error:', err));
-          } else if (!isAlterationOrder) {
-            // Jika bukan alterasi, kirim konfirmasi pesanan standar ke store
-            const itemsListStr = orderData.items
-              .map(
-                (it, idx) =>
-                  `  ${idx + 1}. *${it.sku || '-'}* - ${it.nama_produk} (Qty: ${it.qty} pcs, Fulfillment: ${it.fulfillment || '-'})${
-                    it.needs_alteration
-                      ? `\n     ✂️ *[Alteration: ${it.id_form_alter || 'Auto'}]* ${it.alteration_detail || '-'}`
-                      : ''
-                  }`
-              )
-              .join('\n');
-
-            const submitMsg = `📦 *KONFIRMASI PESANAN MANUAL SHIPMENT BERHASIL*
---------------------------------------------
-Halo Tim *${orderData.nama_pengirim}*, pesanan manual shipment Anda telah berhasil disubmit ke sistem WMS Gudang.
-
-📋 *Rincian Pesanan:*
-• *Order ID / No. Pesanan:* ${orderData.no_pesanan || orderData.no_transaksi_customer}
-• *Store Pengirim:* ${orderData.nama_pengirim}
-• *PIC Store:* ${orderData.pic_store || '-'}
-• *No. DealPOS:* ${dealposStr}
-• *Jasa Kirim:* ${orderData.jasa_kirim || '-'}
-• *Waktu Submit:* ${new Date().toLocaleString('id-ID')}
-
-👤 *Data Penerima (Customer):*
-• *Nama Tujuan:* ${orderData.nama_tujuan}
-• *No. Telp:* ${orderData.no_telp_tujuan || '-'}
-• *Alamat Tujuan:* ${orderData.alamat_tujuan || '-'}
-
-📦 *Daftar Produk (${totalQty} Pcs):*
-${itemsListStr}
-
-📝 *Catatan Paket:* ${orderData.notes_paket || '-'}
-
-Terima kasih!
-_WMS Warehouse System_`;
-
-            sendFonnteMessage(orderData.no_telp_store, submitMsg, fonnteCfg.token)
-              .then((res) => {
-                if (res.success) {
-                  onShowToast('✅ Konfirmasi pesanan berhasil dikirim ke WA Store via Fonnte!', 'success');
-                }
-              })
-              .catch((err) => console.warn('WA submit notice error:', err));
-
-            // Kirim juga ke Grup Gudang / Admin agar Admin menerima notifikasi WA instan meski aplikasi/browser ditutup
-            if (fonnteCfg.groupTarget && fonnteCfg.groupTarget.trim() && fonnteCfg.groupTarget.trim() !== orderData.no_telp_store.trim()) {
-              const adminGroupMsg = `🛍️ *PESANAN MANUAL SHIPMENT BARU MASUK*\n--------------------------------------------\n• *Order ID:* ${orderData.no_pesanan || orderData.no_transaksi_customer}\n• *Store Pengirim:* ${orderData.nama_pengirim} (PIC: ${orderData.pic_store || '-'})\n• *No. DealPOS:* ${dealposStr}\n• *Customer:* ${orderData.nama_tujuan} (${orderData.no_telp_tujuan || '-'})\n• *Jasa Kirim:* ${orderData.jasa_kirim || '-'}\n\n📦 *Daftar Produk (${totalQty} Pcs):*\n${itemsListStr}\n${orderData.notes_paket ? `\n📝 *Catatan Paket:* ${orderData.notes_paket}\n` : ''}\n_Silakan buka menu Pesanan Saya di WMS untuk cetak Label & Picking List._`;
-              sendFonnteMessage(fonnteCfg.groupTarget, adminGroupMsg, fonnteCfg.token).catch((err) =>
-                console.warn('WA group submit notice error:', err)
-              );
-            }
-          }
-        }
-
-        // 3. Notifikasi Otomatis ke Store Penyedia Barang (Inter-Store Fulfillment)
-        // Jika ada produk yang dialokasikan dari toko cabang lain, kirim permintaan kirim barang langsung ke WA resmi store penyedia!
-        if (!editingOrder) {
-          try {
-            const fulfillmentData = resolveOrderFulfillmentStores(orderData);
-            fulfillmentData.groups.forEach((group) => {
-              if (group.isInterStore && !group.isGudangGroup && group.phone) {
-                const itemsText = group.items.map((it, idx) => {
-                  const sizeStr = it.size && it.size !== 'ALL' && it.size !== '-' ? ` (Size: *${it.size}*)` : '';
-                  const alterText = isRealAlterItem(it)
-                    ? `\n     ✂️ *Instruksi Alter:* ${it.alteration_detail || it.layanan_type || 'Perlu Alterasi'}`
-                    : '';
-                  return `  ${idx + 1}. *${it.sku || '-'}* - ${it.nama_produk}${sizeStr} - *${it.qty || 1} pcs*${alterText}`;
-                }).join('\n');
-
-                const interStoreMsg = `📦 *PERMINTAAN PENGIRIMAN PRODUK (STORE ➔ WAREHOUSE)*
---------------------------------------------------
-Halo Tim *${group.storeName}*,
-Terdapat pesanan penarikan barang dari Store Anda yang diajukan oleh *${fulfillmentData.requesterStoreName}* untuk dikirimkan ke Gudang Pusat Chocochips:
-
-📋 *Rincian Pesanan:*
-• *Order ID / No. Pesanan:* ${orderData.no_pesanan || orderData.no_transaksi_customer}
-• *Store Pemohon:* ${fulfillmentData.requesterStoreName} (PIC: ${orderData.pic_store || '-'})
-• *Store Penyedia Barang:* ${group.storeName}
-• *Customer Tujuan Akhir:* ${orderData.nama_tujuan || '-'}
-• *Waktu Permintaan:* ${new Date().toLocaleString('id-ID')}
-
-👕 *Daftar Produk yang Wajib Dikirim dari Store ${group.storeName}:*
-${itemsText || '  1. Produk Pakaian Pesanan'}
-
-🚚 *Tujuan Pengiriman:* WAREHOUSE CHOCOCHIPS (Gudang Pusat)
-📄 *Dokumen Wajib:*
-Mohon buka sistem WMS, login akun toko *${group.storeName}*, dan cetak *Surat Jalan Kirim (Struk Rangkap 2)*:
-  - Lembar 1: Simpan sebagai arsip bukti pengiriman toko Anda
-  - Lembar 2: Lampirkan pada fisik pakaian / polybag yang dikirim ke gudang.
-
-Mohon segera diproses dan kirimkan fisik barang ke gudang. Terima kasih!
-_WMS Warehouse System_`;
-
-                sendFonnteMessage(group.phone, interStoreMsg, fonnteCfg.token)
-                  .then((res) => {
-                    if (res.success) {
-                      onShowToast(`✅ Permintaan kirim barang terkirim otomatis ke WA Store ${group.storeName}!`, 'success');
-                    } else {
-                      console.warn(`Gagal kirim WA ke store penyedia ${group.storeName}:`, res.message);
-                    }
-                  })
-                  .catch((err) => console.warn(`Error kirim WA ke store penyedia ${group.storeName}:`, err));
-              }
-            });
-          } catch (e) {
-            console.warn('Error sending inter-store WA notification on submit:', e);
-          }
-        }
+        });
       }
 
       resetForm();
@@ -2821,9 +2663,20 @@ _WMS Warehouse System_`;
       return;
     }
 
-    const validOrdersToSend = itemsToSend.filter(o => o.status !== 'batal' && ensureOrderItems(o).length > 0);
+    const isMarketplacePickingItem = (it: ManualShipmentItem): boolean => {
+      if (it.item_status === 'sold_out' || it.item_status === 'cancelled') return false;
+      const ful = (it.fulfillment || (it as any).toko_asal || (it as any).store_name || '').trim().toLowerCase();
+      return !ful || ful.includes('marketplace') || ful.includes('gudang') || ful.includes('warehouse');
+    };
+
+    const validOrdersToSend = itemsToSend.filter(
+      o => o.status !== 'batal' && ensureOrderItems(o).some(isMarketplacePickingItem)
+    );
     if (validOrdersToSend.length === 0) {
-      onShowToast('Pesanan yang dipilih tidak memiliki rincian item aktif untuk dipicking', 'warning');
+      onShowToast(
+        'Tidak ada item fulfillment Marketplace / Gudang untuk dikirim ke Picking WA Grup Picker (item Store dikirim lewat Live Chat WMS).',
+        'info'
+      );
       return;
     }
 
@@ -2840,17 +2693,13 @@ _WMS Warehouse System_`;
       let totalItems = 0;
       let totalPcs = 0;
       enrichedOrders.forEach(ord => {
-        const activeItems = ensureOrderItems(ord).filter(
-          it => it.item_status !== 'sold_out' && it.item_status !== 'cancelled'
-        );
+        const activeItems = ensureOrderItems(ord).filter(isMarketplacePickingItem);
         totalItems += activeItems.length;
         totalPcs += activeItems.reduce((s, it) => s + (Number(it.qty) || 1), 0);
       });
 
       const formatOrderItemsList = (ord: ManualShipmentOrder): string => {
-        const activeItems = ensureOrderItems(ord).filter(
-          it => it.item_status !== 'sold_out' && it.item_status !== 'cancelled'
-        );
+        const activeItems = ensureOrderItems(ord).filter(isMarketplacePickingItem);
         return activeItems
           .map((it, idx) => {
             const itemNum = idx + 1;
@@ -2861,18 +2710,7 @@ _WMS Warehouse System_`;
               ? (lookup.size ? lookup.size : '-')
               : (!isCorruptedColorCodeSize(cleanSku, it.size) && it.size && it.size !== '-' && it.size.toLowerCase() !== 'default' ? it.size : '-');
 
-            // Sama persis dengan Picking A4: jika fulfillment Store -> lokasi = kode/nama Store; jika Gudang/MKT -> lokasi rak
-            const ful = (it.fulfillment || (it as any).toko_asal || (it as any).store_name || '').trim();
-            const fulLower = ful.toLowerCase();
-            const isStoreFulfillment = Boolean(
-              ful &&
-                !fulLower.includes('marketplace') &&
-                !fulLower.includes('gudang') &&
-                !fulLower.includes('warehouse')
-            );
-            const cleanLoc = isStoreFulfillment
-              ? getStoreCode(ful) || ful
-              : it.lokasi && it.lokasi !== '-' && it.lokasi !== 'KOSONG'
+            const cleanLoc = it.lokasi && it.lokasi !== '-' && it.lokasi !== 'KOSONG'
               ? it.lokasi
               : '-';
 
@@ -2892,16 +2730,16 @@ _WMS Warehouse System_`;
       if (enrichedOrders.length === 1) {
         const ord = enrichedOrders[0];
         msgLines.push(
-          `*🚨 PICKING LIST MANUAL SHIPMENT / ALTER*`,
+          `*🚨 PICKING LIST MARKETPLACE / GUDANG*`,
           `*No. Pesanan:* \`${ord.no_pesanan || '-'}\``,
           ``,
-          `📋 *DAFTAR ITEM UNTUK PICKING (${totalItems} Item / ${totalPcs} Pcs):*`,
+          `📋 *DAFTAR ITEM PICKING GUDANG (${totalItems} Item / ${totalPcs} Pcs):*`,
           formatOrderItemsList(ord)
         );
       } else {
         msgLines.push(
-          `*🚨 PICKING LIST MANUAL SHIPMENT / ALTER*`,
-          `📋 *DAFTAR ITEM UNTUK PICKING (${enrichedOrders.length} Pesanan / ${totalItems} Item / ${totalPcs} Pcs):*`,
+          `*🚨 PICKING LIST MARKETPLACE / GUDANG*`,
+          `📋 *DAFTAR ITEM PICKING GUDANG (${enrichedOrders.length} Pesanan / ${totalItems} Item / ${totalPcs} Pcs):*`,
           ``
         );
         enrichedOrders.forEach((ord, oIdx) => {
@@ -2919,14 +2757,14 @@ _WMS Warehouse System_`;
         return;
       }
 
-      // Catatan Sesuai Aturan: Picking WA Grup hanya fitur pembantu.
+      // Catatan Sesuai Aturan: Picking WA Grup hanya fitur pembantu (khusus item Marketplace/Gudang).
       // Syarat pindah dari Pesanan Baru ke Sedang Diproses tetap wajib: Cetak Picking List (A4) & Cetak Label Paket (A6).
       if (!isRealOrder && !isOrderArray) {
         setSelectedOrders(new Set());
       }
 
       onShowToast(
-        `Daftar Picking (${enrichedOrders.length} pesanan) terkirim ke Grup WA via Fonnte! (Tetap cetak Picking A4 & Label A6 untuk memindahkan ke Sedang Diproses)`,
+        `Daftar Picking Marketplace (${enrichedOrders.length} pesanan, ${totalItems} item) terkirim ke Grup WA Picker via Fonnte!`,
         'success'
       );
     } catch (err: any) {
@@ -3040,6 +2878,14 @@ _WMS Warehouse System_`;
         if (selectedOrderDetails?.no_pesanan === order.no_pesanan) {
           setSelectedOrderDetails(prev => prev ? mapOrderItems(prev) : null);
         }
+
+        // Kirim update SJ Marketplace ke Grup Live Chat WMS Store
+        const targetLabel =
+          applyToAllMarketplace || !item || item.id === 'ALL_MKT'
+            ? 'Semua item Marketplace / Gudang'
+            : `[${item.sku || '-'}] ${item.nama_produk}`;
+        void notifySjMarketplaceUpdatedToChat(order, cleanSj, targetLabel, operatorName);
+
         setSjModalData(null);
       } else {
         onShowToast('Gagal menyimpan No. Surat Jalan DealPOS', 'error');
@@ -3079,49 +2925,24 @@ _WMS Warehouse System_`;
           setSelectedOrderDetails(updated);
         }
 
-        // Kirim WhatsApp ke PIC Store jika dicentang
-        if (sendWaToStore && order.no_telp_store && order.no_telp_store.trim()) {
-          const storePhone = order.no_telp_store;
+        // Kirim notifikasi ke Grup Live Chat WMS Store jika dicentang
+        if (sendWaToStore) {
           const remainingReadyCount = (updated.items || []).filter(
             it => it.item_status !== 'sold_out' && it.item_status !== 'cancelled'
           ).length;
 
-          let waResolutionText = '';
-          if (resolution === 'cancel_order') {
-            waResolutionText = '⛔ *TINDAKAN GUDANG:* Seluruh pesanan ini telah *DIBATALKAN*.';
-          } else if (resolution === 'partial_fulfill') {
-            waResolutionText = `🚚 *TINDAKAN GUDANG:* Melanjutkan pengiriman sebagian (*Partial Fulfillment*) untuk *${remainingReadyCount} produk* yang siap kirim. Item yang sold dikeluarkan dari paket.`;
-          } else {
-            waResolutionText = '⏳ *TINDAKAN GUDANG:* Menunggu konfirmasi dari tim Store apakah ingin kirim sebagian atau ganti produk lain.';
-          }
-
-          const waSoldMsg = `⚠️ *PEMBERITAHUAN BARANG SOLD OUT (MARKETPLACE)*
---------------------------------------------
-Halo Tim *${order.nama_pengirim || 'Store'}* (PIC: ${order.pic_store || '-'}),
-Ada produk pesanan manual shipment yang stoknya *KOSONG / SOLD OUT* di alokasi DealPOS Marketplace:
-
-📋 *Rincian Pesanan:*
-• *Order ID:* ${order.no_pesanan || order.no_transaksi_customer}
-• *Nama Customer:* ${order.nama_tujuan} (${order.no_telp_tujuan || '-'})
-• *Jasa Kirim:* ${order.jasa_kirim || '-'}
-
-🔴 *Produk Kosong (Sold Out):*
-• *SKU:* ${item.sku}
-• *Nama Produk:* ${item.nama_produk}
-• *Qty:* ${item.qty} pcs ${item.size && item.size !== '-' ? `(Size: ${item.size})` : ''}
-• *Catatan Admin:* ${cleanNote}
-
-${waResolutionText}
-
-_Pemberitahuan otomatis WMS Warehouse System_`;
-
-          sendFonnteMessage(storePhone, waSoldMsg)
-            .then(waRes => {
-              if (waRes.success) {
-                onShowToast(`Pesan WA notifikasi terkirim ke Store (${order.nama_pengirim})`, 'info');
-              }
-            })
-            .catch(err => console.warn('Gagal kirim WA sold notice', err));
+          void notifyOrderSoldOutToChat(
+            order,
+            item,
+            resolution,
+            cleanNote,
+            remainingReadyCount,
+            operatorName
+          ).then((ok) => {
+            if (ok) {
+              onShowToast(`Notifikasi barang sold out dikirim ke Grup Live Chat WMS (${order.nama_pengirim || 'Store'})`, 'info');
+            }
+          });
         }
 
         setSoldModalData(null);
@@ -3149,6 +2970,7 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
         if (selectedOrderDetails?.no_pesanan === order.no_pesanan) {
           setSelectedOrderDetails(res.updatedOrder);
         }
+        void notifySoldItemRestoredToChat(res.updatedOrder, item, operatorName);
       } else {
         onShowToast(res.message || 'Gagal memulihkan status item', 'error');
       }
@@ -3319,22 +3141,22 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
               />
             </div>
 
-            {/* Opsi Notifikasi WhatsApp ke PIC Store */}
-            <div className="p-3 bg-emerald-50/80 dark:bg-emerald-950/40 rounded-xl border border-emerald-200 dark:border-emerald-800/60">
+            {/* Opsi Notifikasi Grup Live Chat WMS ke Store */}
+            <div className="p-3 bg-indigo-50/80 dark:bg-indigo-950/40 rounded-xl border border-indigo-200 dark:border-indigo-800/60">
               <label className="flex items-start gap-2.5 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={sendWaToStore}
                   onChange={(e) => setSoldModalData(prev => prev ? { ...prev, sendWaToStore: e.target.checked } : null)}
-                  className="w-4 h-4 mt-0.5 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                  className="w-4 h-4 mt-0.5 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                 />
                 <div className="text-xs">
-                  <div className="font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
-                    <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Kirim Notifikasi WhatsApp Otomatis ke PIC Store</span>
+                  <div className="font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
+                    <MessageCircle className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <span>Kirim Notifikasi ke Grup Live Chat WMS Store</span>
                   </div>
-                  <div className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5">
-                    Pesan rincian barang kosong dan tindakan akan langsung dikirim ke WhatsApp Store: <b>{order.no_telp_store}</b> ({order.nama_pengirim} - PIC: {order.pic_store || '-'}).
+                  <div className="text-[11px] text-indigo-700 dark:text-indigo-400 mt-0.5">
+                    Pesan rincian barang kosong & tindakan dikirim otomatis ke Grup Live Chat {order.nama_pengirim || 'Store'} (@warehouse · @chocoadm · Store).
                   </div>
                 </div>
               </label>
@@ -3836,11 +3658,11 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                   <button 
                     type="button"
                     onClick={() => handleSendWaStoreNoticeDirect(order)}
-                    className="px-3.5 py-1.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 font-semibold rounded-lg text-xs border border-emerald-300 dark:border-emerald-800 flex items-center transition-colors cursor-pointer"
-                    title="Kirim notifikasi WA ke Store terkait untuk mengirimkan produk ke Warehouse"
+                    className="px-3.5 py-1.5 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 font-semibold rounded-lg text-xs border border-indigo-200 dark:border-indigo-800 flex items-center transition-colors cursor-pointer"
+                    title="Kirim notifikasi pengiriman ke Grup Live Chat WMS Store terkait"
                   >
-                    <MessageCircle className="w-3.5 h-3.5 mr-1.5 text-emerald-600" />
-                    Notif WA Store
+                    <MessageCircle className="w-3.5 h-3.5 mr-1.5 text-indigo-600 dark:text-indigo-400" />
+                    Notif Live Chat Store
                   </button>
 
                   {!isStoreUser && (
@@ -3864,7 +3686,7 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                           disabled={isSendingPickingWa}
                           onClick={() => handleSendPickingWaGroup(order)}
                           className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-xs border border-emerald-700 flex items-center transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
-                          title="Fitur Pembantu Admin: Kirim Rincian Picking List (lengkap Lokasi Rak Gudang) ke Grup WA via Fonnte"
+                          title="Fitur Pembantu Admin: Kirim Rincian Picking Item Marketplace / Gudang ke Grup WA Picker via Fonnte"
                         >
                           {isSendingPickingWa ? (
                             <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
@@ -3903,18 +3725,18 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                         type="button"
                         disabled={isSendingAlterWa}
                         onClick={() => handleSendAlterWaFonnte(order)}
-                        className="px-3.5 py-1.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 font-semibold rounded-lg text-xs border border-emerald-300 dark:border-emerald-800 flex items-center transition-colors cursor-pointer disabled:opacity-50"
-                        title="Kirim SPK Alterasi langsung via WhatsApp Fonnte ke Store & Tim Penjahit"
+                        className="px-3.5 py-1.5 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 font-semibold rounded-lg text-xs border border-indigo-200 dark:border-indigo-800 flex items-center transition-colors cursor-pointer disabled:opacity-50"
+                        title="Kirim SPK Alterasi ke Grup Live Chat WMS Store"
                       >
                         {isSendingAlterWa ? (
                           <>
                             <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                            <span>Mengirim Fonnte...</span>
+                            <span>Mengirim...</span>
                           </>
                         ) : (
                           <>
-                            <SendHorizonal className="w-3.5 h-3.5 mr-1.5 text-emerald-600" />
-                            <span>Kirim WA Alter (Fonnte)</span>
+                            <SendHorizonal className="w-3.5 h-3.5 mr-1.5 text-indigo-600 dark:text-indigo-400" />
+                            <span>Kirim SPK ke Live Chat</span>
                           </>
                         )}
                       </button>
@@ -4490,36 +4312,9 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
         }
         onShowToast('Resi berhasil diupdate & status otomatis berubah menjadi Dikirim (Item Store otomatis Sudah Terima)', 'success');
 
-        // OTOMATIS FONNTE: Kirim notifikasi WhatsApp ke Store
-        const storePhone = resiModalOrder.no_telp_store;
-        if (storePhone && storePhone.trim()) {
-          const resiMsg = `🚚 *UPDATE RESI PENGIRIMAN MANUAL SHIPMENT*
---------------------------------------------
-Halo Tim *${resiModalOrder.nama_pengirim || 'Store'}*, nomor resi pengiriman untuk pesanan Anda telah diperbarui di sistem WMS Gudang:
-
-📋 *Rincian Pesanan:*
-• *Order ID / No. Pesanan:* ${resiModalOrder.no_pesanan || resiModalOrder.no_transaksi_customer}
-• *Store Pengirim:* ${resiModalOrder.nama_pengirim || '-'} (PIC: ${resiModalOrder.pic_store || '-'})
-• *Jasa Kirim:* ${resiModalOrder.jasa_kirim || '-'}
-• *Nama Customer:* ${resiModalOrder.nama_tujuan || '-'}
-• *No. Telp Customer:* ${resiModalOrder.no_telp_tujuan || '-'}
-
-📦 *Nomor Resi Baru:*
-👉 *${cleanResi}*
-
-Status pengiriman paket telah diperbarui. Silakan simpan dan teruskan nomor resi ini kepada customer Anda.
-
-Terima kasih!
-_WMS Warehouse System_`;
-
-          sendFonnteMessage(storePhone, resiMsg)
-            .then((res) => {
-              if (res.success) {
-                console.log('Notifikasi WA update resi terkirim ke store:', storePhone);
-              }
-            })
-            .catch((err) => console.warn('WA resi notice error:', err));
-        }
+        // OTOMATIS LIVE CHAT WMS: Kirim notifikasi update resi ke Grup Store
+        const resiActor = session?.name || getUserPersonName(session?.username) || session?.username || 'Admin Gudang';
+        void notifyOrderResiUpdatedToChat(resiModalOrder, cleanResi, resiActor);
 
         // NOTIFIKASI EMAIL RESI (Chocochips Official) ke Store & Customer jika dilampirkan
         triggerOrderEmailNotifications(
@@ -4655,26 +4450,11 @@ _WMS Warehouse System_`;
       if (res.success) {
         onShowToast(`Pesanan ${order.no_pesanan} berhasil dibatalkan. Histori tersimpan.`, 'success');
 
-        // Kirim notifikasi WA pembatalan via Fonnte jika diminta
-        if (sendWa && order.no_telp_store && order.no_telp_store.trim()) {
-          const fonnteCfg = getFonnteConfig();
-          if (fonnteCfg.token) {
-            const waCancelMsg = `🚫 *PEMBATALAN PESANAN MANUAL SHIPMENT*\n--------------------------------------------\nHalo Tim *${order.nama_pengirim || 'Store'}*, pesanan berikut telah dibatalkan di sistem WMS Gudang:\n\n📋 *Rincian Pesanan:*\n• *Order ID / No. Pesanan:* ${order.no_pesanan || order.no_transaksi_customer}\n• *Store Pengirim:* ${order.nama_pengirim || '-'} (PIC: ${order.pic_store || '-'})\n• *Customer Tujuan:* ${order.nama_tujuan || '-'} (${order.no_telp_tujuan || '-'})\n• *Alamat:* ${order.alamat_tujuan || '-'}\n• *Total Produk:* ${order.items?.length || 0} item\n\n⚠️ *Alasan Pembatalan:*\n👉 *${reasonText}*\n• *Dibatalkan Oleh:* ${actor} (${dateIdStr})\n\nHistori pesanan ini tetap disimpan di sistem rekap WMS untuk kebutuhan pelacakan & audit.\nTerima kasih!\n_WMS Warehouse System_`;
-
-            sendFonnteMessage(order.no_telp_store, waCancelMsg, fonnteCfg.token)
-              .then((r) => {
-                if (r.success) {
-                  onShowToast('✅ Notif pembatalan terkirim ke WA Store via Fonnte!', 'success');
-                } else {
-                  console.warn('Fonnte cancel notice warning:', r.message);
-                }
-              })
-              .catch((err) => console.warn('Fonnte cancel error:', err));
-
-            if (fonnteCfg.groupTarget && fonnteCfg.groupTarget.trim()) {
-              sendFonnteMessage(fonnteCfg.groupTarget, waCancelMsg, fonnteCfg.token).catch(() => {});
-            }
-          }
+        // Kirim notifikasi pembatalan ke Grup Live Chat WMS jika diminta
+        if (sendWa) {
+          void notifyOrderCancelledToChat(updatedOrder, reasonText, actor).then(() => {
+            onShowToast('Notifikasi pembatalan dikirim ke Grup Live Chat WMS!', 'info');
+          });
         }
 
         // NOTIFIKASI EMAIL PEMBATALAN (Chocochips Official) ke Store & Customer jika dilampirkan
@@ -4985,6 +4765,7 @@ _WMS Warehouse System_`;
           : `Status terima [${targetItem.sku}] dibatalkan`,
         markAsReceived ? 'success' : 'info'
       );
+      void notifyWarehouseReceivedStoreItemToChat(updatedOrder, targetItem, markAsReceived, actor);
     } else {
       onShowToast(`Gagal menyimpan status terima: ${res.message}`, 'error');
       loadOrders();
@@ -5122,6 +4903,7 @@ _WMS Warehouse System_`;
           });
 
         onShowToast('Tanggal jadwal kirim ke store berhasil disimpan & status pesanan ditandai Selesai!', 'success');
+        void notifyStoreScheduleToChat(jadwalModalOrder, inputJadwalDate, inputJadwalCatatan, actorName);
         setOrders(prev => prev.map(o => {
           if (o.no_pesanan === jadwalModalOrder.no_pesanan || (o as any).id === orderId) {
             return {
@@ -8046,7 +7828,7 @@ _WMS Warehouse System_`;
                             onClick={() => handleSendWaStoreNoticeDirect(activeOrder)}
                             className="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 transition-colors cursor-pointer"
                           >
-                            Notifikasi WA ke Store
+                            Notif Live Chat Store
                           </button>
 
                           {hasRealAlterItems(activeOrder) && (
@@ -8055,7 +7837,7 @@ _WMS Warehouse System_`;
                               onClick={() => handleSendAlterWaFonnte(activeOrder)}
                               className="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 transition-colors cursor-pointer"
                             >
-                              Kirim WA Alter
+                              Kirim SPK ke Live Chat
                             </button>
                           )}
 
@@ -8968,7 +8750,7 @@ _WMS Warehouse System_`;
                       >
                         <option value="" disabled>Pilih Aksi...</option>
                         <option value="chat_warehouse">💬 Chat Gudang / Tanya Pesanan</option>
-                        <option value="notif_wa_store">💬 Kirim WA ke Store</option>
+                        <option value="notif_wa_store">💬 Notif ke Live Chat Store</option>
                         <option value="sj_struk">🖨️ Cetak SJ Struk Kasir</option>
                         {userIsAdmin && <option value="edit">✏️ Edit Pesanan</option>}
                         {userIsAdmin && order.status !== 'diproses' && order.status !== 'dikirim' && order.status !== 'selesai' && order.status !== 'batal' && (
@@ -8980,14 +8762,14 @@ _WMS Warehouse System_`;
                         {!isStoreUser && (
                           <>
                             <option value="print_picking">📋 Cetak Picking List</option>
-                            {userIsAdmin && <option value="wa_picking_group">📲 Picking ke WA Grup (Fonnte)</option>}
+                            {userIsAdmin && <option value="wa_picking_group">📲 Picking Marketplace ke WA Grup (Fonnte)</option>}
                             <option value="print">🏷️ Cetak Label (A6)</option>
                           </>
                         )}
                         {hasRealAlterItems(order) && (
                           <>
                             <option value="spk_penjahit">✂️ Cetak SPK Penjahit</option>
-                            <option value="kirim_wa_alter">💬 Kirim WA Alter</option>
+                            <option value="kirim_wa_alter">💬 Kirim SPK ke Live Chat WMS</option>
                           </>
                         )}
                         {hasRealAlterItems(order) && (
@@ -9763,9 +9545,9 @@ _WMS Warehouse System_`;
                           {(isEligibleForSjStruk(order) || isStoreUser) && (
                             <option value="sj_struk">🧾 Cetak SJ Struk</option>
                           )}
-                          <option value="notif_wa_store">📲 Notif WA Store</option>
+                          <option value="notif_wa_store">💬 Notif Live Chat Store</option>
                           {!isStoreUser && <option value="print_picking">📋 Cetak Picking List</option>}
-                          {userIsAdmin && !isStoreUser && <option value="wa_picking_group">📲 Picking WA Grup (Fonnte)</option>}
+                          {userIsAdmin && !isStoreUser && <option value="wa_picking_group">📲 Picking Marketplace ke WA Grup (Fonnte)</option>}
                           {!isStoreUser && <option value="print">🏷️ Print Label A6</option>}
                           {userIsAdmin && <option value="jadwal_store">📅 Atur Jadwal Store</option>}
                           {userIsAdmin && order.status !== 'diproses' && order.status !== 'dikirim' && order.status !== 'selesai' && order.status !== 'batal' && (
@@ -9775,7 +9557,7 @@ _WMS Warehouse System_`;
                             <option value="spk_penjahit">✂️ SPK Penjahit</option>
                           )}
                           {hasRealAlterItems(order) && (
-                            <option value="kirim_wa_alter">💬 Kirim WA Alter (Fonnte)</option>
+                            <option value="kirim_wa_alter">💬 Kirim SPK ke Live Chat WMS</option>
                           )}
                           {hasRealAlterItems(order) && (
                             <option value="spk">Cetak SPK</option>
@@ -11065,7 +10847,13 @@ _WMS Warehouse System_`;
         isOpen={isBulkResiModalOpen}
         onClose={() => setIsBulkResiModalOpen(false)}
         orders={orders}
-        onSuccess={() => loadOrders()}
+        onSuccess={(_, updatedEntries) => {
+          if (updatedEntries && updatedEntries.length > 0) {
+            const actorName = session?.name || getUserPersonName(session?.username) || session?.username || 'Admin Gudang';
+            void notifyBulkResiUpdatedToChat(updatedEntries, actorName);
+          }
+          loadOrders();
+        }}
         onShowToast={onShowToast}
       />
 

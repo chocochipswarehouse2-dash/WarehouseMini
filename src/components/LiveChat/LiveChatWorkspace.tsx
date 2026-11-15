@@ -1017,9 +1017,19 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
 
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-1.5">
-                            <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                              {meta.title}
-                            </span>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                                {meta.title}
+                              </span>
+                              {room.system_group_kind === 'store_ops' && (
+                                <span
+                                  className="px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-[9px] font-bold uppercase tracking-wide shrink-0 border border-indigo-200 dark:border-indigo-800"
+                                  title="Grup Otomatis Manual Shipment & Alteration"
+                                >
+                                  Order
+                                </span>
+                              )}
+                            </div>
                             {room.last_message_at && (
                               <span className="text-[10px] font-mono tabular-nums text-slate-400 shrink-0">
                                 {formatTimeShort(room.last_message_at)}
@@ -1194,6 +1204,11 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                           <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate group-hover/hdr:text-indigo-600 transition-colors">
                             {meta.title}
                           </h3>
+                          {activeRoom.system_group_kind === 'store_ops' && (
+                            <span className="px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold shrink-0 border border-indigo-200 dark:border-indigo-800">
+                              Grup Order Store
+                            </span>
+                          )}
                           {meta.isOnline && (
                             <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" title="Online" />
                           )}
@@ -1380,6 +1395,25 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                                 : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100'
                             }`}
                           >
+                            {/* System Audit Update Badge */}
+                            {msg.is_system_update && !msg.is_deleted && (
+                              <div
+                                className={`flex items-center gap-1.5 mb-1.5 px-2 py-0.5 rounded-lg text-[10px] font-bold w-fit ${
+                                  isMine
+                                    ? 'bg-indigo-700/80 text-indigo-100 border border-indigo-400/40'
+                                    : 'bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
+                                }`}
+                              >
+                                <ShieldCheck className="w-3 h-3 shrink-0" />
+                                <span>Update Otomatis WMS</span>
+                                {msg.actor_name && (
+                                  <span className="font-normal opacity-85 truncate max-w-[160px]">
+                                    · {msg.actor_name}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
                             {/* Sender Name Header (for others in group or direct) */}
                             {!isMine && (
                               <div className="flex items-center gap-1.5 mb-1 text-[11px]">

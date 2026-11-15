@@ -29,7 +29,7 @@ interface BulkUpdateResiModalProps {
   isOpen: boolean;
   onClose: () => void;
   orders: ManualShipmentOrder[];
-  onSuccess: (updatedCount: number) => void;
+  onSuccess: (updatedCount: number, updatedEntries?: Array<{ order: ManualShipmentOrder; newResi: string }>) => void;
   onShowToast: (msg: string, type: 'success' | 'error' | 'warning' | 'info') => void;
 }
 
@@ -162,6 +162,7 @@ export const BulkUpdateResiModal: React.FC<BulkUpdateResiModalProps> = ({
   // Submit direct table edits
   const handleSaveTableResi = async () => {
     const updateList: BulkResiUpdateItem[] = [];
+    const updatedEntries: Array<{ order: ManualShipmentOrder; newResi: string }> = [];
 
     Object.entries(tableResiInputs).forEach(([no_pesanan, newResiRaw]) => {
       const newResi = newResiRaw.trim();
@@ -178,6 +179,7 @@ export const BulkUpdateResiModal: React.FC<BulkUpdateResiModalProps> = ({
           no_resi: newResi,
           update_status_to_dikirim: autoMarkAsShipped,
         });
+        updatedEntries.push({ order, newResi });
       }
     });
 
@@ -191,7 +193,7 @@ export const BulkUpdateResiModal: React.FC<BulkUpdateResiModalProps> = ({
       const result = await bulkUpdateShipmentResi(updateList);
       if (result.successCount > 0) {
         onShowToast(`Berhasil memperbarui ${result.successCount} nomor resi pesanan!`, 'success');
-        onSuccess(result.successCount);
+        onSuccess(result.successCount, updatedEntries);
         onClose();
       } else {
         onShowToast(`Gagal memperbarui resi: ${result.errors.join(', ')}`, 'error');
@@ -450,12 +452,17 @@ export const BulkUpdateResiModal: React.FC<BulkUpdateResiModalProps> = ({
       update_status_to_dikirim: autoMarkAsShipped,
     }));
 
+    const updatedEntries: Array<{ order: ManualShipmentOrder; newResi: string }> = validRows.map((r) => ({
+      order: r.matchedOrder!,
+      newResi: r.newResi,
+    }));
+
     setIsSubmitting(true);
     try {
       const result = await bulkUpdateShipmentResi(updateList);
       if (result.successCount > 0) {
         onShowToast(`Berhasil memperbarui ${result.successCount} resi via import CSV!`, 'success');
-        onSuccess(result.successCount);
+        onSuccess(result.successCount, updatedEntries);
         onClose();
       } else {
         onShowToast(`Gagal update resi: ${result.errors.join(', ')}`, 'error');

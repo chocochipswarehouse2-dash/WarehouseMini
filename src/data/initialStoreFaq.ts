@@ -10,17 +10,17 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
     target_audience: 'all',
     
     // PERSPEKTIF ADMIN GUDANG
-    answer_admin: 'Sebagai Admin Gudang / Superadmin, Anda memiliki hak akses penuh untuk membatalkan pesanan di sistem. Tombol pembatalan tersedia di tab Manual Shipment selama pesanan belum diterbitkan nomor resi kurirnya. Pembatalan oleh Admin akan otomatis melepaskan alokasi stok, mencatat log audit, dan mengirim notifikasi status ke PIC Store.',
+    answer_admin: 'Sebagai Admin Gudang / Superadmin, Anda memiliki hak akses penuh untuk membatalkan pesanan di sistem. Tombol pembatalan tersedia di tab Manual Shipment selama pesanan belum diterbitkan nomor resi kurirnya. Pembatalan oleh Admin akan otomatis melepaskan alokasi stok, mencatat log audit, dan mengirim notifikasi otomatis ke Grup Live Chat WMS Store terkait.',
     action_steps_admin: [
       { step: 1, title: 'Buka Tab Manual Shipment', desc: 'Masuk ke menu Pesanan Saya ➔ Tab "Manual Shipment". Gunakan kolom pencarian No. Pesanan untuk menemukan transaksi.' },
       { step: 2, title: 'Periksa Status & Resi', desc: 'Pastikan pesanan belum dipacking ekspedisi dan belum memiliki nomor resi. (Jika sudah ada resi, batalkan resi terlebih dahulu di kurir).' },
-      { step: 3, title: 'Klik Tombol [Batalkan Pesanan]', desc: 'Pada kolom Aksi di sebelah kanan kartu pesanan, klik tombol merah bergambar tempat sampah bertuliskan "Batalkan Pesanan".' },
-      { step: 4, title: 'Pilih Alasan & Konfirmasi', desc: 'Pilih alasan pembatalan (misal: "Permohonan dari Store", "Barang Sold Out", "Salah Alamat"), lalu konfirmasi pembatalan. Status pesanan akan berubah menjadi "cancelled".' }
+      { step: 3, title: 'Klik Tombol [Batalkan Pesanan]', desc: 'Pada kolom Aksi di sebelah kanan kartu pesanan, klik tombol merah bertuliskan "Batalkan Pesanan".' },
+      { step: 4, title: 'Pilih Alasan & Kirim ke Live Chat WMS', desc: 'Pilih alasan pembatalan, pastikan centang notifikasi Grup Live Chat WMS aktif, lalu konfirmasi pembatalan. Notif otomatis masuk ke grup Store Pemohon (dan Store Penyedia jika antar-toko).' }
     ],
     button_badges_admin: [
       { label: 'Batalkan Pesanan', color: 'rose', icon: 'Trash2' },
       { label: 'Status: Cancelled', color: 'slate', icon: 'Ban' },
-      { label: 'Kirim Notifikasi WA', color: 'emerald', icon: 'MessageCircle' }
+      { label: 'Notif Grup Live Chat WMS', color: 'indigo', icon: 'MessageCircle' }
     ],
     admin_notes: '⚠️ Pembatalan pesanan yang melibatkan alokasi DealPOS akan memerlukan verifikasi void/koreksi SJ di DealPOS agar saldo kuota kasir kembali utuh.',
 
@@ -51,11 +51,11 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
     target_audience: 'all',
 
     // PERSPEKTIF ADMIN GUDANG
-    answer_admin: 'Di tabel dan kartu Rekap Pesanan, aksi per-item disesuaikan otomatis berdasarkan sumber fulfillment: (1) Untuk item "Fulfillment Marketplace / Gudang", tersedia tombol merah "Tandai Sold" apabila stok fisik di gudang kosong/reject (dengan opsi Partial Fulfillment atau Batalkan Pesanan + WA otomatis ke Store). (2) Untuk item "Fulfillment dari Store" (misal Gading Serpong, Central Park, dll), tersedia tombol biru "Tandai Terima" untuk memverifikasi bahwa fisik barang dari toko cabang telah tiba di Gudang Pusat. Sekalipun Admin belum sempat mengklik "Tandai Terima", begitu pesanan diinput nomor resi / berstatus "Dikirim", sistem otomatis menandai item Store tersebut menjadi "Sudah Terima".',
+    answer_admin: 'Di tabel dan kartu Rekap Pesanan, aksi per-item disesuaikan otomatis berdasarkan sumber fulfillment: (1) Untuk item "Fulfillment Marketplace / Gudang", tersedia tombol merah "Tandai Sold" apabila stok fisik di gudang kosong/reject (dengan opsi Partial Fulfillment atau Batalkan Pesanan + notifikasi otomatis ke Grup Live Chat WMS Store). (2) Untuk item "Fulfillment dari Store" (misal Gading Serpong, Central Park, dll), tersedia tombol biru "Tandai Terima" untuk memverifikasi bahwa fisik barang dari toko cabang telah tiba di Gudang Pusat (sekaligus mengirim update otomatis ke Grup Live Chat Store terkait). Sekalipun Admin belum sempat mengklik "Tandai Terima", begitu pesanan diinput nomor resi / berstatus "Dikirim", sistem otomatis menandai item Store tersebut menjadi "Sudah Terima".',
     action_steps_admin: [
       { step: 1, title: 'Fulfill Marketplace: Klik [Tandai Sold] Jika Kosong', desc: 'Untuk produk yang diambil dari alokasi Marketplace/Gudang, klik tombol "Tandai Sold" jika stok fisik di rak gudang kosong.' },
-      { step: 2, title: 'Pilih Resolusi Partial / Batal', desc: 'Pilih "Kirim Sebagian (Partial Fulfillment)" atau "Batalkan Seluruh Pesanan", lalu centang kirim WA Fonnte ke PIC Store.' },
-      { step: 3, title: 'Fulfill Store: Klik [Tandai Terima] Saat Barang Tiba', desc: 'Untuk produk yang dikirim dari Store cabang, klik tombol biru "Tandai Terima" saat barang tiba di gudang agar berubah menjadi badge hijau "Sudah Terima".' },
+      { step: 2, title: 'Pilih Resolusi Partial / Batal', desc: 'Pilih "Kirim Sebagian (Partial Fulfillment)" atau "Batalkan Seluruh Pesanan", lalu centang kirim notifikasi ke Grup Live Chat WMS Store.' },
+      { step: 3, title: 'Fulfill Store: Klik [Tandai Terima] Saat Barang Tiba', desc: 'Untuk produk yang dikirim dari Store cabang, klik tombol biru "Tandai Terima" saat barang tiba di gudang agar berubah menjadi badge hijau "Sudah Terima" dan ternotifikasi di Live Chat WMS.' },
       { step: 4, title: 'Otomatis "Sudah Terima" Saat Pesanan Terkirim', desc: 'Apabila Admin menginput No. Resi / menyelesaikan pengiriman sebelum sempat mengklik Tandai Terima, sistem otomatis mengubah status item Store menjadi "Sudah Terima".' }
     ],
     button_badges_admin: [
@@ -240,74 +240,74 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
   {
     id: 'faq-default-no-wa-store-pic',
     category: 'manual_shipment',
-    question: 'Dari mana nomor WhatsApp PIC Store terisi otomatis di form Manual Shipment & Alteration?',
-    answer: 'Nomor WhatsApp PIC Store otomatis terisi secara default dari Master Kontak Toko (Pengaturan > Store & Outlet) yang tersimpan di database Supabase.',
+    question: 'Dari mana notifikasi pesanan Store & Gudang dikirim dan bagaimana peran Grup Live Chat WMS vs No. HP Store?',
+    answer: 'Seluruh update koordinasi Manual Shipment dan Alteration antara Store, Admin Warehouse, dan Warehouse kini dikirim otomatis ke Grup Live Chat WMS khusus masing-masing Store (@warehouse, @chocoadm, dan akun Store terkait). Nomor HP di Master Store & Outlet tetap terisi otomatis untuk lampiran email resmi dan kebutuhan darurat.',
     target_audience: 'all',
 
     // PERSPEKTIF ADMIN GUDANG
-    answer_admin: 'Admin dapat memperbarui nomor WhatsApp resmi masing-masing store melalui menu Pengaturan ➔ Tab "Store & Outlet". Seluruh notifikasi otomatis Fonnte (konfirmasi submit, penerbitan resi, pembatalan pesanan, dan kendala barang kosong) akan mengacu ke nomor WA resmi toko yang terdaftar.',
+    answer_admin: 'Saat Store mensubmit pesanan Manual Shipment atau Alter, sistem otomatis membentuk dan mengirim update ke grup Live Chat WMS bertipe Order Store (anggotanya khusus @warehouse, @chocoadm, dan 1 akun Store terkait). Seluruh pembaruan berikutnya (edit pesanan, pembatalan, input resi, SJ Marketplace, sold out, hingga progress alterasi) otomatis tercatat di grup Live Chat tersebut tanpa melalui WA Fonnte. Nomor HP resmi Store dari Pengaturan ➔ Store & Outlet tetap berguna untuk referensi kontak pada form dan template cetak.',
     action_steps_admin: [
-      { step: 1, title: 'Buka Pengaturan Store & Outlet', desc: 'Buka SettingsModal ➔ klik tab "Store & Outlet".' },
-      { step: 2, title: 'Klik Edit (Pensil) pada Baris Toko', desc: 'Perbarui nomor WhatsApp resmi toko. Data otomatis tersimpan ke Cloud Supabase.' },
-      { step: 3, title: 'Notifikasi Otomatis Terintegrasi', desc: 'Sistem Fonnte akan otomatis mengarahkan seluruh broadcast dan alert order ke nomor resmi tersebut.' }
+      { step: 1, title: 'Cek Menu Live Chat WMS', desc: 'Buka menu Live Chat untuk melihat seluruh Grup Order Store (ditandai badge "Order") yang otomatis terbentuk saat Store submit pesanan.' },
+      { step: 2, title: 'Pantau & Balas Langsung di Grup Store', desc: 'Semua update pesanan masuk sebagai pesan audit otomatis. Admin WH & Warehouse dapat langsung berdiskusi dengan Store di grup yang sama.' },
+      { step: 3, title: 'Kelola Kontak Master (Opsional)', desc: 'Nomor kontak di Pengaturan ➔ Store & Outlet tetap terisi otomatis di form sebagai referensi kontak PIC Store.' }
     ],
     button_badges_admin: [
-      { label: 'Store & Outlet', color: 'blue', icon: 'Store' },
-      { label: 'Master No. WhatsApp', color: 'emerald', icon: 'Phone' }
+      { label: 'Grup Order Store (Live Chat)', color: 'indigo', icon: 'MessageSquare' },
+      { label: 'Store & Outlet', color: 'blue', icon: 'Store' }
     ],
-    admin_notes: 'ℹ️ Nomor WA yang disimpan di Store & Outlet langsung menjadi default saat form Manual Shipment atau Alteration dibuka oleh cabang.',
+    admin_notes: 'ℹ️ WA Fonnte di modul Manual Shipment kini hanya digunakan khusus untuk fitur bantu "Picking WA Grup" bagi item fulfillment Marketplace / Gudang.',
 
     // PERSPEKTIF TIM STORE / OUTLET
-    answer_store: 'Nomor WhatsApp PIC Store akan terisi secara otomatis dengan nomor resmi toko Anda sesuai akun login atau pilihan toko pengirim. Jika ada staf/SA tertentu yang memegang kendali atas pesanan khusus ini, nomor tersebut tetap dapat diedit secara manual sebelum mengirim pesanan.',
+    answer_store: 'Nomor HP Store di form akan terisi otomatis dari master kontak toko Anda untuk keperluan identitas PIC dan surat jalan. Namun seluruh notifikasi status pesanan, pembaruan resi, pembatalan, atau kendala barang kosong kini langsung masuk ke Grup Live Chat WMS toko Anda bersama Warehouse & Admin WH.',
     action_steps_store: [
-      { step: 1, title: 'Buka Form Pesanan / Alterasi', desc: 'Pilih nama toko pengirim. Nomor WhatsApp resmi toko akan otomatis muncul di kolom No. HP Store.' },
-      { step: 2, title: 'Ketik Nama Asli PIC Store', desc: 'Tuliskan nama Anda di kolom PIC Store / SA.' },
-      { step: 3, title: 'Kirim Pesanan', desc: 'Notifikasi status dan pesan konfirmasi dari sistem gudang akan dikirim ke nomor WA toko tersebut.' }
+      { step: 1, title: 'Buka Form Pesanan / Alterasi', desc: 'Nama Store Anda dan kontak default terisi otomatis; ketik nama asli Anda di kolom PIC Store / SA.' },
+      { step: 2, title: 'Submit Pesanan', desc: 'Setelah submit berhasil, sistem otomatis membuat/mengirim ringkasan pesanan ke Grup Live Chat WMS toko Anda.' },
+      { step: 3, title: 'Pantau Update di Live Chat WMS', desc: 'Cek widget atau halaman Live Chat WMS untuk melihat update resi, SJ DealPOS, atau pesan langsung dari tim gudang.' }
     ],
     button_badges_store: [
-      { label: 'No. HP PIC Terisi Otomatis', color: 'emerald', icon: 'Phone' },
+      { label: 'Grup Live Chat Store', color: 'indigo', icon: 'MessageSquare' },
       { label: 'PIC Store * (Wajib Isi Nama)', color: 'rose', icon: 'User' }
     ],
-    store_notes: '💡 Nomor WA toko terisi otomatis agar seluruh update gudang langsung masuk ke HP operasional toko Anda.',
+    store_notes: '💡 Tim Store hanya dapat melihat grup order miliknya sendiri (tidak tercampur dengan grup Store lain).',
 
-    keywords: ['no wa store', 'no hp store', 'pic store', 'kontak toko', 'notifikasi wa', 'fonnte', 'default hp', 'store outlet'],
+    keywords: ['live chat', 'grup chat', 'no wa store', 'no hp store', 'pic store', 'kontak toko', 'notifikasi otomatis', 'store outlet'],
     view_count: 85
   },
 
   {
     id: 'faq-notif-wa-store-penyedia-otomatis',
     category: 'manual_shipment',
-    question: 'Apakah Store Penyedia Barang otomatis menerima notifikasi WA saat pesanan disubmit?',
-    answer: 'Ya, sistem WMS secara otomatis mengirim notifikasi WhatsApp permintaan penarikan barang ke nomor resmi Store Penyedia begitu pesanan yang membutuhkan pemenuhan antar-toko (Inter-Store) disubmit.',
+    question: 'Apakah Store Penyedia Barang otomatis menerima notifikasi saat pesanan antar-toko (Inter-Store) disubmit, dan apakah masuk grup yang sama?',
+    answer: 'Ya, Store Penyedia otomatis menerima notifikasi di Grup Live Chat WMS miliknya sendiri secara terpisah (terisolasi dari grup Store Pemohon) sehingga data dan riwayat chat antar-toko tetap privat.',
     target_audience: 'all',
 
     // PERSPEKTIF ADMIN GUDANG
-    answer_admin: 'Ketika Store Pemohon mensubmit pesanan dengan produk yang diambil dari toko cabang lain (bukan gudang marketplace), Fonnte langsung memicu pengiriman pesan resmi "📦 PERMINTAAN PENGIRIMAN PRODUK (STORE ➔ WAREHOUSE)" ke nomor WhatsApp Store Penyedia barang tersebut. Admin juga tetap memiliki tombol "Notif WA Store" di kartu rekap jika sewaktu-waktu ingin memicu pengiriman ulang secara manual.',
+    answer_admin: 'Ketika Store A mensubmit pesanan dengan produk yang diambil dari Store B (Inter-Store Fulfillment), sistem mengirimkan konfirmasi pesanan lengkap ke Grup Live Chat Store A, dan secara terpisah mengirimkan instruksi pengiriman khusus item Store B ke Grup Live Chat Store B (@warehouse + @chocoadm + Store B). Store B TIDAK dimasukkan ke grup Store A. Saat gudang menerima barang dari Store B atau terjadi pembatalan, progres otomatis dikirim ke grup Store B dan dimirroring ke grup Store A. Admin juga memiliki tombol "Notif Live Chat Store" di kartu rekap untuk mengirim pengingat manual.',
     action_steps_admin: [
-      { step: 1, title: 'Otomatisasi Saat Submit', desc: 'Sistem mendeteksi kolom fulfillment tiap item. Jika dialokasikan dari toko cabang, pesan WA penarikan otomatis terkirim.' },
-      { step: 2, title: 'Tombol Notif WA Store Manual (Opsional)', desc: 'Admin dapat menekan tombol "Notif WA Store" pada kartu pesanan rekap untuk mengirim ulang follow up.' },
-      { step: 3, title: 'Pantau Pengiriman Fisik', desc: 'Pastikan store penyedia segera mengirimkan pakaian ke gudang pusat dengan melampirkan Surat Jalan Struk.' }
+      { step: 1, title: 'Isolasi Grup Otomatis Saat Submit', desc: 'Sistem memisahkan item per toko: grup Store Pemohon mendapat ringkasan penuh, grup Store Penyedia hanya mendapat daftar item miliknya + instruksi cetak SJ Struk.' },
+      { step: 2, title: 'Mirroring Progres Otomatis', desc: 'Saat Store Penyedia klik Dikirim ke WH atau Admin klik Tandai Terima, update otomatis muncul di grup Store Pemohon juga.' },
+      { step: 3, title: 'Tombol Notif Live Chat Store (Opsional)', desc: 'Admin dapat menekan tombol "Notif Live Chat Store" di kartu rekap jika ingin mengirim pengingat ulang ke grup Store penyedia.' }
     ],
     button_badges_admin: [
-      { label: 'Auto-Send WA Inter-Store', color: 'emerald', icon: 'Send' },
-      { label: 'Notif WA Store (Manual)', color: 'blue', icon: 'MessageCircle' }
+      { label: 'Auto-Notify Live Chat', color: 'indigo', icon: 'Send' },
+      { label: 'Notif Live Chat Store', color: 'blue', icon: 'MessageCircle' }
     ],
-    admin_notes: 'ℹ️ Pesan otomatis memuat rincian SKU, nama produk, size, qty, dan instruksi pencetakan Surat Jalan Rangkap 2 bagi toko penyedia.',
+    admin_notes: 'ℹ️ Pesan otomatis ke Store Penyedia memuat rincian SKU, nama produk, size, qty, dan instruksi pencetakan Surat Jalan Rangkap 2.',
 
     // PERSPEKTIF TIM STORE / OUTLET
-    answer_store: 'Jika Anda membuat pesanan dan memilih barang dari toko cabang lain, Anda tidak perlu repot menghubungi toko penyedia secara terpisah. Sistem WMS akan otomatis mengirimkan pesan WhatsApp ke HP operasional toko penyedia barang berisi instruksi untuk mengirimkan pakaian tersebut ke Gudang Pusat.',
+    answer_store: 'Jika Anda membuat pesanan dan memilih barang dari toko cabang lain, Anda tidak perlu menghubungi toko penyedia secara terpisah. Sistem WMS otomatis mengirimkan permintaan kirim barang ke Grup Live Chat WMS milik toko penyedia, dan Anda akan menerima update progresnya secara otomatis di grup Live Chat toko Anda.',
     action_steps_store: [
       { step: 1, title: 'Pilih Fulfillment Store pada Produk', desc: 'Di form pesanan manual, tentukan toko cabang yang menyediakan stok produk.' },
-      { step: 2, title: 'Submit Pesanan', desc: 'Klik Simpan Pesanan. Notifikasi permintaan kirim barang langsung masuk otomatis ke WA toko penyedia.' },
-      { step: 3, title: 'Toko Penyedia Mengirim Barang', desc: 'Toko penyedia akan mencetak Surat Jalan Kirim Struk dan mengirimkan fisik produk ke Gudang.' }
+      { step: 2, title: 'Submit Pesanan', desc: 'Klik Simpan Pesanan. Sistem mengirim rincian ke grup Live Chat Anda dan permintaan penarikan ke grup Live Chat toko penyedia secara terpisah.' },
+      { step: 3, title: 'Pantau Mirroring Progres di Live Chat', desc: 'Saat barang dari toko penyedia dikirim atau tiba di gudang pusat, info progresnya otomatis muncul di grup Live Chat toko Anda.' }
     ],
     button_badges_store: [
-      { label: 'Kirim Otomatis ke WA Cabang', color: 'emerald', icon: 'CheckCircle2' },
-      { label: 'Fulfillment Antar-Store', color: 'indigo', icon: 'Truck' }
+      { label: 'Kirim Otomatis ke Live Chat', color: 'indigo', icon: 'CheckCircle2' },
+      { label: 'Fulfillment Antar-Store', color: 'blue', icon: 'Truck' }
     ],
-    store_notes: '💡 Pastikan toko tujuan fulfillment dipilih dengan benar agar notifikasi penarikan terkirim ke cabang yang tepat.',
+    store_notes: '💡 Pastikan toko tujuan fulfillment dipilih dengan benar agar notifikasi penarikan terkirim ke grup cabang yang tepat.',
 
-    keywords: ['notif wa store penyedia', 'inter store fulfillment', 'tarik barang cabang', 'surat jalan struk', 'kirim ke gudang', 'notifikasi otomatis'],
+    keywords: ['notif store penyedia', 'inter store fulfillment', 'tarik barang cabang', 'live chat wms', 'surat jalan struk', 'kirim ke gudang', 'notifikasi otomatis'],
     view_count: 92
   },
 
@@ -468,24 +468,24 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
     category: 'manual_shipment',
     is_pinned: true,
     question: 'Kapan pesanan Manual Shipment / Alter berpindah dari tab "Pesanan Baru" ke "Sedang Diproses", dan bagaimana cara menggunakan fitur bantu Picking WA Grup (Fonnte) atau cetak massal?',
-    answer: 'Pesanan hanya berpindah dari tab "Pesanan Baru" ke "Sedang Diproses" setelah Admin Gudang menyelesaikan 2 tahapan cetak: (1) Cetak Picking List (A4) DAN (2) Cetak Label Paket (A6). Fitur "Picking WA Grup (Fonnte)" merupakan fitur pembantu khusus Admin/Superadmin untuk meneruskan daftar barang & lokasi rak ke grup WA tim picker, dan tidak menggantikan syarat cetak Picking A4 & Label A6.',
+    answer: 'Pesanan hanya berpindah dari tab "Pesanan Baru" ke "Sedang Diproses" setelah Admin Gudang menyelesaikan 2 tahapan cetak: (1) Cetak Picking List (A4) DAN (2) Cetak Label Paket (A6). Fitur "Picking WA Grup (Fonnte)" merupakan fitur pembantu khusus Admin/Superadmin yang mengirimkan HANYA item fulfillment Marketplace / Gudang beserta lokasi raknya ke grup WA tim picker (item fulfillment Store dikoordinasikan lewat Live Chat WMS), dan tidak menggantikan syarat cetak Picking A4 & Label A6.',
     target_audience: 'all',
 
     // PERSPEKTIF ADMIN GUDANG
-    answer_admin: 'Sebagai Admin Gudang / Superadmin, syarat memindahkan pesanan dari tab "Pesanan Baru" ke "Sedang Diproses" tetap wajib menyelesaikan 2 tahapan cetak fisik: (1) Klik "Cetak Picking List (A4)" (lembar ceklis pengambilan barang), dan (2) Klik "Cetak Label Paket (A6)". Selain itu, tersedia tombol pembantu khusus Admin "📲 Picking WA Grup (Fonnte)" untuk mengirimkan rincian barang beserta lokasi rak gudang langsung ke Grup WhatsApp Gudang.',
+    answer_admin: 'Sebagai Admin Gudang / Superadmin, syarat memindahkan pesanan dari tab "Pesanan Baru" ke "Sedang Diproses" tetap wajib menyelesaikan 2 tahapan cetak fisik: (1) Klik "Cetak Picking List (A4)" (lembar ceklis pengambilan barang), dan (2) Klik "Cetak Label Paket (A6)". Selain itu, tersedia tombol pembantu khusus Admin "📲 Picking WA Grup (Fonnte)" yang secara khusus memfilter dan mengirim item fulfillment Marketplace / Gudang beserta lokasi raknya langsung ke Grup WhatsApp tim picker gudang.',
     action_steps_admin: [
       { step: 1, title: 'Cek Indikator Status Cetak (2 Tahap Wajib)', desc: 'Setiap pesanan menampilkan status "Picking List (A4)" dan "Cetak Label (A6)". Keduanya wajib dicetak agar pesanan berpindah ke tab "Sedang Diproses".' },
-      { step: 2, title: 'Fitur Pembantu: Kirim Picking ke WA Grup (Khusus Admin)', desc: 'Gunakan tombol "📲 Picking WA Grup" (pada bar Filter Cepat Cetak, toolbar multi-select, atau menu aksi pesanan) sebagai fitur pembantu untuk mengirim rincian SKU, Qty, Lokasi Rak Gudang, dan Instruksi Alterasi ke Grup WA via Fonnte.' },
+      { step: 2, title: 'Fitur Pembantu: Kirim Picking Marketplace ke WA Grup', desc: 'Gunakan tombol "📲 Picking WA Grup (Fonnte)" sebagai fitur pembantu untuk mengirim rincian SKU, Qty, dan Lokasi Rak Gudang (khusus item Marketplace / Gudang; item Store otomatis ditangani via Live Chat WMS).' },
       { step: 3, title: 'Cetak Picking List (A4) & Label Paket (A6) Massal', desc: 'Gunakan bar "Filter Cepat Cetak" (Belum Cetak Picking / Belum Cetak Label) lalu klik "⚡ Cetak Picking Massal" dan "⚡ Cetak Label Massal".' },
       { step: 4, title: 'Otomatis Pindah ke "Sedang Diproses"', desc: 'Begitu kedua dokumen (Picking List A4 ✓ dan Label Paket A6 ✓) selesai dicetak, status pesanan otomatis berubah menjadi "Diproses" dan berpindah ke tab "Sedang Diproses".' }
     ],
     button_badges_admin: [
       { label: '⚡ Cetak Picking Massal', color: 'indigo', icon: 'FileText' },
       { label: '⚡ Cetak Label Massal', color: 'amber', icon: 'Printer' },
-      { label: '📲 Picking WA Grup (Bantu)', color: 'emerald', icon: 'Send' },
+      { label: '📲 Picking WA Grup (Marketplace)', color: 'emerald', icon: 'Send' },
       { label: 'Label OK', color: 'emerald', icon: 'CheckCircle2' }
     ],
-    admin_notes: '💡 Fitur "📲 Picking WA Grup" hanya tampil di akun Admin/Superadmin (tidak tampil di akun Store) dan berfungsi murni sebagai fitur pembantu koordinasi tim picker tanpa mengubah status cetak dokumen A4/A6.',
+    admin_notes: '💡 Fitur "📲 Picking WA Grup (Fonnte)" hanya tampil di akun Admin/Superadmin dan otomatis memfilter hanya item Marketplace/Gudang agar tim picker tidak bingung dengan item Store.',
 
     // PERSPEKTIF TIM STORE / OUTLET
     answer_store: 'Tim Store dapat memantau progres penyiapan pesanan di Gudang Pusat melalui indikator badge pada kartu/tabel pesanan. Pesanan yang baru Anda submit akan berada di tab "Pesanan Baru" sampai Admin Gudang menyelesaikan kedua tahapan cetak internal gudang: Cetak Picking List (A4) dan Cetak Label Paket (A6). Tim Store hanya perlu mencetak "SJ Struk Rangkap 2" apabila mengirimkan fisik barang dari toko ke gudang.',

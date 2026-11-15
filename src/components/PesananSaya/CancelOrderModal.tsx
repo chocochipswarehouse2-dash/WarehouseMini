@@ -41,7 +41,7 @@ export const CancelOrderModal: React.FC<CancelOrderModalProps> = ({
     if (isOpen) {
       setSelectedReason(COMMON_CANCEL_REASONS[0]);
       setNotes('');
-      setSendWa(Boolean(order?.no_telp_store));
+      setSendWa(true);
       setErrorMsg('');
     }
   }, [isOpen, order]);
@@ -157,26 +157,24 @@ export const CancelOrderModal: React.FC<CancelOrderModalProps> = ({
             />
           </div>
 
-          {/* Opsi Kirim WA Fonnte ke Store */}
-          {order.no_telp_store && (
-            <label className="flex items-center gap-2 p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={sendWa}
-                onChange={(e) => setSendWa(e.target.checked)}
-                className="w-4 h-4 text-emerald-600 rounded border-slate-300 dark:border-slate-600 focus:ring-emerald-500"
-              />
-              <div className="text-xs">
-                <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1">
-                  <Send className="w-3 h-3 text-emerald-600" />
-                  Kirim Notifikasi Pembatalan via WhatsApp Fonnte ke Store
-                </span>
-                <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5">
-                  Tujuan: {order.no_telp_store} ({order.nama_pengirim})
-                </span>
-              </div>
-            </label>
-          )}
+          {/* Opsi Kirim Notifikasi ke Grup Live Chat WMS */}
+          <label className="flex items-center gap-2 p-2.5 bg-indigo-50/60 dark:bg-indigo-950/30 rounded-xl border border-indigo-200 dark:border-indigo-800/60 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={sendWa}
+              onChange={(e) => setSendWa(e.target.checked)}
+              className="w-4 h-4 text-indigo-600 rounded border-slate-300 dark:border-slate-600 focus:ring-indigo-500"
+            />
+            <div className="text-xs">
+              <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1">
+                <Send className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                Kirim Notifikasi Pembatalan ke Grup Live Chat WMS
+              </span>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                Grup: {order.nama_pengirim || 'Store'} (@warehouse · @chocoadm · Store)
+              </span>
+            </div>
+          </label>
 
           {errorMsg && (
             <div className="p-2.5 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-lg text-xs text-red-600 dark:text-red-400 flex items-center gap-2">

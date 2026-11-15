@@ -3,8 +3,9 @@ import { Printer, X, Scissors, Wrench, Building2, Warehouse, Calendar, User, Clo
 import { ManualShipmentOrder } from '../../types';
 import { isRealAlterItem } from '../../utils/alterationUtils';
 import QRCode from 'qrcode';
-import { sendFonnteMessage, getFonnteConfig, normalizeWhatsAppNumber } from '../../services/whatsapp';
+import { normalizeWhatsAppNumber } from '../../services/whatsapp';
 import { resolveOrderSourceStore, resolveOrderFulfillmentStores, StoreFulfillmentGroup, getStoreContact, saveStoreContact, getFullStoreName } from '../../services/gasManualShipment';
+import { notifyStoreFulfillmentGroupManualToChat } from '../../services/orderChatNotificationService';
 
 interface SuratJalanAlterReceiptModalProps {
   order?: ManualShipmentOrder | null;
@@ -396,25 +397,22 @@ _WMS Warehouse System_`;
     }
   };
 
-  // Kirim via Fonnte API untuk store yang aktif disorot
+  // Kirim via Live Chat WMS untuk store yang aktif disorot
   const handleSendWaFonnte = async () => {
     setIsSendingWa(true);
-    const fonnteCfg = getFonnteConfig();
     let sentSuccess = 0;
-    let fallbackText = '';
 
     for (const ord of orderList) {
-      const phone = editablePhone || currentGroup?.phone || sourceInfo?.phone;
-      const waMsg = generateWaMessage(ord, targetStoreName, currentGroup?.items);
-      fallbackText = waMsg;
-
-      if (fonnteCfg.token && phone) {
-        try {
-          const res = await sendFonnteMessage(phone, waMsg, fonnteCfg.token);
-          if (res.success) sentSuccess++;
-        } catch (e) {
-          console.warn('Fonnte send error:', e);
-        }
+      try {
+        const ok = await notifyStoreFulfillmentGroupManualToChat(
+          ord,
+          targetStoreName,
+          currentGroup?.items || ord.items || [],
+          sourceInfo?.requesterStoreName || ord.nama_pengirim || ''
+        );
+        if (ok) sentSuccess++;
+      } catch (e) {
+        console.warn('Live Chat store notice error:', e);
       }
     }
 
@@ -422,40 +420,41 @@ _WMS Warehouse System_`;
 
     if (sentSuccess > 0) {
       if (onShowToast) {
-        onShowToast(`✅ Notifikasi permintaan kirim berhasil terkirim ke WA Store ${targetStoreName} via Fonnte!`, 'success');
+        onShowToast(`Notifikasi permintaan kirim berhasil dikirim ke Grup Live Chat WMS ${targetStoreName}!`, 'success');
       }
     } else {
+      const fallbackText = generateWaMessage(activeOrder, targetStoreName, currentGroup?.items);
       if (typeof navigator !== 'undefined' && navigator.clipboard) {
         navigator.clipboard.writeText(fallbackText);
       }
       if (onShowToast) {
-        onShowToast('📋 Format notifikasi disalin ke clipboard (Fonnte API token belum dikonfigurasi / nomor tidak aktif)', 'info');
+        onShowToast('Format notifikasi disalin ke clipboard (toko merupakan Gudang Utama atau grup gagal dibuat).', 'info');
       }
     }
   };
 
-  // Kirim otomatis ke SEMUA store fulfillment sekaligus (Batch Send Multi-Store)
+  // Kirim otomatis ke SEMUA Grup Live Chat Store fulfillment sekaligus (Batch Send Multi-Store)
   const handleSendAllFulfillmentsFonnte = async () => {
     setIsSendingWa(true);
-    const fonnteCfg = getFonnteConfig();
     let totalSent = 0;
 
     for (const group of fulfillmentData.groups) {
-      const phoneToUse = group.phone || (getStoreContact(group.storeName)?.no_wa || '');
-      if (!phoneToUse) continue;
-      const msg = generateWaMessage(activeOrder, group.storeName, group.items);
-      if (fonnteCfg.token) {
-        try {
-          const res = await sendFonnteMessage(phoneToUse, msg, fonnteCfg.token);
-          if (res.success) {
-            totalSent++;
-            if (onShowToast) {
-              onShowToast(`✅ Notifikasi WA terkirim ke Store ${group.storeName} (${group.items.length} item)`, 'info');
-            }
+      if (group.isGudangGroup) continue;
+      try {
+        const ok = await notifyStoreFulfillmentGroupManualToChat(
+          activeOrder,
+          group.storeName,
+          group.items || [],
+          sourceInfo?.requesterStoreName || activeOrder.nama_pengirim || ''
+        );
+        if (ok) {
+          totalSent++;
+          if (onShowToast) {
+            onShowToast(`Notifikasi Live Chat terkirim ke grup ${group.storeName} (${group.items.length} item)`, 'info');
           }
-        } catch (e) {
-          console.warn('Batch Fonnte error:', e);
         }
+      } catch (e) {
+        console.warn('Batch Live Chat error:', e);
       }
     }
 
@@ -463,11 +462,11 @@ _WMS Warehouse System_`;
 
     if (totalSent > 0) {
       if (onShowToast) {
-        onShowToast(`🎉 Berhasil mengirim notifikasi WA ke seluruh ${totalSent} Store Fulfillment!`, 'success');
+        onShowToast(`Berhasil mengirim notifikasi Live Chat WMS ke seluruh ${totalSent} Store Fulfillment!`, 'success');
       }
     } else {
       if (onShowToast) {
-        onShowToast('Gagal mengirim otomatis: Fonnte token belum dikonfigurasi atau nomor WA store kosong.', 'warning');
+        onShowToast('Tidak ada item Store Fulfillment untuk dikirim ke Grup Live Chat.', 'warning');
       }
     }
   };
@@ -869,17 +868,17 @@ _WMS Warehouse System_`;
               </div>
             </div>
 
-            {/* Tombol Aksi Pengiriman WhatsApp */}
+            {/* Tombol Aksi Pengiriman Notifikasi */}
             <div className="pt-1 flex flex-col gap-2">
               {fulfillmentData.hasMultipleFulfillments && (
                 <button
                   type="button"
                   disabled={isSendingWa}
                   onClick={handleSendAllFulfillmentsFonnte}
-                  className="w-full py-2.5 px-3 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer disabled:opacity-50 text-xs"
+                  className="w-full py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50 text-xs"
                 >
-                  <Send className="w-4 h-4 text-amber-200" />
-                  <span>🚀 Kirim WA Notif ke Semua Store Fulfillment ({fulfillmentData.groups.length} Store Sekaligus)</span>
+                  <Send className="w-4 h-4" />
+                  <span>Kirim Notif ke Semua Grup Live Chat Store ({fulfillmentData.groups.length} Store)</span>
                 </button>
               )}
 
@@ -887,21 +886,21 @@ _WMS Warehouse System_`;
                 <button
                   type="button"
                   onClick={() => handleOpenWaWeb(activeOrder)}
-                  className="flex-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer"
+                  className="flex-1 py-2.5 px-3 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-xl font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
                 >
                   <ExternalLink className="w-4 h-4" />
-                  <span>Buka Chat WA ({targetStoreName})</span>
+                  <span>WA Web (Opsional)</span>
                 </button>
 
                 <button
                   type="button"
                   disabled={isSendingWa}
                   onClick={handleSendWaFonnte}
-                  className="py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer disabled:opacity-50"
-                  title="Kirim otomatis ke nomor store melalui integrasi Fonnte WhatsApp API"
+                  className="py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                  title="Kirim ke Grup Live Chat WMS Store (@warehouse · @chocoadm · Store)"
                 >
                   {isSendingWa ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                  <span>Kirim WA Fonnte ke {targetStoreName}</span>
+                  <span>Kirim ke Live Chat {targetStoreName}</span>
                 </button>
               </div>
             </div>

@@ -15,6 +15,8 @@ import { getSupabaseClient, supabaseFetch, fetchWmsUsersFromSupabase } from './s
 import { uploadImageToGdrive } from './gdriveUpload';
 import { isSuperadmin } from './permissions';
 import { getUserPersonName } from '../utils/userResolver';
+import { getFullStoreName } from './gasManualShipment';
+import { getStoreCode } from '../utils/transactionGenerator';
 import { playNewTaskChime, vibrateDevice } from './audio';
 import {
   showPushNotification,
@@ -75,6 +77,9 @@ export interface ChatMessage {
   is_deleted?: boolean;
   deleted_at?: string;
   deleted_by?: string;
+  is_system_update?: boolean;
+  system_event_type?: string;
+  actor_name?: string;
 }
 
 export interface ChatParticipantProfile {
@@ -104,6 +109,9 @@ export interface ChatRoom {
   unread_by?: string[]; // lowercase usernames who have not read the latest messages
   unread_counts?: Record<string, number>; // per-user unread count
   archive_urls?: string[]; // Google Drive cold archive URLs for >150 historical messages
+  system_group_kind?: 'store_ops';
+  store_code?: string;
+  store_name?: string;
 }
 
 export interface OnlineUserPresence {
@@ -115,6 +123,12 @@ export interface OnlineUserPresence {
   active_page?: string;
   typing_room_id?: string | null;
 }
+
+export const WAREHOUSE_OPS_CORE_ACCOUNTS = ['warehouse', 'chocoadm'] as const;
+const STORE_ACCOUNT_USERNAME_ALIASES: Record<string, string> = {
+  lvt: 'chocolvl',
+  lvl: 'chocolvl',
+};
 
 export const EDIT_DELETE_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 const HOT_MESSAGE_LIMIT_PER_ROOM = 150;
@@ -466,6 +480,15 @@ export function canModifyMessage(
     };
   }
 
+  if (msg.is_system_update) {
+    return {
+      allowed: false,
+      reason: 'Pesan update otomatis sistem WMS terkunci untuk integritas audit.',
+      remainingSeconds: 0,
+      isReadByOthers: false,
+    };
+  }
+
   const isReadByOthers = hasOtherUserReadMessage(msg, sender);
   if (isReadByOthers) {
     return {
@@ -727,6 +750,10 @@ class LiveChatManager {
     if (!room || isSelfDirectRoom(room)) return false;
     const u = String(username || this.currentSession?.username || '').trim().toLowerCase();
     if (!u) return false;
+    // System Store Ops groups strictly enforce explicit participants list (@warehouse, @chocoadm, 1 related store)
+    if (room.system_group_kind === 'store_ops') {
+      return Array.isArray(room.participants) && room.participants.some((p) => p.toLowerCase() === u);
+    }
     // Defensive check: Group creator is ALWAYS considered a member of their created group room
     if (room.type === 'group' && String(room.created_by || '').trim().toLowerCase() === u) {
       return true;
@@ -1755,6 +1782,355 @@ class LiveChatManager {
   }
 
   /**
+   * Resolves a Store's canonical code, official name, and WMS user account profile
+   * without touching CS accounts (chococs*) or Gudang/Marketplace placeholders.
+   */
+  public async resolveStoreAccountForGroup(
+    storeNameOrCode?: string,
+    explicitCode?: string
+  ): Promise<{
+    canonicalCodeLower: string;
+    fullStoreName: string;
+    storeProfile: ChatParticipantProfile;
+  } | null> {
+    const rawInput = String(storeNameOrCode || '').trim();
+    const rawLower = rawInput.toLowerCase();
+    if (
+      !rawInput ||
+      rawLower === 'marketplace' ||
+      rawLower === 'gudang' ||
+      rawLower === 'warehouse' ||
+      rawLower.includes('gudang utama')
+    ) {
+      return null;
+    }
+
+    if (this.state.allUsersDirectory.length === 0) {
+      await this.refreshUsersDirectory();
+    }
+
+    const fullStoreName = getFullStoreName(rawInput) || rawInput;
+    const fullLower = fullStoreName.trim().toLowerCase();
+    let derivedCode = String(explicitCode || getStoreCode(fullStoreName) || getStoreCode(rawInput) || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+
+    if (derivedCode === 'lvl') {
+      derivedCode = 'lvt';
+    }
+    if (!derivedCode || derivedCode === 'store') {
+      derivedCode = fullLower.replace(/[^a-z0-9]/g, '').slice(0, 6);
+    }
+    if (!derivedCode) return null;
+
+    const aliasUsername = STORE_ACCOUNT_USERNAME_ALIASES[derivedCode];
+    const expectedUsername = aliasUsername || (derivedCode.startsWith('choco') ? derivedCode : `choco${derivedCode}`);
+
+    const matchedUser = this.state.allUsersDirectory.find((u) => {
+      const uname = String(u.username || '').trim().toLowerCase();
+      if (!uname) return false;
+      if (uname === 'warehouse' || uname === 'chocoadm' || uname.startsWith('chococs')) return false;
+      const roleLower = String(u.role || '').trim().toLowerCase();
+      if (roleLower === 'customer service') return false;
+      if (uname === expectedUsername) return true;
+      if (aliasUsername && uname === `choco${derivedCode}`) return true;
+      if (u.store_name && getFullStoreName(u.store_name).toLowerCase() === fullLower) return true;
+      if (u.name && getFullStoreName(u.name).toLowerCase() === fullLower && roleLower === 'store') return true;
+      return false;
+    });
+
+    const resolvedUsername = matchedUser?.username?.trim().toLowerCase() || expectedUsername;
+    const storeProfile: ChatParticipantProfile = matchedUser || {
+      username: resolvedUsername,
+      name: fullStoreName,
+      role: 'Store',
+      store_name: fullStoreName,
+    };
+
+    return {
+      canonicalCodeLower: derivedCode,
+      fullStoreName,
+      storeProfile,
+    };
+  }
+
+  /**
+   * Lazily creates or heals a permanent deterministic Store Ops group:
+   * roomId = group_ops_<storeCodeLower>
+   * STRICT members ONLY: @warehouse, @chocoadm, and the 1 related Store account.
+   */
+  public async ensureStoreOpsGroupRoom(params: {
+    storeName: string;
+    storeCode?: string;
+    targetStoreUsername?: string;
+  }): Promise<ChatRoom | null> {
+    const resolved = await this.resolveStoreAccountForGroup(params.storeName, params.storeCode);
+    if (!resolved) return null;
+
+    const { canonicalCodeLower, fullStoreName, storeProfile } = resolved;
+    const storeUsername = String(params.targetStoreUsername || storeProfile.username || '')
+      .trim()
+      .toLowerCase();
+    if (!storeUsername) return null;
+
+    const roomId = `group_ops_${canonicalCodeLower}`;
+    const targetParticipants = Array.from(
+      new Set<string>([...WAREHOUSE_OPS_CORE_ACCOUNTS, storeUsername])
+    );
+
+    const buildProfile = (uname: string): ChatParticipantProfile => {
+      if (uname === storeUsername) {
+        return { ...storeProfile, username: storeUsername, store_name: storeProfile.store_name || fullStoreName };
+      }
+      const dirMatch = this.state.allUsersDirectory.find((u) => u.username.toLowerCase() === uname);
+      if (dirMatch) return dirMatch;
+      return {
+        username: uname,
+        name: getUserPersonName(uname) || (uname === 'chocoadm' ? 'Admin Warehouse' : 'Warehouse'),
+        role: 'Superadmin',
+      };
+    };
+
+    // Check local state first, then authoritative server index (crucial for cross-store notifications)
+    let existing = this.state.rooms.find(
+      (r) => r.id === roomId && !isRoomDeletedByTombstone(r, this.deletedRoomTombstones)
+    );
+
+    if (!existing) {
+      const [serverRooms, serverTombstones] = await Promise.all([
+        fetchSystemDocJson<ChatRoom[]>(ROOMS_INDEX_DOC_KEY),
+        fetchSystemDocJson<Record<string, string>>(ROOMS_TOMBSTONE_DOC_KEY),
+      ]);
+      if (serverTombstones && typeof serverTombstones === 'object') {
+        Object.assign(this.deletedRoomTombstones, serverTombstones);
+        saveLocalDeletedTombstones(this.deletedRoomTombstones);
+      }
+      if (Array.isArray(serverRooms)) {
+        const srvMatch = serverRooms.find((r) => r?.id === roomId);
+        if (srvMatch && !isRoomDeletedByTombstone(srvMatch, this.deletedRoomTombstones)) {
+          existing = srvMatch;
+        }
+      }
+    }
+
+    if (existing) {
+      const currentParticipants = (existing.participants || []).map((p) => p.toLowerCase());
+      const participantsExactMatch =
+        currentParticipants.length === targetParticipants.length &&
+        targetParticipants.every((p) => currentParticipants.includes(p));
+      const metadataMatch =
+        existing.system_group_kind === 'store_ops' &&
+        existing.store_code === canonicalCodeLower.toUpperCase() &&
+        existing.store_name === fullStoreName;
+
+      if (participantsExactMatch && metadataMatch) {
+        return existing;
+      }
+
+      const nextProfiles: Record<string, ChatParticipantProfile> = {};
+      for (const p of targetParticipants) {
+        nextProfiles[p] = existing.participant_profiles?.[p] || buildProfile(p);
+      }
+
+      const reconciledRoom: ChatRoom = {
+        ...existing,
+        name: `[MS & Alter] ${fullStoreName}`,
+        topic: `Koordinasi Manual Shipment & Alteration (${fullStoreName})`,
+        theme_color: existing.theme_color || 'indigo',
+        participants: targetParticipants,
+        participant_profiles: nextProfiles,
+        system_group_kind: 'store_ops',
+        store_code: canonicalCodeLower.toUpperCase(),
+        store_name: fullStoreName,
+        updated_at: new Date().toISOString(),
+      };
+      await this.upsertRoomToServer(reconciledRoom);
+      return reconciledRoom;
+    }
+
+    // Revive safely if a previous tombstone existed
+    const prevDeletedIso = this.deletedRoomTombstones[roomId];
+    const prevDeletedMs = prevDeletedIso ? new Date(prevDeletedIso).getTime() : 0;
+    const safeNowMs = Math.max(Date.now(), Number.isFinite(prevDeletedMs) ? prevDeletedMs + 2000 : 0);
+    const nowIso = new Date(safeNowMs).toISOString();
+
+    if (this.deletedRoomTombstones[roomId]) {
+      delete this.deletedRoomTombstones[roomId];
+      saveLocalDeletedTombstones(this.deletedRoomTombstones);
+    }
+
+    const profiles: Record<string, ChatParticipantProfile> = {};
+    for (const p of targetParticipants) {
+      profiles[p] = buildProfile(p);
+    }
+
+    const newRoom: ChatRoom = {
+      id: roomId,
+      type: 'group',
+      name: `[MS & Alter] ${fullStoreName}`,
+      topic: `Koordinasi Manual Shipment & Alteration (${fullStoreName})`,
+      theme_color: 'indigo',
+      participants: targetParticipants,
+      participant_profiles: profiles,
+      created_by: 'warehouse',
+      created_by_name: 'WMS System',
+      created_at: nowIso,
+      updated_at: nowIso,
+      unread_by: [],
+      unread_counts: {},
+      system_group_kind: 'store_ops',
+      store_code: canonicalCodeLower.toUpperCase(),
+      store_name: fullStoreName,
+    };
+
+    await this.upsertRoomToServer(newRoom);
+    return newRoom;
+  }
+
+  /**
+   * Sends an automated WMS system notification message into a Store Ops group.
+   * Supports cross-store dispatch (when Store A triggers an update for Store B's group)
+   * without leaking Store B's room into Store A's local sidebar or IndexedDB.
+   */
+  public async sendSystemGroupMessage(params: {
+    storeName: string;
+    storeCode?: string;
+    text: string;
+    contextTags?: ChatContextTag[];
+    orderContext?: ChatOrderContext;
+    eventType: string;
+    actorName?: string;
+  }): Promise<{ success: boolean; room?: ChatRoom; message?: ChatMessage; error?: string }> {
+    const cleanText = String(params.text || '').trim();
+    if (!cleanText && !params.orderContext) {
+      return { success: false, error: 'Konten notifikasi sistem kosong.' };
+    }
+
+    const room = await this.ensureStoreOpsGroupRoom({
+      storeName: params.storeName,
+      storeCode: params.storeCode,
+    });
+
+    if (!room) {
+      return { success: false, error: `Grup operasional untuk store "${params.storeName}" tidak dapat dibuat.` };
+    }
+
+    const me = String(this.currentSession?.username || '').trim().toLowerCase() || 'warehouse';
+    const actorLabel =
+      String(params.actorName || '').trim() ||
+      this.currentSession?.name ||
+      getUserPersonName(me) ||
+      this.currentSession?.store_name ||
+      'Sistem WMS';
+
+    const senderInRoom = this.isUserInRoom(room, me);
+    const now = new Date().toISOString();
+
+    const newMsg: ChatMessage = {
+      id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+      room_id: room.id,
+      sender_username: me,
+      sender_name: actorLabel,
+      sender_role: this.currentSession?.role || 'System',
+      sender_store: this.currentSession?.store_name || undefined,
+      text: cleanText,
+      context_tags: params.contextTags && params.contextTags.length > 0 ? params.contextTags : undefined,
+      order_context: params.orderContext,
+      created_at: now,
+      read_by: senderInRoom
+        ? [
+            {
+              username: me,
+              name: actorLabel,
+              read_at: now,
+            },
+          ]
+        : [],
+      is_system_update: true,
+      system_event_type: params.eventType,
+      actor_name: actorLabel,
+    };
+
+    const minValidMs = this.getMinValidMessageTimeMs(room.id, room);
+    const existingMessages = senderInRoom
+      ? this.state.messagesByRoom[room.id] || (await idbGetRoomMessages(room.id))
+      : (await fetchSystemDocJson<ChatMessage[]>(`${ROOM_MSGS_DOC_PREFIX}${room.id}`)) || [];
+
+    const updatedMessages = mergeMessagesIdempotent(existingMessages, [newMsg], minValidMs);
+
+    const previewLine =
+      cleanText
+        .split('\n')
+        .map((l) => l.trim())
+        .find((l) => l && !/^[-─]+$/.test(l)) || `Update Pesanan #${params.orderContext?.order_id || ''}`;
+
+    const recipientParticipants = senderInRoom
+      ? room.participants.filter((p) => p.toLowerCase() !== me)
+      : [...room.participants];
+
+    const nextUnreadCounts: Record<string, number> = { ...(room.unread_counts || {}) };
+    if (senderInRoom) {
+      nextUnreadCounts[me] = 0;
+    }
+    for (const p of recipientParticipants) {
+      const pLower = p.toLowerCase();
+      nextUnreadCounts[pLower] = (Number(nextUnreadCounts[pLower]) || 0) + 1;
+    }
+
+    const updatedRoom: ChatRoom = {
+      ...room,
+      updated_at: now,
+      last_message_id: newMsg.id,
+      last_message_text: previewLine,
+      last_message_sender: me,
+      last_message_sender_name: actorLabel,
+      last_message_at: now,
+      unread_by: Array.from(new Set([...(room.unread_by || []), ...recipientParticipants.map((p) => p.toLowerCase())])),
+      unread_counts: nextUnreadCounts,
+    };
+
+    if (senderInRoom) {
+      this.state.messagesByRoom[room.id] = updatedMessages;
+      const rIdx = this.state.rooms.findIndex((r) => r.id === room.id);
+      if (rIdx >= 0) {
+        this.state.rooms[rIdx] = updatedRoom;
+      } else {
+        this.state.rooms.unshift(updatedRoom);
+      }
+      this.state.rooms.sort((a, b) => this.getRoomSortTime(b) - this.getRoomSortTime(a));
+      this.notify();
+      await idbSaveRoomMessages(room.id, updatedMessages);
+    }
+
+    try {
+      this.channel?.send({
+        type: 'broadcast',
+        event: 'chat:new_message',
+        payload: {
+          room: updatedRoom,
+          message: newMsg,
+          clientInstanceId: this.clientInstanceId,
+        },
+      });
+    } catch {}
+
+    try {
+      this.crossTabChannel?.postMessage({
+        type: 'MESSAGE_UPDATED',
+        roomId: room.id,
+        message: newMsg,
+        room: updatedRoom,
+        clientInstanceId: this.clientInstanceId,
+      });
+    } catch {}
+
+    await this.persistHotMessagesAndRoomIndex(updatedRoom, updatedMessages);
+
+    return { success: true, room: updatedRoom, message: newMsg };
+  }
+
+  /**
    * Add or remove members in an existing Group Discussion Room (Admin, Superadmin, or Group Creator)
    */
   public async updateGroupMembers(
@@ -1943,17 +2319,20 @@ class LiveChatManager {
     });
 
     try {
-      // Update local state immediately
-      const idx = this.state.rooms.findIndex((r) => r.id === room.id);
-      if (idx >= 0) {
-        this.state.rooms[idx] = room;
-      } else {
-        this.state.rooms.unshift(room);
-      }
-      this.state.rooms.sort((a, b) => this.getRoomSortTime(b) - this.getRoomSortTime(a));
-      this.notify();
+      const isMember = this.isUserInRoom(room);
+      if (isMember) {
+        // Update local state immediately only when current user belongs to this room
+        const idx = this.state.rooms.findIndex((r) => r.id === room.id);
+        if (idx >= 0) {
+          this.state.rooms[idx] = room;
+        } else {
+          this.state.rooms.unshift(room);
+        }
+        this.state.rooms.sort((a, b) => this.getRoomSortTime(b) - this.getRoomSortTime(a));
+        this.notify();
 
-      await idbSaveRooms([room]);
+        await idbSaveRooms([room]);
+      }
 
       // Sync with server index WITHOUT re-inserting stale local rooms that may have been deleted on another device
       const [serverRooms, serverTombstones] = await Promise.all([
@@ -2213,7 +2592,9 @@ class LiveChatManager {
       (a, b) => this.getRoomSortTime(b) - this.getRoomSortTime(a)
     );
     await saveSystemDocJson(ROOMS_INDEX_DOC_KEY, sortedRooms);
-    await idbSaveRooms([updatedRoom]);
+    if (this.isUserInRoom(updatedRoom)) {
+      await idbSaveRooms([updatedRoom]);
+    }
   }
 
   /**

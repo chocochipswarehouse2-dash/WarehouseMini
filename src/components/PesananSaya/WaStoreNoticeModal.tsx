@@ -21,7 +21,8 @@ import {
   getStoreContact,
   getFullStoreName
 } from '../../services/gasManualShipment';
-import { sendFonnteMessage, getFonnteConfig, normalizeWhatsAppNumber } from '../../services/whatsapp';
+import { normalizeWhatsAppNumber } from '../../services/whatsapp';
+import { notifyStoreFulfillmentGroupManualToChat } from '../../services/orderChatNotificationService';
 
 interface WaStoreNoticeModalProps {
   order: ManualShipmentOrder;
@@ -116,126 +117,79 @@ _WMS Warehouse System_`;
   };
 
   const handleSendFonnte = async () => {
-    const cleanPhone = normalizeWhatsAppNumber(phoneNumber);
-    if (!cleanPhone) {
-      onShowToast(`Nomor WhatsApp untuk ${targetStore} belum diisi! Silakan ketik nomor telepon terlebih dahulu.`, 'warning');
+    if (isGudangGroup) {
+      onShowToast('Stok Gudang Utama / Marketplace tidak memerlukan pengiriman fisik antar-store.', 'info');
       return;
     }
 
     setIsSending(true);
-    // Simpan ke direktori kontak
-    saveStoreContact(targetStore, phoneNumber);
-
-    const fonnteCfg = getFonnteConfig();
-    if (!fonnteCfg.token) {
-      // Fallback salin dan buka WA Web
-      if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        navigator.clipboard.writeText(waMessage);
-      }
-      onShowToast('Token Fonnte belum dikonfigurasi. Format pesan disalin dan WhatsApp Web dibuka.', 'info');
-      const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(waMessage)}`;
-      window.open(waUrl, '_blank');
-      setIsSending(false);
-      onClose();
-      return;
+    if (phoneNumber.trim()) {
+      saveStoreContact(targetStore, phoneNumber);
     }
 
     try {
-      const res = await sendFonnteMessage(cleanPhone, waMessage, fonnteCfg.token);
-      if (res.success) {
+      const ok = await notifyStoreFulfillmentGroupManualToChat(
+        order,
+        targetStore,
+        items,
+        requesterStore
+      );
+      if (ok) {
         if (fulfillmentData.hasMultipleFulfillments && selectedGroupIdx < fulfillmentData.groups.length - 1) {
-          onShowToast(`✅ Notifikasi berhasil dikirim ke WhatsApp ${targetStore}! Melanjutkan ke store berikutnya...`, 'success');
+          onShowToast(`Notifikasi dikirim ke Grup Live Chat ${targetStore}. Melanjutkan ke store berikutnya...`, 'success');
           setSelectedGroupIdx(prev => prev + 1);
         } else {
-          onShowToast(`✅ Notifikasi permintaan kirim berhasil dikirim ke WhatsApp ${targetStore} (${cleanPhone})!`, 'success');
+          onShowToast(`Notifikasi permintaan kirim berhasil dikirim ke Grup Live Chat WMS ${targetStore}!`, 'success');
           onClose();
         }
       } else {
-        onShowToast(`Gagal mengirim via Fonnte: ${res.message || 'Error koneksi'}. Teks telah disalin ke clipboard.`, 'warning');
+        onShowToast(`Gagal mengirim ke Grup Live Chat ${targetStore}. Teks pesan disalin ke clipboard.`, 'warning');
         if (typeof navigator !== 'undefined' && navigator.clipboard) {
           navigator.clipboard.writeText(waMessage);
         }
       }
     } catch (e: any) {
-      onShowToast(`Error kirim WA: ${e?.message || 'Gagal'}`, 'error');
+      onShowToast(`Error kirim Live Chat: ${e?.message || 'Gagal'}`, 'error');
     } finally {
       setIsSending(false);
     }
   };
 
-  // Kirim otomatis ke SEMUA store fulfillment sekaligus (Multi-Store Fulfillment)
+  // Kirim otomatis ke SEMUA Grup Live Chat Store fulfillment sekaligus (Multi-Store Fulfillment)
   const handleSendAllFulfillments = async () => {
     setIsSending(true);
-    const fonnteCfg = getFonnteConfig();
     let totalSent = 0;
 
     const storeGroups = fulfillmentData.groups.filter(g => !g.isGudangGroup);
     if (storeGroups.length === 0) {
-      onShowToast('Seluruh item pada pesanan ini merupakan stok dari Gudang Utama / Marketplace (tidak memerlukan notif WA toko).', 'info');
+      onShowToast('Seluruh item pada pesanan ini merupakan stok dari Gudang Utama / Marketplace (tidak memerlukan notif toko).', 'info');
       setIsSending(false);
       return;
     }
 
     for (const group of storeGroups) {
-      const contact = getStoreContact(group.storeName);
-      const phoneToUse = group.phone || contact?.no_wa || '';
-      const cleanPhone = normalizeWhatsAppNumber(phoneToUse);
-      if (!cleanPhone) continue;
-
-      const itemsTextGrp = (group.items || []).map((it, idx) => {
-        const sizeStr = it.size && it.size !== 'ALL' && it.size !== '-' ? ` (Size: *${it.size}*)` : '';
-        const fulText = it.fulfillment ? ` [Ambil dari: ${it.fulfillment}]` : '';
-        const alterText = isRealAlterItem(it)
-          ? `\n     ✂️ *Instruksi Alter:* ${it.alteration_detail || it.layanan_type || 'Perlu Alterasi'}`
-          : '';
-        return `  ${idx + 1}. *${it.sku || '-'}* - ${it.nama_produk}${sizeStr} - *${it.qty || 1} pcs*${fulText}${alterText}`;
-      }).join('\n');
-
-      const msg = `📦 *PERMINTAAN PENGIRIMAN PRODUK (STORE ➔ WAREHOUSE)*
---------------------------------------------------
-Halo Tim *${group.storeName}*,
-${group.isInterStore 
-  ? `Terdapat pesanan penarikan barang dari Store Anda yang diajukan oleh *${requesterStore}* untuk dikirimkan ke Gudang Pusat Chocochips:`
-  : `Terdapat pesanan manual shipment dari Store Anda yang wajib dikirimkan ke Gudang Pusat Chocochips:`}
-
-📋 *Rincian Pesanan:*
-• *Order ID / No. Pesanan:* ${order.no_pesanan || order.no_transaksi_customer}
-• *Store Pemohon:* ${requesterStore} (PIC: ${order.pic_store || '-'})
-• *Store Penyedia Barang:* ${group.storeName}
-• *Customer Tujuan Akhir:* ${order.nama_tujuan || '-'}
-• *Waktu Permintaan:* ${new Date().toLocaleString('id-ID')}
-
-👕 *Daftar Produk yang Wajib Dikirim dari Store ${group.storeName}:*
-${itemsTextGrp || '  1. Produk Pakaian Pesanan'}
-
-🚚 *Tujuan Pengiriman:* WAREHOUSE CHOCOCHIPS (Gudang Pusat)
-📄 *Dokumen Wajib:*
-Mohon buka sistem WMS, login akun toko *${group.storeName}*, dan cetak *Surat Jalan Kirim (Struk Rangkap 2)*:
-  - Lembar 1: Simpan sebagai arsip bukti pengiriman toko Anda
-  - Lembar 2: Lampirkan pada fisik pakaian / polybag yang dikirim ke gudang.
-
-Mohon segera diproses dan kirimkan fisik barang ke gudang. Terima kasih!
-_WMS Warehouse System_`;
-
-      if (fonnteCfg.token) {
-        try {
-          const res = await sendFonnteMessage(cleanPhone, msg, fonnteCfg.token);
-          if (res.success) {
-            totalSent++;
-            onShowToast(`✅ WA terkirim ke ${group.storeName} (${group.items.length} item)`, 'info');
-          }
-        } catch (e) {
-          console.warn('Batch send error:', e);
+      try {
+        const ok = await notifyStoreFulfillmentGroupManualToChat(
+          order,
+          group.storeName,
+          group.items || [],
+          requesterStore
+        );
+        if (ok) {
+          totalSent++;
+          onShowToast(`Notifikasi Live Chat terkirim ke grup ${group.storeName} (${group.items.length} item)`, 'info');
         }
+      } catch (e) {
+        console.warn('Batch Live Chat send error:', e);
       }
     }
 
     setIsSending(false);
     if (totalSent > 0) {
-      onShowToast(`🎉 Berhasil mengirim notifikasi WA ke seluruh ${totalSent} Store Fulfillment!`, 'success');
+      onShowToast(`Berhasil mengirim notifikasi Live Chat WMS ke seluruh ${totalSent} Store Fulfillment!`, 'success');
       onClose();
     } else {
-      onShowToast('Gagal mengirim otomatis: Fonnte token belum dikonfigurasi atau nomor WA store kosong.', 'warning');
+      onShowToast('Gagal mengirim notifikasi ke Grup Live Chat Store.', 'warning');
     }
   };
 
@@ -431,10 +385,10 @@ _WMS Warehouse System_`;
               type="button"
               disabled={isSending}
               onClick={handleSendAllFulfillments}
-              className="w-full py-2.5 px-3 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer disabled:opacity-50 text-xs"
+              className="w-full py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50 text-xs"
             >
-              <Send className="w-4 h-4 text-amber-200" />
-              <span>🚀 Kirim WA Notif ke Semua Store Fulfillment ({fulfillmentData.groups.length} Store Sekaligus)</span>
+              <Send className="w-4 h-4" />
+              <span>Kirim Notif ke Semua Grup Live Chat Store ({fulfillmentData.groups.length} Store)</span>
             </button>
           )}
 
@@ -451,19 +405,19 @@ _WMS Warehouse System_`;
               <button
                 type="button"
                 onClick={handleOpenWaWeb}
-                className="px-3 py-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 rounded-xl hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors flex items-center gap-1.5 cursor-pointer"
-                title="Buka Chat WhatsApp langsung di Tab Baru"
+                className="px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer"
+                title="Buka WhatsApp Web manual jika diperlukan"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
-                <span>Buka WA Web</span>
+                <span>WA Web (Opsional)</span>
               </button>
             </div>
 
             <button
               type="button"
-              disabled={isSending}
+              disabled={isSending || isGudangGroup}
               onClick={handleSendFonnte}
-              className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95 rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ml-auto"
+              className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ml-auto"
             >
               {isSending ? (
                 <>
@@ -473,7 +427,7 @@ _WMS Warehouse System_`;
               ) : (
                 <>
                   <Send className="w-3.5 h-3.5" />
-                  <span>Kirim WA ke {targetStore}</span>
+                  <span>Kirim ke Grup Live Chat {targetStore}</span>
                 </>
               )}
             </button>

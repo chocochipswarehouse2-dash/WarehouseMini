@@ -20,7 +20,7 @@ import { ManualShipmentOrder, AlterationFlowStage, AlterationFlowLog, ManualShip
 import { editManualShipment } from '../../services/gasManualShipment';
 import { hasRealAlterItems } from '../../utils/alterationUtils';
 import { triggerOrderEmailNotifications } from '../../services/emailService';
-import { sendFonnteMessage, getFonnteConfig } from '../../services/whatsapp';
+import { notifyAlterationActionToChat } from '../../services/orderChatNotificationService';
 
 export type AlterationActionType = 'mark_sent_store' | 'mark_received_warehouse' | 'complete_and_ship' | 'mark_dealpos_received';
 
@@ -236,27 +236,32 @@ export const AlterationActionModal: React.FC<AlterationActionModalProps> = ({
       if (res.success) {
         onShowToast(`Berhasil memperbarui status alur: ${logNotes}`, 'success');
 
-        // Notifikasi WA (Fonnte) ke Store Penginput
-        const storePhone = (order.no_telp_store || '').trim();
-        if (storePhone) {
-          const fonnteCfg = getFonnteConfig();
-          let waStatusMsg = '';
-          if (actionType === 'mark_received_warehouse') {
-            waStatusMsg = `📦 *UPDATE STATUS: PAKET DITERIMA GUDANG PUSAT*\n--------------------------------------------\nHalo Tim *${storeName}*,\nPaket alterasi dengan No. Tiket *${order.no_pesanan}* telah DITERIMA oleh tim Warehouse (${picTerimaWarehouse}).\n\n👗 *Produk:* ${productName} (${sku})\n📋 *Kondisi:* ${kondisiTerimaWarehouse}\n\nStatus saat ini: *Diterima & Siap Masuk Antrean Pengerjaan*.\n_Chocochips Official Boutique_`;
-          } else if (actionType === 'complete_and_ship') {
-            waStatusMsg = `🚚 *UPDATE STATUS: PESANAN ALTERASI TELAH DIKIRIM*\n--------------------------------------------\nHalo Tim *${storeName}*,\nPengerjaan alterasi untuk No. Tiket *${order.no_pesanan}* telah SELESAI dan diserahkan ke pihak ekspedisi.\n\n👗 *Produk:* ${productName} (${sku})\n🚚 *Ekspedisi:* ${ekspedisiKembali}\n📦 *No. Resi:* *${resiKembali || '-'}*\n📍 *Tujuan:* ${tujuanPengembalian === 'customer' ? `Customer (${namaPenerima})` : `Store (${namaPenerima})`}\n\nSilakan infokan nomor resi ini kepada customer terkait jika diperlukan.\n_Chocochips Official Boutique_`;
-          }
-
-          if (waStatusMsg && fonnteCfg.token) {
-            sendFonnteMessage(storePhone, waStatusMsg, fonnteCfg.token)
-              .then((r) => {
-                if (r.success) {
-                  console.log(`[WA] Notif status ${actionType} terkirim ke store:`, storePhone);
-                }
-              })
-              .catch((err) => console.warn('WA status notice error:', err));
-          }
-        }
+        // Notifikasi Otomatis ke Grup Live Chat WMS Store (@warehouse + @chocoadm + Store)
+        void notifyAlterationActionToChat(
+          updatedOrder,
+          actionType,
+          {
+            dispatchingStoreName: storeName,
+            kurir: actionType === 'mark_sent_store' ? kurirStore : ekspedisiKembali,
+            resi: actionType === 'mark_sent_store' ? resiStore : resiKembali,
+            tgl:
+              actionType === 'mark_sent_store'
+                ? tglKirimStore
+                : actionType === 'mark_received_warehouse'
+                ? tglTerimaWarehouse
+                : tglDealposReceived,
+            pic: logActor,
+            kondisi: kondisiTerimaWarehouse,
+            tujuanPengembalian,
+            namaPenerima,
+            noDeliveryDealpos,
+            catatan: actionType === 'complete_and_ship' ? catatanKirimKembali : catatanDealpos,
+            productSummary: productName,
+            skuSummary: sku,
+            fotoBuktiKirim,
+          },
+          logActor
+        );
 
         // Notifikasi Email (Chocochips Official) ke PIC Store & Customer jika dilampirkan
         if (actionType === 'mark_received_warehouse') {
@@ -785,16 +790,20 @@ ${catatanKirimKembali ? `📝 *Catatan:* ${catatanKirimKembali}\n` : ''}Produk s
 
           {/* Footer Actions */}
           <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0">
-            {actionType === 'complete_and_ship' ? (
+            {actionType === 'complete_and_ship' && tujuanPengembalian === 'customer' ? (
               <button
                 type="button"
                 onClick={handleSendWaNotification}
                 className="px-3 py-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 border border-emerald-300 dark:border-emerald-800 rounded-xl flex items-center gap-1.5 cursor-pointer"
-                title="Kirim pemberitahuan WA ke Store / Customer"
+                title="Kirim pemberitahuan WA langsung ke Customer"
               >
                 <Share2 className="w-3.5 h-3.5" />
-                <span>Kirim WA Pemberitahuan</span>
+                <span>Kirim WA Customer</span>
               </button>
+            ) : actionType === 'complete_and_ship' ? (
+              <span className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400">
+                Notif Store otomatis dikirim ke Grup Live Chat WMS
+              </span>
             ) : <div />}
 
             <div className="flex items-center gap-2">

@@ -71,7 +71,7 @@ import {
   OutletItem
 } from '../../services/gasManualShipment';
 import { formatProductNameWithSize } from '../../utils/sortUtils';
-import { sendFonnteMessage, getFonnteConfig } from '../../services/whatsapp';
+import { notifyOrderSubmittedToChat } from '../../services/orderChatNotificationService';
 import { AlterationRepairReceiptModal } from './AlterationRepairReceiptModal';
 import { SuratJalanAlterReceiptModal } from './SuratJalanAlterReceiptModal';
 import { AlterationActionModal, AlterationActionType } from './AlterationActionModal';
@@ -826,84 +826,12 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
           'success'
         );
 
-        // OTOMATIS FONNTE: Kirim notifikasi WhatsApp ke PIC Store & Grup Tim Penjahit
-        const fonnteCfg = getFonnteConfig();
-        if (fonnteCfg.token) {
-          const photoText = formFotoUrls.length > 0
-            ? `\n📸 *Foto Panduan (Google Drive):*\n` + formFotoUrls.map((u, i) => `  ${i + 1}. ${u}`).join('\n')
-            : '';
-
-          const itemsText = formItems.map((it, idx) => `*${idx + 1}. ${it.nama_produk}* (SKU: \`${it.sku || '-'}\`, Size: *${it.size || '-'}\`, Qty: *${it.qty || 1} pcs*)
-   • Layanan: *${it.layanan_type || 'Alteration'}*
-   • Instruksi: _${it.alteration_detail || it.repair_detail || 'Sesuai standar'}_`).join('\n\n');
-
-          // Pesan BUKTI PENDAFTARAN untuk PIC Store
-          const picStoreWaMsg = `✂️ *BUKTI PENDAFTARAN TIKET ALTERASI & REPAIR [${regNo}]*
---------------------------------------------------
-Halo Kak *${formPicPemohon.trim() || 'PIC Store'}* (${asalDisplayName}),
-
-Pengajuan tiket Alterasi & Repair Anda telah *BERHASIL didaftarkan* ke dalam sistem WMS!
-
-📋 *Detail Tiket:*
-• *No. Tiket / Registrasi:* ${regNo}
-• *ID Form Alter:* *${finalIdFormAlter}*
-• *Sumber Barang:* ${isWarehouseStock ? 'Stok Gudang (Warehouse)' : `Fisik dari Store (${asalDisplayName})`}
-• *PIC Pemohon:* ${formPicPemohon.trim()} (WA: ${formPicStorePhone.trim() || '-'})
-• *Tujuan Setelah Selesai:* ${formTujuanPengembalian === 'customer' ? `Langsung ke Customer (${formCustomerNama.trim()})` : `Kembali ke Store Asal (${asalDisplayName})`}
-• *Ekspedisi Pengiriman Balik:* *${effectiveCourier}*
-• *Estimasi Selesai:* ${formPerkiraanSelesai || '7 Hari'}
-
-✂️ *Rincian Produk (${formItems.length} Item):*
-${itemsText}${photoText}
-
-📝 *Catatan:* ${formNotesPaket.trim() || '-'}
-
-📌 *Informasi Selanjutnya:*
-Status tiket saat ini: *${isWarehouseStock ? 'Menunggu Penyiapan Stok & Pengerjaan di Gudang' : 'Menunggu Fisik Pakaian Dikirim & Tiba di Gudang'}*. Tim Gudang & Penjahit telah menerima notifikasi tiket ini dan akan memprosesnya sesuai instruksi di atas.
-
-Terima kasih atas kerja samanya!
-_WMS Warehouse & Alteration System_`;
-
-          // Pesan SPK / NOTIFIKASI TIKET MASUK untuk Grup Tim Gudang & Penjahit
-          const grupGudangWaMsg = `✂️ *PERMINTAAN ALTER & REPAIR MASUK [${regNo}]*
---------------------------------------------------
-Halo Tim Gudang & Penjahit, terdapat pendaftaran tiket alterasi/repair baru dari store:
-
-📋 *Detail Tiket:*
-• *No. Tiket / Registrasi:* ${regNo}
-• *ID Form Alter:* *${finalIdFormAlter}*
-• *Sumber Barang:* ${isWarehouseStock ? 'Warehouse / Gudang (Ambil Stok Gudang)' : `Store (${asalDisplayName}) - Fisik dari Toko`}
-• *PIC Pemohon:* ${formPicPemohon.trim()} (WA: ${formPicStorePhone.trim() || '-'})
-• *Penerima Selesai:* ${formTujuanPengembalian === 'customer' ? `Langsung ke Customer (${formCustomerNama.trim()})` : `Kembali ke Store Asal (${asalDisplayName})`}
-• *Jasa Kirim / Ekspedisi:* *${effectiveCourier}*
-• *Estimasi Selesai:* ${formPerkiraanSelesai || '7 Hari'}
-
-✂️ *Daftar Produk (${formItems.length} Item):*
-${itemsText}${photoText}
-
-📝 *Catatan:* ${formNotesPaket.trim() || '-'}
-
-Mohon tim penjahit & gudang segera memeriksa detail instruksi, kebutuhan bahan/aksesoris, dan foto panduan di atas.
-_WMS Warehouse & Alteration System_`;
-
-          // Kirim bukti pendaftaran ke nomor PIC Store
-          if (formPicStorePhone.trim()) {
-            sendFonnteMessage(formPicStorePhone.trim(), picStoreWaMsg, fonnteCfg.token)
-              .then((resP) => {
-                if (resP.success) onShowToast('✅ Bukti pendaftaran alterasi terkirim ke WA PIC Store!', 'success');
-              })
-              .catch(() => {});
-          }
-
-          // Kirim SPK masuk ke Grup WA Gudang & Penjahit
-          if (fonnteCfg.groupTarget) {
-            sendFonnteMessage(fonnteCfg.groupTarget, grupGudangWaMsg, fonnteCfg.token)
-              .then((resF) => {
-                if (resF.success) onShowToast('✅ Notif SPK Alterasi berhasil dikirim ke Grup WA Gudang via Fonnte!', 'success');
-              })
-              .catch(() => {});
-          }
-        }
+        // OTOMATIS LIVE CHAT WMS: Buat / perbarui grup Store Ops (@warehouse + @chocoadm + Store) & kirim SPK Alterasi
+        void notifyOrderSubmittedToChat(newOrderPayload, {
+          actorName: formPicPemohon.trim() || session?.name || session?.username || 'PIC Store',
+        }).then(() => {
+          onShowToast(`Notifikasi tiket ${regNo} dikirim ke Grup Live Chat WMS (${asalDisplayName})`, 'info');
+        });
 
         // Reset form
         setFormItems([createDefaultItem()]);
