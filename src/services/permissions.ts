@@ -70,13 +70,14 @@ export const PERMISSION_GROUPS = [
   },
   {
     id: 'g_ops_agenda',
-    title: 'Agenda & Project',
+    title: 'Agenda, Task & Project',
     badge: '📅',
-    description: 'Jadwal kerja dan tugas',
+    description: 'Jadwal kerja, delegasi tugas & project',
     permissions: [
       { key: 'menu_ops_agenda', label: 'Menu Agenda', description: 'Akses utama menu Agenda', isSuperadminOnly: false },
-      { key: 'tab_ops_agenda_kalendar', label: 'Tab Kalendar Kerja', description: 'Akses kalendar event', isSuperadminOnly: false },
-      { key: 'tab_ops_agenda_project', label: 'Tab Project & Task', description: 'Akses task management', isSuperadminOnly: false },
+      { key: 'tab_ops_agenda_kalendar', label: 'Tab Kalendar Kerja', description: 'Akses kalendar event & distribusi', isSuperadminOnly: false },
+      { key: 'tab_ops_agenda_task', label: 'Tab Task (Tugas Delegasi)', description: 'Akses daftar tugas & laporan hasil kerja', isSuperadminOnly: false },
+      { key: 'tab_ops_agenda_project', label: 'Tab Project', description: 'Akses catatan & manajemen project', isSuperadminOnly: false },
     ]
   },
   {
@@ -237,6 +238,7 @@ export const INITIAL_ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<UserPermis
     menu_ops_live_chat: true,
     menu_ops_agenda: true,
     tab_ops_agenda_kalendar: true,
+    tab_ops_agenda_task: true,
     tab_ops_agenda_project: true,
     menu_ops_pesanan_saya: true,
     tab_ops_pesanan_dashboard: true,
@@ -294,6 +296,7 @@ export const INITIAL_ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<UserPermis
     menu_ops_live_chat: true,
     menu_ops_agenda: true,
     tab_ops_agenda_kalendar: true,
+    tab_ops_agenda_task: true,
     tab_ops_agenda_project: true,
     menu_ops_pesanan_saya: true,
     tab_ops_pesanan_dashboard: true,
@@ -446,6 +449,8 @@ export const INITIAL_ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<UserPermis
   },
   'Customer Service': {
     menu_ops_live_chat: true,
+    menu_ops_agenda: true,
+    tab_ops_agenda_task: true,
     menu_ops_resolusi: true,
     tab_ops_resolusi_retur: true,
     tab_ops_resolusi_refund: true,
@@ -642,7 +647,7 @@ export const canAccessPage = (session: UserSession | null, page: ActivePage): bo
     case 'penerimaan_barang': return hasPermission(session, 'tab_ops_loading_penerimaan');
     case 'packing': return hasPermission(session, 'tab_ops_loading_pengiriman');
     case 'pengiriman': return hasPermission(session, 'tab_ops_loading_pengiriman');
-    case 'agenda': return hasPermission(session, 'menu_ops_agenda') || hasPermission(session, 'tab_ops_agenda_kalendar') || hasPermission(session, 'tab_ops_agenda_project');
+    case 'agenda': return hasPermission(session, 'menu_ops_agenda') || hasPermission(session, 'tab_ops_agenda_kalendar') || hasPermission(session, 'tab_ops_agenda_task') || hasPermission(session, 'tab_ops_agenda_project') || canAccessAgendaTasks(session);
     case 'scanner': return hasPermission(session, 'tab_ops_mutasi_scanner');
     case 'penerimaan': return hasPermission(session, 'tab_ops_loading_produksi');
     case 'inventory': return hasPermission(session, 'menu_ops_inventory') || hasPermission(session, 'menu_ops_mutasi') || hasPermission(session, 'tab_ops_mutasi_scanner') || hasPermission(session, 'tab_ops_mutasi_log') || hasPermission(session, 'tab_ops_mutasi_so');
@@ -784,8 +789,27 @@ export const canPacking = (session: UserSession | null) =>
   hasPermission(session, 'tab_ops_loading_pengiriman') || isSuperadmin(session);
 export const canPengiriman = (session: UserSession | null) =>
   hasPermission(session, 'tab_ops_loading_pengiriman') || isSuperadmin(session);
+export const canAccessAgendaTasks = (session: UserSession | null): boolean => {
+  if (!session) return false;
+  if (isSuperadmin(session)) return true;
+  const role = String(session.role || '').trim().toLowerCase().replace(/[\s_-]/g, '');
+  if (role === 'store' || role === 'outlet' || role === 'toko') {
+    return hasPermission(session, 'tab_ops_agenda_task');
+  }
+  if (hasPermission(session, 'tab_ops_agenda_task') || hasPermission(session, 'menu_ops_agenda')) {
+    return true;
+  }
+  // User dengan ID Karyawan (NIK) otomatis dapat mengakses modul Task
+  return Boolean(session.nik && session.nik.trim() !== '');
+};
+
 export const canAgenda = (session: UserSession | null) =>
-  hasPermission(session, 'menu_ops_agenda') || isSuperadmin(session);
+  hasPermission(session, 'menu_ops_agenda') ||
+  hasPermission(session, 'tab_ops_agenda_kalendar') ||
+  hasPermission(session, 'tab_ops_agenda_task') ||
+  hasPermission(session, 'tab_ops_agenda_project') ||
+  canAccessAgendaTasks(session) ||
+  isSuperadmin(session);
 export const canPenerimaan = (session: UserSession | null) =>
   hasPermission(session, 'tab_ops_loading_produksi') || isSuperadmin(session);
 export const canViewDashboard = (session: UserSession | null) =>

@@ -29,7 +29,8 @@ import {
   fetchIzinPulangAwalList,
   getAgendaEvents,
   getProjects,
-  getNotes
+  getNotes,
+  getDelegatedTasks
 } from './supabase';
 import { getGlobalProductCatalogMap, lookupProductBySku, setGlobalProductCatalog, ProductLookupResult } from '../utils/productLookup';
 import { cleanProductName, resolveProductDisplaySize, extractSizeFromSku } from '../utils/sortUtils';
@@ -762,13 +763,17 @@ const AI_TOOLS = [
       },
       {
         name: 'query_agenda_and_projects',
-        description: 'Membaca dan menganalisis data Kalender Agenda (wms_agenda), Roadmap/Daftar Project & Sub-Tasks (wms_projects), serta Sticky Notes & Checklist (wms_notes). Gunakan saat pengguna bertanya jadwal kegiatan, agenda hari ini/minggu ini, progress project, deadline terlambat/mendekat, atau catatan tim.',
+        description: 'Membaca dan menganalisis data Kalender Agenda Event & Agenda Distribusi (wms_agenda), Daftar Task Delegasi Karyawan/CS/Admin (wms_tasks), Roadmap/Daftar Project (wms_projects), serta Sticky Notes & Checklist (wms_notes). Gunakan saat pengguna bertanya jadwal kegiatan, jadwal/tanggal distribusi barang, tugas delegasi, progress project, deadline terlambat/mendekat, atau catatan tim.',
         parameters: {
           type: 'OBJECT',
           properties: {
             scope: {
               type: 'STRING',
-              description: '"agenda", "projects", "notes", atau "all" (default "all")'
+              description: '"agenda", "tasks", "projects", "notes", atau "all" (default "all")'
+            },
+            agenda_type: {
+              type: 'STRING',
+              description: 'Filter jenis kalender saat scope "agenda" atau "all": "all", "event" (Agenda Event), atau "distribusi" (Agenda Distribusi)'
             },
             start_date: {
               type: 'STRING',
@@ -784,43 +789,55 @@ const AI_TOOLS = [
             },
             status: {
               type: 'STRING',
-              description: 'Filter status Project: "planning", "in_progress", "review", "completed", "on_hold"'
+              description: 'Filter status Project ("planning", "in_progress", "review", "completed", "on_hold") atau Task ("pending", "in_progress", "completed")'
             },
             priority: {
               type: 'STRING',
-              description: 'Filter prioritas Project: "low", "medium", "high", "urgent"'
+              description: 'Filter prioritas Project/Task: "low", "medium", "high", "urgent"'
             },
             keyword: {
               type: 'STRING',
-              description: 'Kata kunci judul, deskripsi, lokasi, atau nama PIC'
+              description: 'Kata kunci judul, deskripsi, lokasi, toko tujuan distribusi, atau nama/ID penerima tugas'
             }
           }
         }
       },
       {
         name: 'prepare_agenda_or_project_draft',
-        description: 'Membantu membuatkan Draft Agenda Kalender baru, Project baru (beserta daftar sub-tasks), atau Sticky Note / Checklist baru untuk direview dan disimpan oleh pengguna di modul Agenda & Project. AI hanya membuka draft di modal, manusia yang mengecek & klik Simpan.',
+        description: 'Membantu membuatkan Draft Agenda Event, Agenda Distribusi (jadwal & tanggal distribusi barang), Tugas Delegasi (Task untuk Admin/CS/ID Karyawan), Project baru, atau Sticky Note / Checklist baru untuk direview dan disimpan oleh pengguna di modul Agenda, Task & Project. AI hanya membuka draft di modal, manusia yang mengecek & klik Simpan.',
         parameters: {
           type: 'OBJECT',
           properties: {
             draft_type: {
               type: 'STRING',
-              description: '"agenda", "project", atau "note"'
+              description: '"agenda" (Agenda Event), "agenda_distribusi" (Agenda Distribusi khusus jadwal/tanggal distribusi), "task" (Tugas Delegasi ke user/karyawan), "project", atau "note"'
             },
-            title: { type: 'STRING', description: 'Judul Agenda, Project, atau Catatan' },
-            description: { type: 'STRING', description: 'Deskripsi detail Agenda/Project atau isi konten Note' },
-            start_date: { type: 'STRING', description: 'Tanggal mulai format YYYY-MM-DD (default hari ini)' },
+            agenda_type: {
+              type: 'STRING',
+              description: 'Opsional: "event" atau "distribusi"'
+            },
+            title: { type: 'STRING', description: 'Judul Agenda, Jadwal Distribusi, Tugas, Project, atau Catatan' },
+            description: { type: 'STRING', description: 'Deskripsi detail Agenda/Distribusi/Tugas/Project atau isi konten Note' },
+            start_date: { type: 'STRING', description: 'Tanggal mulai/distribusi format YYYY-MM-DD (default hari ini)' },
             end_date: { type: 'STRING', description: 'Tanggal selesai Agenda format YYYY-MM-DD' },
-            deadline: { type: 'STRING', description: 'Tanggal deadline Project format YYYY-MM-DD' },
+            deadline: { type: 'STRING', description: 'Tanggal deadline Project atau tenggat Task format YYYY-MM-DD' },
+            due_date: { type: 'STRING', description: 'Tanggal tenggat waktu Task format YYYY-MM-DD' },
             is_all_day: { type: 'BOOLEAN', description: 'True jika agenda seharian penuh' },
             start_time: { type: 'STRING', description: 'Jam mulai agenda HH:mm, misal "09:00"' },
             end_time: { type: 'STRING', description: 'Jam selesai agenda HH:mm, misal "10:00"' },
-            category: { type: 'STRING', description: 'Kategori Agenda (misal "operasional", "meeting", "deadline") atau kategori Project' },
-            location: { type: 'STRING', description: 'Lokasi kegiatan/meeting (opsional)' },
+            category: { type: 'STRING', description: 'Kategori Agenda (misal "operasional", "meeting", "supplier") atau kategori Project' },
+            location: { type: 'STRING', description: 'Lokasi kegiatan/meeting atau tujuan distribusi (opsional)' },
             pic: { type: 'STRING', description: 'Nama PIC / penanggung jawab' },
-            priority: { type: 'STRING', description: 'Prioritas Project: "low", "medium", "high", "urgent"' },
+            store_target: { type: 'STRING', description: 'Khusus agenda_distribusi: Store / Cabang tujuan distribusi' },
+            expedition: { type: 'STRING', description: 'Khusus agenda_distribusi: Nama ekspedisi / armada pengiriman' },
+            total_koli: { type: 'NUMBER', description: 'Khusus agenda_distribusi: Estimasi jumlah koli' },
+            total_qty: { type: 'NUMBER', description: 'Khusus agenda_distribusi: Estimasi jumlah pcs' },
+            dist_status: { type: 'STRING', description: 'Khusus agenda_distribusi: "terjadwal", "dikirim", atau "selesai"' },
+            assigned_to_id: { type: 'STRING', description: 'Khusus task: Username atau NIK/ID Karyawan penerima tugas (misal "WH0004", "chococs1")' },
+            assigned_to_name: { type: 'STRING', description: 'Khusus task: Nama lengkap penerima tugas' },
+            priority: { type: 'STRING', description: 'Prioritas Project/Task: "low", "medium", "high", "urgent"' },
             status: { type: 'STRING', description: 'Status Project: "planning", "in_progress", "review", "completed", "on_hold"' },
-            project_id: { type: 'STRING', description: 'Opsional ID project yang ditautkan ke Agenda' },
+            project_id: { type: 'STRING', description: 'Opsional ID project yang ditautkan' },
             tasks: {
               type: 'ARRAY',
               description: 'Daftar sub-task (checklist) untuk Project baru',
@@ -3321,6 +3338,7 @@ async function executePrepareReturBarangDraft(args: {
  */
 async function executeQueryAgendaAndProjects(args: {
   scope?: string;
+  agenda_type?: string;
   start_date?: string;
   end_date?: string;
   category?: string;
@@ -3329,6 +3347,7 @@ async function executeQueryAgendaAndProjects(args: {
   keyword?: string;
 }): Promise<any> {
   const scope = String(args.scope || 'all').toLowerCase();
+  const agendaTypeFilter = String(args.agenda_type || 'all').toLowerCase();
   const kw = String(args.keyword || '').trim().toLowerCase();
   const cat = String(args.category || '').trim().toLowerCase();
   const today = formatLocalYmd(new Date());
@@ -3339,6 +3358,11 @@ async function executeQueryAgendaAndProjects(args: {
   if (scope === 'all' || scope === 'agenda') {
     const events = await getAgendaEvents().catch(() => []);
     let filtered = events || [];
+    if (agendaTypeFilter === 'distribusi') {
+      filtered = filtered.filter((ev) => ev.agenda_type === 'distribusi' || ev.category === 'distribusi');
+    } else if (agendaTypeFilter === 'event') {
+      filtered = filtered.filter((ev) => ev.agenda_type !== 'distribusi' && ev.category !== 'distribusi');
+    }
     if (args.start_date) {
       filtered = filtered.filter((ev) => (ev.end_date || ev.start_date) >= args.start_date!);
     }
@@ -3350,7 +3374,7 @@ async function executeQueryAgendaAndProjects(args: {
     }
     if (kw) {
       filtered = filtered.filter((ev) =>
-        `${ev.title} ${ev.description || ''} ${ev.location || ''} ${ev.pic || ''} ${ev.category}`
+        `${ev.title} ${ev.description || ''} ${ev.location || ''} ${ev.pic || ''} ${ev.category} ${ev.distribution_info?.store_target || ''} ${ev.distribution_info?.expedition || ''}`
           .toLowerCase()
           .includes(kw)
       );
@@ -3360,6 +3384,7 @@ async function executeQueryAgendaAndProjects(args: {
       total_agenda: filtered.length,
       daftar: filtered.slice(0, 30).map((ev) => ({
         id: ev.id,
+        jenis_kalender: ev.agenda_type === 'distribusi' || ev.category === 'distribusi' ? 'distribusi' : 'event',
         judul: ev.title,
         tanggal_mulai: ev.start_date,
         tanggal_selesai: ev.end_date || ev.start_date,
@@ -3367,8 +3392,42 @@ async function executeQueryAgendaAndProjects(args: {
         kategori: ev.category,
         lokasi: ev.location || '-',
         pic: ev.pic || '-',
+        distribusi: ev.distribution_info || null,
         project_id: ev.project_id || null,
         deskripsi: ev.description || '-'
+      }))
+    };
+  }
+
+  if (scope === 'all' || scope === 'tasks') {
+    const tasks = await getDelegatedTasks().catch(() => []);
+    let filtered = tasks || [];
+    if (args.status) {
+      filtered = filtered.filter((t) => String(t.status || '').toLowerCase() === String(args.status).toLowerCase());
+    }
+    if (args.priority) {
+      filtered = filtered.filter((t) => String(t.priority || '').toLowerCase() === String(args.priority).toLowerCase());
+    }
+    if (kw) {
+      filtered = filtered.filter((t) =>
+        `${t.title} ${t.description || ''} ${t.assigned_to_name} ${t.assigned_to_id} ${t.assigned_by} ${t.work_report || ''}`
+          .toLowerCase()
+          .includes(kw)
+      );
+    }
+    out.tasks = {
+      total_tasks: filtered.length,
+      daftar: filtered.slice(0, 30).map((t) => ({
+        id: t.id,
+        judul: t.title,
+        status: t.status,
+        prioritas: t.priority,
+        tenggat: t.due_date || '-',
+        penerima_id: t.assigned_to_id,
+        penerima_nama: t.assigned_to_name,
+        pemberi_tugas: t.assigned_by,
+        laporan_hasil_kerja: t.work_report || '-',
+        terlambat: Boolean(t.due_date && t.due_date < today && t.status !== 'completed')
       }))
     };
   }
@@ -3458,18 +3517,27 @@ async function executeQueryAgendaAndProjects(args: {
  * 15. Eksekusi tool: prepare_agenda_or_project_draft (Human-in-the-loop)
  */
 async function executePrepareAgendaOrProjectDraft(args: {
-  draft_type: 'agenda' | 'project' | 'note';
+  draft_type: 'agenda' | 'agenda_distribusi' | 'task' | 'project' | 'note';
+  agenda_type?: 'event' | 'distribusi';
   title: string;
   description?: string;
   start_date?: string;
   end_date?: string;
   deadline?: string;
+  due_date?: string;
   is_all_day?: boolean;
   start_time?: string;
   end_time?: string;
   category?: string;
   location?: string;
   pic?: string;
+  store_target?: string;
+  expedition?: string;
+  total_koli?: number;
+  total_qty?: number;
+  dist_status?: string;
+  assigned_to_id?: string;
+  assigned_to_name?: string;
   priority?: string;
   status?: string;
   project_id?: string;
@@ -3479,6 +3547,7 @@ async function executePrepareAgendaOrProjectDraft(args: {
 }): Promise<any> {
   const today = formatLocalYmd(new Date());
   const draftType = args.draft_type || 'agenda';
+  const isDistribusi = draftType === 'agenda_distribusi' || args.agenda_type === 'distribusi';
 
   const payload = {
     draft_type: draftType,
@@ -3486,21 +3555,30 @@ async function executePrepareAgendaOrProjectDraft(args: {
       title: args.title || '',
       description: args.description || '',
       content: args.description || '',
+      agenda_type: isDistribusi ? 'distribusi' : 'event',
       start_date: args.start_date || today,
       end_date: args.end_date || args.start_date || today,
       deadline: args.deadline || args.end_date || formatLocalYmd(new Date(Date.now() + 7 * 86400000)),
-      is_all_day: Boolean(args.is_all_day),
+      due_date: args.due_date || args.deadline || formatLocalYmd(new Date(Date.now() + 2 * 86400000)),
+      is_all_day: isDistribusi ? (args.is_all_day ?? true) : Boolean(args.is_all_day),
       start_time: args.start_time || '09:00',
       end_time: args.end_time || '10:00',
-      category: args.category || (draftType === 'project' ? 'Operasional' : 'operasional'),
-      location: args.location || '',
+      category: args.category || (draftType === 'project' ? 'Operasional' : isDistribusi ? 'supplier' : 'operasional'),
+      location: args.location || args.store_target || '',
       pic: args.pic || '',
+      store_target: args.store_target || args.location || '',
+      expedition: args.expedition || '',
+      total_koli: args.total_koli,
+      total_qty: args.total_qty,
+      dist_status: args.dist_status || 'terjadwal',
+      assigned_to_id: args.assigned_to_id || '',
+      assigned_to_name: args.assigned_to_name || args.pic || '',
       priority: args.priority || 'medium',
       status: args.status || 'in_progress',
       project_id: args.project_id || undefined,
       tasks: Array.isArray(args.tasks) ? args.tasks : [],
       checklist: Array.isArray(args.checklist) ? args.checklist : [],
-      color: args.color || undefined
+      color: args.color || (isDistribusi ? 'emerald' : undefined)
     },
     updatedAt: Date.now()
   };
@@ -3512,7 +3590,16 @@ async function executePrepareAgendaOrProjectDraft(args: {
     } catch {}
   }
 
-  const label = draftType === 'project' ? 'Project' : draftType === 'note' ? 'Sticky Note' : 'Agenda Kalender';
+  const label =
+    draftType === 'task'
+      ? 'Tugas Delegasi'
+      : isDistribusi
+      ? 'Agenda Distribusi'
+      : draftType === 'project'
+      ? 'Project'
+      : draftType === 'note'
+      ? 'Sticky Note'
+      : 'Agenda Kalender';
   return {
     status: 'draft_ready',
     draft_type: draftType,

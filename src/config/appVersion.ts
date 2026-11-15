@@ -15,21 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.15.1",
-  "versionCode": 351,
+  "version": "v2.16.0",
+  "versionCode": 360,
   "buildDate": "15 November 2026",
-  "buildHash": "wms-261115-v351-1309",
-  "releaseTitle": "WMS v2.15.1 — Dashboard Live: Antrean Picking, Kapasitas Blok F/Global, Breakdown Manual/Alter & Anomali Scan",
+  "buildHash": "wms-261115-v360-2014",
+  "releaseTitle": "WMS v2.16.0 — Kalender Agenda Distribusi & Modul Task Delegasi Terpisah",
   "releaseNotes": [
-    "Menghilangkan duplikasi 3x blok pintasan Dashboard dan menyinkronkan hitungan Antrean Hitung Ulang (BELUM vs SELISIH) dengan tab Audit Hitung Ulang",
-    "Menambahkan live widget Antrean Tugas Picking serta panel Kapasitas Warehouse Global, Shopee, TikTok, Studio & IG Live",
-    "Menampilkan breakdown status Manual Shipment & Alteration (Baru, Sedang Diproses, Selesai) dengan deep-link langsung ke tab Rekap",
-    "Menambahkan deteksi & kartu peringatan Anomali Data Scan (lokasi anomali, stok minus, SKU rusak/non-master) beserta modal inspeksi"
+    "2 Opsi Tampilan Kalender: Agenda Event & Agenda Distribusi (terintegrasi Asisten AI)",
+    "Pemisahan Modul Task Delegasi & Project: delegasi tugas ke Admin/CS/ID Karyawan beserta status & laporan hasil kerja"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.15.1",
+    "versionCode": 351,
+    "buildDate": "15 November 2026",
+    "buildHash": "wms-261115-v351-1309",
+    "releaseTitle": "WMS v2.15.1 — Dashboard Live: Antrean Picking, Kapasitas Blok F/Global, Breakdown Manual/Alter & Anomali Scan",
+    "releaseNotes": [
+      "Menghilangkan duplikasi 3x blok pintasan Dashboard dan menyinkronkan hitungan Antrean Hitung Ulang (BELUM vs SELISIH) dengan tab Audit Hitung Ulang",
+      "Menambahkan live widget Antrean Tugas Picking serta panel Kapasitas Warehouse Global, Shopee, TikTok, Studio & IG Live",
+      "Menampilkan breakdown status Manual Shipment & Alteration (Baru, Sedang Diproses, Selesai) dengan deep-link langsung ke tab Rekap",
+      "Menambahkan deteksi & kartu peringatan Anomali Data Scan (lokasi anomali, stok minus, SKU rusak/non-master) beserta modal inspeksi"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.15.0",
     "versionCode": 350,
@@ -113,18 +125,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Perbaikan tampilan & responsivitas Header aplikasi di seluler dan desktop",
       "Audit Profil User: akun Store & non-karyawan tidak lagi masuk profil Warehouse (WH0001), bebas KPI, dan memblokir kebocoran menu Pengaturan Sistem [ADMIN]",
       "Kontrol switch ON/OFF Notifikasi Perangkat di Sidebar, Notification Hub & Settings (menghentikan pop-up OS, Web Push, Service Worker watcher & suara chime saat OFF)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.12.1",
-    "versionCode": 321,
-    "buildDate": "14 November 2026",
-    "buildHash": "wms-261114-v321-1123",
-    "releaseTitle": "WMS v2.12.1 — Penandaan Otomatis Status BOLOS pada Jadwal Roster Shift",
-    "releaseNotes": [
-      "Karyawan yang tidak melakukan absensi datang dan pulang pada hari kerja otomatis ditandai sebagai BOLOS pada Jadwal Roster Shift (Matriks Sebulan, Kalender Staf, Mingguan, Tabel Harian & Kartu)",
-      "Menambahkan indikator statistik Bolos (Alpha), filter khusus Bolos, serta detail keterangan audit (Tidak Absen Datang & Pulang / Tidak Absen Pulang) beserta jadwal shift awalnya"
     ],
     "minSupportedVersion": "v2.0.0"
   }

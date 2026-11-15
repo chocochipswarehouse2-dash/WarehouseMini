@@ -5,29 +5,32 @@ import {
   Trash2, Edit3, Search, Filter, Sun, Check, Sparkles, RefreshCw, 
   AlertTriangle, ArrowRight, Layers, Eye, CheckSquare, Square, MoreHorizontal, StickyNote,
   FolderPlus, CalendarDays, ListFilter, RotateCcw, ChevronDown, ChevronUp, Palette,
-  PanelLeft, PanelLeftClose, LayoutGrid, Columns, CalendarRange, GripVertical
+  PanelLeft, PanelLeftClose, LayoutGrid, Columns, CalendarRange, GripVertical, Truck
 } from 'lucide-react';
 import { compressImage } from '../utils/imageCompressor';
 import { uploadImageToGdrive } from '../services/gdriveUpload';
 import { 
   getAgendaEvents, saveAgendaEvent, deleteAgendaEvent, 
   getProjects, saveProject, deleteProject, getNotes, saveNote, deleteNote, reorderNotes,
+  getDelegatedTasks,
   getSupabaseClient } from '../services/supabase';
+import { hasPermission, isSuperadmin, canAccessAgendaTasks } from '../services/permissions';
 import { fetchWmsSettings } from '../services/settings';
 import { AgendaCategoryModal } from './AgendaCategoryModal';
+import { TasksTab } from './agenda/TasksTab';
 import { 
   syncEventToGoogleCalendar, 
   reconcileGoogleCalendarTwoWay, 
   LAST_GCAL_SYNC_KEY 
 } from '../services/googleCalendarService';
 import { 
-  AgendaEvent, ProjectItem, AgendaCategory, ProjectStatus, 
+  AgendaEvent, AgendaCalendarType, DelegatedTask, ProjectItem, AgendaCategory, ProjectStatus, 
   ProjectPriority, AgendaAttachment, ProjectTask, NoteItem, NoteColor, NoteChecklistItem } from '../types';
 
 interface AgendaViewProps {
   session?: any;
   onShowToast?: (msg: string, type: 'success' | 'error' | 'info' | 'warning') => void;
-  initialTab?: 'calendar' | 'project' | 'notes';
+  initialTab?: 'calendar' | 'tasks' | 'project' | 'notes';
 }
 
 export const DEFAULT_CATEGORY_CONFIG: Record<string, { 
@@ -480,12 +483,31 @@ export const resolveEventColorStyle = (
 
 
 export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, initialTab }) => {
+  const canViewCalendar = isSuperadmin(session) || hasPermission(session, 'tab_ops_agenda_kalendar') || hasPermission(session, 'menu_ops_agenda');
+  const canViewTasks = isSuperadmin(session) || canAccessAgendaTasks(session);
+  const canViewProject = isSuperadmin(session) || hasPermission(session, 'tab_ops_agenda_project') || hasPermission(session, 'menu_ops_agenda');
+  const canViewNotes = canViewCalendar || canViewProject || canViewTasks;
+
+  const resolveDefaultTab = (req?: 'calendar' | 'tasks' | 'project' | 'notes'): 'calendar' | 'tasks' | 'project' | 'notes' => {
+    if (req === 'calendar' && canViewCalendar) return 'calendar';
+    if (req === 'tasks' && canViewTasks) return 'tasks';
+    if (req === 'project' && canViewProject) return 'project';
+    if (req === 'notes' && canViewNotes) return 'notes';
+    if (canViewCalendar) return 'calendar';
+    if (canViewTasks) return 'tasks';
+    if (canViewProject) return 'project';
+    return 'notes';
+  };
+
   // Main Tab
-  const [activeTab, setActiveTab] = useState<'calendar' | 'project' | 'notes'>(initialTab || 'calendar');
+  const [activeTab, setActiveTab] = useState<'calendar' | 'tasks' | 'project' | 'notes'>(() => resolveDefaultTab(initialTab));
 
   useEffect(() => {
-    if (initialTab) setActiveTab(initialTab);
+    if (initialTab) setActiveTab(resolveDefaultTab(initialTab));
   }, [initialTab]);
+
+  // Calendar 2 Opsi Tampilan: Agenda Event vs Agenda Distribusi
+  const [calendarDisplayMode, setCalendarDisplayMode] = useState<AgendaCalendarType>('event');
 
   // Calendar View Mode: week (default desktop), month, day, agenda (default mobile)
   const [calendarView, setCalendarView] = useState<'week' | 'month' | 'day' | 'agenda'>('month');
@@ -494,8 +516,11 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
 
   // Data state
   const [events, setEvents] = useState<AgendaEvent[]>([]);
+  const [delegatedTasks, setDelegatedTasks] = useState<DelegatedTask[]>([]);
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [notes, setNotes] = useState<NoteItem[]>([]);
+  const [taskCreateTrigger, setTaskCreateTrigger] = useState(0);
+  const [externalTaskDraft, setExternalTaskDraft] = useState<Partial<DelegatedTask> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isGcalSyncing, setIsGcalSyncing] = useState(false);
@@ -739,14 +764,16 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
   const loadData = async (silent = false) => {
     if (!silent) setIsLoading(true);
     try {
-      const [agendaData, projectData, noteData] = await Promise.all([
+      const [agendaData, projectData, noteData, taskData] = await Promise.all([
         getAgendaEvents(),
         getProjects(),
-        getNotes()
+        getNotes(),
+        getDelegatedTasks()
       ]);
       setEvents(agendaData);
       setProjects(projectData);
       setNotes(noteData);
+      setDelegatedTasks(taskData);
       setLoadError(null);
     } catch (err) {
       console.error('Error loading agenda/projects:', err);
@@ -773,7 +800,20 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
       const actor = session?.name || session?.username || 'Warehouse';
       const todayIso = formatIsoDate(new Date());
 
-      if (draftType === 'project') {
+      if (draftType === 'task') {
+        setActiveTab('tasks');
+        setExternalTaskDraft({
+          title: String(payload.title || '').trim(),
+          description: String(payload.description || '').trim(),
+          priority: payload.priority || 'medium',
+          due_date: String(payload.due_date || payload.deadline || todayIso).slice(0, 10),
+          assigned_to_id: String(payload.assigned_to_id || '').trim(),
+          assigned_to_name: String(payload.assigned_to_name || payload.pic || '').trim(),
+          assigned_to_role: String(payload.assigned_to_role || '').trim(),
+          project_id: payload.project_id ? String(payload.project_id) : undefined,
+        });
+        onShowToast?.('✨ Draft Tugas Delegasi dari AI siap direview & disimpan!', 'info');
+      } else if (draftType === 'project') {
         setActiveTab('project');
         const rawTasks = Array.isArray(payload.tasks) ? payload.tasks : [];
         setEditingProject({
@@ -814,7 +854,12 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
         setNoteModalOpen(true);
         onShowToast?.('✨ Draft Catatan dari AI siap direview & disimpan!', 'info');
       } else {
+        const isDistribusi =
+          draftType === 'agenda_distribusi' ||
+          payload.agenda_type === 'distribusi' ||
+          payload.category === 'distribusi';
         setActiveTab('calendar');
+        setCalendarDisplayMode(isDistribusi ? 'distribusi' : 'event');
         const sDate = String(payload.start_date || todayIso).slice(0, 10);
         const eDate = String(payload.end_date || sDate).slice(0, 10);
         setEditingEvent({
@@ -825,16 +870,31 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
           is_all_day: Boolean(payload.is_all_day),
           start_time: String(payload.start_time || '09:00'),
           end_time: String(payload.end_time || '10:00'),
-          category: String(payload.category || 'operasional'),
+          category: isDistribusi ? 'supplier' : String(payload.category || 'operasional'),
+          agenda_type: isDistribusi ? 'distribusi' : 'event',
+          distribution_info: isDistribusi
+            ? {
+                store_target: String(payload.store_target || payload.location || '').trim(),
+                expedition: String(payload.expedition || '').trim(),
+                total_koli: payload.total_koli ? Number(payload.total_koli) : undefined,
+                total_qty: payload.total_qty ? Number(payload.total_qty) : undefined,
+                dist_status: payload.dist_status || 'terjadwal',
+              }
+            : undefined,
           color: payload.color || undefined,
-          location: String(payload.location || '').trim(),
+          location: String(payload.location || payload.store_target || '').trim(),
           pic: String(payload.pic || actor).trim(),
           project_id: payload.project_id ? String(payload.project_id) : undefined,
           created_by: actor,
           attachments: [],
         });
         setAgendaModalOpen(true);
-        onShowToast?.('✨ Draft Agenda dari AI siap direview & disimpan!', 'info');
+        onShowToast?.(
+          isDistribusi
+            ? '✨ Draft Agenda Distribusi dari AI siap direview & disimpan!'
+            : '✨ Draft Agenda dari AI siap direview & disimpan!',
+          'info'
+        );
       }
 
       if (typeof window !== 'undefined') {
@@ -1024,12 +1084,16 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
     setSelectedDate(today);
   };
 
-  // Filtered Events
+  // Filtered Events (dipisah berdasarkan 2 opsi tampilan: Agenda Event vs Agenda Distribusi)
   const filteredEvents = useMemo(() => {
     return events.filter(e => {
+      const isDistribusi = e.agenda_type === 'distribusi' || e.category === 'distribusi';
+      if (calendarDisplayMode === 'distribusi' && !isDistribusi) return false;
+      if (calendarDisplayMode === 'event' && isDistribusi) return false;
+
       // Category filter: only exclude if explicitly unchecked (false)
       const catKey = e.category || 'umum';
-      if (selectedCategories[catKey] === false) return false;
+      if (calendarDisplayMode === 'event' && selectedCategories[catKey] === false) return false;
       // Search filter
       if (calendarSearch.trim()) {
         const q = calendarSearch.toLowerCase();
@@ -1037,11 +1101,13 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
         const matchDesc = e.description?.toLowerCase().includes(q);
         const matchLoc = e.location?.toLowerCase().includes(q);
         const matchPic = e.pic?.toLowerCase().includes(q);
-        if (!matchTitle && !matchDesc && !matchLoc && !matchPic) return false;
+        const matchStore = e.distribution_info?.store_target?.toLowerCase().includes(q);
+        const matchExp = e.distribution_info?.expedition?.toLowerCase().includes(q);
+        if (!matchTitle && !matchDesc && !matchLoc && !matchPic && !matchStore && !matchExp) return false;
       }
       return true;
     });
-  }, [events, selectedCategories, calendarSearch]);
+  }, [events, selectedCategories, calendarSearch, calendarDisplayMode]);
 
 
   // Status counts for Project & Task 6-Tab Navigation
@@ -1167,20 +1233,25 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
       eTime = `${String(Math.min(23, presetHour + 1)).padStart(2, '0')}:00`;
     }
 
-    const defaultCategory = categoryConfig.operasional
-      ? 'operasional'
-      : (Object.keys(categoryConfig)[0] || 'umum');
+    const isDistMode = calendarDisplayMode === 'distribusi';
+    const defaultCategory = isDistMode
+      ? (categoryConfig.supplier ? 'supplier' : (Object.keys(categoryConfig)[0] || 'umum'))
+      : (categoryConfig.operasional ? 'operasional' : (Object.keys(categoryConfig)[0] || 'umum'));
 
     setEditingEvent({
       title: '',
       description: '',
       start_date: dStr,
       end_date: dStr,
-      is_all_day: false,
+      is_all_day: isDistMode,
       start_time: sTime,
       end_time: eTime,
       category: defaultCategory,
-      color: undefined,
+      agenda_type: calendarDisplayMode,
+      distribution_info: isDistMode
+        ? { store_target: '', expedition: '', dist_status: 'terjadwal' }
+        : undefined,
+      color: isDistMode ? 'emerald' : undefined,
       location: '',
       pic: session?.name || session?.username || '',
       created_by: session?.name || session?.username || 'Warehouse',
@@ -1697,12 +1768,12 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-sm shrink-0">
-              {activeTab === 'calendar' ? <Calendar className="w-5 h-5 sm:w-6 sm:h-6" /> : activeTab === 'project' ? <Briefcase className="w-5 h-5 sm:w-6 sm:h-6" /> : <StickyNote className="w-5 h-5 sm:w-6 sm:h-6" />}
+              {activeTab === 'calendar' ? (calendarDisplayMode === 'distribusi' ? <Truck className="w-5 h-5 sm:w-6 sm:h-6" /> : <Calendar className="w-5 h-5 sm:w-6 sm:h-6" />) : activeTab === 'tasks' ? <CheckSquare className="w-5 h-5 sm:w-6 sm:h-6" /> : activeTab === 'project' ? <Briefcase className="w-5 h-5 sm:w-6 sm:h-6" /> : <StickyNote className="w-5 h-5 sm:w-6 sm:h-6" />}
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">
-                  Agenda &amp; Project
+                  Agenda, Task &amp; Project
                 </h1>
                 <span className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
@@ -1710,7 +1781,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                 </span>
               </div>
               <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
-                Jadwal operasional gudang, meeting, dan inisiatif milestone proyek.
+                Kalender event &amp; distribusi, delegasi tugas karyawan, serta catatan project.
               </p>
             </div>
           </div>
@@ -1732,75 +1803,108 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
               type="button"
               onClick={() => {
                 if (activeTab === 'calendar') handleOpenAddEvent();
+                else if (activeTab === 'tasks') setTaskCreateTrigger((n) => n + 1);
                 else if (activeTab === 'notes') handleOpenAddNote();
                 else handleOpenAddProject();
               }}
               className="flex-1 sm:flex-initial px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm active:scale-98 transition-all shrink-0 cursor-pointer"
-              title={activeTab === 'calendar' ? 'Tambah Agenda Baru' : activeTab === 'notes' ? 'Tambah Catatan Baru' : 'Tambah Project Baru'}
+              title={
+                activeTab === 'calendar'
+                  ? (calendarDisplayMode === 'distribusi' ? 'Tambah Jadwal Distribusi' : 'Tambah Agenda Baru')
+                  : activeTab === 'tasks'
+                  ? 'Buat & Delegasikan Tugas'
+                  : activeTab === 'notes'
+                  ? 'Tambah Catatan Baru'
+                  : 'Tambah Project Baru'
+              }
             >
               <Plus className="w-4 h-4 stroke-[2.5]" />
               <span>
-                {activeTab === 'calendar' ? 'Tambah Agenda' : activeTab === 'notes' ? 'Tambah Catatan' : 'Tambah Project'}
+                {activeTab === 'calendar'
+                  ? (calendarDisplayMode === 'distribusi' ? 'Tambah Distribusi' : 'Tambah Agenda')
+                  : activeTab === 'tasks'
+                  ? 'Tambah Task'
+                  : activeTab === 'notes'
+                  ? 'Tambah Catatan'
+                  : 'Tambah Project'}
               </span>
             </button>
           </div>
         </div>
 
-        {/* Row 2: Segmented Tabs (Evenly distributed, zero overlap) */}
-        <div className="flex items-center bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/60 dark:border-slate-700/60 gap-1">
-          <button
-            type="button"
-            onClick={() => setActiveTab('calendar')}
-            className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'calendar'
-                ? 'bg-white dark:bg-[#101726] text-indigo-600 dark:text-indigo-400 shadow-xs font-black'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            }`}
-          >
-            <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-            <span className="truncate">
-              <span className="hidden sm:inline">Kalender Kerja</span>
-              <span className="sm:hidden">Kalender</span>
-            </span>
-            <span className="text-[10px] font-mono tabular-nums bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">
-              {filteredEvents.length}
-            </span>
-          </button>
+        {/* Row 2: Segmented Tabs (Kalender, Task, Project, Catatan — Terpisah) */}
+        <div className="flex items-center overflow-x-auto no-scrollbar bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/60 dark:border-slate-700/60 gap-1">
+          {canViewCalendar && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('calendar')}
+              className={`flex-1 min-w-[92px] flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'calendar'
+                  ? 'bg-white dark:bg-[#101726] text-indigo-600 dark:text-indigo-400 shadow-xs font-black'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span>Kalender</span>
+              <span className="text-[10px] font-mono tabular-nums bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">
+                {filteredEvents.length}
+              </span>
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('project')}
-            className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'project'
-                ? 'bg-white dark:bg-[#101726] text-indigo-600 dark:text-indigo-400 shadow-xs font-black'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            }`}
-          >
-            <Briefcase className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-            <span className="truncate">
-              <span className="hidden sm:inline">Project &amp; Task</span>
-              <span className="sm:hidden">Project</span>
-            </span>
-            <span className="text-[10px] font-mono tabular-nums bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">
-              {filteredProjects.length}
-            </span>
-          </button>
+          {canViewTasks && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('tasks')}
+              className={`flex-1 min-w-[84px] flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'tasks'
+                  ? 'bg-white dark:bg-[#101726] text-indigo-600 dark:text-indigo-400 shadow-xs font-black'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <CheckSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span>Task</span>
+              <span className="text-[10px] font-mono tabular-nums bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">
+                {delegatedTasks.filter((t) => t.status !== 'completed').length}
+              </span>
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('notes')}
-            className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'notes'
-                ? 'bg-white dark:bg-[#101726] text-indigo-600 dark:text-indigo-400 shadow-xs font-black'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            }`}
-          >
-            <StickyNote className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-            <span className="truncate">Catatan</span>
-            <span className="text-[10px] font-mono tabular-nums bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">
-              {filteredNotes.length}
-            </span>
-          </button>
+          {canViewProject && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('project')}
+              className={`flex-1 min-w-[92px] flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'project'
+                  ? 'bg-white dark:bg-[#101726] text-indigo-600 dark:text-indigo-400 shadow-xs font-black'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Briefcase className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span>Project</span>
+              <span className="text-[10px] font-mono tabular-nums bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">
+                {filteredProjects.length}
+              </span>
+            </button>
+          )}
+
+          {canViewNotes && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('notes')}
+              className={`flex-1 min-w-[92px] flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'notes'
+                  ? 'bg-white dark:bg-[#101726] text-indigo-600 dark:text-indigo-400 shadow-xs font-black'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <StickyNote className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span>Catatan</span>
+              <span className="text-[10px] font-mono tabular-nums bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">
+                {filteredNotes.length}
+              </span>
+            </button>
+          )}
         </div>
 
         {loadError && (
@@ -2154,6 +2258,33 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
 
               {/* Right View Switchers & Search */}
               <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 w-full lg:w-auto">
+                {/* 2 Opsi Tampilan Kalendar: Agenda Event vs Agenda Distribusi */}
+                <div className="inline-flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setCalendarDisplayMode('event')}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      calendarDisplayMode === 'event'
+                        ? 'bg-white dark:bg-[#101726] text-indigo-600 dark:text-indigo-400 shadow-2xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    <Calendar className="w-3 h-3" />
+                    <span>Agenda Event</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCalendarDisplayMode('distribusi')}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      calendarDisplayMode === 'distribusi'
+                        ? 'bg-white dark:bg-[#101726] text-emerald-600 dark:text-emerald-400 shadow-2xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    <Truck className="w-3 h-3" />
+                    <span>Agenda Distribusi</span>
+                  </button>
+                </div>
                 
                 {/* Search input (accessible on mobile & desktop) */}
                 <div className="relative w-full sm:w-44 md:w-52 order-last sm:order-none">
@@ -2949,6 +3080,19 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
         </div>
       )}
       {/* PROJECT & INITIATIVE TAB */}
+      {activeTab === 'tasks' && canViewTasks && (
+        <TasksTab
+          session={session}
+          tasks={delegatedTasks}
+          projects={projects}
+          onTasksChange={setDelegatedTasks}
+          onShowToast={onShowToast}
+          externalCreateTrigger={taskCreateTrigger}
+          externalDraft={externalTaskDraft}
+          onConsumeExternalDraft={() => setExternalTaskDraft(null)}
+        />
+      )}
+
       {activeTab === 'project' && (
         <div className="space-y-4">
           
@@ -4367,6 +4511,153 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
             <form onSubmit={handleSaveAgenda} className="flex-1 min-h-0 flex flex-col overflow-hidden">
               <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6 space-y-4">
               
+              {/* Jenis Agenda Switcher (Agenda Event vs Agenda Distribusi) */}
+              <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-800/70 rounded-xl border border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setEditingEvent({ ...editingEvent, agenda_type: 'event' })}
+                  className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    (editingEvent.agenda_type || 'event') === 'event'
+                      ? 'bg-white dark:bg-[#101726] text-indigo-600 dark:text-indigo-400 shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Agenda Event</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEditingEvent({
+                      ...editingEvent,
+                      agenda_type: 'distribusi',
+                      distribution_info: editingEvent.distribution_info || { dist_status: 'terjadwal' },
+                    })
+                  }
+                  className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    editingEvent.agenda_type === 'distribusi'
+                      ? 'bg-white dark:bg-[#101726] text-emerald-600 dark:text-emerald-400 shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  <Truck className="w-3.5 h-3.5" />
+                  <span>Agenda Distribusi</span>
+                </button>
+              </div>
+
+              {/* Detail Khusus Jadwal Distribusi */}
+              {editingEvent.agenda_type === 'distribusi' && (
+                <div className="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/70 space-y-3">
+                  <div className="flex items-center gap-1.5 text-xs font-black text-emerald-800 dark:text-emerald-300">
+                    <Truck className="w-4 h-4" />
+                    <span>Detail Jadwal Distribusi</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        Store / Tujuan Distribusi
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Misal: Store PIM, Store GI, Cabang Surabaya"
+                        value={editingEvent.distribution_info?.store_target || ''}
+                        onChange={(e) =>
+                          setEditingEvent({
+                            ...editingEvent,
+                            distribution_info: {
+                              ...editingEvent.distribution_info,
+                              store_target: e.target.value,
+                            },
+                          })
+                        }
+                        className="w-full px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        Ekspedisi / Armada
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Misal: Kurir Internal, JNE Cargo, Lalamove"
+                        value={editingEvent.distribution_info?.expedition || ''}
+                        onChange={(e) =>
+                          setEditingEvent({
+                            ...editingEvent,
+                            distribution_info: {
+                              ...editingEvent.distribution_info,
+                              expedition: e.target.value,
+                            },
+                          })
+                        }
+                        className="w-full px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        Estimasi Koli / Qty
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          placeholder="Koli"
+                          value={editingEvent.distribution_info?.total_koli ?? ''}
+                          onChange={(e) =>
+                            setEditingEvent({
+                              ...editingEvent,
+                              distribution_info: {
+                                ...editingEvent.distribution_info,
+                                total_koli: e.target.value ? Number(e.target.value) : undefined,
+                              },
+                            })
+                          }
+                          className="w-1/2 px-2.5 py-2 text-xs font-mono rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 outline-none"
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          placeholder="Pcs"
+                          value={editingEvent.distribution_info?.total_qty ?? ''}
+                          onChange={(e) =>
+                            setEditingEvent({
+                              ...editingEvent,
+                              distribution_info: {
+                                ...editingEvent.distribution_info,
+                                total_qty: e.target.value ? Number(e.target.value) : undefined,
+                              },
+                            })
+                          }
+                          className="w-1/2 px-2.5 py-2 text-xs font-mono rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        Status Distribusi
+                      </label>
+                      <select
+                        value={editingEvent.distribution_info?.dist_status || 'terjadwal'}
+                        onChange={(e) =>
+                          setEditingEvent({
+                            ...editingEvent,
+                            distribution_info: {
+                              ...editingEvent.distribution_info,
+                              dist_status: e.target.value as 'terjadwal' | 'dikirim' | 'selesai',
+                            },
+                          })
+                        }
+                        className="w-full px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 outline-none"
+                      >
+                        <option value="terjadwal">Terjadwal</option>
+                        <option value="dikirim">Dalam Pengiriman</option>
+                        <option value="selesai">Selesai Distribusi</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Judul Agenda */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300">

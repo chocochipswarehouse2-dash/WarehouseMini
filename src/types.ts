@@ -92,6 +92,7 @@ export type UserPermissionKey =
   | 'menu_ops_live_chat'
   | 'menu_ops_agenda'
   | 'tab_ops_agenda_kalendar'
+  | 'tab_ops_agenda_task'
   | 'tab_ops_agenda_project'
   | 'menu_ops_pesanan_saya'
   | 'tab_ops_pesanan_dashboard'
@@ -1170,6 +1171,17 @@ export interface AgendaAttachment {
   url?: string;
 }
 
+export type AgendaCalendarType = 'event' | 'distribusi';
+
+export interface AgendaDistributionInfo {
+  store_target?: string;
+  expedition?: string;
+  total_koli?: number;
+  total_qty?: number;
+  dist_status?: 'terjadwal' | 'dikirim' | 'selesai';
+  notes?: string;
+}
+
 export interface AgendaEvent {
   id: string;
   title: string;
@@ -1180,6 +1192,8 @@ export interface AgendaEvent {
   start_time?: string; // HH:mm
   end_time?: string; // HH:mm
   category: AgendaCategory;
+  agenda_type?: AgendaCalendarType;
+  distribution_info?: AgendaDistributionInfo;
   color?: string; // Hex color code (e.g. #1a73e8) or palette ID (indigo, emerald, amber, etc.)
   location?: string;
   pic?: string;
@@ -1188,6 +1202,28 @@ export interface AgendaEvent {
   google_event_id?: string;
   source?: 'wms' | 'google_calendar';
   created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export type DelegatedTaskStatus = 'pending' | 'in_progress' | 'completed';
+
+export interface DelegatedTask {
+  id: string;
+  title: string;
+  description?: string;
+  status: DelegatedTaskStatus;
+  priority: ProjectPriority;
+  due_date?: string; // YYYY-MM-DD
+  assigned_to_id: string; // username atau NIK karyawan (e.g. WH0004, chococs1, admin)
+  assigned_to_name: string;
+  assigned_to_role?: string;
+  assigned_by: string;
+  work_report?: string;
+  report_attachments?: AgendaAttachment[];
+  started_at?: string;
+  completed_at?: string;
+  project_id?: string;
   created_at?: string;
   updated_at?: string;
 }

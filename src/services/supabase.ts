@@ -41,6 +41,9 @@ import {
   QcReport,
   SimpanPenerimaanPayload,
   AgendaEvent,
+  AgendaCalendarType,
+  AgendaDistributionInfo,
+  DelegatedTask,
   ProjectItem,
   NoteItem,
   NoteChecklistItem,
@@ -11163,13 +11166,31 @@ const VALID_DB_AGENDA_CATEGORIES = new Set([
  */
 function encodeAgendaMetadata(
   description: string,
-  meta: { color?: string; google_event_id?: string; source?: string; custom_category?: string }
+  meta: {
+    color?: string;
+    google_event_id?: string;
+    source?: string;
+    custom_category?: string;
+    agenda_type?: AgendaCalendarType;
+    distribution_info?: AgendaDistributionInfo;
+  }
 ): string {
   const clean = (description || '').replace(/<!--wms_meta:[\s\S]*?-->/g, '').trim();
+  const hasDistInfo = Boolean(
+    meta.distribution_info &&
+      (meta.distribution_info.store_target ||
+        meta.distribution_info.expedition ||
+        meta.distribution_info.total_koli ||
+        meta.distribution_info.total_qty ||
+        meta.distribution_info.dist_status ||
+        meta.distribution_info.notes)
+  );
   const hasMeta = Boolean(
     meta.color ||
       meta.google_event_id ||
       meta.custom_category ||
+      (meta.agenda_type && meta.agenda_type !== 'event') ||
+      hasDistInfo ||
       (meta.source && meta.source !== 'wms')
   );
   if (!hasMeta) return clean;
@@ -11181,7 +11202,14 @@ function encodeAgendaMetadata(
  */
 function decodeAgendaMetadata(rawDescription: string): {
   description: string;
-  meta: { color?: string; google_event_id?: string; source?: string; custom_category?: string };
+  meta: {
+    color?: string;
+    google_event_id?: string;
+    source?: string;
+    custom_category?: string;
+    agenda_type?: AgendaCalendarType;
+    distribution_info?: AgendaDistributionInfo;
+  };
 } {
   if (!rawDescription) return { description: '', meta: {} };
   const match = rawDescription.match(/<!--wms_meta:([\s\S]*?)-->/);
@@ -11208,6 +11236,8 @@ export async function getAgendaEvents(): Promise<AgendaEvent[]> {
           ...item,
           description,
           category: meta.custom_category || item.category || 'umum',
+          agenda_type: meta.agenda_type || (item.category === 'distribusi' ? 'distribusi' : 'event'),
+          distribution_info: meta.distribution_info || undefined,
           color: item.color || meta.color || undefined,
           google_event_id: item.google_event_id || meta.google_event_id || undefined,
           source: item.source || meta.source || 'wms',
@@ -11384,6 +11414,8 @@ export async function saveAgendaEvent(item: Partial<AgendaEvent>): Promise<Agend
     google_event_id: payload.google_event_id,
     source: payload.source,
     custom_category: customCategoryMeta,
+    agenda_type: item.agenda_type || (payload.category === 'distribusi' ? 'distribusi' : 'event'),
+    distribution_info: item.distribution_info,
   });
 
   const dbPayload: Record<string, any> = {
@@ -12118,3 +12150,195 @@ export async function savePenerimaanRecountQueueToSupabase(
 
 
 export { getRecountAuditMap, saveRecountAuditRecord, fetchRecountAuditMapFromCloud } from './settings';
+
+// ============================================================
+// MODUL TASK DELEGASI TERPISAH (wms_tasks)
+// ============================================================
+const LOCAL_DELEGATED_TASKS_KEY = 'wms_delegated_tasks_v1';
+const DOC_DELEGATED_TASKS_SECTION = 'wms_delegated_tasks';
+
+function sortDelegatedTasks(list: DelegatedTask[]): DelegatedTask[] {
+  const statusWeight: Record<string, number> = { in_progress: 0, pending: 1, completed: 2 };
+  const prioWeight: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
+  return [...list].sort((a, b) => {
+    const sw = (statusWeight[a.status] ?? 9) - (statusWeight[b.status] ?? 9);
+    if (sw !== 0) return sw;
+    const pw = (prioWeight[a.priority] ?? 9) - (prioWeight[b.priority] ?? 9);
+    if (pw !== 0) return pw;
+    return (b.updated_at || b.created_at || '').localeCompare(a.updated_at || a.created_at || '');
+  });
+}
+
+async function saveTasksToSystemDocsFallback(tasks: DelegatedTask[], actor: string): Promise<void> {
+  try {
+    await supabaseFetch(
+      'wms_system_docs',
+      'POST',
+      [
+        {
+          section_id: DOC_DELEGATED_TASKS_SECTION,
+          content: JSON.stringify(tasks),
+          updated_at: new Date().toISOString(),
+          updated_by: actor || 'WMS Task',
+        },
+      ],
+      'on_conflict=section_id',
+      true
+    );
+  } catch (err) {
+    console.warn('Fallback sync wms_delegated_tasks ke wms_system_docs gagal:', err);
+  }
+}
+
+export async function getDelegatedTasks(): Promise<DelegatedTask[]> {
+  // 1. Coba tabel dedicated wms_tasks
+  try {
+    const rows = await supabaseFetch<any[]>('wms_tasks', 'GET', null, 'order=updated_at.desc');
+    if (Array.isArray(rows)) {
+      const normalized: DelegatedTask[] = rows.map((r) => ({
+        id: String(r.id),
+        title: String(r.title || ''),
+        description: r.description || '',
+        status: (['pending', 'in_progress', 'completed'].includes(r.status) ? r.status : 'pending') as DelegatedTask['status'],
+        priority: (['low', 'medium', 'high', 'urgent'].includes(r.priority) ? r.priority : 'medium') as DelegatedTask['priority'],
+        due_date: r.due_date || undefined,
+        assigned_to_id: String(r.assigned_to_id || ''),
+        assigned_to_name: String(r.assigned_to_name || ''),
+        assigned_to_role: r.assigned_to_role || '',
+        assigned_by: String(r.assigned_by || ''),
+        work_report: r.work_report || '',
+        report_attachments: Array.isArray(r.report_attachments) ? r.report_attachments : [],
+        started_at: r.started_at || undefined,
+        completed_at: r.completed_at || undefined,
+        project_id: r.project_id || undefined,
+        created_at: r.created_at || undefined,
+        updated_at: r.updated_at || undefined,
+      }));
+      const sorted = sortDelegatedTasks(normalized);
+      safeSetLocalStorage(LOCAL_DELEGATED_TASKS_KEY, sorted);
+      return sorted;
+    }
+  } catch {
+    // Fallback ke wms_system_docs jika tabel wms_tasks belum dibuat
+  }
+
+  // 2. Fallback ke wms_system_docs
+  try {
+    const docs = await supabaseFetch<any[]>(
+      'wms_system_docs',
+      'GET',
+      null,
+      `section_id=eq.${encodeURIComponent(DOC_DELEGATED_TASKS_SECTION)}`
+    );
+    if (Array.isArray(docs) && docs.length > 0 && docs[0]?.content) {
+      const parsed = JSON.parse(docs[0].content);
+      if (Array.isArray(parsed)) {
+        const sorted = sortDelegatedTasks(parsed);
+        safeSetLocalStorage(LOCAL_DELEGATED_TASKS_KEY, sorted);
+        return sorted;
+      }
+    }
+  } catch {
+    // Fallback ke localStorage
+  }
+
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem(LOCAL_DELEGATED_TASKS_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) return sortDelegatedTasks(parsed);
+      }
+    } catch {}
+  }
+
+  return [];
+}
+
+export async function saveDelegatedTask(item: Partial<DelegatedTask>): Promise<DelegatedTask> {
+  const nowIso = new Date().toISOString();
+  const isExistingUuid = Boolean(item.id && isValidUUID(item.id));
+  const id = isExistingUuid ? String(item.id) : generateUUID();
+
+  const payload: DelegatedTask = {
+    id,
+    title: String(item.title || '').trim(),
+    description: String(item.description || '').trim(),
+    status: item.status || 'pending',
+    priority: item.priority || 'medium',
+    due_date: item.due_date || undefined,
+    assigned_to_id: String(item.assigned_to_id || '').trim(),
+    assigned_to_name: String(item.assigned_to_name || '').trim(),
+    assigned_to_role: item.assigned_to_role || '',
+    assigned_by: String(item.assigned_by || 'Admin').trim(),
+    work_report: item.work_report || '',
+    report_attachments: Array.isArray(item.report_attachments) ? item.report_attachments : [],
+    started_at: item.started_at || undefined,
+    completed_at: item.completed_at || undefined,
+    project_id: item.project_id && isValidUUID(item.project_id) ? item.project_id : undefined,
+    created_at: item.created_at || nowIso,
+    updated_at: nowIso,
+  };
+
+  let savedToDedicatedTable = false;
+  try {
+    const dbPayload: Record<string, any> = {
+      ...payload,
+      due_date: payload.due_date || null,
+      started_at: payload.started_at || null,
+      completed_at: payload.completed_at || null,
+      project_id: payload.project_id || null,
+    };
+    if (!isExistingUuid) {
+      await supabaseFetch('wms_tasks', 'POST', [dbPayload]);
+    } else {
+      const patchData = { ...dbPayload };
+      delete patchData.id;
+      const patchRes = await supabaseFetch<any[]>('wms_tasks', 'PATCH', patchData, `id=eq.${encodeURIComponent(id)}`);
+      if (!Array.isArray(patchRes) || patchRes.length === 0) {
+        await supabaseFetch('wms_tasks', 'POST', [dbPayload]);
+      }
+    }
+    savedToDedicatedTable = true;
+  } catch {
+    // Fallback ke wms_system_docs
+  }
+
+  const currentList = await getDelegatedTasks().catch(() => []);
+  const existingIdx = currentList.findIndex((t) => t.id === id);
+  const nextList =
+    existingIdx >= 0
+      ? currentList.map((t, idx) => (idx === existingIdx ? payload : t))
+      : [payload, ...currentList];
+  const sorted = sortDelegatedTasks(nextList);
+  safeSetLocalStorage(LOCAL_DELEGATED_TASKS_KEY, sorted);
+
+  if (!savedToDedicatedTable) {
+    await saveTasksToSystemDocsFallback(sorted, payload.assigned_by);
+  }
+
+  return payload;
+}
+
+export async function deleteDelegatedTask(id: string): Promise<void> {
+  if (!id) return;
+  let deletedFromTable = false;
+  try {
+    if (isValidUUID(id)) {
+      await supabaseFetch('wms_tasks', 'DELETE', null, `id=eq.${encodeURIComponent(id)}`);
+      deletedFromTable = true;
+    }
+  } catch {}
+
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem(LOCAL_DELEGATED_TASKS_KEY);
+      const list: DelegatedTask[] = cached ? JSON.parse(cached) : [];
+      const nextList = list.filter((t) => t.id !== id);
+      safeSetLocalStorage(LOCAL_DELEGATED_TASKS_KEY, nextList);
+      if (!deletedFromTable) {
+        await saveTasksToSystemDocsFallback(nextList, 'WMS Task');
+      }
+    } catch {}
+  }
+}

@@ -511,7 +511,7 @@ export default function App() {
     if (p === 'tugas-picking' || p === 'picking' || p === 'picking-tasks' || pageParam === 'picking_tasks') return 'picking_tasks';
     return undefined;
   });
-  const [agendaInitialTab, setAgendaInitialTab] = useState<'calendar' | 'project' | 'notes'>('calendar');
+  const [agendaInitialTab, setAgendaInitialTab] = useState<'calendar' | 'tasks' | 'project' | 'notes'>('calendar');
   const [cetakLabelInitialTab, setCetakLabelInitialTab] = useState<'qr_prefix' | 'paket' | 'barcode' | undefined>(() => {
     if (typeof window === 'undefined') return undefined;
     const p = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();

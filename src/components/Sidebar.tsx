@@ -48,7 +48,7 @@ import {
   Bot,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
-import { hasPermission, isSuperadmin, canAccessSettings, canAccessJneRekap, canAccessLiveChat, canAccessWmsAi, ROLE_DETAILS } from '../services/permissions';
+import { hasPermission, isSuperadmin, canAccessSettings, canAccessJneRekap, canAccessLiveChat, canAccessWmsAi, canAccessAgendaTasks, ROLE_DETAILS } from '../services/permissions';
 import { getUserPersonName } from '../utils/userResolver';
 import { CURRENT_APP_VERSION, CURRENT_APP_VERSION_INFO, isNewerVersion } from '../config/appVersion';
 import { useAppUpdate } from '../hooks/useAppUpdate';
@@ -156,7 +156,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const canLiveChat = canAccessLiveChat(session);
   const canAgenda = userIsAdmin || hasPermission(session, 'menu_ops_agenda') || 
     hasPermission(session, 'tab_ops_agenda_kalendar') || 
-    hasPermission(session, 'tab_ops_agenda_project');
+    hasPermission(session, 'tab_ops_agenda_task') ||
+    hasPermission(session, 'tab_ops_agenda_project') ||
+    canAccessAgendaTasks(session);
   const canPesanan = userIsAdmin || hasPermission(session, 'menu_ops_pesanan_saya') ||
     hasPermission(session, 'tab_ops_pesanan_dashboard') ||
     hasPermission(session, 'tab_ops_pesanan_manual_shipment') ||
@@ -223,10 +225,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'agenda' as ActivePage,
-      label: 'Agenda dan Project',
+      label: 'Agenda, Task & Project',
       shortLabel: 'Agenda',
       icon: Calendar,
-      description: 'Kalender Kerja & Project',
+      description: 'Kalender, Tugas & Project',
       access: canAgenda,
     },
     {

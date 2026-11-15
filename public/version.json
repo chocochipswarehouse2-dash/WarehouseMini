@@ -1,14 +1,12 @@
 {
-  "version": "v2.15.1",
-  "versionCode": 351,
+  "version": "v2.16.0",
+  "versionCode": 360,
   "buildDate": "15 November 2026",
-  "buildHash": "wms-261115-v351-1309",
-  "releaseTitle": "WMS v2.15.1 — Dashboard Live: Antrean Picking, Kapasitas Blok F/Global, Breakdown Manual/Alter & Anomali Scan",
+  "buildHash": "wms-261115-v360-2014",
+  "releaseTitle": "WMS v2.16.0 — Kalender Agenda Distribusi & Modul Task Delegasi Terpisah",
   "releaseNotes": [
-    "Menghilangkan duplikasi 3x blok pintasan Dashboard dan menyinkronkan hitungan Antrean Hitung Ulang (BELUM vs SELISIH) dengan tab Audit Hitung Ulang",
-    "Menambahkan live widget Antrean Tugas Picking serta panel Kapasitas Warehouse Global, Shopee, TikTok, Studio & IG Live",
-    "Menampilkan breakdown status Manual Shipment & Alteration (Baru, Sedang Diproses, Selesai) dengan deep-link langsung ke tab Rekap",
-    "Menambahkan deteksi & kartu peringatan Anomali Data Scan (lokasi anomali, stok minus, SKU rusak/non-master) beserta modal inspeksi"
+    "2 Opsi Tampilan Kalender: Agenda Event & Agenda Distribusi (terintegrasi Asisten AI)",
+    "Pemisahan Modul Task Delegasi & Project: delegasi tugas ke Admin/CS/ID Karyawan beserta status & laporan hasil kerja"
   ],
   "minSupportedVersion": "v2.0.0"
 }
