@@ -24,6 +24,7 @@ import {
   LayoutList,
   ShoppingCart,
   ArrowRight,
+  Maximize2,
 } from 'lucide-react';
 import {
   InventoryPickingCartDrawer,
@@ -71,6 +72,7 @@ export interface InventoryViewProps {
   scannerComponent?: React.ReactNode | ((layoutMode: ScannerLayoutMode) => React.ReactNode);
   scannedCount?: number;
   onOpenImportModal?: () => void;
+  onOpenScannerPopup?: () => void;
   initialTab?: InventoryPageTab;
 }
 
@@ -93,6 +95,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   scannerComponent,
   scannedCount = 0,
   onOpenImportModal,
+  onOpenScannerPopup,
   initialTab,
 }) => {
   const userIsAdmin = isSuperadmin(session ?? null);
@@ -630,6 +633,18 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                 <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                 <span className="hidden sm:inline">Impor Excel</span>
                 <span className="sm:hidden">Impor</span>
+              </button>
+            )}
+
+            {onOpenScannerPopup && (
+              <button
+                type="button"
+                onClick={onOpenScannerPopup}
+                className="py-1.5 px-3 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center gap-1.5 rounded-lg transition-all cursor-pointer shadow-2xs shrink-0"
+                title="Buka di Popup Scanner Luas (Bisa Diminimize Sambil Buka Halaman Lain)"
+              >
+                <Maximize2 className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">Popup Luas</span>
               </button>
             )}
           </div>

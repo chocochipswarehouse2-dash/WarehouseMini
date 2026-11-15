@@ -3,6 +3,7 @@ import { Wifi, WifiOff, CloudUpload, RefreshCw, CheckCircle2 } from 'lucide-reac
 import { getPendingOfflinePengecekanSJ, syncPendingOfflinePengecekanSJ } from '../services/gasTarikanMD';
 import { getPendingOfflinePeminjaman, clearPendingOfflinePeminjaman, getPendingOfflineProduksiCount } from '../services/localDb';
 import { savePeminjamanToSupabase, syncOfflinePenerimaanProduksi } from '../services/supabase';
+import { getPendingScannerOutboxCount, syncAllScannerOutboxBatches } from '../services/scannerOutboxService';
 
 interface OfflineProtectionBarProps {
   onNotify?: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
@@ -15,15 +16,18 @@ export const OfflineProtectionBar: React.FC<OfflineProtectionBarProps> = ({ onNo
   const [pendingSJCount, setPendingSJCount] = useState<number>(0);
   const [pendingPeminjamanCount, setPendingPeminjamanCount] = useState<number>(0);
   const [pendingProduksiCount, setPendingProduksiCount] = useState<number>(0);
+  const [pendingScannerCount, setPendingScannerCount] = useState<number>(0);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   const checkPendingCounts = () => {
     const sjList = getPendingOfflinePengecekanSJ();
     const pemList = getPendingOfflinePeminjaman();
     const prodCount = getPendingOfflineProduksiCount();
+    const scanOutboxCount = getPendingScannerOutboxCount();
     setPendingSJCount(sjList.length);
     setPendingPeminjamanCount(pemList.length);
     setPendingProduksiCount(prodCount);
+    setPendingScannerCount(scanOutboxCount);
   };
 
   const syncAllOfflineData = async () => {
@@ -32,6 +36,10 @@ export const OfflineProtectionBar: React.FC<OfflineProtectionBarProps> = ({ onNo
 
     try {
       let totalSynced = 0;
+
+      // 0. Sync Scanner Outbox Batches (Idempotent Step-by-Step)
+      const scannerResult = await syncAllScannerOutboxBatches();
+      totalSynced += scannerResult.syncedBatches;
 
       // 1. Sync Pengecekan SJ
       const sjResult = await syncPendingOfflinePengecekanSJ();
@@ -61,7 +69,7 @@ export const OfflineProtectionBar: React.FC<OfflineProtectionBarProps> = ({ onNo
 
       if (totalSynced > 0) {
         if (onNotify) {
-          onNotify(`✅ Berhasil menyinkronkan ${totalSynced} data offline ke Database Supabase!`, 'success');
+          onNotify(`✅ Berhasil menyinkronkan ${totalSynced} antrean data offline ke Database Supabase!`, 'success');
         }
       }
     } catch (err) {
@@ -87,8 +95,13 @@ export const OfflineProtectionBar: React.FC<OfflineProtectionBarProps> = ({ onNo
       if (onNotify) onNotify('⚠️ Koneksi internet terputus. Mode proteksi offline aktif: Seluruh pekerjaan Anda tetap aman tersimpan.', 'warning');
     };
 
+    const handleOutboxUpdated = () => {
+      checkPendingCounts();
+    };
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    window.addEventListener('wms_scanner_outbox_updated', handleOutboxUpdated);
 
     // Periodically poll for pending offline items (e.g. every 5 seconds)
     const interval = setInterval(() => {
@@ -98,11 +111,12 @@ export const OfflineProtectionBar: React.FC<OfflineProtectionBarProps> = ({ onNo
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('wms_scanner_outbox_updated', handleOutboxUpdated);
       clearInterval(interval);
     };
   }, []);
 
-  const totalPending = pendingSJCount + pendingPeminjamanCount + pendingProduksiCount;
+  const totalPending = pendingSJCount + pendingPeminjamanCount + pendingProduksiCount + pendingScannerCount;
 
   // If online and no pending items, remain completely invisible (zero-clutter UI)
   if (isOnline && totalPending === 0) {

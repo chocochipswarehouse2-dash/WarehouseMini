@@ -1341,7 +1341,7 @@ export async function insertStockOpnameQueue(items: StockOpnameQueueItem[]): Pro
   }));
 
   try {
-    const res = await supabaseFetch('stock_opname_queue', 'POST', sanitized);
+    const res = await supabaseFetch('stock_opname_queue', 'POST', sanitized, 'on_conflict=id');
     return res;
   } catch (err: any) {
     console.error('Error inserting Stock Opname Queue to Supabase:', err);

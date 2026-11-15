@@ -59,6 +59,12 @@ import { LocationPurgeModal } from './components/inventory/LocationPurgeModal';
 import { WmsAiModal } from './components/ai/WmsAiModal';
 import { fetchAiConfig } from './services/wmsAiService';
 import { OfflineProtectionBar } from './components/OfflineProtectionBar';
+import { ScannerPopupModal, ScannerPopupLayoutMode } from './components/ScannerPopupModal';
+import {
+  enqueueScannerOutboxBatch,
+  syncAllScannerOutboxBatches,
+  getPendingScannerOutboxCount
+} from './services/scannerOutboxService';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { globalRealtimeStore } from './services/store';
 import {
@@ -149,7 +155,8 @@ import {
   ROLE_DEFAULT_PERMISSIONS,
 } from './services/permissions';
 import { getUserPersonName, registerUserNames } from './utils/userResolver';
-import { setGlobalProductCatalog } from './utils/productLookup';
+import { setGlobalProductCatalog, lookupProductBySku } from './utils/productLookup';
+import { resolveProductDisplaySize } from './utils/sortUtils';
 import {
   playCategoryBeep,
   playErrorBeep,
@@ -779,6 +786,17 @@ export default function App() {
 
   // Handler navigasi dengan verifikasi izin halaman & Auto-Update Aman saat pindah menu utama
   const handleSelectPage = useCallback((rawPage: ActivePage) => {
+    // Jika klik tombol Scanner (mis. dari Dashboard), buka Popup Scanner Luas yang bisa diminimize
+    if (rawPage === 'scanner') {
+      if (session && !canAccessPage(session, 'scanner')) {
+        showToast('Akses ditolak: Akun Anda tidak memiliki hak akses untuk Scanner.', 'warning');
+        return;
+      }
+      setIsScannerPopupOpen(true);
+      setIsScannerPopupMinimized(false);
+      return;
+    }
+
     if (rawPage === 'cetak_barcode') setCetakLabelInitialTab('barcode');
     if (rawPage === 'picking_tasks') {
       setLoadingDockInitialTab('picking_tasks');
@@ -786,7 +804,7 @@ export default function App() {
         window.dispatchEvent(new CustomEvent('wms_open_loading_dock_tab', { detail: { tab: 'picking_tasks' } }));
       }
     }
-    if (rawPage === 'operasi_stok' || rawPage === 'scanner') setInventoryInitialTab('scanner');
+    if (rawPage === 'operasi_stok') setInventoryInitialTab('scanner');
     if (rawPage === 'mutasi_log') setInventoryInitialTab('logs');
     if (rawPage === 'pesanan_saya' || rawPage === 'manual_shipment') {
       if (typeof window !== 'undefined') {
@@ -811,12 +829,14 @@ export default function App() {
       return;
     }
 
-    // Jika ada pembaruan versi yang menunggu dan user sedang berpindah menu utama (tanpa draft scan yang belum disimpan)
+    // Jika ada pembaruan versi yang menunggu dan user sedang berpindah menu utama (tanpa draft scan / outbox yang belum disimpan)
     if (page !== activePage && appUpdateManager.hasPendingUpdate()) {
       let hasStagingScans = false;
       try {
         const rawDraft = localStorage.getItem('wms_active_staging_scans');
-        hasStagingScans = Boolean(rawDraft && JSON.parse(rawDraft)?.length > 0);
+        hasStagingScans =
+          Boolean(rawDraft && JSON.parse(rawDraft)?.length > 0) ||
+          getPendingScannerOutboxCount() > 0;
       } catch {}
 
       if (!hasStagingScans) {
@@ -1004,6 +1024,22 @@ export default function App() {
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [showQuickTags, setShowQuickTags] = useState<boolean>(true);
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
+  const [isScannerPopupOpen, setIsScannerPopupOpen] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('wms_active_staging_scans');
+      return Boolean(saved && JSON.parse(saved)?.length > 0);
+    } catch {
+      return false;
+    }
+  });
+  const [isScannerPopupMinimized, setIsScannerPopupMinimized] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('wms_active_staging_scans');
+      return Boolean(saved && JSON.parse(saved)?.length > 0);
+    } catch {
+      return false;
+    }
+  });
 
   // Auto-backup staging scanned items to localStorage to prevent data loss on reload or force-close
   useEffect(() => {
@@ -4013,104 +4049,78 @@ export default function App() {
       const logsToInsert: Parameters<typeof insertLogProduk>[0] = [];
       const soFisik: Record<string, Record<string, number>> = {};
       const waktuPesan = new Date();
+      const createdAtIso = waktuPesan.toISOString();
       const personName = session?.name || getUserPersonName(session?.username) || 'Petugas';
       const operatorName = `${personName} | Import`;
       const invoiceBase = `IMP-${waktuPesan.getTime()}`;
 
       for (let i = 0; i < validRows.length; i++) {
         const row = validRows[i];
-        const line = row.sku.toUpperCase();
+        const line = row.sku.trim().toUpperCase();
         const cType: CategoryType = row.tipe;
-        const cLokasi = row.lokasi || 'DEFAULT';
+        const cLokasi = (row.lokasi || 'DEFAULT').trim().toUpperCase();
         const ketText = row.keterangan || 'Hasil Import Data';
-        
+        const master = lookupProductBySku(line);
+        const officialName =
+          master?.found && master.nama_produk ? master.nama_produk : row.productName || line;
+        const officialSize = resolveProductDisplaySize(line, master?.size || '');
+
         if (cType === 'IN' || cType === 'OUT') {
           logsToInsert.push({
             type: cType,
             invoice: invoiceBase,
             sku: line,
-            nama_produk: row.productName || line,
-            size: '', // Since size isn't easily extracted from name, leave blank or lookup
+            nama_produk: officialName,
+            size: officialSize,
             area: getAreaFromLokasi(cLokasi),
             lokasi: cLokasi,
             qty: row.qty,
             operator: operatorName,
             keterangan: ketText,
-            created_at: waktuPesan.toISOString(),
+            created_at: createdAtIso,
           });
         } else if (cType === 'SO') {
           if (!soFisik[cLokasi]) soFisik[cLokasi] = {};
           soFisik[cLokasi][line] = (soFisik[cLokasi][line] || 0) + row.qty;
-          
+
           logsToInsert.push({
             type: 'SO',
             invoice: invoiceBase,
             sku: line,
-            nama_produk: row.productName || line,
-            size: '',
+            nama_produk: officialName,
+            size: officialSize,
             area: getAreaFromLokasi(cLokasi),
             lokasi: cLokasi,
             qty: row.qty,
             operator: operatorName,
             keterangan: ketText,
-            created_at: waktuPesan.toISOString(),
+            created_at: createdAtIso,
           });
         }
       }
 
-      if (logsToInsert.length > 0) {
-        await insertLogProduk(logsToInsert);
-      }
+      enqueueScannerOutboxBatch({
+        invoice: invoiceBase,
+        createdAtIso,
+        operator: operatorName,
+        keterangan: 'Import Excel/CSV',
+        logs: logsToInsert,
+        soFisik,
+      });
 
-      const lokasis = Object.keys(soFisik);
-      if (lokasis.length > 0) {
-        const currentStock = await fetchStockForLocations(lokasis);
-        const soQueueToInsert: Parameters<typeof insertStockOpnameQueue>[0] = [];
-
-        lokasis.forEach((lokasi) => {
-          const physicalCounts = soFisik[lokasi];
-          const systemStockForLokasi = currentStock.filter(
-            (s) => s.lokasi.toUpperCase() === lokasi.toUpperCase()
+      if (typeof navigator === 'undefined' || navigator.onLine) {
+        const syncRes = await syncAllScannerOutboxBatches(productDatabase);
+        if (syncRes.remainingBatches > 0) {
+          showToast(
+            'Data import telah diamankan di Outbox Offline & akan otomatis lanjut dikirim saat sinyal stabil.',
+            'warning'
           );
-
-          const allSkus = new Set([
-            ...Object.keys(physicalCounts),
-            ...systemStockForLokasi.map((s) => s.sku),
-          ]);
-
-          allSkus.forEach((sku) => {
-            const qty_fisik = physicalCounts[sku] || 0;
-            const sysRow = systemStockForLokasi.find(
-              (s) => s.sku.toUpperCase() === sku.toUpperCase()
-            );
-            const qty_sistem = sysRow ? Number(sysRow.sisa_stok) : 0;
-            const selisih = qty_fisik - qty_sistem;
-
-            if (selisih === 0) return; // Skip if no difference
-
-            soQueueToInsert.push({
-              sesi_id: invoiceBase,
-              tanggal: waktuPesan.toISOString(),
-              sku,
-              nama_produk: sysRow?.nama_produk || sku,
-              size: sysRow?.size || '',
-              lokasi,
-              alasan: `Import Opname (${selisih > 0 ? `+${selisih}` : selisih})`,
-              area: sysRow?.area || getAreaFromLokasi(lokasi),
-              qty_sistem,
-              qty_fisik,
-              selisih,
-              status: 'PENDING',
-              jenis: 'Opname',
-              operator: operatorName,
-              invoice: invoiceBase,
-            });
-          });
-        });
-
-        if (soQueueToInsert.length > 0) {
-          await insertStockOpnameQueue(soQueueToInsert);
         }
+      } else {
+        showToast(
+          'Mode Offline: Data import diamankan di Outbox Offline & akan dikirim otomatis saat sinyal kembali.',
+          'warning'
+        );
       }
     } catch (error: any) {
       console.error(error);
@@ -4118,7 +4128,7 @@ export default function App() {
     }
   };
 
-  // Save to Supabase & Sheets
+  // Save to Supabase via Idempotent Outbox Queue (Zero Double Input & Zero Data Loss)
   const handleSaveData = async () => {
     if (scannedData.length === 0 || isSaving) return;
 
@@ -4130,9 +4140,10 @@ export default function App() {
       const soFisik: Record<string, Record<string, number>> = {};
 
       const waktuPesan = new Date();
+      const createdAtIso = waktuPesan.toISOString();
       const personName = session?.name || getUserPersonName(session?.username) || 'Petugas';
       const operatorName = `${personName} | Staging`;
-      const invoiceBase = `WEB-${waktuPesan.getTime()}`;
+      const batchInvoice = currentInvoiceRef.current || `WEB-${waktuPesan.getTime()}`;
 
       for (let i = 0; i < scannedData.length; i++) {
         const item = scannedData[i];
@@ -4149,7 +4160,7 @@ export default function App() {
           return;
         }
 
-        const cLokasi = (item.location || currentLocation || '').trim();
+        const cLokasi = (item.location || currentLocation || '').trim().toUpperCase();
         if (!cLokasi || cLokasi === 'DEFAULT' || cLokasi === 'ANOMALI') {
           setIsSaving(false);
           playErrorBeep();
@@ -4157,123 +4168,71 @@ export default function App() {
           return;
         }
 
-        // Fix invoice base to use extracted explicit invoice if available
-        const currentLineInvoice = currentInvoiceRef.current || `WEB-${waktuPesan.getTime()}`;
+        const master = lookupProductBySku(line);
+        const pData = productDatabase.find((p) => p.k.toUpperCase() === line);
+        const officialName =
+          master?.found && master.nama_produk
+            ? master.nama_produk
+            : pData
+            ? pData.p
+            : item.productName || line;
+        const officialSize = resolveProductDisplaySize(
+          line,
+          master?.size || item.size || (pData ? pData.s : '')
+        );
 
         if (cType === 'IN' || cType === 'OUT') {
-          const pData = productDatabase.find((p) => p.k.toUpperCase() === line);
           logsToInsert.push({
             type: cType,
-            invoice: currentLineInvoice,
+            invoice: batchInvoice,
             sku: line,
-            nama_produk: pData ? pData.p : (item.productName || line),
-            size: item.size || (pData ? pData.s : ''),
+            nama_produk: officialName,
+            size: officialSize,
             area: getAreaFromLokasi(cLokasi),
             lokasi: cLokasi,
             qty: item.qty || 1,
             operator: operatorName,
             keterangan: ketText || `${cType} Staging Scan`,
-            created_at: waktuPesan.toISOString(),
+            created_at: createdAtIso,
           });
         } else if (cType === 'SO') {
           if (!soFisik[cLokasi]) soFisik[cLokasi] = {};
           soFisik[cLokasi][line] = (soFisik[cLokasi][line] || 0) + (item.qty || 1);
 
-          // Add to log_produk for SO scan as well
-          const pData = productDatabase.find((p) => p.k.toUpperCase() === line);
           logsToInsert.push({
             type: 'SO',
-            invoice: currentLineInvoice,
+            invoice: batchInvoice,
             sku: line,
-            nama_produk: pData ? pData.p : (item.productName || line),
-            size: item.size || (pData ? pData.s : ''),
+            nama_produk: officialName,
+            size: officialSize,
             area: getAreaFromLokasi(cLokasi),
             lokasi: cLokasi,
             qty: item.qty || 1,
             operator: operatorName,
             keterangan: ketText || 'Stock Opname Scan',
-            created_at: waktuPesan.toISOString(),
+            created_at: createdAtIso,
           });
         }
       }
 
-      // 1. Eksekusi Mutasi Langsung (#IN / #OUT) ke Supabase
-      if (logsToInsert.length > 0) {
-        await insertLogProduk(logsToInsert);
+      if (logsToInsert.length === 0 && Object.keys(soFisik).length === 0) {
+        setIsSaving(false);
+        showToast('Belum ada item SKU valid untuk disimpan.', 'warning');
+        return;
       }
 
-      // 2. Eksekusi Stock Opname (#SO) ke Supabase
-      const lokasis = Object.keys(soFisik);
-      if (lokasis.length > 0) {
-        const currentStock = await fetchStockForLocations(lokasis);
-        const soQueueToInsert: Parameters<typeof insertStockOpnameQueue>[0] = [];
-
-        lokasis.forEach((lokasi) => {
-          const physicalCounts = soFisik[lokasi];
-          const systemStockForLokasi = currentStock.filter(
-            (s) => s.lokasi.toUpperCase() === lokasi.toUpperCase()
-          );
-
-          const allSkus = new Set([
-            ...Object.keys(physicalCounts),
-            ...systemStockForLokasi.map((s) => s.sku),
-          ]);
-
-          allSkus.forEach((sku) => {
-            const qty_fisik = physicalCounts[sku] || 0;
-            const sysRow = systemStockForLokasi.find(
-              (s) => s.sku.toUpperCase() === sku.toUpperCase()
-            );
-            const qty_sistem = sysRow ? Number(sysRow.sisa_stok) : 0;
-            const selisih = qty_fisik - qty_sistem;
-
-            // OPTIMIZATION: Lewati jika fisik == sistem (selisih 0), tidak perlu antrean adjustment approval
-            if (selisih === 0) return;
-
-            const pData = productDatabase.find((p) => p.k.toUpperCase() === sku.toUpperCase());
-            soQueueToInsert.push({
-              sesi_id: invoiceBase,
-              tanggal: waktuPesan.toISOString(),
-              sku,
-              nama_produk: pData?.p || sysRow?.nama_produk || sku,
-              size: sysRow?.size || pData?.s || '',
-              lokasi,
-              alasan: ketText
-                ? `Pending Adjustment - ${ketText}`
-                : `Selisih Opname (${selisih > 0 ? `+${selisih}` : selisih})`,
-              area: sysRow?.area || getAreaFromLokasi(lokasi),
-              qty_sistem,
-              qty_fisik,
-              selisih,
-              status: 'PENDING',
-              jenis: 'Opname',
-              operator: operatorName,
-              invoice: invoiceBase,
-            });
-          });
-        });
-
-        if (soQueueToInsert.length > 0) {
-          await insertStockOpnameQueue(soQueueToInsert);
-        }
-      }
-
-      playSaveSuccessChime();
-      vibrateDevice([100, 50, 100]);
-      try {
-        confetti({
-          particleCount: 50,
-          spread: 60,
-          origin: { y: 0.85 },
-          colors: ['var(--theme-500)', '#ffa726', '#ffffff'],
-        });
-      } catch {}
-
-      showToast('Data scan berhasil disimpan ke Database!', 'success');
-      showPushNotification('✅ Data Scan Tersimpan', {
-        body: `Berhasil mencatat ${scannedData.length} item scan ke Database.`,
+      // 1. Kunci ke Idempotent Outbox Queue lokal terlebih dahulu (Zero Data Loss & Zero Double Input)
+      enqueueScannerOutboxBatch({
+        invoice: batchInvoice,
+        createdAtIso,
+        operator: operatorName,
+        keterangan: ketText,
+        logs: logsToInsert,
+        soFisik,
       });
 
+      // 2. Kosongkan daftar scan aktif segera setelah masuk Outbox agar tidak pernah ter-submit ganda
+      const totalSavedRows = logsToInsert.length;
       setScannedData([]);
       setKeterangan('');
       setCurrentCategory('');
@@ -4281,6 +4240,41 @@ export default function App() {
       setCurrentInvoice('');
       setCurrentLocation('');
       setHasScannedSku(false);
+
+      playSaveSuccessChime();
+      vibrateDevice([100, 50, 100]);
+
+      // 3. Jika sedang online, langsung kirim Outbox ke Supabase (Step 1: log_produk -> Step 2: stock_opname_queue)
+      const isCurrentlyOnline = typeof navigator === 'undefined' ? true : navigator.onLine;
+      if (!isCurrentlyOnline) {
+        showToast(
+          `📦 Mode Offline: ${totalSavedRows} item scan telah diamankan di Outbox Offline & otomatis dikirim saat sinyal kembali (Anti Double Input).`,
+          'warning'
+        );
+        return;
+      }
+
+      const syncRes = await syncAllScannerOutboxBatches(productDatabase);
+      if (syncRes.remainingBatches === 0) {
+        try {
+          confetti({
+            particleCount: 50,
+            spread: 60,
+            origin: { y: 0.85 },
+            colors: ['var(--theme-500)', '#ffa726', '#ffffff'],
+          });
+        } catch {}
+
+        showToast('Data scan berhasil disimpan ke Database!', 'success');
+        showPushNotification('✅ Data Scan Tersimpan', {
+          body: `Berhasil mencatat ${totalSavedRows} item scan ke Database.`,
+        });
+      } else {
+        showToast(
+          `⚠️ Jaringan terputus saat mengirim. Data telah diamankan di Outbox Offline (Step yang sudah masuk tidak diulang) & otomatis lanjut saat sinyal stabil.`,
+          'warning'
+        );
+      }
     } catch (err: unknown) {
       console.error(err);
       playErrorBeep();
@@ -4785,6 +4779,10 @@ export default function App() {
                             }
                             scannedCount={scannedData.length}
                             onOpenImportModal={() => setIsImportModalOpen(true)}
+                            onOpenScannerPopup={() => {
+                              setIsScannerPopupOpen(true);
+                              setIsScannerPopupMinimized(false);
+                            }}
                             scannerComponent={(layoutMode) => {
                               const inputCard = (
                                 <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
@@ -4807,7 +4805,7 @@ export default function App() {
                                   {(scanMode === 'fisik' || scanMode === 'manual') && (
                                     <PhysicalScanInput onScan={handleScannedItem} products={productDatabase} />
                                   )}
-                                  {scanMode === 'kamera' && isVisible && (
+                                  {scanMode === 'kamera' && isVisible && (!isScannerPopupOpen || isScannerPopupMinimized) && (
                                     <CameraScanner
                                       onScan={handleScannedItem}
                                       onRequestWakeLock={requestScreenWakeLock}
@@ -5377,6 +5375,138 @@ export default function App() {
         }}
         onNavigateToAgendaDraft={() => {
           handleSelectPage('agenda');
+        }}
+      />
+
+      {/* Wide Popup Scanner Modal (Minimizable & Offline Outbox Safe) */}
+      <ScannerPopupModal
+        isOpen={isScannerPopupOpen}
+        isMinimized={isScannerPopupMinimized}
+        onMinimizeChange={(min) => setIsScannerPopupMinimized(min)}
+        onClose={() => {
+          if (scannedData.length > 0) {
+            setIsScannerPopupMinimized(true);
+            showToast(
+              'Popup Scanner dikecilkan ke pojok bawah agar daftar scan Anda yang belum disimpan tetap aman.',
+              'info'
+            );
+          } else {
+            setIsScannerPopupOpen(false);
+            setIsScannerPopupMinimized(false);
+          }
+        }}
+        onOpenFullPage={() => {
+          setIsScannerPopupOpen(false);
+          setIsScannerPopupMinimized(false);
+          setInventoryInitialTab('scanner');
+          handleSelectPage('operasi_stok');
+        }}
+        onOpenImportModal={() => setIsImportModalOpen(true)}
+        scannedItems={scannedData}
+        currentCategory={currentCategory}
+        currentLocation={currentLocation}
+        isSaving={isSaving}
+        onNotify={showToast}
+        renderScannerWorkspace={(layoutMode: ScannerPopupLayoutMode, isCameraAllowed: boolean) => {
+          const inputCard = (
+            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
+              <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-50/70 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800 rounded-t-xl">
+                <div className="flex-1 min-w-0">
+                  <ScanMethodSelector currentMode={scanMode} onSelectMode={setScanMode} />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowQuickTags((prev) => !prev)}
+                  className="py-1 px-2.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 whitespace-nowrap shadow-2xs cursor-pointer select-none"
+                  title={showQuickTags ? 'Sembunyikan Pengaturan Tag' : 'Tampilkan Pengaturan Tag'}
+                >
+                  <Tag className="w-3.5 h-3.5 text-indigo-500" />
+                  <span className="hidden sm:inline">
+                    {showQuickTags ? 'Sembunyikan Tag' : 'Tampilkan Tag'}
+                  </span>
+                </button>
+              </div>
+              {(scanMode === 'fisik' || scanMode === 'manual') && (
+                <PhysicalScanInput onScan={handleScannedItem} products={productDatabase} />
+              )}
+              {scanMode === 'kamera' && isCameraAllowed && (
+                <CameraScanner
+                  onScan={handleScannedItem}
+                  onRequestWakeLock={requestScreenWakeLock}
+                />
+              )}
+              <QuickTagToolbar
+                isVisible={showQuickTags}
+                currentCategory={currentCategory}
+                currentLocation={currentLocation}
+                onSelectCategory={handleSelectQuickCategory}
+                onSelectLocation={handleSelectQuickLocation}
+              />
+            </div>
+          );
+
+          const saveBar = (
+            <BottomSaveBar
+              items={scannedData}
+              keterangan={keterangan}
+              onChangeKeterangan={setKeterangan}
+              onSave={handleSaveData}
+              isSaving={isSaving}
+            />
+          );
+
+          if (layoutMode === 'split') {
+            return (
+              <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+                <div className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-0 space-y-3">
+                  {inputCard}
+                  {saveBar}
+                </div>
+                <div className="lg:col-span-7 xl:col-span-8">
+                  <ScannedItemsList
+                    items={scannedData}
+                    onRemoveItem={handleRemoveItem}
+                    onClearAll={handleClearAll}
+                    onUpdateCategory={handleUpdateItemCategory}
+                    onUpdateQty={handleUpdateItemQty}
+                  />
+                </div>
+              </div>
+            );
+          }
+
+          if (layoutMode === 'table') {
+            return (
+              <div className="w-full space-y-3">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
+                  <div className="lg:col-span-8">{inputCard}</div>
+                  <div className="lg:col-span-4 flex flex-col justify-end">{saveBar}</div>
+                </div>
+                <ScannedItemsList
+                  items={scannedData}
+                  onRemoveItem={handleRemoveItem}
+                  onClearAll={handleClearAll}
+                  onUpdateCategory={handleUpdateItemCategory}
+                  onUpdateQty={handleUpdateItemQty}
+                  forceTableMode={true}
+                />
+              </div>
+            );
+          }
+
+          return (
+            <div className="w-full max-w-3xl mx-auto space-y-3">
+              {inputCard}
+              <ScannedItemsList
+                items={scannedData}
+                onRemoveItem={handleRemoveItem}
+                onClearAll={handleClearAll}
+                onUpdateCategory={handleUpdateItemCategory}
+                onUpdateQty={handleUpdateItemQty}
+              />
+              {saveBar}
+            </div>
+          );
         }}
       />
 
