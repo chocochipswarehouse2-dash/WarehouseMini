@@ -15,20 +15,42 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.12.2",
-  "versionCode": 322,
+  "version": "v2.12.4",
+  "versionCode": 324,
   "buildDate": "14 November 2026",
-  "buildHash": "wms-261114-v322-2316",
-  "releaseTitle": "WMS v2.12.2 — Audit Header, Isolasi Profil & Akses Store, serta Kontrol ON/OFF Notifikasi Perangkat",
+  "buildHash": "wms-261114-v324-2330",
+  "releaseTitle": "WMS v2.12.4 — Fix Tampilan Menu Notifikasi Perangkat di Drawer Mobile",
   "releaseNotes": [
-    "Perbaikan tampilan & responsivitas Header aplikasi di seluler dan desktop",
-    "Audit Profil User: akun Store & non-karyawan tidak lagi masuk profil Warehouse (WH0001), bebas KPI, dan memblokir kebocoran menu Pengaturan Sistem [ADMIN]",
-    "Kontrol switch ON/OFF Notifikasi Perangkat di Sidebar, Notification Hub & Settings (menghentikan pop-up OS, Web Push, Service Worker watcher & suara chime saat OFF)"
+    "Memperbaiki bug kondisi collapsed pada renderQuickTools di Sidebar agar menu Notifikasi Perangkat dan switch ON/OFF tampil penuh di Mobile Drawer (tidak hanya ikon lonceng)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.12.3",
+    "versionCode": 323,
+    "buildDate": "14 November 2026",
+    "buildHash": "wms-261114-v323-2326",
+    "releaseTitle": "WMS v2.12.3 — Penyempurnaan Tampilan Switch Notifikasi Perangkat",
+    "releaseNotes": [
+      "Mengganti tampilan tombol ON/OFF ganda pada Notifikasi Perangkat menjadi switch standar yang bersih dan sejajar di Sidebar, Notification Hub, dan Settings"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
+  {
+    "version": "v2.12.2",
+    "versionCode": 322,
+    "buildDate": "14 November 2026",
+    "buildHash": "wms-261114-v322-2316",
+    "releaseTitle": "WMS v2.12.2 — Audit Header, Isolasi Profil & Akses Store, serta Kontrol ON/OFF Notifikasi Perangkat",
+    "releaseNotes": [
+      "Perbaikan tampilan & responsivitas Header aplikasi di seluler dan desktop",
+      "Audit Profil User: akun Store & non-karyawan tidak lagi masuk profil Warehouse (WH0001), bebas KPI, dan memblokir kebocoran menu Pengaturan Sistem [ADMIN]",
+      "Kontrol switch ON/OFF Notifikasi Perangkat di Sidebar, Notification Hub & Settings (menghentikan pop-up OS, Web Push, Service Worker watcher & suara chime saat OFF)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.12.1",
     "versionCode": 321,
@@ -103,30 +125,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Hapus semua tebakan size dari SKU (regex)",
       "Merge katalog: master selalu menimpa cache lama",
       "Delta sync master_produk berbasis updated_at (hemat egress)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.11.6",
-    "versionCode": 316,
-    "buildDate": "12 November 2026",
-    "buildHash": "wms-261112-v316-1940",
-    "releaseTitle": "WMS v2.11.6 — Penegakan Mutlak VLOOKUP Master Produk di Manual Shipment & Resolusi Retur",
-    "releaseNotes": [
-      "Eliminasi fallback size lokal ke Master Produk VLOOKUP murni",
-      "Pembersihan data items di 17 order manual_shipment dan 7 tiket retur"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.11.5",
-    "versionCode": 315,
-    "buildDate": "12 November 2026",
-    "buildHash": "wms-261112-v315-1331",
-    "releaseTitle": "WMS v2.11.5 — Sanitasi Menyeluruh Size Kode Warna (YL/OL/CM) di Seluruh Sistem & Master DB",
-    "releaseNotes": [
-      "Pembersihan 7.020 data master_produk dari pseudo-size kode warna",
-      "Runtime guard isCorruptedColorCodeSize di Inventory, Katalog, dan Lookup"
     ],
     "minSupportedVersion": "v2.0.0"
   }

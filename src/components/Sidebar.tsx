@@ -613,7 +613,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           }
         };
 
-        if (effectiveCollapsed) {
+        if (collapsed) {
           return (
             <button
               type="button"
@@ -696,12 +696,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
                 <div className="text-[10px] text-slate-400 font-normal truncate">
                   {isNotifOn
-                    ? 'Aktif · Klik di sini untuk tes'
+                    ? 'Aktif · Ketuk untuk tes'
                     : isPermissionBlocked
-                    ? 'Izin diblokir browser'
+                    ? 'Diblokir browser'
                     : !deviceNotificationEnabled
-                    ? 'Nonaktif di perangkat ini'
-                    : 'Belum diaktifkan'}
+                    ? 'Nonaktif'
+                    : 'Ketuk untuk aktifkan'}
                 </div>
               </div>
             </button>
@@ -712,23 +712,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
               aria-checked={isNotifOn}
               aria-label={isNotifOn ? 'Matikan Notifikasi Perangkat' : 'Aktifkan Notifikasi Perangkat'}
               onClick={handleToggle}
-              title={isNotifOn ? 'Matikan Notifikasi Perangkat (OFF)' : 'Nyalakan Notifikasi Perangkat (ON)'}
-              className={`shrink-0 inline-flex items-center gap-1.5 px-1.5 py-1 rounded-full border transition-all cursor-pointer select-none ${
-                isNotifOn
-                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
-                  : 'bg-slate-200/80 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400'
+              title={isNotifOn ? 'Matikan Notifikasi Perangkat' : 'Aktifkan Notifikasi Perangkat'}
+              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+                isNotifOn ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'
               }`}
             >
-              <span className="text-[9px] font-black tracking-wide pl-1">
-                {isNotifOn ? 'ON' : 'OFF'}
-              </span>
               <span
-                className={`w-7 h-4 rounded-full p-0.5 transition-colors flex items-center ${
-                  isNotifOn ? 'bg-emerald-500 justify-end' : 'bg-slate-400 dark:bg-slate-600 justify-start'
+                className={`inline-block h-4 w-4 rounded-full bg-white shadow-xs transition-transform duration-200 ${
+                  isNotifOn ? 'translate-x-4' : 'translate-x-0'
                 }`}
-              >
-                <span className="w-3 h-3 rounded-full bg-white shadow-xs" />
-              </span>
+              />
             </button>
           </div>
         );

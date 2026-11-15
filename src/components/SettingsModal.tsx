@@ -3217,7 +3217,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-2.5 shrink-0">
                       {isPushOn && (
                         <button
                           type="button"
@@ -3231,6 +3231,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         type="button"
                         role="switch"
                         aria-checked={isPushOn}
+                        aria-label={isPushOn ? 'Matikan Notifikasi Perangkat' : 'Aktifkan Notifikasi Perangkat'}
                         onClick={() => {
                           if (onToggleDeviceNotification) {
                             onToggleDeviceNotification(!isPushOn);
@@ -3238,20 +3239,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             onRequestNotification();
                           }
                         }}
-                        className={`inline-flex items-center gap-2 px-2.5 py-1.5 rounded-xl border text-xs font-black transition-all cursor-pointer ${
-                          isPushOn
-                            ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs hover:bg-emerald-500'
-                            : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-primary-500'
+                        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+                          isPushOn ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'
                         }`}
                       >
-                        <span>{isPushOn ? 'ON' : 'OFF'}</span>
                         <span
-                          className={`w-7 h-4 rounded-full p-0.5 flex items-center transition-colors ${
-                            isPushOn ? 'bg-white/30 justify-end' : 'bg-slate-300 dark:bg-slate-600 justify-start'
+                          className={`inline-block h-5 w-5 rounded-full bg-white shadow-xs transition-transform duration-200 ${
+                            isPushOn ? 'translate-x-5' : 'translate-x-0'
                           }`}
-                        >
-                          <span className="w-3 h-3 rounded-full bg-white shadow-xs" />
-                        </span>
+                        />
                       </button>
                     </div>
                   </div>

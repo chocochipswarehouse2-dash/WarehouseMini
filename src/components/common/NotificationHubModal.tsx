@@ -316,38 +316,7 @@ export const NotificationHubModal: React.FC<NotificationHubModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={isDeviceNotifActive}
-              onClick={() => {
-                const target = !isDeviceNotifActive;
-                if (onToggleDeviceNotification) {
-                  onToggleDeviceNotification(target);
-                } else {
-                  setDeviceNotificationEnabled(target);
-                  setLocalNotifEnabled(target);
-                }
-              }}
-              title={
-                isDeviceNotifActive
-                  ? 'Notifikasi Perangkat: ON — Klik untuk mematikan (OFF)'
-                  : 'Notifikasi Perangkat: OFF — Klik untuk mengaktifkan (ON)'
-              }
-              className={`inline-flex items-center gap-1 px-2 py-1.5 rounded-xl border text-[11px] font-extrabold transition-all cursor-pointer ${
-                isDeviceNotifActive
-                  ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
-                  : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              {isDeviceNotifActive ? (
-                <BellRing className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              ) : (
-                <BellOff className="w-3.5 h-3.5 text-slate-400" />
-              )}
-              <span>{isDeviceNotifActive ? 'ON' : 'OFF'}</span>
-            </button>
+          <div className="flex items-center gap-1 shrink-0">
             <button
               type="button"
               onClick={handleManualRefresh}
@@ -366,6 +335,62 @@ export const NotificationHubModal: React.FC<NotificationHubModalProps> = ({
               <X className="w-4 h-4" />
             </button>
           </div>
+        </div>
+
+        {/* Device Notification ON/OFF Row */}
+        <div className="px-4 py-2.5 bg-slate-50/70 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div
+              className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                isDeviceNotifActive
+                  ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
+                  : 'bg-slate-200/80 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+              }`}
+            >
+              {isDeviceNotifActive ? (
+                <BellRing className="w-3.5 h-3.5" />
+              ) : (
+                <BellOff className="w-3.5 h-3.5" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+                Pop-up &amp; Suara Perangkat
+              </div>
+              <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                {isDeviceNotifActive
+                  ? 'Aktif di perangkat ini'
+                  : effectivePerm === 'denied'
+                  ? 'Izin notifikasi diblokir browser'
+                  : 'Nonaktif · Riwayat tetap tercatat di sini'}
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isDeviceNotifActive}
+            aria-label={isDeviceNotifActive ? 'Matikan Notifikasi Perangkat' : 'Aktifkan Notifikasi Perangkat'}
+            onClick={() => {
+              const target = !isDeviceNotifActive;
+              if (onToggleDeviceNotification) {
+                onToggleDeviceNotification(target);
+              } else {
+                setDeviceNotificationEnabled(target);
+                setLocalNotifEnabled(target);
+              }
+            }}
+            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+              isDeviceNotifActive ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 rounded-full bg-white shadow-xs transition-transform duration-200 ${
+                isDeviceNotifActive ? 'translate-x-4' : 'translate-x-0'
+              }`}
+            />
+          </button>
         </div>
 
         {/* Filter Tabs (Belum Dibaca vs Semua) + Mark All as Read */}
