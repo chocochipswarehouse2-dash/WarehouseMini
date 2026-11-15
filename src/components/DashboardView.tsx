@@ -20,10 +20,33 @@ import {
   AlertCircle,
   FolderKanban,
   CheckCircle2,
-  CalendarDays
+  CalendarDays,
+  ClipboardPlus,
+  Scale,
+  Minimize2,
+  CloudUpload,
 } from 'lucide-react';
 import { UserSession, ProductItem, ProjectItem, AgendaEvent } from '../types';
-import { getSupabaseClient } from '../services/supabase';
+import {
+  getSupabaseClient,
+  fetchPenerimaanRecountQueueFromSupabase,
+  getRecountAuditMap,
+} from '../services/supabase';
+import { getPendingOfflineProduksiCount } from '../services/localDb';
+import {
+  getActiveProduksiInputDraftSummary,
+  getActiveRecountDraftSummary,
+  getPendingRecountOutboxCount,
+} from '../services/scannerOutboxService';
+
+export interface DashboardRecountQueueEntry {
+  kode_produksi: string;
+  catatan_petunjuk?: string;
+  added_at?: string;
+  added_by?: string;
+  status: 'BELUM' | 'SELISIH' | 'MATCH';
+  selisih?: number | null;
+}
 
 interface DashboardViewProps {
   session?: UserSession | null;
@@ -59,6 +82,75 @@ interface DashboardMetrics {
 
 const DASHBOARD_CACHE_KEY = 'wms_dashboard_lean_metrics_v3';
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 Menit Stale-While-Revalidate
+
+function readLocalRecountQueueEntries(): DashboardRecountQueueEntry[] {
+  try {
+    const rawQueue = localStorage.getItem('wms_recount_selected_queue');
+    const auditMap = getRecountAuditMap();
+    const entriesMap = new Map<string, DashboardRecountQueueEntry>();
+
+    if (rawQueue) {
+      const parsed = JSON.parse(rawQueue);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((it: any) => {
+          const code = typeof it === 'string' ? it.trim().toUpperCase() : String(it?.kode_produksi || '').trim().toUpperCase();
+          if (!code) return;
+          const audit = auditMap[code];
+          const isCounted = audit && audit.total_fisik !== null && audit.total_fisik !== undefined;
+          const hasDiff = isCounted && Number(audit.selisih || 0) !== 0;
+          entriesMap.set(code, {
+            kode_produksi: code,
+            catatan_petunjuk: typeof it === 'object' ? it?.catatan_petunjuk || '' : '',
+            added_at: typeof it === 'object' ? it?.added_at : undefined,
+            added_by: typeof it === 'object' ? it?.added_by : undefined,
+            status: !isCounted ? 'BELUM' : hasDiff ? 'SELISIH' : 'MATCH',
+            selisih: isCounted ? Number(audit.selisih || 0) : null,
+          });
+        });
+      } else if (typeof parsed === 'object' && parsed !== null) {
+        Object.entries(parsed).forEach(([rawCode, meta]: [string, any]) => {
+          const code = rawCode.trim().toUpperCase();
+          if (!code) return;
+          const audit = auditMap[code];
+          const isCounted = audit && audit.total_fisik !== null && audit.total_fisik !== undefined;
+          const hasDiff = isCounted && Number(audit.selisih || 0) !== 0;
+          entriesMap.set(code, {
+            kode_produksi: code,
+            catatan_petunjuk: meta?.catatan_petunjuk || '',
+            added_at: meta?.added_at,
+            added_by: meta?.added_by,
+            status: !isCounted ? 'BELUM' : hasDiff ? 'SELISIH' : 'MATCH',
+            selisih: isCounted ? Number(audit.selisih || 0) : null,
+          });
+        });
+      }
+    }
+
+    // Include codes in auditMap that still have a discrepancy (selisih !== 0)
+    Object.values(auditMap).forEach((rec) => {
+      const code = String(rec?.kode_produksi || '').trim().toUpperCase();
+      if (!code || entriesMap.has(code)) return;
+      if (rec.total_fisik !== null && rec.total_fisik !== undefined && Number(rec.selisih || 0) !== 0) {
+        entriesMap.set(code, {
+          kode_produksi: code,
+          catatan_petunjuk: rec.notes || '',
+          added_at: rec.audited_at,
+          added_by: rec.auditor,
+          status: 'SELISIH',
+          selisih: Number(rec.selisih || 0),
+        });
+      }
+    });
+
+    // Prioritize BELUM -> SELISIH -> MATCH
+    const priorityOrder = { BELUM: 0, SELISIH: 1, MATCH: 2 };
+    return Array.from(entriesMap.values()).sort(
+      (a, b) => priorityOrder[a.status] - priorityOrder[b.status] || a.kode_produksi.localeCompare(b.kode_produksi)
+    );
+  } catch {
+    return [];
+  }
+}
 
 function formatRelativeTime(timestamp: number | string): string {
   if (!timestamp) return 'Belum lama ini';
@@ -117,8 +209,43 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     };
   });
 
+  const [recountQueueEntries, setRecountQueueEntries] = useState<DashboardRecountQueueEntry[]>(() =>
+    readLocalRecountQueueEntries()
+  );
+  const [produksiDraft, setProduksiDraft] = useState(() => getActiveProduksiInputDraftSummary());
+  const [recountDraft, setRecountDraft] = useState(() => getActiveRecountDraftSummary());
+  const [offlineProduksiCount, setOfflineProduksiCount] = useState<number>(() =>
+    getPendingOfflineProduksiCount()
+  );
+  const [offlineRecountCount, setOfflineRecountCount] = useState<number>(() =>
+    getPendingRecountOutboxCount()
+  );
+
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [timeAgoStr, setTimeAgoStr] = useState<string>('');
+
+  const refreshLocalDraftAndQueueState = useCallback(() => {
+    setRecountQueueEntries(readLocalRecountQueueEntries());
+    setProduksiDraft(getActiveProduksiInputDraftSummary());
+    setRecountDraft(getActiveRecountDraftSummary());
+    setOfflineProduksiCount(getPendingOfflineProduksiCount());
+    setOfflineRecountCount(getPendingRecountOutboxCount());
+  }, []);
+
+  useEffect(() => {
+    refreshLocalDraftAndQueueState();
+    const handleSyncEvents = () => refreshLocalDraftAndQueueState();
+    window.addEventListener('storage', handleSyncEvents);
+    window.addEventListener('wms_produksi_draft_updated', handleSyncEvents);
+    window.addEventListener('wms_recount_draft_updated', handleSyncEvents);
+    window.addEventListener('wms_recount_outbox_updated', handleSyncEvents);
+    return () => {
+      window.removeEventListener('storage', handleSyncEvents);
+      window.removeEventListener('wms_produksi_draft_updated', handleSyncEvents);
+      window.removeEventListener('wms_recount_draft_updated', handleSyncEvents);
+      window.removeEventListener('wms_recount_outbox_updated', handleSyncEvents);
+    };
+  }, [refreshLocalDraftAndQueueState]);
 
   // Update relative time label every 30 seconds
   useEffect(() => {
@@ -141,7 +268,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       const sb = getSupabaseClient();
       const todayYmd = new Date().toISOString().split('T')[0];
 
-      // Parallel execution of count-only headers, 4 active projects, 4 upcoming events, and 5 recent logs
+      // Parallel execution of count-only headers, 4 active projects, 4 upcoming events, 5 recent logs, and recount queue
       const [
         ordersNewRes,
         ordersProcRes,
@@ -150,6 +277,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         projectsRes,
         agendaRes,
         recentLogsRes,
+        cloudRecountQueueRes,
       ] = await Promise.allSettled([
         sb.from('manual_shipment').select('id', { count: 'exact', head: true }).eq('status', 'diterima'),
         sb.from('manual_shipment').select('id', { count: 'exact', head: true }).eq('status', 'diproses'),
@@ -169,7 +297,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           .select('id, type, sku, nama_produk, lokasi, qty, operator, created_at')
           .order('created_at', { ascending: false })
           .limit(5),
+        fetchPenerimaanRecountQueueFromSupabase(),
       ]);
+
+      if (cloudRecountQueueRes.status === 'fulfilled' && cloudRecountQueueRes.value) {
+        try {
+          localStorage.setItem('wms_recount_selected_queue', JSON.stringify(cloudRecountQueueRes.value));
+        } catch {}
+      }
+      refreshLocalDraftAndQueueState();
 
       const newMetrics: DashboardMetrics = {
         lastUpdated: Date.now(),
@@ -210,18 +346,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     } finally {
       setIsRefreshing(false);
     }
-  }, [metrics, onShowToast]);
+  }, [metrics, onShowToast, refreshLocalDraftAndQueueState]);
 
   // Initial mount: only fetch if cache is absent or older than 15 minutes
   useEffect(() => {
     const age = Date.now() - (metrics.lastUpdated || 0);
     if (!metrics.lastUpdated || age > CACHE_TTL_MS) {
       fetchLeanMetrics(false);
+    } else {
+      fetchPenerimaanRecountQueueFromSupabase()
+        .then((q) => {
+          if (q && Object.keys(q).length > 0) {
+            try {
+              localStorage.setItem('wms_recount_selected_queue', JSON.stringify(q));
+            } catch {}
+            refreshLocalDraftAndQueueState();
+          }
+        })
+        .catch(() => {});
     }
   }, []);
 
   const totalMasterSkus = useMemo(() => productCatalog?.length || 0, [productCatalog]);
   const totalLocations = useMemo(() => currentLocations?.length || 0, [currentLocations]);
+
+  const uncountedRecountEntries = useMemo(
+    () => recountQueueEntries.filter((it) => it.status === 'BELUM' || it.status === 'SELISIH'),
+    [recountQueueEntries]
+  );
 
   // Format today's date in Indonesian
   const formattedToday = useMemo(() => {
@@ -600,6 +752,237 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
+      {/* 3B. Dedicated Section: Pintasan Popup Produksi & Antrean Kode Butuh Hitung Ulang (Minimizable & Offline Safe) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4">
+        {/* Left Card (5 cols): Shortcut Popup Input Penerimaan Produksi & Scanner */}
+        <div className="lg:col-span-5 bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 flex flex-col justify-between space-y-3">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-2.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400">
+                  <ClipboardPlus className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
+                    Popup Kerja Cepat &amp; Pelindung Offline
+                  </h2>
+                  <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    Bisa diminimize ke Dock bawah tanpa bentrok &amp; bebas freeze
+                  </p>
+                </div>
+              </div>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60 shrink-0">
+                <Minimize2 className="w-2.5 h-2.5" />
+                Multi-Dock
+              </span>
+            </div>
+
+            <div className="space-y-2.5">
+              {/* Button 1: Input Penerimaan Produksi Popup */}
+              <div
+                onClick={() => handleAction('popup_produksi_input')}
+                className="p-3 rounded-xl border border-emerald-200/80 dark:border-emerald-800/60 bg-emerald-50/40 dark:bg-emerald-950/20 hover:bg-emerald-50/80 dark:hover:bg-emerald-950/40 hover:border-emerald-400 transition-all cursor-pointer group"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                      <ClipboardPlus className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
+                          Input Penerimaan Produksi
+                        </h3>
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300">
+                          Popup Minimize
+                        </span>
+                      </div>
+                      <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                        Input SJ konveksi, matriks warna/size &amp; simpan offline anti double-input
+                      </p>
+                    </div>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-emerald-600 dark:text-emerald-400 group-hover:translate-x-0.5 transition-transform shrink-0 mt-1" />
+                </div>
+
+                {(produksiDraft.hasDraft || offlineProduksiCount > 0) && (
+                  <div className="mt-2 pt-2 border-t border-emerald-200/60 dark:border-emerald-800/50 flex flex-wrap items-center gap-1.5 text-[10px]">
+                    {produksiDraft.hasDraft && (
+                      <span className="px-2 py-0.5 rounded-md font-mono font-bold bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                        Draft Aktif: {produksiDraft.noSuratJalan ? `SJ ${produksiDraft.noSuratJalan}` : `${produksiDraft.modelCount} Model`} ({produksiDraft.totalPcs} pcs)
+                      </span>
+                    )}
+                    {offlineProduksiCount > 0 && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300">
+                        <CloudUpload className="w-3 h-3" />
+                        {offlineProduksiCount} antrean offline
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Button 2: Scanner Gudang Popup */}
+              <div
+                onClick={() => handleAction('scanner')}
+                className="p-3 rounded-xl border border-indigo-200/80 dark:border-indigo-800/60 bg-indigo-50/40 dark:bg-indigo-950/20 hover:bg-indigo-50/80 dark:hover:bg-indigo-950/40 hover:border-indigo-400 transition-all cursor-pointer group"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                      <Barcode className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
+                          Popup Scanner Gudang
+                        </h3>
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300">
+                          Popup Minimize
+                        </span>
+                      </div>
+                      <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                        Scan #IN, #OUT, #SO dengan proteksi Outbox anti-duplikat
+                      </p>
+                    </div>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-indigo-600 dark:text-indigo-400 group-hover:translate-x-0.5 transition-transform shrink-0 mt-1" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
+            <span>Semua draft tetap tersimpan walau popup ditutup (×)</span>
+            <button
+              type="button"
+              onClick={() => handleAction('produksi')}
+              className="font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+            >
+              Rekap Produksi →
+            </button>
+          </div>
+        </div>
+
+        {/* Right Card (7 cols): Antrean Kode Butuh Hitung Ulang (Live Queue + Popup Trigger) */}
+        <div className="lg:col-span-7 bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 flex flex-col justify-between space-y-3">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-2.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400">
+                  <Scale className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <h2 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
+                      Antrean Kode Butuh Hitung Ulang
+                    </h2>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-extrabold ${
+                        uncountedRecountEntries.length > 0
+                          ? 'bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300'
+                          : 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300'
+                      }`}
+                    >
+                      {uncountedRecountEntries.length} Butuh Hitung
+                    </span>
+                    {recountDraft.hasActiveWorkspaceDraft && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300">
+                        Draft: {recountDraft.selectedCode || 'Aktif'} ({recountDraft.filledVariantsCount} var)
+                      </span>
+                    )}
+                    {offlineRecountCount > 0 && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300">
+                        {offlineRecountCount} Outbox Offline
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    Klik kode di bawah untuk langsung buka Popup Hitung Ulang (bisa minimize &amp; pelindung offline)
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleAction('popup_hitung_ulang')}
+                className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer shrink-0"
+              >
+                <Scale className="w-3.5 h-3.5" />
+                <span>Buka Popup Hitung Ulang</span>
+              </button>
+            </div>
+
+            {/* Interactive Queue List */}
+            {recountQueueEntries.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[210px] overflow-y-auto pr-1">
+                {recountQueueEntries.slice(0, 8).map((item) => {
+                  const isBelum = item.status === 'BELUM';
+                  const isSelisih = item.status === 'SELISIH';
+                  const badgeClass = isBelum
+                    ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                    : isSelisih
+                    ? 'bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                    : 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
+
+                  return (
+                    <div
+                      key={item.kode_produksi}
+                      onClick={() => handleAction('popup_hitung_ulang', item.kode_produksi)}
+                      className="p-2.5 rounded-xl bg-slate-50/80 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800 hover:border-amber-400 dark:hover:border-amber-600 hover:bg-amber-50/30 dark:hover:bg-amber-950/20 transition-all cursor-pointer flex items-center justify-between gap-2 group"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono font-black text-xs sm:text-sm text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400">
+                            {item.kode_produksi}
+                          </span>
+                          <span className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold border ${badgeClass}`}>
+                            {isBelum
+                              ? 'BELUM DIHITUNG'
+                              : isSelisih
+                              ? `SELISIH ${Number(item.selisih) > 0 ? `+${item.selisih}` : item.selisih}`
+                              : 'MATCH'}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                          {item.catatan_petunjuk
+                            ? `📌 ${item.catatan_petunjuk}`
+                            : 'Klik untuk input hasil hitung ulang fisik'}
+                        </p>
+                      </div>
+                      <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all shrink-0" />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="py-6 px-4 rounded-xl bg-slate-50/70 dark:bg-slate-900/40 border border-dashed border-slate-200 dark:border-slate-800 text-center space-y-1.5">
+                <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Belum ada kode di Antrean Hitung Ulang aktif
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Anda tetap dapat membuka Popup Hitung Ulang untuk mencari kode produksi atau menambahkan antrean baru.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2 text-[11px]">
+            <span className="text-slate-500 dark:text-slate-400 truncate">
+              Total antrean terdaftar: <b className="font-mono text-slate-700 dark:text-slate-200">{recountQueueEntries.length}</b> kode
+            </span>
+            <button
+              type="button"
+              onClick={() => handleAction('popup_hitung_ulang')}
+              className="font-bold text-amber-600 dark:text-amber-400 hover:text-amber-700 flex items-center gap-1 cursor-pointer shrink-0"
+            >
+              <span>Kelola Semua Antrean Hitung Ulang</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* 4. Asymmetric Bento Section: Antrean Fokus Kerja (7 cols) vs Live Ledger (5 cols) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4">
         {/* Left Column: Antrean Prioritas Kerja Gudang */}
@@ -608,7 +991,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div>
               <h2 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5 sm:gap-2">
                 <Activity className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                Antrean & Fokus Kerja Hari Ini
+                Antrean &amp; Fokus Kerja Hari Ini
               </h2>
               <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 Pintasan ke modul operasional utama yang membutuhkan tindakan
@@ -616,7 +999,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 sm:gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
             {/* Action Card 1: Pesanan & Cetak Label */}
             <div
               onClick={() => handleAction('pesanan_saya')}
@@ -630,7 +1013,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
                 </div>
                 <h4 className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-200 mt-1.5">
-                  Pesanan & Label
+                  Pesanan &amp; Label
                 </h4>
                 <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
                   Verifikasi pesanan dan cetak thermal A6.
@@ -659,28 +1042,70 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
             </div>
 
-            {/* Action Card 3: Penerimaan Produksi */}
+            {/* Action Card 3: Input Penerimaan Produksi (Popup) */}
             <div
-              onClick={() => handleAction('produksi')}
-              className="p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-800/60 hover:border-indigo-300 dark:hover:border-indigo-700/60 transition-all cursor-pointer group flex flex-col justify-between"
+              onClick={() => handleAction('popup_produksi_input')}
+              className="p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-800/60 hover:border-emerald-300 dark:hover:border-emerald-700/60 transition-all cursor-pointer group flex flex-col justify-between"
             >
               <div>
                 <div className="flex items-center justify-between">
                   <span className="text-[9px] sm:text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300">
-                    Konveksi
+                    Popup Minimize
                   </span>
-                  <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
+                  <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
                 </div>
                 <h4 className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-200 mt-1.5">
-                  Produksi Masuk
+                  Input Produksi
                 </h4>
                 <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
-                  Rekap spreadsheet dan sync barcode baru.
+                  Input penerimaan barang produksi (aman offline).
                 </p>
               </div>
             </div>
 
-            {/* Action Card 4: Pusat Resolusi & Retur */}
+            {/* Action Card 4: Antrean Hitung Ulang (Popup) */}
+            <div
+              onClick={() => handleAction('popup_hitung_ulang')}
+              className="p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-800/60 hover:border-amber-300 dark:hover:border-amber-700/60 transition-all cursor-pointer group flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] sm:text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300">
+                    {uncountedRecountEntries.length} Kode Antrean
+                  </span>
+                  <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all" />
+                </div>
+                <h4 className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-200 mt-1.5">
+                  Hitung Ulang
+                </h4>
+                <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
+                  Audit hitung ulang kode produksi (bisa minimize).
+                </p>
+              </div>
+            </div>
+
+            {/* Action Card 5: Scanner Gudang (Popup) */}
+            <div
+              onClick={() => handleAction('scanner')}
+              className="p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-800/60 hover:border-indigo-300 dark:hover:border-indigo-700/60 transition-all cursor-pointer group flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] sm:text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300">
+                    Popup Minimize
+                  </span>
+                  <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
+                </div>
+                <h4 className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-200 mt-1.5">
+                  Scanner Gudang
+                </h4>
+                <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
+                  Scan barcode rak &amp; SO dengan Outbox offline.
+                </p>
+              </div>
+            </div>
+
+            {/* Action Card 6: Pusat Resolusi & Retur */}
             <div
               onClick={() => handleAction('pusat_resolusi')}
               className="p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-800/60 hover:border-indigo-300 dark:hover:border-indigo-700/60 transition-all cursor-pointer group flex flex-col justify-between"
@@ -787,14 +1212,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* 5. Bottom Row: Pusat Akses Cepat Operasional (Mobile: 3x2 Grid, Desktop: 6 Cols) */}
+      {/* 5. Bottom Row: Pusat Akses Cepat Operasional (Mobile: 2x4 Grid, Desktop: 8 Cols) */}
       <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 space-y-2.5 sm:space-y-3">
         <h3 className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
           Pusat Akses Cepat Alat Operasional
         </h3>
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 sm:gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 sm:gap-3">
           {[
-            { label: 'Scanner', desc: 'Scan Rak & Fisik', page: 'scanner', icon: Barcode },
+            { label: 'Scanner Popup', desc: 'Scan Rak & Fisik', page: 'scanner', icon: Barcode },
+            { label: 'Input Produksi', desc: 'Popup Konveksi', page: 'popup_produksi_input', icon: ClipboardPlus },
+            { label: 'Hitung Ulang', desc: `${uncountedRecountEntries.length} Kode Antrean`, page: 'popup_hitung_ulang', icon: Scale },
             { label: 'Cetak Barcode', desc: 'Label Rak/Produk', page: 'cetak_barcode', icon: FileText },
             { label: 'Loading Dock', desc: 'Inbound & Picking', page: 'loading_dock', icon: Truck },
             { label: 'Kalendar Shift', desc: 'Jadwal & Agenda', page: 'agenda', icon: Calendar },
@@ -824,7 +1251,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="flex items-start gap-2 min-w-0">
           <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
           <p className="leading-relaxed">
-            <strong className="text-slate-700 dark:text-slate-200">Arsitektur Hemat Bandwidth Aktif:</strong> Metrik dihitung via HTTP Head-Only Count & list ringkas (&lt; 1.5 KB payload). Cache 15 menit melindungi kuota free tier Supabase Anda dengan nol listener latar belakang.
+            <strong className="text-slate-700 dark:text-slate-200">Arsitektur Hemat Bandwidth Aktif:</strong> Metrik dihitung via HTTP Head-Only Count &amp; list ringkas (&lt; 1.5 KB payload). Cache 15 menit melindungi kuota free tier Supabase Anda dengan nol listener latar belakang.
           </p>
         </div>
         <span className="shrink-0 font-mono text-[9px] sm:text-[11px] px-2 py-0.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">

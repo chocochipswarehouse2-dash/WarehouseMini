@@ -94,6 +94,8 @@ interface PenerimaanProduksiViewProps {
   session: UserSession | null;
   productCatalog?: ProductItem[];
   onShowToast: (msg: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
+  popupMode?: 'input';
+  onSubmittedSuccess?: () => void;
 }
 
 type TabMode = 'riwayat' | 'input' | 'qc_pengerjaan' | 'audit_hitung_ulang';
@@ -492,8 +494,12 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
   session,
   productCatalog = [],
   onShowToast,
+  popupMode,
+  onSubmittedSuccess,
 }) => {
-  const [activeTab, setActiveTab] = useState<TabMode>('riwayat');
+  const [activeTab, setActiveTab] = useState<TabMode>(() =>
+    popupMode === 'input' ? 'input' : 'riwayat'
+  );
   const [editingOriginalSJ, setEditingOriginalSJ] = useState<string | null>(null);
   const [selectedQcTargetCode, setSelectedQcTargetCode] = useState<string | undefined>(undefined);
   const [selectedAuditTargetCode, setSelectedAuditTargetCode] = useState<string | undefined>(undefined);
@@ -626,7 +632,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     return { all: dataList.length, diff, counted, uncounted };
   }, [dataList]);
 
-  // Draft Recovery for in-progress goods receipt form (protects against reload, tab close, or app crash)
+  // Draft Recovery for in-progress goods receipt form (protects against reload, tab close, minimize, or app crash)
   const initialFormDraft = useMemo(() => {
     try {
       const raw = localStorage.getItem('wms_penerimaan_produksi_form_draft');
@@ -636,7 +642,20 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
           parsed &&
           (parsed.fromAiAssistant ||
             parsed.formNoSuratJalan ||
-            (Array.isArray(parsed.productBlocks) && parsed.productBlocks.some((b: any) => b.kode_produksi)))
+            parsed.formKeteranganGlobal ||
+            (Array.isArray(parsed.productBlocks) &&
+              parsed.productBlocks.some(
+                (b: any) =>
+                  b.kode_produksi ||
+                  b.catatan ||
+                  b.foto_url ||
+                  (Array.isArray(b.warnas) &&
+                    b.warnas.some(
+                      (w: any) =>
+                        w.warna ||
+                        (Array.isArray(w.sizes) && w.sizes.some((s: any) => (Number(s.qty) || 0) > 0))
+                    ))
+              )))
         ) {
           return parsed;
         }
@@ -661,28 +680,43 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     return [createNewProductBlock()];
   });
 
-  // Auto-Save in-progress draft to localStorage
+  // Auto-Save in-progress draft to localStorage & broadcast live draft status for Minimized Dock / Dashboard
   useEffect(() => {
     const hasData = Boolean(
       formNoSuratJalan.trim() ||
       formKeteranganGlobal.trim() ||
-      productBlocks.some(b => b.kode_produksi.trim() || (b.warnas && b.warnas.some(w => w.warna.trim())))
+      productBlocks.some(
+        (b) =>
+          b.kode_produksi.trim() ||
+          (b.catatan && b.catatan.trim()) ||
+          b.foto_url ||
+          (b.warnas &&
+            b.warnas.some(
+              (w) =>
+                w.warna.trim() ||
+                (w.sizes && w.sizes.some((s) => (Number(s.qty) || 0) > 0))
+            ))
+      )
     );
-    if (hasData) {
-      const timer = setTimeout(() => {
-        try {
-          localStorage.setItem('wms_penerimaan_produksi_form_draft', JSON.stringify({
-            formKategori,
-            formTanggal,
-            formNoSuratJalan,
-            formKeteranganGlobal,
-            productBlocks,
-            savedAt: Date.now(),
-          }));
-        } catch {}
-      }, 400);
-      return () => clearTimeout(timer);
-    }
+    const timer = setTimeout(() => {
+      try {
+        if (hasData) {
+          localStorage.setItem(
+            'wms_penerimaan_produksi_form_draft',
+            JSON.stringify({
+              formKategori,
+              formTanggal,
+              formNoSuratJalan,
+              formKeteranganGlobal,
+              productBlocks,
+              savedAt: Date.now(),
+            })
+          );
+        }
+        window.dispatchEvent(new CustomEvent('wms_produksi_draft_updated'));
+      } catch {}
+    }, 220);
+    return () => clearTimeout(timer);
   }, [formKategori, formTanggal, formNoSuratJalan, formKeteranganGlobal, productBlocks]);
 
   // BeforeUnload guard to warn if operator attempts to reload or close tab with unsaved items
@@ -831,8 +865,9 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     };
   }, []);
 
-  // Filtered List
+  // Filtered List (short-circuited when in dedicated popupMode='input' to save CPU/RAM)
   const filteredData = useMemo(() => {
+    if (popupMode === 'input') return [];
     return dataList.filter((item) => {
       // Filter Kategori
       if (filterKategori !== 'Semua' && item.kategori !== filterKategori) {
@@ -870,7 +905,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       }
       return true;
     });
-  }, [dataList, filterKategori, filterStartDate, filterEndDate, filterRecountStatus, searchQuery]);
+  }, [dataList, filterKategori, filterStartDate, filterEndDate, filterRecountStatus, searchQuery, popupMode]);
 
   // Summary Metrics
   const metrics = useMemo(() => {
@@ -1456,6 +1491,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     setProductBlocks([createNewProductBlock()]);
     try {
       localStorage.removeItem('wms_penerimaan_produksi_form_draft');
+      window.dispatchEvent(new CustomEvent('wms_produksi_draft_updated'));
     } catch {}
   };
 
@@ -1590,16 +1626,22 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
         setEditingOriginalSJ(null);
       } else {
         savedItems = await simpanBatchPenerimaanProduksiToSupabase(payload, operatorName);
-        onShowToast(
-          `Sukses menyimpan kedatangan ${cleanedBlocks.length} kode produksi (${formSummary.totalPcs} pcs)!`,
-          'success'
-        );
+        const savedOffline = savedItems.some((it) => String(it.id || '').startsWith('local_'));
+        if (savedOffline) {
+          onShowToast(
+            `📦 Jaringan sedang offline: ${cleanedBlocks.length} kode (${formSummary.totalPcs} pcs) disimpan aman di Antrean Offline & otomatis terkirim ke Supabase saat online!`,
+            'warning'
+          );
+        } else {
+          onShowToast(
+            `Sukses menyimpan kedatangan ${cleanedBlocks.length} kode produksi (${formSummary.totalPcs} pcs)!`,
+            'success'
+          );
+        }
       }
 
       // Otomatis push riwayat produksi bergambar ke Google Sheet (1 Tanggal = 1 Tab Sheet)
       if (savedItems && savedItems.length > 0) {
-        // Ambil semua item yang ada pada tanggal & kategori ini agar jika ada multiple SJ di hari yang sama,
-        // seluruh SJ tetap tergabung lengkap di tab sheet tanggal tersebut (tidak saling menimpa).
         const existingOtherItems = dataList.filter((it) => {
           const matchDate = it.tanggal_penerimaan === formTanggal;
           const matchCat =
@@ -1626,7 +1668,12 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       }
 
       handleResetForm();
-      setActiveTab('riwayat');
+      if (popupMode === 'input') {
+        setActiveTab('input');
+        if (onSubmittedSuccess) onSubmittedSuccess();
+      } else {
+        setActiveTab('riwayat');
+      }
       loadData();
     } catch (err: any) {
       console.error('Gagal simpan penerimaan:', err);
@@ -2022,8 +2069,9 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
   };
 
   return (
-    <div className="space-y-3.5 sm:space-y-3 pb-16">
-      {/* 1. Header Page & Tabs Combined */}
+    <div className={popupMode === 'input' ? 'space-y-3 pb-6' : 'space-y-3.5 sm:space-y-3 pb-16'}>
+      {/* 1. Header Page & Tabs Combined (Hidden when in dedicated popupMode='input') */}
+      {popupMode !== 'input' && (
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-2 sm:p-3 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           {/* Top-Level Tab Switcher (Mobile Swipeable Horizontal Bar) */}
@@ -2141,6 +2189,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
           </div>
         </div>
       </div>
+      )}
 
       {/* ========================================================
           TAB 1: INPUT KEDATANGAN BARANG (BATCH INPUT)

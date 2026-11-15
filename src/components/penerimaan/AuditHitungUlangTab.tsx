@@ -59,6 +59,12 @@ import {
   formatDatesSummary,
 } from '../../services/gasProduksiSync';
 import { getSizeWeight } from '../../utils/sortUtils';
+import {
+  loadRecountWorkspaceDraft,
+  saveRecountWorkspaceDraft,
+  clearRecountCodeDraft,
+  enqueueRecountOutboxBatch,
+} from '../../services/scannerOutboxService';
 
 export interface AuditHitungUlangTabProps {
   session: UserSession | null;
@@ -142,9 +148,17 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
   onRefreshData,
   onOpenLightbox,
 }) => {
+  const initialDraftState = useMemo(() => loadRecountWorkspaceDraft(), []);
+
   // Current active mode: 'queue' (Antrian & Daftar Pekerjaan) | 'workspace' (Lembar Kerja Input Fisik)
-  const [activeMode, setActiveMode] = useState<'queue' | 'workspace'>('queue');
-  const [selectedCode, setSelectedCode] = useState<string>(initialTargetCode || '');
+  const [activeMode, setActiveMode] = useState<'queue' | 'workspace'>(() => {
+    if (initialTargetCode) return 'workspace';
+    return initialDraftState.activeMode || 'queue';
+  });
+  const [selectedCode, setSelectedCode] = useState<string>(() => {
+    if (initialTargetCode) return initialTargetCode.trim().toUpperCase();
+    return initialDraftState.selectedCode || '';
+  });
 
   // Queue Map: { [kode_produksi]: { catatan_petunjuk?: string, added_at?: string } }
   const [queueMap, setQueueMap] = useState<Record<string, QueueItemMetadata>>(() => loadStoredQueueMap());
@@ -769,7 +783,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
 
   const lastLoadedCodeRef = useRef<string | null>(null);
 
-  // Initialize variantInputs when switching selectedCode, preserving user inputs during background polling
+  // Initialize variantInputs when switching selectedCode, restoring any unsaved draft first
   useEffect(() => {
     if (!selectedCode || !activeGroup) {
       lastLoadedCodeRef.current = null;
@@ -779,19 +793,36 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
     if (lastLoadedCodeRef.current !== selectedCode) {
       lastLoadedCodeRef.current = selectedCode;
 
+      const savedDraft = loadRecountWorkspaceDraft().draftsByCode?.[selectedCode];
       const initialMap: Record<string, { recountQty: number | null; note: string }> = {};
 
       activeVariants.forEach((v) => {
         const key = `${v.warna}_${v.size}`;
+        const draftVar = savedDraft?.variantInputs?.[key];
         initialMap[key] = {
-          recountQty: v.existing_fisik !== null ? v.existing_fisik : null,
-          note: v.existing_note || '',
+          recountQty:
+            draftVar && draftVar.recountQty !== undefined
+              ? draftVar.recountQty
+              : v.existing_fisik !== null
+              ? v.existing_fisik
+              : null,
+          note:
+            draftVar && typeof draftVar.note === 'string' && draftVar.note
+              ? draftVar.note
+              : v.existing_note || '',
         };
       });
 
       setVariantInputs(initialMap);
-      setGeneralNotes(activeGroup.last_notes || '');
-      if (activeGroup.last_auditor) setAuditorName(activeGroup.last_auditor);
+      setGeneralNotes(savedDraft?.generalNotes ?? activeGroup.last_notes ?? '');
+      if (savedDraft?.auditorName) {
+        setAuditorName(savedDraft.auditorName);
+      } else if (activeGroup.last_auditor) {
+        setAuditorName(activeGroup.last_auditor);
+      }
+      if (savedDraft?.auditDate) {
+        setAuditDate(savedDraft.auditDate);
+      }
     } else {
       // Same code workspace: merge any new variants without overwriting user-typed input values
       setVariantInputs((prev) => {
@@ -811,6 +842,30 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       });
     }
   }, [selectedCode, activeGroup, activeVariants]);
+
+  // Persist activeMode, selectedCode, and in-progress variantInputs so Minimize / Close never loses work
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!selectedCode) {
+        saveRecountWorkspaceDraft({ activeMode, selectedCode: '' });
+        return;
+      }
+      saveRecountWorkspaceDraft({
+        activeMode,
+        selectedCode,
+        draftsByCode: {
+          [selectedCode]: {
+            variantInputs,
+            generalNotes,
+            auditorName,
+            auditDate,
+            updatedAt: Date.now(),
+          },
+        },
+      });
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [activeMode, selectedCode, variantInputs, generalNotes, auditorName, auditDate]);
 
   // Live calculations for current workspace
   const workspaceSummary = useMemo(() => {
@@ -931,108 +986,145 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         };
       });
 
-      // 2. Simpan ke database Supabase
-      await updatePenerimaanProduksiItemsInSupabase(updatedItems);
+      // 2. Simpan ke database Supabase (dan deteksi apakah offline / gagal sebagian)
+      const patchRes = await updatePenerimaanProduksiItemsInSupabase(updatedItems);
+      const isOfflineNow = typeof navigator !== 'undefined' && !navigator.onLine;
+
+      const detailRecords = activeVariants.map((v) => {
+        const key = `${v.warna}_${v.size}`;
+        const sv = variantInputs[key];
+        const fisik = sv && sv.recountQty !== null ? sv.recountQty : v.qty_asli;
+        return {
+          kode_produksi: activeGroup.kode_produksi,
+          nama_produk: activeGroup.nama_produk,
+          warna: v.warna,
+          size: v.size,
+          tanggal_penerimaan: activeGroup.items[0]?.tanggal_penerimaan || auditDate,
+          qty_sebelumnya: v.qty_asli,
+          qty_fisik: fisik,
+          selisih: fisik - v.qty_asli,
+          catatan: sv?.note || generalNotes || '',
+        };
+      });
+
+      const logPayload = {
+        id: `recount_${normalizeProductCode(activeGroup.kode_produksi)}_r${nextRound}_${Date.now()}`,
+        round: nextRound,
+        tanggal_audit: auditDate,
+        auditor: auditorName || 'Auditor Fisik',
+        kode_produksi: activeGroup.kode_produksi,
+        total_sebelumnya: workspaceSummary.totalAsli,
+        total_fisik: workspaceSummary.totalFisik,
+        total_selisih: workspaceSummary.totalSelisih,
+        general_notes: generalNotes,
+        details: detailRecords,
+      };
+
+      const prevRec = recountAuditMap[activeGroup.kode_produksi];
+      const prevHistory = Array.isArray(prevRec?.history) ? [...prevRec.history] : [];
+      if (prevRec && prevRec.total_fisik !== undefined && Number(prevRec.round || 1) !== nextRound) {
+        prevHistory.push({
+          round: prevRec.round || 1,
+          tanggal_audit: prevRec.tanggal_audit,
+          total_asli: prevRec.total_asli,
+          total_fisik: prevRec.total_fisik,
+          total_selisih: prevRec.total_selisih,
+          status: prevRec.status,
+          auditor: prevRec.auditor,
+          catatan: prevRec.catatan,
+          updated_at: prevRec.updated_at,
+          variants: prevRec.variants,
+        });
+      }
+
+      const newRecord = {
+        kode_produksi: activeGroup.kode_produksi,
+        tanggal_audit: auditDate,
+        total_asli: workspaceSummary.totalAsli,
+        total_fisik: workspaceSummary.totalFisik,
+        total_selisih: workspaceSummary.totalSelisih,
+        status: workspaceSummary.status,
+        round: nextRound,
+        auditor: auditorName || 'Auditor Fisik',
+        catatan: generalNotes,
+        updated_at: nowIso,
+        history: prevHistory,
+        variants: activeVariants.map((v) => {
+          const key = `${v.warna}_${v.size}`;
+          const sv = variantInputs[key];
+          const fisik = sv && sv.recountQty !== null ? sv.recountQty : v.qty_asli;
+          const selisih = fisik - v.qty_asli;
+          return {
+            warna: v.warna,
+            size: v.size,
+            qty_asli: v.qty_asli,
+            qty_fisik: fisik,
+            selisih,
+            status: selisih === 0 ? 'MATCH' : selisih < 0 ? 'KURANG' : 'LEBIH',
+            note: sv?.note || '',
+          };
+        }),
+      };
+
+      const arrivalDates = Array.from(activeGroup.distinct_dates || []);
+      const arrivalDatesInfo = formatDatesSummary(arrivalDates);
+
+      const deltaItems: MasterRecountDeltaItem[] = activeVariants.map((v) => {
+        const key = `${v.warna}_${v.size}`;
+        const sv = variantInputs[key];
+        const fisik = sv && sv.recountQty !== null ? sv.recountQty : v.qty_asli;
+        const selisih = fisik - v.qty_asli;
+        const status = selisih === 0 ? 'MATCH' : selisih < 0 ? 'KURANG' : 'LEBIH';
+
+        return {
+          kode_produksi: activeGroup.kode_produksi,
+          warna: v.warna,
+          size: v.size,
+          qty_asli: v.qty_asli,
+          qty_fisik: fisik,
+          selisih,
+          status,
+          round: nextRound,
+          auditor: auditorName || 'Auditor',
+          catatan: sv?.note || generalNotes || '',
+          tanggal_kedatangan_info: arrivalDatesInfo,
+          updated_at: nowIso,
+        };
+      });
+
+      const sheetDeltaPayload = {
+        activeTab: (activeGroup.kategori === 'Kargo' ? 'Kargo' : 'CMT') as 'Kargo' | 'CMT',
+        kode_produksi: activeGroup.kode_produksi,
+        tanggal_hitung: auditDate,
+        items: deltaItems,
+      };
 
       // 3. Catat ke riwayat log audit (History Logs)
+      let logSyncedOk = false;
       try {
-        // Jika kode ini sebelumnya sudah pernah dihitung (mis. Putaran 1 dari sistem lama),
-        // pastikan snapshot putaran sebelumnya tersimpan lebih dulu agar tidak hilang saat masuk Putaran ke-2 dst.
-        if (activeGroup.is_counted) {
+        if (activeGroup.is_counted && !isOfflineNow) {
           const prevSynth = synthesizeHistoryLogForCode(activeGroup.kode_produksi);
           if (prevSynth && Number(prevSynth.round || 1) < nextRound) {
             await savePenerimaanRecountLog(prevSynth);
           }
         }
-
-        const detailRecords = activeVariants.map((v) => {
-          const key = `${v.warna}_${v.size}`;
-          const sv = variantInputs[key];
-          const fisik = sv && sv.recountQty !== null ? sv.recountQty : v.qty_asli;
-          return {
-            kode_produksi: activeGroup.kode_produksi,
-            nama_produk: activeGroup.nama_produk,
-            warna: v.warna,
-            size: v.size,
-            tanggal_penerimaan: activeGroup.items[0]?.tanggal_penerimaan || auditDate,
-            qty_sebelumnya: v.qty_asli,
-            qty_fisik: fisik,
-            selisih: fisik - v.qty_asli,
-            catatan: sv?.note || generalNotes || '',
-          };
-        });
-
-        await savePenerimaanRecountLog({
-          id: `recount_${normalizeProductCode(activeGroup.kode_produksi)}_r${nextRound}_${Date.now()}`,
-          round: nextRound,
-          tanggal_audit: auditDate,
-          auditor: auditorName || 'Auditor Fisik',
-          kode_produksi: activeGroup.kode_produksi,
-          total_sebelumnya: workspaceSummary.totalAsli,
-          total_fisik: workspaceSummary.totalFisik,
-          total_selisih: workspaceSummary.totalSelisih,
-          general_notes: generalNotes,
-          details: detailRecords,
-        });
+        await savePenerimaanRecountLog(logPayload);
+        logSyncedOk = !isOfflineNow;
       } catch (logErr) {
         console.warn('Gagal catat log audit:', logErr);
       }
 
-      // Simpan ke Cloud Settings agar persisten & langsung terbaca di seluruh user / HP
+      // 4. Simpan ke Cloud Settings agar persisten & langsung terbaca di seluruh user / HP
+      let auditRecordSyncedOk = false;
       try {
-        const prevRec = recountAuditMap[activeGroup.kode_produksi];
-        const prevHistory = Array.isArray(prevRec?.history) ? [...prevRec.history] : [];
-        if (prevRec && prevRec.total_fisik !== undefined && Number(prevRec.round || 1) !== nextRound) {
-          prevHistory.push({
-            round: prevRec.round || 1,
-            tanggal_audit: prevRec.tanggal_audit,
-            total_asli: prevRec.total_asli,
-            total_fisik: prevRec.total_fisik,
-            total_selisih: prevRec.total_selisih,
-            status: prevRec.status,
-            auditor: prevRec.auditor,
-            catatan: prevRec.catatan,
-            updated_at: prevRec.updated_at,
-            variants: prevRec.variants,
-          });
-        }
-
-        const newRecord = {
-          kode_produksi: activeGroup.kode_produksi,
-          tanggal_audit: auditDate,
-          total_asli: workspaceSummary.totalAsli,
-          total_fisik: workspaceSummary.totalFisik,
-          total_selisih: workspaceSummary.totalSelisih,
-          status: workspaceSummary.status,
-          round: nextRound,
-          auditor: auditorName || 'Auditor Fisik',
-          catatan: generalNotes,
-          updated_at: nowIso,
-          history: prevHistory,
-          variants: activeVariants.map((v) => {
-            const key = `${v.warna}_${v.size}`;
-            const sv = variantInputs[key];
-            const fisik = sv && sv.recountQty !== null ? sv.recountQty : v.qty_asli;
-            const selisih = fisik - v.qty_asli;
-            return {
-              warna: v.warna,
-              size: v.size,
-              qty_asli: v.qty_asli,
-              qty_fisik: fisik,
-              selisih,
-              status: selisih === 0 ? 'MATCH' : selisih < 0 ? 'KURANG' : 'LEBIH',
-              note: sv?.note || '',
-            };
-          }),
-        };
         await saveRecountAuditRecord(newRecord);
         setRecountAuditMap((prev) => ({
           ...prev,
           [activeGroup.kode_produksi]: newRecord,
         }));
+        auditRecordSyncedOk = !isOfflineNow;
 
-        // Sinkronkan juga status selisih nota terbaru ke Supabase jika ada Qty Nota
-        if (workspaceSummary.hasNota) {
+        if (workspaceSummary.hasNota && !isOfflineNow) {
           syncQtyNotaAndAutoQueueRecount({
             penerimaanItems,
             skipSheetFetch: true,
@@ -1048,41 +1140,40 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         console.warn('Gagal simpan recount record ke Cloud settings:', errRec);
       }
 
-      // 4. AUTO-PUSH TARGETED DELTA KE MASTER SHEET DI GOOGLE SPREADSHEET (ANTI-TIMEOUT)
+      // Jika sedang offline atau ada baris PATCH yang gagal karena sinyal putus di tengah jalan,
+      // masukkan ke Antrean Outbox Hitung Ulang (Idempotent PATCH) agar terkirim otomatis saat sinyal pulih!
+      if (isOfflineNow || !patchRes.success || patchRes.failedCount > 0) {
+        enqueueRecountOutboxBatch({
+          kode_produksi: activeGroup.kode_produksi,
+          tanggal_audit: auditDate,
+          auditor: auditorName || 'Auditor Fisik',
+          round: nextRound,
+          updatedItems,
+          auditRecord: newRecord,
+          logRecord: logPayload,
+          sheetDelta: sheetDeltaPayload,
+          itemsSynced: patchRes.success && patchRes.failedCount === 0 && !isOfflineNow,
+          auditRecordSynced: auditRecordSyncedOk,
+          logSynced: logSyncedOk,
+          sheetSynced: false,
+        });
+
+        clearRecountCodeDraft(activeGroup.kode_produksi);
+        handleAddMultipleToQueue([{ kode_produksi: activeGroup.kode_produksi }]);
+        await onRefreshData();
+        setFilterStatus('all');
+        setActiveMode('queue');
+        onShowToast(
+          `📦 Hasil hitung ulang Kode ${activeGroup.kode_produksi} tersimpan aman di Antrean Offline! Otomatis dikirim ke Supabase & Google Sheet saat jaringan kembali stabil.`,
+          'warning'
+        );
+        return;
+      }
+
+      // 5. AUTO-PUSH TARGETED DELTA KE MASTER SHEET DI GOOGLE SPREADSHEET (ANTI-TIMEOUT)
       setIsSyncingSheet(true);
       try {
-        const arrivalDates = Array.from(activeGroup.distinct_dates || []);
-        const arrivalDatesInfo = formatDatesSummary(arrivalDates);
-
-        const deltaItems: MasterRecountDeltaItem[] = activeVariants.map((v) => {
-          const key = `${v.warna}_${v.size}`;
-          const sv = variantInputs[key];
-          const fisik = sv && sv.recountQty !== null ? sv.recountQty : v.qty_asli;
-          const selisih = fisik - v.qty_asli;
-          const status = selisih === 0 ? 'MATCH' : selisih < 0 ? 'KURANG' : 'LEBIH';
-
-          return {
-            kode_produksi: activeGroup.kode_produksi,
-            warna: v.warna,
-            size: v.size,
-            qty_asli: v.qty_asli,
-            qty_fisik: fisik,
-            selisih,
-            status,
-            round: nextRound,
-            auditor: auditorName || 'Auditor',
-            catatan: sv?.note || generalNotes || '',
-            tanggal_kedatangan_info: arrivalDatesInfo,
-            updated_at: nowIso,
-          };
-        });
-
-        const deltaRes = await pushMasterRecountDeltaToGoogleSheet({
-          activeTab: activeGroup.kategori === 'Kargo' ? 'Kargo' : 'CMT',
-          kode_produksi: activeGroup.kode_produksi,
-          tanggal_hitung: auditDate,
-          items: deltaItems,
-        });
+        const deltaRes = await pushMasterRecountDeltaToGoogleSheet(sheetDeltaPayload);
 
         if (deltaRes.success) {
           onShowToast(
@@ -1102,10 +1193,13 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         setIsSyncingSheet(false);
       }
 
+      // Bersihkan draft kode ini karena sudah tersimpan penuh
+      clearRecountCodeDraft(activeGroup.kode_produksi);
+
       // Pastikan kode tersimpan dalam antrian terpilih
       handleAddMultipleToQueue([{ kode_produksi: activeGroup.kode_produksi }]);
 
-      // 5. Muat ulang data induk dan kembali ke daftar antrian
+      // 6. Muat ulang data induk dan kembali ke daftar antrian
       await onRefreshData();
       setFilterStatus('all');
       setActiveMode('queue');

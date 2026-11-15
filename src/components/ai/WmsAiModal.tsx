@@ -1058,7 +1058,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
   // Pengguna bisa bebas bekerja di modul WMS lain sambil menunggu jawaban AI!
   if (isMinimized) {
     return (
-      <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 p-2 sm:p-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 animate-in slide-in-from-bottom duration-200 hover:shadow-primary-500/10 transition-all select-none">
+      <div className="fixed bottom-20 right-4 z-50 flex items-center gap-2 p-2 sm:p-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 animate-in slide-in-from-bottom duration-200 hover:shadow-primary-500/10 transition-all select-none">
         <div
           onClick={() => setIsMinimized(false)}
           className="flex items-center gap-2.5 cursor-pointer hover:opacity-90 transition-opacity"

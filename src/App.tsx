@@ -60,10 +60,16 @@ import { WmsAiModal } from './components/ai/WmsAiModal';
 import { fetchAiConfig } from './services/wmsAiService';
 import { OfflineProtectionBar } from './components/OfflineProtectionBar';
 import { ScannerPopupModal, ScannerPopupLayoutMode } from './components/ScannerPopupModal';
+import { ProduksiInputPopupModal } from './components/ProduksiInputPopupModal';
+import { HitungUlangPopupModal } from './components/HitungUlangPopupModal';
+import { MinimizedWorkspacesDock } from './components/common/MinimizedWorkspacesDock';
 import {
   enqueueScannerOutboxBatch,
   syncAllScannerOutboxBatches,
-  getPendingScannerOutboxCount
+  getPendingScannerOutboxCount,
+  getPendingRecountOutboxCount,
+  getActiveProduksiInputDraftSummary,
+  getActiveRecountDraftSummary,
 } from './services/scannerOutboxService';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { globalRealtimeStore } from './services/store';
@@ -785,17 +791,55 @@ export default function App() {
   }, [session?.username]);
 
   // Handler navigasi dengan verifikasi izin halaman & Auto-Update Aman saat pindah menu utama
-  const handleSelectPage = useCallback((rawPage: ActivePage) => {
-    // Jika klik tombol Scanner (mis. dari Dashboard), buka Popup Scanner Luas yang bisa diminimize
+  const handleSelectPage = useCallback((rawPage: ActivePage | 'popup_produksi_input' | 'popup_hitung_ulang', subTabOrCode?: string) => {
+    // 1. Pintasan Popup Scanner Luas (Minimizable & Offline Safe)
     if (rawPage === 'scanner') {
       if (session && !canAccessPage(session, 'scanner')) {
         showToast('Akses ditolak: Akun Anda tidak memiliki hak akses untuk Scanner.', 'warning');
         return;
       }
+      setIsProduksiInputPopupMinimized(true);
+      setIsHitungUlangPopupMinimized(true);
       setIsScannerPopupOpen(true);
       setIsScannerPopupMinimized(false);
       return;
     }
+
+    // 2. Pintasan Popup Input Penerimaan Produksi (Minimizable & Offline Safe)
+    if (rawPage === 'popup_produksi_input') {
+      if (session && !canAccessPage(session, 'produksi')) {
+        showToast('Akses ditolak: Akun Anda tidak memiliki hak akses ke modul Produksi.', 'warning');
+        return;
+      }
+      setIsScannerPopupMinimized(true);
+      setIsHitungUlangPopupMinimized(true);
+      setIsProduksiInputPopupOpen(true);
+      setIsProduksiInputPopupMinimized(false);
+      return;
+    }
+
+    // 3. Pintasan Popup Antrean Kode Butuh Hitung Ulang (Minimizable & Offline Safe)
+    if (rawPage === 'popup_hitung_ulang') {
+      if (session && !canAccessPage(session, 'produksi')) {
+        showToast('Akses ditolak: Akun Anda tidak memiliki hak akses ke modul Produksi.', 'warning');
+        return;
+      }
+      if (subTabOrCode) {
+        setHitungUlangPopupTargetCode(String(subTabOrCode).trim().toUpperCase());
+      } else {
+        setHitungUlangPopupTargetCode(undefined);
+      }
+      setIsScannerPopupMinimized(true);
+      setIsProduksiInputPopupMinimized(true);
+      setIsHitungUlangPopupOpen(true);
+      setIsHitungUlangPopupMinimized(false);
+      return;
+    }
+
+    // Auto-minimize any open maximized popup into the bottom Dock when navigating between main pages
+    setIsScannerPopupMinimized(true);
+    setIsProduksiInputPopupMinimized(true);
+    setIsHitungUlangPopupMinimized(true);
 
     if (rawPage === 'cetak_barcode') setCetakLabelInitialTab('barcode');
     if (rawPage === 'picking_tasks') {
@@ -836,7 +880,10 @@ export default function App() {
         const rawDraft = localStorage.getItem('wms_active_staging_scans');
         hasStagingScans =
           Boolean(rawDraft && JSON.parse(rawDraft)?.length > 0) ||
-          getPendingScannerOutboxCount() > 0;
+          getPendingScannerOutboxCount() > 0 ||
+          getPendingRecountOutboxCount() > 0 ||
+          getActiveProduksiInputDraftSummary().hasDraft ||
+          getActiveRecountDraftSummary().hasActiveWorkspaceDraft;
       } catch {}
 
       if (!hasStagingScans) {
@@ -1040,6 +1087,23 @@ export default function App() {
       return false;
     }
   });
+
+  // Popup Input Penerimaan Produksi (Minimizable & Offline Safe)
+  const [isProduksiInputPopupOpen, setIsProduksiInputPopupOpen] = useState<boolean>(() => {
+    return getActiveProduksiInputDraftSummary().hasDraft;
+  });
+  const [isProduksiInputPopupMinimized, setIsProduksiInputPopupMinimized] = useState<boolean>(() => {
+    return getActiveProduksiInputDraftSummary().hasDraft;
+  });
+
+  // Popup Antrean & Audit Hitung Ulang (Minimizable & Offline Safe)
+  const [isHitungUlangPopupOpen, setIsHitungUlangPopupOpen] = useState<boolean>(() => {
+    return getActiveRecountDraftSummary().hasActiveWorkspaceDraft || getPendingRecountOutboxCount() > 0;
+  });
+  const [isHitungUlangPopupMinimized, setIsHitungUlangPopupMinimized] = useState<boolean>(() => {
+    return getActiveRecountDraftSummary().hasActiveWorkspaceDraft || getPendingRecountOutboxCount() > 0;
+  });
+  const [hitungUlangPopupTargetCode, setHitungUlangPopupTargetCode] = useState<string | undefined>(undefined);
 
   // Auto-backup staging scanned items to localStorage to prevent data loss on reload or force-close
   useEffect(() => {
@@ -4724,7 +4788,7 @@ export default function App() {
                               if (page === 'agenda' && subTab) setAgendaInitialTab(subTab as any);
                               if (page === 'loading_dock' && subTab) setLoadingDockInitialTab(subTab as any);
                               if (page === 'inventory' && subTab) setInventoryInitialTab(subTab as any);
-                              handleSelectPage(page as any);
+                              handleSelectPage(page as any, subTab);
                             }}
                             productCatalog={productDatabase}
                             currentLocations={activeLocations}
@@ -4780,6 +4844,8 @@ export default function App() {
                             scannedCount={scannedData.length}
                             onOpenImportModal={() => setIsImportModalOpen(true)}
                             onOpenScannerPopup={() => {
+                              setIsProduksiInputPopupMinimized(true);
+                              setIsHitungUlangPopupMinimized(true);
                               setIsScannerPopupOpen(true);
                               setIsScannerPopupMinimized(false);
                             }}
@@ -5041,7 +5107,7 @@ export default function App() {
                   {companionPage === 'dashboard' && (
                     <DashboardView
                       session={session}
-                      onNavigate={(page) => handleSelectPage(page as any)}
+                      onNavigate={(page, subTab) => handleSelectPage(page as any, subTab)}
                       productCatalog={productDatabase}
                       currentLocations={activeLocations}
                       onShowToast={showToast}
@@ -5382,17 +5448,21 @@ export default function App() {
       <ScannerPopupModal
         isOpen={isScannerPopupOpen}
         isMinimized={isScannerPopupMinimized}
-        onMinimizeChange={(min) => setIsScannerPopupMinimized(min)}
+        onMinimizeChange={(min) => {
+          if (!min) {
+            setIsProduksiInputPopupMinimized(true);
+            setIsHitungUlangPopupMinimized(true);
+          }
+          setIsScannerPopupMinimized(min);
+        }}
         onClose={() => {
+          setIsScannerPopupOpen(false);
+          setIsScannerPopupMinimized(false);
           if (scannedData.length > 0) {
-            setIsScannerPopupMinimized(true);
             showToast(
-              'Popup Scanner dikecilkan ke pojok bawah agar daftar scan Anda yang belum disimpan tetap aman.',
+              `Popup Scanner ditutup. ${scannedData.length} item scan Anda tetap tersimpan aman di draft & siap dilanjutkan kapan saja saat Scanner dibuka kembali.`,
               'info'
             );
-          } else {
-            setIsScannerPopupOpen(false);
-            setIsScannerPopupMinimized(false);
           }
         }}
         onOpenFullPage={() => {
@@ -5508,6 +5578,141 @@ export default function App() {
             </div>
           );
         }}
+      />
+
+      {/* Wide Popup Input Penerimaan Produksi (Minimizable & Offline Safe) */}
+      <ProduksiInputPopupModal
+        isOpen={isProduksiInputPopupOpen}
+        isMinimized={isProduksiInputPopupMinimized}
+        onMinimizeChange={(min) => {
+          if (!min) {
+            setIsScannerPopupMinimized(true);
+            setIsHitungUlangPopupMinimized(true);
+          }
+          setIsProduksiInputPopupMinimized(min);
+        }}
+        onClose={() => {
+          setIsProduksiInputPopupOpen(false);
+          setIsProduksiInputPopupMinimized(false);
+          if (getActiveProduksiInputDraftSummary().hasDraft) {
+            showToast(
+              'Popup Input Penerimaan Produksi ditutup. Isian form Anda tetap tersimpan aman di draft & dapat dilanjutkan kapan saja.',
+              'info'
+            );
+          }
+        }}
+        onOpenFullPage={() => {
+          setIsProduksiInputPopupOpen(false);
+          setIsProduksiInputPopupMinimized(false);
+          if (typeof window !== 'undefined') {
+            (window as any).__wms_pending_produksi_target = { tab: 'input' };
+            window.dispatchEvent(new CustomEvent('wms_open_produksi_tab', { detail: { tab: 'input' } }));
+          }
+          handleSelectPage('produksi');
+        }}
+        session={session}
+        productCatalog={productDatabase}
+        onNotify={showToast}
+      />
+
+      {/* Wide Popup Antrean & Audit Hitung Ulang (Minimizable & Offline Safe) */}
+      <HitungUlangPopupModal
+        isOpen={isHitungUlangPopupOpen}
+        isMinimized={isHitungUlangPopupMinimized}
+        onMinimizeChange={(min) => {
+          if (!min) {
+            setIsScannerPopupMinimized(true);
+            setIsProduksiInputPopupMinimized(true);
+          }
+          setIsHitungUlangPopupMinimized(min);
+        }}
+        onClose={() => {
+          setIsHitungUlangPopupOpen(false);
+          setIsHitungUlangPopupMinimized(false);
+          if (getActiveRecountDraftSummary().hasActiveWorkspaceDraft) {
+            showToast(
+              'Popup Hitung Ulang ditutup. Angka hitung fisik Anda tetap tersimpan aman di draft & dapat dilanjutkan kapan saja.',
+              'info'
+            );
+          }
+        }}
+        onOpenFullPage={() => {
+          setIsHitungUlangPopupOpen(false);
+          setIsHitungUlangPopupMinimized(false);
+          if (typeof window !== 'undefined') {
+            const target = {
+              tab: 'audit_hitung_ulang',
+              kodeProduksi: hitungUlangPopupTargetCode,
+            };
+            (window as any).__wms_pending_produksi_target = target;
+            window.dispatchEvent(new CustomEvent('wms_open_produksi_tab', { detail: target }));
+          }
+          handleSelectPage('produksi');
+        }}
+        session={session}
+        productCatalog={productDatabase}
+        initialTargetCode={hitungUlangPopupTargetCode}
+        onNotify={showToast}
+      />
+
+      {/* Unified Anti-Collision & Anti-Freeze Minimized Workspaces Dock (Bottom-Left) */}
+      <MinimizedWorkspacesDock
+        isScannerOpen={isScannerPopupOpen}
+        isScannerMinimized={isScannerPopupMinimized}
+        onMaximizeScanner={() => {
+          setIsProduksiInputPopupMinimized(true);
+          setIsHitungUlangPopupMinimized(true);
+          setIsScannerPopupMinimized(false);
+        }}
+        onCloseScanner={() => {
+          setIsScannerPopupOpen(false);
+          setIsScannerPopupMinimized(false);
+          if (scannedData.length > 0) {
+            showToast(
+              `Popup Scanner ditutup. ${scannedData.length} item scan Anda tetap tersimpan aman di draft.`,
+              'info'
+            );
+          }
+        }}
+        scannedItems={scannedData}
+        currentCategory={currentCategory}
+        currentLocation={currentLocation}
+        isScannerSaving={isSaving}
+        isProduksiInputOpen={isProduksiInputPopupOpen}
+        isProduksiInputMinimized={isProduksiInputPopupMinimized}
+        onMaximizeProduksiInput={() => {
+          setIsScannerPopupMinimized(true);
+          setIsHitungUlangPopupMinimized(true);
+          setIsProduksiInputPopupMinimized(false);
+        }}
+        onCloseProduksiInput={() => {
+          setIsProduksiInputPopupOpen(false);
+          setIsProduksiInputPopupMinimized(false);
+          if (getActiveProduksiInputDraftSummary().hasDraft) {
+            showToast(
+              'Popup Input Produksi ditutup. Draft form tetap tersimpan aman.',
+              'info'
+            );
+          }
+        }}
+        isHitungUlangOpen={isHitungUlangPopupOpen}
+        isHitungUlangMinimized={isHitungUlangPopupMinimized}
+        onMaximizeHitungUlang={() => {
+          setIsScannerPopupMinimized(true);
+          setIsProduksiInputPopupMinimized(true);
+          setIsHitungUlangPopupMinimized(false);
+        }}
+        onCloseHitungUlang={() => {
+          setIsHitungUlangPopupOpen(false);
+          setIsHitungUlangPopupMinimized(false);
+          if (getActiveRecountDraftSummary().hasActiveWorkspaceDraft) {
+            showToast(
+              'Popup Hitung Ulang ditutup. Draft angka hitung tetap tersimpan aman.',
+              'info'
+            );
+          }
+        }}
+        onNotify={showToast}
       />
 
       {/* Notification Hub Modal (Riwayat Notifikasi Belum Dibaca & Mark All Read) */}

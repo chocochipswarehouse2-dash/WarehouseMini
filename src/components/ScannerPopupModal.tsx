@@ -115,111 +115,15 @@ export const ScannerPopupModal: React.FC<ScannerPopupModalProps> = ({
     }
   };
 
-  if (!isOpen) return null;
+  // ZERO-DOM WHEN MINIMIZED OR CLOSED:
+  // Camera stream & DOM tree are completely unmounted when minimized.
+  // Minimized pill is rendered inside the unified MinimizedWorkspacesDock.
+  if (!isOpen || isMinimized) return null;
 
-  const validSkuItems = scannedItems.filter((it) => it && !it.isCategory && !it.isLocation);
-  const totalPcs = validSkuItems.reduce((sum, it) => sum + (Number(it.qty) || 1), 0);
   const pendingOutboxItemsCount = outboxBatches.reduce(
     (sum, b) => sum + (Number(b.totalItemsCount) || b.logs.length || 0),
     0
   );
-
-  // ===========================================================================
-  // FLOATING COMPANION PILL WHEN MINIMIZED
-  // (Camera stream is automatically unmounted via isCameraAllowed=false)
-  // ===========================================================================
-  if (isMinimized) {
-    return (
-      <div className="fixed bottom-4 left-4 z-50 flex items-center gap-2 p-2 sm:p-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 animate-in slide-in-from-bottom duration-200 select-none max-w-[calc(100vw-2rem)]">
-        <div
-          onClick={() => onMinimizeChange(false)}
-          className="flex items-center gap-2.5 cursor-pointer hover:opacity-90 transition-opacity min-w-0"
-        >
-          <div
-            className={`w-9 h-9 rounded-xl flex items-center justify-center text-white shadow-sm shrink-0 ${
-              !isOnline
-                ? 'bg-amber-600'
-                : isSaving || isSyncingOutbox
-                ? 'bg-indigo-600 animate-pulse'
-                : 'bg-indigo-600'
-            }`}
-          >
-            <ScanBarcode className="w-5 h-5" />
-          </div>
-
-          <div className="flex flex-col pr-1 min-w-0">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-xs font-extrabold text-slate-900 dark:text-white truncate">
-                Popup Scanner
-              </span>
-              {currentCategory && (
-                <span
-                  className={`px-1.5 py-0.2 rounded text-[9px] font-black font-mono uppercase ${
-                    currentCategory === 'IN'
-                      ? 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300'
-                      : currentCategory === 'OUT'
-                      ? 'bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300'
-                      : 'bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300'
-                  }`}
-                >
-                  #{currentCategory}
-                </span>
-              )}
-              {currentLocation && (
-                <span className="px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[9px] font-mono font-bold">
-                  {currentLocation}
-                </span>
-              )}
-              {!isOnline && (
-                <span className="px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 text-[9px] font-bold">
-                  Offline
-                </span>
-              )}
-            </div>
-
-            <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[210px] sm:max-w-[280px]">
-              {validSkuItems.length > 0
-                ? `${validSkuItems.length} baris (${totalPcs} pcs) di draft scan`
-                : outboxBatches.length > 0
-                ? `${outboxBatches.length} batch (${pendingOutboxItemsCount} item) menunggu sync`
-                : 'Kamera dijeda · Klik untuk lanjut scan'}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-1 pl-1.5 border-l border-slate-200 dark:border-slate-800 shrink-0">
-          {outboxBatches.length > 0 && isOnline && (
-            <button
-              type="button"
-              onClick={handleManualOutboxSync}
-              disabled={isSyncingOutbox}
-              title="Kirim antrean offline sekarang"
-              className="px-2 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3 h-3 ${isSyncingOutbox ? 'animate-spin' : ''}`} />
-              <span>Sync ({outboxBatches.length})</span>
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => onMinimizeChange(false)}
-            title="Perbesar Popup Scanner"
-            className="p-1.5 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-          >
-            <Maximize2 className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            title="Tutup Popup (Draft scan tetap aman tersimpan)"
-            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   // ===========================================================================
   // WIDE POPUP MODAL VIEW

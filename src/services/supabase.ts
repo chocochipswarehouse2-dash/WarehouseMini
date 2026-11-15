@@ -9865,6 +9865,48 @@ export async function syncOfflinePenerimaanProduksi(): Promise<{ synced: number,
 
   if (offlineItems.length === 0) return { synced: 0, failed: 0, errors: [] };
 
+  // Pre-Flight Duplicate Check: fetch existing rows for the involved no_surat_jalan values
+  // so if a previous submission was interrupted halfway, already-committed rows are never double-inserted!
+  const existingSignatureMap = new Map<string, PenerimaanProduksiItem>();
+  try {
+    const distinctSJs = Array.from(
+      new Set(
+        offlineItems
+          .map((it) => String(it.no_surat_jalan || '').trim().toUpperCase())
+          .filter(Boolean)
+      )
+    );
+    for (const sj of distinctSJs) {
+      const remoteRows = await supabaseFetch<PenerimaanProduksiItem[]>(
+        'penerimaan_produksi',
+        'GET',
+        undefined,
+        `no_surat_jalan=eq.${encodeURIComponent(sj)}&limit=500`
+      );
+      if (Array.isArray(remoteRows)) {
+        remoteRows.forEach((r) => {
+          const sig = `${String(r.no_surat_jalan || '').trim().toUpperCase()}|${String(
+            r.kode_produksi || ''
+          )
+            .trim()
+            .toUpperCase()}|${String(r.warna || '').trim().toUpperCase()}|${String(
+            r.size || ''
+          )
+            .trim()
+            .toUpperCase()}|${String(r.tanggal_penerimaan || '').trim()}`;
+          existingSignatureMap.set(sig, r);
+        });
+      }
+    }
+  } catch (preErr) {
+    console.warn('Pre-flight check penerimaan_produksi gagal (jaringan belum stabil):', preErr);
+    return {
+      synced: 0,
+      failed: offlineItems.length,
+      errors: ['Koneksi ke server belum stabil untuk memverifikasi status antrean produksi.']
+    };
+  }
+
   // Fetch sequential IDs in advance to avoid PostgreSQL sequence desync (error 23505)
   const nextIds = await getNextPenerimaanProduksiIds(offlineItems.length);
   let idIndex = 0;
@@ -9873,11 +9915,30 @@ export async function syncOfflinePenerimaanProduksi(): Promise<{ synced: number,
   let failed = 0;
   const errors: string[] = [];
   const remainingOffline: PenerimaanProduksiItem[] = [];
+  const syncedRemoteReplacements: PenerimaanProduksiItem[] = [];
 
-  for (const item of offlineItems) {
+  for (let i = 0; i < offlineItems.length; i++) {
+    const item = offlineItems[i];
     try {
+      const sig = `${String(item.no_surat_jalan || '').trim().toUpperCase()}|${String(
+        item.kode_produksi || ''
+      )
+        .trim()
+        .toUpperCase()}|${String(item.warna || '').trim().toUpperCase()}|${String(
+        item.size || ''
+      )
+        .trim()
+        .toUpperCase()}|${String(item.tanggal_penerimaan || '').trim()}`;
+
+      const alreadyInCloud = existingSignatureMap.get(sig);
+      if (alreadyInCloud) {
+        synced++;
+        syncedRemoteReplacements.push(alreadyInCloud);
+        continue;
+      }
+
       const rowToInsert: any = { ...item };
-      
+
       // Upload image to Google Drive if it is a data URI
       if (rowToInsert.foto_url && rowToInsert.foto_url.startsWith('data:')) {
         try {
@@ -9901,13 +9962,12 @@ export async function syncOfflinePenerimaanProduksi(): Promise<{ synced: number,
       } else {
         delete rowToInsert.id;
       }
-      
+
       let res: any = null;
       try {
         res = await supabaseFetch<PenerimaanProduksiItem[]>('penerimaan_produksi', 'POST', [rowToInsert], '', true);
       } catch (postErr: any) {
         const errMsg = String(postErr?.message || postErr || '');
-        // If error is 23505 / duplicate key, dynamically re-fetch fresh max ID and retry immediately
         if (errMsg.includes('penerimaan_produksi_pkey') || errMsg.includes('23505')) {
           const freshIds = await getNextPenerimaanProduksiIds(1);
           if (freshIds.length > 0) {
@@ -9923,25 +9983,42 @@ export async function syncOfflinePenerimaanProduksi(): Promise<{ synced: number,
 
       if (res && Array.isArray(res) && res.length > 0) {
         synced++;
+        syncedRemoteReplacements.push(res[0]);
+        existingSignatureMap.set(sig, res[0]);
+        // Checkpoint progress immediately to localStorage so partial progress is never lost
+        try {
+          const unprocessed = offlineItems.slice(i + 1);
+          const nonOffline = localData.filter((d) => !offlineItems.includes(d));
+          const checkpointList = [
+            ...syncedRemoteReplacements,
+            ...nonOffline,
+            ...remainingOffline,
+            ...unprocessed
+          ];
+          saveLightweightPenerimaanToLocalStorage(checkpointList);
+        } catch {}
       } else {
         failed++;
-        errors.push("Empty response from Supabase");
+        errors.push('Empty response from Supabase');
         remainingOffline.push(rowToInsert as PenerimaanProduksiItem);
       }
     } catch (err: any) {
       console.warn('Failed to sync offline item:', err);
       failed++;
       errors.push(err.message || String(err));
-      // Save the updated rowToInsert (potentially with uploaded photo) back to remainingOffline
-      const failedItem = { ...item };
-      remainingOffline.push(failedItem);
+      remainingOffline.push({ ...item });
     }
   }
 
   try {
-    // Keep only the remaining offline items and the ones that were NOT offline
-    const updatedLocal = localData.filter(d => !offlineItems.includes(d)).concat(remainingOffline);
-    localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(updatedLocal));
+    const nonOffline = localData.filter((d) => !offlineItems.includes(d));
+    const updatedLocal = [...syncedRemoteReplacements, ...nonOffline, ...remainingOffline];
+    memoryPenerimaanProduksiCache = updatedLocal;
+    saveLightweightPenerimaanToLocalStorage(updatedLocal);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('wms_scanner_outbox_updated'));
+      window.dispatchEvent(new CustomEvent('wms_penerimaan_produksi_updated'));
+    }
   } catch {}
 
   return { synced, failed, errors };
@@ -10671,9 +10748,9 @@ export async function deletePenerimaanRecountLog(id: string): Promise<boolean> {
 }
 export async function updatePenerimaanProduksiItemsInSupabase(
   updatedItems: PenerimaanProduksiItem[]
-): Promise<{ success: boolean; updatedCount: number }> {
+): Promise<{ success: boolean; updatedCount: number; failedCount: number }> {
   if (!updatedItems || updatedItems.length === 0) {
-    return { success: true, updatedCount: 0 };
+    return { success: true, updatedCount: 0, failedCount: 0 };
   }
 
   // 1. Update di LocalStorage cache
@@ -10701,8 +10778,13 @@ export async function updatePenerimaanProduksiItemsInSupabase(
   // Invalidate in-memory cache
   invalidatePenerimaanProduksiCache();
 
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return { success: false, updatedCount: 0, failedCount: updatedItems.length };
+  }
+
   // 2. Update di Supabase Database secara parallel / batch
   let updatedCount = 0;
+  let failedCount = 0;
   for (const item of updatedItems) {
     const patchPayload: Record<string, any> = {
       qty: Number(item.qty) || 0,
@@ -10721,7 +10803,6 @@ export async function updatePenerimaanProduksiItemsInSupabase(
 
     try {
       if (item.id && typeof item.id === 'number' && item.id < 1000000000) {
-        // Update by ID
         await supabaseFetch(
           'penerimaan_produksi',
           'PATCH',
@@ -10730,12 +10811,12 @@ export async function updatePenerimaanProduksiItemsInSupabase(
         );
         updatedCount++;
       } else if (item.kode_produksi && item.warna && item.size && item.tanggal_penerimaan) {
-        // Fallback update by composite key
         const q = `kode_produksi=eq.${encodeURIComponent(item.kode_produksi)}&warna=eq.${encodeURIComponent(item.warna)}&size=eq.${encodeURIComponent(item.size)}&tanggal_penerimaan=eq.${encodeURIComponent(item.tanggal_penerimaan)}`;
         await supabaseFetch('penerimaan_produksi', 'PATCH', patchPayload, q);
         updatedCount++;
       }
     } catch (err) {
+      failedCount++;
       console.warn(`Gagal patch row penerimaan_produksi (id: ${item.id}):`, err);
     }
   }
@@ -10751,7 +10832,7 @@ export async function updatePenerimaanProduksiItemsInSupabase(
     } catch {}
   }
 
-  return { success: true, updatedCount };
+  return { success: failedCount === 0, updatedCount, failedCount };
 }
 
 export async function hapusPenerimaanProduksiSingleRowFromSupabase(id: string | number): Promise<boolean> {

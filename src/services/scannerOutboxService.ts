@@ -1,7 +1,9 @@
 import {
   LogProdukItem,
   StockOpnameQueueItem,
-  ProductItem
+  ProductItem,
+  PenerimaanProduksiItem,
+  PenerimaanRecountLogItem
 } from '../types';
 import {
   supabaseFetch,
@@ -10,13 +12,22 @@ import {
   getAreaFromLokasi,
   generateUUID,
   isValidUUID,
-  invalidateStokFisikCache
+  invalidateStokFisikCache,
+  saveRecountAuditRecord,
+  savePenerimaanRecountLog,
+  invalidatePenerimaanProduksiCache
 } from './supabase';
+import {
+  pushMasterRecountDeltaToGoogleSheet,
+  MasterRecountDeltaItem
+} from './gasProduksiSync';
 import { lookupProductBySku } from '../utils/productLookup';
 import { cleanProductName, resolveProductDisplaySize } from '../utils/sortUtils';
 
 const OUTBOX_STORAGE_KEY = 'wms_scanner_outbox_queue_v1';
 const LEGACY_OFFLINE_LOGS_KEY = 'wms_offline_logs';
+const RECOUNT_OUTBOX_STORAGE_KEY = 'wms_recount_offline_outbox_v1';
+const RECOUNT_WORKSPACE_DRAFT_KEY = 'wms_recount_workspace_draft_v1';
 
 export interface ScannerOutboxBatch {
   batchId: string;
@@ -35,7 +46,47 @@ export interface ScannerOutboxBatch {
   status: 'PENDING' | 'SYNCING' | 'FAILED';
 }
 
+export interface RecountOutboxBatch {
+  batchId: string;
+  kode_produksi: string;
+  tanggal_audit: string;
+  auditor: string;
+  round: number;
+  updatedItems: PenerimaanProduksiItem[];
+  auditRecord: any;
+  logRecord: Omit<PenerimaanRecountLogItem, 'id' | 'created_at'> & { id?: string; created_at?: string };
+  sheetDelta?: {
+    activeTab: 'Kargo' | 'CMT';
+    kode_produksi: string;
+    tanggal_hitung: string;
+    items: MasterRecountDeltaItem[];
+  };
+  itemsSynced: boolean;
+  auditRecordSynced: boolean;
+  logSynced: boolean;
+  sheetSynced: boolean;
+  attempts: number;
+  lastError?: string;
+  status: 'PENDING' | 'SYNCING' | 'FAILED';
+  createdAtIso: string;
+}
+
+export interface RecountCodeDraftEntry {
+  variantInputs: Record<string, { recountQty: number | null; note: string }>;
+  generalNotes: string;
+  auditorName: string;
+  auditDate: string;
+  updatedAt: number;
+}
+
+export interface RecountWorkspaceDraftState {
+  activeMode: 'queue' | 'workspace';
+  selectedCode: string;
+  draftsByCode: Record<string, RecountCodeDraftEntry>;
+}
+
 let isOutboxSyncing = false;
+let isRecountOutboxSyncing = false;
 
 function notifyOutboxUpdated() {
   if (typeof window !== 'undefined') {
@@ -437,3 +488,395 @@ export async function syncAllScannerOutboxBatches(
     errors
   };
 }
+
+// ============================================================================
+// RECOUNT (HITUNG ULANG PRODUKSI) OFFLINE OUTBOX & DRAFT PERSISTENCE
+// ============================================================================
+
+export function getRecountOutboxBatches(): RecountOutboxBatch[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(RECOUNT_OUTBOX_STORAGE_KEY);
+    const parsed: RecountOutboxBatch[] = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function getPendingRecountOutboxCount(): number {
+  return getRecountOutboxBatches().length;
+}
+
+function saveRecountOutboxBatches(batches: RecountOutboxBatch[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (batches.length === 0) {
+      localStorage.removeItem(RECOUNT_OUTBOX_STORAGE_KEY);
+    } else {
+      localStorage.setItem(RECOUNT_OUTBOX_STORAGE_KEY, JSON.stringify(batches));
+    }
+  } catch (err) {
+    console.warn('[RecountOutbox] Failed saving recount outbox:', err);
+  }
+  notifyOutboxUpdated();
+}
+
+export function enqueueRecountOutboxBatch(params: {
+  kode_produksi: string;
+  tanggal_audit: string;
+  auditor: string;
+  round: number;
+  updatedItems: PenerimaanProduksiItem[];
+  auditRecord: any;
+  logRecord: Omit<PenerimaanRecountLogItem, 'id' | 'created_at'> & { id?: string; created_at?: string };
+  sheetDelta?: {
+    activeTab: 'Kargo' | 'CMT';
+    kode_produksi: string;
+    tanggal_hitung: string;
+    items: MasterRecountDeltaItem[];
+  };
+  itemsSynced?: boolean;
+  auditRecordSynced?: boolean;
+  logSynced?: boolean;
+  sheetSynced?: boolean;
+}): RecountOutboxBatch {
+  const cleanCode = String(params.kode_produksi || '').trim().toUpperCase();
+  const newBatch: RecountOutboxBatch = {
+    batchId: `RECOUNT-${cleanCode}-R${params.round}-${Date.now()}`,
+    kode_produksi: cleanCode,
+    tanggal_audit: params.tanggal_audit,
+    auditor: params.auditor,
+    round: params.round,
+    updatedItems: params.updatedItems || [],
+    auditRecord: params.auditRecord,
+    logRecord: params.logRecord,
+    sheetDelta: params.sheetDelta,
+    itemsSynced: Boolean(params.itemsSynced),
+    auditRecordSynced: Boolean(params.auditRecordSynced),
+    logSynced: Boolean(params.logSynced),
+    sheetSynced: Boolean(params.sheetSynced || !params.sheetDelta),
+    attempts: 0,
+    status: 'PENDING',
+    createdAtIso: new Date().toISOString()
+  };
+
+  // Replace any older unsynced batch for the same kode_produksi so we only sync the latest recount state
+  const current = getRecountOutboxBatches().filter(
+    (b) => String(b.kode_produksi || '').toUpperCase() !== cleanCode
+  );
+  const updated = [...current, newBatch];
+  saveRecountOutboxBatches(updated);
+  return newBatch;
+}
+
+export async function syncAllRecountOutboxBatches(): Promise<{
+  syncedBatches: number;
+  remainingBatches: number;
+  errors: string[];
+}> {
+  const current = getRecountOutboxBatches();
+  if (current.length === 0) {
+    return { syncedBatches: 0, remainingBatches: 0, errors: [] };
+  }
+
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return {
+      syncedBatches: 0,
+      remainingBatches: current.length,
+      errors: ['Perangkat sedang offline']
+    };
+  }
+
+  if (isRecountOutboxSyncing) {
+    return { syncedBatches: 0, remainingBatches: current.length, errors: [] };
+  }
+
+  isRecountOutboxSyncing = true;
+  let syncedBatches = 0;
+  const errors: string[] = [];
+  const workingList = [...current];
+
+  try {
+    for (let i = 0; i < workingList.length; i++) {
+      const batch = workingList[i];
+      batch.status = 'SYNCING';
+      saveRecountOutboxBatches(
+        workingList.filter((b) => !(b.itemsSynced && b.auditRecordSynced && b.logSynced))
+      );
+
+      try {
+        // Step 1: Idempotent PATCH on penerimaan_produksi rows
+        if (!batch.itemsSynced && batch.updatedItems.length > 0) {
+          for (const item of batch.updatedItems) {
+            const patchPayload: Record<string, any> = {
+              qty: Number(item.qty) || 0,
+              recount_qty: item.recount_qty,
+              recount_selisih: item.recount_selisih,
+              recount_status: item.recount_status,
+              recount_round: item.recount_round,
+              recount_notes: item.recount_notes,
+              recount_auditor: item.recount_auditor,
+              recount_updated_at: item.recount_updated_at
+            };
+            if (item.id && typeof item.id === 'number' && item.id < 1000000000) {
+              await supabaseFetch(
+                'penerimaan_produksi',
+                'PATCH',
+                patchPayload,
+                `id=eq.${encodeURIComponent(String(item.id))}`
+              );
+            } else if (item.kode_produksi && item.warna && item.size && item.tanggal_penerimaan) {
+              const q = `kode_produksi=eq.${encodeURIComponent(item.kode_produksi)}&warna=eq.${encodeURIComponent(
+                item.warna
+              )}&size=eq.${encodeURIComponent(item.size)}&tanggal_penerimaan=eq.${encodeURIComponent(
+                item.tanggal_penerimaan
+              )}`;
+              await supabaseFetch('penerimaan_produksi', 'PATCH', patchPayload, q);
+            }
+          }
+          batch.itemsSynced = true;
+        } else {
+          batch.itemsSynced = true;
+        }
+
+        // Step 2: Sync recount_audit_results to Cloud Settings / wms_system_docs
+        if (!batch.auditRecordSynced && batch.auditRecord) {
+          await saveRecountAuditRecord(batch.auditRecord);
+          batch.auditRecordSynced = true;
+        } else {
+          batch.auditRecordSynced = true;
+        }
+
+        // Step 3: Sync recount_history_logs_v1
+        if (!batch.logSynced && batch.logRecord) {
+          await savePenerimaanRecountLog(batch.logRecord);
+          batch.logSynced = true;
+        } else {
+          batch.logSynced = true;
+        }
+
+        // Step 4: Best-effort Google Sheet Delta push
+        if (!batch.sheetSynced && batch.sheetDelta) {
+          try {
+            await pushMasterRecountDeltaToGoogleSheet(batch.sheetDelta);
+            batch.sheetSynced = true;
+          } catch {
+            // Sheet sync is non-blocking once Supabase database is synced
+            batch.sheetSynced = true;
+          }
+        }
+
+        batch.status = 'PENDING';
+        batch.lastError = undefined;
+        syncedBatches++;
+      } catch (err: any) {
+        batch.attempts = (batch.attempts || 0) + 1;
+        batch.status = 'FAILED';
+        batch.lastError = err?.message || 'Gangguan jaringan saat sinkronisasi hitung ulang';
+        errors.push(batch.lastError!);
+      }
+
+      const stillPending = workingList.filter(
+        (b) => !(b.itemsSynced && b.auditRecordSynced && b.logSynced)
+      );
+      saveRecountOutboxBatches(stillPending);
+    }
+
+    if (syncedBatches > 0) {
+      invalidatePenerimaanProduksiCache();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('wms_penerimaan_produksi_updated'));
+        window.dispatchEvent(new CustomEvent('wms_recount_audit_updated'));
+      }
+    }
+  } finally {
+    isRecountOutboxSyncing = false;
+  }
+
+  const remaining = getRecountOutboxBatches();
+  return {
+    syncedBatches,
+    remainingBatches: remaining.length,
+    errors
+  };
+}
+
+// ============================================================================
+// WORKSPACE DRAFT HELPERS (ZERO-DOM MINIMIZE & CLOSE PROTECTION)
+// ============================================================================
+
+export function loadRecountWorkspaceDraft(): RecountWorkspaceDraftState {
+  if (typeof window === 'undefined') {
+    return { activeMode: 'queue', selectedCode: '', draftsByCode: {} };
+  }
+  try {
+    const raw = localStorage.getItem(RECOUNT_WORKSPACE_DRAFT_KEY);
+    if (!raw) return { activeMode: 'queue', selectedCode: '', draftsByCode: {} };
+    const parsed = JSON.parse(raw);
+    return {
+      activeMode: parsed?.activeMode === 'workspace' ? 'workspace' : 'queue',
+      selectedCode: typeof parsed?.selectedCode === 'string' ? parsed.selectedCode : '',
+      draftsByCode:
+        parsed?.draftsByCode && typeof parsed.draftsByCode === 'object'
+          ? parsed.draftsByCode
+          : {}
+    };
+  } catch {
+    return { activeMode: 'queue', selectedCode: '', draftsByCode: {} };
+  }
+}
+
+export function saveRecountWorkspaceDraft(state: Partial<RecountWorkspaceDraftState>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const prev = loadRecountWorkspaceDraft();
+    const merged: RecountWorkspaceDraftState = {
+      activeMode: state.activeMode ?? prev.activeMode,
+      selectedCode: state.selectedCode ?? prev.selectedCode,
+      draftsByCode: state.draftsByCode
+        ? { ...prev.draftsByCode, ...state.draftsByCode }
+        : prev.draftsByCode
+    };
+    localStorage.setItem(RECOUNT_WORKSPACE_DRAFT_KEY, JSON.stringify(merged));
+    window.dispatchEvent(new CustomEvent('wms_recount_draft_updated'));
+  } catch {}
+}
+
+export function clearRecountCodeDraft(code: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const norm = String(code || '').trim().toUpperCase();
+    const prev = loadRecountWorkspaceDraft();
+    const nextDrafts = { ...prev.draftsByCode };
+    delete nextDrafts[norm];
+    const nextState: RecountWorkspaceDraftState = {
+      activeMode: prev.selectedCode === norm ? 'queue' : prev.activeMode,
+      selectedCode: prev.selectedCode === norm ? '' : prev.selectedCode,
+      draftsByCode: nextDrafts
+    };
+    localStorage.setItem(RECOUNT_WORKSPACE_DRAFT_KEY, JSON.stringify(nextState));
+    window.dispatchEvent(new CustomEvent('wms_recount_draft_updated'));
+  } catch {}
+}
+
+export function getActiveRecountDraftSummary(): {
+  hasActiveWorkspaceDraft: boolean;
+  selectedCode: string;
+  filledVariantsCount: number;
+  queuedCodesCount: number;
+  uncountedCodesCount: number;
+} {
+  if (typeof window === 'undefined') {
+    return {
+      hasActiveWorkspaceDraft: false,
+      selectedCode: '',
+      filledVariantsCount: 0,
+      queuedCodesCount: 0,
+      uncountedCodesCount: 0
+    };
+  }
+  try {
+    const draft = loadRecountWorkspaceDraft();
+    let filledVariantsCount = 0;
+    const activeCode = draft.selectedCode || Object.keys(draft.draftsByCode)[0] || '';
+    if (activeCode && draft.draftsByCode[activeCode]?.variantInputs) {
+      Object.values(draft.draftsByCode[activeCode].variantInputs).forEach((v) => {
+        if (v && v.recountQty !== null && v.recountQty !== undefined && !isNaN(Number(v.recountQty))) {
+          filledVariantsCount++;
+        }
+      });
+    }
+
+    const rawQueue = localStorage.getItem('wms_recount_selected_queue');
+    const queueMap = rawQueue ? JSON.parse(rawQueue) : {};
+    const queueKeys =
+      queueMap && typeof queueMap === 'object' && !Array.isArray(queueMap)
+        ? Object.keys(queueMap)
+        : [];
+
+    const rawAudit = localStorage.getItem('wms_recount_audit_map');
+    const auditMap = rawAudit ? JSON.parse(rawAudit) : {};
+
+    let uncountedCodesCount = 0;
+    queueKeys.forEach((k) => {
+      const code = k.trim().toUpperCase();
+      if (!auditMap || !auditMap[code]) {
+        uncountedCodesCount++;
+      }
+    });
+
+    return {
+      hasActiveWorkspaceDraft: Boolean(activeCode && filledVariantsCount > 0),
+      selectedCode: activeCode,
+      filledVariantsCount,
+      queuedCodesCount: queueKeys.length,
+      uncountedCodesCount
+    };
+  } catch {
+    return {
+      hasActiveWorkspaceDraft: false,
+      selectedCode: '',
+      filledVariantsCount: 0,
+      queuedCodesCount: 0,
+      uncountedCodesCount: 0
+    };
+  }
+}
+
+export function getActiveProduksiInputDraftSummary(): {
+  hasDraft: boolean;
+  noSuratJalan: string;
+  kategori: string;
+  modelCount: number;
+  totalPcs: number;
+} {
+  if (typeof window === 'undefined') {
+    return { hasDraft: false, noSuratJalan: '', kategori: 'Lokal CMT', modelCount: 0, totalPcs: 0 };
+  }
+  try {
+    const raw = localStorage.getItem('wms_penerimaan_produksi_form_draft');
+    if (!raw) {
+      return { hasDraft: false, noSuratJalan: '', kategori: 'Lokal CMT', modelCount: 0, totalPcs: 0 };
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') {
+      return { hasDraft: false, noSuratJalan: '', kategori: 'Lokal CMT', modelCount: 0, totalPcs: 0 };
+    }
+    const blocks = Array.isArray(parsed.productBlocks) ? parsed.productBlocks : [];
+    let modelCount = 0;
+    let totalPcs = 0;
+
+    blocks.forEach((b: any) => {
+      const hasKode = Boolean(String(b?.kode_produksi || '').trim());
+      let blockPcs = 0;
+      if (Array.isArray(b?.warnas)) {
+        b.warnas.forEach((w: any) => {
+          if (Array.isArray(w?.sizes)) {
+            w.sizes.forEach((s: any) => {
+              blockPcs += Number(s?.qty) || 0;
+            });
+          }
+        });
+      }
+      if (hasKode || blockPcs > 0) {
+        modelCount++;
+      }
+      totalPcs += blockPcs;
+    });
+
+    const noSuratJalan = String(parsed.formNoSuratJalan || '').trim().toUpperCase();
+    const hasDraft = Boolean(noSuratJalan || modelCount > 0 || totalPcs > 0 || String(parsed.formKeteranganGlobal || '').trim());
+
+    return {
+      hasDraft,
+      noSuratJalan,
+      kategori: parsed.formKategori || 'Lokal CMT',
+      modelCount,
+      totalPcs
+    };
+  } catch {
+    return { hasDraft: false, noSuratJalan: '', kategori: 'Lokal CMT', modelCount: 0, totalPcs: 0 };
+  }
+}
+

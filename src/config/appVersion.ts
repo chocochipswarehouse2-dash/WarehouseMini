@@ -15,19 +15,45 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.12.5",
-  "versionCode": 325,
+  "version": "v2.14.0",
+  "versionCode": 340,
   "buildDate": "15 November 2026",
-  "buildHash": "wms-261115-v325-0140",
-  "releaseTitle": "WMS v2.12.5 — Kalender Bulanan Agenda Muat Penuh 7 Hari di Layar HP",
+  "buildHash": "wms-261115-v340-0910",
+  "releaseTitle": "WMS v2.14.0 — Popup Input Produksi, Antrean Hitung Ulang & Anti-Freeze Minimize Dock",
   "releaseNotes": [
-    "Menghapus min-w-[700px] pada Month View & menjadikan strip tanggal 7 kolom sejajar agar Senin-Minggu muat penuh di layar HP tanpa terpotong",
-    "Menyembunyikan tombol + dan ikon emoji kalender per-sel di mobile serta mendukung wrap 2 baris pada chip agenda 1 hari agar judul tetap terbaca jelas"
+    "Pintasan Dashboard & Popup Luas Input Penerimaan Produksi (bisa minimize, auto-save draft & pelindung offline anti double-input)",
+    "Kartu Antrean Kode Butuh Hitung Ulang di Dashboard + Popup Audit Hitung Ulang (auto-save draft per kode & Outbox Hitung Ulang Offline)",
+    "Unified Minimized Workspaces Dock (Anti-Collision & Zero-DOM Anti-Freeze saat banyak jendela kerja diminimize bersamaan)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.13.0",
+    "versionCode": 330,
+    "buildDate": "15 November 2026",
+    "buildHash": "wms-261115-v330-0823",
+    "releaseTitle": "WMS v2.13.0 — Upgrade Asisten AI Pintar (Agenda/Project, Audit, PDF/Voice) & Popup Scanner Luas Anti-Duplikat Offline",
+    "releaseNotes": [
+      "Ekspansi 19 Tool Asisten AI Pintar: integrasi Agenda & Project, audit stok/mutasi/rak, picking, QC/perbaikan, retur, HR, draft form, PDF & Voice-to-Text",
+      "Popup Scanner Gudang luas yang dapat di-minimize (auto-pause kamera) saat bekerja di halaman lain",
+      "Idempotent Offline Outbox Queue (Zero Double Input, Zero Data Loss & Zero Tabrakan dengan Webhook WA)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
+  {
+    "version": "v2.12.5",
+    "versionCode": 325,
+    "buildDate": "15 November 2026",
+    "buildHash": "wms-261115-v325-0140",
+    "releaseTitle": "WMS v2.12.5 — Kalender Bulanan Agenda Muat Penuh 7 Hari di Layar HP",
+    "releaseNotes": [
+      "Menghapus min-w-[700px] pada Month View & menjadikan strip tanggal 7 kolom sejajar agar Senin-Minggu muat penuh di layar HP tanpa terpotong",
+      "Menyembunyikan tombol + dan ikon emoji kalender per-sel di mobile serta mendukung wrap 2 baris pada chip agenda 1 hari agar judul tetap terbaca jelas"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.12.4",
     "versionCode": 324,
@@ -97,32 +123,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Menghapus override heuristik isCorruptedColorCodeSize terhadap data resmi master_produk sehingga SKU seperti F25GBG278BNL (L) dan F25GBG278BNS (S) tampil akurat sesuai database",
       "Memperbaiki batas 1.000 baris PostgREST pada Delta Sync master_produk dan menaikkan versi IndexedDB ke v7 agar cache lokal tersinkronisasi 100%"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.11.9",
-    "versionCode": 319,
-    "buildDate": "13 November 2026",
-    "buildHash": "wms-261113-v319-0143",
-    "releaseTitle": "WMS v2.11.9 — Minimize Background Update Database & Notifikasi Eksklusif Warehouse",
-    "releaseNotes": [
-      "Fitur Update Database Master (CSV) kini dapat di-minimize ke latar belakang saat proses upload berjalan tanpa menghalangi aktivitas menu lain",
-      "Indikator mengambang (Floating Progress Widget) di pojok kanan bawah menampilkan progres persentase, jumlah SKU, dan tombol Buka Detail",
-      "Notifikasi selesai Update Database (Toast, Notification Hub & Push Notification) dikunci eksklusif hanya untuk akun utama Warehouse"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.11.8",
-    "versionCode": 318,
-    "buildDate": "13 November 2026",
-    "buildHash": "wms-261113-v318-0759",
-    "releaseTitle": "WMS v2.11.8 — Fix Import Master CSV Verbatim & Hemat Egress",
-    "releaseNotes": [
-      "UpdateDatabaseModal kini menyimpan size CSV DealPOS apa adanya (menutup sumber data karangan A->ALL, B->XS, G->XXL)",
-      "Pertahankan nilai Default apa adanya di Retur, Manual Shipment, Distribusi, dan AI",
-      "Optimasi egress: naikkan ambang logGap ke 2000, batasi select picking_list ke 800 baris, dan longgarkan interval polling"
     ],
     "minSupportedVersion": "v2.0.0"
   }
