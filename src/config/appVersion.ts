@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.17.0",
-  "versionCode": 370,
+  "version": "v2.17.1",
+  "versionCode": 371,
   "buildDate": "15 November 2026",
-  "buildHash": "wms-261115-v370-1344",
-  "releaseTitle": "WMS v2.17.0 — Denah 2D Setup Area & Pembaruan Dashboard Kapasitas",
+  "buildHash": "wms-261115-v371-2100",
+  "releaseTitle": "WMS v2.17.1 — Kelola Cache Lokal Per Modul & Akses Semua User",
   "releaseNotes": [
-    "Tambahkan mode Denah 2D interaktif pada Visual 3D Kapasitas untuk setup penamaan area/zona, kode lokasi WMS berurutan, dan edit cepat via tabel yang tersinkron langsung ke 3D & Cloud",
-    "Rombak Dashboard Interaktif Kapasitas agar lebih ringkas, tenang tanpa animasi berkedip berlebih, serta menyatukan strip kategori penyimpanan dan status rak"
+    "Tambahkan fitur clear cache lokal per modul maupun semua modul sekaligus (Katalog, Picking, Mutasi, Store, Opname, Produksi, Dashboard, Shopee, Website, PWA)",
+    "Hadirkan menu Kelola Cache di Modal Pembaruan Aplikasi agar dapat diakses seluruh role user"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.17.0",
+    "versionCode": 370,
+    "buildDate": "15 November 2026",
+    "buildHash": "wms-261115-v370-1344",
+    "releaseTitle": "WMS v2.17.0 — Denah 2D Setup Area & Pembaruan Dashboard Kapasitas",
+    "releaseNotes": [
+      "Tambahkan mode Denah 2D interaktif pada Visual 3D Kapasitas untuk setup penamaan area/zona, kode lokasi WMS berurutan, dan edit cepat via tabel yang tersinkron langsung ke 3D & Cloud",
+      "Rombak Dashboard Interaktif Kapasitas agar lebih ringkas, tenang tanpa animasi berkedip berlebih, serta menyatukan strip kategori penyimpanan dan status rak"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.16.0",
     "versionCode": 360,
@@ -113,17 +125,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseTitle": "WMS v2.12.4 — Fix Tampilan Menu Notifikasi Perangkat di Drawer Mobile",
     "releaseNotes": [
       "Memperbaiki bug kondisi collapsed pada renderQuickTools di Sidebar agar menu Notifikasi Perangkat dan switch ON/OFF tampil penuh di Mobile Drawer (tidak hanya ikon lonceng)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.12.3",
-    "versionCode": 323,
-    "buildDate": "14 November 2026",
-    "buildHash": "wms-261114-v323-2326",
-    "releaseTitle": "WMS v2.12.3 — Penyempurnaan Tampilan Switch Notifikasi Perangkat",
-    "releaseNotes": [
-      "Mengganti tampilan tombol ON/OFF ganda pada Notifikasi Perangkat menjadi switch standar yang bersih dan sejajar di Sidebar, Notification Hub, dan Settings"
     ],
     "minSupportedVersion": "v2.0.0"
   }

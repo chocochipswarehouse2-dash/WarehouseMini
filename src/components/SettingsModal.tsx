@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { clearLocalDb } from '../services/localDb';
+import { CacheManagerPanel } from './common/CacheManagerPanel';
 import {
   X,
   Settings,
@@ -3288,31 +3288,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 )}
               </div>
 
-              {/* Clear Cache */}
-              <div className="p-3.5 bg-primary-50/50 dark:bg-primary-950/20 rounded-2xl border border-primary-200 dark:border-primary-900/40 flex items-center justify-between">
-                <div>
-                  <h4 className="text-xs font-bold text-primary-800 dark:text-primary-300">
-                    Bersihkan Cache & Reset Data Lokal
-                  </h4>
-                  <p className="text-[11px] text-slate-500">
-                    Hapus cache katalog produk dan riwayat sementara di browser ini
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await clearLocalDb();
-                    localStorage.removeItem('wms_product_cache');
-                    localStorage.removeItem('wms_cache_inventory_v38');
-                    localStorage.removeItem('wms_inventory_stock_cache');
-                    onNotify('Database & cache katalog lokal berhasil dibersihkan.', 'info');
-                  }}
-                  className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
-                >
-                  Bersihkan Cache & Reset DB Lokal
-                </button>
-              </div>
+              {/* Clear Cache Per Modul / Semua */}
+              <CacheManagerPanel onNotify={onNotify} />
             </div>
           )}
 

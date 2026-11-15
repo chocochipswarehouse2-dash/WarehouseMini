@@ -24,6 +24,7 @@ import {
 } from '../../config/appVersion';
 import { UserSession } from '../../types';
 import { canAccessUpdateDatabase } from '../../services/permissions';
+import { CacheManagerPanel } from './CacheManagerPanel';
 
 interface AppUpdateModalProps {
   isOpen: boolean;
@@ -58,6 +59,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
 
   const [isClearingCache, setIsClearingCache] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showCacheManager, setShowCacheManager] = useState(false);
   const userIsAdmin = canAccessUpdateDatabase(session);
 
   if (!isOpen) return null;
@@ -384,8 +386,8 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
           )}
 
           {/* TOMBOL TINDAKAN: PERIKSA PEMBARUAN & BERSIHKAN CACHE */}
-          <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
-            <div className="flex items-center gap-2">
+          <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => checkForUpdates(false)}
@@ -398,15 +400,34 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
 
               <button
                 type="button"
+                onClick={() => setShowCacheManager((v) => !v)}
+                title="Pilih modul cache lokal yang ingin dibersihkan (untuk semua user)"
+                className="py-2.5 px-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-indigo-500 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-indigo-500" />
+                <span>Kelola Cache</span>
+                {showCacheManager ? (
+                  <ChevronUp className="w-3.5 h-3.5" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5" />
+                )}
+              </button>
+
+              <button
+                type="button"
                 onClick={handleEmergencyReset}
                 disabled={isClearingCache}
                 title="Bersihkan cache file browser tanpa menghapus sesi login jika aplikasi terasa lambat"
                 className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-950/40 text-slate-600 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer border border-transparent hover:border-rose-200 dark:hover:border-rose-800"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Reset Cache</span>
+                <RotateCw className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Reset PWA</span>
               </button>
             </div>
+
+            {showCacheManager && (
+              <CacheManagerPanel onNotify={onNotify} compact />
+            )}
           </div>
         </div>
       </div>
