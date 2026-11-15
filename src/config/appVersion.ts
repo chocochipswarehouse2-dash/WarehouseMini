@@ -15,18 +15,30 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.12.4",
-  "versionCode": 324,
-  "buildDate": "14 November 2026",
-  "buildHash": "wms-261114-v324-2330",
-  "releaseTitle": "WMS v2.12.4 — Fix Tampilan Menu Notifikasi Perangkat di Drawer Mobile",
+  "version": "v2.12.5",
+  "versionCode": 325,
+  "buildDate": "15 November 2026",
+  "buildHash": "wms-261115-v325-0140",
+  "releaseTitle": "WMS v2.12.5 — Kalender Bulanan Agenda Muat Penuh 7 Hari di Layar HP",
   "releaseNotes": [
-    "Memperbaiki bug kondisi collapsed pada renderQuickTools di Sidebar agar menu Notifikasi Perangkat dan switch ON/OFF tampil penuh di Mobile Drawer (tidak hanya ikon lonceng)"
+    "Menghapus min-w-[700px] pada Month View & menjadikan strip tanggal 7 kolom sejajar agar Senin-Minggu muat penuh di layar HP tanpa terpotong",
+    "Menyembunyikan tombol + dan ikon emoji kalender per-sel di mobile serta mendukung wrap 2 baris pada chip agenda 1 hari agar judul tetap terbaca jelas"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.12.4",
+    "versionCode": 324,
+    "buildDate": "14 November 2026",
+    "buildHash": "wms-261114-v324-2330",
+    "releaseTitle": "WMS v2.12.4 — Fix Tampilan Menu Notifikasi Perangkat di Drawer Mobile",
+    "releaseNotes": [
+      "Memperbaiki bug kondisi collapsed pada renderQuickTools di Sidebar agar menu Notifikasi Perangkat dan switch ON/OFF tampil penuh di Mobile Drawer (tidak hanya ikon lonceng)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.12.3",
     "versionCode": 323,
@@ -111,20 +123,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "UpdateDatabaseModal kini menyimpan size CSV DealPOS apa adanya (menutup sumber data karangan A->ALL, B->XS, G->XXL)",
       "Pertahankan nilai Default apa adanya di Retur, Manual Shipment, Distribusi, dan AI",
       "Optimasi egress: naikkan ambang logGap ke 2000, batasi select picking_list ke 800 baris, dan longgarkan interval polling"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.11.7",
-    "versionCode": 317,
-    "buildDate": "13 November 2026",
-    "buildHash": "wms-261113-v317-0735",
-    "releaseTitle": "WMS v2.11.7 — Size & Nama Produk Murni dari Master + Delta Sync Master",
-    "releaseNotes": [
-      "Size dan nama produk di semua modul kini VLOOKUP persis nilai master_produk (Default tetap Default, ALL tetap ALL)",
-      "Hapus semua tebakan size dari SKU (regex)",
-      "Merge katalog: master selalu menimpa cache lama",
-      "Delta sync master_produk berbasis updated_at (hemat egress)"
     ],
     "minSupportedVersion": "v2.0.0"
   }

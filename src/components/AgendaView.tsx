@@ -2185,15 +2185,15 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
               </div>
             </div>
 
-            {/* Mobile Horizontal Day Picker Strip (Essential for mobile quick navigation) */}
-            <div className="block lg:hidden bg-white dark:bg-[#1a2332] p-2 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-x-auto">
-              <div className="flex items-center gap-2 min-w-max pb-1">
+            {/* Mobile Horizontal Day Picker Strip (7 cols fit symmetrically on mobile) */}
+            <div className="block lg:hidden bg-white dark:bg-[#1a2332] p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <div className="grid grid-cols-7 gap-1">
                 {weekDates.map((date, idx) => {
                   const dStr = formatIsoDate(date);
                   const isSel = isSameDay(date, selectedDate);
                   const isTod = isToday(date);
                   const dayEvents = eventsByDate.get(dStr) || [];
-                  
+
                   return (
                     <button
                       key={idx}
@@ -2201,24 +2201,26 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                         setSelectedDate(date);
                         setCurrentDate(date);
                       }}
-                      className={`flex flex-col items-center justify-center px-3 py-2 rounded-xl transition-all ${
+                      className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl transition-all cursor-pointer ${
                         isSel
-                          ? 'bg-primary-500 text-white shadow-md shadow-primary-500/30'
+                          ? 'bg-primary-500 text-white shadow-sm shadow-primary-500/30'
                           : isTod
                           ? 'bg-primary-50 dark:bg-primary-950/40 text-primary-600 dark:text-primary-400 border border-primary-200 dark:border-primary-800'
-                          : 'bg-slate-50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 hover:bg-slate-100'
+                          : 'bg-slate-50/80 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 hover:bg-slate-100'
                       }`}
                     >
-                      <span className="text-[10px] font-bold uppercase">{DAYS_NAME[date.getDay()]}</span>
-                      <span className="text-sm font-black mt-0.5">{date.getDate()}</span>
-                      <div className="flex gap-0.5 mt-1">
+                      <span className={`text-[9px] font-bold uppercase ${!isSel && date.getDay() === 0 ? 'text-rose-500 dark:text-rose-400' : ''}`}>
+                        {DAYS_NAME[date.getDay()]}
+                      </span>
+                      <span className="text-xs font-black mt-0.5">{date.getDate()}</span>
+                      <div className="flex gap-0.5 mt-0.5 h-1.5 items-center">
                         {dayEvents.slice(0, 3).map((_, i) => (
                           <span
                             key={i}
-                            className={`w-1.5 h-1.5 rounded-full ${
+                            className={`w-1 h-1 rounded-full ${
                               isSel ? 'bg-white' : 'bg-primary-500'
                             }`}
-                          ></span>
+                          />
                         ))}
                       </div>
                     </button>
@@ -2365,15 +2367,17 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
               </div>
             )}
 
-            {/* 2. MONTH VIEW (Google Calendar Continuous Spanning Multi-Day Layout) */}
+            {/* 2. MONTH VIEW (Full 7-Day Fit on Mobile & Desktop Continuous Spanning Bars) */}
             {calendarView === 'month' && (
               <div className="space-y-4">
-                <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-x-auto scrollbar-thin">
-                  <div className="min-w-[700px] sm:min-w-full">
+                <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                  <div className="w-full">
                     {/* Header Columns: SEN, SEL, RAB, KAM, JUM, SAB, MIN */}
-                    <div className="grid grid-cols-7 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/50 text-center text-[11px] font-bold text-slate-500 dark:text-slate-400 py-2.5 select-none tracking-wider">
-                      {DAYS_HEADER_MONDAY_START.map(d => (
-                        <div key={d}>{d}</div>
+                    <div className="grid grid-cols-7 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/50 text-center text-[10px] sm:text-[11px] font-bold text-slate-500 dark:text-slate-400 py-2 select-none tracking-wider">
+                      {DAYS_HEADER_MONDAY_START.map((d, idx) => (
+                        <div key={d} className={idx === 6 ? 'text-rose-500 dark:text-rose-400' : ''}>
+                          {d}
+                        </div>
                       ))}
                     </div>
 
@@ -2392,7 +2396,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                         return (
                           <div
                             key={weekIdx}
-                            className="relative min-h-[115px] h-auto flex flex-col justify-start select-none"
+                            className="relative min-h-[82px] sm:min-h-[115px] h-auto flex flex-col justify-start select-none"
                           >
                             {/* Layer 1: Background Day Cells (Grid 7 Cols with Borders) */}
                             <div className="grid grid-cols-7 divide-x divide-slate-100 dark:divide-slate-800/60 absolute inset-0">
@@ -2408,23 +2412,24 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                                     }}
                                     onDoubleClick={() => handleOpenAddEvent(item.dateStr)}
                                     className={`h-full transition-colors cursor-pointer group/cell relative ${
-                                      !item.currentMonth 
-                                        ? 'bg-slate-50/50 dark:bg-slate-900/30' 
-                                        : isTod 
-                                        ? 'bg-blue-50/20 dark:bg-blue-950/10' 
+                                      !item.currentMonth
+                                        ? 'bg-slate-50/50 dark:bg-slate-900/30'
+                                        : isTod
+                                        ? 'bg-blue-50/25 dark:bg-blue-950/15'
                                         : 'bg-white dark:bg-[#1a2332]'
-                                    } ${isSel ? 'bg-primary-50/25 dark:bg-primary-950/20 ring-1 ring-primary-500/30 ring-inset' : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/30'}`}
+                                    } ${isSel ? 'bg-primary-50/35 dark:bg-primary-950/25 ring-1 ring-primary-500/60 ring-inset' : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/30'}`}
                                     title={`Klik untuk pilih ${item.dateStr}, klik 2x untuk buat agenda`}
                                   />
                                 );
                               })}
                             </div>
 
-                            {/* Layer 2: Clickable Day Headers with Add Button */}
-                            <div className="grid grid-cols-7 relative z-10 pt-1.5 pb-1 px-1">
+                            {/* Layer 2: Clickable Day Headers */}
+                            <div className="grid grid-cols-7 relative z-10 pt-1 sm:pt-1.5 pb-0.5 sm:pb-1 px-0 sm:px-1">
                               {weekDays.map((item, dIdx) => {
                                 const isTod = isToday(item.date);
                                 const isSel = isSameDay(item.date, selectedDate);
+                                const isSunday = item.date.getDay() === 0;
                                 const isFirstOfMonth = item.date.getDate() === 1;
 
                                 const displayLabel = isFirstOfMonth
@@ -2439,17 +2444,19 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                                       setCurrentDate(item.date);
                                     }}
                                     onDoubleClick={() => handleOpenAddEvent(item.dateStr)}
-                                    className="flex items-center justify-between px-1 cursor-pointer group"
+                                    className="flex items-center justify-center sm:justify-between px-0.5 sm:px-1 cursor-pointer group min-w-0"
                                     title={`Klik untuk pilih tanggal, klik dua kali untuk buat agenda pada ${item.dateStr}`}
                                   >
                                     <span
-                                      className={`text-xs font-semibold px-1.5 py-0.5 rounded-full flex items-center justify-center transition-transform group-hover:scale-105 ${
+                                      className={`text-[11px] sm:text-xs font-semibold px-1 sm:px-1.5 py-0.5 rounded-full flex items-center justify-center transition-transform group-hover:scale-105 truncate ${
                                         isTod
-                                          ? 'bg-[#1a73e8] text-white font-bold w-6 h-6 shadow-xs'
+                                          ? 'bg-[#1a73e8] text-white font-bold min-w-[20px] h-5 sm:w-6 sm:h-6 shadow-xs'
                                           : isSel
                                           ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white font-bold'
                                           : !item.currentMonth
-                                          ? 'text-slate-400 dark:text-slate-500'
+                                          ? 'text-slate-400 dark:text-slate-600'
+                                          : isSunday
+                                          ? 'text-rose-500 dark:text-rose-400 font-bold'
                                           : isFirstOfMonth
                                           ? 'text-slate-800 dark:text-slate-100 font-bold'
                                           : 'text-slate-700 dark:text-slate-200'
@@ -2465,7 +2472,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                                         setCurrentDate(item.date);
                                         handleOpenAddEvent(item.dateStr);
                                       }}
-                                      className={`${isSel ? 'opacity-100' : 'opacity-75 sm:opacity-0 sm:group-hover:opacity-100'} w-5 h-5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center justify-center transition-all cursor-pointer`}
+                                      className={`hidden sm:flex ${isSel ? 'sm:opacity-100' : 'sm:opacity-0 sm:group-hover:opacity-100'} w-5 h-5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 items-center justify-center transition-all cursor-pointer shrink-0`}
                                       title={`+ Tambah agenda pada ${item.dateStr}`}
                                     >
                                       <Plus className="w-3 h-3 stroke-[2.5]" />
@@ -2475,25 +2482,23 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                               })}
                             </div>
 
-                            {/* Layer 3: Continuous Event Bars (Flexible Full Height - pointer-events-none agar klik pada sel tanggal tetap berfungsi) */}
+                            {/* Layer 3: Continuous Event Bars */}
                             <div
-                              className="grid grid-cols-7 gap-y-1 relative z-10 px-0.5 pb-2.5 flex-1 pointer-events-none"
-                              style={{
-                                gridAutoRows: '24px',
-                                alignContent: 'start'
-                              }}
+                              className="grid grid-cols-7 gap-y-0.5 sm:gap-y-1 auto-rows-[minmax(16px,auto)] sm:auto-rows-[24px] content-start relative z-10 px-0 sm:px-0.5 pb-1.5 sm:pb-2.5 flex-1 pointer-events-none"
                             >
                               {segments.map((seg, sIdx) => {
                                 const colorStyle = resolveEventColorStyle(seg.event, categoryConfig);
-                                
-                                const borderRounding = 
+                                const isMultiCol =
+                                  seg.endCol > seg.startCol || seg.continuesFromPrev || seg.continuesToNext;
+
+                                const borderRounding =
                                   seg.continuesFromPrev && seg.continuesToNext
                                     ? 'rounded-none mx-0'
                                     : seg.continuesFromPrev
-                                    ? 'rounded-r-md rounded-l-none ml-0 mr-1'
+                                    ? 'rounded-r-sm sm:rounded-r-md rounded-l-none ml-0 mr-[1px] sm:mr-1'
                                     : seg.continuesToNext
-                                    ? 'rounded-l-md rounded-r-none mr-0 ml-1'
-                                    : 'rounded-md mx-1';
+                                    ? 'rounded-l-sm sm:rounded-l-md rounded-r-none mr-0 ml-[1px] sm:ml-1'
+                                    : 'rounded-sm sm:rounded-md mx-[1px] sm:mx-1';
 
                                 return (
                                   <div
@@ -2512,29 +2517,33 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                                       gridRowStart: seg.slot + 1,
                                       ...(colorStyle.barBgStyle || {})
                                     }}
-                                    className={`pointer-events-auto h-6 text-[11px] font-bold text-white flex items-center px-2 shadow-2xs cursor-pointer truncate transition-all hover:brightness-110 active:scale-[0.99] select-none ${colorStyle.barBgClass} ${borderRounding}`}
+                                    className={`pointer-events-auto text-[9px] sm:text-[11px] font-bold text-white flex items-center px-1 sm:px-2 shadow-2xs cursor-pointer transition-all hover:brightness-110 active:scale-[0.99] select-none min-w-0 ${
+                                      isMultiCol
+                                        ? 'h-[17px] sm:h-6 truncate whitespace-nowrap'
+                                        : 'min-h-[17px] sm:h-6 py-[1px] sm:py-0 leading-[1.12]'
+                                    } ${colorStyle.barBgClass} ${borderRounding}`}
                                     title={`${seg.event.title} (${seg.event.start_date}${seg.event.end_date ? ' s/d ' + seg.event.end_date : ''}) - Klik untuk lihat, klik 2x untuk edit`}
                                   >
                                     {seg.continuesFromPrev && (
-                                      <span className="text-[9px] mr-1 opacity-85 shrink-0 font-mono">◀</span>
+                                      <span className="text-[8px] sm:text-[9px] mr-0.5 sm:mr-1 opacity-85 shrink-0 font-mono">◀</span>
                                     )}
 
                                     {!seg.isAllDayOrMultiDay && seg.event.start_time && (
-                                      <span className="font-mono text-[10px] mr-1 font-semibold opacity-95 shrink-0">
+                                      <span className="hidden sm:inline font-mono text-[10px] mr-1 font-semibold opacity-95 shrink-0">
                                         {seg.event.start_time}
                                       </span>
                                     )}
 
-                                    <span className="truncate">
+                                    <span className={isMultiCol ? 'truncate' : 'line-clamp-2 sm:line-clamp-1 sm:truncate break-words'}>
                                       {seg.event.title}
                                     </span>
 
                                     {seg.event.google_event_id && (
-                                      <span className="ml-1 shrink-0 text-[10px] opacity-80" title="Tersinkron Google Calendar">📅</span>
+                                      <span className="hidden sm:inline ml-1 shrink-0 text-[10px] opacity-80" title="Tersinkron Google Calendar">📅</span>
                                     )}
 
                                     {seg.continuesToNext && (
-                                      <span className="text-[9px] ml-auto pl-1 opacity-85 shrink-0 font-mono">▶</span>
+                                      <span className="text-[8px] sm:text-[9px] ml-auto pl-0.5 sm:pl-1 opacity-85 shrink-0 font-mono">▶</span>
                                     )}
                                   </div>
                                 );
