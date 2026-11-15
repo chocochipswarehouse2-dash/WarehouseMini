@@ -25,6 +25,7 @@ import {
   Play,
   Pause,
   Compass,
+  Map as MapIcon,
 } from 'lucide-react';
 import type { StockRealtimeItem, ProductItem, UserSession } from '../../types';
 import { cleanProductName, extractCleanSizeToken, extractSizeFromSku } from '../../utils/sortUtils';
@@ -37,6 +38,10 @@ import {
   type EnrichedCatalogEntry,
 } from '../../services/rackCapacityService';
 import { getSystemDocs, saveSystemDoc } from '../../services/supabase';
+import {
+  Warehouse2DFloorplanEditor,
+  type Warehouse3DLayoutState,
+} from './Warehouse2DFloorplanEditor';
 
 const WAREHOUSE_3D_DOC_KEY = 'warehouse_3d_layout_v1';
 const LOCAL_STORAGE_3D_KEY = 'wms3d';
@@ -869,12 +874,15 @@ window.addEventListener('message',e=>{
       const parsed=typeof d.payload==='string'?JSON.parse(d.payload):d.payload;
       if(parsed && Array.isArray(parsed.floors) && Array.isArray(parsed.objs)){
         S=Object.assign(S,parsed);
-        autoMapWmsCodesToObjs(S.objs);
+        if(!d.skipAutoMap) autoMapWmsCodesToObjs(S.objs);
         S.sel=null;S.ms=[];
         buildB();renderObjs();drawFloors();drawP();
         localStorage.setItem('${LOCAL_STORAGE_3D_KEY}',JSON.stringify(S));
       }
     }catch(err){}
+  } else if(d.type==='WMS_REFRESH_VIEW'){
+    rs();
+    inv();
   } else if(d.type==='WMS_RESET_SEED'){
     try{
       const seed = getInitialSeed();
@@ -908,6 +916,7 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
 }) => {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [viewMode, setViewMode] = useState<'3d' | '2d'>('3d');
   const [config, setConfig] = useState<RackCapacityConfig>(() => loadLocalRackCapacityConfig());
   const [heatmapActive, setHeatmapActive] = useState(false);
   const [showTags, setShowTags] = useState(true);
@@ -920,6 +929,18 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
   const [isSavingCloud, setIsSavingCloud] = useState(false);
   const [selectedRackInfo, setSelectedRackInfo] = useState<Selected3DRackInfo | null>(null);
   const latest3DStateRef = useRef<string | null>(null);
+  const [layoutState, setLayoutState] = useState<Warehouse3DLayoutState>(() => {
+    try {
+      const stored = localStorage.getItem(LOCAL_STORAGE_3D_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && Array.isArray(parsed.floors) && Array.isArray(parsed.objs) && parsed.objs.length >= 1) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return JSON.parse(JSON.stringify(DEFAULT_WAREHOUSE_3D_SEED));
+  });
 
   // Load latest rack capacity config from Supabase
   useEffect(() => {
@@ -1069,6 +1090,7 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
               }
             } catch (e) {}
             if (remoteLayout && !hasValidLocal) {
+              setLayoutState(remoteLayout);
               iframeRef.current?.contentWindow?.postMessage(
                 { type: 'WMS_LOAD_CLOUD_STATE', payload: remoteLayout },
                 '*'
@@ -1078,6 +1100,12 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
           .catch(() => {});
       } else if (data.type === 'WMS_3D_STATE_CHANGED') {
         latest3DStateRef.current = data.payload;
+        try {
+          const parsed = typeof data.payload === 'string' ? JSON.parse(data.payload) : data.payload;
+          if (parsed && Array.isArray(parsed.floors) && Array.isArray(parsed.objs)) {
+            setLayoutState(parsed);
+          }
+        } catch {}
       } else if (data.type === 'WMS_PANEL_VISIBILITY_CHANGED') {
         setIsSidePanelHidden(!Boolean(data.payload));
       } else if (data.type === 'WMS_3D_HEATMAP_CHANGED') {
@@ -1257,11 +1285,36 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
   };
 
   const handleResetDefaultLayout = () => {
+    const freshSeed: Warehouse3DLayoutState = JSON.parse(JSON.stringify(DEFAULT_WAREHOUSE_3D_SEED));
+    setLayoutState(freshSeed);
+    latest3DStateRef.current = JSON.stringify(freshSeed);
     iframeRef.current?.contentWindow?.postMessage({ type: 'WMS_RESET_SEED' }, '*');
     if (onNotify) {
       onNotify('Layout 3D dikembalikan ke tata letak gedung 4 lantai awal.', 'info');
     }
   };
+
+  const handleChange2DLayout = useCallback((nextLayout: Warehouse3DLayoutState) => {
+    setLayoutState(nextLayout);
+    try {
+      const str = JSON.stringify(nextLayout);
+      latest3DStateRef.current = str;
+      localStorage.setItem(LOCAL_STORAGE_3D_KEY, str);
+    } catch {}
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: 'WMS_LOAD_CLOUD_STATE', payload: nextLayout, skipAutoMap: true },
+      '*'
+    );
+  }, []);
+
+  const handleSwitchViewMode = useCallback((mode: '3d' | '2d') => {
+    setViewMode(mode);
+    if (mode === '3d') {
+      setTimeout(() => {
+        iframeRef.current?.contentWindow?.postMessage({ type: 'WMS_REFRESH_VIEW' }, '*');
+      }, 40);
+    }
+  }, []);
 
   const handleSaveCloud = async () => {
     setIsSavingCloud(true);
@@ -1269,6 +1322,7 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
       const raw =
         latest3DStateRef.current ||
         localStorage.getItem(LOCAL_STORAGE_3D_KEY) ||
+        layoutState ||
         DEFAULT_WAREHOUSE_3D_SEED;
       const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
       await saveSystemDoc({
@@ -1282,7 +1336,7 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
         updated_by: session?.username || 'admin',
       });
       if (onNotify) {
-        onNotify('Tata letak Gudang 3D berhasil disimpan ke database server!', 'success');
+        onNotify('Tata letak Gudang 2D & 3D berhasil disimpan ke database server!', 'success');
       }
     } catch (err: any) {
       if (onNotify) {
@@ -1633,89 +1687,121 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
             {/* Title & Live Status */}
             <div className="flex items-start sm:items-center gap-2.5">
               <div className="w-9 h-9 rounded-xl bg-indigo-600/10 dark:bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
-                <Box className="w-5 h-5" />
+                {viewMode === '2d' ? <MapIcon className="w-5 h-5" /> : <Box className="w-5 h-5" />}
               </div>
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h2 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white">
-                    Visualisasi 3D Layout &amp; Kapasitas Gudang (4 Lantai)
+                    {viewMode === '2d'
+                      ? 'Denah 2D Gudang — Setup Penamaan Area & Kode Lokasi'
+                      : 'Visualisasi 3D Layout & Kapasitas Gudang (4 Lantai)'}
                   </h2>
                   <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
-                    LIVE SYNC WMS ({summaryStats.totalRacks.toLocaleString('id-ID')} Rak)
+                    LIVE SYNC ({summaryStats.totalRacks.toLocaleString('id-ID')} Rak)
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Klik rak pada gedung 3D untuk menginspeksi kapasitas real-time, mengubah kode rak WMS, atau mencetak daftar isi rak.
+                  {viewMode === '2d'
+                    ? 'Atur penamaan area/zona dan kode rak WMS langsung di denah atas; perubahan otomatis tersinkron ke tampilan 3D.'
+                    : 'Klik rak pada gedung 3D untuk inspeksi kapasitas real-time, atau pindah ke Denah 2D untuk setup area & kode lokasi.'}
                 </p>
               </div>
             </div>
 
-            {/* Toolbar Actions (Max 1 primary solid button + neutral secondary outline buttons per Rule 10) */}
+            {/* Toolbar Actions (Segmented 3D/2D switcher + max 1 primary solid button + neutral outline buttons) */}
             <div className="flex flex-wrap items-center gap-1.5">
-              {/* PRIMARY SOLID BUTTON: Fullscreen 3D Presentation */}
-              <button
-                type="button"
-                onClick={handleEnterPresentation}
-                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:shadow-indigo-500/20"
-                title="Buka tampilan 3D dalam mode presentasi layar penuh interaktif (dengan tur kamera 360° dan switcher lantai)"
-              >
-                <Presentation className="w-3.5 h-3.5" />
-                <span>Mode Presentasi 3D</span>
-              </button>
+              {/* View Switcher: Visual 3D | Denah 2D */}
+              <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 mr-1">
+                <button
+                  type="button"
+                  onClick={() => handleSwitchViewMode('3d')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    viewMode === '3d'
+                      ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-2xs'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Box className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Visual 3D</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSwitchViewMode('2d')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    viewMode === '2d'
+                      ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-2xs'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <MapIcon className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Denah 2D</span>
+                </button>
+              </div>
 
-              {/* SECONDARY OUTLINE: Heatmap */}
-              <button
-                type="button"
-                onClick={handleToggleHeatmap}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs ${
-                  heatmapActive
-                    ? 'bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 border border-indigo-300 dark:border-indigo-700'
-                    : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
-                }`}
-                title="Ubah warna rak 3D berdasarkan tingkat kepenuhan stok nyata (Hijau / Kuning / Merah)"
-              >
-                {heatmapActive ? (
-                  <>
-                    <Flame className="w-3.5 h-3.5 text-amber-500" />
-                    <span>Heatmap: ON</span>
-                  </>
-                ) : (
-                  <>
-                    <Palette className="w-3.5 h-3.5 text-indigo-500" />
-                    <span>Heatmap 3D</span>
-                  </>
-                )}
-              </button>
+              {viewMode === '3d' ? (
+                <>
+                  {/* PRIMARY SOLID BUTTON: Fullscreen 3D Presentation */}
+                  <button
+                    type="button"
+                    onClick={handleEnterPresentation}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                    title="Buka tampilan 3D dalam mode presentasi layar penuh interaktif"
+                  >
+                    <Presentation className="w-3.5 h-3.5" />
+                    <span>Presentasi 3D</span>
+                  </button>
 
-              {/* SECONDARY OUTLINE: Toggle Marking / Penanda Rak */}
-              <button
-                type="button"
-                onClick={handleToggleTags}
-                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs border ${
-                  showTags
-                    ? 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
-                    : 'bg-slate-100 dark:bg-slate-850 hover:bg-slate-200 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-800'
-                }`}
-                title="Sembunyikan atau tampilkan tulisan penanda & label kode rak di gedung 3D (Tekan T)"
-              >
-                {showTags ? (
-                  <>
-                    <Eye className="w-3.5 h-3.5 text-indigo-500" />
-                    <span>Marking: ON</span>
-                  </>
-                ) : (
-                  <>
-                    <EyeOff className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Marking: OFF</span>
-                  </>
-                )}
-              </button>
+                  <button
+                    type="button"
+                    onClick={handleToggleHeatmap}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs ${
+                      heatmapActive
+                        ? 'bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 border border-indigo-300 dark:border-indigo-700'
+                        : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    {heatmapActive ? (
+                      <>
+                        <Flame className="w-3.5 h-3.5 text-amber-500" />
+                        <span>Heatmap: ON</span>
+                      </>
+                    ) : (
+                      <>
+                        <Palette className="w-3.5 h-3.5 text-indigo-500" />
+                        <span>Heatmap 3D</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleToggleTags}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs border ${
+                      showTags
+                        ? 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+                        : 'bg-slate-100 dark:bg-slate-850 hover:bg-slate-200 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-800'
+                    }`}
+                  >
+                    {showTags ? (
+                      <>
+                        <Eye className="w-3.5 h-3.5 text-indigo-500" />
+                        <span>Marking: ON</span>
+                      </>
+                    ) : (
+                      <>
+                        <EyeOff className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Marking: OFF</span>
+                      </>
+                    )}
+                  </button>
+                </>
+              ) : null}
 
               <button
                 type="button"
                 onClick={handleAutoMapRacks}
                 className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                title="Petakan otomatis rak 3D ke kode rak A, B, C, D, Koli R/V/Z, & Studio"
+                title="Petakan otomatis rak ke kode rak A, B, C, D, Koli R/V/Z, & Studio"
               >
                 <Sparkles className="w-3.5 h-3.5 text-amber-500" />
                 <span>Auto-Map Rak</span>
@@ -1725,10 +1811,14 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
                 type="button"
                 disabled={isSavingCloud}
                 onClick={handleSaveCloud}
-                className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
-                title="Simpan perubahan desain 3D ke database server"
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shadow-2xs ${
+                  viewMode === '2d'
+                    ? 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                    : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
+                }`}
+                title="Simpan perubahan desain 2D & 3D ke database server"
               >
-                <CloudUpload className={`w-3.5 h-3.5 text-emerald-500 ${isSavingCloud ? 'animate-bounce' : ''}`} />
+                <CloudUpload className={`w-3.5 h-3.5 ${viewMode === '2d' ? 'text-white' : 'text-emerald-500'} ${isSavingCloud ? 'animate-bounce' : ''}`} />
                 <span>{isSavingCloud ? 'Menyimpan...' : 'Simpan Cloud'}</span>
               </button>
 
@@ -1736,7 +1826,7 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
                 type="button"
                 onClick={handleResetDefaultLayout}
                 className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                title="Kembalikan tata letak 3D ke desain awal"
+                title="Kembalikan tata letak ke desain awal"
               >
                 <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
                 <span className="hidden sm:inline">Reset Default</span>
@@ -1755,28 +1845,30 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
                 </button>
               )}
 
-              <button
-                type="button"
-                onClick={() => handleToggleSidePanel()}
-                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs ${
-                  isSidePanelHidden
-                    ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700'
-                    : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
-                }`}
-                title="Sembunyikan atau buka panel editor perancang gudang (Tekan H)"
-              >
-                {isSidePanelHidden ? (
-                  <>
-                    <PanelLeft className="w-3.5 h-3.5 text-amber-500" />
-                    <span>Buka Panel Desain</span>
-                  </>
-                ) : (
-                  <>
-                    <PanelLeftClose className="w-3.5 h-3.5 text-slate-500" />
-                    <span className="hidden sm:inline">Sembunyikan Panel</span>
-                  </>
-                )}
-              </button>
+              {viewMode === '3d' && (
+                <button
+                  type="button"
+                  onClick={() => handleToggleSidePanel()}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs ${
+                    isSidePanelHidden
+                      ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700'
+                      : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+                  }`}
+                  title="Sembunyikan atau buka panel editor perancang gudang (Tekan H)"
+                >
+                  {isSidePanelHidden ? (
+                    <>
+                      <PanelLeft className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Buka Panel Desain</span>
+                    </>
+                  ) : (
+                    <>
+                      <PanelLeftClose className="w-3.5 h-3.5 text-slate-500" />
+                      <span className="hidden sm:inline">Sembunyikan Panel</span>
+                    </>
+                  )}
+                </button>
+              )}
 
               <button
                 type="button"
@@ -1837,9 +1929,9 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
       )}
 
       {/* ========================================================
-          C. SELECTED 3D RACK LIVE INSPECTOR BAR (IF A RACK IS CLICKED IN STANDARD MODE)
+          C. SELECTED 3D RACK LIVE INSPECTOR BAR (IF A RACK IS CLICKED IN STANDARD 3D MODE)
           ======================================================== */}
-      {!isPresentation && selectedRackInfo && selectedRackInfo.wmsCode && (
+      {!isPresentation && viewMode === '3d' && selectedRackInfo && selectedRackInfo.wmsCode && (
         <div className="bg-white dark:bg-[#131d31] border border-indigo-200 dark:border-indigo-900/70 rounded-2xl p-3 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div className="flex items-start sm:items-center gap-3 min-w-0">
             <div className="px-2.5 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-mono font-extrabold text-xs shrink-0">
@@ -1919,10 +2011,27 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
       )}
 
       {/* ========================================================
-          D. INTERACTIVE 3D WAREHOUSE CANVAS (IFRAME)
+          D. DENAH 2D FLOORPLAN & AREA/CODE SETUP WORKSPACE
+          ======================================================== */}
+      {!isPresentation && viewMode === '2d' && (
+        <Warehouse2DFloorplanEditor
+          layout={layoutState}
+          rackSlotsMap={rackSlotsMap}
+          heatmapActive={heatmapActive}
+          onToggleHeatmap={handleToggleHeatmap}
+          onChangeLayout={handleChange2DLayout}
+          onOpenPrintModal={onOpenPrintModal}
+          onNotify={onNotify}
+        />
+      )}
+
+      {/* ========================================================
+          E. INTERACTIVE 3D WAREHOUSE CANVAS (IFRAME - KEPT MOUNTED)
           ======================================================== */}
       <div
         className={`w-full overflow-hidden border shadow-sm bg-[#0f172a] relative ${
+          !isPresentation && viewMode === '2d' ? 'hidden' : ''
+        } ${
           isPresentation
             ? 'flex-1 min-h-0 border-0 rounded-none'
             : isFullscreen

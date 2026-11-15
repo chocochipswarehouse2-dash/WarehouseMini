@@ -29,6 +29,8 @@ import {
   Archive,
   CheckSquare,
   Square,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import type { StockRealtimeItem, UserSession, LogProdukItem, ProductItem } from '../../types';
 import { supabaseFetch } from '../../services/supabase';
@@ -146,17 +148,17 @@ function getStatusVisual(status: RackStatusLevel) {
     case 'OVERLOAD':
       return {
         label: 'Overload',
-        cardBorder: 'border-rose-500 dark:border-rose-500 ring-2 ring-rose-500/30',
-        liquidBg: 'bg-rose-500/20 dark:bg-rose-500/25',
+        cardBorder: 'border-rose-400 dark:border-rose-600/80 ring-1 ring-rose-500/20',
+        liquidBg: 'bg-rose-500/5 dark:bg-rose-500/10',
         barBg: 'bg-rose-600',
         textColor: 'text-rose-600 dark:text-rose-400',
-        pulseClass: 'animate-pulse',
+        pulseClass: '',
       };
     case 'FULL':
       return {
         label: 'Penuh (100%)',
-        cardBorder: 'border-rose-300 dark:border-rose-800',
-        liquidBg: 'bg-rose-500/15 dark:bg-rose-500/20',
+        cardBorder: 'border-rose-300 dark:border-rose-800/80',
+        liquidBg: 'bg-rose-500/5 dark:bg-rose-500/10',
         barBg: 'bg-rose-500',
         textColor: 'text-rose-600 dark:text-rose-400',
         pulseClass: '',
@@ -164,8 +166,8 @@ function getStatusVisual(status: RackStatusLevel) {
     case 'WARNING':
       return {
         label: 'Hampir Penuh',
-        cardBorder: 'border-amber-300 dark:border-amber-800',
-        liquidBg: 'bg-amber-500/15 dark:bg-amber-500/20',
+        cardBorder: 'border-amber-300 dark:border-amber-800/80',
+        liquidBg: 'bg-amber-500/5 dark:bg-amber-500/10',
         barBg: 'bg-amber-500',
         textColor: 'text-amber-600 dark:text-amber-400',
         pulseClass: '',
@@ -173,8 +175,8 @@ function getStatusVisual(status: RackStatusLevel) {
     case 'SAFE':
       return {
         label: 'Tersedia',
-        cardBorder: 'border-emerald-300/80 dark:border-emerald-800/80',
-        liquidBg: 'bg-emerald-500/12 dark:bg-emerald-500/15',
+        cardBorder: 'border-emerald-200 dark:border-emerald-800/70',
+        liquidBg: 'bg-emerald-500/5 dark:bg-emerald-500/10',
         barBg: 'bg-emerald-500',
         textColor: 'text-emerald-600 dark:text-emerald-400',
         pulseClass: '',
@@ -212,6 +214,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isZonesExpanded, setIsZonesExpanded] = useState<boolean>(true);
 
   // Selected Rack for Detail Drawer
   const [selectedRackLokasi, setSelectedRackLokasi] = useState<string | null>(null);
@@ -1575,418 +1578,35 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   return (
     <div className="space-y-4 w-full max-w-full min-w-0 overflow-x-hidden pb-20 sm:pb-6">
       {/* ============================================================================
-          1. TOP KPI STRIP (Ringkasan Kapasitas & Status Rak)
+          1. UNIFIED EXECUTIVE CAPACITY SUMMARY & AREA SEGMENT STRIP
           ============================================================================ */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5 min-w-0">
-        {/* Total Utilisasi Gudang (Full width on mobile, 1 col on desktop) */}
-        <div className="col-span-2 sm:col-span-1 min-w-0 p-3 sm:p-3.5 rounded-2xl border bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 shadow-2xs">
-          <div className="flex items-center justify-between gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400">
-            <span className="truncate">{summaryStats.kpiTitle}</span>
-            <Layers className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-          </div>
-          <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-            <span className="text-2xl font-black text-slate-900 dark:text-white font-mono tabular-nums">
-              {summaryStats.overallPercent}%
-            </span>
-            <span className="text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
-              {summaryStats.totalFilled.toLocaleString('id-ID')} /{' '}
-              {summaryStats.totalCapacity.toLocaleString('id-ID')} pcs
-            </span>
-          </div>
-          <div className="mt-2 h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-blue-600 transition-transform duration-200 origin-left"
-              style={{
-                transform: `scaleX(${Math.min(1, summaryStats.overallPercent / 100)})`,
-              }}
-            />
-          </div>
-          <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1.5 truncate">
-            {summaryStats.kpiSubtitle}
-          </div>
-        </div>
-
-        {/* Rak Overload (>100%) */}
-        <button
-          type="button"
-          onClick={() => setStatusFilter((prev) => (prev === 'OVERLOAD' ? 'ALL' : 'OVERLOAD'))}
-          className={`min-w-0 p-3 sm:p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
-            statusFilter === 'OVERLOAD'
-              ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-500 ring-2 ring-rose-500/20'
-              : summaryStats.overloadCount > 0
-              ? 'bg-white dark:bg-[#131d31] border-rose-300 dark:border-rose-900/70 hover:border-rose-500'
-              : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800'
-          }`}
-        >
-          <div className="flex items-start justify-between gap-1 text-[11px] sm:text-xs font-bold text-rose-600 dark:text-rose-400 leading-tight">
-            <span className="min-w-0">{selectedArea === 'ALL' || selectedArea === 'Warehouse' ? 'RAK OVERLOAD (>100%)' : 'OVERLOAD (>100%)'}</span>
-            <AlertTriangle
-              className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${summaryStats.overloadCount > 0 ? 'animate-bounce' : ''}`}
-            />
-          </div>
-          <div className="mt-1 text-xl sm:text-2xl font-black text-rose-600 dark:text-rose-400 font-mono tabular-nums">
-            {summaryStats.overloadCount.toLocaleString('id-ID')}{' '}
-            <span className="text-xs font-normal text-slate-400">rak</span>
-          </div>
-          <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 leading-tight">
-            {selectedArea === 'ALL' || selectedArea === 'Warehouse' ? 'Rak A–D melebihi kapasitas' : 'Lokasi melebihi kapasitas'}
-          </div>
-        </button>
-
-        {/* Rak Hampir Penuh / Penuh (75-100%) */}
-        <button
-          type="button"
-          onClick={() =>
-            setStatusFilter((prev) => (prev === 'WARNING_FULL' ? 'ALL' : 'WARNING_FULL'))
-          }
-          className={`min-w-0 p-3 sm:p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
-            statusFilter === 'WARNING_FULL'
-              ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-500 ring-2 ring-amber-500/20'
-              : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-amber-400'
-          }`}
-        >
-          <div className="flex items-start justify-between gap-1 text-[11px] sm:text-xs font-bold text-amber-600 dark:text-amber-400 leading-tight">
-            <span className="min-w-0">HAMPIR PENUH (75-100%)</span>
-            <Package className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-          </div>
-          <div className="mt-1 text-xl sm:text-2xl font-black text-amber-600 dark:text-amber-400 font-mono tabular-nums">
-            {summaryStats.warningFullCount.toLocaleString('id-ID')}{' '}
-            <span className="text-xs font-normal text-slate-400">rak</span>
-          </div>
-          <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 leading-tight">
-            {selectedArea === 'ALL' || selectedArea === 'Warehouse' ? 'Rak A–D mendekati batas maksimum' : 'Mendekati batas maksimum'}
-          </div>
-        </button>
-
-        {/* Rak Aman / Tersedia (1-74%) */}
-        <button
-          type="button"
-          onClick={() => setStatusFilter((prev) => (prev === 'SAFE' ? 'ALL' : 'SAFE'))}
-          className={`min-w-0 p-3 sm:p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
-            statusFilter === 'SAFE'
-              ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 ring-2 ring-emerald-500/20'
-              : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-emerald-400'
-          }`}
-        >
-          <div className="flex items-start justify-between gap-1 text-[11px] sm:text-xs font-bold text-emerald-600 dark:text-emerald-400 leading-tight">
-            <span className="min-w-0">TERSEDIA / LONGGAR</span>
-            <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-          </div>
-          <div className="mt-1 text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono tabular-nums">
-            {summaryStats.safeCount.toLocaleString('id-ID')}{' '}
-            <span className="text-xs font-normal text-slate-400">rak</span>
-          </div>
-          <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 leading-tight">
-            {selectedArea === 'ALL' || selectedArea === 'Warehouse' ? 'Rak A–D terisi 1% – 74%' : 'Terisi 1% – 74%'}
-          </div>
-        </button>
-
-        {/* Rak Kosong (0%) */}
-        <button
-          type="button"
-          onClick={() => setStatusFilter((prev) => (prev === 'EMPTY' ? 'ALL' : 'EMPTY'))}
-          className={`min-w-0 p-3 sm:p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
-            statusFilter === 'EMPTY'
-              ? 'bg-slate-100 dark:bg-slate-800 border-slate-900 dark:border-white'
-              : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-slate-400'
-          }`}
-        >
-          <div className="flex items-start justify-between gap-1 text-[11px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 leading-tight">
-            <span className="min-w-0">{selectedArea === 'ALL' || selectedArea === 'Warehouse' ? 'RAK KOSONG (0%)' : 'KOSONG (0%)'}</span>
-            <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-          </div>
-          <div className="mt-1 text-xl sm:text-2xl font-black text-slate-800 dark:text-slate-100 font-mono tabular-nums">
-            {summaryStats.emptyCount.toLocaleString('id-ID')}{' '}
-            <span className="text-xs font-normal text-slate-400">rak</span>
-          </div>
-          <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 leading-tight">
-            {selectedArea === 'ALL' || selectedArea === 'Warehouse' ? 'Rak A–D siap ditempati stok' : 'Siap ditempati stok baru'}
-          </div>
-        </button>
-      </div>
-
-      {/* ============================================================================
-          1.1 STATUS KAPASITAS MASING-MASING KATEGORI PENYIMPANAN
-          (1. Rak ABCD · 2. Koli R,V,Z,X,CC,PMK,DF · 3. Blok F Studio,Shopee,TikTok,IGlive)
-          ============================================================================ */}
-      <div className="space-y-2 min-w-0">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 min-w-0">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2 min-w-0">
-            <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
-              Status Kapasitas Kategori Penyimpanan
-            </h3>
-            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
-              (Klik kartu untuk memfilter tampilan rak secara spesifik)
-            </span>
-          </div>
-          {selectedArea !== 'ALL' && (
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedArea('ALL');
-                setSelectedZoneId('ALL');
-              }}
-              className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-1 self-start sm:self-auto shrink-0"
-            >
-              <RotateCcw className="w-3 h-3 shrink-0" />
-              <span>Reset ke Semua Warehouse (Rak + Koli)</span>
-            </button>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 min-w-0">
-          {/* Kategori 1: Kapasitas Penyimpanan Rak (ABCD) */}
-          <div
-            onClick={() => {
-              setSelectedArea((prev) => (prev === 'RAK_ABCD' || prev === 'Warehouse' ? 'ALL' : 'RAK_ABCD'));
-              setSelectedZoneId('ALL');
-            }}
-            className={`min-w-0 p-3.5 rounded-2xl border transition-all text-left cursor-pointer flex flex-col justify-between shadow-2xs group ${
-              selectedArea === 'RAK_ABCD' || selectedArea === 'Warehouse'
-                ? 'bg-blue-50/70 dark:bg-blue-950/40 border-blue-500 ring-2 ring-blue-500/20'
-                : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-600'
-            }`}
-          >
+      <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 sm:p-4 space-y-3.5 shadow-2xs min-w-0">
+        {/* Top Header: Active Scope Summary + Primary/Secondary Actions */}
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 min-w-0">
+          <div className="flex items-start sm:items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-indigo-600/10 dark:bg-indigo-500/20 border border-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
+              <Layers className="w-5 h-5" />
+            </div>
             <div className="min-w-0">
-              <div className="flex items-center justify-between gap-1.5 flex-wrap">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <Layers className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                  <span className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider truncate">
-                    Penyimpanan Rak (ABCD)
-                  </span>
-                </div>
-                <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 shrink-0">
-                  Utilitas Rak
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight">
+                  {summaryStats.kpiTitle}
+                </h2>
+                <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-mono font-black tabular-nums">
+                  {summaryStats.overallPercent}%
+                </span>
+                <span className="text-xs font-mono font-bold text-slate-600 dark:text-slate-300 tabular-nums">
+                  {summaryStats.totalFilled.toLocaleString('id-ID')} / {summaryStats.totalCapacity.toLocaleString('id-ID')} pcs
                 </span>
               </div>
-
-              <div className="mt-2 flex items-baseline justify-between gap-2">
-                <span className="text-2xl font-black text-blue-600 dark:text-blue-400 font-mono tabular-nums">
-                  {summaryStats.rak.overallPercent}%
-                </span>
-                <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 tabular-nums">
-                  {summaryStats.rak.totalFilled.toLocaleString('id-ID')} / {summaryStats.rak.totalCapacity.toLocaleString('id-ID')}{' '}
-                  <span className="font-normal text-slate-400 text-[10px]">pcs</span>
-                </span>
-              </div>
-
-              {/* Progress bar */}
-              <div className="mt-2 h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-blue-600 transition-transform duration-200 origin-left"
-                  style={{
-                    transform: `scaleX(${Math.min(1, summaryStats.rak.overallPercent / 100)})`,
-                  }}
-                />
-              </div>
-
-              {/* Status chips */}
-              <div className="grid grid-cols-4 gap-1 mt-2.5 text-center">
-                <div className="p-1 rounded bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-mono text-[10px]">
-                  <div className="font-extrabold">{summaryStats.rak.overloadCount}</div>
-                  <div className="text-[8px] uppercase truncate">Overload</div>
-                </div>
-                <div className="p-1 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 font-mono text-[10px]">
-                  <div className="font-extrabold">{summaryStats.rak.warningFullCount}</div>
-                  <div className="text-[8px] uppercase truncate">Penuh</div>
-                </div>
-                <div className="p-1 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-mono text-[10px]">
-                  <div className="font-extrabold">{summaryStats.rak.safeCount}</div>
-                  <div className="text-[8px] uppercase truncate">Tersedia</div>
-                </div>
-                <div className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono text-[10px]">
-                  <div className="font-extrabold">{summaryStats.rak.emptyCount}</div>
-                  <div className="text-[8px] uppercase truncate">Kosong</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-2.5 flex items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-800/80 pt-1.5 min-w-0">
-              <span className="truncate">{summaryStats.rak.rackCount} rak utama</span>
-              <span className="font-bold text-blue-600 dark:text-blue-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5 shrink-0">
-                {selectedArea === 'RAK_ABCD' || selectedArea === 'Warehouse' ? '✓ Aktif' : 'Lihat Rak →'}
-              </span>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                {summaryStats.kpiSubtitle}
+              </p>
             </div>
           </div>
 
-          {/* Kategori 2: Kapasitas Penyimpanan Koli (R, V, Z, X, CC, PMK, DF) */}
-          <div
-            onClick={() => {
-              setSelectedArea((prev) => (prev === 'KOLI_ALL' ? 'ALL' : 'KOLI_ALL'));
-              setSelectedZoneId('ALL');
-            }}
-            className={`min-w-0 p-3.5 rounded-2xl border transition-all text-left cursor-pointer flex flex-col justify-between shadow-2xs group ${
-              selectedArea === 'KOLI_ALL' || selectedArea === 'Kolian' || selectedArea === 'Transit' || selectedArea === 'Perbaikan'
-                ? 'bg-amber-50/70 dark:bg-amber-950/40 border-amber-500 ring-2 ring-amber-500/20'
-                : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-amber-400 dark:hover:border-amber-600'
-            }`}
-          >
-            <div className="min-w-0">
-              <div className="flex items-center justify-between gap-1.5 flex-wrap">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <Boxes className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                  <span className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider truncate">
-                    Penyimpanan Koli
-                  </span>
-                </div>
-                <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 shrink-0">
-                  R, V, Z, X, CC, PMK, DF
-                </span>
-              </div>
-
-              <div className="mt-2 flex items-baseline justify-between gap-2">
-                <span className="text-2xl font-black text-amber-600 dark:text-amber-400 font-mono tabular-nums">
-                  {summaryStats.koli.overallPercent}%
-                </span>
-                <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 tabular-nums">
-                  {summaryStats.koli.totalFilled.toLocaleString('id-ID')} / {summaryStats.koli.totalCapacity.toLocaleString('id-ID')}{' '}
-                  <span className="font-normal text-slate-400 text-[10px]">pcs</span>
-                </span>
-              </div>
-
-              {/* Progress bar */}
-              <div className="mt-2 h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-amber-500 transition-transform duration-200 origin-left"
-                  style={{
-                    transform: `scaleX(${Math.min(1, summaryStats.koli.overallPercent / 100)})`,
-                  }}
-                />
-              </div>
-
-              {/* Status chips */}
-              <div className="grid grid-cols-4 gap-1 mt-2.5 text-center">
-                <div className="p-1 rounded bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-mono text-[10px]">
-                  <div className="font-extrabold">{summaryStats.koli.overloadCount}</div>
-                  <div className="text-[8px] uppercase truncate">Overload</div>
-                </div>
-                <div className="p-1 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 font-mono text-[10px]">
-                  <div className="font-extrabold">{summaryStats.koli.warningFullCount}</div>
-                  <div className="text-[8px] uppercase truncate">Penuh</div>
-                </div>
-                <div className="p-1 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-mono text-[10px]">
-                  <div className="font-extrabold">{summaryStats.koli.safeCount}</div>
-                  <div className="text-[8px] uppercase truncate">Tersedia</div>
-                </div>
-                <div className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono text-[10px]">
-                  <div className="font-extrabold">{summaryStats.koli.emptyCount}</div>
-                  <div className="text-[8px] uppercase truncate">Kosong</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-2.5 flex items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-800/80 pt-1.5 min-w-0">
-              <span className="truncate min-w-0 flex-1">
-                R/V/Z: {summaryStats.koli.breakdown.kolianFilled.toLocaleString('id-ID')} · X: {summaryStats.koli.breakdown.transitFilled.toLocaleString('id-ID')} · CC/PMK/DF: {summaryStats.koli.breakdown.perbaikanFilled.toLocaleString('id-ID')} pcs
-              </span>
-              <span className="font-bold text-amber-600 dark:text-amber-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5 shrink-0">
-                {selectedArea === 'KOLI_ALL' ? '✓ Aktif' : 'Lihat Koli →'}
-              </span>
-            </div>
-          </div>
-
-          {/* Kategori 3: Kapasitas Blok F (Studio, Shopee, TikTok, IGlive) */}
-          <div
-            onClick={() => {
-              setSelectedArea((prev) => (prev === 'BLOK_F' || prev === 'Blok F' ? 'ALL' : 'BLOK_F'));
-              setSelectedZoneId('ALL');
-            }}
-            className={`min-w-0 p-3.5 rounded-2xl border transition-all text-left cursor-pointer flex flex-col justify-between shadow-2xs group ${
-              selectedArea === 'BLOK_F' || selectedArea === 'Blok F'
-                ? 'bg-purple-50/70 dark:bg-purple-950/40 border-purple-500 ring-2 ring-purple-500/20'
-                : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-purple-400 dark:hover:border-purple-600'
-            }`}
-          >
-            <div className="min-w-0">
-              <div className="flex items-center justify-between gap-1.5 flex-wrap">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <Sparkles className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                  <span className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider truncate">
-                    Kapasitas Blok F
-                  </span>
-                </div>
-                <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 shrink-0">
-                  Area Terpisah
-                </span>
-              </div>
-
-              <div className="mt-2 flex items-baseline justify-between gap-2">
-                <span className="text-2xl font-black text-purple-600 dark:text-purple-400 font-mono tabular-nums">
-                  {summaryStats.blokF.overallPercent}%
-                </span>
-                <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 tabular-nums">
-                  {summaryStats.blokF.totalFilled.toLocaleString('id-ID')} / {summaryStats.blokF.totalCapacity.toLocaleString('id-ID')}{' '}
-                  <span className="font-normal text-slate-400 text-[10px]">pcs</span>
-                </span>
-              </div>
-
-              {/* Progress bar */}
-              <div className="mt-2 h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-purple-600 transition-transform duration-200 origin-left"
-                  style={{
-                    transform: `scaleX(${Math.min(1, summaryStats.blokF.overallPercent / 100)})`,
-                  }}
-                />
-              </div>
-
-              {/* Status chips */}
-              <div className="grid grid-cols-4 gap-1 mt-2.5 text-center">
-                <div className="p-1 rounded bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-mono text-[10px]">
-                  <div className="font-extrabold">{summaryStats.blokF.overloadCount}</div>
-                  <div className="text-[8px] uppercase truncate">Overload</div>
-                </div>
-                <div className="p-1 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 font-mono text-[10px]">
-                  <div className="font-extrabold">{summaryStats.blokF.warningFullCount}</div>
-                  <div className="text-[8px] uppercase truncate">Penuh</div>
-                </div>
-                <div className="p-1 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-mono text-[10px]">
-                  <div className="font-extrabold">{summaryStats.blokF.safeCount}</div>
-                  <div className="text-[8px] uppercase truncate">Tersedia</div>
-                </div>
-                <div className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono text-[10px]">
-                  <div className="font-extrabold">{summaryStats.blokF.emptyCount}</div>
-                  <div className="text-[8px] uppercase truncate">Kosong</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-2.5 flex items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-800/80 pt-1.5 min-w-0">
-              <span className="truncate min-w-0 flex-1">Shopee, TikTok, IGlive, Studio</span>
-              <span className="font-bold text-purple-600 dark:text-purple-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5 shrink-0">
-                {selectedArea === 'BLOK_F' || selectedArea === 'Blok F' ? '✓ Aktif' : 'Lihat Blok F →'}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ============================================================================
-          2. ZONE & CATEGORY PROGRESS CARDS (Lokasi A=Dress, B=Bottom, C=Top, D=Sale, dll)
-          ============================================================================ */}
-      <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 sm:p-4 space-y-3 min-w-0">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 min-w-0">
-          <div className="min-w-0">
-            <h3 className="text-sm font-black text-slate-900 dark:text-white">
-              Kapasitas Per Area &amp; Kategori Zona Rak
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Klik kartu zona di bawah untuk memfilter rak (Warehouse Utama: A–D · Suplai Kolian: R, V, Z · Transit: X · Blok F: Shopee, TikTok, IGlive, Studio · Perbaikan: CC, PMK, DF)
-            </p>
-          </div>
+          {/* Toolbar Actions: Maks 1 tombol solid primary + outline netral */}
           <div className="flex flex-wrap items-center gap-2 shrink-0">
-            {(selectedZoneId !== 'ALL' || selectedArea !== 'ALL') && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedZoneId('ALL');
-                  setSelectedArea('ALL');
-                }}
-                className="px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 cursor-pointer whitespace-nowrap"
-              >
-                Tampilkan Semua Zona
-              </button>
-            )}
             {canRelocateRack && (
               <button
                 type="button"
@@ -1995,167 +1615,365 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                   setRelocationInitialFromLoc('');
                   setIsRelocationModalOpen(true);
                 }}
-                className="px-3 py-1.5 text-xs font-extrabold rounded-xl border bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/70 transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-2xs"
+                className="px-3.5 py-2 text-xs font-extrabold rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs"
                 title="Pindahkan isi stok dari satu rak ke rak lain secara langsung (#OUT + #IN)"
               >
                 <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" />
                 <span>Relokasi Rak</span>
               </button>
             )}
+
             <button
               type="button"
               onClick={() => setIsSimPanelOpen((prev) => !prev)}
-              className={`px-3 py-1.5 text-xs font-extrabold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+              className={`px-3 py-2 text-xs font-bold rounded-xl border transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
                 isSimPanelOpen || simulationMoves.length > 0
-                  ? 'bg-purple-600 text-white border-purple-600'
-                  : 'bg-slate-50 dark:bg-[#0E1420] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
+                  ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700'
+                  : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60'
               }`}
             >
-              <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" />
+              <Sparkles className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
               <span>
-                Rekomendasi Pindah Rak
+                Rekomendasi Pindah
                 {simulationMoves.length > 0 ? ` (${simulationMoves.length})` : ''}
               </span>
             </button>
+
             <button
               type="button"
               onClick={handleOpenSetupModal}
-              className="px-3.5 py-1.5 text-xs font-extrabold bg-slate-900 dark:bg-amber-500 text-white dark:text-black rounded-xl hover:opacity-90 transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+              className="px-3 py-2 text-xs font-bold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
             >
-              <Sliders className="w-3.5 h-3.5 shrink-0" />
-              <span>Setup Kapasitas &amp; Lokasi</span>
+              <Sliders className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+              <span>Setup Kapasitas</span>
+            </button>
+
+            {onRefreshStock && (
+              <button
+                type="button"
+                onClick={onRefreshStock}
+                disabled={isRefreshingStock}
+                className="px-3 py-2 text-xs font-bold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50 whitespace-nowrap"
+                title="Sinkronkan data stok fisik terbaru dari database"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${isRefreshingStock ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">Sinkron</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* 4-Column Storage Area Segment Strip (Single click to filter area) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 min-w-0">
+          {(
+            [
+              {
+                key: 'ALL',
+                active: selectedArea === 'ALL',
+                title: 'Semua Warehouse',
+                subtitle: `${summaryStats.warehouseTotal.totalRacks} lokasi (Rak + Koli)`,
+                percent: summaryStats.warehouseTotal.overallPercent,
+                filled: summaryStats.warehouseTotal.totalFilled,
+                cap: summaryStats.warehouseTotal.totalCapacity,
+                overload: summaryStats.warehouseTotal.overloadCount,
+                barColor: 'bg-indigo-600',
+              },
+              {
+                key: 'RAK_ABCD',
+                active: selectedArea === 'RAK_ABCD' || selectedArea === 'Warehouse',
+                title: 'Rak Utama (A–D)',
+                subtitle: `${summaryStats.rak.rackCount} rak penyimpanan`,
+                percent: summaryStats.rak.overallPercent,
+                filled: summaryStats.rak.totalFilled,
+                cap: summaryStats.rak.totalCapacity,
+                overload: summaryStats.rak.overloadCount,
+                barColor: 'bg-blue-600',
+              },
+              {
+                key: 'KOLI_ALL',
+                active:
+                  selectedArea === 'KOLI_ALL' ||
+                  selectedArea === 'Kolian' ||
+                  selectedArea === 'Transit' ||
+                  selectedArea === 'Perbaikan',
+                title: 'Penyimpanan Koli',
+                subtitle: `R/V/Z, X, CC/PMK/DF (${summaryStats.koli.rackCount} lokasi)`,
+                percent: summaryStats.koli.overallPercent,
+                filled: summaryStats.koli.totalFilled,
+                cap: summaryStats.koli.totalCapacity,
+                overload: summaryStats.koli.overloadCount,
+                barColor: 'bg-amber-500',
+              },
+              {
+                key: 'BLOK_F',
+                active: selectedArea === 'BLOK_F' || selectedArea === 'Blok F',
+                title: 'Blok F (Live & Studio)',
+                subtitle: `Shopee, TikTok, IGlive, Studio`,
+                percent: summaryStats.blokF.overallPercent,
+                filled: summaryStats.blokF.totalFilled,
+                cap: summaryStats.blokF.totalCapacity,
+                overload: summaryStats.blokF.overloadCount,
+                barColor: 'bg-purple-600',
+              },
+            ] as const
+          ).map((seg) => (
+            <button
+              key={seg.key}
+              type="button"
+              onClick={() => {
+                if (seg.key === 'ALL') {
+                  setSelectedArea('ALL');
+                } else {
+                  setSelectedArea((prev) => (seg.active ? 'ALL' : seg.key));
+                }
+                setSelectedZoneId('ALL');
+              }}
+              className={`min-w-0 p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                seg.active
+                  ? 'bg-indigo-50/70 dark:bg-indigo-950/35 border-indigo-500 ring-1 ring-indigo-500/30'
+                  : 'bg-slate-50/70 dark:bg-[#0E1420] border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-extrabold text-slate-900 dark:text-white truncate">
+                  {seg.title}
+                </span>
+                <span className="text-sm font-black font-mono tabular-nums text-slate-900 dark:text-white shrink-0">
+                  {seg.percent}%
+                </span>
+              </div>
+              <div className="mt-1.5 h-1.5 w-full bg-slate-200/70 dark:bg-slate-800 rounded-full overflow-hidden">
+                <div
+                  className={`h-full transition-transform duration-200 origin-left ${
+                    seg.percent > 100 ? 'bg-rose-600' : seg.barColor
+                  }`}
+                  style={{ transform: `scaleX(${Math.min(1, seg.percent / 100)})` }}
+                />
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-2 text-[11px] font-mono tabular-nums text-slate-600 dark:text-slate-400">
+                <span className="truncate">
+                  {seg.filled.toLocaleString('id-ID')} / {seg.cap.toLocaleString('id-ID')} pcs
+                </span>
+                {seg.overload > 0 ? (
+                  <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 shrink-0">
+                    {seg.overload} overload
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-slate-400 truncate font-sans">{seg.subtitle}</span>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {/* Compact Status Quick-Filter Bar */}
+        <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100 dark:border-slate-800/80 overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-1.5 whitespace-nowrap">
+            {(
+              [
+                {
+                  id: 'ALL' as StatusFilter,
+                  label: 'Semua Lokasi',
+                  count: summaryStats.totalRacks,
+                  dot: 'bg-indigo-500',
+                  activeCls: 'bg-slate-900 text-white border-slate-900 dark:bg-indigo-600 dark:border-indigo-600',
+                },
+                {
+                  id: 'OVERLOAD' as StatusFilter,
+                  label: 'Overload (>100%)',
+                  count: summaryStats.overloadCount,
+                  dot: 'bg-rose-500',
+                  activeCls: 'bg-rose-600 text-white border-rose-600',
+                },
+                {
+                  id: 'WARNING_FULL' as StatusFilter,
+                  label: 'Hampir Penuh (75–100%)',
+                  count: summaryStats.warningFullCount,
+                  dot: 'bg-amber-500',
+                  activeCls: 'bg-amber-500 text-white border-amber-500',
+                },
+                {
+                  id: 'SAFE' as StatusFilter,
+                  label: 'Tersedia (1–74%)',
+                  count: summaryStats.safeCount,
+                  dot: 'bg-emerald-500',
+                  activeCls: 'bg-emerald-600 text-white border-emerald-600',
+                },
+                {
+                  id: 'EMPTY' as StatusFilter,
+                  label: 'Kosong (0%)',
+                  count: summaryStats.emptyCount,
+                  dot: 'bg-slate-400',
+                  activeCls: 'bg-slate-700 text-white border-slate-700',
+                },
+              ]
+            ).map((st) => {
+              const isActive = statusFilter === st.id;
+              return (
+                <button
+                  key={st.id}
+                  type="button"
+                  onClick={() =>
+                    setStatusFilter((prev) => (prev === st.id && st.id !== 'ALL' ? 'ALL' : st.id))
+                  }
+                  className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
+                    isActive
+                      ? st.activeCls
+                      : 'bg-white dark:bg-[#0E1420] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/70'
+                  }`}
+                >
+                  {!isActive && <span className={`w-2 h-2 rounded-full ${st.dot} shrink-0`} />}
+                  <span>{st.label}</span>
+                  <span
+                    className={`font-mono tabular-nums text-[11px] px-1.5 py-0.2 rounded ${
+                      isActive
+                        ? 'bg-white/20 text-white'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    {st.count.toLocaleString('id-ID')}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {(selectedArea !== 'ALL' || selectedZoneId !== 'ALL' || statusFilter !== 'ALL') && (
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedArea('ALL');
+                setSelectedZoneId('ALL');
+                setStatusFilter('ALL');
+              }}
+              className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer flex items-center gap-1 shrink-0 whitespace-nowrap"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Reset Filter</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ============================================================================
+          2. COLLAPSIBLE ZONE BREAKDOWN CARDS (Ringkas & Bersih per Zona)
+          ============================================================================ */}
+      <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl p-3 sm:p-3.5 space-y-3 min-w-0">
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <button
+            type="button"
+            onClick={() => setIsZonesExpanded((prev) => !prev)}
+            className="flex items-center gap-2 text-left cursor-pointer group min-w-0"
+          >
+            <span className="p-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 group-hover:text-indigo-600">
+              {isZonesExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </span>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
+                  Ringkasan Zona Rak ({summaryStats.zones.length} Zona)
+                </h3>
+                {selectedZoneId !== 'ALL' && (
+                  <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold">
+                    Filter Zona Aktif
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate hidden sm:block">
+                Klik zona untuk memfokuskan rak (A=Dress, B=Bottom, C=Top, D=Sale, R/V/Z=Koli, Blok F)
+              </p>
+            </div>
+          </button>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {selectedZoneId !== 'ALL' && (
+              <button
+                type="button"
+                onClick={() => setSelectedZoneId('ALL')}
+                className="px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-lg hover:bg-slate-200 cursor-pointer whitespace-nowrap"
+              >
+                Semua Zona
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsZonesExpanded((prev) => !prev)}
+              className="px-2.5 py-1 text-[11px] font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white cursor-pointer whitespace-nowrap"
+            >
+              {isZonesExpanded ? 'Sembunyikan' : 'Tampilkan'}
             </button>
           </div>
         </div>
 
-        {/* Quick Area Filter Tabs */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap py-1 -mx-1 px-1 sm:mx-0 sm:px-0 sm:flex-wrap">
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedArea('ALL');
-              setSelectedZoneId('ALL');
-            }}
-            className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer shrink-0 ${
-              selectedArea === 'ALL'
-                ? 'bg-slate-900 text-white border-slate-900 dark:bg-amber-500 dark:text-black dark:border-amber-500 shadow-2xs'
-                : 'bg-slate-50 dark:bg-[#0E1420] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
-            }`}
-          >
-            🏢 Semua Warehouse (Rak + Koli) ({summaryStats.warehouseTotal.totalRacks} lokasi)
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedArea((prev) => (prev === 'RAK_ABCD' || prev === 'Warehouse' ? 'ALL' : 'RAK_ABCD'));
-              setSelectedZoneId('ALL');
-            }}
-            className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer shrink-0 ${
-              selectedArea === 'RAK_ABCD' || selectedArea === 'Warehouse'
-                ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
-                : 'bg-slate-50 dark:bg-[#0E1420] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
-            }`}
-          >
-            🗄️ Penyimpanan Rak (ABCD) ({summaryStats.rak.rackCount} rak)
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedArea((prev) => (prev === 'KOLI_ALL' ? 'ALL' : 'KOLI_ALL'));
-              setSelectedZoneId('ALL');
-            }}
-            className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer shrink-0 ${
-              selectedArea === 'KOLI_ALL' || selectedArea === 'Kolian' || selectedArea === 'Transit' || selectedArea === 'Perbaikan'
-                ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
-                : 'bg-slate-50 dark:bg-[#0E1420] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
-            }`}
-          >
-            📦 Penyimpanan Koli ({summaryStats.koli.rackCount} lokasi)
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedArea((prev) => (prev === 'BLOK_F' || prev === 'Blok F' ? 'ALL' : 'BLOK_F'));
-              setSelectedZoneId('ALL');
-            }}
-            className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer shrink-0 ${
-              selectedArea === 'BLOK_F' || selectedArea === 'Blok F'
-                ? 'bg-purple-600 text-white border-purple-600 shadow-2xs'
-                : 'bg-slate-50 dark:bg-[#0E1420] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
-            }`}
-          >
-            🎬 Blok F ({summaryStats.blokF.rackCount} lokasi)
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-6 min-[2000px]:grid-cols-8 gap-2.5">
-          {summaryStats.zones.map((z) => {
-            const pct = z.maxCapacity > 0 ? Math.round((z.currentQty / z.maxCapacity) * 100) : 0;
-            const style = COLOR_STYLES[z.color] || COLOR_STYLES.slate;
-            const isSelected = selectedZoneId === z.zoneId;
-            return (
-              <button
-                key={z.zoneId}
-                type="button"
-                onClick={() =>
-                  setSelectedZoneId((prev) => (prev === z.zoneId ? 'ALL' : z.zoneId))
-                }
-                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                  isSelected
-                    ? 'ring-2 ring-slate-900 dark:ring-amber-400 border-slate-900 dark:border-amber-400 bg-slate-50 dark:bg-slate-800/70'
-                    : `${style.border} ${style.bgSoft} hover:opacity-95`
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-xs font-black text-slate-900 dark:text-white truncate">
-                      {z.zoneName}
+        {isZonesExpanded && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-6 min-[2000px]:grid-cols-7 gap-2">
+            {summaryStats.zones.map((z) => {
+              const pct = z.maxCapacity > 0 ? Math.round((z.currentQty / z.maxCapacity) * 100) : 0;
+              const style = COLOR_STYLES[z.color] || COLOR_STYLES.slate;
+              const isSelected = selectedZoneId === z.zoneId;
+              return (
+                <button
+                  key={z.zoneId}
+                  type="button"
+                  onClick={() =>
+                    setSelectedZoneId((prev) => (prev === z.zoneId ? 'ALL' : z.zoneId))
+                  }
+                  className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                    isSelected
+                      ? 'ring-1 ring-indigo-500 border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/30'
+                      : 'bg-slate-50/60 dark:bg-[#0E1420] border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-1.5">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-2 h-2 rounded-full ${style.bar} shrink-0`} />
+                        <span className="text-xs font-extrabold text-slate-900 dark:text-white truncate">
+                          {z.zoneName}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                        <span>{z.category}</span>
+                        <span aria-hidden="true"> · </span>
+                        <span className="font-mono tabular-nums">Max {z.defaultMaxCapacity}/rak</span>
+                      </div>
                     </div>
-                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                      <span>{z.area}</span>
-                      <span aria-hidden="true"> · </span>
-                      <span className={`font-bold ${style.text}`}>Kategori: {z.category}</span>
-                      <span aria-hidden="true"> · </span>
-                      <span className="font-mono tabular-nums">Max {z.defaultMaxCapacity}/rak</span>
-                    </div>
+                    <span
+                      className={`text-xs font-black font-mono tabular-nums shrink-0 ${
+                        pct > 100 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'
+                      }`}
+                    >
+                      {pct}%
+                    </span>
                   </div>
-                  <span className="text-sm font-black font-mono tabular-nums text-slate-900 dark:text-white shrink-0">
-                    {pct}%
-                  </span>
-                </div>
 
-                {/* Progress bar */}
-                <div className="mt-2.5 h-2 w-full bg-white/80 dark:bg-slate-900/70 rounded-full overflow-hidden border border-slate-200/60 dark:border-slate-800">
-                  <div
-                    className={`h-full transition-transform duration-200 origin-left ${
-                      pct > 100 ? 'bg-rose-600' : style.bar
-                    }`}
-                    style={{
-                      transform: `scaleX(${Math.min(1, pct / 100)})`,
-                    }}
-                  />
-                </div>
+                  <div className="mt-2 h-1.5 w-full bg-slate-200/80 dark:bg-slate-800 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full transition-transform duration-200 origin-left ${
+                        pct > 100 ? 'bg-rose-600' : style.bar
+                      }`}
+                      style={{ transform: `scaleX(${Math.min(1, pct / 100)})` }}
+                    />
+                  </div>
 
-                <div className="mt-2 flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-400 font-mono tabular-nums">
-                  <span>
-                    {z.currentQty.toLocaleString('id-ID')} / {z.maxCapacity.toLocaleString('id-ID')} pcs
-                  </span>
-                  <span>
-                    {z.activeRackCount}/{z.rackCount} terisi
-                    {z.overloadRackCount > 0 ? (
-                      <strong className="text-rose-600 dark:text-rose-400 ml-1">
-                        · {z.overloadRackCount} overload
-                      </strong>
-                    ) : null}
-                  </span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
+                  <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+                    <span>
+                      {z.currentQty.toLocaleString('id-ID')}/{z.maxCapacity.toLocaleString('id-ID')}
+                    </span>
+                    <span>
+                      {z.activeRackCount}/{z.rackCount} rak
+                      {z.overloadRackCount > 0 ? (
+                        <strong className="text-rose-600 dark:text-rose-400 ml-1">
+                          · {z.overloadRackCount}!
+                        </strong>
+                      ) : null}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* ============================================================================
@@ -2757,8 +2575,12 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             )}
           </div>
 
-          {/* Right Controls: Category Select, Refresh, Dual View Mode (Grid / Table) */}
+          {/* Right Controls: Category Select, Count Badge, View Mode, Pilih Banyak */}
           <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto min-w-0">
+            <span className="text-[11px] font-mono font-bold text-slate-500 dark:text-slate-400 px-2 py-1 rounded-lg bg-slate-100 dark:bg-[#0E1420] tabular-nums">
+              {filteredSlots.length.toLocaleString('id-ID')} rak tampil
+            </span>
+
             {/* Category Filter */}
             <select
               value={selectedCategory}
@@ -2773,34 +2595,6 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               ))}
             </select>
 
-            {/* Status Filter Segmented Buttons (Swipeable on mobile to prevent >100vw overflow) */}
-            <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-[#0E1420] rounded-xl border border-slate-200 dark:border-slate-800 w-full sm:w-auto max-w-full overflow-x-auto no-scrollbar">
-              {(
-                [
-                  { id: 'ALL', label: 'Semua' },
-                  { id: 'OVERLOAD', label: `Overload (${summaryStats.overloadCount})` },
-                  { id: 'WARNING_FULL', label: 'Hampir Penuh' },
-                  { id: 'SAFE', label: 'Tersedia' },
-                  { id: 'EMPTY', label: `Kosong (${summaryStats.emptyCount})` },
-                ] as const
-              ).map((st) => (
-                <button
-                  key={st.id}
-                  type="button"
-                  onClick={() => setStatusFilter(st.id)}
-                  className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                    statusFilter === st.id
-                      ? st.id === 'OVERLOAD'
-                        ? 'bg-rose-600 text-white shadow-xs'
-                        : 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                  }`}
-                >
-                  {st.label}
-                </button>
-              ))}
-            </div>
-
             {/* Dual View Mode Toggle: Grid vs Table */}
             <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-[#0E1420] rounded-xl border border-slate-200 dark:border-slate-800 flex-1 sm:flex-initial">
               <button
@@ -2808,24 +2602,24 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 onClick={() => setViewMode('GRID')}
                 className={`flex-1 sm:flex-initial justify-center px-2.5 py-1 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
                   viewMode === 'GRID'
-                    ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-2xs'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
-                <span>Grid Visual</span>
+                <span>Grid</span>
               </button>
               <button
                 type="button"
                 onClick={() => setViewMode('TABLE')}
                 className={`flex-1 sm:flex-initial justify-center px-2.5 py-1 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
                   viewMode === 'TABLE'
-                    ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-2xs'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 <List className="w-3.5 h-3.5 shrink-0" />
-                <span>Tabel Ringkas</span>
+                <span>Tabel</span>
               </button>
             </div>
 
@@ -2839,7 +2633,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                     setIsMultiSelectMode(true);
                   }
                 }}
-                className={`px-3 py-2 text-xs font-extrabold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 shadow-2xs ${
+                className={`px-3 py-2 text-xs font-bold rounded-xl border transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
                   isMultiSelectMode || selectedMultiLocs.size > 0
                     ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-700'
                     : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
@@ -2852,35 +2646,6 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                     ? `Pilih Banyak (${selectedMultiLocs.size})`
                     : 'Pilih Banyak'}
                 </span>
-              </button>
-            )}
-
-            {onRefreshStock && (
-              <button
-                type="button"
-                onClick={onRefreshStock}
-                disabled={isRefreshingStock}
-                className="px-3 py-2 text-xs font-extrabold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 whitespace-nowrap shrink-0 shadow-2xs"
-                title="Sinkronkan data stok fisik terbaru dari database"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 text-amber-500 ${isRefreshingStock ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">Sinkron Stok</span>
-              </button>
-            )}
-
-            {canRelocateRack && (
-              <button
-                type="button"
-                onClick={() => {
-                  setRelocationInitialFromLocations([]);
-                  setRelocationInitialFromLoc('');
-                  setIsRelocationModalOpen(true);
-                }}
-                className="px-3.5 py-2 text-xs font-extrabold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 shadow-2xs"
-                title="Pindahkan isi stok dari satu rak ke rak lain secara langsung (#OUT + #IN)"
-              >
-                <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" />
-                <span>Relokasi Rak</span>
               </button>
             )}
           </div>
@@ -3016,9 +2781,8 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
           </p>
         </div>
       ) : viewMode === 'GRID' ? (
-        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12 min-[2200px]:grid-cols-14 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12 min-[2200px]:grid-cols-14 gap-2">
           {filteredSlots.map((slot) => {
-            // Pure physical reality display: UI = Data Fisik
             const activePct = slot.fillPercent;
             const activeQty = slot.currentQty;
             const activeStatus = slot.status;
@@ -3050,24 +2814,16 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                     }
                   }
                 }}
-                className={`group relative overflow-hidden rounded-xl border bg-white dark:bg-[#131d31] p-3 text-left transition-transform duration-150 hover:-translate-y-0.5 cursor-pointer flex flex-col justify-between min-h-[116px] select-none ${
+                className={`group relative overflow-hidden rounded-xl border bg-white dark:bg-[#131d31] p-2.5 text-left transition-all duration-150 hover:border-indigo-400 dark:hover:border-indigo-500 cursor-pointer flex flex-col justify-between min-h-[104px] select-none ${
                   isMultiSelected
                     ? 'ring-2 ring-indigo-600 dark:ring-amber-400 border-indigo-600 dark:border-amber-400'
                     : vis.cardBorder
                 }`}
               >
-                {/* Animated vertical liquid-fill backdrop using transform scaleY */}
-                <div
-                  className={`absolute inset-x-0 bottom-0 h-full origin-bottom transition-transform duration-200 pointer-events-none ${vis.liquidBg} ${vis.pulseClass}`}
-                  style={{
-                    transform: `scaleY(${clampedHeightPct / 100})`,
-                  }}
-                />
-
-                {/* Top row: Checkbox + Rack Code & Status / Task Badge */}
-                <div className="relative z-10 flex items-start justify-between gap-1 w-full">
+                {/* Top row: Checkbox + Rack Code & Percentage */}
+                <div className="flex items-start justify-between gap-1 w-full">
                   <div className="min-w-0">
-                    <div className="text-sm font-black font-mono text-slate-900 dark:text-white tracking-tight flex items-center gap-1.5">
+                    <div className="text-xs sm:text-sm font-black font-mono text-slate-900 dark:text-white tracking-tight flex items-center gap-1">
                       {canMultiSelectRacks && (
                         <button
                           type="button"
@@ -3084,16 +2840,16 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                           aria-label={`Pilih rak ${slot.lokasi}`}
                         >
                           {isMultiSelected ? (
-                            <CheckSquare className="w-4 h-4 text-indigo-600 dark:text-amber-400" />
+                            <CheckSquare className="w-3.5 h-3.5 text-indigo-600 dark:text-amber-400" />
                           ) : (
-                            <Square className="w-4 h-4 text-slate-400 hover:text-indigo-600 dark:hover:text-amber-400" />
+                            <Square className="w-3.5 h-3.5 text-slate-400 hover:text-indigo-600 dark:hover:text-amber-400" />
                           )}
                         </button>
                       )}
-                      <span>{slot.lokasi}</span>
+                      <span className="truncate">{slot.lokasi}</span>
                       {hasPendingTask && (
                         <span
-                          className="text-[9px] font-black font-mono px-1 rounded bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800"
+                          className="text-[9px] font-black font-mono px-1 rounded bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300"
                           title={`Ada antrean tugas: ${slot.simulatedQty > slot.currentQty ? `+${slot.simulatedQty - slot.currentQty}` : `-${slot.currentQty - slot.simulatedQty}`} pcs`}
                         >
                           {slot.simulatedQty > slot.currentQty
@@ -3102,30 +2858,19 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                         </span>
                       )}
                     </div>
-                    <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400 truncate max-w-[95px]">
+                    <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400 truncate max-w-[92px]">
                       {slot.category}
                     </div>
                   </div>
-                  {activeStatus === 'OVERLOAD' ? (
-                    <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 animate-bounce shrink-0" />
-                  ) : (
-                    <span
-                      className={`text-xs font-black font-mono tabular-nums ${vis.textColor}`}
-                    >
-                      {activePct}%
-                    </span>
-                  )}
+                  <span
+                    className={`text-[11px] font-black font-mono tabular-nums shrink-0 ${vis.textColor}`}
+                  >
+                    {activePct}%
+                  </span>
                 </div>
 
                 {/* Middle / Bottom: Progress Bar & Exact Pcs Counter */}
-                <div className="relative z-10 mt-3 w-full space-y-1.5">
-                  {activeStatus === 'OVERLOAD' && (
-                    <div className="flex items-center justify-between text-[10px] font-black text-rose-600 dark:text-rose-400 font-mono tabular-nums">
-                      <span>OVERLOAD</span>
-                      <span>{activePct}%</span>
-                    </div>
-                  )}
-
+                <div className="mt-2.5 w-full space-y-1.5">
                   <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                     <div
                       className={`h-full origin-left transition-transform duration-200 ${vis.barBg}`}
@@ -3135,13 +2880,16 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                     />
                   </div>
 
-                  <div className="flex items-center justify-between text-[11px] font-mono tabular-nums">
+                  <div className="flex items-center justify-between text-[10px] font-mono tabular-nums">
                     <span className="font-bold text-slate-800 dark:text-slate-200">
                       {activeQty}/{slot.maxCapacity}
-                      <span className="text-[10px] font-normal text-slate-400 ml-0.5">pcs</span>
                     </span>
-                    <span className="text-[10px] text-slate-400">
-                      {slot.skuCount > 0 ? `${slot.skuCount} SKU` : 'Kosong'}
+                    <span className={activeStatus === 'OVERLOAD' ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-slate-400'}>
+                      {activeStatus === 'OVERLOAD'
+                        ? 'OVER'
+                        : slot.skuCount > 0
+                        ? `${slot.skuCount} SKU`
+                        : 'Kosong'}
                     </span>
                   </div>
                 </div>
@@ -3151,13 +2899,13 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
         </div>
       ) : (
         /* TABLE MODE */
-        <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
+        <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full lg:table-fixed text-left border-collapse">
               <thead>
                 <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-[#0E1420] text-[11px] font-extrabold text-slate-500 dark:text-slate-400">
                   {canMultiSelectRacks && (
-                    <th className="py-2.5 px-3 w-10 text-center">
+                    <th className="py-2.5 px-3 w-10 lg:w-[4%] text-center">
                       <button
                         type="button"
                         onClick={() => {
@@ -3186,15 +2934,15 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                       </button>
                     </th>
                   )}
-                  <th className="py-2.5 px-3.5">KODE RAK</th>
-                  <th className="py-2.5 px-3.5">AREA &amp; KATEGORI</th>
-                  <th className="py-2.5 px-3.5 text-right">TERISI (PCS)</th>
-                  <th className="py-2.5 px-3.5 text-right">KAPASITAS MAX</th>
-                  <th className="py-2.5 px-3.5 text-right">SISA RUANG</th>
-                  <th className="py-2.5 px-3.5 w-48">PERSENTASE TERISI</th>
-                  <th className="py-2.5 px-3.5 text-right">JML SKU</th>
-                  <th className="py-2.5 px-3.5">STATUS</th>
-                  <th className="py-2.5 px-3.5 text-right">AKSI</th>
+                  <th className="py-2.5 px-3.5 lg:w-[10%]">KODE RAK</th>
+                  <th className="py-2.5 px-3.5 lg:w-[18%]">AREA &amp; KATEGORI</th>
+                  <th className="py-2.5 px-3.5 lg:w-[10%] text-right">TERISI (PCS)</th>
+                  <th className="py-2.5 px-3.5 lg:w-[11%] text-right">KAPASITAS MAX</th>
+                  <th className="py-2.5 px-3.5 lg:w-[11%] text-right">SISA RUANG</th>
+                  <th className="py-2.5 px-3.5 lg:w-[16%]">PERSENTASE TERISI</th>
+                  <th className="py-2.5 px-3.5 lg:w-[7%] text-right">SKU</th>
+                  <th className="py-2.5 px-3.5 lg:w-[8%]">STATUS</th>
+                  <th className="py-2.5 px-3.5 lg:w-[9%] text-right">AKSI</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70 text-xs">

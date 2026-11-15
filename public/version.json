@@ -1,12 +1,12 @@
 {
-  "version": "v2.16.0",
-  "versionCode": 360,
+  "version": "v2.17.0",
+  "versionCode": 370,
   "buildDate": "15 November 2026",
-  "buildHash": "wms-261115-v360-2014",
-  "releaseTitle": "WMS v2.16.0 — Kalender Agenda Distribusi & Modul Task Delegasi Terpisah",
+  "buildHash": "wms-261115-v370-1344",
+  "releaseTitle": "WMS v2.17.0 — Denah 2D Setup Area & Pembaruan Dashboard Kapasitas",
   "releaseNotes": [
-    "2 Opsi Tampilan Kalender: Agenda Event & Agenda Distribusi (terintegrasi Asisten AI)",
-    "Pemisahan Modul Task Delegasi & Project: delegasi tugas ke Admin/CS/ID Karyawan beserta status & laporan hasil kerja"
+    "Tambahkan mode Denah 2D interaktif pada Visual 3D Kapasitas untuk setup penamaan area/zona, kode lokasi WMS berurutan, dan edit cepat via tabel yang tersinkron langsung ke 3D & Cloud",
+    "Rombak Dashboard Interaktif Kapasitas agar lebih ringkas, tenang tanpa animasi berkedip berlebih, serta menyatukan strip kategori penyimpanan dan status rak"
   ],
   "minSupportedVersion": "v2.0.0"
 }

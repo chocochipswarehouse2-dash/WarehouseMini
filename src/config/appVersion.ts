@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.16.0",
-  "versionCode": 360,
+  "version": "v2.17.0",
+  "versionCode": 370,
   "buildDate": "15 November 2026",
-  "buildHash": "wms-261115-v360-2014",
-  "releaseTitle": "WMS v2.16.0 — Kalender Agenda Distribusi & Modul Task Delegasi Terpisah",
+  "buildHash": "wms-261115-v370-1344",
+  "releaseTitle": "WMS v2.17.0 — Denah 2D Setup Area & Pembaruan Dashboard Kapasitas",
   "releaseNotes": [
-    "2 Opsi Tampilan Kalender: Agenda Event & Agenda Distribusi (terintegrasi Asisten AI)",
-    "Pemisahan Modul Task Delegasi & Project: delegasi tugas ke Admin/CS/ID Karyawan beserta status & laporan hasil kerja"
+    "Tambahkan mode Denah 2D interaktif pada Visual 3D Kapasitas untuk setup penamaan area/zona, kode lokasi WMS berurutan, dan edit cepat via tabel yang tersinkron langsung ke 3D & Cloud",
+    "Rombak Dashboard Interaktif Kapasitas agar lebih ringkas, tenang tanpa animasi berkedip berlebih, serta menyatukan strip kategori penyimpanan dan status rak"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.16.0",
+    "versionCode": 360,
+    "buildDate": "15 November 2026",
+    "buildHash": "wms-261115-v360-2014",
+    "releaseTitle": "WMS v2.16.0 — Kalender Agenda Distribusi & Modul Task Delegasi Terpisah",
+    "releaseNotes": [
+      "2 Opsi Tampilan Kalender: Agenda Event & Agenda Distribusi (terintegrasi Asisten AI)",
+      "Pemisahan Modul Task Delegasi & Project: delegasi tugas ke Admin/CS/ID Karyawan beserta status & laporan hasil kerja"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.15.1",
     "versionCode": 351,
@@ -112,19 +124,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseTitle": "WMS v2.12.3 — Penyempurnaan Tampilan Switch Notifikasi Perangkat",
     "releaseNotes": [
       "Mengganti tampilan tombol ON/OFF ganda pada Notifikasi Perangkat menjadi switch standar yang bersih dan sejajar di Sidebar, Notification Hub, dan Settings"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.12.2",
-    "versionCode": 322,
-    "buildDate": "14 November 2026",
-    "buildHash": "wms-261114-v322-2316",
-    "releaseTitle": "WMS v2.12.2 — Audit Header, Isolasi Profil & Akses Store, serta Kontrol ON/OFF Notifikasi Perangkat",
-    "releaseNotes": [
-      "Perbaikan tampilan & responsivitas Header aplikasi di seluler dan desktop",
-      "Audit Profil User: akun Store & non-karyawan tidak lagi masuk profil Warehouse (WH0001), bebas KPI, dan memblokir kebocoran menu Pengaturan Sistem [ADMIN]",
-      "Kontrol switch ON/OFF Notifikasi Perangkat di Sidebar, Notification Hub & Settings (menghentikan pop-up OS, Web Push, Service Worker watcher & suara chime saat OFF)"
     ],
     "minSupportedVersion": "v2.0.0"
   }
