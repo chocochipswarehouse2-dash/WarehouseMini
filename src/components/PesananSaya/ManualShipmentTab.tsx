@@ -1040,8 +1040,10 @@ _WMS Warehouse System_`;
         applyManualShipmentDraft(target.draft);
       }
       if (targetSubTab === 'rekap') {
-        setStageTab('semua');
-        setFilterOrderType('all');
+        const validStages = ['baru', 'diproses', 'selesai', 'batal', 'semua'];
+        const validOrderTypes = ['all', 'manual_shipment', 'manual_with_alter', 'alteration_repair'];
+        setStageTab(validStages.includes(target.stageTab) ? target.stageTab : 'semua');
+        setFilterOrderType(validOrderTypes.includes(target.filterOrderType) ? target.filterOrderType : 'all');
         setFilterAlterStatus('all');
         setFilterStatus('all');
         setFilterStore('all');

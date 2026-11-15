@@ -5107,7 +5107,12 @@ export default function App() {
                   {companionPage === 'dashboard' && (
                     <DashboardView
                       session={session}
-                      onNavigate={(page, subTab) => handleSelectPage(page as any, subTab)}
+                      onNavigate={(page, subTab) => {
+                        if (page === 'agenda' && subTab) setAgendaInitialTab(subTab as any);
+                        if (page === 'loading_dock' && subTab) setLoadingDockInitialTab(subTab as any);
+                        if (page === 'inventory' && subTab) setInventoryInitialTab(subTab as any);
+                        handleSelectPage(page as any, subTab);
+                      }}
                       productCatalog={productDatabase}
                       currentLocations={activeLocations}
                       onShowToast={showToast}

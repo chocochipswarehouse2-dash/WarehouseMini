@@ -1,13 +1,14 @@
 {
-  "version": "v2.14.0",
-  "versionCode": 340,
+  "version": "v2.15.1",
+  "versionCode": 351,
   "buildDate": "15 November 2026",
-  "buildHash": "wms-261115-v340-0910",
-  "releaseTitle": "WMS v2.14.0 — Popup Input Produksi, Antrean Hitung Ulang & Anti-Freeze Minimize Dock",
+  "buildHash": "wms-261115-v351-1309",
+  "releaseTitle": "WMS v2.15.1 — Dashboard Live: Antrean Picking, Kapasitas Blok F/Global, Breakdown Manual/Alter & Anomali Scan",
   "releaseNotes": [
-    "Pintasan Dashboard & Popup Luas Input Penerimaan Produksi (bisa minimize, auto-save draft & pelindung offline anti double-input)",
-    "Kartu Antrean Kode Butuh Hitung Ulang di Dashboard + Popup Audit Hitung Ulang (auto-save draft per kode & Outbox Hitung Ulang Offline)",
-    "Unified Minimized Workspaces Dock (Anti-Collision & Zero-DOM Anti-Freeze saat banyak jendela kerja diminimize bersamaan)"
+    "Menghilangkan duplikasi 3x blok pintasan Dashboard dan menyinkronkan hitungan Antrean Hitung Ulang (BELUM vs SELISIH) dengan tab Audit Hitung Ulang",
+    "Menambahkan live widget Antrean Tugas Picking serta panel Kapasitas Warehouse Global, Shopee, TikTok, Studio & IG Live",
+    "Menampilkan breakdown status Manual Shipment & Alteration (Baru, Sedang Diproses, Selesai) dengan deep-link langsung ke tab Rekap",
+    "Menambahkan deteksi & kartu peringatan Anomali Data Scan (lokasi anomali, stok minus, SKU rusak/non-master) beserta modal inspeksi"
   ],
   "minSupportedVersion": "v2.0.0"
 }

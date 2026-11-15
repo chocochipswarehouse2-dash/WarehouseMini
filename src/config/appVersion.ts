@@ -15,20 +15,47 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.14.0",
-  "versionCode": 340,
+  "version": "v2.15.1",
+  "versionCode": 351,
   "buildDate": "15 November 2026",
-  "buildHash": "wms-261115-v340-0910",
-  "releaseTitle": "WMS v2.14.0 — Popup Input Produksi, Antrean Hitung Ulang & Anti-Freeze Minimize Dock",
+  "buildHash": "wms-261115-v351-1309",
+  "releaseTitle": "WMS v2.15.1 — Dashboard Live: Antrean Picking, Kapasitas Blok F/Global, Breakdown Manual/Alter & Anomali Scan",
   "releaseNotes": [
-    "Pintasan Dashboard & Popup Luas Input Penerimaan Produksi (bisa minimize, auto-save draft & pelindung offline anti double-input)",
-    "Kartu Antrean Kode Butuh Hitung Ulang di Dashboard + Popup Audit Hitung Ulang (auto-save draft per kode & Outbox Hitung Ulang Offline)",
-    "Unified Minimized Workspaces Dock (Anti-Collision & Zero-DOM Anti-Freeze saat banyak jendela kerja diminimize bersamaan)"
+    "Menghilangkan duplikasi 3x blok pintasan Dashboard dan menyinkronkan hitungan Antrean Hitung Ulang (BELUM vs SELISIH) dengan tab Audit Hitung Ulang",
+    "Menambahkan live widget Antrean Tugas Picking serta panel Kapasitas Warehouse Global, Shopee, TikTok, Studio & IG Live",
+    "Menampilkan breakdown status Manual Shipment & Alteration (Baru, Sedang Diproses, Selesai) dengan deep-link langsung ke tab Rekap",
+    "Menambahkan deteksi & kartu peringatan Anomali Data Scan (lokasi anomali, stok minus, SKU rusak/non-master) beserta modal inspeksi"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.15.0",
+    "versionCode": 350,
+    "buildDate": "15 November 2026",
+    "buildHash": "wms-261115-v350-1233",
+    "releaseTitle": "WMS v2.15.0 — Migrasi Notifikasi Manual Shipment & Alter ke Grup Live Chat WMS",
+    "releaseNotes": [
+      "Grup Live Chat WMS otomatis per Store (@warehouse + @chocoadm + 1 Store terkait) untuk seluruh update Manual Shipment & Alteration (submit, edit, resi, batal, SJ Marketplace, sold out, dan alur 2-arah)",
+      "Isolasi penuh Inter-Store Fulfillment: Store penyedia menerima permintaan kirim terpisah di grupnya sendiri dengan mirroring progres ke grup Store pemohon",
+      "Picking WA Grup (Fonnte) khusus Admin difilter ketat hanya untuk item Marketplace / Gudang Utama serta pembaruan FAQ bantuan Store"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
+  {
+    "version": "v2.14.0",
+    "versionCode": 340,
+    "buildDate": "15 November 2026",
+    "buildHash": "wms-261115-v340-0910",
+    "releaseTitle": "WMS v2.14.0 — Popup Input Produksi, Antrean Hitung Ulang & Anti-Freeze Minimize Dock",
+    "releaseNotes": [
+      "Pintasan Dashboard & Popup Luas Input Penerimaan Produksi (bisa minimize, auto-save draft & pelindung offline anti double-input)",
+      "Kartu Antrean Kode Butuh Hitung Ulang di Dashboard + Popup Audit Hitung Ulang (auto-save draft per kode & Outbox Hitung Ulang Offline)",
+      "Unified Minimized Workspaces Dock (Anti-Collision & Zero-DOM Anti-Freeze saat banyak jendela kerja diminimize bersamaan)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.13.0",
     "versionCode": 330,
@@ -98,31 +125,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Karyawan yang tidak melakukan absensi datang dan pulang pada hari kerja otomatis ditandai sebagai BOLOS pada Jadwal Roster Shift (Matriks Sebulan, Kalender Staf, Mingguan, Tabel Harian & Kartu)",
       "Menambahkan indikator statistik Bolos (Alpha), filter khusus Bolos, serta detail keterangan audit (Tidak Absen Datang & Pulang / Tidak Absen Pulang) beserta jadwal shift awalnya"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.12.0",
-    "versionCode": 320,
-    "buildDate": "14 November 2026",
-    "buildHash": "wms-261114-v320-1106",
-    "releaseTitle": "WMS v2.12.0 — Relokasi & Multi-Select Kosongkan Rak, Minimize Background & Roster Shift Bulanan Responsif HP",
-    "releaseNotes": [
-      "Fitur Relokasi Rak Penuh (contoh X105 ke V004) & Multi-Select Kosongkan Rak langsung dari Dashboard Interaktif Kapasitas",
-      "Fitur Minimize ke latar belakang untuk Reset Lokasi & Relokasi Rak serta optimasi chunking anti-freeze (bebas Page Not Responding)",
-      "Perbaikan tampilan Roster Shift Matriks Bulanan (1-31) di HP: kolom sticky kompak 112px, filter rentang mingguan, proteksi sentuh geser, dan Mode Kalender Staf 7 kolom"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.11.10",
-    "versionCode": 320,
-    "buildDate": "13 November 2026",
-    "buildHash": "wms-261113-v320-0638",
-    "releaseTitle": "WMS v2.11.10 — Perbaikan VLOOKUP Size Master Produk (F25GBG278BNL/BNS & Akhiran Warna + S/M/L)",
-    "releaseNotes": [
-      "Menghapus override heuristik isCorruptedColorCodeSize terhadap data resmi master_produk sehingga SKU seperti F25GBG278BNL (L) dan F25GBG278BNS (S) tampil akurat sesuai database",
-      "Memperbaiki batas 1.000 baris PostgREST pada Delta Sync master_produk dan menaikkan versi IndexedDB ke v7 agar cache lokal tersinkronisasi 100%"
     ],
     "minSupportedVersion": "v2.0.0"
   }

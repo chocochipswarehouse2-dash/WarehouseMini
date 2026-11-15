@@ -9,35 +9,70 @@ import {
   Calendar,
   MessageSquare,
   FileText,
-  TrendingUp,
   RotateCcw,
   Sparkles,
   ShieldCheck,
   Truck,
-  ExternalLink,
   Layers,
   Activity,
-  AlertCircle,
   FolderKanban,
   CheckCircle2,
   CalendarDays,
   ClipboardPlus,
   Scale,
-  Minimize2,
-  CloudUpload,
+  AlertTriangle,
+  ShieldAlert,
+  Wrench,
+  Store,
+  Radio,
+  ShoppingBag,
+  Video,
+  Warehouse,
 } from 'lucide-react';
-import { UserSession, ProductItem, ProjectItem, AgendaEvent } from '../types';
+import {
+  UserSession,
+  ProductItem,
+  ProjectItem,
+  AgendaEvent,
+  StockRealtimeItem,
+  PickingListItem,
+  PenerimaanProduksiItem,
+  ManualShipmentOrder,
+} from '../types';
 import {
   getSupabaseClient,
   fetchPenerimaanRecountQueueFromSupabase,
   getRecountAuditMap,
+  fetchRecountAuditMapFromCloud,
+  getCachedPenerimaanProduksiSync,
+  fetchPenerimaanProduksiFromSupabase,
+  fetchPickingListFromSupabase,
+  fetchSupabaseStokFisikDirect,
+  getMemoryStokFisikCache,
+  getAreaFromLokasi,
 } from '../services/supabase';
-import { getPendingOfflineProduksiCount } from '../services/localDb';
+import {
+  getPendingOfflineProduksiCount,
+  getAllInventoryStocksFromLocalDb,
+} from '../services/localDb';
+import { fetchManualShipments } from '../services/gasManualShipment';
+import {
+  fetchRackCapacityConfig,
+  getDefaultRackCapacityConfig,
+  computeAllRackSlots,
+  buildEnrichedCatalogMap,
+  RackCapacityConfig,
+  ComputedRackSlot,
+} from '../services/rackCapacityService';
+import { scanAnomalies, isCorruptedSku, AnomalyItem } from '../utils/anomalyUtils';
+import { orderNeedsResi, hasRealAlterItems } from '../utils/alterationUtils';
+import { isSuperadmin } from '../services/permissions';
 import {
   getActiveProduksiInputDraftSummary,
   getActiveRecountDraftSummary,
   getPendingRecountOutboxCount,
 } from '../services/scannerOutboxService';
+import { InventoryAnomalyModal } from './InventoryAnomalyModal';
 
 export interface DashboardRecountQueueEntry {
   kode_produksi: string;
@@ -46,6 +81,25 @@ export interface DashboardRecountQueueEntry {
   added_by?: string;
   status: 'BELUM' | 'SELISIH' | 'MATCH';
   selisih?: number | null;
+}
+
+export interface DashboardPickingTaskSummary {
+  no_sj: string;
+  invoice_picking?: string;
+  tujuan: string;
+  tanggal: string;
+  status: 'PENDING' | 'SEDANG PICKING';
+  totalItems: number;
+  totalQtyReq: number;
+  totalQtyPicked: number;
+  created_at?: string;
+}
+
+interface OrderBreakdownStats {
+  baru: number;
+  diproses: number;
+  selesai: number;
+  total: number;
 }
 
 interface DashboardViewProps {
@@ -69,8 +123,8 @@ interface RecentLogItem {
 
 interface DashboardMetrics {
   lastUpdated: number;
-  pesananBaru: number;
-  pesananDiproses: number;
+  manualStats: OrderBreakdownStats;
+  alterStats: OrderBreakdownStats;
   peminjamanAktif: number;
   returAktif: number;
   activeProjects: ProjectItem[];
@@ -80,69 +134,218 @@ interface DashboardMetrics {
   recentLogs: RecentLogItem[];
 }
 
-const DASHBOARD_CACHE_KEY = 'wms_dashboard_lean_metrics_v3';
-const CACHE_TTL_MS = 15 * 60 * 1000; // 15 Menit Stale-While-Revalidate
+const EMPTY_ORDER_STATS: OrderBreakdownStats = { baru: 0, diproses: 0, selesai: 0, total: 0 };
 
-function readLocalRecountQueueEntries(): DashboardRecountQueueEntry[] {
+const DASHBOARD_CACHE_KEY = 'wms_dashboard_lean_metrics_v4';
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 Menit Stale-While-Revalidate
+
+function getSessionStoreName(session: UserSession | null | undefined): string {
+  if (!session || isSuperadmin(session)) return '';
+  const div = String(session.divisi || '').trim();
+  if (div && !['gudang', 'warehouse', 'admin', 'produksi', 'management'].includes(div.toLowerCase())) {
+    return div;
+  }
+  return '';
+}
+
+function isSameStoreName(a?: string, b?: string): boolean {
+  if (!a || !b) return false;
+  const na = a.trim().toLowerCase().replace(/^store\s+/i, '');
+  const nb = b.trim().toLowerCase().replace(/^store\s+/i, '');
+  return na === nb || na.includes(nb) || nb.includes(na);
+}
+
+function computeOrderBreakdowns(
+  orders: ManualShipmentOrder[],
+  session?: UserSession | null
+): { manualStats: OrderBreakdownStats; alterStats: OrderBreakdownStats } {
+  const manualStats: OrderBreakdownStats = { baru: 0, diproses: 0, selesai: 0, total: 0 };
+  const alterStats: OrderBreakdownStats = { baru: 0, diproses: 0, selesai: 0, total: 0 };
+
+  const userIsAdmin = isSuperadmin(session ?? null);
+  const userStore = getSessionStoreName(session);
+
+  for (let i = 0; i < orders.length; i++) {
+    const o = orders[i];
+    if (!o || o.status === 'batal') continue;
+
+    if (!userIsAdmin && userStore) {
+      const fromStore =
+        isSameStoreName(o.nama_pengirim, userStore) ||
+        isSameStoreName(o.alteration_repair_data?.nama_asal, userStore);
+      const hasStoreItem = Array.isArray(o.items) && o.items.some((it) => isSameStoreName(it.fulfillment, userStore));
+      if (!fromStore && !hasStoreItem) continue;
+    }
+
+    const noPesananUp = String(o.no_pesanan || '').toUpperCase().trim();
+    const isAr =
+      o.order_type === 'alteration_repair' ||
+      noPesananUp.startsWith('AR-') ||
+      noPesananUp.startsWith('REP-') ||
+      noPesananUp.startsWith('ALT-') ||
+      hasRealAlterItems(o);
+
+    const isSelesai = !orderNeedsResi(o)
+      ? Boolean(o.tgl_jadwal_kirim_store && o.tgl_jadwal_kirim_store.trim()) ||
+        o.status === 'dikirim' ||
+        o.status === 'selesai' ||
+        o.status === 'diambil'
+      : Boolean(o.no_resi && o.no_resi.trim());
+
+    const flowStr = String(o.alteration_repair_data?.status_flow || '').toLowerCase();
+    const isDiproses =
+      !isSelesai &&
+      (Boolean(o.is_picking_printed && o.is_label_printed) ||
+        ['dalam_pengerjaan', 'selesai_qc', 'diterima_warehouse', 'siap_dikirim'].includes(flowStr));
+
+    const target = isAr ? alterStats : manualStats;
+    target.total += 1;
+    if (isSelesai) target.selesai += 1;
+    else if (isDiproses) target.diproses += 1;
+    else target.baru += 1;
+  }
+
+  return { manualStats, alterStats };
+}
+
+/**
+ * Menghitung antrean kode Hitung Ulang dengan logika identik AuditHitungUlangTab:
+ * - Menggabungkan queueMap (wms_recount_selected_queue), auditMap (Cloud + Local), dan penerimaanItems.recount_qty
+ * - Menggunakan field total_selisih (bukan selisih) dan target Qty Nota jika tersedia
+ * - Memastikan jumlah BELUM DIHITUNG sama persis dengan kartu "ANTRIAN BELUM" di Audit Hitung Ulang
+ */
+function buildSyncedRecountEntries(penerimaanItems: PenerimaanProduksiItem[]): DashboardRecountQueueEntry[] {
   try {
     const rawQueue = localStorage.getItem('wms_recount_selected_queue');
-    const auditMap = getRecountAuditMap();
-    const entriesMap = new Map<string, DashboardRecountQueueEntry>();
+    const queueMap: Record<string, any> = {};
 
     if (rawQueue) {
       const parsed = JSON.parse(rawQueue);
       if (Array.isArray(parsed)) {
         parsed.forEach((it: any) => {
           const code = typeof it === 'string' ? it.trim().toUpperCase() : String(it?.kode_produksi || '').trim().toUpperCase();
-          if (!code) return;
-          const audit = auditMap[code];
-          const isCounted = audit && audit.total_fisik !== null && audit.total_fisik !== undefined;
-          const hasDiff = isCounted && Number(audit.selisih || 0) !== 0;
-          entriesMap.set(code, {
-            kode_produksi: code,
-            catatan_petunjuk: typeof it === 'object' ? it?.catatan_petunjuk || '' : '',
-            added_at: typeof it === 'object' ? it?.added_at : undefined,
-            added_by: typeof it === 'object' ? it?.added_by : undefined,
-            status: !isCounted ? 'BELUM' : hasDiff ? 'SELISIH' : 'MATCH',
-            selisih: isCounted ? Number(audit.selisih || 0) : null,
-          });
+          if (code) queueMap[code] = typeof it === 'object' && it !== null ? it : { catatan_petunjuk: '' };
         });
       } else if (typeof parsed === 'object' && parsed !== null) {
-        Object.entries(parsed).forEach(([rawCode, meta]: [string, any]) => {
+        Object.entries(parsed).forEach(([rawCode, meta]) => {
           const code = rawCode.trim().toUpperCase();
-          if (!code) return;
-          const audit = auditMap[code];
-          const isCounted = audit && audit.total_fisik !== null && audit.total_fisik !== undefined;
-          const hasDiff = isCounted && Number(audit.selisih || 0) !== 0;
-          entriesMap.set(code, {
-            kode_produksi: code,
-            catatan_petunjuk: meta?.catatan_petunjuk || '',
-            added_at: meta?.added_at,
-            added_by: meta?.added_by,
-            status: !isCounted ? 'BELUM' : hasDiff ? 'SELISIH' : 'MATCH',
-            selisih: isCounted ? Number(audit.selisih || 0) : null,
-          });
+          if (code) queueMap[code] = meta || {};
         });
       }
     }
 
-    // Include codes in auditMap that still have a discrepancy (selisih !== 0)
-    Object.values(auditMap).forEach((rec) => {
-      const code = String(rec?.kode_produksi || '').trim().toUpperCase();
-      if (!code || entriesMap.has(code)) return;
-      if (rec.total_fisik !== null && rec.total_fisik !== undefined && Number(rec.selisih || 0) !== 0) {
+    let notaMap: Record<string, any> = {};
+    try {
+      const rawNota = localStorage.getItem('wms_produksi_qty_nota_map_v1');
+      if (rawNota) notaMap = JSON.parse(rawNota) || {};
+    } catch {}
+
+    const auditMap = getRecountAuditMap();
+
+    // Agregasi baris penerimaan_produksi per kode_produksi (sama dengan AuditHitungUlangTab)
+    const prodByCode = new Map<
+      string,
+      {
+        totalAsli: number;
+        hasRecountQty: boolean;
+        sumFisikFromRows: number;
+        notes?: string;
+        hasMetaTrigger: boolean;
+      }
+    >();
+
+    for (let i = 0; i < penerimaanItems.length; i++) {
+      const it = penerimaanItems[i];
+      const code = String(it?.kode_produksi || '')
+        .replace(/[\u200B-\u200D\uFEFF\u00A0\r\n\t]/g, '')
+        .trim()
+        .toUpperCase();
+      if (!code) continue;
+
+      let grp = prodByCode.get(code);
+      if (!grp) {
+        grp = { totalAsli: 0, hasRecountQty: false, sumFisikFromRows: 0, hasMetaTrigger: false };
+        prodByCode.set(code, grp);
+      }
+
+      const qtyAsli = Number(it.qty) || 0;
+      const hasRowRecount = it.recount_qty !== undefined && it.recount_qty !== null;
+      grp.totalAsli += qtyAsli;
+      if (hasRowRecount) {
+        grp.hasRecountQty = true;
+        grp.sumFisikFromRows += Number(it.recount_qty) || 0;
+      } else {
+        grp.sumFisikFromRows += qtyAsli;
+      }
+      if (!grp.notes && it.recount_notes) grp.notes = it.recount_notes;
+      if (it.recount_notes || it.recount_round || hasRowRecount) {
+        grp.hasMetaTrigger = true;
+      }
+    }
+
+    const entriesMap = new Map<string, DashboardRecountQueueEntry>();
+    const hasPenerimaanData = prodByCode.size > 0;
+
+    if (hasPenerimaanData) {
+      // Skenario normal (identik 100% dengan AuditHitungUlangTab): evaluasi kode yang ada di penerimaan_produksi
+      prodByCode.forEach((pStats, code) => {
+        const audit = auditMap[code];
+        const qMeta = queueMap[code];
+        const isExplicitlyQueued = Boolean(qMeta) || pStats.hasMetaTrigger;
+        const isCounted =
+          Boolean(audit && audit.total_fisik !== null && audit.total_fisik !== undefined) || pStats.hasRecountQty;
+
+        if (!isExplicitlyQueued && !isCounted) return;
+
+        let effectiveSelisih: number | null = null;
+        let status: 'BELUM' | 'SELISIH' | 'MATCH' = 'BELUM';
+
+        if (isCounted) {
+          const totalFisik =
+            audit && audit.total_fisik !== null && audit.total_fisik !== undefined
+              ? Number(audit.total_fisik) || 0
+              : pStats.sumFisikFromRows;
+
+          const rawNota = qMeta?.qty_nota ?? notaMap[code]?.qty_nota ?? null;
+          const hasNota = rawNota !== null && rawNota !== undefined && !isNaN(Number(rawNota));
+
+          if (hasNota) {
+            effectiveSelisih = totalFisik - Number(rawNota);
+          } else if (audit && (audit.total_selisih !== undefined || audit.selisih !== undefined)) {
+            effectiveSelisih = Number(audit.total_selisih ?? audit.selisih ?? 0);
+          } else {
+            effectiveSelisih = totalFisik - pStats.totalAsli;
+          }
+
+          status = effectiveSelisih !== 0 ? 'SELISIH' : 'MATCH';
+        }
+
         entriesMap.set(code, {
           kode_produksi: code,
-          catatan_petunjuk: rec.notes || '',
-          added_at: rec.audited_at,
-          added_by: rec.auditor,
-          status: 'SELISIH',
-          selisih: Number(rec.selisih || 0),
+          catatan_petunjuk: qMeta?.catatan_petunjuk || pStats.notes || audit?.catatan || '',
+          added_at: qMeta?.added_at,
+          added_by: qMeta?.added_by,
+          status,
+          selisih: effectiveSelisih,
         });
-      }
-    });
+      });
+    } else {
+      // Fallback sementara sebelum penerimaanItems selesai dimuat
+      Object.entries(queueMap).forEach(([code, meta]) => {
+        const audit = auditMap[code];
+        const isCounted = Boolean(audit && audit.total_fisik !== null && audit.total_fisik !== undefined);
+        const rawSelisih = isCounted ? Number(audit.total_selisih ?? audit.selisih ?? 0) : null;
+        entriesMap.set(code, {
+          kode_produksi: code,
+          catatan_petunjuk: meta?.catatan_petunjuk || '',
+          added_at: meta?.added_at,
+          added_by: meta?.added_by,
+          status: !isCounted ? 'BELUM' : rawSelisih !== 0 ? 'SELISIH' : 'MATCH',
+          selisih: rawSelisih,
+        });
+      });
+    }
 
-    // Prioritize BELUM -> SELISIH -> MATCH
     const priorityOrder = { BELUM: 0, SELISIH: 1, MATCH: 2 };
     return Array.from(entriesMap.values()).sort(
       (a, b) => priorityOrder[a.status] - priorityOrder[b.status] || a.kode_produksi.localeCompare(b.kode_produksi)
@@ -150,6 +353,115 @@ function readLocalRecountQueueEntries(): DashboardRecountQueueEntry[] {
   } catch {
     return [];
   }
+}
+
+function buildActivePickingSummary(items: PickingListItem[]): {
+  activeTasks: DashboardPickingTaskSummary[];
+  pendingCount: number;
+  pickingCount: number;
+  totalActiveItems: number;
+} {
+  let completedSet = new Set<string>();
+  try {
+    const raw = localStorage.getItem('wms_completed_sjs_set');
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        arr.forEach((s) => completedSet.add(String(s || '').trim().toUpperCase()));
+      }
+    }
+  } catch {}
+
+  const grouped = new Map<
+    string,
+    {
+      no_sj: string;
+      invoice_picking?: string;
+      tujuan: string;
+      tanggal: string;
+      created_at?: string;
+      items: PickingListItem[];
+      totalItems: number;
+      totalQtyReq: number;
+      totalQtyPicked: number;
+    }
+  >();
+
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const sjKey = String(it?.no_sj || 'NO_SJ').trim().toUpperCase();
+    if (!sjKey) continue;
+
+    let grp = grouped.get(sjKey);
+    if (!grp) {
+      grp = {
+        no_sj: sjKey,
+        invoice_picking: it.invoice_picking,
+        tujuan: it.tujuan || 'Marketplace / Store',
+        tanggal: it.tanggal || (it.created_at ? String(it.created_at).slice(0, 10) : ''),
+        created_at: it.created_at,
+        items: [],
+        totalItems: 0,
+        totalQtyReq: 0,
+        totalQtyPicked: 0,
+      };
+      grouped.set(sjKey, grp);
+    }
+
+    if (!grp.invoice_picking && it.invoice_picking) grp.invoice_picking = it.invoice_picking;
+
+    if (it.is_unexpected || Number(it.qty_req) === 0) {
+      grp.totalQtyPicked += Number(it.qty_picked) || 0;
+    } else {
+      grp.items.push(it);
+      grp.totalItems += 1;
+      grp.totalQtyReq += Number(it.qty_req) || 0;
+      grp.totalQtyPicked += Number(it.qty_picked) || 0;
+    }
+  }
+
+  const activeTasks: DashboardPickingTaskSummary[] = [];
+  let pendingCount = 0;
+  let pickingCount = 0;
+  let totalActiveItems = 0;
+
+  grouped.forEach((grp, sjKey) => {
+    const isCompletedLocally = completedSet.has(sjKey);
+    const isAllDone =
+      isCompletedLocally ||
+      (grp.items.length > 0 && grp.items.every((it) => String(it.status || '').toUpperCase().trim() === 'SELESAI'));
+    if (isAllDone || grp.items.length === 0) return;
+
+    const isStarted = grp.items.some(
+      (it) => Number(it.qty_picked) > 0 || String(it.status || '').toUpperCase().trim() === 'SEDANG PICKING'
+    );
+    const status: 'PENDING' | 'SEDANG PICKING' = isStarted ? 'SEDANG PICKING' : 'PENDING';
+    if (status === 'SEDANG PICKING') pickingCount++;
+    else pendingCount++;
+    totalActiveItems += grp.totalItems;
+
+    activeTasks.push({
+      no_sj: grp.no_sj,
+      invoice_picking: grp.invoice_picking,
+      tujuan: grp.tujuan,
+      tanggal: grp.tanggal,
+      created_at: grp.created_at,
+      status,
+      totalItems: grp.totalItems,
+      totalQtyReq: grp.totalQtyReq,
+      totalQtyPicked: grp.totalQtyPicked,
+    });
+  });
+
+  // Sort SEDANG PICKING first, then newest tanggal/created_at via fast string compare
+  activeTasks.sort((a, b) => {
+    if (a.status !== b.status) return a.status === 'SEDANG PICKING' ? -1 : 1;
+    const da = a.created_at || a.tanggal || '';
+    const db = b.created_at || b.tanggal || '';
+    return db > da ? 1 : db < da ? -1 : a.no_sj.localeCompare(b.no_sj);
+  });
+
+  return { activeTasks, pendingCount, pickingCount, totalActiveItems };
 }
 
 function formatRelativeTime(timestamp: number | string): string {
@@ -192,13 +504,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     try {
       const raw = localStorage.getItem(DASHBOARD_CACHE_KEY);
       if (raw) {
-        return JSON.parse(raw);
+        const parsed = JSON.parse(raw);
+        return {
+          lastUpdated: parsed.lastUpdated || 0,
+          manualStats: parsed.manualStats || { ...EMPTY_ORDER_STATS },
+          alterStats: parsed.alterStats || { ...EMPTY_ORDER_STATS },
+          peminjamanAktif: parsed.peminjamanAktif || 0,
+          returAktif: parsed.returAktif || 0,
+          activeProjects: parsed.activeProjects || [],
+          activeProjectsCount: parsed.activeProjectsCount || 0,
+          upcomingAgenda: parsed.upcomingAgenda || [],
+          upcomingAgendaCount: parsed.upcomingAgendaCount || 0,
+          recentLogs: parsed.recentLogs || [],
+        };
       }
     } catch {}
     return {
       lastUpdated: 0,
-      pesananBaru: 0,
-      pesananDiproses: 0,
+      manualStats: { ...EMPTY_ORDER_STATS },
+      alterStats: { ...EMPTY_ORDER_STATS },
       peminjamanAktif: 0,
       returAktif: 0,
       activeProjects: [],
@@ -209,9 +533,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     };
   });
 
-  const [recountQueueEntries, setRecountQueueEntries] = useState<DashboardRecountQueueEntry[]>(() =>
-    readLocalRecountQueueEntries()
+  const [penerimaanItems, setPenerimaanItems] = useState<PenerimaanProduksiItem[]>(() =>
+    getCachedPenerimaanProduksiSync()
   );
+  const [recountQueueEntries, setRecountQueueEntries] = useState<DashboardRecountQueueEntry[]>(() =>
+    buildSyncedRecountEntries(getCachedPenerimaanProduksiSync())
+  );
+  const [pickingItems, setPickingItems] = useState<PickingListItem[]>(() => {
+    try {
+      const raw = localStorage.getItem('wms_raw_picking_list_cache');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [stockRows, setStockRows] = useState<StockRealtimeItem[]>(() => getMemoryStokFisikCache() || []);
+  const [rackConfig, setRackConfig] = useState<RackCapacityConfig>(() => getDefaultRackCapacityConfig());
+  const [isAnomalyModalOpen, setIsAnomalyModalOpen] = useState(false);
+
   const [produksiDraft, setProduksiDraft] = useState(() => getActiveProduksiInputDraftSummary());
   const [recountDraft, setRecountDraft] = useState(() => getActiveRecountDraftSummary());
   const [offlineProduksiCount, setOfflineProduksiCount] = useState<number>(() =>
@@ -224,26 +563,62 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [timeAgoStr, setTimeAgoStr] = useState<string>('');
 
-  const refreshLocalDraftAndQueueState = useCallback(() => {
-    setRecountQueueEntries(readLocalRecountQueueEntries());
-    setProduksiDraft(getActiveProduksiInputDraftSummary());
-    setRecountDraft(getActiveRecountDraftSummary());
-    setOfflineProduksiCount(getPendingOfflineProduksiCount());
-    setOfflineRecountCount(getPendingRecountOutboxCount());
+  const refreshLocalDraftAndQueueState = useCallback(
+    (overridePenerimaan?: PenerimaanProduksiItem[]) => {
+      const targetItems = overridePenerimaan || getCachedPenerimaanProduksiSync();
+      if (overridePenerimaan) setPenerimaanItems(overridePenerimaan);
+      setRecountQueueEntries(buildSyncedRecountEntries(targetItems));
+      setProduksiDraft(getActiveProduksiInputDraftSummary());
+      setRecountDraft(getActiveRecountDraftSummary());
+      setOfflineProduksiCount(getPendingOfflineProduksiCount());
+      setOfflineRecountCount(getPendingRecountOutboxCount());
+    },
+    []
+  );
+
+  // Hydrate stockRows from IndexedDB on cold memory cache so capacity & anomaly cards appear instantly
+  useEffect(() => {
+    let active = true;
+    if (stockRows.length === 0) {
+      getAllInventoryStocksFromLocalDb()
+        .then((localStocks) => {
+          if (active && localStocks && localStocks.length > 0) {
+            setStockRows(localStocks);
+          }
+        })
+        .catch(() => {});
+    }
+    fetchRackCapacityConfig()
+      .then((cfg) => {
+        if (active && cfg) setRackConfig(cfg);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
-    refreshLocalDraftAndQueueState();
+    refreshLocalDraftAndQueueState(penerimaanItems);
     const handleSyncEvents = () => refreshLocalDraftAndQueueState();
+    const handleRecountUpdated = () => {
+      fetchRecountAuditMapFromCloud()
+        .catch(() => {})
+        .finally(() => refreshLocalDraftAndQueueState());
+    };
     window.addEventListener('storage', handleSyncEvents);
     window.addEventListener('wms_produksi_draft_updated', handleSyncEvents);
     window.addEventListener('wms_recount_draft_updated', handleSyncEvents);
     window.addEventListener('wms_recount_outbox_updated', handleSyncEvents);
+    window.addEventListener('wms_recount_queue_updated', handleSyncEvents);
+    window.addEventListener('wms_recount_audit_updated', handleRecountUpdated);
     return () => {
       window.removeEventListener('storage', handleSyncEvents);
       window.removeEventListener('wms_produksi_draft_updated', handleSyncEvents);
       window.removeEventListener('wms_recount_draft_updated', handleSyncEvents);
       window.removeEventListener('wms_recount_outbox_updated', handleSyncEvents);
+      window.removeEventListener('wms_recount_queue_updated', handleSyncEvents);
+      window.removeEventListener('wms_recount_audit_updated', handleRecountUpdated);
     };
   }, [refreshLocalDraftAndQueueState]);
 
@@ -261,119 +636,303 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return () => clearInterval(timer);
   }, [metrics.lastUpdated]);
 
-  // Fetch metrics using ultra-lean HEAD-only queries & tiny limit queries (< 1.5 KB total)
-  const fetchLeanMetrics = useCallback(async (isManualTrigger = false) => {
-    setIsRefreshing(true);
-    try {
-      const sb = getSupabaseClient();
-      const todayYmd = new Date().toISOString().split('T')[0];
-
-      // Parallel execution of count-only headers, 4 active projects, 4 upcoming events, 5 recent logs, and recount queue
-      const [
-        ordersNewRes,
-        ordersProcRes,
-        peminjamanRes,
-        returRes,
-        projectsRes,
-        agendaRes,
-        recentLogsRes,
-        cloudRecountQueueRes,
-      ] = await Promise.allSettled([
-        sb.from('manual_shipment').select('id', { count: 'exact', head: true }).eq('status', 'diterima'),
-        sb.from('manual_shipment').select('id', { count: 'exact', head: true }).eq('status', 'diproses'),
-        sb.from('peminjaman').select('id', { count: 'exact', head: true }).eq('status', 'dipinjam'),
-        sb.from('retur_barang').select('id', { count: 'exact', head: true }).neq('status', 'selesai'),
-        sb.from('wms_projects')
-          .select('id, title, status, priority, progress, deadline, pic', { count: 'exact' })
-          .neq('status', 'completed')
-          .order('created_at', { ascending: false })
-          .limit(4),
-        sb.from('wms_agenda')
-          .select('id, title, start_date, start_time, end_date, end_time, category, pic', { count: 'exact' })
-          .gte('start_date', todayYmd)
-          .order('start_date', { ascending: true })
-          .limit(4),
-        sb.from('log_produk')
-          .select('id, type, sku, nama_produk, lokasi, qty, operator, created_at')
-          .order('created_at', { ascending: false })
-          .limit(5),
-        fetchPenerimaanRecountQueueFromSupabase(),
-      ]);
-
-      if (cloudRecountQueueRes.status === 'fulfilled' && cloudRecountQueueRes.value) {
-        try {
-          localStorage.setItem('wms_recount_selected_queue', JSON.stringify(cloudRecountQueueRes.value));
-        } catch {}
-      }
-      refreshLocalDraftAndQueueState();
-
-      const newMetrics: DashboardMetrics = {
-        lastUpdated: Date.now(),
-        pesananBaru: ordersNewRes.status === 'fulfilled' ? (ordersNewRes.value.count ?? 0) : metrics.pesananBaru,
-        pesananDiproses: ordersProcRes.status === 'fulfilled' ? (ordersProcRes.value.count ?? 0) : metrics.pesananDiproses,
-        peminjamanAktif: peminjamanRes.status === 'fulfilled' ? (peminjamanRes.value.count ?? 0) : metrics.peminjamanAktif,
-        returAktif: returRes.status === 'fulfilled' ? (returRes.value.count ?? 0) : metrics.returAktif,
-        activeProjects: projectsRes.status === 'fulfilled' && projectsRes.value.data
-          ? (projectsRes.value.data as ProjectItem[])
-          : metrics.activeProjects,
-        activeProjectsCount: projectsRes.status === 'fulfilled'
-          ? (projectsRes.value.count ?? projectsRes.value.data?.length ?? 0)
-          : metrics.activeProjectsCount,
-        upcomingAgenda: agendaRes.status === 'fulfilled' && agendaRes.value.data
-          ? (agendaRes.value.data as AgendaEvent[])
-          : metrics.upcomingAgenda,
-        upcomingAgendaCount: agendaRes.status === 'fulfilled'
-          ? (agendaRes.value.count ?? agendaRes.value.data?.length ?? 0)
-          : metrics.upcomingAgendaCount,
-        recentLogs: recentLogsRes.status === 'fulfilled' && recentLogsRes.value.data
-          ? (recentLogsRes.value.data as RecentLogItem[])
-          : metrics.recentLogs,
-      };
-
-      setMetrics(newMetrics);
+  // Fetch metrics & operational queues using cached/lean queries
+  const fetchLeanMetrics = useCallback(
+    async (isManualTrigger = false) => {
+      setIsRefreshing(true);
       try {
-        localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(newMetrics));
-      } catch {}
+        const sb = getSupabaseClient();
+        const todayYmd = new Date().toISOString().split('T')[0];
 
-      if (isManualTrigger && onShowToast) {
-        onShowToast('Data ringkasan berhasil diperbarui (< 1.5 KB Egress)', 'info');
-      }
-    } catch (err: any) {
-      console.warn('[Dashboard] Gagal memperbarui data:', err?.message || err);
-      if (isManualTrigger && onShowToast) {
-        onShowToast('Gagal terhubung ke database. Menggunakan data cache.', 'warning');
-      }
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [metrics, onShowToast, refreshLocalDraftAndQueueState]);
+        const [
+          manualOrdersRes,
+          peminjamanRes,
+          returRes,
+          projectsRes,
+          agendaRes,
+          recentLogsRes,
+          cloudRecountQueueRes,
+          cloudAuditMapRes,
+          penerimaanRes,
+          pickingListRes,
+          rackCfgRes,
+          stokFisikRes,
+        ] = await Promise.allSettled([
+          fetchManualShipments(),
+          sb.from('peminjaman').select('id', { count: 'exact', head: true }).eq('status', 'dipinjam'),
+          sb.from('retur_barang').select('id', { count: 'exact', head: true }).neq('status', 'selesai'),
+          sb
+            .from('wms_projects')
+            .select('id, title, status, priority, progress, deadline, pic', { count: 'exact' })
+            .neq('status', 'completed')
+            .order('created_at', { ascending: false })
+            .limit(4),
+          sb
+            .from('wms_agenda')
+            .select('id, title, start_date, start_time, end_date, end_time, category, pic', { count: 'exact' })
+            .gte('start_date', todayYmd)
+            .order('start_date', { ascending: true })
+            .limit(4),
+          sb
+            .from('log_produk')
+            .select('id, type, sku, nama_produk, lokasi, qty, operator, created_at')
+            .order('created_at', { ascending: false })
+            .limit(12),
+          fetchPenerimaanRecountQueueFromSupabase(),
+          fetchRecountAuditMapFromCloud(),
+          fetchPenerimaanProduksiFromSupabase({ forceRefresh: isManualTrigger }),
+          fetchPickingListFromSupabase(isManualTrigger),
+          fetchRackCapacityConfig(),
+          fetchSupabaseStokFisikDirect(isManualTrigger),
+        ]);
 
-  // Initial mount: only fetch if cache is absent or older than 15 minutes
+        if (cloudRecountQueueRes.status === 'fulfilled' && cloudRecountQueueRes.value) {
+          try {
+            localStorage.setItem('wms_recount_selected_queue', JSON.stringify(cloudRecountQueueRes.value));
+          } catch {}
+        }
+        void cloudAuditMapRes;
+
+        const latestPenerimaan =
+          penerimaanRes.status === 'fulfilled' && Array.isArray(penerimaanRes.value)
+            ? penerimaanRes.value
+            : penerimaanItems;
+        refreshLocalDraftAndQueueState(latestPenerimaan);
+
+        if (pickingListRes.status === 'fulfilled' && Array.isArray(pickingListRes.value)) {
+          setPickingItems(pickingListRes.value);
+        }
+        if (rackCfgRes.status === 'fulfilled' && rackCfgRes.value) {
+          setRackConfig(rackCfgRes.value);
+        }
+        if (stokFisikRes.status === 'fulfilled' && Array.isArray(stokFisikRes.value) && stokFisikRes.value.length > 0) {
+          setStockRows(stokFisikRes.value);
+        }
+
+        const orderBreakdowns =
+          manualOrdersRes.status === 'fulfilled' && Array.isArray(manualOrdersRes.value)
+            ? computeOrderBreakdowns(manualOrdersRes.value, session)
+            : { manualStats: metrics.manualStats, alterStats: metrics.alterStats };
+
+        const newMetrics: DashboardMetrics = {
+          lastUpdated: Date.now(),
+          manualStats: orderBreakdowns.manualStats,
+          alterStats: orderBreakdowns.alterStats,
+          peminjamanAktif: peminjamanRes.status === 'fulfilled' ? peminjamanRes.value.count ?? 0 : metrics.peminjamanAktif,
+          returAktif: returRes.status === 'fulfilled' ? returRes.value.count ?? 0 : metrics.returAktif,
+          activeProjects:
+            projectsRes.status === 'fulfilled' && projectsRes.value.data
+              ? (projectsRes.value.data as ProjectItem[])
+              : metrics.activeProjects,
+          activeProjectsCount:
+            projectsRes.status === 'fulfilled'
+              ? projectsRes.value.count ?? projectsRes.value.data?.length ?? 0
+              : metrics.activeProjectsCount,
+          upcomingAgenda:
+            agendaRes.status === 'fulfilled' && agendaRes.value.data
+              ? (agendaRes.value.data as AgendaEvent[])
+              : metrics.upcomingAgenda,
+          upcomingAgendaCount:
+            agendaRes.status === 'fulfilled'
+              ? agendaRes.value.count ?? agendaRes.value.data?.length ?? 0
+              : metrics.upcomingAgendaCount,
+          recentLogs:
+            recentLogsRes.status === 'fulfilled' && recentLogsRes.value.data
+              ? (recentLogsRes.value.data as RecentLogItem[])
+              : metrics.recentLogs,
+        };
+
+        setMetrics(newMetrics);
+        try {
+          localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(newMetrics));
+        } catch {}
+
+        if (isManualTrigger && onShowToast) {
+          onShowToast('Seluruh ringkasan Dashboard berhasil diperbarui.', 'info');
+        }
+      } catch (err: any) {
+        console.warn('[Dashboard] Gagal memperbarui data:', err?.message || err);
+        if (isManualTrigger && onShowToast) {
+          onShowToast('Gagal terhubung ke database. Menggunakan data cache.', 'warning');
+        }
+      } finally {
+        setIsRefreshing(false);
+      }
+    },
+    [metrics, penerimaanItems, onShowToast, refreshLocalDraftAndQueueState, session]
+  );
+
+  // Initial mount: fetch full lean metrics when stale, or still refresh volatile operational queues
   useEffect(() => {
     const age = Date.now() - (metrics.lastUpdated || 0);
     if (!metrics.lastUpdated || age > CACHE_TTL_MS) {
       fetchLeanMetrics(false);
     } else {
-      fetchPenerimaanRecountQueueFromSupabase()
-        .then((q) => {
-          if (q && Object.keys(q).length > 0) {
-            try {
-              localStorage.setItem('wms_recount_selected_queue', JSON.stringify(q));
-            } catch {}
-            refreshLocalDraftAndQueueState();
-          }
-        })
-        .catch(() => {});
+      // Refresh ringan antrean operasional aktif agar selalu sinkron meski cache KPI masih segar
+      Promise.allSettled([
+        fetchPenerimaanRecountQueueFromSupabase(),
+        fetchRecountAuditMapFromCloud(),
+        fetchPenerimaanProduksiFromSupabase(),
+        fetchPickingListFromSupabase(false),
+        fetchManualShipments(),
+        fetchSupabaseStokFisikDirect(false),
+      ]).then(([qRes, _aRes, pRes, pickRes, ordersRes, stockRes]) => {
+        if (qRes.status === 'fulfilled' && qRes.value && Object.keys(qRes.value).length > 0) {
+          try {
+            localStorage.setItem('wms_recount_selected_queue', JSON.stringify(qRes.value));
+          } catch {}
+        }
+        const latestP = pRes.status === 'fulfilled' && Array.isArray(pRes.value) ? pRes.value : undefined;
+        refreshLocalDraftAndQueueState(latestP);
+        if (pickRes.status === 'fulfilled' && Array.isArray(pickRes.value)) {
+          setPickingItems(pickRes.value);
+        }
+        if (stockRes.status === 'fulfilled' && Array.isArray(stockRes.value) && stockRes.value.length > 0) {
+          setStockRows(stockRes.value);
+        }
+        if (ordersRes.status === 'fulfilled' && Array.isArray(ordersRes.value)) {
+          const bd = computeOrderBreakdowns(ordersRes.value, session);
+          setMetrics((prev) => ({ ...prev, ...bd }));
+        }
+      });
     }
   }, []);
 
-  const totalMasterSkus = useMemo(() => productCatalog?.length || 0, [productCatalog]);
-  const totalLocations = useMemo(() => currentLocations?.length || 0, [currentLocations]);
+  // =========================================================================
+  // COMPUTED SUMMARIES
+  // =========================================================================
 
-  const uncountedRecountEntries = useMemo(
+  // 1. Recount Queue Split (Identik dengan AuditHitungUlangTab: BELUM vs SELISIH vs MATCH)
+  const belumRecountEntries = useMemo(
+    () => recountQueueEntries.filter((it) => it.status === 'BELUM'),
+    [recountQueueEntries]
+  );
+  const selisihRecountEntries = useMemo(
+    () => recountQueueEntries.filter((it) => it.status === 'SELISIH'),
+    [recountQueueEntries]
+  );
+  const actionableRecountEntries = useMemo(
     () => recountQueueEntries.filter((it) => it.status === 'BELUM' || it.status === 'SELISIH'),
     [recountQueueEntries]
   );
+
+  // 2. Picking Queue Summary
+  const pickingSummary = useMemo(() => buildActivePickingSummary(pickingItems), [pickingItems]);
+
+  // 3. Warehouse & Blok F Channel Capacities (Warehouse Global, Shopee, TikTok, Studio, IG Live)
+  const enrichedCatalogMap = useMemo(() => buildEnrichedCatalogMap(productCatalog), [productCatalog]);
+
+  const capacitySummary = useMemo(() => {
+    const slots: ComputedRackSlot[] = computeAllRackSlots(rackConfig, stockRows, [], enrichedCatalogMap);
+
+    const rak = { filled: 0, cap: 0, overload: 0, racks: 0 };
+    const koli = { filled: 0, cap: 0, overload: 0, racks: 0 };
+    const shopee = { filled: 0, cap: 0 };
+    const tiktok = { filled: 0, cap: 0 };
+    const studio = { filled: 0, cap: 0 };
+    const iglive = { filled: 0, cap: 0 };
+
+    for (let i = 0; i < slots.length; i++) {
+      const s = slots[i];
+      const a = (s.area || '').toUpperCase();
+      const l = (s.lokasi || '').toUpperCase();
+
+      const isRak = a === 'WAREHOUSE' || /^[ABCD]-?\d+/i.test(l);
+      const isKoli =
+        !isRak &&
+        (a === 'KOLIAN' ||
+          a === 'KOLI' ||
+          a === 'TRANSIT' ||
+          a === 'PERBAIKAN' ||
+          /^[RVZ]-?\d+/i.test(l) ||
+          /^X-?\d*/i.test(l) ||
+          l === 'X' ||
+          l === 'TRANSIT' ||
+          /^(CC|PMK|DF)-?\d*/i.test(l));
+
+      if (isRak) {
+        rak.racks++;
+        rak.filled += s.currentQty;
+        rak.cap += s.maxCapacity;
+        if (s.status === 'OVERLOAD') rak.overload++;
+      } else if (isKoli) {
+        koli.racks++;
+        koli.filled += s.currentQty;
+        koli.cap += s.maxCapacity;
+        if (s.status === 'OVERLOAD') koli.overload++;
+      } else if (l === 'SHOPEE') {
+        shopee.filled += s.currentQty;
+        shopee.cap += s.maxCapacity;
+      } else if (l === 'TIKTOK') {
+        tiktok.filled += s.currentQty;
+        tiktok.cap += s.maxCapacity;
+      } else if (l === 'STUDIO') {
+        studio.filled += s.currentQty;
+        studio.cap += s.maxCapacity;
+      } else if (l === 'IGLIVE' || l === 'IG LIVE') {
+        iglive.filled += s.currentQty;
+        iglive.cap += s.maxCapacity;
+      }
+    }
+
+    const whFilled = rak.filled + koli.filled;
+    const whCap = rak.cap + koli.cap;
+    const pct = (f: number, c: number) => (c > 0 ? Math.round((f / c) * 100) : 0);
+
+    return {
+      hasStockLoaded: stockRows.length > 0,
+      warehouse: {
+        filled: whFilled,
+        cap: whCap,
+        percent: pct(whFilled, whCap),
+        overload: rak.overload + koli.overload,
+        rakFilled: rak.filled,
+        koliFilled: koli.filled,
+      },
+      shopee: { filled: shopee.filled, cap: shopee.cap || 400, percent: pct(shopee.filled, shopee.cap || 400) },
+      tiktok: { filled: tiktok.filled, cap: tiktok.cap || 250, percent: pct(tiktok.filled, tiktok.cap || 250) },
+      studio: { filled: studio.filled, cap: studio.cap || 500, percent: pct(studio.filled, studio.cap || 500) },
+      iglive: { filled: iglive.filled, cap: iglive.cap || 250, percent: pct(iglive.filled, iglive.cap || 250) },
+    };
+  }, [rackConfig, stockRows, enrichedCatalogMap]);
+
+  // 4. Scan Data Anomalies (Physical Stock + Recent Scan Logs)
+  const anomalySummary = useMemo(() => {
+    const items: AnomalyItem[] = stockRows.length > 0 ? scanAnomalies(productCatalog, stockRows) : [];
+    let invalidLocation = 0;
+    let negativeStock = 0;
+    let skuCorrupted = 0;
+    let skuNotInMaster = 0;
+    let mismatchMaster = 0;
+
+    for (let i = 0; i < items.length; i++) {
+      const cats = items[i].categories;
+      if (cats.includes('INVALID_LOCATION')) invalidLocation++;
+      if (cats.includes('NEGATIVE_STOCK')) negativeStock++;
+      if (cats.includes('SKU_CORRUPTED')) skuCorrupted++;
+      if (cats.includes('SKU_NOT_IN_MASTER')) skuNotInMaster++;
+      if (cats.includes('MISMATCH_MASTER_DATA')) mismatchMaster++;
+    }
+
+    // Cek juga log mutasi scan terbaru apakah ada lokasi Anomali / SKU rusak
+    const recentLogAnomalies = (metrics.recentLogs || []).filter((log) => {
+      const area = getAreaFromLokasi(log.lokasi || '');
+      return area === 'Anomali' || isCorruptedSku(log.sku);
+    });
+
+    return {
+      total: items.length,
+      items,
+      invalidLocation,
+      negativeStock,
+      skuIssue: skuCorrupted + skuNotInMaster,
+      mismatchMaster,
+      recentLogAnomalies,
+    };
+  }, [productCatalog, stockRows, metrics.recentLogs]);
+
+  const totalMasterSkus = useMemo(() => productCatalog?.length || 0, [productCatalog]);
+  const totalLocations = useMemo(() => currentLocations?.length || 0, [currentLocations]);
 
   // Format today's date in Indonesian
   const formattedToday = useMemo(() => {
@@ -398,22 +957,58 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }
   };
 
+  const handleNavigateManualOrderStage = (
+    filterOrderType: 'manual_shipment' | 'alteration_repair',
+    stageTab: 'baru' | 'diproses' | 'selesai' | 'semua'
+  ) => {
+    if (typeof window !== 'undefined') {
+      const target = {
+        tab: 'manual_shipment',
+        subTab: 'manual_shipment',
+        manualSubTab: 'rekap',
+        stageTab,
+        filterOrderType,
+      };
+      (window as any).__wms_pending_pesanan_target = target;
+      window.dispatchEvent(new CustomEvent('wms_open_pesanan_target', { detail: target }));
+    }
+    handleAction('pesanan_saya');
+  };
+
+  const getProgressColor = (pct: number) => {
+    if (pct > 100) return 'bg-rose-600 dark:bg-rose-500';
+    if (pct >= 85) return 'bg-amber-500 dark:bg-amber-400';
+    return 'bg-emerald-600 dark:bg-emerald-500';
+  };
+
+  const getCapacityBadgeClass = (pct: number) => {
+    if (pct > 100) return 'bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800';
+    if (pct >= 85) return 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800';
+    return 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
+  };
+
+  const totalPendingOrders = metrics.manualStats.baru + metrics.alterStats.baru;
+  const totalProcessingOrders = metrics.manualStats.diproses + metrics.alterStats.diproses;
+
   return (
-    <div className="p-2 sm:p-4 lg:p-6 space-y-3 sm:space-y-5 w-full max-w-full pb-24">
-      {/* 1. Header Toolbar & Context (Mobile-Optimized Compact Sizing) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 sm:p-4 lg:p-5 rounded-2xl bg-white dark:bg-[#1a2332] border border-slate-200 dark:border-slate-800 shadow-2xs">
+    <div className="w-full max-w-full px-2 sm:px-4 lg:px-6 py-2 sm:py-4 space-y-3 sm:space-y-4 pb-24">
+      {/* 1. Header Toolbar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 sm:p-4 lg:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs">
         <div className="space-y-0.5 min-w-0">
           <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-            <h1 className="text-lg sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+            <h1 className="text-base sm:text-xl font-black text-slate-900 dark:text-white tracking-tight">
               Dashboard Operasional
             </h1>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60">
               <Sparkles className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-indigo-500" />
               Live WMS
             </span>
-            <span className="inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-800/40" title="Query hanya mengambil HTTP Header Count & list ringkas (Zero-Egress Protection)">
+            <span
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] sm:text-[10px] font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-800/40"
+              title="Menggunakan cache lokal & delta sync agar ringan dan hemat kuota Supabase"
+            >
               <ShieldCheck className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-600 dark:text-emerald-400" />
-              Hemat Kuota (~0 KB)
+              Hemat Kuota
             </span>
           </div>
           <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate">
@@ -421,18 +1016,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </p>
         </div>
 
-        {/* Refresh Button & Relative Time */}
         <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
           <button
             type="button"
             onClick={() => fetchLeanMetrics(true)}
             disabled={isRefreshing}
-            className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 active:scale-98 transition-all cursor-pointer shadow-2xs disabled:opacity-60"
-            title="Perbarui ringkasan (Memakai Lean Query < 1.5 KB Egress)"
+            className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 active:scale-98 transition-all cursor-pointer shadow-2xs disabled:opacity-60"
+            title="Segarkan seluruh metrik Dashboard"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${isRefreshing ? 'animate-spin text-indigo-600 dark:text-indigo-400' : ''}`} />
             <span className="hidden sm:inline">{isRefreshing ? 'Memperbarui...' : 'Segarkan'}</span>
-            <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 sm:pl-1 sm:border-l sm:border-slate-200 sm:dark:border-slate-700">
+            <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 sm:pl-1.5 sm:border-l sm:border-slate-200 sm:dark:border-slate-700">
               {timeAgoStr}
             </span>
           </button>
@@ -440,149 +1034,778 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* 2. Top 4 Master KPI Cards (Mobile: 2x2 Grid, Desktop: 4 Columns) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3.5">
-        {/* KPI 1: Pesanan Masuk */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+        {/* KPI 1: Manual & Alter Aktif */}
         <div
-          onClick={() => handleAction('pesanan_saya')}
-          className="group bg-white dark:bg-[#1a2332] p-3 sm:p-4 lg:p-5 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs hover:shadow-md hover:border-amber-300 dark:hover:border-amber-700/60 transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between"
+          onClick={() => handleNavigateManualOrderStage('manual_shipment', 'baru')}
+          className="group bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs hover:shadow-md hover:border-amber-300 dark:hover:border-amber-700/60 transition-all cursor-pointer flex flex-col justify-between"
         >
-          <div className="flex items-start justify-between">
+          <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 truncate">
-                Pesanan Masuk
+              <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 leading-tight">
+                Manual &amp; Alter Baru
               </p>
-              <h3 className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-900 dark:text-white mt-0.5 sm:mt-1">
-                {metrics.pesananBaru}
+              <h3 className="text-xl sm:text-2xl lg:text-3xl font-black font-mono text-slate-900 dark:text-white mt-1">
+                {totalPendingOrders}
               </h3>
             </div>
-            <div className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 border border-amber-200/50 dark:border-amber-800/40 shrink-0">
+            <div className="p-2 rounded-lg sm:rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 border border-amber-200/50 dark:border-amber-800/40 shrink-0">
               <Package className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
           </div>
-          <div className="mt-2.5 pt-2.5 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between text-[10px] sm:text-xs">
+          <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between text-[10px] sm:text-xs">
             <span className="text-slate-500 dark:text-slate-400 truncate">
-              <b className="text-slate-700 dark:text-slate-200">{metrics.pesananDiproses}</b> diproses
+              <b className="font-mono text-slate-700 dark:text-slate-200">{totalProcessingOrders}</b> diproses
             </span>
             <span className="font-bold text-amber-600 dark:text-amber-400 flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform shrink-0">
-              <span className="hidden sm:inline">Buka</span> <ArrowRight className="w-3 h-3" />
+              <span className="hidden sm:inline">Pesanan</span> <ArrowRight className="w-3 h-3" />
             </span>
           </div>
         </div>
 
-        {/* KPI 2: Master Katalog & Rak */}
+        {/* KPI 2: Antrean Tugas Picking */}
         <div
-          onClick={() => handleAction('inventory')}
-          className="group bg-white dark:bg-[#1a2332] p-3 sm:p-4 lg:p-5 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-700/60 transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between"
+          onClick={() => handleAction('loading_dock', 'picking_tasks')}
+          className="group bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-700/60 transition-all cursor-pointer flex flex-col justify-between"
         >
-          <div className="flex items-start justify-between">
+          <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 truncate">
-                Katalog & Rak
+              <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 leading-tight">
+                Antrean Picking
               </p>
-              <h3 className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-900 dark:text-white mt-0.5 sm:mt-1 truncate">
-                {totalMasterSkus > 0 ? totalMasterSkus.toLocaleString('id-ID') : '—'} <span className="text-[10px] sm:text-xs font-semibold text-slate-500">SKU</span>
+              <h3 className="text-xl sm:text-2xl lg:text-3xl font-black font-mono text-slate-900 dark:text-white mt-1">
+                {pickingSummary.activeTasks.length} <span className="text-[10px] sm:text-xs font-sans font-semibold text-slate-500">SJ</span>
               </h3>
             </div>
-            <div className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200/50 dark:border-indigo-800/40 shrink-0">
-              <Boxes className="w-4 h-4 sm:w-5 sm:h-5" />
+            <div className="p-2 rounded-lg sm:rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200/50 dark:border-indigo-800/40 shrink-0">
+              <Truck className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
           </div>
-          <div className="mt-2.5 pt-2.5 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between text-[10px] sm:text-xs">
+          <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between text-[10px] sm:text-xs">
             <span className="text-slate-500 dark:text-slate-400 truncate">
-              <b className="text-slate-700 dark:text-slate-200">{totalLocations > 0 ? totalLocations : '—'}</b> rak aktif
+              <b className="font-mono text-slate-700 dark:text-slate-200">{pickingSummary.pendingCount}</b> tunggu ·{' '}
+              <b className="font-mono text-indigo-600 dark:text-indigo-400">{pickingSummary.pickingCount}</b> jalan
             </span>
             <span className="font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform shrink-0">
-              <span className="hidden sm:inline">Stok</span> <ArrowRight className="w-3 h-3" />
+              <span className="hidden sm:inline">Picking</span> <ArrowRight className="w-3 h-3" />
             </span>
           </div>
         </div>
 
-        {/* KPI 3: Proyek & Milestone Berjalan */}
+        {/* KPI 3: Kapasitas Warehouse Global */}
         <div
-          onClick={() => handleAction('agenda', 'project')}
-          className="group bg-white dark:bg-[#1a2332] p-3 sm:p-4 lg:p-5 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs hover:shadow-md hover:border-blue-300 dark:hover:border-blue-700/60 transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between"
+          onClick={() => handleAction('inventory', 'capacity')}
+          className="group bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs hover:shadow-md hover:border-emerald-300 dark:hover:border-emerald-700/60 transition-all cursor-pointer flex flex-col justify-between"
         >
-          <div className="flex items-start justify-between">
+          <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 truncate">
-                Proyek Aktif
+              <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 leading-tight">
+                Kapasitas Gudang
               </p>
-              <h3 className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-900 dark:text-white mt-0.5 sm:mt-1">
-                {metrics.activeProjectsCount} <span className="text-[10px] sm:text-xs font-semibold text-slate-500">Proyek</span>
+              <h3 className="text-xl sm:text-2xl lg:text-3xl font-black font-mono text-slate-900 dark:text-white mt-1">
+                {capacitySummary.hasStockLoaded ? `${capacitySummary.warehouse.percent}%` : '—'}
               </h3>
             </div>
-            <div className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border border-blue-200/50 dark:border-blue-800/40 shrink-0">
-              <FolderKanban className="w-4 h-4 sm:w-5 sm:h-5" />
+            <div className="p-2 rounded-lg sm:rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200/50 dark:border-emerald-800/40 shrink-0">
+              <Warehouse className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
           </div>
-          <div className="mt-2.5 pt-2.5 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between text-[10px] sm:text-xs">
-            <span className="text-slate-500 dark:text-slate-400 truncate">
-              In progress & milestone
-            </span>
-            <span className="font-bold text-blue-600 dark:text-blue-400 flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform shrink-0">
-              <span className="hidden sm:inline">Proyek</span> <ArrowRight className="w-3 h-3" />
-            </span>
-          </div>
-        </div>
-
-        {/* KPI 4: Jadwal & Agenda Terdekat */}
-        <div
-          onClick={() => handleAction('agenda', 'calendar')}
-          className="group bg-white dark:bg-[#1a2332] p-3 sm:p-4 lg:p-5 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs hover:shadow-md hover:border-emerald-300 dark:hover:border-emerald-700/60 transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between"
-        >
-          <div className="flex items-start justify-between">
-            <div className="min-w-0">
-              <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 truncate">
-                Jadwal & Drop
-              </p>
-              <h3 className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-900 dark:text-white mt-0.5 sm:mt-1">
-                {metrics.upcomingAgendaCount} <span className="text-[10px] sm:text-xs font-semibold text-slate-500">Jadwal</span>
-              </h3>
-            </div>
-            <div className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200/50 dark:border-emerald-800/40 shrink-0">
-              <CalendarDays className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-          </div>
-          <div className="mt-2.5 pt-2.5 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between text-[10px] sm:text-xs">
-            <span className="text-slate-500 dark:text-slate-400 truncate">
-              Hari ini & terdekat
+          <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between text-[10px] sm:text-xs">
+            <span className="text-slate-500 dark:text-slate-400 truncate font-mono">
+              {capacitySummary.hasStockLoaded
+                ? `${capacitySummary.warehouse.filled.toLocaleString('id-ID')}/${capacitySummary.warehouse.cap.toLocaleString('id-ID')} pcs`
+                : `${totalMasterSkus.toLocaleString('id-ID')} SKU · ${totalLocations} rak`}
             </span>
             <span className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform shrink-0">
-              <span className="hidden sm:inline">Agenda</span> <ArrowRight className="w-3 h-3" />
+              <span className="hidden sm:inline">Denah</span> <ArrowRight className="w-3 h-3" />
+            </span>
+          </div>
+        </div>
+
+        {/* KPI 4: Anomali Data Scan & Hitung Ulang */}
+        <div
+          onClick={() => setIsAnomalyModalOpen(true)}
+          className={`group bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-xl sm:rounded-2xl border shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between ${
+            anomalySummary.total > 0
+              ? 'border-rose-200 dark:border-rose-900/60 hover:border-rose-400'
+              : 'border-slate-200 dark:border-slate-800 hover:border-emerald-300'
+          }`}
+        >
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 leading-tight">
+                Anomali Data Scan
+              </p>
+              <h3
+                className={`text-xl sm:text-2xl lg:text-3xl font-black font-mono mt-1 ${
+                  anomalySummary.total > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'
+                }`}
+              >
+                {capacitySummary.hasStockLoaded ? anomalySummary.total : '—'}
+              </h3>
+            </div>
+            <div
+              className={`p-2 rounded-lg sm:rounded-xl border shrink-0 ${
+                anomalySummary.total > 0
+                  ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border-rose-200/50 dark:border-rose-800/40'
+                  : 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border-emerald-200/50 dark:border-emerald-800/40'
+              }`}
+            >
+              {anomalySummary.total > 0 ? (
+                <ShieldAlert className="w-4 h-4 sm:w-5 sm:h-5" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
+              )}
+            </div>
+          </div>
+          <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between text-[10px] sm:text-xs">
+            <span className="text-slate-500 dark:text-slate-400 truncate">
+              {anomalySummary.total > 0
+                ? `${anomalySummary.invalidLocation} lok · ${anomalySummary.negativeStock} minus`
+                : 'Stok & lokasi scan bersih'}
+            </span>
+            <span className="font-bold text-rose-600 dark:text-rose-400 flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform shrink-0">
+              <span className="hidden sm:inline">Inspeksi</span> <ArrowRight className="w-3 h-3" />
             </span>
           </div>
         </div>
       </div>
 
-      {/* 3. Bento Section: Agenda Operasional & Proyek Berjalan (2 Kolom Seimbang) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
-        {/* Tile A: Jadwal Kerja & Pengiriman Terdekat */}
-        <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 flex flex-col justify-between space-y-3">
+      {/* 3. Kapasitas Gudang: Warehouse Global + Shopee + TikTok + Studio + IG Live */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-2.5">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
+              <Boxes className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
+                Kapasitas Penyimpanan Gudang &amp; Channel Live
+              </h2>
+              <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                Okupansi real-time Warehouse Global (Rak ABCD + Koli) serta Blok F: Shopee, TikTok, Studio &amp; IG Live
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => handleAction('inventory', 'capacity')}
+            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center gap-1.5 cursor-pointer shrink-0 shadow-2xs"
+          >
+            <span>Detail Kapasitas Rak</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3">
+          {/* Card 1: Warehouse Global (span 2 on mobile so no orphan card) */}
+          <div
+            onClick={() => handleAction('inventory', 'capacity')}
+            className="col-span-2 sm:col-span-1 p-3 rounded-xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/70 hover:border-indigo-400 dark:hover:border-indigo-600 transition-all cursor-pointer space-y-2"
+          >
+            <div className="flex items-center justify-between gap-1.5">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Warehouse className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                <span className="text-xs font-extrabold text-slate-900 dark:text-white truncate">Warehouse Global</span>
+              </div>
+              <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono font-extrabold border shrink-0 ${getCapacityBadgeClass(capacitySummary.warehouse.percent)}`}>
+                {capacitySummary.hasStockLoaded ? `${capacitySummary.warehouse.percent}%` : '—'}
+              </span>
+            </div>
+            <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
+              <div
+                className={`h-2 rounded-full transition-all duration-300 ${getProgressColor(capacitySummary.warehouse.percent)}`}
+                style={{ width: `${Math.min(100, Math.max(0, capacitySummary.warehouse.percent))}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+              <span>
+                <b className="text-slate-800 dark:text-slate-200">{capacitySummary.warehouse.filled.toLocaleString('id-ID')}</b> / {capacitySummary.warehouse.cap.toLocaleString('id-ID')} pcs
+              </span>
+              {capacitySummary.warehouse.overload > 0 && (
+                <span className="text-rose-600 dark:text-rose-400 font-bold">
+                  {capacitySummary.warehouse.overload} penuh
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
+              Rak ABCD: <b className="font-mono">{capacitySummary.warehouse.rakFilled.toLocaleString('id-ID')}</b> · Koli: <b className="font-mono">{capacitySummary.warehouse.koliFilled.toLocaleString('id-ID')}</b>
+            </p>
+          </div>
+
+          {/* Card 2..5: Shopee, TikTok, Studio, IG Live */}
+          {[
+            {
+              key: 'shopee',
+              label: 'Shopee',
+              sub: 'Area Blok F',
+              icon: ShoppingBag,
+              iconClass: 'text-orange-600 dark:text-orange-400',
+              data: capacitySummary.shopee,
+            },
+            {
+              key: 'tiktok',
+              label: 'TikTok',
+              sub: 'Area Blok F',
+              icon: Video,
+              iconClass: 'text-purple-600 dark:text-purple-400',
+              data: capacitySummary.tiktok,
+            },
+            {
+              key: 'studio',
+              label: 'Studio',
+              sub: 'Display Studio',
+              icon: Boxes,
+              iconClass: 'text-cyan-600 dark:text-cyan-400',
+              data: capacitySummary.studio,
+            },
+            {
+              key: 'iglive',
+              label: 'IG Live',
+              sub: 'Instagram Live',
+              icon: Radio,
+              iconClass: 'text-rose-600 dark:text-rose-400',
+              data: capacitySummary.iglive,
+            },
+          ].map((ch) => (
+            <div
+              key={ch.key}
+              onClick={() => handleAction('inventory', 'capacity')}
+              className="p-3 rounded-xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/70 hover:border-indigo-400 dark:hover:border-indigo-600 transition-all cursor-pointer space-y-2"
+            >
+              <div className="flex items-center justify-between gap-1.5">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <ch.icon className={`w-3.5 h-3.5 shrink-0 ${ch.iconClass}`} />
+                  <span className="text-xs font-extrabold text-slate-900 dark:text-white truncate">{ch.label}</span>
+                </div>
+                <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono font-extrabold border shrink-0 ${getCapacityBadgeClass(ch.data.percent)}`}>
+                  {capacitySummary.hasStockLoaded ? `${ch.data.percent}%` : '—'}
+                </span>
+              </div>
+              <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
+                <div
+                  className={`h-2 rounded-full transition-all duration-300 ${getProgressColor(ch.data.percent)}`}
+                  style={{ width: `${Math.min(100, Math.max(0, ch.data.percent))}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                <span>
+                  <b className="text-slate-800 dark:text-slate-200">{ch.data.filled.toLocaleString('id-ID')}</b> / {ch.data.cap.toLocaleString('id-ID')} pcs
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">{ch.sub}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 4. Status Pesanan Store (Manual Shipment & Alteration) + Deteksi Anomali Data Scan */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4">
+        {/* Left (7 cols): Manual Shipment & Alteration Breakdown (Baru, Diproses, Selesai) */}
+        <div className="lg:col-span-7 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 flex flex-col justify-between space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-2.5">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400">
+                <Store className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
+                  Status Manual Shipment &amp; Alteration
+                </h2>
+                <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                  Rekap real-time pesanan baru, sedang diproses, dan selesai (klik tahap untuk langsung buka)
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleNavigateManualOrderStage('manual_shipment', 'semua')}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center gap-1 cursor-pointer shrink-0 shadow-2xs"
+            >
+              <span>Buka Rekap Store</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Sub-Card: Manual Shipment */}
+            <div className="p-3 rounded-xl bg-slate-50/90 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/70 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <Package className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                  Manual Shipment
+                </span>
+                <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400">
+                  Total {metrics.manualStats.total}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleNavigateManualOrderStage('manual_shipment', 'baru')}
+                  className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/70 hover:border-amber-400 text-left transition-all cursor-pointer"
+                >
+                  <span className="block text-[9.5px] font-bold uppercase text-amber-800 dark:text-amber-300">Baru</span>
+                  <span className="block text-base sm:text-lg font-black font-mono text-amber-700 dark:text-amber-200 mt-0.5">
+                    {metrics.manualStats.baru}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleNavigateManualOrderStage('manual_shipment', 'diproses')}
+                  className="p-2 rounded-lg bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800/70 hover:border-blue-400 text-left transition-all cursor-pointer"
+                >
+                  <span className="block text-[9.5px] font-bold uppercase text-blue-800 dark:text-blue-300">Diproses</span>
+                  <span className="block text-base sm:text-lg font-black font-mono text-blue-700 dark:text-blue-200 mt-0.5">
+                    {metrics.manualStats.diproses}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleNavigateManualOrderStage('manual_shipment', 'selesai')}
+                  className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/70 hover:border-emerald-400 text-left transition-all cursor-pointer"
+                >
+                  <span className="block text-[9.5px] font-bold uppercase text-emerald-800 dark:text-emerald-300">Selesai</span>
+                  <span className="block text-base sm:text-lg font-black font-mono text-emerald-700 dark:text-emerald-200 mt-0.5">
+                    {metrics.manualStats.selesai}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Sub-Card: Alteration & Repair */}
+            <div className="p-3 rounded-xl bg-slate-50/90 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/70 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <Wrench className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                  Alteration &amp; Repair
+                </span>
+                <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400">
+                  Total {metrics.alterStats.total}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleNavigateManualOrderStage('alteration_repair', 'baru')}
+                  className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/70 hover:border-amber-400 text-left transition-all cursor-pointer"
+                >
+                  <span className="block text-[9.5px] font-bold uppercase text-amber-800 dark:text-amber-300">Baru</span>
+                  <span className="block text-base sm:text-lg font-black font-mono text-amber-700 dark:text-amber-200 mt-0.5">
+                    {metrics.alterStats.baru}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleNavigateManualOrderStage('alteration_repair', 'diproses')}
+                  className="p-2 rounded-lg bg-purple-50 dark:bg-purple-950/50 border border-purple-200 dark:border-purple-800/70 hover:border-purple-400 text-left transition-all cursor-pointer"
+                >
+                  <span className="block text-[9.5px] font-bold uppercase text-purple-800 dark:text-purple-300">Diproses</span>
+                  <span className="block text-base sm:text-lg font-black font-mono text-purple-700 dark:text-purple-200 mt-0.5">
+                    {metrics.alterStats.diproses}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleNavigateManualOrderStage('alteration_repair', 'selesai')}
+                  className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/70 hover:border-emerald-400 text-left transition-all cursor-pointer"
+                >
+                  <span className="block text-[9.5px] font-bold uppercase text-emerald-800 dark:text-emerald-300">Selesai</span>
+                  <span className="block text-base sm:text-lg font-black font-mono text-emerald-700 dark:text-emerald-200 mt-0.5">
+                    {metrics.alterStats.selesai}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right (5 cols): Informasi Anomali Data Scan & Stok Rak */}
+        <div
+          className={`lg:col-span-5 bg-white dark:bg-slate-900 rounded-2xl border shadow-2xs p-3.5 sm:p-5 flex flex-col justify-between space-y-3 ${
+            anomalySummary.total > 0 || anomalySummary.recentLogAnomalies.length > 0
+              ? 'border-rose-200 dark:border-rose-900/60'
+              : 'border-slate-200 dark:border-slate-800'
+          }`}
+        >
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-2.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <div
+                  className={`p-1.5 rounded-lg ${
+                    anomalySummary.total > 0
+                      ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400'
+                      : 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400'
+                  }`}
+                >
+                  <AlertTriangle className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <h2 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
+                      Peringatan Anomali Data Scan
+                    </h2>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-extrabold border ${
+                        anomalySummary.total > 0
+                          ? 'bg-rose-50 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                          : 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                      }`}
+                    >
+                      {capacitySummary.hasStockLoaded ? `${anomalySummary.total} Temuan` : 'Memindai...'}
+                    </span>
+                  </div>
+                  <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    Lokasi non-rak, stok fisik minus, SKU rusak/tak terdaftar &amp; mismatch master
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {anomalySummary.total > 0 ? (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                  <div className="p-2 rounded-lg bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200/70 dark:border-rose-800/50">
+                    <span className="block text-[9.5px] font-bold text-rose-700 dark:text-rose-300">Lokasi Anomali</span>
+                    <span className="font-mono font-black text-sm text-rose-800 dark:text-rose-200">
+                      {anomalySummary.invalidLocation}
+                    </span>
+                  </div>
+                  <div className="p-2 rounded-lg bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/70 dark:border-amber-800/50">
+                    <span className="block text-[9.5px] font-bold text-amber-800 dark:text-amber-300">Stok Minus</span>
+                    <span className="font-mono font-black text-sm text-amber-800 dark:text-amber-200">
+                      {anomalySummary.negativeStock}
+                    </span>
+                  </div>
+                  <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/70">
+                    <span className="block text-[9.5px] font-bold text-slate-600 dark:text-slate-300">SKU Anomali</span>
+                    <span className="font-mono font-black text-sm text-slate-900 dark:text-white">
+                      {anomalySummary.skuIssue}
+                    </span>
+                  </div>
+                  <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/70">
+                    <span className="block text-[9.5px] font-bold text-slate-600 dark:text-slate-300">Mismatch</span>
+                    <span className="font-mono font-black text-sm text-slate-900 dark:text-white">
+                      {anomalySummary.mismatchMaster}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 max-h-[112px] overflow-y-auto pr-1">
+                  {anomalySummary.items.slice(0, 3).map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => setIsAnomalyModalOpen(true)}
+                      className="flex items-center justify-between gap-2 p-2 rounded-lg bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-700/70 hover:border-rose-300 cursor-pointer text-[11px]"
+                    >
+                      <div className="min-w-0">
+                        <span className="font-mono font-bold text-slate-900 dark:text-white truncate block">
+                          {item.sku}
+                        </span>
+                        <span className="text-[10px] text-rose-600 dark:text-rose-400 truncate block">
+                          {item.reasons[0]}
+                        </span>
+                      </div>
+                      <ArrowRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="py-4 px-3 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-900/40 flex items-center gap-2.5">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                    Tidak ada anomali data scan aktif
+                  </p>
+                  <p className="text-[10px] text-emerald-700/80 dark:text-emerald-400/80">
+                    Semua lokasi rak fisik, stok, dan SKU sesuai Master Produk.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2">
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+              {anomalySummary.recentLogAnomalies.length > 0
+                ? `⚠️ ${anomalySummary.recentLogAnomalies.length} scan terbaru berlokasi non-rak`
+                : 'Audit otomatis stok fisik & log scan'}
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsAnomalyModalOpen(true)}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center gap-1 cursor-pointer shrink-0 shadow-2xs"
+            >
+              <span>Inspeksi Anomali</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 5. Antrean Operasional Live (2 Kolom Seimbang: Antrean Tugas Picking & Antrean Hitung Ulang) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4">
+        {/* Left (6 cols): Antrean Tugas Picking Live */}
+        <div className="lg:col-span-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 flex flex-col justify-between space-y-3">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-2.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
+                  <Truck className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <h2 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
+                      Antrean Tugas Picking
+                    </h2>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-extrabold border ${
+                        pickingSummary.activeTasks.length > 0
+                          ? 'bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
+                          : 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                      }`}
+                    >
+                      {pickingSummary.activeTasks.length} SJ Aktif
+                    </span>
+                  </div>
+                  <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    Daftar Surat Jalan Marketplace / SPS yang menunggu atau sedang dipicking
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleAction('loading_dock', 'picking_tasks')}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center gap-1 cursor-pointer shrink-0 shadow-2xs"
+              >
+                <span>Buka Tugas Picking</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {pickingSummary.activeTasks.length > 0 ? (
+              <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
+                {pickingSummary.activeTasks.slice(0, 6).map((task) => {
+                  const progressPct =
+                    task.totalQtyReq > 0 ? Math.min(100, Math.round((task.totalQtyPicked / task.totalQtyReq) * 100)) : 0;
+                  const isRunning = task.status === 'SEDANG PICKING';
+                  return (
+                    <div
+                      key={task.no_sj}
+                      onClick={() => handleAction('loading_dock', 'picking_tasks')}
+                      className="p-2.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/70 hover:border-indigo-400 dark:hover:border-indigo-600 transition-all cursor-pointer space-y-1.5 group"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                          <span className="font-mono font-black text-xs text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                            {task.no_sj}
+                          </span>
+                          {task.invoice_picking && (
+                            <span className="px-1.5 py-0.5 rounded-md text-[9.5px] font-mono font-bold bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                              {task.invoice_picking}
+                            </span>
+                          )}
+                          <span
+                            className={`px-1.5 py-0.5 rounded-md text-[9.5px] font-bold border ${
+                              isRunning
+                                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                                : 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                            }`}
+                          >
+                            {isRunning ? 'SEDANG PICKING' : 'PENDING'}
+                          </span>
+                        </div>
+                        <span className="font-mono text-[11px] font-bold text-slate-700 dark:text-slate-200 shrink-0">
+                          {task.totalQtyPicked}/{task.totalQtyReq} pcs
+                        </span>
+                      </div>
+
+                      <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className={`h-1.5 rounded-full transition-all duration-300 ${
+                            isRunning ? 'bg-indigo-600 dark:bg-indigo-500' : 'bg-amber-500'
+                          }`}
+                          style={{ width: `${progressPct}%` }}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
+                        <span className="truncate">{task.tujuan}</span>
+                        <span className="font-mono shrink-0">{task.totalItems} SKU</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="py-8 px-4 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700 text-center space-y-1">
+                <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Tidak ada antrean Tugas Picking aktif
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Semua Surat Jalan picking telah selesai diproses.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+            <span>
+              Total item aktif: <b className="font-mono text-slate-700 dark:text-slate-200">{pickingSummary.totalActiveItems}</b> baris SKU
+            </span>
+            <span className="font-mono text-[10px]">
+              {pickingSummary.pendingCount} pending · {pickingSummary.pickingCount} berjalan
+            </span>
+          </div>
+        </div>
+
+        {/* Right (6 cols): Antrean Kode Butuh Hitung Ulang (Tersinkron 100% dengan AuditHitungUlangTab) */}
+        <div className="lg:col-span-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 flex flex-col justify-between space-y-3">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-2.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400">
+                  <Scale className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <h2 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
+                      Antrean Kode Butuh Hitung Ulang
+                    </h2>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-extrabold border ${
+                        belumRecountEntries.length > 0
+                          ? 'bg-amber-50 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                          : 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                      }`}
+                    >
+                      {belumRecountEntries.length} Belum Hitung
+                    </span>
+                    {selisihRecountEntries.length > 0 && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-extrabold border bg-rose-50 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800">
+                        {selisihRecountEntries.length} Ada Selisih
+                      </span>
+                    )}
+                    {recountDraft.hasActiveWorkspaceDraft && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                        Draft: {recountDraft.selectedCode || 'Aktif'} ({recountDraft.filledVariantsCount})
+                      </span>
+                    )}
+                    {offlineRecountCount > 0 && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300">
+                        {offlineRecountCount} Outbox
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    Klik kode untuk langsung buka Popup Hitung Ulang (sinkron dengan Audit Hitung Ulang)
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleAction('popup_hitung_ulang')}
+                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer shrink-0"
+              >
+                <Scale className="w-3.5 h-3.5" />
+                <span>Buka Popup</span>
+              </button>
+            </div>
+
+            {actionableRecountEntries.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[240px] overflow-y-auto pr-1">
+                {actionableRecountEntries.slice(0, 8).map((item) => {
+                  const isBelum = item.status === 'BELUM';
+                  const badgeClass = isBelum
+                    ? 'bg-amber-50 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                    : 'bg-rose-50 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800';
+
+                  return (
+                    <div
+                      key={item.kode_produksi}
+                      onClick={() => handleAction('popup_hitung_ulang', item.kode_produksi)}
+                      className="p-2.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/70 hover:border-amber-400 dark:hover:border-amber-600 transition-all cursor-pointer flex items-center justify-between gap-2 group"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono font-black text-xs text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 truncate">
+                            {item.kode_produksi}
+                          </span>
+                          <span className={`px-1.5 py-0.5 rounded-md text-[9.5px] font-bold border shrink-0 ${badgeClass}`}>
+                            {isBelum
+                              ? 'BELUM'
+                              : `SELISIH ${Number(item.selisih) > 0 ? `+${item.selisih}` : item.selisih}`}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                          {item.catatan_petunjuk ? item.catatan_petunjuk : 'Klik untuk input hitung ulang fisik'}
+                        </p>
+                      </div>
+                      <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all shrink-0" />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="py-8 px-4 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700 text-center space-y-1">
+                <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Semua antrean Hitung Ulang sudah klop
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Tidak ada kode dengan status Belum Hitung atau Ada Selisih.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2 text-[11px]">
+            <span className="text-slate-500 dark:text-slate-400 truncate">
+              Total antrean terdaftar: <b className="font-mono text-slate-700 dark:text-slate-200">{recountQueueEntries.length}</b> kode
+            </span>
+            <button
+              type="button"
+              onClick={() => handleAction('popup_hitung_ulang')}
+              className="font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer shrink-0"
+            >
+              <span>Kelola Semua</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 6. Jadwal Kerja, Proyek Berjalan & Mutasi Stok Terkini */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4">
+        {/* Jadwal Kerja & Drop Terdekat (4 cols) */}
+        <div className="lg:col-span-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 flex flex-col justify-between space-y-3">
           <div>
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-2.5">
               <div className="flex items-center gap-2 min-w-0">
                 <div className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400">
-                  <Calendar className="w-4 h-4" />
+                  <CalendarDays className="w-4 h-4" />
                 </div>
                 <div className="min-w-0">
                   <h2 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
-                    Jadwal Kerja & Drop Terdekat
+                    Jadwal &amp; Agenda ({metrics.upcomingAgendaCount})
                   </h2>
                   <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    Bazaar, pengiriman luar kota, dan jadwal rilis artikel
+                    Event, drop &amp; rilis terdekat
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => handleAction('agenda', 'calendar')}
-                className="text-[11px] sm:text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 flex items-center gap-0.5 shrink-0 cursor-pointer"
+                className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-0.5 shrink-0 cursor-pointer"
               >
                 Kalendar <ArrowRight className="w-3 h-3" />
               </button>
             </div>
 
-            {/* List of Upcoming Agenda */}
             <div className="mt-3 space-y-2">
               {metrics.upcomingAgenda && metrics.upcomingAgenda.length > 0 ? (
                 metrics.upcomingAgenda.map((event, idx) => {
@@ -598,65 +1821,43 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <div
                       key={event.id || idx}
                       onClick={() => handleAction('agenda', 'calendar')}
-                      className="flex items-center justify-between gap-2.5 p-2 sm:p-2.5 rounded-xl bg-slate-50/70 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/60 hover:bg-slate-100/60 dark:hover:bg-slate-850 transition-colors cursor-pointer"
+                      className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-50/70 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 hover:border-emerald-300 transition-colors cursor-pointer"
                     >
-                      <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-                        {/* Date badge */}
-                        <div className="w-9 sm:w-10 h-9 sm:h-10 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center shrink-0 shadow-2xs">
-                          <span className="text-[11px] sm:text-xs font-black text-slate-800 dark:text-slate-200 leading-none">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-9 h-9 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center shrink-0">
+                          <span className="text-[11px] font-black text-slate-800 dark:text-slate-200 leading-none">
                             {badge.day}
                           </span>
-                          <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase leading-none mt-0.5">
+                          <span className="text-[8.5px] font-bold text-slate-400 uppercase leading-none mt-0.5">
                             {badge.month}
                           </span>
                         </div>
-
                         <div className="min-w-0">
-                          <p className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 truncate">
+                          <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
                             {event.title}
                           </p>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded ${catClass}`}>
+                          <div className="flex items-center gap-1.5 mt-0.5 text-[9.5px] text-slate-400">
+                            <span className={`font-extrabold uppercase px-1.5 py-0.2 rounded ${catClass}`}>
                               {event.category || 'Operasional'}
                             </span>
-                            {event.pic && (
-                              <span className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
-                                · PIC: {event.pic}
-                              </span>
-                            )}
+                            {event.pic && <span className="truncate">PIC: {event.pic}</span>}
                           </div>
                         </div>
-                      </div>
-
-                      <div className="text-right shrink-0">
-                        <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500">
-                          {event.start_date}
-                        </span>
                       </div>
                     </div>
                   );
                 })
               ) : (
                 <div className="py-6 text-center text-xs text-slate-400">
-                  Tidak ada jadwal atau event terdekat.
+                  Tidak ada jadwal terdekat.
                 </div>
               )}
             </div>
           </div>
-
-          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80">
-            <button
-              type="button"
-              onClick={() => handleAction('agenda', 'calendar')}
-              className="w-full py-2 px-3 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800/70 hover:bg-slate-200 dark:hover:bg-slate-700/80 transition-colors text-center cursor-pointer"
-            >
-              Buka Kalendar Kerja Lengkap
-            </button>
-          </div>
         </div>
 
-        {/* Tile B: Proyek & Milestone Berjalan */}
-        <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 flex flex-col justify-between space-y-3">
+        {/* Proyek & Milestone Berjalan (4 cols) */}
+        <div className="lg:col-span-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 flex flex-col justify-between space-y-3">
           <div>
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-2.5">
               <div className="flex items-center gap-2 min-w-0">
@@ -665,24 +1866,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
                 <div className="min-w-0">
                   <h2 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
-                    Proyek & Milestone Berjalan
+                    Proyek Berjalan ({metrics.activeProjectsCount})
                   </h2>
                   <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    Tracking progress target operasional & perbaikan
+                    Progress milestone operasional
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => handleAction('agenda', 'project')}
-                className="text-[11px] sm:text-xs font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 flex items-center gap-0.5 shrink-0 cursor-pointer"
+                className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-0.5 shrink-0 cursor-pointer"
               >
                 Proyek <ArrowRight className="w-3 h-3" />
               </button>
             </div>
 
-            {/* List of Active Projects */}
-            <div className="mt-3 space-y-2.5">
+            <div className="mt-3 space-y-2">
               {metrics.activeProjects && metrics.activeProjects.length > 0 ? (
                 metrics.activeProjects.map((project, idx) => {
                   const isHigh = project.priority === 'high';
@@ -695,14 +1895,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <div
                       key={project.id || idx}
                       onClick={() => handleAction('agenda', 'project')}
-                      className="p-2.5 rounded-xl bg-slate-50/70 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/60 hover:bg-slate-100/60 dark:hover:bg-slate-850 transition-colors cursor-pointer space-y-1.5"
+                      className="p-2.5 rounded-xl bg-slate-50/70 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 hover:border-blue-300 transition-colors cursor-pointer space-y-1.5"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 min-w-0">
                           <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded shrink-0 ${priorityClass}`}>
                             {project.priority || 'Medium'}
                           </span>
-                          <p className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 truncate">
+                          <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
                             {project.title}
                           </p>
                         </div>
@@ -710,24 +1910,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           {progressVal}%
                         </span>
                       </div>
-
-                      {/* Progress bar */}
                       <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden">
                         <div
                           className="bg-indigo-600 dark:bg-indigo-500 h-1.5 rounded-full transition-all duration-300"
                           style={{ width: `${Math.min(100, Math.max(0, progressVal))}%` }}
                         />
-                      </div>
-
-                      <div className="flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500 pt-0.5">
-                        <span className="truncate">
-                          Status: <b className="capitalize text-slate-600 dark:text-slate-400">{project.status?.replace('_', ' ') || 'In progress'}</b>
-                        </span>
-                        {project.deadline && (
-                          <span className="shrink-0 font-mono">
-                            Deadline: {project.deadline}
-                          </span>
-                        )}
                       </div>
                     </div>
                   );
@@ -739,423 +1926,40 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               )}
             </div>
           </div>
-
-          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80">
-            <button
-              type="button"
-              onClick={() => handleAction('agenda', 'project')}
-              className="w-full py-2 px-3 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800/70 hover:bg-slate-200 dark:hover:bg-slate-700/80 transition-colors text-center cursor-pointer"
-            >
-              Buka Manajemen Proyek Lengkap
-            </button>
-          </div>
         </div>
-      </div>
 
-      {/* 3B. Dedicated Section: Pintasan Popup Produksi & Antrean Kode Butuh Hitung Ulang (Minimizable & Offline Safe) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4">
-        {/* Left Card (5 cols): Shortcut Popup Input Penerimaan Produksi & Scanner */}
-        <div className="lg:col-span-5 bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 flex flex-col justify-between space-y-3">
-          <div className="space-y-3">
+        {/* Pergerakan Stok Terkini (4 cols) */}
+        <div className="lg:col-span-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 flex flex-col justify-between space-y-3">
+          <div>
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-2.5">
               <div className="flex items-center gap-2 min-w-0">
-                <div className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400">
-                  <ClipboardPlus className="w-4 h-4" />
+                <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                  <Activity className="w-4 h-4" />
                 </div>
                 <div className="min-w-0">
                   <h2 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
-                    Popup Kerja Cepat &amp; Pelindung Offline
+                    Mutasi Stok Terkini
                   </h2>
                   <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    Bisa diminimize ke Dock bawah tanpa bentrok &amp; bebas freeze
+                    5 transaksi scan fisik terakhir
                   </p>
                 </div>
-              </div>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60 shrink-0">
-                <Minimize2 className="w-2.5 h-2.5" />
-                Multi-Dock
-              </span>
-            </div>
-
-            <div className="space-y-2.5">
-              {/* Button 1: Input Penerimaan Produksi Popup */}
-              <div
-                onClick={() => handleAction('popup_produksi_input')}
-                className="p-3 rounded-xl border border-emerald-200/80 dark:border-emerald-800/60 bg-emerald-50/40 dark:bg-emerald-950/20 hover:bg-emerald-50/80 dark:hover:bg-emerald-950/40 hover:border-emerald-400 transition-all cursor-pointer group"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs shrink-0">
-                      <ClipboardPlus className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
-                          Input Penerimaan Produksi
-                        </h3>
-                        <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300">
-                          Popup Minimize
-                        </span>
-                      </div>
-                      <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                        Input SJ konveksi, matriks warna/size &amp; simpan offline anti double-input
-                      </p>
-                    </div>
-                  </div>
-                  <ArrowRight className="w-4 h-4 text-emerald-600 dark:text-emerald-400 group-hover:translate-x-0.5 transition-transform shrink-0 mt-1" />
-                </div>
-
-                {(produksiDraft.hasDraft || offlineProduksiCount > 0) && (
-                  <div className="mt-2 pt-2 border-t border-emerald-200/60 dark:border-emerald-800/50 flex flex-wrap items-center gap-1.5 text-[10px]">
-                    {produksiDraft.hasDraft && (
-                      <span className="px-2 py-0.5 rounded-md font-mono font-bold bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                        Draft Aktif: {produksiDraft.noSuratJalan ? `SJ ${produksiDraft.noSuratJalan}` : `${produksiDraft.modelCount} Model`} ({produksiDraft.totalPcs} pcs)
-                      </span>
-                    )}
-                    {offlineProduksiCount > 0 && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300">
-                        <CloudUpload className="w-3 h-3" />
-                        {offlineProduksiCount} antrean offline
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Button 2: Scanner Gudang Popup */}
-              <div
-                onClick={() => handleAction('scanner')}
-                className="p-3 rounded-xl border border-indigo-200/80 dark:border-indigo-800/60 bg-indigo-50/40 dark:bg-indigo-950/20 hover:bg-indigo-50/80 dark:hover:bg-indigo-950/40 hover:border-indigo-400 transition-all cursor-pointer group"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
-                      <Barcode className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
-                          Popup Scanner Gudang
-                        </h3>
-                        <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300">
-                          Popup Minimize
-                        </span>
-                      </div>
-                      <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                        Scan #IN, #OUT, #SO dengan proteksi Outbox anti-duplikat
-                      </p>
-                    </div>
-                  </div>
-                  <ArrowRight className="w-4 h-4 text-indigo-600 dark:text-indigo-400 group-hover:translate-x-0.5 transition-transform shrink-0 mt-1" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
-            <span>Semua draft tetap tersimpan walau popup ditutup (×)</span>
-            <button
-              type="button"
-              onClick={() => handleAction('produksi')}
-              className="font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
-            >
-              Rekap Produksi →
-            </button>
-          </div>
-        </div>
-
-        {/* Right Card (7 cols): Antrean Kode Butuh Hitung Ulang (Live Queue + Popup Trigger) */}
-        <div className="lg:col-span-7 bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 flex flex-col justify-between space-y-3">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-2.5">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400">
-                  <Scale className="w-4 h-4" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <h2 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
-                      Antrean Kode Butuh Hitung Ulang
-                    </h2>
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-extrabold ${
-                        uncountedRecountEntries.length > 0
-                          ? 'bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300'
-                          : 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300'
-                      }`}
-                    >
-                      {uncountedRecountEntries.length} Butuh Hitung
-                    </span>
-                    {recountDraft.hasActiveWorkspaceDraft && (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300">
-                        Draft: {recountDraft.selectedCode || 'Aktif'} ({recountDraft.filledVariantsCount} var)
-                      </span>
-                    )}
-                    {offlineRecountCount > 0 && (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300">
-                        {offlineRecountCount} Outbox Offline
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    Klik kode di bawah untuk langsung buka Popup Hitung Ulang (bisa minimize &amp; pelindung offline)
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => handleAction('popup_hitung_ulang')}
-                className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer shrink-0"
-              >
-                <Scale className="w-3.5 h-3.5" />
-                <span>Buka Popup Hitung Ulang</span>
-              </button>
-            </div>
-
-            {/* Interactive Queue List */}
-            {recountQueueEntries.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[210px] overflow-y-auto pr-1">
-                {recountQueueEntries.slice(0, 8).map((item) => {
-                  const isBelum = item.status === 'BELUM';
-                  const isSelisih = item.status === 'SELISIH';
-                  const badgeClass = isBelum
-                    ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
-                    : isSelisih
-                    ? 'bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
-                    : 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
-
-                  return (
-                    <div
-                      key={item.kode_produksi}
-                      onClick={() => handleAction('popup_hitung_ulang', item.kode_produksi)}
-                      className="p-2.5 rounded-xl bg-slate-50/80 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800 hover:border-amber-400 dark:hover:border-amber-600 hover:bg-amber-50/30 dark:hover:bg-amber-950/20 transition-all cursor-pointer flex items-center justify-between gap-2 group"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono font-black text-xs sm:text-sm text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400">
-                            {item.kode_produksi}
-                          </span>
-                          <span className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold border ${badgeClass}`}>
-                            {isBelum
-                              ? 'BELUM DIHITUNG'
-                              : isSelisih
-                              ? `SELISIH ${Number(item.selisih) > 0 ? `+${item.selisih}` : item.selisih}`
-                              : 'MATCH'}
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                          {item.catatan_petunjuk
-                            ? `📌 ${item.catatan_petunjuk}`
-                            : 'Klik untuk input hasil hitung ulang fisik'}
-                        </p>
-                      </div>
-                      <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all shrink-0" />
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="py-6 px-4 rounded-xl bg-slate-50/70 dark:bg-slate-900/40 border border-dashed border-slate-200 dark:border-slate-800 text-center space-y-1.5">
-                <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                  Belum ada kode di Antrean Hitung Ulang aktif
-                </p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Anda tetap dapat membuka Popup Hitung Ulang untuk mencari kode produksi atau menambahkan antrean baru.
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2 text-[11px]">
-            <span className="text-slate-500 dark:text-slate-400 truncate">
-              Total antrean terdaftar: <b className="font-mono text-slate-700 dark:text-slate-200">{recountQueueEntries.length}</b> kode
-            </span>
-            <button
-              type="button"
-              onClick={() => handleAction('popup_hitung_ulang')}
-              className="font-bold text-amber-600 dark:text-amber-400 hover:text-amber-700 flex items-center gap-1 cursor-pointer shrink-0"
-            >
-              <span>Kelola Semua Antrean Hitung Ulang</span>
-              <ArrowRight className="w-3 h-3" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* 4. Asymmetric Bento Section: Antrean Fokus Kerja (7 cols) vs Live Ledger (5 cols) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4">
-        {/* Left Column: Antrean Prioritas Kerja Gudang */}
-        <div className="lg:col-span-7 bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 space-y-3">
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-2.5">
-            <div>
-              <h2 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5 sm:gap-2">
-                <Activity className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                Antrean &amp; Fokus Kerja Hari Ini
-              </h2>
-              <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Pintasan ke modul operasional utama yang membutuhkan tindakan
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
-            {/* Action Card 1: Pesanan & Cetak Label */}
-            <div
-              onClick={() => handleAction('pesanan_saya')}
-              className="p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-800/60 hover:border-indigo-300 dark:hover:border-indigo-700/60 transition-all cursor-pointer group flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[9px] sm:text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300">
-                    {metrics.pesananBaru} Menunggu
-                  </span>
-                  <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
-                </div>
-                <h4 className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-200 mt-1.5">
-                  Pesanan &amp; Label
-                </h4>
-                <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
-                  Verifikasi pesanan dan cetak thermal A6.
-                </p>
-              </div>
-            </div>
-
-            {/* Action Card 2: Tugas Picking */}
-            <div
-              onClick={() => handleAction('loading_dock', 'picking_tasks')}
-              className="p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-800/60 hover:border-indigo-300 dark:hover:border-indigo-700/60 transition-all cursor-pointer group flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[9px] sm:text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300">
-                    Loading Dock
-                  </span>
-                  <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
-                </div>
-                <h4 className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-200 mt-1.5">
-                  Tugas Picking
-                </h4>
-                <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
-                  Ambil stok rak Prioritas 1–3 via invoice WA.
-                </p>
-              </div>
-            </div>
-
-            {/* Action Card 3: Input Penerimaan Produksi (Popup) */}
-            <div
-              onClick={() => handleAction('popup_produksi_input')}
-              className="p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-800/60 hover:border-emerald-300 dark:hover:border-emerald-700/60 transition-all cursor-pointer group flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[9px] sm:text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300">
-                    Popup Minimize
-                  </span>
-                  <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
-                </div>
-                <h4 className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-200 mt-1.5">
-                  Input Produksi
-                </h4>
-                <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
-                  Input penerimaan barang produksi (aman offline).
-                </p>
-              </div>
-            </div>
-
-            {/* Action Card 4: Antrean Hitung Ulang (Popup) */}
-            <div
-              onClick={() => handleAction('popup_hitung_ulang')}
-              className="p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-800/60 hover:border-amber-300 dark:hover:border-amber-700/60 transition-all cursor-pointer group flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[9px] sm:text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300">
-                    {uncountedRecountEntries.length} Kode Antrean
-                  </span>
-                  <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all" />
-                </div>
-                <h4 className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-200 mt-1.5">
-                  Hitung Ulang
-                </h4>
-                <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
-                  Audit hitung ulang kode produksi (bisa minimize).
-                </p>
-              </div>
-            </div>
-
-            {/* Action Card 5: Scanner Gudang (Popup) */}
-            <div
-              onClick={() => handleAction('scanner')}
-              className="p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-800/60 hover:border-indigo-300 dark:hover:border-indigo-700/60 transition-all cursor-pointer group flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[9px] sm:text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300">
-                    Popup Minimize
-                  </span>
-                  <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
-                </div>
-                <h4 className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-200 mt-1.5">
-                  Scanner Gudang
-                </h4>
-                <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
-                  Scan barcode rak &amp; SO dengan Outbox offline.
-                </p>
-              </div>
-            </div>
-
-            {/* Action Card 6: Pusat Resolusi & Retur */}
-            <div
-              onClick={() => handleAction('pusat_resolusi')}
-              className="p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-800/60 hover:border-indigo-300 dark:hover:border-indigo-700/60 transition-all cursor-pointer group flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[9px] sm:text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300">
-                    {metrics.returAktif} Retur
-                  </span>
-                  <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
-                </div>
-                <h4 className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-200 mt-1.5">
-                  Pusat Resolusi
-                </h4>
-                <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
-                  Retur barang, kendala pesanan, dan ganti size.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column: Pergerakan Stok Terkini (5 Transaksi Terakhir dari log_produk) */}
-        <div className="lg:col-span-5 bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 flex flex-col justify-between space-y-3">
-          <div>
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-2.5">
-              <div>
-                <h2 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5">
-                  <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  Pergerakan Stok Terkini
-                </h2>
-                <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400">
-                  5 mutasi fisik terakhir di gudang
-                </p>
               </div>
               <button
                 type="button"
                 onClick={() => handleAction('mutasi_log')}
-                className="text-[11px] sm:text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 flex items-center gap-0.5 cursor-pointer shrink-0"
+                className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5 cursor-pointer shrink-0"
               >
                 Semua Log <ArrowRight className="w-3 h-3" />
               </button>
             </div>
 
-            {/* List of 5 Recent Logs */}
             <div className="mt-3 space-y-2">
               {metrics.recentLogs && metrics.recentLogs.length > 0 ? (
-                metrics.recentLogs.map((log, idx) => {
+                metrics.recentLogs.slice(0, 5).map((log, idx) => {
                   const isOut = log.type === 'OUT' || log.type === 'ADJ_OUT';
                   const isSo = log.type === 'SO';
+                  const isLocAnomaly = getAreaFromLokasi(log.lokasi || '') === 'Anomali';
                   const typeColor = isOut
                     ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
                     : isSo
@@ -1165,27 +1969,39 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   return (
                     <div
                       key={log.id || idx}
-                      className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-50/70 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/60 text-xs"
+                      className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-50/70 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-xs"
                     >
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className={`px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-mono font-black shrink-0 ${typeColor}`}>
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-black shrink-0 ${typeColor}`}>
                           #{log.type}
                         </span>
                         <div className="min-w-0">
-                          <p className="font-mono font-bold text-slate-800 dark:text-slate-200 truncate text-[11px] sm:text-xs">
+                          <p className="font-mono font-bold text-slate-800 dark:text-slate-200 truncate text-[11px]">
                             {log.sku}
                           </p>
-                          <p className="text-[9px] sm:text-[10px] text-slate-500 dark:text-slate-400 truncate">
-                            {log.nama_produk || '—'} · Rak <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{log.lokasi}</span>
+                          <p className="text-[9.5px] text-slate-500 dark:text-slate-400 truncate">
+                            Rak{' '}
+                            <span
+                              className={`font-mono font-bold ${
+                                isLocAnomaly ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-300'
+                              }`}
+                            >
+                              {log.lokasi || '-'}
+                            </span>
+                            {isLocAnomaly && ' (Anomali)'}
                           </p>
                         </div>
                       </div>
 
                       <div className="text-right shrink-0">
-                        <span className={`font-mono font-black text-xs sm:text-sm ${isOut ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                        <span
+                          className={`font-mono font-black text-xs ${
+                            isOut ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'
+                          }`}
+                        >
                           {isOut ? `-${log.qty}` : `+${log.qty}`}
                         </span>
-                        <p className="text-[9px] sm:text-[10px] text-slate-400 dark:text-slate-500">
+                        <p className="text-[9px] text-slate-400 dark:text-slate-500">
                           {formatRelativeTime(log.created_at)}
                         </p>
                       </div>
@@ -1199,46 +2015,91 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               )}
             </div>
           </div>
-
-          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80">
-            <button
-              type="button"
-              onClick={() => handleAction('mutasi_log')}
-              className="w-full py-2 px-3 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800/70 hover:bg-slate-200 dark:hover:bg-slate-700/80 transition-colors text-center cursor-pointer"
-            >
-              Buka Riwayat Mutasi Gudang Lengkap
-            </button>
-          </div>
         </div>
       </div>
 
-      {/* 5. Bottom Row: Pusat Akses Cepat Operasional (Mobile: 2x4 Grid, Desktop: 8 Cols) */}
-      <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 space-y-2.5 sm:space-y-3">
-        <h3 className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-          Pusat Akses Cepat Alat Operasional
-        </h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 sm:gap-3">
+      {/* 7. Pusat Alat Operasional & Popup Cepat (1x Saja — Tanpa Duplikasi!) */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 space-y-2.5 sm:space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Alat Operasional &amp; Popup Cepat
+          </h3>
+          <span className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:inline">
+            Draft popup tetap tersimpan meski diminimize atau offline
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 sm:gap-2.5">
           {[
-            { label: 'Scanner Popup', desc: 'Scan Rak & Fisik', page: 'scanner', icon: Barcode },
-            { label: 'Input Produksi', desc: 'Popup Konveksi', page: 'popup_produksi_input', icon: ClipboardPlus },
-            { label: 'Hitung Ulang', desc: `${uncountedRecountEntries.length} Kode Antrean`, page: 'popup_hitung_ulang', icon: Scale },
-            { label: 'Cetak Barcode', desc: 'Label Rak/Produk', page: 'cetak_barcode', icon: FileText },
-            { label: 'Loading Dock', desc: 'Inbound & Picking', page: 'loading_dock', icon: Truck },
-            { label: 'Kalendar Shift', desc: 'Jadwal & Agenda', page: 'agenda', icon: Calendar },
-            { label: 'Live Chat', desc: 'Chat Internal', page: 'live_chat', icon: MessageSquare },
-            { label: 'Rekap JNE', desc: 'Tagihan Ekspedisi', page: 'rekap_tagihan_jne', icon: Layers },
-          ].map((tool, i) => (
+            {
+              label: 'Input Produksi',
+              desc: produksiDraft.hasDraft
+                ? `Draft: ${produksiDraft.totalPcs} pcs`
+                : offlineProduksiCount > 0
+                ? `${offlineProduksiCount} antrean offline`
+                : 'Popup SJ Konveksi',
+              page: 'popup_produksi_input',
+              icon: ClipboardPlus,
+              highlight: produksiDraft.hasDraft || offlineProduksiCount > 0,
+            },
+            {
+              label: 'Scanner Gudang',
+              desc: 'Popup #IN / #OUT / #SO',
+              page: 'scanner',
+              icon: Barcode,
+              highlight: false,
+            },
+            {
+              label: 'Pusat Resolusi',
+              desc: `${metrics.returAktif} Retur aktif`,
+              page: 'pusat_resolusi',
+              icon: RotateCcw,
+              highlight: metrics.returAktif > 0,
+            },
+            {
+              label: 'Cetak Barcode',
+              desc: 'Label Rak & Produk',
+              page: 'cetak_barcode',
+              icon: FileText,
+              highlight: false,
+            },
+            {
+              label: 'Kalendar Shift',
+              desc: 'Jadwal & Agenda',
+              page: 'agenda',
+              icon: Calendar,
+              highlight: false,
+            },
+            {
+              label: 'Live Chat',
+              desc: 'Chat Store & Gudang',
+              page: 'live_chat',
+              icon: MessageSquare,
+              highlight: false,
+            },
+            {
+              label: 'Rekap JNE',
+              desc: 'Tagihan Ekspedisi',
+              page: 'rekap_tagihan_jne',
+              icon: Layers,
+              highlight: false,
+            },
+          ].map((tool) => (
             <button
-              key={i}
+              key={tool.page}
               type="button"
               onClick={() => handleAction(tool.page)}
-              className="p-2.5 sm:p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/30 hover:border-indigo-300 dark:hover:border-indigo-800 text-left transition-all group cursor-pointer"
+              className={`p-2.5 sm:p-3 rounded-xl border text-left transition-all group cursor-pointer ${
+                tool.highlight
+                  ? 'border-amber-200 dark:border-amber-800/70 bg-amber-50/40 dark:bg-amber-950/20 hover:border-amber-400'
+                  : 'border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/30 hover:border-indigo-300 dark:hover:border-indigo-800'
+              }`}
             >
-              <tool.icon className="w-4 h-4 sm:w-5 sm:h-5 text-slate-600 dark:text-slate-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors mb-1 sm:mb-2" />
+              <tool.icon className="w-4 h-4 text-slate-600 dark:text-slate-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors mb-1.5" />
               <p className="text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate">
                 {tool.label}
               </p>
-              <p className="text-[9px] sm:text-[10px] text-slate-400 dark:text-slate-500 truncate">
+              <p className="text-[9.5px] sm:text-[10px] text-slate-500 dark:text-slate-400 truncate">
                 {tool.desc}
               </p>
             </button>
@@ -1246,18 +2107,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* 6. Health & Egress Protection Transparency Card */}
-      <div className="bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800/80 rounded-xl sm:rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">
-        <div className="flex items-start gap-2 min-w-0">
-          <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-          <p className="leading-relaxed">
-            <strong className="text-slate-700 dark:text-slate-200">Arsitektur Hemat Bandwidth Aktif:</strong> Metrik dihitung via HTTP Head-Only Count &amp; list ringkas (&lt; 1.5 KB payload). Cache 15 menit melindungi kuota free tier Supabase Anda dengan nol listener latar belakang.
-          </p>
-        </div>
-        <span className="shrink-0 font-mono text-[9px] sm:text-[11px] px-2 py-0.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
-          Supabase Free Tier Safe ✅
-        </span>
-      </div>
+      {/* Modal Inspeksi & Perbaikan Anomali Data Scan (Lazy-mounted) */}
+      {isAnomalyModalOpen && (
+        <InventoryAnomalyModal
+          isOpen={isAnomalyModalOpen}
+          onClose={() => setIsAnomalyModalOpen(false)}
+          productCatalog={productCatalog}
+          stockList={stockRows}
+          userSession={session}
+          onDataFixed={() => {
+            fetchSupabaseStokFisikDirect(true)
+              .then((fresh) => {
+                if (fresh && fresh.length > 0) setStockRows(fresh);
+              })
+              .catch(() => {});
+            fetchLeanMetrics(true);
+          }}
+        />
+      )}
     </div>
   );
 };
