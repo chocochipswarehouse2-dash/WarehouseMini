@@ -1528,6 +1528,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                   {[
                     { id: 'sans', name: 'Default (Plus Jakarta)' },
+                    { id: 'system', name: 'Bawaan Sistem (Laptop)' },
                     { id: 'ios', name: 'iPhone (SF Pro)' },
                     { id: 'samsung', name: 'Samsung Sans' },
                     { id: 'inter', name: 'Inter (Modern)' },

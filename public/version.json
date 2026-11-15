@@ -1,12 +1,12 @@
 {
-  "version": "v2.17.1",
-  "versionCode": 371,
+  "version": "v2.17.2",
+  "versionCode": 372,
   "buildDate": "15 November 2026",
-  "buildHash": "wms-261115-v371-2100",
-  "releaseTitle": "WMS v2.17.1 — Kelola Cache Lokal Per Modul & Akses Semua User",
+  "buildHash": "wms-261115-v372-2108",
+  "releaseTitle": "WMS v2.17.2 — Multi-Tab Desktop 4 Tab & Opsi Font Bawaan Sistem",
   "releaseNotes": [
-    "Tambahkan fitur clear cache lokal per modul maupun semua modul sekaligus (Katalog, Picking, Mutasi, Store, Opname, Produksi, Dashboard, Shopee, Website, PWA)",
-    "Hadirkan menu Kelola Cache di Modal Pembaruan Aplikasi agar dapat diakses seluruh role user"
+    "Naikkan batas maksimal tab Keep-Alive Desktop dari 3 menjadi 4 tab",
+    "Tambahkan opsi font Bawaan Sistem (Laptop) pada pengaturan Tema & Tampilan"
   ],
   "minSupportedVersion": "v2.0.0"
 }

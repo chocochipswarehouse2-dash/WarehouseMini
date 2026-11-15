@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.17.1",
-  "versionCode": 371,
+  "version": "v2.17.2",
+  "versionCode": 372,
   "buildDate": "15 November 2026",
-  "buildHash": "wms-261115-v371-2100",
-  "releaseTitle": "WMS v2.17.1 — Kelola Cache Lokal Per Modul & Akses Semua User",
+  "buildHash": "wms-261115-v372-2108",
+  "releaseTitle": "WMS v2.17.2 — Multi-Tab Desktop 4 Tab & Opsi Font Bawaan Sistem",
   "releaseNotes": [
-    "Tambahkan fitur clear cache lokal per modul maupun semua modul sekaligus (Katalog, Picking, Mutasi, Store, Opname, Produksi, Dashboard, Shopee, Website, PWA)",
-    "Hadirkan menu Kelola Cache di Modal Pembaruan Aplikasi agar dapat diakses seluruh role user"
+    "Naikkan batas maksimal tab Keep-Alive Desktop dari 3 menjadi 4 tab",
+    "Tambahkan opsi font Bawaan Sistem (Laptop) pada pengaturan Tema & Tampilan"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.17.1",
+    "versionCode": 371,
+    "buildDate": "15 November 2026",
+    "buildHash": "wms-261115-v371-2100",
+    "releaseTitle": "WMS v2.17.1 — Kelola Cache Lokal Per Modul & Akses Semua User",
+    "releaseNotes": [
+      "Tambahkan fitur clear cache lokal per modul maupun semua modul sekaligus (Katalog, Picking, Mutasi, Store, Opname, Produksi, Dashboard, Shopee, Website, PWA)",
+      "Hadirkan menu Kelola Cache di Modal Pembaruan Aplikasi agar dapat diakses seluruh role user"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.17.0",
     "versionCode": 370,
@@ -114,17 +126,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Menghapus min-w-[700px] pada Month View & menjadikan strip tanggal 7 kolom sejajar agar Senin-Minggu muat penuh di layar HP tanpa terpotong",
       "Menyembunyikan tombol + dan ikon emoji kalender per-sel di mobile serta mendukung wrap 2 baris pada chip agenda 1 hari agar judul tetap terbaca jelas"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.12.4",
-    "versionCode": 324,
-    "buildDate": "14 November 2026",
-    "buildHash": "wms-261114-v324-2330",
-    "releaseTitle": "WMS v2.12.4 — Fix Tampilan Menu Notifikasi Perangkat di Drawer Mobile",
-    "releaseNotes": [
-      "Memperbaiki bug kondisi collapsed pada renderQuickTools di Sidebar agar menu Notifikasi Perangkat dan switch ON/OFF tampil penuh di Mobile Drawer (tidak hanya ikon lonceng)"
     ],
     "minSupportedVersion": "v2.0.0"
   }

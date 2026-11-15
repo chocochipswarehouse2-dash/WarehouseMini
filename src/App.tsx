@@ -1282,7 +1282,7 @@ export default function App() {
     localStorage.setItem('wms_theme_font_size', themeFontSize);
     
     // Remove previous font classes
-    document.documentElement.classList.remove('font-sans', 'font-ios', 'font-samsung', 'font-inter', 'font-mono', 'font-serif', 'font-rounded');
+    document.documentElement.classList.remove('font-sans', 'font-system', 'font-ios', 'font-samsung', 'font-inter', 'font-mono', 'font-serif', 'font-rounded');
     document.documentElement.classList.add(`font-${themeFont}`);
     
     document.documentElement.setAttribute('data-theme-icon', themeIconStyle);
@@ -1341,7 +1341,7 @@ export default function App() {
   // Pada perangkat HP Seluler (< 1024px), fitur Keep-Alive Multi-Tab & Companion Drawer
   // WAJIB MATI TOTAL (0 background mounted pages) demi menjaga RAM HP & kamera scanner.
   // ============================================================================
-  const MAX_KEEP_ALIVE_TABS = 3;
+  const MAX_KEEP_ALIVE_TABS = 4;
   const [isDesktopViewport, setIsDesktopViewport] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return window.innerWidth >= 1024;
