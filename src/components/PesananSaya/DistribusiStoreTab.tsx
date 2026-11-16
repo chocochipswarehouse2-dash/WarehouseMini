@@ -377,6 +377,14 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   const [pickingModalDrafts, setPickingModalDrafts] = useState<PengecekanSJDraft[]>([]);
   const [pickingModalInitialTab, setPickingModalInitialTab] = useState<'print' | 'whatsapp' | 'app'>('app');
   const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(new Set());
+  const [bulkSubmitModal, setBulkSubmitModal] = useState<{
+    drafts: PengecekanSJDraft[];
+    targetStatus: 'pending' | 'selesai';
+  } | null>(null);
+  const [bulkSubmittingProgress, setBulkSubmittingProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
   const [selisihWaModalParams, setSelisihWaModalParams] = useState<SuratJalanSelisihMessageParams | null>(null);
 
   // Custom confirmation modal (replaces window.confirm which is blocked in mobile/iframe)
@@ -979,44 +987,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         }
 
         // Jika ini adalah Penerimaan / Mutasi Masuk, inisialisasi / perbarui QC Mutasi Job
-        const isPenerimaan =
-          record.tipe_import === 'Penerimaan' ||
-          (!record.tipe_import &&
-            ((record.destination || '').toLowerCase().includes('warehouse') ||
-              (record.destination || '').toLowerCase().includes('gudang') ||
-              (record.destination || '').toLowerCase().includes('pusat')));
-
-        if (isPenerimaan && allRows.length > 0) {
-          try {
-            const itemGroupMap = new Map<string, PengecekanSJItem[]>();
-            allRows.forEach(it => {
-              const info = extractProductInfoFromSJItem(it);
-              const groupKode = (it.kode_produksi || info.kode_produksi || 'ITEM').trim().toUpperCase();
-              if (!itemGroupMap.has(groupKode)) itemGroupMap.set(groupKode, []);
-              itemGroupMap.get(groupKode)!.push(it);
-            });
-
-            itemGroupMap.forEach((items, groupKode) => {
-              const mutasiJob = buildOrGetQcMutasiJob(
-                record.no_sj,
-                groupKode,
-                items,
-                {
-                  id: record.id,
-                  source: record.source,
-                  destination: record.destination,
-                  tanggal_sj: record.tanggal_sj,
-                  catatan: record.catatan,
-                  submitted_by: record.submitted_by,
-                },
-                submittedBy
-              );
-              saveSingleQcJob(mutasiJob);
-            });
-          } catch (qcErr) {
-            console.error('Failed to auto-register QC Mutasi Job:', qcErr);
-          }
-        }
+        registerQcMutasiJobsForRecord(record, submittedBy);
 
         // Optimistic UI: langsung tampilkan record baru di riwayat
         setRecords(prev => {
@@ -1027,6 +998,12 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         // Hapus dari antrean draft karena scan fisik sudah selesai
         deleteSJDraft(activeDraft.id);
         setDrafts(prev => prev.filter(d => d.id !== activeDraft.id));
+        setSelectedDraftIds(prev => {
+          if (!prev.has(activeDraft.id)) return prev;
+          const next = new Set(prev);
+          next.delete(activeDraft.id);
+          return next;
+        });
         setPendingOfflineCount(getPendingOfflinePengecekanSJ().length);
 
         // Buka tab Riwayat Pengecekan
@@ -1040,6 +1017,157 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
       console.error('Submit error:', e);
       onShowToast(`Terjadi kesalahan saat submit data: ${e?.message || 'Error'}`, 'error');
     } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const registerQcMutasiJobsForRecord = (record: PengecekanSJRecord, submittedBy: string) => {
+    const isPenerimaan =
+      record.tipe_import === 'Penerimaan' ||
+      (!record.tipe_import &&
+        ((record.destination || '').toLowerCase().includes('warehouse') ||
+          (record.destination || '').toLowerCase().includes('gudang') ||
+          (record.destination || '').toLowerCase().includes('pusat')));
+
+    if (isPenerimaan && Array.isArray(record.items) && record.items.length > 0) {
+      try {
+        const itemGroupMap = new Map<string, PengecekanSJItem[]>();
+        record.items.forEach(it => {
+          const info = extractProductInfoFromSJItem(it);
+          const groupKode = (it.kode_produksi || info.kode_produksi || 'ITEM').trim().toUpperCase();
+          if (!itemGroupMap.has(groupKode)) itemGroupMap.set(groupKode, []);
+          itemGroupMap.get(groupKode)!.push(it);
+        });
+
+        itemGroupMap.forEach((items, groupKode) => {
+          const mutasiJob = buildOrGetQcMutasiJob(
+            record.no_sj,
+            groupKode,
+            items,
+            {
+              id: record.id,
+              source: record.source,
+              destination: record.destination,
+              tanggal_sj: record.tanggal_sj,
+              catatan: record.catatan,
+              submitted_by: record.submitted_by,
+            },
+            submittedBy
+          );
+          saveSingleQcJob(mutasiJob);
+        });
+      } catch (qcErr) {
+        console.error('Failed to auto-register QC Mutasi Job:', qcErr);
+      }
+    }
+  };
+
+  const handleOpenBulkSubmitModal = () => {
+    const targetDrafts = selectedDraftIds.size > 0
+      ? drafts.filter(d => selectedDraftIds.has(d.id))
+      : drafts;
+
+    if (targetDrafts.length === 0) {
+      onShowToast('Pilih minimal 1 Surat Jalan di antrean untuk disubmit.', 'warning');
+      return;
+    }
+
+    const allMatched = targetDrafts.every(d => {
+      const hasUnexpected = Object.keys(d.unexpected || {}).length > 0;
+      if (hasUnexpected) return false;
+      return (d.items || []).every(it => (d.scanQty?.[it.sku] ?? 0) === Number(it.qty_sj || 0));
+    });
+
+    setBulkSubmitModal({
+      drafts: targetDrafts,
+      targetStatus: allMatched ? 'selesai' : 'pending',
+    });
+  };
+
+  const handleExecuteBulkSubmit = async (
+    targetDrafts: PengecekanSJDraft[],
+    targetStatus: 'pending' | 'selesai'
+  ) => {
+    if (!targetDrafts || targetDrafts.length === 0) return;
+
+    setBulkSubmitModal(null);
+    setSubmitting(true);
+    setBulkSubmittingProgress({ current: 0, total: targetDrafts.length });
+
+    const submittedBy = session?.name || session?.username || 'Operator';
+    const succeededRecords: PengecekanSJRecord[] = [];
+    const succeededDraftIds = new Set<string>();
+    let offlineCount = 0;
+    let failCount = 0;
+
+    try {
+      for (let idx = 0; idx < targetDrafts.length; idx++) {
+        const draft = targetDrafts[idx];
+        setBulkSubmittingProgress({ current: idx + 1, total: targetDrafts.length });
+        try {
+          const record = buildPengecekanRecordFromDraft(draft, {
+            status: targetStatus,
+            submittedBy,
+            productCatalog,
+          });
+          const res = await submitTarikanMD(record);
+          if (res.success) {
+            succeededRecords.push(record);
+            succeededDraftIds.add(draft.id);
+            if (res.offline) offlineCount++;
+            registerQcMutasiJobsForRecord(record, submittedBy);
+          } else {
+            failCount++;
+          }
+        } catch {
+          failCount++;
+        }
+      }
+
+      if (succeededRecords.length > 0) {
+        const syncedNos = new Set(succeededRecords.map(r => r.no_sj.trim().toUpperCase()));
+        setRecords(prev => {
+          const remaining = prev.filter(
+            r => !succeededDraftIds.has(r.id) && !syncedNos.has(r.no_sj.trim().toUpperCase())
+          );
+          return [...succeededRecords, ...remaining];
+        });
+
+        succeededDraftIds.forEach(id => deleteSJDraft(id));
+        setDrafts(prev => prev.filter(d => !succeededDraftIds.has(d.id)));
+        setSelectedDraftIds(prev => {
+          const next = new Set(prev);
+          succeededDraftIds.forEach(id => next.delete(id));
+          return next;
+        });
+        if (activeDraftId && succeededDraftIds.has(activeDraftId)) {
+          setActiveDraftId(null);
+        }
+        setPendingOfflineCount(getPendingOfflinePengecekanSJ().length);
+        setActiveTab('riwayat');
+        void loadRecords(false);
+      }
+
+      if (failCount === 0 && offlineCount === 0) {
+        onShowToast(
+          `${succeededRecords.length} Surat Jalan berhasil disubmit sekaligus (${targetStatus.toUpperCase()}) ke Supabase!`,
+          'success'
+        );
+      } else if (succeededRecords.length > 0 && offlineCount > 0 && failCount === 0) {
+        onShowToast(
+          `${succeededRecords.length} Surat Jalan disimpan (${offlineCount} antre offline untuk sinkron saat internet pulih).`,
+          'info'
+        );
+      } else if (succeededRecords.length > 0) {
+        onShowToast(
+          `${succeededRecords.length} SJ berhasil disubmit, ${failCount} SJ gagal (tetap aman di antrean).`,
+          'warning'
+        );
+      } else {
+        onShowToast(`Gagal menyimpan ${failCount} Surat Jalan. Periksa koneksi atau database.`, 'error');
+      }
+    } finally {
+      setBulkSubmittingProgress(null);
       setSubmitting(false);
     }
   };
@@ -1601,6 +1729,32 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                   <div className="flex items-center gap-2 flex-wrap">
                     <button
                       type="button"
+                      disabled={submitting}
+                      onClick={handleOpenBulkSubmitModal}
+                      className="px-3 py-1.5 text-xs font-extrabold rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 active:scale-95 text-white flex items-center gap-1.5 transition-all cursor-pointer shadow-sm shadow-indigo-600/20"
+                      title="Submit beberapa atau semua Surat Jalan di antrean sekaligus ke Database"
+                    >
+                      {bulkSubmittingProgress ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>
+                            Menyimpan {bulkSubmittingProgress.current}/{bulkSubmittingProgress.total} SJ...
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>
+                            {selectedDraftIds.size > 0
+                              ? `Submit Sekaligus (${selectedDraftIds.size} SJ)`
+                              : `Submit Semua (${drafts.length} SJ)`}
+                          </span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => {
                         const targetDrafts = selectedDraftIds.size > 0
                           ? drafts.filter(d => selectedDraftIds.has(d.id) && d.items && d.items.length > 0)
@@ -1613,7 +1767,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                         setPickingModalDraft(null);
                         setPickingModalDrafts(targetDrafts);
                       }}
-                      className="px-3 py-1.5 text-xs font-extrabold rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white flex items-center gap-1.5 transition-all cursor-pointer shadow-sm shadow-emerald-600/20"
+                      className="px-3 py-1.5 text-xs font-extrabold rounded-xl bg-white dark:bg-slate-800 border border-emerald-300 dark:border-emerald-700/80 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 active:scale-95 flex items-center gap-1.5 transition-all cursor-pointer"
                       title="Kirim banyak atau semua Surat Jalan sekaligus ke Tugas Picking App, Grup WA Gudang, atau Cetak A4 Massal"
                     >
                       <Send className="w-3.5 h-3.5" />
@@ -1643,7 +1797,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                             }
                           });
                         }}
-                        className="px-2.5 py-1.5 text-xs font-bold rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 flex items-center gap-1 transition-all cursor-pointer"
+                        className="px-2.5 py-1.5 text-xs font-bold rounded-xl bg-white dark:bg-slate-800 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center gap-1 transition-all cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                         <span>Hapus ({selectedDraftIds.size})</span>
@@ -3113,6 +3267,138 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
           productCatalog={productCatalog || []}
           onNotify={onShowToast}
         />
+
+        {/* BULK SUBMIT CONFIRMATION MODAL */}
+        {bulkSubmitModal && (
+          <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="p-2 rounded-xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 shrink-0">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="text-sm font-black text-slate-900 dark:text-white truncate">
+                      Submit Sekaligus ({bulkSubmitModal.drafts.length} Surat Jalan)
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                      Semua SJ terpilih akan disimpan ke Riwayat & Supabase lalu dipindahkan dari antrean.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setBulkSubmitModal(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-5 overflow-y-auto space-y-4">
+                <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                  {bulkSubmitModal.drafts.map((d) => {
+                    const qtySj = (d.items || []).reduce((s, it) => s + Number(it.qty_sj || 0), 0);
+                    const qtyScan =
+                      Object.values(d.scanQty || {}).reduce((s, v) => s + Number(v || 0), 0) +
+                      Object.values(d.unexpected || {}).reduce((s, v) => s + Number(v?.qty || 0), 0);
+                    const isExactMatch =
+                      Object.keys(d.unexpected || {}).length === 0 &&
+                      (d.items || []).every((it) => (d.scanQty?.[it.sku] ?? 0) === Number(it.qty_sj || 0));
+
+                    return (
+                      <div
+                        key={d.id}
+                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/40"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-mono text-xs font-extrabold text-slate-900 dark:text-white truncate">
+                            {d.no_sj}
+                          </div>
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                            {d.source} → {d.destination}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="font-mono text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                            {qtyScan} / {qtySj} pcs
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                              isExactMatch
+                                ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                                : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
+                            }`}
+                          >
+                            {isExactMatch ? 'COCOK' : 'SELISIH'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-slate-50 dark:bg-[#0f172a] rounded-xl border border-slate-200 dark:border-slate-700">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Status Simpan Massal:
+                  </span>
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="bulkSubmitStatus"
+                        value="pending"
+                        checked={bulkSubmitModal.targetStatus === 'pending'}
+                        onChange={() =>
+                          setBulkSubmitModal((prev) => (prev ? { ...prev, targetStatus: 'pending' } : null))
+                        }
+                        className="w-4 h-4 text-indigo-600 border-slate-300 focus:ring-indigo-500"
+                      />
+                      <span className="text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded">
+                        PENDING
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="bulkSubmitStatus"
+                        value="selesai"
+                        checked={bulkSubmitModal.targetStatus === 'selesai'}
+                        onChange={() =>
+                          setBulkSubmitModal((prev) => (prev ? { ...prev, targetStatus: 'selesai' } : null))
+                        }
+                        className="w-4 h-4 text-emerald-600 border-slate-300 focus:ring-emerald-500"
+                      />
+                      <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded">
+                        SELESAI
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-5 py-3.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-end gap-2 bg-slate-50/50 dark:bg-slate-900/40 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setBulkSubmitModal(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void handleExecuteBulkSubmit(bulkSubmitModal.drafts, bulkSubmitModal.targetStatus)
+                  }
+                  className="px-4 py-2 text-xs font-extrabold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/20 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Submit {bulkSubmitModal.drafts.length} SJ ke Database</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* CUSTOM CONFIRMATION MODAL (No window.confirm blocks in iframe/mobile) */}
         {confirmModal && (

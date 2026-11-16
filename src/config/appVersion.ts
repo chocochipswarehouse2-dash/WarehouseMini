@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.18.4",
-  "versionCode": 384,
+  "version": "v2.18.5",
+  "versionCode": 385,
   "buildDate": "16 November 2026",
-  "buildHash": "wms-261116-v384-0821",
-  "releaseTitle": "WMS v2.18.4 — Fitur Geser Bebas Semua Bubble Minimize",
+  "buildHash": "wms-261116-v385-1226",
+  "releaseTitle": "WMS v2.18.5 — Submit Sekaligus Antrean Pengecekan Surat Jalan",
   "releaseNotes": [
-    "Semua bubble minimize (Update Database, Reset Lokasi, Dock Scanner/Produksi/Hitung Ulang, Asisten AI, Update Aplikasi) kini bisa digeser bebas ke seluruh area layar (mouse & sentuh)",
-    "Posisi kustom tiap bubble tersimpan otomatis di perangkat dengan batas aman viewport dan reset cepat klik 2x pada grip handle"
+    "Tambah tombol Submit Sekaligus / Submit Semua di Antrean Pengecekan SJ dengan modal ringkasan qty, pilihan status PENDING/SELESAI, dan simpan massal ke Supabase",
+    "Rapikan hierarki tombol toolbar Antrean Pengecekan (1 primary solid + tombol sekunder outline)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.18.4",
+    "versionCode": 384,
+    "buildDate": "16 November 2026",
+    "buildHash": "wms-261116-v384-0821",
+    "releaseTitle": "WMS v2.18.4 — Fitur Geser Bebas Semua Bubble Minimize",
+    "releaseNotes": [
+      "Semua bubble minimize (Update Database, Reset Lokasi, Dock Scanner/Produksi/Hitung Ulang, Asisten AI, Update Aplikasi) kini bisa digeser bebas ke seluruh area layar (mouse & sentuh)",
+      "Posisi kustom tiap bubble tersimpan otomatis di perangkat dengan batas aman viewport dan reset cepat klik 2x pada grip handle"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.18.3",
     "versionCode": 383,
@@ -110,18 +122,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Naikkan batas maksimal tab Keep-Alive Desktop dari 3 menjadi 4 tab",
       "Tambahkan opsi font Bawaan Sistem (Laptop) pada pengaturan Tema & Tampilan"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.17.1",
-    "versionCode": 371,
-    "buildDate": "15 November 2026",
-    "buildHash": "wms-261115-v371-2100",
-    "releaseTitle": "WMS v2.17.1 — Kelola Cache Lokal Per Modul & Akses Semua User",
-    "releaseNotes": [
-      "Tambahkan fitur clear cache lokal per modul maupun semua modul sekaligus (Katalog, Picking, Mutasi, Store, Opname, Produksi, Dashboard, Shopee, Website, PWA)",
-      "Hadirkan menu Kelola Cache di Modal Pembaruan Aplikasi agar dapat diakses seluruh role user"
     ],
     "minSupportedVersion": "v2.0.0"
   }
