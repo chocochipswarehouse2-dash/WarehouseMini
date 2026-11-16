@@ -80,6 +80,7 @@ export interface ChatMessage {
   is_system_update?: boolean;
   system_event_type?: string;
   actor_name?: string;
+  reactions?: Record<string, string[]>; // emoji -> array of lowercase usernames
 }
 
 export interface ChatParticipantProfile {
@@ -370,6 +371,7 @@ function mergeMessagesIdempotent(
         attachment_url: isDeleted ? undefined : (m.attachment_url ?? prev.attachment_url),
         context_tags: isDeleted ? undefined : (m.context_tags ?? prev.context_tags),
         order_context: isDeleted ? undefined : (m.order_context ?? prev.order_context),
+        reactions: isDeleted ? undefined : (m.reactions ?? prev.reactions),
         read_by: Array.from(readMap.values()),
         is_edited: Boolean(prev.is_edited || m.is_edited),
         is_deleted: isDeleted,
@@ -2741,6 +2743,7 @@ class LiveChatManager {
       attachment_url: undefined,
       context_tags: undefined,
       order_context: undefined,
+      reactions: undefined,
       is_deleted: true,
       deleted_at: now,
       deleted_by: myName,
@@ -2795,6 +2798,89 @@ class LiveChatManager {
         updatedMsgs.slice(-HOT_MESSAGE_LIMIT_PER_ROOM)
       );
     }
+
+    return { success: true };
+  }
+
+  /**
+   * Toggle an emoji reaction on a message (Optimistic 0ms UI + Broadcast + Supabase Hot Store)
+   */
+  public async toggleMessageReaction(
+    roomId: string,
+    messageId: string,
+    emoji: string
+  ): Promise<{ success: boolean; error?: string }> {
+    if (!this.currentSession?.username) {
+      return { success: false, error: 'Silakan login terlebih dahulu.' };
+    }
+    const cleanEmoji = String(emoji || '').trim();
+    if (!roomId || !messageId || !cleanEmoji) {
+      return { success: false, error: 'Data reaksi tidak valid.' };
+    }
+
+    const me = this.currentSession.username.trim().toLowerCase();
+    const msgs = this.state.messagesByRoom[roomId] || (await idbGetRoomMessages(roomId));
+    const target = msgs.find((m) => m.id === messageId);
+    if (!target || target.is_deleted) {
+      return { success: false, error: 'Pesan tidak ditemukan atau telah dihapus.' };
+    }
+
+    const currentReactions: Record<string, string[]> = {};
+    if (target.reactions && typeof target.reactions === 'object') {
+      for (const [k, users] of Object.entries(target.reactions)) {
+        if (Array.isArray(users) && users.length > 0) {
+          currentReactions[k] = Array.from(new Set(users.map((u) => String(u || '').trim().toLowerCase()).filter(Boolean)));
+        }
+      }
+    }
+
+    const existingList = currentReactions[cleanEmoji] || [];
+    const hasReacted = existingList.includes(me);
+    const nextList = hasReacted
+      ? existingList.filter((u) => u !== me)
+      : [...existingList, me];
+
+    if (nextList.length > 0) {
+      currentReactions[cleanEmoji] = nextList;
+    } else {
+      delete currentReactions[cleanEmoji];
+    }
+
+    const updatedMsg: ChatMessage = {
+      ...target,
+      reactions: Object.keys(currentReactions).length > 0 ? currentReactions : undefined,
+    };
+
+    const updatedMsgs = mergeMessagesIdempotent(msgs, [updatedMsg]);
+    this.state.messagesByRoom[roomId] = updatedMsgs;
+    this.notify();
+
+    try {
+      this.channel?.send({
+        type: 'broadcast',
+        event: 'chat:message_updated',
+        payload: {
+          roomId,
+          message: updatedMsg,
+          clientInstanceId: this.clientInstanceId,
+        },
+      });
+    } catch {}
+
+    try {
+      this.crossTabChannel?.postMessage({
+        type: 'MESSAGE_UPDATED',
+        roomId,
+        message: updatedMsg,
+        clientInstanceId: this.clientInstanceId,
+      });
+    } catch {}
+
+    await idbSaveRoomMessages(roomId, updatedMsgs);
+    await saveSystemDocJson(
+      `${ROOM_MSGS_DOC_PREFIX}${roomId}`,
+      updatedMsgs.slice(-HOT_MESSAGE_LIMIT_PER_ROOM)
+    );
 
     return { success: true };
   }

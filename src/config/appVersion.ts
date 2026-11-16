@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.17.2",
-  "versionCode": 372,
+  "version": "v2.17.3",
+  "versionCode": 373,
   "buildDate": "15 November 2026",
-  "buildHash": "wms-261115-v372-2108",
-  "releaseTitle": "WMS v2.17.2 — Multi-Tab Desktop 4 Tab & Opsi Font Bawaan Sistem",
+  "buildHash": "wms-261115-v373-2350",
+  "releaseTitle": "WMS v2.17.3 — Emoji Picker & Reaksi Emoticon Live Chat",
   "releaseNotes": [
-    "Naikkan batas maksimal tab Keep-Alive Desktop dari 3 menjadi 4 tab",
-    "Tambahkan opsi font Bawaan Sistem (Laptop) pada pengaturan Tema & Tampilan"
+    "Tambahkan tombol & panel Pemilih Emoticon/Emoji lengkap (Gudang & Kerja, Ekspresi, Gestur, Simbol) pada kolom ketik Live Chat Desktop & HP",
+    "Tambahkan fitur Reaksi Emoticon cepat (👍 🙏 ✅ ❤️ 😂 🔥 📦 👀) pada setiap balon pesan Live Chat"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.17.2",
+    "versionCode": 372,
+    "buildDate": "15 November 2026",
+    "buildHash": "wms-261115-v372-2108",
+    "releaseTitle": "WMS v2.17.2 — Multi-Tab Desktop 4 Tab & Opsi Font Bawaan Sistem",
+    "releaseNotes": [
+      "Naikkan batas maksimal tab Keep-Alive Desktop dari 3 menjadi 4 tab",
+      "Tambahkan opsi font Bawaan Sistem (Laptop) pada pengaturan Tema & Tampilan"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.17.1",
     "versionCode": 371,
@@ -114,18 +126,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Ekspansi 19 Tool Asisten AI Pintar: integrasi Agenda & Project, audit stok/mutasi/rak, picking, QC/perbaikan, retur, HR, draft form, PDF & Voice-to-Text",
       "Popup Scanner Gudang luas yang dapat di-minimize (auto-pause kamera) saat bekerja di halaman lain",
       "Idempotent Offline Outbox Queue (Zero Double Input, Zero Data Loss & Zero Tabrakan dengan Webhook WA)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.12.5",
-    "versionCode": 325,
-    "buildDate": "15 November 2026",
-    "buildHash": "wms-261115-v325-0140",
-    "releaseTitle": "WMS v2.12.5 — Kalender Bulanan Agenda Muat Penuh 7 Hari di Layar HP",
-    "releaseNotes": [
-      "Menghapus min-w-[700px] pada Month View & menjadikan strip tanggal 7 kolom sejajar agar Senin-Minggu muat penuh di layar HP tanpa terpotong",
-      "Menyembunyikan tombol + dan ikon emoji kalender per-sel di mobile serta mendukung wrap 2 baris pada chip agenda 1 hari agar judul tetap terbaca jelas"
     ],
     "minSupportedVersion": "v2.0.0"
   }

@@ -59,8 +59,9 @@ Target: semua fitur di bawah WAJIB tetap berfungsi di Android (Chrome/PWA), iPho
 | Quick reply dari notifikasi | Ada (Android/PC) | iOS/Safari TIDAK mendukung input teks di notifikasi → fallback buka aplikasi |
 | Badge angka ikon aplikasi | Ada (v2.6.60) | `syncAppBadge` (`navigator.setAppBadge`, bila didukung) |
 | Pencarian pesan dalam room | Ada | `showMessageSearch` |
+| **Pemilih Emoticon / Emoji & Reaksi Pesan** | Ada (v2.17.3) | Tombol `Smile` di composer (`EMOJI_CATEGORIES`, `handleInsertEmoji`) & Reaksi Cepat pada balon pesan (`toggleMessageReaction`, `QUICK_REACTION_EMOJIS`) |
 | Lampiran dokumen (PDF/Excel) | BELUM | Upload GDrive baru untuk gambar (`uploadImageToGdrive`) |
-| Reaksi emoji, forward, voice note, kirim banyak foto sekaligus | BELUM | Bukan prioritas; tambahkan bila diminta |
+| Forward, voice note, kirim banyak foto sekaligus | BELUM | Bukan prioritas; tambahkan bila diminta |
 
 ### Aturan lintas-platform (jangan dilanggar)
 - **iPhone zoom otomatis**: input/textarea di layar kecil WAJIB `text-base` (≥16px) lalu `sm:text-sm`/`sm:text-xs`. Jangan kembalikan `text-xs` murni pada input.

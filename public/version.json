@@ -1,12 +1,12 @@
 {
-  "version": "v2.17.2",
-  "versionCode": 372,
+  "version": "v2.17.3",
+  "versionCode": 373,
   "buildDate": "15 November 2026",
-  "buildHash": "wms-261115-v372-2108",
-  "releaseTitle": "WMS v2.17.2 — Multi-Tab Desktop 4 Tab & Opsi Font Bawaan Sistem",
+  "buildHash": "wms-261115-v373-2350",
+  "releaseTitle": "WMS v2.17.3 — Emoji Picker & Reaksi Emoticon Live Chat",
   "releaseNotes": [
-    "Naikkan batas maksimal tab Keep-Alive Desktop dari 3 menjadi 4 tab",
-    "Tambahkan opsi font Bawaan Sistem (Laptop) pada pengaturan Tema & Tampilan"
+    "Tambahkan tombol & panel Pemilih Emoticon/Emoji lengkap (Gudang & Kerja, Ekspresi, Gestur, Simbol) pada kolom ketik Live Chat Desktop & HP",
+    "Tambahkan fitur Reaksi Emoticon cepat (👍 🙏 ✅ ❤️ 😂 🔥 📦 👀) pada setiap balon pesan Live Chat"
   ],
   "minSupportedVersion": "v2.0.0"
 }

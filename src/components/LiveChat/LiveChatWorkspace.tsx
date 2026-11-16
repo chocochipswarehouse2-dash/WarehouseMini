@@ -32,6 +32,7 @@ import {
   ExternalLink,
   Crown,
   LogOut,
+  Smile,
 } from 'lucide-react';
 import { ProductItem, UserSession } from '../../types';
 import {
@@ -63,6 +64,52 @@ interface LiveChatWorkspaceProps {
   onNotify?: (msg: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
+const QUICK_REACTION_EMOJIS = ['👍', '🙏', '✅', '❤️', '😂', '🔥', '📦', '👀'] as const;
+
+type EmojiCategoryKey = 'operasional' | 'ekspresi' | 'gestur' | 'simbol';
+
+const EMOJI_CATEGORIES: Record<
+  EmojiCategoryKey,
+  { label: string; icon: string; emojis: string[] }
+> = {
+  operasional: {
+    label: 'Gudang & Kerja',
+    icon: '📦',
+    emojis: [
+      '👍', '🙏', '✅', '👌', '🤝', '📦', '🚚', '🏷️', '📋', '🔍',
+      '⚠️', '🚨', '⏳', '🕐', '📍', '🛒', '✂️', '🧵', '👕', '👖',
+      '👗', '📸', '🖨️', '💯', '🔥', '🚀', '💪', '🫡', '🎉', '✨',
+    ],
+  },
+  ekspresi: {
+    label: 'Ekspresi',
+    icon: '😊',
+    emojis: [
+      '😊', '😄', '😁', '😂', '🤣', '😅', '😉', '😍', '🥰', '😎',
+      '🤔', '🫡', '😮', '😯', '😢', '😭', '😤', '🥳', '🤩', '😇',
+      '🙂', '🙃', '😌', '😴', '🤯', '🥺', '😬', '🤭', '🤫', '🫠',
+    ],
+  },
+  gestur: {
+    label: 'Gestur & Sapa',
+    icon: '👋',
+    emojis: [
+      '👋', '🤚', '✋', '👌', '🤌', '✌️', '🤞', '🫶', '👍', '👎',
+      '✊', '👊', '👏', '🙌', '👐', '🤲', '🤝', '🙏', '✍️', '💪',
+      '☝️', '👆', '👇', '👈', '👉', '🖐️', '🖖', '🤙', '🫡', '🙇',
+    ],
+  },
+  simbol: {
+    label: 'Simbol & Tanda',
+    icon: '✅',
+    emojis: [
+      '✅', '☑️', '✔️', '❌', '❎', '⚠️', '🚫', '❗', '❓', '‼️',
+      '🔴', '🟠', '🟡', '🟢', '🔵', '🟣', '⭐', '🌟', '⚡', '🔥',
+      '💥', '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '💯',
+    ],
+  },
+};
+
 export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
   session,
   productCatalog = [],
@@ -87,10 +134,13 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
   const [pendingAttachmentUrl, setPendingAttachmentUrl] = useState<string>('');
   const [isSending, setIsSending] = useState(false);
 
-  // Tag Picker Popover
+  // Tag Picker & Emoji Picker Popover
   const [isTagPickerOpen, setIsTagPickerOpen] = useState(false);
   const [tagType, setTagType] = useState<ChatContextTagType>('SKU');
   const [tagSearchInput, setTagSearchInput] = useState('');
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
+  const [activeEmojiCategory, setActiveEmojiCategory] = useState<EmojiCategoryKey>('operasional');
+  const [activeReactionMsgId, setActiveReactionMsgId] = useState<string | null>(null);
 
   // Group Creation / Member Management Modal (Admin & Superadmin only)
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
@@ -141,6 +191,28 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
       textareaRef.current.style.height = 'auto';
     }
   }, [inputText]);
+
+  const handleInsertEmoji = (emoji: string) => {
+    const el = textareaRef.current;
+    const start = el && typeof el.selectionStart === 'number' ? el.selectionStart : inputText.length;
+    const end = el && typeof el.selectionEnd === 'number' ? el.selectionEnd : inputText.length;
+    const nextText = `${inputText.slice(0, start)}${emoji}${inputText.slice(end)}`;
+    setInputText(nextText);
+    if (activeRoom) {
+      liveChatManager.sendTypingIndicator(activeRoom.id);
+    }
+    setTimeout(() => {
+      if (textareaRef.current) {
+        const nextCursor = start + emoji.length;
+        textareaRef.current.focus();
+        try {
+          textareaRef.current.setSelectionRange(nextCursor, nextCursor);
+        } catch {}
+        textareaRef.current.style.height = 'auto';
+        textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 112)}px`;
+      }
+    }, 0);
+  };
 
   const myUsername = String(session?.username || '').trim().toLowerCase();
   const isAdminGroupManager = canManageChatGroups(session);
@@ -627,6 +699,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
         } else {
           setEditingMessage(null);
           setInputText('');
+          setIsEmojiPickerOpen(false);
         }
       } finally {
         setIsSending(false);
@@ -658,6 +731,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
         setPendingOrderContext(null);
         setReplyTo(null);
         setMentionQuery(null);
+        setIsEmojiPickerOpen(false);
       }
     } finally {
       setIsSending(false);
@@ -1574,6 +1648,94 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                                     {renderMessageTextWithMentions(msg.text, isMine)}
                                   </div>
                                 )}
+
+                                {/* Active Emoji Reaction Pills */}
+                                {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                                  <div className="mt-2 flex flex-wrap items-center gap-1">
+                                    {Object.entries(msg.reactions).map(([emojiKey, users]) => {
+                                      if (!Array.isArray(users) || users.length === 0) return null;
+                                      const iReacted = users.some((u) => u.toLowerCase() === myUsername);
+                                      const reactorNames = users
+                                        .map((u) => {
+                                          const uLower = u.toLowerCase();
+                                          const prof =
+                                            activeRoom.participant_profiles?.[uLower] ||
+                                            chatState.allUsersDirectory.find(
+                                              (d) => d.username.toLowerCase() === uLower
+                                            );
+                                          return prof?.name || getUserPersonName(uLower) || uLower;
+                                        })
+                                        .join(', ');
+                                      return (
+                                        <button
+                                          key={emojiKey}
+                                          type="button"
+                                          onClick={() =>
+                                            void liveChatManager.toggleMessageReaction(
+                                              activeRoom.id,
+                                              msg.id,
+                                              emojiKey
+                                            )
+                                          }
+                                          title={`Reaksi ${emojiKey} oleh: ${reactorNames} (Klik untuk tambah/lepas)`}
+                                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border transition-colors cursor-pointer ${
+                                            isMine
+                                              ? iReacted
+                                                ? 'bg-white text-indigo-700 border-white font-bold shadow-2xs'
+                                                : 'bg-indigo-700/80 text-indigo-100 border-indigo-400/50 hover:bg-indigo-700'
+                                              : iReacted
+                                              ? 'bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700 font-bold'
+                                              : 'bg-slate-100 dark:bg-slate-900/70 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-indigo-400'
+                                          }`}
+                                        >
+                                          <span>{emojiKey}</span>
+                                          <span className="font-mono text-[10px] tabular-nums">
+                                            {users.length}
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+
+                                {/* Quick Emoji Reaction Picker Bar */}
+                                {activeReactionMsgId === msg.id && (
+                                  <div
+                                    className={`mt-2 p-1.5 rounded-xl border flex items-center gap-1 flex-wrap ${
+                                      isMine
+                                        ? 'bg-indigo-800/90 border-indigo-500/60'
+                                        : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700'
+                                    }`}
+                                  >
+                                    {QUICK_REACTION_EMOJIS.map((em) => {
+                                      const iReacted = Boolean(
+                                        msg.reactions?.[em]?.some((u) => u.toLowerCase() === myUsername)
+                                      );
+                                      return (
+                                        <button
+                                          key={em}
+                                          type="button"
+                                          onClick={() => {
+                                            void liveChatManager.toggleMessageReaction(
+                                              activeRoom.id,
+                                              msg.id,
+                                              em
+                                            );
+                                            setActiveReactionMsgId(null);
+                                          }}
+                                          className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm transition-transform hover:scale-110 active:scale-95 cursor-pointer ${
+                                            iReacted
+                                              ? 'bg-indigo-600/30 ring-1 ring-indigo-400'
+                                              : 'hover:bg-black/10 dark:hover:bg-white/10'
+                                          }`}
+                                          title={`Beri reaksi ${em}`}
+                                        >
+                                          {em}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
                               </>
                             )}
 
@@ -1594,6 +1756,21 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
 
                               {!msg.is_deleted && (
                                 <div className="flex items-center gap-2">
+                                  {/* Quick Emoji Reaction Trigger */}
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setActiveReactionMsgId((prev) => (prev === msg.id ? null : msg.id))
+                                    }
+                                    className={`hover:underline flex items-center gap-0.5 cursor-pointer opacity-85 hover:opacity-100 py-1.5 sm:py-0 px-1 sm:px-0 ${
+                                      activeReactionMsgId === msg.id ? 'font-bold underline opacity-100' : ''
+                                    }`}
+                                    title="Beri reaksi emoticon pada pesan ini"
+                                  >
+                                    <Smile className="w-3 h-3" />
+                                    <span>Emot</span>
+                                  </button>
+
                                   {/* Reply button */}
                                   <button
                                     type="button"
@@ -1638,8 +1815,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                                     </>
                                   )}
 
-                                 
-{/* Read Receipt Checkmarks (✓ Sent vs ✓✓ Read) */}
+                                  {/* Read Receipt Checkmarks (✓ Sent vs ✓✓ Read) */}
                                   {isMine && (
                                     <button
                                       type="button"
@@ -1869,6 +2045,57 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                   </div>
                 )}
 
+                {/* Emoji / Emoticon Picker Popover */}
+                {isEmojiPickerOpen && (
+                  <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/95 border border-slate-200 dark:border-slate-700 space-y-2 shadow-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1 overflow-x-auto no-scrollbar whitespace-nowrap">
+                        {(Object.keys(EMOJI_CATEGORIES) as EmojiCategoryKey[]).map((catKey) => {
+                          const cat = EMOJI_CATEGORIES[catKey];
+                          const isActive = activeEmojiCategory === catKey;
+                          return (
+                            <button
+                              key={catKey}
+                              type="button"
+                              onClick={() => setActiveEmojiCategory(catKey)}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer shrink-0 ${
+                                isActive
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-indigo-400'
+                              }`}
+                            >
+                              <span>{cat.icon}</span>
+                              <span>{cat.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsEmojiPickerOpen(false)}
+                        className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer shrink-0"
+                        title="Tutup panel emoticon"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-8 sm:grid-cols-10 gap-1 max-h-40 overflow-y-auto pr-0.5">
+                      {EMOJI_CATEGORIES[activeEmojiCategory].emojis.map((em, idx) => (
+                        <button
+                          key={`${activeEmojiCategory}_${em}_${idx}`}
+                          type="button"
+                          onClick={() => handleInsertEmoji(em)}
+                          className="h-8 rounded-lg flex items-center justify-center text-lg hover:bg-white dark:hover:bg-slate-700/80 transition-transform active:scale-90 cursor-pointer select-none"
+                          title={`Sisipkan ${em}`}
+                        >
+                          {em}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Input Row */}
                 <form onSubmit={handleSendOrSaveEdit} className="flex items-end gap-2">
                   <input
@@ -1895,62 +2122,84 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                     }}
                   />
 
-                  {!editingMessage && (
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setInputText((prev) => `${prev}@`);
-                          setMentionQuery('');
-                          setMentionIndex(inputText.length);
-                          textareaRef.current?.focus();
-                        }}
-                        className="p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-colors cursor-pointer"
-                        title="Tag Pengguna / Sebut Anggota (@)"
-                      >
-                        <AtSign className="w-4 h-4" />
-                      </button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEmojiPickerOpen((v) => !v);
+                        setIsTagPickerOpen(false);
+                      }}
+                      className={`p-2 rounded-xl border transition-colors cursor-pointer ${
+                        isEmojiPickerOpen
+                          ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-300'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600'
+                      }`}
+                      title="Sisipkan Emoticon / Emoji"
+                      aria-label="Sisipkan Emoticon"
+                    >
+                      <Smile className="w-4 h-4" />
+                    </button>
 
-                      <button
-                        type="button"
-                        onClick={() => setIsTagPickerOpen((v) => !v)}
-                        className={`p-2 rounded-xl border transition-colors cursor-pointer ${
-                          isTagPickerOpen
-                            ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-300'
-                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600'
-                        }`}
-                        title="Sisipkan Tag Nomor Order, SJ, atau SKU Produk"
-                      >
-                        <Hash className="w-4 h-4" />
-                      </button>
+                    {!editingMessage && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setInputText((prev) => `${prev}@`);
+                            setMentionQuery('');
+                            setMentionIndex(inputText.length);
+                            textareaRef.current?.focus();
+                          }}
+                          className="p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-colors cursor-pointer"
+                          title="Tag Pengguna / Sebut Anggota (@)"
+                        >
+                          <AtSign className="w-4 h-4" />
+                        </button>
 
-                      <button
-                        type="button"
-                        disabled={isUploadingImage}
-                        onClick={() => cameraInputRef.current?.click()}
-                        className="p-2.5 sm:p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-colors cursor-pointer disabled:opacity-50"
-                        title="Ambil Foto dari Kamera (HP)"
-                        aria-label="Ambil foto dari kamera"
-                      >
-                        <Camera className="w-4 h-4" />
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsTagPickerOpen((v) => !v);
+                            setIsEmojiPickerOpen(false);
+                          }}
+                          className={`p-2 rounded-xl border transition-colors cursor-pointer ${
+                            isTagPickerOpen
+                              ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-300'
+                              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600'
+                          }`}
+                          title="Sisipkan Tag Nomor Order, SJ, atau SKU Produk"
+                        >
+                          <Hash className="w-4 h-4" />
+                        </button>
 
-                      <button
-                        type="button"
-                        disabled={isUploadingImage}
-                        onClick={() => fileInputRef.current?.click()}
-                        className="p-2.5 sm:p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-colors cursor-pointer disabled:opacity-50"
-                        title="Lampirkan Foto dari Galeri / Screenshot (Otomatis disimpan di Google Drive CDN)"
-                        aria-label="Lampirkan foto dari galeri"
-                      >
-                        {isUploadingImage ? (
-                          <RefreshCw className="w-4 h-4 animate-spin text-indigo-600" />
-                        ) : (
-                          <ImageIcon className="w-4 h-4" />
-                        )}
-                      </button>
-                    </div>
-                  )}
+                        <button
+                          type="button"
+                          disabled={isUploadingImage}
+                          onClick={() => cameraInputRef.current?.click()}
+                          className="p-2.5 sm:p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-colors cursor-pointer disabled:opacity-50"
+                          title="Ambil Foto dari Kamera (HP)"
+                          aria-label="Ambil foto dari kamera"
+                        >
+                          <Camera className="w-4 h-4" />
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isUploadingImage}
+                          onClick={() => fileInputRef.current?.click()}
+                          className="p-2.5 sm:p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-colors cursor-pointer disabled:opacity-50"
+                          title="Lampirkan Foto dari Galeri / Screenshot (Otomatis disimpan di Google Drive CDN)"
+                          aria-label="Lampirkan foto dari galeri"
+                        >
+                          {isUploadingImage ? (
+                            <RefreshCw className="w-4 h-4 animate-spin text-indigo-600" />
+                          ) : (
+                            <ImageIcon className="w-4 h-4" />
+                          )}
+                        </button>
+                      </>
+                    )}
+                  </div>
 
                   <div className="flex-1 relative min-w-0">
                     {/* Mention (@) Autocomplete Popover */}
