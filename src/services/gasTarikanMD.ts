@@ -1,14 +1,33 @@
-import { PengecekanSJRecord, PengecekanSJItem, PengecekanSJDraft, TarikanMDRecord, ProductItem } from '../types';
-import { supabaseFetch } from './supabase';
+import { PengecekanSJRecord, PengecekanSJItem, PengecekanSJDraft, ProductItem } from '../types';
+import { supabaseFetch, supabaseFetchAllPages } from './supabase';
 import { fetchWithDeltaSync } from './gasSync';
-import { saveSJDraftsToDb, loadSJDraftsFromDb, deleteSJDraftFromDb } from './localDb';
-import { resolveProductName, extractSizeFromSku, isRealSize, isCorruptedColorCodeSize } from '../utils/sortUtils';
+import { saveSJDraftsToDb, loadSJDraftsFromDb, deleteSJDraftFromDb, getLocalDbMeta, setLocalDbMeta } from './localDb';
+import { resolveProductName, resolveProductDisplaySize, extractSizeFromSku, isRealSize, isCorruptedColorCodeSize } from '../utils/sortUtils';
 import { lookupProductBySku } from '../utils/productLookup';
 
 const CACHE_KEY_RECORDS = 'wms_cached_pengecekan_sj_records';
 const CACHE_KEY_LEGACY = 'wms_cached_tarikan_md';
 const CACHE_KEY_DRAFTS = 'wms_cached_pengecekan_sj_drafts';
 const CACHE_KEY_OFFLINE_QUEUE = 'wms_offline_queue_pengecekan_sj';
+const IDB_CACHE_KEY_RECORDS = 'pengecekan_sj_records_cache';
+const LS_CACHE_SLICE_LIMIT = 60;
+
+async function persistPengecekanSJCache(records: PengecekanSJRecord[]): Promise<void> {
+  // 1. Store full list in IndexedDB (no 5MB quota truncation)
+  try {
+    await setLocalDbMeta(IDB_CACHE_KEY_RECORDS, records);
+  } catch (err) {
+    console.warn('Gagal menyimpan cache lengkap pengecekan_sj ke IndexedDB:', err);
+  }
+  // 2. Store lightweight slice in localStorage for instant 0ms startup
+  try {
+    localStorage.setItem(CACHE_KEY_RECORDS, JSON.stringify(records.slice(0, LS_CACHE_SLICE_LIMIT)));
+  } catch {
+    try {
+      localStorage.setItem(CACHE_KEY_RECORDS, JSON.stringify(records.slice(0, 20)));
+    } catch {}
+  }
+}
 
 /**
  * Normalizes any date string (DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD, etc.)
@@ -61,11 +80,18 @@ export async function savePengecekanSJToSupabase(record: PengecekanSJRecord): Pr
     const nowIso = new Date().toISOString();
     const encodedNoSj = encodeURIComponent(cleanNoSj);
 
-    // 1. Hapus entri sebelumnya untuk no_sj yang sama agar data selalu segar tanpa duplikat
+    // 1. Cek entri existing berdasarkan no_sj agar update berjalan atomik (PATCH) tanpa risiko hilang di tengah jalan
+    let existingRows: Array<{ id: string }> = [];
     try {
-      await supabaseFetch('pengecekan_sj', 'DELETE', null, `no_sj=eq.${encodedNoSj}`);
-    } catch (delErr) {
-      console.warn('Peringatan saat pembersihan no_sj lama:', delErr);
+      const found = await supabaseFetch<Array<{ id: string }>>(
+        'pengecekan_sj',
+        'GET',
+        null,
+        `select=id&no_sj=eq.${encodedNoSj}&order=created_at.desc`
+      );
+      if (Array.isArray(found)) existingRows = found;
+    } catch (chkErr) {
+      console.warn('Peringatan saat cek existing no_sj:', chkErr);
     }
 
     // 2. Validasi UUID format
@@ -126,13 +152,28 @@ export async function savePengecekanSJToSupabase(record: PengecekanSJRecord): Pr
       updated_at: nowIso
     };
 
-    await supabaseFetch('pengecekan_sj', 'POST', [insertPayload]);
+    const savedId = existingRows[0]?.id;
+    if (savedId) {
+      const patchPayload = { ...insertPayload };
+      delete (patchPayload as any).id;
+      await supabaseFetch('pengecekan_sj', 'PATCH', patchPayload, `id=eq.${encodeURIComponent(savedId)}`);
+      // Bersihkan duplikat tambahan (jika pernah ada) SETELAH PATCH utama berhasil
+      if (existingRows.length > 1) {
+        const extraIds = existingRows.slice(1).map((r) => r.id).filter(Boolean);
+        for (const extraId of extraIds) {
+          await supabaseFetch('pengecekan_sj', 'DELETE', null, `id=eq.${encodeURIComponent(extraId)}`).catch(() => {});
+        }
+      }
+    } else {
+      await supabaseFetch('pengecekan_sj', 'POST', [insertPayload]);
+    }
 
-    // Update cache lokal langsung agar sinkron seketika
+    // Update cache lokal (IndexedDB + localStorage slice) langsung agar sinkron seketika
     try {
-      const cached = getCachedPengecekanSJList();
+      const cached = await getCachedPengecekanSJListAsync();
       const sanitizedRecord: PengecekanSJRecord = {
         ...record,
+        id: savedId || record.id,
         no_sj: cleanNoSj,
         tanggal_sj: normalizeDateToIso(record.tanggal_sj),
         status: validStatus as any,
@@ -146,7 +187,7 @@ export async function savePengecekanSJToSupabase(record: PengecekanSJRecord): Pr
         updated_at: nowIso
       };
       const updatedCache = [sanitizedRecord, ...cached.filter(r => r.no_sj !== cleanNoSj)];
-      localStorage.setItem(CACHE_KEY_RECORDS, JSON.stringify(updatedCache));
+      await persistPengecekanSJCache(updatedCache);
     } catch {}
 
     return true;
@@ -162,14 +203,23 @@ export async function editPengecekanSJ(record: PengecekanSJRecord): Promise<bool
 
 export const PENGECEKAN_SJ_COLUMNS = 'id,no_sj,tanggal_sj,source,destination,status,status_komparasi,total_qty_sj,total_qty_terima,total_sku,submitted_by,catatan,items,sync_status,created_at,updated_at';
 
-export async function fetchPengecekanSJFromSupabase(limit = 200): Promise<PengecekanSJRecord[]> {
+export async function fetchPengecekanSJFromSupabase(limit = 0): Promise<PengecekanSJRecord[]> {
   try {
-    const rawData = await supabaseFetch<any[]>(
-      'pengecekan_sj',
-      'GET',
-      null,
-      `select=${PENGECEKAN_SJ_COLUMNS}&order=created_at.desc&limit=${limit}`
-    );
+    const rawData =
+      limit > 0
+        ? await supabaseFetch<any[]>(
+            'pengecekan_sj',
+            'GET',
+            null,
+            `select=${PENGECEKAN_SJ_COLUMNS}&order=created_at.desc,id.desc&limit=${limit}`
+          )
+        : await supabaseFetchAllPages<any>(
+            'pengecekan_sj',
+            `select=${PENGECEKAN_SJ_COLUMNS}&order=created_at.desc,id.desc`,
+            100000,
+            250,
+            4
+          );
     return normalizeRecords(rawData);
   } catch (err) {
     console.warn('Gagal fetchPengecekanSJFromSupabase via direct REST:', err);
@@ -184,10 +234,10 @@ export async function deletePengecekanSJFromSupabase(no_sj: string): Promise<boo
     const encodedNoSj = encodeURIComponent(cleanNoSj);
     await supabaseFetch('pengecekan_sj', 'DELETE', null, `no_sj=eq.${encodedNoSj}`);
 
-    // Hapus juga dari cache lokal
+    // Hapus juga dari cache lokal (IndexedDB + localStorage)
     try {
-      const cached = getCachedPengecekanSJList();
-      localStorage.setItem(CACHE_KEY_RECORDS, JSON.stringify(cached.filter(r => r.no_sj !== cleanNoSj)));
+      const cached = await getCachedPengecekanSJListAsync();
+      await persistPengecekanSJCache(cached.filter(r => r.no_sj !== cleanNoSj));
     } catch {}
 
     return true;
@@ -272,6 +322,7 @@ function normalizeRecords(rawData: any[]): PengecekanSJRecord[] {
           }
         }
         group.itemsMap.set(sku, {
+          id: it.id ? String(it.id) : undefined,
           no_sj: row.no_sj,
           source: row.source,
           destination: row.destination,
@@ -279,10 +330,15 @@ function normalizeRecords(rawData: any[]): PengecekanSJRecord[] {
           sku: sku,
           nama_produk: resolvedName,
           size: rawSize,
+          category: it.category ? String(it.category) : undefined,
           qty_sj: Number(it.qty_sj || 0),
           qty_scan: Number(it.qty_scan || it.qty_terima || 0),
           selisih: Number(it.qty_scan || it.qty_terima || 0) - Number(it.qty_sj || 0),
           status_item: Number(it.qty_scan || it.qty_terima || 0) === Number(it.qty_sj || 0) ? 'COCOK' : (Number(it.qty_scan || it.qty_terima || 0) < Number(it.qty_sj || 0) ? 'KURANG' : 'LEBIH'),
+          is_unexpected: Boolean(it.is_unexpected || Number(it.qty_sj || 0) === 0),
+          submitted_by: it.submitted_by ? String(it.submitted_by) : row.submitted_by,
+          catatan: it.catatan ? String(it.catatan) : undefined,
+          created_at: it.created_at || row.created_at,
         });
       }
     });
@@ -304,17 +360,39 @@ export function getCachedPengecekanSJList(): PengecekanSJRecord[] {
   return [];
 }
 
-export async function fetchPengecekanSJList(limit = 200): Promise<PengecekanSJRecord[]> {
+export async function getCachedPengecekanSJListAsync(): Promise<PengecekanSJRecord[]> {
+  try {
+    const fromIdb = await getLocalDbMeta<PengecekanSJRecord[]>(IDB_CACHE_KEY_RECORDS);
+    if (Array.isArray(fromIdb) && fromIdb.length > 0) {
+      return fromIdb;
+    }
+  } catch {}
+  return getCachedPengecekanSJList();
+}
+
+export async function clearPengecekanSJRecordsCache(): Promise<void> {
+  try {
+    localStorage.removeItem(CACHE_KEY_RECORDS);
+    localStorage.removeItem(CACHE_KEY_LEGACY);
+  } catch {}
+  try {
+    await setLocalDbMeta(IDB_CACHE_KEY_RECORDS, null);
+  } catch {}
+}
+
+export async function fetchPengecekanSJList(limit = 0): Promise<PengecekanSJRecord[]> {
   try {
     const onlineData = await fetchPengecekanSJFromSupabase(limit);
     if (onlineData && onlineData.length > 0) {
-      try { localStorage.setItem(CACHE_KEY_RECORDS, JSON.stringify(onlineData)); } catch {}
+      if (limit <= 0) {
+        await persistPengecekanSJCache(onlineData);
+      }
       return onlineData;
     }
   } catch (err) {
     console.warn('Error fetching pengecekan SJ list:', err);
   }
-  return getCachedPengecekanSJList();
+  return getCachedPengecekanSJListAsync();
 }
 
 export async function fetchTarikanMDLegacy(): Promise<any[]> {
@@ -345,6 +423,113 @@ export async function fetchTarikanMDLegacy(): Promise<any[]> {
   } catch (err) {
     return [];
   }
+}
+
+export function buildPengecekanRecordFromDraft(
+  draft: PengecekanSJDraft,
+  options?: {
+    status?: 'pending' | 'selesai';
+    submittedBy?: string;
+    productCatalog?: ProductItem[];
+    createdAt?: string;
+  }
+): PengecekanSJRecord {
+  const nowIso = options?.createdAt || new Date().toISOString();
+  const cleanDate = normalizeDateToIso(draft.tanggal_sj);
+  const submittedBy = options?.submittedBy || 'Petugas';
+  const targetStatus: 'pending' | 'selesai' = options?.status || 'pending';
+  const productCatalog = options?.productCatalog;
+
+  const regularRows: PengecekanSJItem[] = (draft.items || []).map((item) => {
+    const cleanSku = (item.sku || '').trim().toUpperCase();
+    const prod = productCatalog?.find(
+      (p) =>
+        (p.k && p.k.trim().toUpperCase() === cleanSku) ||
+        ((p as any).sku && String((p as any).sku).trim().toUpperCase() === cleanSku)
+    );
+    const resolvedSize = resolveProductDisplaySize(
+      cleanSku,
+      item.size,
+      prod?.s ? String(prod.s) : ((prod as any)?.size ? String((prod as any).size) : undefined)
+    );
+    const effectiveSize = resolvedSize && resolvedSize !== '-' ? resolvedSize : undefined;
+    const baseName = resolveProductName(cleanSku, item.nama_produk, prod);
+    const qtyScan = draft.scanQty?.[item.sku] ?? 0;
+    const qtySj = Number(item.qty_sj || 0);
+    const selisih = qtyScan - qtySj;
+    const statusItem: 'COCOK' | 'KURANG' | 'LEBIH' =
+      selisih === 0 ? 'COCOK' : selisih < 0 ? 'KURANG' : 'LEBIH';
+
+    return {
+      id: `${draft.no_sj}-${item.sku}`,
+      no_sj: draft.no_sj,
+      source: draft.source,
+      destination: draft.destination,
+      tanggal_sj: cleanDate,
+      sku: item.sku,
+      nama_produk: baseName,
+      size: effectiveSize,
+      category: item.category || '',
+      qty_sj: qtySj,
+      qty_scan: qtyScan,
+      selisih,
+      status_item: statusItem,
+      status_sj: targetStatus,
+      is_unexpected: false,
+      submitted_by: submittedBy,
+      created_at: nowIso,
+      catatan: draft.catatan || '',
+    };
+  });
+
+  const unexpectedRows: PengecekanSJItem[] = Object.entries(draft.unexpected || {}).map(
+    ([sku, val]) => ({
+      id: `${draft.no_sj}-${sku}-unexpected`,
+      no_sj: draft.no_sj,
+      source: draft.source,
+      destination: draft.destination,
+      tanggal_sj: cleanDate,
+      sku,
+      nama_produk: resolveProductName(sku, val.nama),
+      size: resolveProductDisplaySize(sku, (val as any).size) || 'Default',
+      category: val.category || 'Lebih',
+      qty_sj: 0,
+      qty_scan: val.qty,
+      selisih: val.qty,
+      status_item: 'LEBIH' as const,
+      status_sj: targetStatus,
+      is_unexpected: true,
+      submitted_by: submittedBy,
+      created_at: nowIso,
+      catatan: 'Lebihan barang tidak ada di Surat Jalan',
+    })
+  );
+
+  const allRows: PengecekanSJItem[] = [...regularRows, ...unexpectedRows];
+  const totalQtySj = regularRows.reduce((s, r) => s + r.qty_sj, 0);
+  const totalQtyTerima = allRows.reduce((s, r) => s + r.qty_scan, 0);
+  const hasSelisih =
+    regularRows.some((r) => r.selisih !== 0) || unexpectedRows.length > 0;
+
+  return {
+    id: draft.id,
+    no_sj: draft.no_sj,
+    source: draft.source,
+    destination: draft.destination,
+    tanggal_sj: cleanDate,
+    tipe_import: draft.tipe_import,
+    status: targetStatus,
+    status_komparasi: hasSelisih ? 'SELISIH' : 'COCOK',
+    total_qty_sj: totalQtySj,
+    total_qty_terima: totalQtyTerima,
+    total_sku: allRows.length,
+    submitted_by: submittedBy,
+    created_at: draft.created_at || nowIso,
+    updated_at: nowIso,
+    catatan: draft.catatan || '',
+    items: allRows,
+    items_json: JSON.stringify(allRows),
+  };
 }
 
 export async function submitPengecekanSJ(payload: PengecekanSJRecord): Promise<{ success: boolean; message: string }> {
@@ -484,6 +669,9 @@ export async function clearAllCaches() {
   localStorage.removeItem(CACHE_KEY_LEGACY);
   localStorage.removeItem(CACHE_KEY_DRAFTS);
   localStorage.removeItem(CACHE_KEY_OFFLINE_QUEUE);
+  try {
+    await setLocalDbMeta(IDB_CACHE_KEY_RECORDS, null);
+  } catch {}
 }
 
 export async function deleteTarikanMD(id: string, no_sj?: string): Promise<boolean> {
@@ -641,6 +829,6 @@ export async function submitTarikanMD(record: PengecekanSJRecord): Promise<{ suc
   }
 }
 
-export async function fetchTarikanMDRecords(limit = 200): Promise<PengecekanSJRecord[]> {
+export async function fetchTarikanMDRecords(limit = 0): Promise<PengecekanSJRecord[]> {
   return fetchPengecekanSJList(limit);
 }

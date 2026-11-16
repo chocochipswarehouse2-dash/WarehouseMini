@@ -1,12 +1,12 @@
 {
-  "version": "v2.18.0",
-  "versionCode": 380,
+  "version": "v2.18.2",
+  "versionCode": 382,
   "buildDate": "16 November 2026",
-  "buildHash": "wms-261116-v380-0137",
-  "releaseTitle": "WMS v2.18.0 — Relokasi Rak Multi-Rute Sekaligus",
+  "buildHash": "wms-261116-v382-0744",
+  "releaseTitle": "WMS v2.18.2 — Kunci Hapus Grup Chat Store MS/Alter & Auto-Save Import Awal Pengecekan SJ",
   "releaseNotes": [
-    "Tambah mode Multi-Rute di modal Relokasi Rak untuk memindahkan banyak pasangan rak sekaligus dalam 1 aksi",
-    "Dukungan tempel daftar rute otomatis, pratinjau stok & simulasi kapasitas per baris, serta bukti A4 & ringkasan WA batch"
+    "Kunci akses hapus & keluar grup chat operasional Store Manual/Alter (store_ops) bagi Store maupun Admin Warehouse",
+    "Simpan otomatis data Pengecekan SJ ke database Supabase (status PENDING) sejak import CSV pertama dan saat revisi timpa file"
   ],
   "minSupportedVersion": "v2.0.0"
 }

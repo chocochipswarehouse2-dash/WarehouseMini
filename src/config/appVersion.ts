@@ -15,19 +15,43 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.18.0",
-  "versionCode": 380,
+  "version": "v2.18.2",
+  "versionCode": 382,
   "buildDate": "16 November 2026",
-  "buildHash": "wms-261116-v380-0137",
-  "releaseTitle": "WMS v2.18.0 — Relokasi Rak Multi-Rute Sekaligus",
+  "buildHash": "wms-261116-v382-0744",
+  "releaseTitle": "WMS v2.18.2 — Kunci Hapus Grup Chat Store MS/Alter & Auto-Save Import Awal Pengecekan SJ",
   "releaseNotes": [
-    "Tambah mode Multi-Rute di modal Relokasi Rak untuk memindahkan banyak pasangan rak sekaligus dalam 1 aksi",
-    "Dukungan tempel daftar rute otomatis, pratinjau stok & simulasi kapasitas per baris, serta bukti A4 & ringkasan WA batch"
+    "Kunci akses hapus & keluar grup chat operasional Store Manual/Alter (store_ops) bagi Store maupun Admin Warehouse",
+    "Simpan otomatis data Pengecekan SJ ke database Supabase (status PENDING) sejak import CSV pertama dan saat revisi timpa file"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.18.1",
+    "versionCode": 381,
+    "buildDate": "16 November 2026",
+    "buildHash": "wms-261116-v381-0703",
+    "releaseTitle": "WMS v2.18.1 — Muat Penuh Semua Riwayat Pengecekan SJ (Hapus Batas 200)",
+    "releaseNotes": [
+      "Hapus batas limit=200 pada fetch pengecekan_sj dengan pagination penuh (supabaseFetchAllPages) sehingga seluruh 666+ SJ dapat ditemukan & diekspor",
+      "Simpan cache lengkap riwayat pengecekan_sj di IndexedDB (anti limit 5MB localStorage) & ubah simpan ulang menjadi PATCH atomik"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
+  {
+    "version": "v2.18.0",
+    "versionCode": 380,
+    "buildDate": "16 November 2026",
+    "buildHash": "wms-261116-v380-0137",
+    "releaseTitle": "WMS v2.18.0 — Relokasi Rak Multi-Rute Sekaligus",
+    "releaseNotes": [
+      "Tambah mode Multi-Rute di modal Relokasi Rak untuk memindahkan banyak pasangan rak sekaligus dalam 1 aksi",
+      "Dukungan tempel daftar rute otomatis, pratinjau stok & simulasi kapasitas per baris, serta bukti A4 & ringkasan WA batch"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.17.4",
     "versionCode": 374,
@@ -97,33 +121,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "2 Opsi Tampilan Kalender: Agenda Event & Agenda Distribusi (terintegrasi Asisten AI)",
       "Pemisahan Modul Task Delegasi & Project: delegasi tugas ke Admin/CS/ID Karyawan beserta status & laporan hasil kerja"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.15.1",
-    "versionCode": 351,
-    "buildDate": "15 November 2026",
-    "buildHash": "wms-261115-v351-1309",
-    "releaseTitle": "WMS v2.15.1 — Dashboard Live: Antrean Picking, Kapasitas Blok F/Global, Breakdown Manual/Alter & Anomali Scan",
-    "releaseNotes": [
-      "Menghilangkan duplikasi 3x blok pintasan Dashboard dan menyinkronkan hitungan Antrean Hitung Ulang (BELUM vs SELISIH) dengan tab Audit Hitung Ulang",
-      "Menambahkan live widget Antrean Tugas Picking serta panel Kapasitas Warehouse Global, Shopee, TikTok, Studio & IG Live",
-      "Menampilkan breakdown status Manual Shipment & Alteration (Baru, Sedang Diproses, Selesai) dengan deep-link langsung ke tab Rekap",
-      "Menambahkan deteksi & kartu peringatan Anomali Data Scan (lokasi anomali, stok minus, SKU rusak/non-master) beserta modal inspeksi"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.15.0",
-    "versionCode": 350,
-    "buildDate": "15 November 2026",
-    "buildHash": "wms-261115-v350-1233",
-    "releaseTitle": "WMS v2.15.0 — Migrasi Notifikasi Manual Shipment & Alter ke Grup Live Chat WMS",
-    "releaseNotes": [
-      "Grup Live Chat WMS otomatis per Store (@warehouse + @chocoadm + 1 Store terkait) untuk seluruh update Manual Shipment & Alteration (submit, edit, resi, batal, SJ Marketplace, sold out, dan alur 2-arah)",
-      "Isolasi penuh Inter-Store Fulfillment: Store penyedia menerima permintaan kirim terpisah di grupnya sendiri dengan mirroring progres ke grup Store pemohon",
-      "Picking WA Grup (Fonnte) khusus Admin difilter ketat hanya untuk item Marketplace / Gudang Utama serta pembaruan FAQ bantuan Store"
     ],
     "minSupportedVersion": "v2.0.0"
   }

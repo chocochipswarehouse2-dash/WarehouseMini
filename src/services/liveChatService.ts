@@ -176,6 +176,14 @@ export function isSelfDirectRoom(room: ChatRoom | null | undefined): boolean {
   return uniqueParticipants.size < 2;
 }
 
+export function isProtectedStoreOpsGroup(room: ChatRoom | null | undefined): boolean {
+  if (!room || room.type !== 'group') return false;
+  if (room.system_group_kind === 'store_ops') return true;
+  const id = String(room.id || '').trim().toLowerCase();
+  const name = String(room.name || '').trim().toLowerCase();
+  return id.startsWith('group_ops_') || name.startsWith('[ms & alter]');
+}
+
 export function isRoomDeletedByTombstone(
   room: ChatRoom | null | undefined,
   tombstones: Record<string, string>
@@ -2179,6 +2187,12 @@ class LiveChatManager {
     const uniqueMembers = Array.from(new Set(membersToInclude));
 
     if (uniqueMembers.length === 0) {
+      if (isProtectedStoreOpsGroup(room)) {
+        return {
+          success: false,
+          error: 'Grup chat Manual & Alteration bersama Store bersifat permanen dan tidak dapat dikosongkan atau dihapus.',
+        };
+      }
       return this.deleteChatRoom(roomId);
     }
 
@@ -2208,7 +2222,7 @@ class LiveChatManager {
   }
 
   /**
-   * Leave a group discussion room (any member)
+   * Leave a group discussion room (any member, except permanent Store Ops MS & Alter groups)
    */
   public async leaveGroupRoom(roomId: string): Promise<{ success: boolean; error?: string }> {
     if (!this.currentSession) return { success: false, error: 'Sesi tidak ditemukan.' };
@@ -2216,6 +2230,12 @@ class LiveChatManager {
     const room = this.state.rooms.find((r) => r.id === roomId);
     if (!room || room.type !== 'group') {
       return { success: false, error: 'Ruang grup tidak ditemukan.' };
+    }
+    if (isProtectedStoreOpsGroup(room)) {
+      return {
+        success: false,
+        error: 'Grup chat Manual & Alteration bersama Store bersifat permanen sehingga tidak dapat keluar atau dihapus.',
+      };
     }
     const remaining = room.participants.filter((p) => p.toLowerCase() !== me);
     if (remaining.length === 0) {
@@ -2225,7 +2245,8 @@ class LiveChatManager {
   }
 
   /**
-   * Delete a Chat Room (Direct 1-on-1 chat by its participant or Admin; Group room by Creator, Admin & Superadmin)
+   * Delete a Chat Room (Direct 1-on-1 chat by its participant or Admin; Group room by Creator, Admin & Superadmin).
+   * Store Ops ([MS & Alter]) groups are permanently locked against deletion for both Store and Warehouse Admin.
    */
   public async deleteChatRoom(roomId: string): Promise<{ success: boolean; error?: string }> {
     if (!this.currentSession) return { success: false, error: 'Sesi tidak ditemukan.' };
@@ -2235,6 +2256,17 @@ class LiveChatManager {
       Boolean(this.currentSession.permissions?.action_manage_chat_groups);
 
     const room = this.state.rooms.find((r) => r.id === roomId);
+    if (
+      isProtectedStoreOpsGroup(room) ||
+      String(roomId || '').trim().toLowerCase().startsWith('group_ops_')
+    ) {
+      return {
+        success: false,
+        error:
+          'Grup chat Manual Shipment & Alteration bersama Store tidak dapat dihapus oleh Store maupun Admin Warehouse.',
+      };
+    }
+
     const isCreator = room && String(room.created_by || '').trim().toLowerCase() === me;
 
     if (room && room.type === 'group' && !isAdmin && !isCreator) {

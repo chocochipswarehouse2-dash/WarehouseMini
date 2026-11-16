@@ -32,6 +32,9 @@ import {
   syncPendingOfflinePengecekanSJ,
   normalizeDateToIso,
   getCachedPengecekanSJList,
+  getCachedPengecekanSJListAsync,
+  clearPengecekanSJRecordsCache,
+  buildPengecekanRecordFromDraft,
 } from '../../services/gasTarikanMD';
 import { fetchWithDeltaSync, clearDeltaSyncCache } from '../../services/gasSync';
 import { playSuccessBeep, playErrorBeep } from '../../services/audio';
@@ -345,6 +348,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   }, []);
 
   const [submitting, setSubmitting] = useState(false);
+  const [isSavingImport, setIsSavingImport] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<'pending' | 'selesai'>('pending');
   const [detailFilter, setDetailFilter] = useState<'ALL' | 'COCOK' | 'SELISIH'>('ALL');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -445,9 +449,29 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
     }
   };
 
+  // Hydrate full IndexedDB records cache & sync all pages from Supabase on mount
+  useEffect(() => {
+    let mounted = true;
+    getCachedPengecekanSJListAsync()
+      .then((idbCached) => {
+        if (!mounted || !idbCached || idbCached.length === 0) return;
+        const sortedCached = [...idbCached].sort((a, b) => {
+          const timeA = new Date(a.created_at || a.tanggal_sj || 0).getTime();
+          const timeB = new Date(b.created_at || b.tanggal_sj || 0).getTime();
+          return timeB - timeA;
+        });
+        setRecords((prev) => (sortedCached.length > prev.length ? sortedCached : prev));
+      })
+      .catch(() => {});
+    loadRecords(false);
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   useEffect(() => {
     if (activeTab === 'riwayat') {
-      loadRecords();
+      loadRecords(records.length === 0);
     }
   }, [activeTab]);
 
@@ -500,6 +524,60 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
     const has_selisih = kurang > 0 || lebih > 0 || unexpectedCount > 0;
     return { total_sj, total_scan, cocok, kurang, lebih, unexpectedCount, total_unexpected_qty, has_selisih };
   }, [activeDraft, comparisonData]);
+
+  const persistImportedDraftsToSupabase = useCallback(
+    async (targetDrafts: PengecekanSJDraft[]): Promise<{ syncedCount: number; offlineCount: number; failCount: number }> => {
+      if (!targetDrafts || targetDrafts.length === 0) {
+        return { syncedCount: 0, offlineCount: 0, failCount: 0 };
+      }
+      const submittedBy = session?.name || session?.username || 'Petugas';
+      const initialRecords: PengecekanSJRecord[] = targetDrafts.map((draft) =>
+        buildPengecekanRecordFromDraft(draft, {
+          status: 'pending',
+          submittedBy,
+          productCatalog,
+        })
+      );
+
+      // Optimistically reflect imported SJ in Riwayat immediately
+      setRecords((prev) => {
+        const incomingKeys = new Set(initialRecords.map((r) => r.no_sj.trim().toUpperCase()));
+        const remaining = prev.filter((r) => !incomingKeys.has(r.no_sj.trim().toUpperCase()));
+        return [...initialRecords, ...remaining];
+      });
+
+      setIsSavingImport(true);
+      let syncedCount = 0;
+      let offlineCount = 0;
+      let failCount = 0;
+
+      try {
+        for (const rec of initialRecords) {
+          try {
+            const res = await submitTarikanMD(rec);
+            if (res.success && !res.offline) {
+              syncedCount++;
+            } else if (res.success && res.offline) {
+              offlineCount++;
+            } else {
+              failCount++;
+            }
+          } catch {
+            failCount++;
+          }
+        }
+        setPendingOfflineCount(getPendingOfflinePengecekanSJ().length);
+        if (syncedCount > 0) {
+          void loadRecords(false);
+        }
+      } finally {
+        setIsSavingImport(false);
+      }
+
+      return { syncedCount, offlineCount, failCount };
+    },
+    [session, productCatalog]
+  );
 
   // ==========================================
   // MULTI-CSV IMPORT & AUTO SPLIT MULTI-SJ
@@ -599,7 +677,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
     // Reset file input agar user bisa memilih kembali file jika diperlukan
     if (fileInputRef.current) fileInputRef.current.value = '';
 
-    // Skenario A: Ada SJ baru yang valid
+    // Skenario A: Ada SJ baru yang valid -> Simpan antrean lokal AND langsung simpan ke Supabase dari import pertama
     if (validNewDrafts.length > 0) {
       setDrafts(prev => {
         const map = new Map<string, PengecekanSJDraft>();
@@ -609,14 +687,31 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
       });
       setActiveDraftId(validNewDrafts[0].id);
 
+      const syncRes = await persistImportedDraftsToSupabase(validNewDrafts);
+      const savedNote =
+        syncRes.syncedCount === validNewDrafts.length
+          ? 'dan langsung tersimpan ke Supabase!'
+          : syncRes.offlineCount > 0
+          ? '(antre sinkronisasi Supabase saat online).'
+          : 'dengan sebagian antre sinkronisasi ulang.';
+
       if (conflicts.length === 0) {
-        onShowToast(`Berhasil mengimpor ${validNewDrafts.length} Surat Jalan ke Antrean Pengecekan!`, 'success');
+        onShowToast(
+          `Berhasil mengimpor ${validNewDrafts.length} Surat Jalan ${savedNote}`,
+          syncRes.failCount > 0 ? 'warning' : 'success'
+        );
       } else {
         const batchDuplicates = conflicts.filter(c => c.status === 'batch_duplicate');
         if (batchDuplicates.length > 0) {
-          onShowToast(`File "${batchDuplicates[0].file_name}" ditolak karena duplikat dengan "${validNewDrafts[0].file_name}" (SJ ${batchDuplicates[0].no_sj} berhasil diimpor 1x).`, 'warning');
+          onShowToast(
+            `File "${batchDuplicates[0].file_name}" ditolak karena duplikat dengan "${validNewDrafts[0].file_name}" (SJ ${batchDuplicates[0].no_sj} berhasil diimpor 1x ${savedNote}).`,
+            'warning'
+          );
         } else {
-          onShowToast(`Berhasil mengimpor ${validNewDrafts.length} Surat Jalan baru. ${conflicts.length} Surat Jalan lainnya ditolak karena sudah ada di sistem.`, 'warning');
+          onShowToast(
+            `Berhasil mengimpor ${validNewDrafts.length} Surat Jalan baru ${savedNote} ${conflicts.length} Surat Jalan lainnya ditolak karena sudah ada di sistem.`,
+            'warning'
+          );
         }
       }
     }
@@ -631,7 +726,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
           title: '⚠️ File Duplikat Ditolak (Upload Bersamaan)',
           message: `Sistem mendeteksi 2 file dengan Nomor Surat Jalan yang sama diupload bersamaan:\n\n` +
             conflicts.map(c => `• ${c.no_sj} (File: "${c.file_name}")` + '\n  ' + `Alasan: ${c.reason}`).join('\n\n') +
-            `\n\n✅ Status Penanganan:\nFile pertama ("${validNewDrafts[0].file_name}") telah berhasil diimpor ke Antrean Pengecekan.\nFile kedua ditolak otomatis untuk mencegah duplikasi data atau double count.`,
+            `\n\n✅ Status Penanganan:\nFile pertama ("${validNewDrafts[0].file_name}") telah berhasil diimpor ke Antrean Pengecekan & tersimpan ke Supabase.\nFile kedua ditolak otomatis untuk mencegah duplikasi data atau double count.`,
           confirmLabel: 'Mengerti',
           isDanger: false,
           onConfirm: () => setConfirmModal(null)
@@ -648,7 +743,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
             `\n\n🛡️ Proteksi Integritas Data:\nSistem menolak import otomatis ini guna mencegah duplikasi data, selisih perhitungan, atau tertimpanya progres fisik yang sedang berjalan.\n\nApakah Anda ingin membatalkan (disarankan), atau ini adalah Revisi File resmi yang perlu menimpa data lama?`,
           confirmLabel: 'Tetap Timpa (Revisi Resmi)',
           isDanger: true,
-          onConfirm: () => {
+          onConfirm: async () => {
             const draftsToApply = conflicts.map(c => c.parsedDraft);
             setDrafts(prev => {
               const map = new Map<string, PengecekanSJDraft>();
@@ -657,12 +752,16 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
               return Array.from(map.values());
             });
             setActiveDraftId(draftsToApply[0].id);
-            onShowToast(`Surat Jalan ${draftsToApply.map(d => d.no_sj).join(', ')} berhasil ditimpa dengan file revisi baru.`, 'info');
+            await persistImportedDraftsToSupabase(draftsToApply);
+            onShowToast(
+              `Surat Jalan ${draftsToApply.map(d => d.no_sj).join(', ')} berhasil ditimpa & diperbarui ke Supabase.`,
+              'info'
+            );
           }
         });
       }
     }
-  }, [drafts, records, onShowToast, importType, productCatalog]);
+  }, [drafts, records, onShowToast, importType, productCatalog, persistImportedDraftsToSupabase]);
 
   // ==========================================
   // SCAN HANDLER & CATALOG LOOKUP
@@ -950,15 +1049,17 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   // ==========================================
   const loadRecords = async (options?: boolean | React.MouseEvent) => {
     const showLoadingSpinner = typeof options === 'boolean' ? options : true;
-    // 1. Instantly populate from local cache if available (0ms fast render!)
-    const cached = getCachedPengecekanSJList();
-    if (cached.length > 0 && records.length === 0) {
-      const sortedCached = [...cached].sort((a, b) => {
-        const timeA = new Date(a.created_at || a.tanggal_sj || 0).getTime();
-        const timeB = new Date(b.created_at || b.tanggal_sj || 0).getTime();
-        return timeB - timeA;
-      });
-      setRecords(sortedCached);
+    // 1. Instantly populate from IndexedDB / localStorage cache if available
+    if (records.length === 0) {
+      const cached = await getCachedPengecekanSJListAsync();
+      if (cached.length > 0) {
+        const sortedCached = [...cached].sort((a, b) => {
+          const timeA = new Date(a.created_at || a.tanggal_sj || 0).getTime();
+          const timeB = new Date(b.created_at || b.tanggal_sj || 0).getTime();
+          return timeB - timeA;
+        });
+        setRecords(sortedCached);
+      }
     }
 
     if (showLoadingSpinner) setLoadingRecords(true);
@@ -978,14 +1079,14 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   };
 
   /**
-   * Force full reload: reset delta sync cache so ALL data is fetched fresh
+   * Force full reload: reset delta sync & IndexedDB/local cache so ALL data is fetched fresh
    */
   const forceReloadRecords = async () => {
     setLoadingRecords(true);
     try {
       await clearDeltaSyncCache('Tarikan MD');
-      localStorage.removeItem('wms_cached_pengecekan_sj_records');
-      localStorage.removeItem('wms_cached_tarikanmd'); // Clear if any local cache exists
+      await clearPengecekanSJRecordsCache();
+      localStorage.removeItem('wms_cached_tarikanmd');
       await loadRecords(true);
       onShowToast('Muat ulang penuh selesai.', 'success');
     } catch {
@@ -1404,9 +1505,15 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                     Import File Surat Jalan (Bisa Banyak CSV)
                   </h3>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    1 file CSV = 1 draft. Jika 1 file berisi banyak No SJ, sistem otomatis memisahkannya.
+                    1 file CSV = 1 draft. Jika 1 file berisi banyak No SJ, sistem otomatis memisahkannya dan langsung menyimpan ke Supabase sejak import pertama.
                   </p>
                 </div>
+                {isSavingImport && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[11px] font-bold shrink-0">
+                    <RefreshCw className="w-3 h-3 animate-spin" />
+                    Menyimpan ke Supabase...
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center gap-4 py-2">
@@ -1748,7 +1855,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                       </div>
                       <div className="inline-flex items-center gap-1.5 text-[9.5px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 px-2 py-0.5 rounded-md shadow-2xs mt-2">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        <span>Proteksi Kerja Aktif: Scan & draft tersimpan otomatis ke IndexedDB & Cache Lokal</span>
+                        <span>Tersimpan ke Supabase sejak import awal · Progres scan tersimpan otomatis di perangkat</span>
                       </div>
                     </div>
 
@@ -2488,16 +2595,47 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
             )}
 
             {/* RECORD LIST */}
+            {loadingRecords && filteredRecords.length > 0 && (
+              <div className="px-3.5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/60 flex items-center gap-2 text-xs text-indigo-700 dark:text-indigo-300">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                <span>Menyinkronkan seluruh riwayat pengecekan SJ dari server...</span>
+              </div>
+            )}
+
             {loadingRecords && filteredRecords.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-slate-400 gap-3">
                 <RefreshCw className="w-7 h-7 animate-spin text-primary-500" />
-                <span className="text-sm font-medium">Memuat riwayat pengecekan...</span>
+                <span className="text-sm font-medium">Memuat seluruh riwayat pengecekan...</span>
               </div>
             ) : filteredRecords.length === 0 ? (
               <div className="text-center py-16 bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
                 <Package className="w-12 h-12 mx-auto mb-3 text-slate-300 dark:text-slate-600" />
-                <p className="text-sm font-bold text-slate-700 dark:text-slate-300">Belum ada data riwayat pengecekan</p>
-                <p className="text-xs text-slate-400 mt-1">Submit pengecekan di tab Pengecekan Barang untuk mencatat ke riwayat.</p>
+                {records.length > 0 ? (
+                  <>
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                      Tidak ada Surat Jalan yang cocok dengan filter saat ini
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Terdapat {records.length} SJ tersimpan. Coba ganti tab tipe atau reset kata kunci pencarian.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRiwayatTypeFilter('ALL');
+                        setStatusFilter('ALL');
+                        setSearchFilter('');
+                      }}
+                      className="mt-4 px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
+                    >
+                      Tampilkan Semua ({records.length} SJ)
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">Belum ada data riwayat pengecekan</p>
+                    <p className="text-xs text-slate-400 mt-1">Submit pengecekan di tab Pengecekan Barang untuk mencatat ke riwayat.</p>
+                  </>
+                )}
               </div>
             ) : (
               <div className="space-y-2.5">

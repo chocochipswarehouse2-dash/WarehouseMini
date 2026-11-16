@@ -48,6 +48,7 @@ import {
   canModifyMessage,
   hasOtherUserReadMessage,
   compressAndUploadChatImage,
+  isProtectedStoreOpsGroup,
 } from '../../services/liveChatService';
 import { canManageChatGroups } from '../../services/permissions';
 import { getUserPersonName } from '../../utils/userResolver';
@@ -1047,10 +1048,12 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                   const unreadCount =
                     room.unread_counts?.[myUsername] ||
                     (Array.isArray(room.unread_by) && room.unread_by.includes(myUsername) ? 1 : 0);
+                  const isProtectedOpsGroup = isProtectedStoreOpsGroup(room);
                   const canDeleteThisRoom =
-                    room.type === 'direct' ||
-                    isAdminGroupManager ||
-                    String(room.created_by || '').trim().toLowerCase() === myUsername;
+                    !isProtectedOpsGroup &&
+                    (room.type === 'direct' ||
+                      isAdminGroupManager ||
+                      String(room.created_by || '').trim().toLowerCase() === myUsername);
 
                   return (
                     <div
@@ -1325,9 +1328,10 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                         </button>
                       )}
 
-                      {(activeRoom.type === 'direct' ||
-                        isAdminGroupManager ||
-                        String(activeRoom.created_by || '').trim().toLowerCase() === myUsername) && (
+                      {!isProtectedStoreOpsGroup(activeRoom) &&
+                        (activeRoom.type === 'direct' ||
+                          isAdminGroupManager ||
+                          String(activeRoom.created_by || '').trim().toLowerCase() === myUsername) && (
                         <button
                           type="button"
                           onClick={() => setConfirmDeleteRoom(activeRoom)}
@@ -1339,6 +1343,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                       )}
 
                       {activeRoom.type === 'group' &&
+                        !isProtectedStoreOpsGroup(activeRoom) &&
                         !isAdminGroupManager &&
                         String(activeRoom.created_by || '').trim().toLowerCase() !== myUsername && (
                           <button
@@ -2456,7 +2461,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
               </div>
 
               <div className="px-4 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center justify-between gap-2">
-                {groupModalMode === 'manage' && activeRoom ? (
+                {groupModalMode === 'manage' && activeRoom && !isProtectedStoreOpsGroup(activeRoom) ? (
                   <button
                     type="button"
                     onClick={async () => {
@@ -2464,6 +2469,8 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                       if (res.success) {
                         onNotify?.('Ruang diskusi grup telah dihapus.', 'info');
                         setIsGroupModalOpen(false);
+                      } else {
+                        onNotify?.(res.error || 'Grup ini tidak dapat dihapus.', 'error');
                       }
                     }}
                     className="px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400 text-xs font-semibold hover:bg-rose-50 cursor-pointer"
@@ -2822,19 +2829,26 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                         <UserPlus className="w-3.5 h-3.5" />
                         <span>Tambah / Edit</span>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsGroupInfoModalOpen(false);
-                          setConfirmDeleteRoom(activeRoom);
-                        }}
-                        className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-rose-600 dark:text-rose-400 hover:bg-rose-50 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Hapus Grup</span>
-                      </button>
+                      {!isProtectedStoreOpsGroup(activeRoom) ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsGroupInfoModalOpen(false);
+                            setConfirmDeleteRoom(activeRoom);
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-rose-600 dark:text-rose-400 hover:bg-rose-50 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Hapus Grup</span>
+                        </button>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                          <Lock className="w-3 h-3 text-indigo-500 shrink-0" />
+                          <span>Grup Order Permanen</span>
+                        </span>
+                      )}
                     </>
-                  ) : (
+                  ) : !isProtectedStoreOpsGroup(activeRoom) ? (
                     <button
                       type="button"
                       onClick={async () => {
@@ -2853,6 +2867,11 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                       <LogOut className="w-3.5 h-3.5" />
                       <span>Keluar dari Grup</span>
                     </button>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                      <Lock className="w-3 h-3 text-indigo-500 shrink-0" />
+                      <span>Grup Order Permanen</span>
+                    </span>
                   )}
                 </div>
                 <button
