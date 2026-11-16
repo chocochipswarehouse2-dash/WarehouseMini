@@ -85,7 +85,7 @@ export default defineConfig(({ command }) => {
           theme_color: '#0f172a',
           background_color: '#0f172a',
           display: 'standalone',
-          orientation: 'portrait',
+          orientation: 'portrait-primary',
           lang: 'id',
           dir: 'ltr',
           categories: ['business', 'productivity', 'utilities'],

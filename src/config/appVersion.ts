@@ -15,20 +15,45 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.18.6",
-  "versionCode": 386,
+  "version": "v2.18.8",
+  "versionCode": 388,
   "buildDate": "16 November 2026",
-  "buildHash": "wms-261116-v386-1312",
-  "releaseTitle": "WMS v2.18.6 — Minimize Tugas Picking, Perlindungan Offline & Perbaikan Lokasi Tunggal",
+  "buildHash": "wms-261116-v388-1406",
+  "releaseTitle": "WMS v2.18.8 — Perketat Kunci Portrait-Primary & Opsi Orientasi Layar Per-Perangkat",
   "releaseNotes": [
-    "Tambah tombol Minimize Picking di workspace Tugas Picking lengkap dengan banner lanjutkan di Daftar SJ & bubble floating draggable di dock lintas menu",
-    "Tambah perlindungan offline Tugas Picking: auto-save draft per SJ, indikator Online/Offline, antrean outbox wms_picking_offline_outbox_v1, dan auto-sync ke Supabase saat kembali online",
-    "Perbaiki bug klik pill lokasi dan tombol +1/Maks yang sebelumnya memicu log multi-lokasi anomali (koma/gabungan) agar selalu mencatat 1 rak tunggal prioritas serta flag Anomali di getAreaFromLokasi"
+    "Ubah manifest PWA ke orientation portrait-primary (kunci 0 derajat tegak, hilangkan fallback SENSOR_PORTRAIT yang memicu sensor putar pada sebagian ROM Android)",
+    "Perbaiki deteksi isMobilePhoneDevice untuk HP DPI kecil/Situs Desktop serta tambah listener orientationchange & gesture lock ulang",
+    "Tambah kontrol Orientasi Layar HP di Pengaturan Perangkat (Kunci Tegak Default vs Ikuti Pengaturan HP OS)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.18.7",
+    "versionCode": 387,
+    "buildDate": "16 November 2026",
+    "buildHash": "wms-261116-v387-1316",
+    "releaseTitle": "WMS v2.18.7 — Minimize Proses Tugas Picking & Perlindungan Offline",
+    "releaseNotes": [
+      "Fitur Minimize saat proses picking aktif (di header, sticky scanner bar, dan bar bawah) ke dock mengambang yang bebas digeser",
+      "Perlindungan Offline penuh untuk Tugas Picking: auto-save draft per Surat Jalan ke memori lokal dan Outbox Offline idempotent saat penyelesaian SJ tanpa koneksi"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
+  {
+    "version": "v2.18.6",
+    "versionCode": 386,
+    "buildDate": "16 November 2026",
+    "buildHash": "wms-261116-v386-1312",
+    "releaseTitle": "WMS v2.18.6 — Minimize Tugas Picking, Perlindungan Offline & Perbaikan Lokasi Tunggal",
+    "releaseNotes": [
+      "Tambah tombol Minimize Picking di workspace Tugas Picking lengkap dengan banner lanjutkan di Daftar SJ & bubble floating draggable di dock lintas menu",
+      "Tambah perlindungan offline Tugas Picking: auto-save draft per SJ, indikator Online/Offline, antrean outbox wms_picking_offline_outbox_v1, dan auto-sync ke Supabase saat kembali online",
+      "Perbaiki bug klik pill lokasi dan tombol +1/Maks yang sebelumnya memicu log multi-lokasi anomali (koma/gabungan) agar selalu mencatat 1 rak tunggal prioritas serta flag Anomali di getAreaFromLokasi"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.18.5",
     "versionCode": 385,
@@ -99,30 +124,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Tambah mode Multi-Rute di modal Relokasi Rak untuk memindahkan banyak pasangan rak sekaligus dalam 1 aksi",
       "Dukungan tempel daftar rute otomatis, pratinjau stok & simulasi kapasitas per baris, serta bukti A4 & ringkasan WA batch"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.17.4",
-    "versionCode": 374,
-    "buildDate": "16 November 2026",
-    "buildHash": "wms-261116-v374-0116",
-    "releaseTitle": "WMS v2.17.4 — Audit Tampilan & Standarisasi Bahasa Antarmuka Profesional",
-    "releaseNotes": [
-      "Standarisasi istilah, label, dan petunjuk antarmuka di Dashboard, Kapasitas Rak, Denah 2D/3D, Popup Operasional, dan Live Chat agar ringkas dan profesional",
-      "Hilangkan jargon teknis internal dan kalimat instruksi bertele-tele pada komponen antarmuka"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.17.3",
-    "versionCode": 373,
-    "buildDate": "15 November 2026",
-    "buildHash": "wms-261115-v373-2350",
-    "releaseTitle": "WMS v2.17.3 — Emoji Picker & Reaksi Emoticon Live Chat",
-    "releaseNotes": [
-      "Tambahkan tombol & panel Pemilih Emoticon/Emoji lengkap (Gudang & Kerja, Ekspresi, Gestur, Simbol) pada kolom ketik Live Chat Desktop & HP",
-      "Tambahkan fitur Reaksi Emoticon cepat (👍 🙏 ✅ ❤️ 😂 🔥 📦 👀) pada setiap balon pesan Live Chat"
     ],
     "minSupportedVersion": "v2.0.0"
   }

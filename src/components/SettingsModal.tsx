@@ -117,6 +117,13 @@ import {
   vibrateDevice,
 } from '../services/audio';
 import { SupabaseMigrationView } from './SupabaseMigrationView';
+import {
+  OrientationPreference,
+  getOrientationPreference,
+  setOrientationPreference,
+  lockOrientationToPortrait,
+  isStandalonePwa,
+} from '../services/orientationLock';
 
 export interface SettingsModalProps {
   isOpen?: boolean;
@@ -242,6 +249,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isTestingWaWebhook, setIsTestingWaWebhook] = useState<boolean>(false);
   const [waWebhookStatus, setWaWebhookStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [waWebhookStatusMsg, setWaWebhookStatusMsg] = useState<string>('');
+  const [orientationPref, setOrientationPrefState] = useState<OrientationPreference>(() =>
+    getOrientationPreference()
+  );
+  const [currentScreenOrient, setCurrentScreenOrient] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'portrait-primary';
+    return window.screen?.orientation?.type || (window.innerWidth > window.innerHeight ? 'landscape' : 'portrait');
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncOrient = () => {
+      setCurrentScreenOrient(
+        window.screen?.orientation?.type || (window.innerWidth > window.innerHeight ? 'landscape' : 'portrait')
+      );
+      setOrientationPrefState(getOrientationPreference());
+    };
+    window.addEventListener('resize', syncOrient);
+    window.addEventListener('orientationchange', syncOrient);
+    window.addEventListener('wms_orientation_pref_changed', syncOrient);
+    return () => {
+      window.removeEventListener('resize', syncOrient);
+      window.removeEventListener('orientationchange', syncOrient);
+      window.removeEventListener('wms_orientation_pref_changed', syncOrient);
+    };
+  }, []);
 
   // Outlets Management State
   const [outletList, setOutletList] = useState<OutletItem[]>([]);
@@ -3254,6 +3286,100 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 );
               })()}
+
+              {/* Kunci Orientasi Layar HP (Portrait Lock vs Ikuti Pengaturan HP) */}
+              <div className="p-3.5 bg-slate-50 dark:bg-[#0f172a] rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                      <Smartphone className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <h4 className="text-xs font-bold text-slate-800 dark:text-white">
+                        Orientasi Layar HP (Portrait / Auto-Rotasi)
+                      </h4>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Layar saat ini:{' '}
+                        <b className={currentScreenOrient.includes('landscape') ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}>
+                          {currentScreenOrient.includes('landscape') ? 'Landscape (Miring)' : 'Portrait (Tegak)'}
+                        </b>{' '}
+                        · {isStandalonePwa() ? 'Mode Aplikasi PWA' : 'Mode Tab Browser'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await setOrientationPreference('portrait_lock');
+                      const ok = await lockOrientationToPortrait();
+                      setOrientationPrefState('portrait_lock');
+                      if (ok) {
+                        onNotify('Layar berhasil dikunci tegak (Portrait).', 'success');
+                      } else {
+                        onNotify(
+                          'Browser di tab biasa memblokir kunci orientasi. Buka lewat ikon Aplikasi PWA di Layar Utama atau gunakan mode "Ikuti Pengaturan HP".',
+                          'info'
+                        );
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>Kunci Portrait Sekarang</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await setOrientationPreference('portrait_lock');
+                      setOrientationPrefState('portrait_lock');
+                      onNotify('Mode diubah ke Kunci Tegak (Portrait-Primary).', 'success');
+                    }}
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                      orientationPref === 'portrait_lock'
+                        ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-400 dark:border-indigo-700'
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="text-xs font-extrabold text-slate-800 dark:text-white flex items-center justify-between">
+                      <span>Kunci Tegak (Default)</span>
+                      {orientationPref === 'portrait_lock' && <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600" />}
+                    </div>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      Mengunci layar aplikasi ke portrait tegak (0°) di perangkat mobile.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await setOrientationPreference('follow_os');
+                      setOrientationPrefState('follow_os');
+                      onNotify('Mode diubah ke Ikuti Pengaturan HP (Auto-Rotate mengikuti pengaturan Android/iOS).', 'info');
+                    }}
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                      orientationPref === 'follow_os'
+                        ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-400 dark:border-indigo-700'
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="text-xs font-extrabold text-slate-800 dark:text-white flex items-center justify-between">
+                      <span>Ikuti Pengaturan HP (OS)</span>
+                      {orientationPref === 'follow_os' && <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600" />}
+                    </div>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      Lepas paksaan browser agar 100% patuh pada tombol Auto-Rotate mati/nyala di HP Anda.
+                    </p>
+                  </button>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-[10px] text-amber-800 dark:text-amber-300 leading-relaxed">
+                  <strong>Tips jika layar HP masih berputar meski Auto-Rotate mati:</strong> (1) Pilih opsi <b>Ikuti Pengaturan HP (OS)</b> di atas pada HP Xiaomi/Oppo/Vivo, (2) Pastikan opsi <b>Situs Desktop / Desktop Site</b> di Chrome mati, (3) Hapus ikon PWA/APK lama di Layar Utama lalu pasang ulang agar konfigurasi portrait terbaru aktif.
+                </div>
+              </div>
 
               {/* Pusat Pembaruan Sistem (OTA Update ala Android) */}
               <div className="p-4 bg-gradient-to-r from-emerald-500/10 via-primary-500/10 to-transparent rounded-2xl border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">

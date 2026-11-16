@@ -2682,9 +2682,20 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               className="bg-white dark:bg-[#0F0F12] rounded-t-[inherit] px-2 py-2.5 border-b border-slate-200 dark:border-slate-800/80 transition-colors"
             >
               <div className="max-w-lg mx-auto">
-                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1.5 text-center">
-                  Metode Pemindaian
-                </label>
+                <div className="flex items-center justify-between gap-2 mb-1.5 px-0.5">
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                    Metode Pemindaian · <span className="font-mono text-slate-600 dark:text-slate-300">{activeSJ.no_sj} ({activeStats.regularPicked}/{activeStats.totalReq})</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleMinimizeActiveSJ}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[10px] font-extrabold transition-colors cursor-pointer"
+                    title="Minimize sesi picking ke dock mengambang"
+                  >
+                    <Minimize2 className="w-3 h-3 text-indigo-500" />
+                    <span>Minimize</span>
+                  </button>
+                </div>
                 <div className="flex bg-slate-100 dark:bg-[#09090B] p-1 rounded-xl border border-slate-200 dark:border-slate-800">
                   <button
                     id="btnPickingModeFisik"
@@ -3342,17 +3353,29 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             </div>
           </div>
 
-          <button
-            onClick={handleOpenRekapModal}
-            className={`px-3 py-3.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all shadow-lg active:scale-95 flex items-center gap-2 cursor-pointer ${
-              activeStats.statusType === 'SEMUA_PAS'
-                ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20'
-                : 'bg-primary-500 hover:bg-primary-600 text-white shadow-primary-500/20'
-            }`}
-          >
-            <ClipboardCheck className="w-4 h-4" />
-            <span>Selesaikan Picking (Cek Rekap)</span>
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={handleMinimizeActiveSJ}
+              className="px-3 py-3 rounded-xl font-extrabold text-xs bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
+              title="Minimize sesi picking agar bisa cek SJ atau halaman lain"
+            >
+              <Minimize2 className="w-4 h-4 text-indigo-500" />
+              <span>Minimize</span>
+            </button>
+
+            <button
+              onClick={handleOpenRekapModal}
+              className={`px-3 py-3.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all shadow-lg active:scale-95 flex items-center gap-2 cursor-pointer ${
+                activeStats.statusType === 'SEMUA_PAS'
+                  ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20'
+                  : 'bg-primary-500 hover:bg-primary-600 text-white shadow-primary-500/20'
+              }`}
+            >
+              <ClipboardCheck className="w-4 h-4" />
+              <span>Selesaikan Picking (Cek Rekap)</span>
+            </button>
+          </div>
         </div>
 
         {/* MODAL REKAP & PENYELESAIAN HASIL PICKING */}
@@ -3801,6 +3824,14 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         ) : (
           filteredSJs.slice(0, 100).map((group) => {
             const isDone = group.status === 'SELESAI';
+            const sjUpper = (group.no_sj || '').toUpperCase().trim();
+            const isCurrentlyMinimizedSj = Boolean(
+              activeSJ && isMinimized && activeSJ.no_sj.toUpperCase().trim() === sjUpper
+            );
+            const hasSavedLocalDraft = Boolean(!isDone && group.total_qty_picked > 0);
+            const isPendingOfflineOutbox = getPickingOutboxBatches().some(
+              (b) => (b.no_sj || '').toUpperCase().trim() === sjUpper
+            );
             const percent =
               group.total_qty_req > 0
                 ? Math.min(100, Math.round((group.total_qty_picked / group.total_qty_req) * 100))
@@ -3810,21 +3841,23 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               <div
                 key={group.no_sj}
                 className={`p-2 sm:p-3 rounded-2xl bg-white dark:bg-[#131d31] border transition-all shadow-sm ${
-                  isDone
+                  isCurrentlyMinimizedSj
+                    ? 'border-indigo-400 dark:border-indigo-500 ring-1 ring-indigo-400/30'
+                    : isDone
                     ? 'border-emerald-200 dark:border-emerald-950 bg-emerald-50/10'
                     : 'border-slate-200 dark:border-slate-800 hover:border-primary-500'
                 }`}
               >
                 <div className="flex flex-wrap justify-between items-start gap-2 mb-3">
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <input
                         type="checkbox"
                         checked={selectedSJs.includes(group.no_sj)}
                         onChange={() => handleSelectSJCheckbox(group.no_sj)}
                         className="w-4 h-4 rounded text-primary-500 focus:ring-primary-500 cursor-pointer"
                       />
-                      <span className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-tight">
+                      <span className="text-sm font-black font-mono text-slate-800 dark:text-white uppercase tracking-tight">
                         {group.no_sj}
                       </span>
                       <span
@@ -3848,6 +3881,21 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                             : 'SELESAI (SEBAGIAN)'
                           : group.status}
                       </span>
+                      {isCurrentlyMinimizedSj && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800">
+                          📌 Diminimize
+                        </span>
+                      )}
+                      {!isCurrentlyMinimizedSj && hasSavedLocalDraft && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                          💾 Draft Tersimpan ({group.total_qty_picked}/{group.total_qty_req} pcs)
+                        </span>
+                      )}
+                      {isPendingOfflineOutbox && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-800">
+                          ☁️ Menunggu Sync Offline
+                        </span>
+                      )}
                     </div>
 
                     <div className="text-xs font-medium text-slate-500 mt-1 flex flex-wrap items-center gap-2">
@@ -3929,6 +3977,10 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       {isDone ? (
                         <>
                           <FileText className="w-3.5 h-3.5" /> Detail Rekap
+                        </>
+                      ) : isCurrentlyMinimizedSj || hasSavedLocalDraft ? (
+                        <>
+                          <Maximize2 className="w-3.5 h-3.5" /> Lanjutkan Picking
                         </>
                       ) : (
                         <>

@@ -1,13 +1,13 @@
 {
-  "version": "v2.18.6",
-  "versionCode": 386,
+  "version": "v2.18.8",
+  "versionCode": 388,
   "buildDate": "16 November 2026",
-  "buildHash": "wms-261116-v386-1312",
-  "releaseTitle": "WMS v2.18.6 — Minimize Tugas Picking, Perlindungan Offline & Perbaikan Lokasi Tunggal",
+  "buildHash": "wms-261116-v388-1406",
+  "releaseTitle": "WMS v2.18.8 — Perketat Kunci Portrait-Primary & Opsi Orientasi Layar Per-Perangkat",
   "releaseNotes": [
-    "Tambah tombol Minimize Picking di workspace Tugas Picking lengkap dengan banner lanjutkan di Daftar SJ & bubble floating draggable di dock lintas menu",
-    "Tambah perlindungan offline Tugas Picking: auto-save draft per SJ, indikator Online/Offline, antrean outbox wms_picking_offline_outbox_v1, dan auto-sync ke Supabase saat kembali online",
-    "Perbaiki bug klik pill lokasi dan tombol +1/Maks yang sebelumnya memicu log multi-lokasi anomali (koma/gabungan) agar selalu mencatat 1 rak tunggal prioritas serta flag Anomali di getAreaFromLokasi"
+    "Ubah manifest PWA ke orientation portrait-primary (kunci 0 derajat tegak, hilangkan fallback SENSOR_PORTRAIT yang memicu sensor putar pada sebagian ROM Android)",
+    "Perbaiki deteksi isMobilePhoneDevice untuk HP DPI kecil/Situs Desktop serta tambah listener orientationchange & gesture lock ulang",
+    "Tambah kontrol Orientasi Layar HP di Pengaturan Perangkat (Kunci Tegak Default vs Ikuti Pengaturan HP OS)"
   ],
   "minSupportedVersion": "v2.0.0"
 }
