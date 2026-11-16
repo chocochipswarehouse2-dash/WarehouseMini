@@ -35,6 +35,7 @@ import {
 import { playSuccessBeep, playErrorBeep, vibrateDevice } from '../services/audio';
 import { globalRealtimeStore } from '../services/store';
 import { addNotificationToHub } from '../services/notificationHubService';
+import { DraggableFloatingBubble, BubbleDragHandle } from './common/DraggableFloatingBubble';
 
 interface UpdateDatabaseModalProps {
   isOpen: boolean;
@@ -422,18 +423,27 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
     const isErr = updateStep === 'failed' && !isUpdating;
 
     return (
-      <div className="fixed bottom-20 left-4 z-[70] w-[calc(100vw-2rem)] sm:w-96 bg-slate-900/95 dark:bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-700/80 p-4 backdrop-blur-md animate-in slide-in-from-bottom-4 duration-200 print:hidden">
-        <div className="flex items-start justify-between gap-2.5 mb-2.5">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div
-              className={`p-2 rounded-xl shrink-0 ${
-                isDone
-                  ? 'bg-emerald-500/20 text-emerald-400'
-                  : isErr
-                  ? 'bg-rose-500/20 text-rose-400'
-                  : 'bg-indigo-500/20 text-indigo-400'
-              }`}
-            >
+      <DraggableFloatingBubble
+        storageKey="update_db_minimized"
+        defaultAnchor="bottom-left"
+        defaultOffset={{ x: 16, y: 80 }}
+        zIndexClass="z-[70]"
+        className="w-[calc(100vw-2rem)] sm:w-96"
+        ariaLabel="Progress Update Database"
+      >
+        <div className="w-full bg-slate-900/95 dark:bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-700/80 p-4 backdrop-blur-md animate-in slide-in-from-bottom-4 duration-200">
+          <div className="flex items-start justify-between gap-2.5 mb-2.5">
+            <div className="flex items-center gap-2 min-w-0">
+              <BubbleDragHandle tone="dark" className="-ml-1" />
+              <div
+                className={`p-2 rounded-xl shrink-0 ${
+                  isDone
+                    ? 'bg-emerald-500/20 text-emerald-400'
+                    : isErr
+                    ? 'bg-rose-500/20 text-rose-400'
+                    : 'bg-indigo-500/20 text-indigo-400'
+                }`}
+              >
               {isUpdating ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : isDone ? (
@@ -507,7 +517,8 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
         <div className="text-[10px] text-slate-400 truncate">
           {statusMessage || 'Memproses pembaruan database di latar belakang...'}
         </div>
-      </div>
+        </div>
+      </DraggableFloatingBubble>
     );
   }
 

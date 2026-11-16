@@ -22,6 +22,7 @@ import {
 } from '../../services/scannerOutboxService';
 import { syncOfflinePenerimaanProduksi } from '../../services/supabase';
 import { getPendingOfflineProduksiCount } from '../../services/localDb';
+import { DraggableFloatingBubble, BubbleDragHandle } from './DraggableFloatingBubble';
 
 interface MinimizedWorkspacesDockProps {
   // 1. Scanner Popup
@@ -190,41 +191,50 @@ export const MinimizedWorkspacesDock: React.FC<MinimizedWorkspacesDockProps> = (
   };
 
   return (
-    <div
-      className="fixed bottom-3 left-3 z-[60] flex flex-col items-start gap-1.5 max-w-[calc(100vw-5.2rem)] sm:max-w-[calc(100vw-16rem)] print:hidden select-none"
-      aria-label="Minimized Workspaces Dock"
+    <DraggableFloatingBubble
+      storageKey="minimized_workspaces_dock"
+      defaultAnchor="bottom-left"
+      defaultOffset={{ x: 12, y: 12 }}
+      zIndexClass="z-[60]"
+      className="max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-2rem)]"
+      ariaLabel="Minimized Workspaces Dock"
     >
-      {/* Mobile Multi-Window Compact Header Toggle when >= 2 popups are minimized */}
-      {activePillCount >= 2 && (
-        <button
-          type="button"
-          onClick={() => setIsMobileCollapsed((prev) => !prev)}
-          className="sm:hidden inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900/95 dark:bg-slate-800/95 text-white text-[10px] font-extrabold shadow-lg border border-slate-700 cursor-pointer"
-        >
-          <Layers className="w-3 h-3 text-indigo-400" />
-          <span>{activePillCount} Jendela Kerja Diminimize</span>
-          {!isOnline && <WifiOff className="w-3 h-3 text-amber-400" />}
-          {isMobileCollapsed ? (
-            <ChevronUp className="w-3 h-3 text-slate-300" />
-          ) : (
-            <ChevronDown className="w-3 h-3 text-slate-300" />
-          )}
-        </button>
-      )}
-
-      {/* Horizontal / Wrap Non-Colliding Dock Container */}
-      <div
-        className={`${
-          activePillCount >= 2 && isMobileCollapsed ? 'hidden sm:flex' : 'flex'
-        } flex-wrap items-center gap-2 max-w-full overflow-x-auto no-scrollbar`}
-      >
-        {/* 1. PILL: SCANNER GUDANG */}
-        {showScannerPill && (
-          <div className="flex items-center gap-2 p-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 animate-in slide-in-from-bottom duration-200">
-            <div
-              onClick={onMaximizeScanner}
-              className="flex items-center gap-2 cursor-pointer hover:opacity-90 transition-opacity min-w-0"
+      <div className="flex flex-col items-start gap-1.5">
+        {/* Mobile Multi-Window Compact Header Toggle when >= 2 popups are minimized */}
+        {activePillCount >= 2 && (
+          <div className="sm:hidden inline-flex items-center gap-1 pl-1.5 pr-2.5 py-1 rounded-full bg-slate-900/95 dark:bg-slate-800/95 text-white text-[10px] font-extrabold shadow-lg border border-slate-700">
+            <BubbleDragHandle tone="dark" />
+            <button
+              type="button"
+              onClick={() => setIsMobileCollapsed((prev) => !prev)}
+              className="inline-flex items-center gap-1.5 cursor-pointer"
             >
+              <Layers className="w-3 h-3 text-indigo-400" />
+              <span>{activePillCount} Jendela Kerja Diminimize</span>
+              {!isOnline && <WifiOff className="w-3 h-3 text-amber-400" />}
+              {isMobileCollapsed ? (
+                <ChevronUp className="w-3 h-3 text-slate-300" />
+              ) : (
+                <ChevronDown className="w-3 h-3 text-slate-300" />
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* Horizontal / Wrap Non-Colliding Dock Container */}
+        <div
+          className={`${
+            activePillCount >= 2 && isMobileCollapsed ? 'hidden sm:flex' : 'flex'
+          } flex-wrap items-center gap-2 max-w-full`}
+        >
+          {/* 1. PILL: SCANNER GUDANG */}
+          {showScannerPill && (
+            <div className="flex items-center gap-1.5 p-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 animate-in slide-in-from-bottom duration-200">
+              <BubbleDragHandle tone="light" className="-ml-0.5" />
+              <div
+                onClick={onMaximizeScanner}
+                className="flex items-center gap-2 cursor-pointer hover:opacity-90 transition-opacity min-w-0"
+              >
               <div
                 className={`w-8 h-8 rounded-xl flex items-center justify-center text-white shadow-xs shrink-0 ${
                   !isOnline
@@ -307,7 +317,8 @@ export const MinimizedWorkspacesDock: React.FC<MinimizedWorkspacesDockProps> = (
 
         {/* 2. PILL: INPUT PENERIMAAN PRODUKSI */}
         {showProduksiPill && (
-          <div className="flex items-center gap-2 p-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 animate-in slide-in-from-bottom duration-200">
+          <div className="flex items-center gap-1.5 p-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 animate-in slide-in-from-bottom duration-200">
+            <BubbleDragHandle tone="light" className="-ml-0.5" />
             <div
               onClick={onMaximizeProduksiInput}
               className="flex items-center gap-2 cursor-pointer hover:opacity-90 transition-opacity min-w-0"
@@ -381,7 +392,8 @@ export const MinimizedWorkspacesDock: React.FC<MinimizedWorkspacesDockProps> = (
 
         {/* 3. PILL: ANTREAN HITUNG ULANG */}
         {showHitungUlangPill && (
-          <div className="flex items-center gap-2 p-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 animate-in slide-in-from-bottom duration-200">
+          <div className="flex items-center gap-1.5 p-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 animate-in slide-in-from-bottom duration-200">
+            <BubbleDragHandle tone="light" className="-ml-0.5" />
             <div
               onClick={onMaximizeHitungUlang}
               className="flex items-center gap-2 cursor-pointer hover:opacity-90 transition-opacity min-w-0"
@@ -456,7 +468,8 @@ export const MinimizedWorkspacesDock: React.FC<MinimizedWorkspacesDockProps> = (
             </div>
           </div>
         )}
+        </div>
       </div>
-    </div>
+    </DraggableFloatingBubble>
   );
 };

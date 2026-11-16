@@ -15,20 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.18.3",
-  "versionCode": 383,
+  "version": "v2.18.4",
+  "versionCode": 384,
   "buildDate": "16 November 2026",
-  "buildHash": "wms-261116-v383-0802",
-  "releaseTitle": "WMS v2.18.3 — Perbaikan Stabilitas Indeks Live Chat (Anti-Hilang & Atomic CAS)",
+  "buildHash": "wms-261116-v384-0821",
+  "releaseTitle": "WMS v2.18.4 — Fitur Geser Bebas Semua Bubble Minimize",
   "releaseNotes": [
-    "Proteksi atomic CAS PATCH + antrean sinkronisasi pada wms_chat_rooms_index_v1 agar grup & chat tidak pernah terhapus akibat gangguan jaringan atau tulis bersamaan",
-    "Sinkronisasi CAS di Service Worker (pwa-extras.js) untuk aksi Balas Cepat & Tandai Dibaca",
-    "Pemulihan 5 ruang chat non-tombstone (termasuk grup tim QC & chat store) dari riwayat pesan Supabase"
+    "Semua bubble minimize (Update Database, Reset Lokasi, Dock Scanner/Produksi/Hitung Ulang, Asisten AI, Update Aplikasi) kini bisa digeser bebas ke seluruh area layar (mouse & sentuh)",
+    "Posisi kustom tiap bubble tersimpan otomatis di perangkat dengan batas aman viewport dan reset cepat klik 2x pada grip handle"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.18.3",
+    "versionCode": 383,
+    "buildDate": "16 November 2026",
+    "buildHash": "wms-261116-v383-0802",
+    "releaseTitle": "WMS v2.18.3 — Perbaikan Stabilitas Indeks Live Chat (Anti-Hilang & Atomic CAS)",
+    "releaseNotes": [
+      "Proteksi atomic CAS PATCH + antrean sinkronisasi pada wms_chat_rooms_index_v1 agar grup & chat tidak pernah terhapus akibat gangguan jaringan atau tulis bersamaan",
+      "Sinkronisasi CAS di Service Worker (pwa-extras.js) untuk aksi Balas Cepat & Tandai Dibaca",
+      "Pemulihan 5 ruang chat non-tombstone (termasuk grup tim QC & chat store) dari riwayat pesan Supabase"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.18.2",
     "versionCode": 382,
@@ -110,18 +122,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Tambahkan fitur clear cache lokal per modul maupun semua modul sekaligus (Katalog, Picking, Mutasi, Store, Opname, Produksi, Dashboard, Shopee, Website, PWA)",
       "Hadirkan menu Kelola Cache di Modal Pembaruan Aplikasi agar dapat diakses seluruh role user"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.17.0",
-    "versionCode": 370,
-    "buildDate": "15 November 2026",
-    "buildHash": "wms-261115-v370-1344",
-    "releaseTitle": "WMS v2.17.0 — Denah 2D Setup Area & Pembaruan Dashboard Kapasitas",
-    "releaseNotes": [
-      "Tambahkan mode Denah 2D interaktif pada Visual 3D Kapasitas untuk setup penamaan area/zona, kode lokasi WMS berurutan, dan edit cepat via tabel yang tersinkron langsung ke 3D & Cloud",
-      "Rombak Dashboard Interaktif Kapasitas agar lebih ringkas, tenang tanpa animasi berkedip berlebih, serta menyatukan strip kategori penyimpanan dan status rak"
     ],
     "minSupportedVersion": "v2.0.0"
   }

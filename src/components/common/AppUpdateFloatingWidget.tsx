@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Sparkles, RotateCw, X, Info, Check } from 'lucide-react';
 import { useAppUpdate } from '../../hooks/useAppUpdate';
 import { CURRENT_APP_VERSION_INFO, isNewerVersion } from '../../config/appVersion';
+import { DraggableFloatingBubble, BubbleDragHandle } from './DraggableFloatingBubble';
 
 interface AppUpdateFloatingWidgetProps {
   onOpenModal: () => void;
@@ -24,12 +25,20 @@ export const AppUpdateFloatingWidget: React.FC<AppUpdateFloatingWidgetProps> = (
 
   if (status === 'downloading') {
     return (
-      <div className="fixed bottom-20 left-3 right-3 sm:left-auto sm:right-6 sm:max-w-sm z-40 print:hidden animate-in fade-in duration-200">
-        <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl bg-slate-900/95 text-white backdrop-blur-md shadow-2xl border border-emerald-500/40 text-xs font-bold">
+      <DraggableFloatingBubble
+        storageKey="app_update_widget"
+        defaultAnchor="bottom-right"
+        defaultOffset={{ x: 16, y: 80 }}
+        zIndexClass="z-40"
+        className="w-[min(calc(100vw-1.5rem),24rem)] sm:w-auto sm:max-w-sm"
+        ariaLabel="Status Mempersiapkan Pembaruan"
+      >
+        <div className="flex items-center gap-2 px-3 py-2.5 rounded-2xl bg-slate-900/95 text-white backdrop-blur-md shadow-2xl border border-emerald-500/40 text-xs font-bold animate-in fade-in duration-200">
+          <BubbleDragHandle tone="dark" className="-ml-1" />
           <RotateCw className="w-4 h-4 text-emerald-400 animate-spin shrink-0" />
           <span className="truncate">Mempersiapkan pembaruan {latestVersion}...</span>
         </div>
-      </div>
+      </DraggableFloatingBubble>
     );
   }
 
@@ -49,8 +58,16 @@ export const AppUpdateFloatingWidget: React.FC<AppUpdateFloatingWidgetProps> = (
   };
 
   return (
-    <div className="fixed bottom-20 left-3 right-3 sm:left-auto sm:right-6 sm:max-w-md z-40 print:hidden animate-in fade-in slide-in-from-bottom-2 duration-300">
-      <div className="flex items-center justify-between gap-1.5 sm:gap-2 p-2 sm:p-2.5 rounded-2xl bg-slate-900/95 dark:bg-slate-800/95 text-white backdrop-blur-md shadow-2xl border border-amber-500/40 ring-2 ring-amber-500/15 max-w-full overflow-hidden">
+    <DraggableFloatingBubble
+      storageKey="app_update_widget"
+      defaultAnchor="bottom-right"
+      defaultOffset={{ x: 16, y: 80 }}
+      zIndexClass="z-40"
+      className="w-[min(calc(100vw-1.5rem),28rem)] sm:w-auto sm:max-w-md"
+      ariaLabel="Notifikasi Update Aplikasi"
+    >
+      <div className="flex items-center justify-between gap-1.5 sm:gap-2 p-2 sm:p-2.5 rounded-2xl bg-slate-900/95 dark:bg-slate-800/95 text-white backdrop-blur-md shadow-2xl border border-amber-500/40 ring-2 ring-amber-500/15 max-w-full overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <BubbleDragHandle tone="dark" className="-ml-0.5" />
         <div
           onClick={onOpenModal}
           className="flex items-center gap-2 cursor-pointer pr-1 group min-w-0 flex-1"
@@ -116,6 +133,6 @@ export const AppUpdateFloatingWidget: React.FC<AppUpdateFloatingWidgetProps> = (
           </button>
         </div>
       </div>
-    </div>
+    </DraggableFloatingBubble>
   );
 };

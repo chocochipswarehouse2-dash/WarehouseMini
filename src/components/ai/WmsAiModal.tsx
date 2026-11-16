@@ -43,6 +43,7 @@ import {
 } from 'lucide-react';
 import { UserSession } from '../../types';
 import { isWarehouseAccountOnly } from '../../services/permissions';
+import { DraggableFloatingBubble, BubbleDragHandle } from '../common/DraggableFloatingBubble';
 import { parseAiAttachmentFile, AiAttachment } from '../../utils/aiAttachmentParser';
 import {
   exportAiTableToExcel,
@@ -1058,11 +1059,20 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
   // Pengguna bisa bebas bekerja di modul WMS lain sambil menunggu jawaban AI!
   if (isMinimized) {
     return (
-      <div className="fixed bottom-20 right-4 z-50 flex items-center gap-2 p-2 sm:p-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 animate-in slide-in-from-bottom duration-200 hover:shadow-primary-500/10 transition-all select-none">
-        <div
-          onClick={() => setIsMinimized(false)}
-          className="flex items-center gap-2.5 cursor-pointer hover:opacity-90 transition-opacity"
-        >
+      <DraggableFloatingBubble
+        storageKey="wms_ai_minimized"
+        defaultAnchor="bottom-right"
+        defaultOffset={{ x: 16, y: 80 }}
+        zIndexClass="z-50"
+        className="max-w-[calc(100vw-1.5rem)]"
+        ariaLabel="Asisten AI WMS (Minimized)"
+      >
+        <div className="flex items-center gap-1.5 sm:gap-2 p-2 sm:p-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 animate-in slide-in-from-bottom duration-200 hover:shadow-primary-500/10 transition-all">
+          <BubbleDragHandle tone="light" className="-ml-0.5" />
+          <div
+            onClick={() => setIsMinimized(false)}
+            className="flex items-center gap-2.5 cursor-pointer hover:opacity-90 transition-opacity min-w-0"
+          >
           <div
             className={`w-9 h-9 rounded-xl flex items-center justify-center text-white shadow-sm shrink-0 ${
               isLoading
@@ -1120,7 +1130,8 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
             <X className="w-4 h-4" />
           </button>
         </div>
-      </div>
+        </div>
+      </DraggableFloatingBubble>
     );
   }
 

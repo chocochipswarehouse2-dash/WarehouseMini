@@ -33,6 +33,7 @@ import {
   LocationPurgePreviewResult,
   fetchDistinctDatabaseLocations,
 } from '../../services/supabase';
+import { DraggableFloatingBubble, BubbleDragHandle } from '../common/DraggableFloatingBubble';
 
 interface LocationPurgeModalProps {
   isOpen: boolean;
@@ -385,11 +386,20 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
     const isErr = minimizedStatus === 'failed' && !isExecuting;
 
     return (
-      <div className="fixed bottom-20 left-4 z-[9998] w-[calc(100vw-2rem)] sm:w-96 bg-slate-900/95 text-white rounded-2xl shadow-2xl border border-slate-700/80 p-3.5 backdrop-blur-md animate-in slide-in-from-bottom-4 duration-200 print:hidden">
-        <div className="flex items-center justify-between gap-2.5">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div
-              className={`p-2 rounded-xl shrink-0 ${
+      <DraggableFloatingBubble
+        storageKey="location_purge_minimized"
+        defaultAnchor="bottom-left"
+        defaultOffset={{ x: 16, y: 80 }}
+        zIndexClass="z-[9998]"
+        className="w-[calc(100vw-2rem)] sm:w-96"
+        ariaLabel="Progress Reset Lokasi"
+      >
+        <div className="w-full bg-slate-900/95 text-white rounded-2xl shadow-2xl border border-slate-700/80 p-3.5 backdrop-blur-md animate-in slide-in-from-bottom-4 duration-200">
+          <div className="flex items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2 min-w-0">
+              <BubbleDragHandle tone="dark" className="-ml-1" />
+              <div
+                className={`p-2 rounded-xl shrink-0 ${
                 isDone
                   ? 'bg-emerald-500/20 text-emerald-400'
                   : isErr
@@ -460,7 +470,8 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
             )}
           </div>
         </div>
-      </div>
+        </div>
+      </DraggableFloatingBubble>
     );
   }
 
