@@ -824,64 +824,95 @@ async function handleBackgroundChatAction(actionType, roomId, replyText) {
       }),
     });
 
-    // 2. Perbarui indeks ruang chat (wms_chat_rooms_index_v1)
-    const idxRes = await fetch(
-      `${cfg.supabaseUrl}/rest/v1/wms_system_docs?select=content&or=(section_id.eq.wms_chat_rooms_index_v1,doc_key.eq.wms_chat_rooms_index_v1)&limit=1`,
-      { method: 'GET', headers }
-    );
-    if (idxRes.ok) {
+    // 2. Perbarui indeks ruang chat (wms_chat_rooms_index_v1) secara atomik via CAS (anti-overwrite)
+    for (let idxAttempt = 0; idxAttempt < 3; idxAttempt++) {
+      const idxRes = await fetch(
+        `${cfg.supabaseUrl}/rest/v1/wms_system_docs?select=content,updated_at&or=(section_id.eq.wms_chat_rooms_index_v1,doc_key.eq.wms_chat_rooms_index_v1)&limit=1`,
+        { method: 'GET', headers }
+      );
+      if (!idxRes.ok) break;
       const idxRows = await idxRes.json();
-      let rooms =
-        Array.isArray(idxRows) && idxRows.length > 0 && idxRows[0].content
-          ? typeof idxRows[0].content === 'string'
-            ? JSON.parse(idxRows[0].content)
-            : idxRows[0].content
-          : [];
-      if (Array.isArray(rooms)) {
-        rooms = rooms.map((r) => {
-          if (!r || r.id !== roomId) return r;
-          const otherMembers = (Array.isArray(r.participants) ? r.participants : []).filter(
-            (p) => String(p || '').toLowerCase() !== me
-          );
-          const nextCounts = { ...(r.unread_counts || {}), [me]: 0 };
-          let nextUnreadBy = (Array.isArray(r.unread_by) ? r.unread_by : []).filter(
-            (u) => String(u || '').toLowerCase() !== me
-          );
+      const idxRow = Array.isArray(idxRows) && idxRows.length > 0 ? idxRows[0] : null;
+      if (!idxRow || idxRow.content === undefined || idxRow.content === null) break;
 
-          if (newReplyMsg) {
-            for (const om of otherMembers) {
-              nextCounts[om] = (Number(nextCounts[om]) || 0) + 1;
-            }
-            nextUnreadBy = Array.from(new Set([...nextUnreadBy, ...otherMembers]));
-            return {
-              ...r,
-              updated_at: nowIso,
-              last_message_id: newReplyMsg.id,
-              last_message_text: newReplyMsg.text,
-              last_message_sender: me,
-              last_message_sender_name: myName,
-              last_message_at: nowIso,
-              unread_by: nextUnreadBy,
-              unread_counts: nextCounts,
-            };
+      let rooms = null;
+      try {
+        rooms = typeof idxRow.content === 'string' ? JSON.parse(idxRow.content) : idxRow.content;
+      } catch {
+        rooms = null;
+      }
+      if (!Array.isArray(rooms) || rooms.length === 0) break;
+
+      const updatedRooms = rooms.map((r) => {
+        if (!r || r.id !== roomId) return r;
+        const otherMembers = (Array.isArray(r.participants) ? r.participants : []).filter(
+          (p) => String(p || '').toLowerCase() !== me
+        );
+        const nextCounts = { ...(r.unread_counts || {}), [me]: 0 };
+        let nextUnreadBy = (Array.isArray(r.unread_by) ? r.unread_by : []).filter(
+          (u) => String(u || '').toLowerCase() !== me
+        );
+
+        if (newReplyMsg) {
+          for (const om of otherMembers) {
+            nextCounts[om] = (Number(nextCounts[om]) || 0) + 1;
           }
-
+          nextUnreadBy = Array.from(new Set([...nextUnreadBy, ...otherMembers]));
           return {
             ...r,
+            updated_at: nowIso,
+            last_message_id: newReplyMsg.id,
+            last_message_text: newReplyMsg.text,
+            last_message_sender: me,
+            last_message_sender_name: myName,
+            last_message_at: nowIso,
             unread_by: nextUnreadBy,
             unread_counts: nextCounts,
           };
-        });
+        }
 
-        if (rooms.length > 0) await fetch(`${cfg.supabaseUrl}/rest/v1/wms_system_docs?on_conflict=section_id`, {
+        return {
+          ...r,
+          unread_by: nextUnreadBy,
+          unread_counts: nextCounts,
+        };
+      });
+
+      if (idxRow.updated_at) {
+        const casRes = await fetch(
+          `${cfg.supabaseUrl}/rest/v1/wms_system_docs?section_id=eq.wms_chat_rooms_index_v1&updated_at=eq.${encodeURIComponent(idxRow.updated_at)}`,
+          {
+            method: 'PATCH',
+            headers: {
+              ...headers,
+              Prefer: 'return=representation',
+            },
+            body: JSON.stringify({
+              doc_key: 'wms_chat_rooms_index_v1',
+              content: updatedRooms,
+              updated_at: nowIso,
+            }),
+          }
+        );
+        if (casRes.ok) {
+          const patched = await casRes.json();
+          if (Array.isArray(patched) && patched.length > 0) {
+            break;
+          }
+        }
+        await new Promise((r) => setTimeout(r, 120));
+      } else {
+        await fetch(`${cfg.supabaseUrl}/rest/v1/wms_system_docs?on_conflict=section_id`, {
           method: 'POST',
           headers,
           body: JSON.stringify({
-            section_id: 'wms_chat_rooms_index_v1', doc_key: 'wms_chat_rooms_index_v1',
-            content: rooms,
+            section_id: 'wms_chat_rooms_index_v1',
+            doc_key: 'wms_chat_rooms_index_v1',
+            content: updatedRooms,
             updated_at: nowIso,
           }),
         });
+        break;
       }
     }
 

@@ -1,12 +1,13 @@
 {
-  "version": "v2.18.2",
-  "versionCode": 382,
+  "version": "v2.18.3",
+  "versionCode": 383,
   "buildDate": "16 November 2026",
-  "buildHash": "wms-261116-v382-0744",
-  "releaseTitle": "WMS v2.18.2 — Kunci Hapus Grup Chat Store MS/Alter & Auto-Save Import Awal Pengecekan SJ",
+  "buildHash": "wms-261116-v383-0802",
+  "releaseTitle": "WMS v2.18.3 — Perbaikan Stabilitas Indeks Live Chat (Anti-Hilang & Atomic CAS)",
   "releaseNotes": [
-    "Kunci akses hapus & keluar grup chat operasional Store Manual/Alter (store_ops) bagi Store maupun Admin Warehouse",
-    "Simpan otomatis data Pengecekan SJ ke database Supabase (status PENDING) sejak import CSV pertama dan saat revisi timpa file"
+    "Proteksi atomic CAS PATCH + antrean sinkronisasi pada wms_chat_rooms_index_v1 agar grup & chat tidak pernah terhapus akibat gangguan jaringan atau tulis bersamaan",
+    "Sinkronisasi CAS di Service Worker (pwa-extras.js) untuk aksi Balas Cepat & Tandai Dibaca",
+    "Pemulihan 5 ruang chat non-tombstone (termasuk grup tim QC & chat store) dari riwayat pesan Supabase"
   ],
   "minSupportedVersion": "v2.0.0"
 }

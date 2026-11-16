@@ -397,35 +397,109 @@ function mergeMessagesIdempotent(
 // TIER 2: ZERO-SETUP SUPABASE wms_system_docs PERSISTENCE
 // =============================================================================
 
-async function fetchSystemDocJson<T>(docKey: string): Promise<T | null> {
+interface SystemDocFetchResult<T> {
+  ok: boolean;
+  exists: boolean;
+  data: T | null;
+  updatedAt?: string;
+  sectionId?: string;
+}
+
+async function fetchSystemDocJsonDetailed<T>(docKey: string): Promise<SystemDocFetchResult<T>> {
   try {
     const rawKey = String(docKey || '').trim();
     const cleanKey = encodeURIComponent(rawKey);
-    if (!cleanKey) return null;
-    const rows = await supabaseFetch<Array<{ section_id?: string; doc_key?: string; content: any }>>(
+    if (!cleanKey) return { ok: false, exists: false, data: null };
+    const rows = await supabaseFetch<Array<{ section_id?: string; doc_key?: string; content: any; updated_at?: string }>>(
       'wms_system_docs',
       'GET',
       null,
-      `select=section_id,doc_key,content&or=(section_id.eq.${cleanKey},doc_key.eq.${cleanKey})&limit=5`
+      `select=section_id,doc_key,content,updated_at&or=(section_id.eq.${cleanKey},doc_key.eq.${cleanKey})&limit=5`
     );
-    if (Array.isArray(rows) && rows.length > 0) {
-      const matched = rows.find((r) => r && (r.section_id === rawKey || r.doc_key === rawKey));
-      if (matched && matched.content !== undefined) {
-        const raw = matched.content;
-        if (typeof raw === 'string') {
-          try {
-            return JSON.parse(raw) as T;
-          } catch {
-            return null;
-          }
-        }
-        return raw as T;
+    if (!Array.isArray(rows)) {
+      return { ok: false, exists: false, data: null };
+    }
+    if (rows.length === 0) {
+      return { ok: true, exists: false, data: null };
+    }
+    const matched = rows.find((r) => r && (r.section_id === rawKey || r.doc_key === rawKey));
+    if (!matched) {
+      return { ok: true, exists: false, data: null };
+    }
+    if (matched.content === undefined || matched.content === null) {
+      return {
+        ok: true,
+        exists: true,
+        data: null,
+        updatedAt: matched.updated_at,
+        sectionId: matched.section_id || rawKey,
+      };
+    }
+    const raw = matched.content;
+    if (typeof raw === 'string') {
+      try {
+        return {
+          ok: true,
+          exists: true,
+          data: JSON.parse(raw) as T,
+          updatedAt: matched.updated_at,
+          sectionId: matched.section_id || rawKey,
+        };
+      } catch (parseErr) {
+        console.warn(`[LiveChat] fetchSystemDocJsonDetailed(${docKey}) JSON parse error:`, parseErr);
+        return {
+          ok: false,
+          exists: true,
+          data: null,
+          updatedAt: matched.updated_at,
+          sectionId: matched.section_id || rawKey,
+        };
       }
     }
+    return {
+      ok: true,
+      exists: true,
+      data: raw as T,
+      updatedAt: matched.updated_at,
+      sectionId: matched.section_id || rawKey,
+    };
   } catch (err) {
     console.warn(`[LiveChat] fetchSystemDocJson(${docKey}) warning:`, err);
+    return { ok: false, exists: false, data: null };
   }
-  return null;
+}
+
+async function fetchSystemDocJson<T>(docKey: string): Promise<T | null> {
+  const res = await fetchSystemDocJsonDetailed<T>(docKey);
+  return res.data;
+}
+
+async function patchSystemDocIfUnchanged(
+  sectionId: string,
+  expectedUpdatedAt: string,
+  content: any
+): Promise<'updated' | 'conflict' | 'error'> {
+  try {
+    const query = `section_id=eq.${encodeURIComponent(sectionId)}&updated_at=eq.${encodeURIComponent(expectedUpdatedAt)}`;
+    const rows = await supabaseFetch<Array<{ section_id?: string; updated_at?: string }>>(
+      'wms_system_docs',
+      'PATCH',
+      {
+        doc_key: sectionId,
+        content,
+        updated_at: new Date().toISOString(),
+      },
+      query,
+      true
+    );
+    if (Array.isArray(rows) && rows.length > 0) {
+      return 'updated';
+    }
+    return 'conflict';
+  } catch (err) {
+    console.warn(`[LiveChat] patchSystemDocIfUnchanged(${sectionId}) warning:`, err);
+    return 'error';
+  }
 }
 
 async function saveSystemDocJson(docKey: string, content: any): Promise<boolean> {
@@ -656,6 +730,7 @@ class LiveChatManager {
   private deletedRoomTombstones: Record<string, string> = loadLocalDeletedTombstones();
   private pendingUpsertRooms = new Map<string, ChatRoom>();
   private recentlyUpsertedRooms = new Map<string, { room: ChatRoom; expiresAt: number }>();
+  private roomIndexWriteQueue: Promise<any> = Promise.resolve();
   private initializedForUser: string | null = null;
   private typingTimeout: any = null;
   private directoryLoadedAt = 0;
@@ -1276,12 +1351,29 @@ class LiveChatManager {
     this.notify();
 
     try {
-      const [serverRooms, serverTombstones] = await Promise.all([
-        fetchSystemDocJson<ChatRoom[]>(ROOMS_INDEX_DOC_KEY),
-        fetchSystemDocJson<Record<string, string>>(ROOMS_TOMBSTONE_DOC_KEY),
+      // Retry flushing any pending rooms that previously failed to save while offline
+      if (this.pendingUpsertRooms.size > 0) {
+        const pendingBatch = Array.from(this.pendingUpsertRooms.values());
+        const flushed = await this.mutateRoomsIndexOnServer({
+          mode: 'upsert',
+          upsertRooms: pendingBatch,
+        });
+        if (flushed) {
+          for (const pr of pendingBatch) {
+            this.pendingUpsertRooms.delete(pr.id);
+          }
+        }
+      }
+
+      const [indexRes, tombRes] = await Promise.all([
+        fetchSystemDocJsonDetailed<ChatRoom[]>(ROOMS_INDEX_DOC_KEY),
+        fetchSystemDocJsonDetailed<Record<string, string>>(ROOMS_TOMBSTONE_DOC_KEY),
       ]);
 
-      if (serverTombstones && typeof serverTombstones === 'object') {
+      const serverRooms = indexRes.ok && Array.isArray(indexRes.data) ? indexRes.data : null;
+      const serverTombstones = tombRes.ok && tombRes.data && typeof tombRes.data === 'object' ? tombRes.data : null;
+
+      if (serverTombstones) {
         for (const [rid, ts] of Object.entries(serverTombstones)) {
           if (!rid || typeof ts !== 'string') continue;
           const prevTs = this.deletedRoomTombstones[rid];
@@ -1305,7 +1397,7 @@ class LiveChatManager {
             roomMap.set(r.id, r);
           }
         }
-        // Plus any room currently in the middle of an optimistic upsert on this device
+        // Plus any room currently in the middle of an optimistic upsert (or pending offline flush) on this device
         for (const [id, pendingRoom] of this.pendingUpsertRooms.entries()) {
           if (!isRoomDeletedByTombstone(pendingRoom, this.deletedRoomTombstones)) {
             roomMap.set(id, pendingRoom);
@@ -1332,8 +1424,12 @@ class LiveChatManager {
       }
 
       const allAuthoritative = Array.from(roomMap.values());
+      const hasUnexpectedEmptyServer =
+        Array.isArray(serverRooms) &&
+        serverRooms.length === 0 &&
+        this.state.rooms.some((r) => r?.id && !isRoomDeletedByTombstone(r, this.deletedRoomTombstones));
 
-      if (Array.isArray(serverRooms)) {
+      if (Array.isArray(serverRooms) && !hasUnexpectedEmptyServer) {
         // Purge any rooms from local IndexedDB & memory that were deleted on another device
         const purgedRoomIds = await idbReconcileAuthoritativeRooms(
           allAuthoritative,
@@ -2314,35 +2410,175 @@ class LiveChatManager {
       });
     } catch {}
 
-    // 3. Persist deletion tombstone & updated rooms index to Supabase wms_system_docs
-    const [serverRooms, serverTombstones] = await Promise.all([
-      fetchSystemDocJson<ChatRoom[]>(ROOMS_INDEX_DOC_KEY),
-      fetchSystemDocJson<Record<string, string>>(ROOMS_TOMBSTONE_DOC_KEY),
-    ]);
-
-    const mergedTombstones: Record<string, string> = {
-      ...(serverTombstones && typeof serverTombstones === 'object' ? serverTombstones : {}),
-      ...this.deletedRoomTombstones,
-      [roomId]: deletedAt,
-    };
-    this.deletedRoomTombstones = mergedTombstones;
-    saveLocalDeletedTombstones(mergedTombstones);
-
-    const remaining = (Array.isArray(serverRooms) ? serverRooms : []).filter(
-      (r) => r && r.id !== roomId && !isRoomDeletedByTombstone(r, mergedTombstones)
-    );
-
-    await Promise.all([
-      saveSystemDocJson(ROOMS_TOMBSTONE_DOC_KEY, mergedTombstones),
-      saveSystemDocJson(ROOMS_INDEX_DOC_KEY, remaining),
-      saveSystemDocJson(`${ROOM_MSGS_DOC_PREFIX}${roomId}`, []),
-    ]);
+    // 3. Persist deletion tombstone & updated rooms index safely (CAS + fail-safe abort on read error)
+    await this.mutateRoomsIndexOnServer({
+      mode: 'delete',
+      deleteRoomId: roomId,
+      deletedAt,
+    });
+    await saveSystemDocJson(`${ROOM_MSGS_DOC_PREFIX}${roomId}`, []);
 
     return { success: true };
   }
 
   public async deleteGroupRoom(roomId: string): Promise<{ success: boolean; error?: string }> {
     return this.deleteChatRoom(roomId);
+  }
+
+  private runSerializedRoomIndexOp<T>(op: () => Promise<T>): Promise<T> {
+    const next = this.roomIndexWriteQueue.then(op, op);
+    this.roomIndexWriteQueue = next.catch(() => {});
+    return next;
+  }
+
+  /**
+   * Serialized, CAS-protected read-merge-write for `wms_chat_rooms_index_v1` & `wms_chat_deleted_rooms_v1`.
+   * HARD SAFETY GUARANTEES:
+   * 1. NEVER writes `wms_chat_rooms_index_v1` if reading the existing server index failed (prevents wiping rooms on network hiccups).
+   * 2. Uses conditional `PATCH` (`updated_at=eq.<ts>`) + retry loop so concurrent writers never overwrite each other's rooms.
+   */
+  private async mutateRoomsIndexOnServer(
+    options:
+      | {
+          mode: 'upsert';
+          upsertRooms: ChatRoom[];
+          patchRoomById?: Record<string, (serverRoom: ChatRoom | undefined) => ChatRoom>;
+        }
+      | {
+          mode: 'delete';
+          deleteRoomId: string;
+          deletedAt: string;
+        }
+  ): Promise<boolean> {
+    return this.runSerializedRoomIndexOp(async () => {
+      const MAX_ATTEMPTS = 4;
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        const [indexRes, tombRes] = await Promise.all([
+          fetchSystemDocJsonDetailed<ChatRoom[]>(ROOMS_INDEX_DOC_KEY),
+          fetchSystemDocJsonDetailed<Record<string, string>>(ROOMS_TOMBSTONE_DOC_KEY),
+        ]);
+
+        // Guard: NEVER overwrite the shared global rooms index if reading failed or returned corrupted non-array data
+        if (!indexRes.ok || !tombRes.ok || (indexRes.exists && !Array.isArray(indexRes.data))) {
+          if (attempt < MAX_ATTEMPTS - 1) {
+            await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
+            continue;
+          }
+          console.warn('[LiveChat] Aborting rooms index write because server fetch failed (preserving existing rooms).');
+          return false;
+        }
+
+        const serverRooms = Array.isArray(indexRes.data) ? indexRes.data : [];
+        const serverTombstones =
+          tombRes.data && typeof tombRes.data === 'object' ? tombRes.data : {};
+
+        // Merge tombstones keeping newest timestamp per roomId
+        const mergedTombstones: Record<string, string> = { ...serverTombstones };
+        for (const [rid, ts] of Object.entries(this.deletedRoomTombstones)) {
+          if (!rid || typeof ts !== 'string') continue;
+          const prev = mergedTombstones[rid];
+          if (!prev || new Date(ts).getTime() > new Date(prev).getTime()) {
+            mergedTombstones[rid] = ts;
+          }
+        }
+
+        let tombstonesDirty = false;
+        if (options.mode === 'delete') {
+          const prev = mergedTombstones[options.deleteRoomId];
+          if (!prev || new Date(options.deletedAt).getTime() >= new Date(prev).getTime()) {
+            mergedTombstones[options.deleteRoomId] = options.deletedAt;
+            tombstonesDirty = true;
+          }
+        } else {
+          for (const r of options.upsertRooms) {
+            if (r?.id && mergedTombstones[r.id] && !isRoomDeletedByTombstone(r, mergedTombstones)) {
+              delete mergedTombstones[r.id];
+              tombstonesDirty = true;
+            }
+          }
+        }
+
+        this.deletedRoomTombstones = mergedTombstones;
+        saveLocalDeletedTombstones(mergedTombstones);
+
+        const map = new Map<string, ChatRoom>();
+        let validServerCount = 0;
+        for (const r of serverRooms) {
+          if (r?.id && !isRoomDeletedByTombstone(r, mergedTombstones)) {
+            map.set(r.id, r);
+            validServerCount += 1;
+          }
+        }
+
+        // Preserve any rooms pending upsert or created/updated in the last 20s on this client
+        for (const [id, pendingRoom] of this.pendingUpsertRooms.entries()) {
+          if (!isRoomDeletedByTombstone(pendingRoom, mergedTombstones)) {
+            map.set(id, pendingRoom);
+          }
+        }
+        const nowMs = Date.now();
+        for (const [id, entry] of this.recentlyUpsertedRooms.entries()) {
+          if (nowMs <= entry.expiresAt && !map.has(id) && !isRoomDeletedByTombstone(entry.room, mergedTombstones)) {
+            map.set(id, entry.room);
+          }
+        }
+
+        if (options.mode === 'delete') {
+          map.delete(options.deleteRoomId);
+        } else {
+          for (const uRoom of options.upsertRooms) {
+            if (!uRoom?.id || isRoomDeletedByTombstone(uRoom, mergedTombstones)) continue;
+            const customMerge = options.patchRoomById?.[uRoom.id];
+            const finalRoom = customMerge ? customMerge(map.get(uRoom.id)) : uRoom;
+            if (finalRoom && !isRoomDeletedByTombstone(finalRoom, mergedTombstones)) {
+              map.set(finalRoom.id, finalRoom);
+            }
+          }
+        }
+
+        const nextList = Array.from(map.values()).sort(
+          (a, b) => this.getRoomSortTime(b) - this.getRoomSortTime(a)
+        );
+
+        // Extra Anti-Shrink Safety Guard on non-delete mutations
+        if (options.mode === 'upsert' && nextList.length < validServerCount) {
+          console.warn('[LiveChat] Blocked unexpected rooms index shrink during upsert:', {
+            validServerCount,
+            nextCount: nextList.length,
+          });
+          return false;
+        }
+
+        if (tombstonesDirty) {
+          await saveSystemDocJson(ROOMS_TOMBSTONE_DOC_KEY, mergedTombstones);
+        }
+
+        if (indexRes.exists && indexRes.updatedAt) {
+          const casResult = await patchSystemDocIfUnchanged(
+            indexRes.sectionId || ROOMS_INDEX_DOC_KEY,
+            indexRes.updatedAt,
+            nextList
+          );
+          if (casResult === 'updated') {
+            return true;
+          }
+          if (attempt < MAX_ATTEMPTS - 1) {
+            await new Promise((r) => setTimeout(r, 100 + Math.floor(Math.random() * 150)));
+            continue;
+          }
+          return false;
+        } else {
+          const created = await saveSystemDocJson(ROOMS_INDEX_DOC_KEY, nextList);
+          if (created) return true;
+          if (attempt < MAX_ATTEMPTS - 1) {
+            await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
+            continue;
+          }
+          return false;
+        }
+      }
+      return false;
+    });
   }
 
   private async upsertRoomToServer(room: ChatRoom): Promise<void> {
@@ -2352,6 +2588,7 @@ class LiveChatManager {
       expiresAt: Date.now() + 20_000,
     });
 
+    let persisted = false;
     try {
       const isMember = this.isUserInRoom(room);
       if (isMember) {
@@ -2368,47 +2605,10 @@ class LiveChatManager {
         await idbSaveRooms([room]);
       }
 
-      // Sync with server index WITHOUT re-inserting stale local rooms that may have been deleted on another device
-      const [serverRooms, serverTombstones] = await Promise.all([
-        fetchSystemDocJson<ChatRoom[]>(ROOMS_INDEX_DOC_KEY),
-        fetchSystemDocJson<Record<string, string>>(ROOMS_TOMBSTONE_DOC_KEY),
-      ]);
-
-      let tombstoneCleaned = false;
-      if (serverTombstones && typeof serverTombstones === 'object') {
-        Object.assign(this.deletedRoomTombstones, serverTombstones);
-        if (
-          this.deletedRoomTombstones[room.id] &&
-          !isRoomDeletedByTombstone(room, this.deletedRoomTombstones)
-        ) {
-          delete this.deletedRoomTombstones[room.id];
-          tombstoneCleaned = true;
-        }
-        saveLocalDeletedTombstones(this.deletedRoomTombstones);
-      }
-
-      const map = new Map<string, ChatRoom>();
-      for (const r of Array.isArray(serverRooms) ? serverRooms : []) {
-        if (r?.id && !isRoomDeletedByTombstone(r, this.deletedRoomTombstones)) {
-          map.set(r.id, r);
-        }
-      }
-      for (const [id, pendingRoom] of this.pendingUpsertRooms.entries()) {
-        if (!isRoomDeletedByTombstone(pendingRoom, this.deletedRoomTombstones)) {
-          map.set(id, pendingRoom);
-        }
-      }
-      map.set(room.id, room);
-
-      const updatedList = Array.from(map.values()).sort(
-        (a, b) => this.getRoomSortTime(b) - this.getRoomSortTime(a)
-      );
-      await Promise.all([
-        saveSystemDocJson(ROOMS_INDEX_DOC_KEY, updatedList),
-        tombstoneCleaned
-          ? saveSystemDocJson(ROOMS_TOMBSTONE_DOC_KEY, this.deletedRoomTombstones)
-          : Promise.resolve(),
-      ]);
+      persisted = await this.mutateRoomsIndexOnServer({
+        mode: 'upsert',
+        upsertRooms: [room],
+      });
 
       try {
         this.channel?.send({
@@ -2429,7 +2629,15 @@ class LiveChatManager {
         });
       } catch {}
     } finally {
-      this.pendingUpsertRooms.delete(room.id);
+      if (persisted) {
+        this.pendingUpsertRooms.delete(room.id);
+      } else {
+        // Keep room protected in pendingUpsertRooms + extend grace window so polling never drops it offline
+        this.recentlyUpsertedRooms.set(room.id, {
+          room,
+          expiresAt: Date.now() + 60_000,
+        });
+      }
     }
   }
 
@@ -2581,6 +2789,7 @@ class LiveChatManager {
     updatedRoom: ChatRoom,
     allMessages: ChatMessage[]
   ): Promise<void> {
+    this.pendingUpsertRooms.set(updatedRoom.id, updatedRoom);
     this.recentlyUpsertedRooms.set(updatedRoom.id, {
       room: updatedRoom,
       expiresAt: Date.now() + 20_000,
@@ -2591,41 +2800,33 @@ class LiveChatManager {
       hotMessages = hotMessages.slice(-HOT_MESSAGE_LIMIT_PER_ROOM);
     }
 
-    const [serverRooms, serverTombstones] = await Promise.all([
-      fetchSystemDocJson<ChatRoom[]>(ROOMS_INDEX_DOC_KEY),
-      fetchSystemDocJson<Record<string, string>>(ROOMS_TOMBSTONE_DOC_KEY),
-    ]);
-
-    if (serverTombstones && typeof serverTombstones === 'object') {
-      Object.assign(this.deletedRoomTombstones, serverTombstones);
+    const tombRes = await fetchSystemDocJsonDetailed<Record<string, string>>(ROOMS_TOMBSTONE_DOC_KEY);
+    if (tombRes.ok && tombRes.data && typeof tombRes.data === 'object') {
+      Object.assign(this.deletedRoomTombstones, tombRes.data);
       saveLocalDeletedTombstones(this.deletedRoomTombstones);
     }
 
     // If this room was deleted by another device while we were persisting, abort so we don't resurrect it
     if (isRoomDeletedByTombstone(updatedRoom, this.deletedRoomTombstones)) {
+      this.pendingUpsertRooms.delete(updatedRoom.id);
       await this.handleIncomingRoomDeleted(updatedRoom.id, this.deletedRoomTombstones[updatedRoom.id]);
       return;
     }
 
     await saveSystemDocJson(`${ROOM_MSGS_DOC_PREFIX}${updatedRoom.id}`, hotMessages);
 
-    const map = new Map<string, ChatRoom>();
-    for (const r of Array.isArray(serverRooms) ? serverRooms : []) {
-      if (r?.id && !isRoomDeletedByTombstone(r, this.deletedRoomTombstones)) {
-        map.set(r.id, r);
-      }
+    const saved = await this.mutateRoomsIndexOnServer({
+      mode: 'upsert',
+      upsertRooms: [updatedRoom],
+    });
+    if (saved) {
+      this.pendingUpsertRooms.delete(updatedRoom.id);
+    } else {
+      this.recentlyUpsertedRooms.set(updatedRoom.id, {
+        room: updatedRoom,
+        expiresAt: Date.now() + 60_000,
+      });
     }
-    for (const [id, pendingRoom] of this.pendingUpsertRooms.entries()) {
-      if (!isRoomDeletedByTombstone(pendingRoom, this.deletedRoomTombstones)) {
-        map.set(id, pendingRoom);
-      }
-    }
-    map.set(updatedRoom.id, updatedRoom);
-
-    const sortedRooms = Array.from(map.values()).sort(
-      (a, b) => this.getRoomSortTime(b) - this.getRoomSortTime(a)
-    );
-    await saveSystemDocJson(ROOMS_INDEX_DOC_KEY, sortedRooms);
     if (this.isUserInRoom(updatedRoom)) {
       await idbSaveRooms([updatedRoom]);
     }
@@ -3004,26 +3205,23 @@ class LiveChatManager {
       }
 
       if (updatedRoom) {
-        const [serverRooms, serverTombstones] = await Promise.all([
-          fetchSystemDocJson<ChatRoom[]>(ROOMS_INDEX_DOC_KEY),
-          fetchSystemDocJson<Record<string, string>>(ROOMS_TOMBSTONE_DOC_KEY),
-        ]);
-        if (serverTombstones && typeof serverTombstones === 'object') {
-          Object.assign(this.deletedRoomTombstones, serverTombstones);
-          saveLocalDeletedTombstones(this.deletedRoomTombstones);
-        }
-        if (isRoomDeletedByTombstone(updatedRoom, this.deletedRoomTombstones)) {
-          await this.handleIncomingRoomDeleted(updatedRoom.id, this.deletedRoomTombstones[updatedRoom.id]);
-          return;
-        }
-        const map = new Map<string, ChatRoom>();
-        for (const r of Array.isArray(serverRooms) ? serverRooms : []) {
-          if (r?.id && !isRoomDeletedByTombstone(r, this.deletedRoomTombstones)) {
-            map.set(r.id, r);
-          }
-        }
-        map.set(updatedRoom.id, updatedRoom);
-        await saveSystemDocJson(ROOMS_INDEX_DOC_KEY, Array.from(map.values()));
+        await this.mutateRoomsIndexOnServer({
+          mode: 'upsert',
+          upsertRooms: [updatedRoom],
+          patchRoomById: {
+            [updatedRoom.id]: (serverRoom) => {
+              const base = serverRoom || updatedRoom;
+              return {
+                ...base,
+                unread_by: (base.unread_by || []).filter((u) => u.toLowerCase() !== me),
+                unread_counts: {
+                  ...(base.unread_counts || {}),
+                  [me]: 0,
+                },
+              };
+            },
+          },
+        });
         await idbSaveRooms([updatedRoom]);
       }
     }
