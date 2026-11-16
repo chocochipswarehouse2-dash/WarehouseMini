@@ -7,7 +7,9 @@ import {
   getPendingScannerOutboxCount,
   syncAllScannerOutboxBatches,
   getPendingRecountOutboxCount,
-  syncAllRecountOutboxBatches
+  syncAllRecountOutboxBatches,
+  getPendingPickingOutboxCount,
+  syncAllPickingOutboxBatches
 } from '../services/scannerOutboxService';
 
 interface OfflineProtectionBarProps {
@@ -23,6 +25,7 @@ export const OfflineProtectionBar: React.FC<OfflineProtectionBarProps> = ({ onNo
   const [pendingProduksiCount, setPendingProduksiCount] = useState<number>(0);
   const [pendingScannerCount, setPendingScannerCount] = useState<number>(0);
   const [pendingRecountCount, setPendingRecountCount] = useState<number>(0);
+  const [pendingPickingCount, setPendingPickingCount] = useState<number>(0);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   const checkPendingCounts = () => {
@@ -31,11 +34,13 @@ export const OfflineProtectionBar: React.FC<OfflineProtectionBarProps> = ({ onNo
     const prodCount = getPendingOfflineProduksiCount();
     const scanOutboxCount = getPendingScannerOutboxCount();
     const recountOutboxCount = getPendingRecountOutboxCount();
+    const pickingOutboxCount = getPendingPickingOutboxCount();
     setPendingSJCount(sjList.length);
     setPendingPeminjamanCount(pemList.length);
     setPendingProduksiCount(prodCount);
     setPendingScannerCount(scanOutboxCount);
     setPendingRecountCount(recountOutboxCount);
+    setPendingPickingCount(pickingOutboxCount);
   };
 
   const syncAllOfflineData = async () => {
@@ -77,6 +82,10 @@ export const OfflineProtectionBar: React.FC<OfflineProtectionBarProps> = ({ onNo
       const recountResult = await syncAllRecountOutboxBatches();
       totalSynced += recountResult.syncedBatches;
 
+      // 5. Sync Tugas Picking Offline Outbox (Idempotent Step-by-Step)
+      const pickingResult = await syncAllPickingOutboxBatches();
+      totalSynced += pickingResult.syncedBatches;
+
       checkPendingCounts();
 
       if (totalSynced > 0) {
@@ -114,6 +123,7 @@ export const OfflineProtectionBar: React.FC<OfflineProtectionBarProps> = ({ onNo
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     window.addEventListener('wms_scanner_outbox_updated', handleOutboxUpdated);
+    window.addEventListener('wms_picking_outbox_updated', handleOutboxUpdated);
     window.addEventListener('wms_penerimaan_produksi_updated', handleOutboxUpdated);
 
     // Periodically poll for pending offline items (e.g. every 5 seconds)
@@ -125,12 +135,13 @@ export const OfflineProtectionBar: React.FC<OfflineProtectionBarProps> = ({ onNo
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('wms_scanner_outbox_updated', handleOutboxUpdated);
+      window.removeEventListener('wms_picking_outbox_updated', handleOutboxUpdated);
       window.removeEventListener('wms_penerimaan_produksi_updated', handleOutboxUpdated);
       clearInterval(interval);
     };
   }, []);
 
-  const totalPending = pendingSJCount + pendingPeminjamanCount + pendingProduksiCount + pendingScannerCount + pendingRecountCount;
+  const totalPending = pendingSJCount + pendingPeminjamanCount + pendingProduksiCount + pendingScannerCount + pendingRecountCount + pendingPickingCount;
 
   // If online and no pending items, remain completely invisible (zero-clutter UI)
   if (isOnline && totalPending === 0) {

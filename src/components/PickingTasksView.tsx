@@ -48,6 +48,11 @@ import {
   Navigation,
   MessageSquare,
   Copy,
+  Minimize2,
+  Maximize2,
+  WifiOff,
+  CloudUpload,
+  ShieldCheck,
 } from 'lucide-react';
 import { CameraScanner } from './CameraScanner';
 import { FulfillmentRefillModal } from './FulfillmentRefillModal';
@@ -73,9 +78,19 @@ import {
   isWarehouseLocation,
   getPickingPriority,
   getAreaFromLokasi,
+  resolvePrimarySingleLocation,
   getSupabaseClient,
   extractPickingItemFromRow,
 } from '../services/supabase';
+import {
+  getPickingOutboxBatches,
+  enqueuePickingOutboxBatch,
+  syncAllPickingOutboxBatches,
+  getPickingSjDraftsMap,
+  savePickingSjDraft,
+  removePickingSjDraft,
+  notifyPickingSessionUpdated,
+} from '../services/scannerOutboxService';
 import { globalRealtimeStore } from '../services/store';
 import {
   playSuccessBeep,
@@ -94,6 +109,42 @@ interface PickingTasksViewProps {
   onNotify: (msg: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
   currentUser: string;
   productCatalog?: ProductItem[];
+}
+
+function readStoredPickingSession(): {
+  activeSJ: PickingSuratJalanGroup | null;
+  activeItems: PickingListItem[];
+  unexpectedItems: PickingListItem[];
+  activeLocation: string;
+  rekapCatatan: string;
+  isMinimized: boolean;
+} {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const raw = localStorage.getItem('wms_active_picking_session');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.activeSJ) {
+          return {
+            activeSJ: parsed.activeSJ,
+            activeItems: Array.isArray(parsed.activeItems) ? parsed.activeItems : [],
+            unexpectedItems: Array.isArray(parsed.unexpectedItems) ? parsed.unexpectedItems : [],
+            activeLocation: resolvePrimarySingleLocation(parsed.activeLocation || '') || '',
+            rekapCatatan: parsed.rekapCatatan || '',
+            isMinimized: Boolean(parsed.isMinimized),
+          };
+        }
+      }
+    }
+  } catch {}
+  return {
+    activeSJ: null,
+    activeItems: [],
+    unexpectedItems: [],
+    activeLocation: '',
+    rekapCatatan: '',
+    isMinimized: false,
+  };
 }
 
 const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
@@ -117,14 +168,26 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   // Realtime Stock cache per SKU across all warehouse locations
   const [realtimeSkuStocks, setRealtimeSkuStocks] = useState<Record<string, StockRealtimeItem[]>>({});
 
-  // Active SJ workspace state (when picker gets 1 SJ)
+  // Active SJ workspace state hydrated synchronously so mount never flickers or clears minimized dock
+  const initialStoredSession = useMemo(() => readStoredPickingSession(), []);
   const [hideCompleted, setHideCompleted] = useState(true);
-  const [activeSJ, setActiveSJ] = useState<PickingSuratJalanGroup | null>(null);
-  const [activeItems, setActiveItems] = useState<PickingListItem[]>([]);
-  const [unexpectedItems, setUnexpectedItems] = useState<PickingListItem[]>([]);
+  const [activeSJ, setActiveSJ] = useState<PickingSuratJalanGroup | null>(initialStoredSession.activeSJ);
+  const [activeItems, setActiveItems] = useState<PickingListItem[]>(initialStoredSession.activeItems);
+  const [unexpectedItems, setUnexpectedItems] = useState<PickingListItem[]>(initialStoredSession.unexpectedItems);
+  const [isMinimized, setIsMinimized] = useState<boolean>(initialStoredSession.isMinimized);
+
+  // Offline Protection & Outbox Sync states
+  const [isOnline, setIsOnline] = useState<boolean>(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+  const [pickingOutboxCount, setPickingOutboxCount] = useState<number>(() =>
+    getPickingOutboxBatches().length
+  );
+  const [isSyncingPickingOutbox, setIsSyncingPickingOutbox] = useState<boolean>(false);
+  const [draftsRevision, setDraftsRevision] = useState<number>(0);
 
   // 2-Phase Scanning State (Fase 1: Tembak Lokasi -> Fase 2: Tembak SKU)
-  const [activeLocation, setActiveLocation] = useState<string>('');
+  const [activeLocation, setActiveLocation] = useState<string>(initialStoredSession.activeLocation);
   const [recentScans, setRecentScans] = useState<
     Array<{
       id: string;
@@ -233,7 +296,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
   // Modal Rekap Penyelesaian
   const [isRekapModalOpen, setIsRekapModalOpen] = useState(false);
-  const [rekapCatatan, setRekapCatatan] = useState('');
+  const [rekapCatatan, setRekapCatatan] = useState(initialStoredSession.rekapCatatan);
   const [syncOutLog, setSyncOutLog] = useState(true);
   const [isSubmittingRekap, setIsSubmittingRekap] = useState(false);
 
@@ -249,36 +312,95 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   >([{ sku: '', nama_produk: '', size: '', lokasi: '', qty_req: 1 }]);
   const [isCreatingSj, setIsCreatingSj] = useState(false);
 
-  // Load from Supabase on mount
+  // Load initial SJ data from Supabase on mount
   useEffect(() => {
-    // Check local storage for active offline session
-    try {
-      const activeSession = localStorage.getItem('wms_active_picking_session');
-      if (activeSession) {
-        const parsed = JSON.parse(activeSession);
-        if (parsed.activeSJ) {
-          setActiveSJ(parsed.activeSJ);
-          setActiveItems(parsed.activeItems || []);
-          setUnexpectedItems(parsed.unexpectedItems || []);
-          setActiveLocation(parsed.activeLocation || '');
-          setRekapCatatan(parsed.rekapCatatan || '');
-        }
-      }
-    } catch {}
-    
     loadPickingList();
   }, []);
 
-  // Save active picking session to localStorage to persist across refreshes / offline
+  // Online/Offline, Outbox, & Global Dock Maximize/Minimize Listeners
+  useEffect(() => {
+    const syncOutboxAndRefresh = async () => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (getPickingOutboxBatches().length === 0) return;
+      setIsSyncingPickingOutbox(true);
+      try {
+        const res = await syncAllPickingOutboxBatches();
+        setPickingOutboxCount(res.remainingBatches);
+        setDraftsRevision((r) => r + 1);
+        if (res.syncedBatches > 0) {
+          onNotify(
+            `✅ Koneksi kembali! ${res.syncedBatches} Tugas Picking offline berhasil disinkronkan ke Database.`,
+            'success'
+          );
+          loadPickingList();
+        }
+      } finally {
+        setIsSyncingPickingOutbox(false);
+      }
+    };
+
+    const handleOnline = () => {
+      setIsOnline(true);
+      syncOutboxAndRefresh();
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+    const handleMaximizePicking = () => {
+      setIsMinimized(false);
+    };
+    const handleMinimizePicking = () => {
+      setIsMinimized(true);
+      setInputMode((prev) => (prev === 'kamera' ? 'fisik' : prev));
+    };
+    const handleClosePickingSession = () => {
+      setActiveSJ(null);
+      setActiveItems([]);
+      setUnexpectedItems([]);
+      setActiveLocation('');
+      setRekapCatatan('');
+      setIsMinimized(false);
+      setDraftsRevision((r) => r + 1);
+    };
+    const handleOutboxChange = () => {
+      setPickingOutboxCount(getPickingOutboxBatches().length);
+      setDraftsRevision((r) => r + 1);
+    };
+    const handleListUpdated = () => {
+      setDraftsRevision((r) => r + 1);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('wms_maximize_picking_session', handleMaximizePicking);
+    window.addEventListener('wms_minimize_picking_session', handleMinimizePicking);
+    window.addEventListener('wms_close_picking_session', handleClosePickingSession);
+    window.addEventListener('wms_picking_outbox_updated', handleOutboxChange);
+    window.addEventListener('wms_picking_list_updated', handleListUpdated);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('wms_maximize_picking_session', handleMaximizePicking);
+      window.removeEventListener('wms_minimize_picking_session', handleMinimizePicking);
+      window.removeEventListener('wms_close_picking_session', handleClosePickingSession);
+      window.removeEventListener('wms_picking_outbox_updated', handleOutboxChange);
+      window.removeEventListener('wms_picking_list_updated', handleListUpdated);
+    };
+  }, []);
+
+  // Save active picking session + per-SJ draft to localStorage to persist across minimize / refresh / offline
   useEffect(() => {
     try {
       if (activeSJ) {
+        const cleanActiveLoc = resolvePrimarySingleLocation(activeLocation || '') || '';
         const sessionData = {
           activeSJ,
           activeItems,
           unexpectedItems,
-          activeLocation,
+          activeLocation: cleanActiveLoc,
           rekapCatatan,
+          isMinimized,
           timestamp: new Date().toISOString()
         };
         const saved = safeLocalStorageSet('wms_active_picking_session', JSON.stringify(sessionData));
@@ -291,20 +413,38 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               sku: it.sku,
               qty_picked: it.qty_picked,
               qty_req: it.qty_req,
+              lokasi: it.lokasi,
+              lokasi_picked: it.lokasi_picked,
             })),
             unexpectedItems,
-            activeLocation,
+            activeLocation: cleanActiveLoc,
+            rekapCatatan,
+            isMinimized,
             timestamp: new Date().toISOString(),
           };
           safeLocalStorageSet('wms_active_picking_session', JSON.stringify(lightweightSession));
         }
+
+        // Also keep per-SJ draft safe so switching to another SJ or navigating back never loses scans
+        savePickingSjDraft({
+          no_sj: activeSJ.no_sj,
+          tujuan: activeSJ.tujuan,
+          tanggal: activeSJ.tanggal,
+          activeItems,
+          unexpectedItems,
+          activeLocation: cleanActiveLoc,
+          rekapCatatan,
+          updatedAt: Date.now(),
+        });
+        notifyPickingSessionUpdated();
       } else {
         safeLocalStorageRemove('wms_active_picking_session');
+        notifyPickingSessionUpdated();
       }
     } catch (err) {
       console.warn('[PickingTasksView] Gagal menyimpan sesi picking aktif:', err);
     }
-  }, [activeSJ, activeItems, unexpectedItems, activeLocation, rekapCatatan]);
+  }, [activeSJ, activeItems, unexpectedItems, activeLocation, rekapCatatan, isMinimized]);
 
   // Proteksi reload / tab close / force-close saat proses picking aktif sedang berlangsung
   useEffect(() => {
@@ -378,11 +518,12 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     const isRealtimeChecked = cleanSku in realtimeSkuStocks;
     if (isRealtimeChecked) {
       const realtimeList = realtimeSkuStocks[cleanSku] || [];
-      // ONLY recommend warehouse locations that currently have physical stock (sisa_stok > 0)!
+      // ONLY recommend single valid warehouse locations that currently have physical stock (sisa_stok > 0)!
       realtimeList.forEach((stk) => {
         const loc = String(stk.lokasi || '').trim().toUpperCase();
         const qty = Number(stk.sisa_stok) || 0;
-        if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc, stk.area) && qty > 0) {
+        // Skip compound multi-location anomaly rows from stok_real_fisik
+        if (loc && !/[,/;\n|]/.test(loc) && loc !== '-' && loc !== '--' && isWarehouseLocation(loc, stk.area) && qty > 0) {
           const existing = map.get(loc);
           if (existing) {
             existing.qty = (existing.qty || 0) + qty;
@@ -418,7 +559,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       const parts = strItemLokasi
         .split(/[,/;\n|]+/)
         .map((s) => String(s || '').trim().toUpperCase())
-        .filter((loc) => loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc));
+        .filter((loc) => loc && !/[,/;\n|]/.test(loc) && loc !== '-' && loc !== '--' && isWarehouseLocation(loc));
       parts.forEach((loc, idx) => {
         map.set(loc, {
           lokasi: loc,
@@ -434,7 +575,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         if (typeof itemLoc === 'object' && itemLoc && itemLoc.lokasi) {
           const loc = String(itemLoc.lokasi || '').trim().toUpperCase();
           const qty = Number(itemLoc.qty) || 0;
-          if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc) && qty > 0) {
+          if (loc && !/[,/;\n|]/.test(loc) && loc !== '-' && loc !== '--' && isWarehouseLocation(loc) && qty > 0) {
             if (!map.has(loc)) {
               map.set(loc, {
                 lokasi: loc,
@@ -448,7 +589,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       });
     }
 
-    const allLocs = Array.from(map.values()).filter((l) => l && l.lokasi && l.lokasi !== '-' && isWarehouseLocation(l.lokasi, l.area));
+    const allLocs = Array.from(map.values()).filter((l) => l && l.lokasi && !/[,/;\n|]/.test(l.lokasi) && l.lokasi !== '-' && isWarehouseLocation(l.lokasi, l.area));
     allLocs.sort((a, b) => {
       const pA = getPickingPriority(a.lokasi, a.area);
       const pB = getPickingPriority(b.lokasi, b.area);
@@ -456,6 +597,60 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       return (b.qty || 0) - (a.qty || 0);
     });
     return allLocs;
+  };
+
+  // Resolve guaranteed SINGLE valid rack for an item (prevents multi-location comma strings like "C093, R070, R071")
+  const resolveSingleItemLocation = useCallback(
+    (item: PickingListItem): string => {
+      const cleanPicked = resolvePrimarySingleLocation(item.lokasi_picked || '');
+      if (cleanPicked && isWarehouseLocation(cleanPicked)) {
+        return cleanPicked;
+      }
+      const locs = getProductLocations(item.sku, item.lokasi);
+      if (locs.length > 0 && locs[0]?.lokasi) {
+        return locs[0].lokasi;
+      }
+      const fromItemLoc = resolvePrimarySingleLocation(item.lokasi || '');
+      if (fromItemLoc) return fromItemLoc;
+      return cleanPicked || 'A001';
+    },
+    [realtimeSkuStocks, productCatalog]
+  );
+
+  // Minimize Active SJ Workspace -> collapses back to Daftar SJ & shows floating draggable dock
+  const handleMinimizeActiveSJ = () => {
+    if (!activeSJ) return;
+    setInputMode((prev) => (prev === 'kamera' ? 'fisik' : prev));
+    setIsMinimized(true);
+    playCategoryBeep();
+    onNotify(
+      `📌 Tugas Picking ${activeSJ.no_sj} diminimize! Progres (${activeStats.regularPicked}/${activeStats.totalReq} pcs) tersimpan aman.`,
+      'info'
+    );
+  };
+
+  // Manual trigger to sync offline Picking outbox batches
+  const handleSyncPickingOutboxNow = async () => {
+    if (!isOnline) {
+      onNotify('Perangkat masih offline. Sinkronisasi akan berjalan otomatis saat internet aktif.', 'warning');
+      return;
+    }
+    if (isSyncingPickingOutbox) return;
+    setIsSyncingPickingOutbox(true);
+    try {
+      const res = await syncAllPickingOutboxBatches();
+      setPickingOutboxCount(res.remainingBatches);
+      setDraftsRevision((r) => r + 1);
+      if (res.syncedBatches > 0) {
+        playSaveSuccessChime();
+        onNotify(`✅ ${res.syncedBatches} Surat Jalan selesai offline berhasil disinkronkan ke Database!`, 'success');
+        loadPickingList();
+      } else if (res.errors.length > 0) {
+        onNotify(`Sebagian gagal sinkron: ${res.errors[0]}`, 'warning');
+      }
+    } finally {
+      setIsSyncingPickingOutbox(false);
+    }
   };
 
   // Helper: Retrieve all recorded warehouse locations that currently have 0 stock (for informative warnings)
@@ -598,8 +793,48 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       }
     } catch {}
 
+    // Overlay offline outbox completions & local per-SJ drafts so SJ cards reflect live offline/minimized progress
+    const localDraftsMap = getPickingSjDraftsMap();
+    const outboxBatches = getPickingOutboxBatches();
+    const outboxByNoSj = new Map<string, typeof outboxBatches[number]>();
+    outboxBatches.forEach((b) => {
+      if (b?.no_sj) outboxByNoSj.set(b.no_sj.toUpperCase().trim(), b);
+    });
+
     // Evaluate group status based on items
     const result = Array.from(map.values()).map((g) => {
+      const sjUpper = (g.no_sj || '').toUpperCase().trim();
+      const outboxEntry = outboxByNoSj.get(sjUpper);
+      const draftEntry = !outboxEntry ? localDraftsMap[sjUpper] : undefined;
+
+      if (outboxEntry) {
+        g.items = g.items.map((it) => {
+          const m = outboxEntry.items.find(
+            (x) => (x.id && x.id === it.id) || (x.sku || '').toUpperCase() === (it.sku || '').toUpperCase()
+          );
+          return m ? { ...it, qty_picked: m.qty_picked, lokasi_picked: m.lokasi_picked, status: 'SELESAI' as const } : { ...it, status: 'SELESAI' as const };
+        });
+        g.unexpected_items = outboxEntry.unexpectedItems || g.unexpected_items;
+        g.total_qty_picked =
+          g.items.reduce((s, it) => s + (Number(it.qty_picked) || 0), 0) +
+          g.unexpected_items.reduce((s, it) => s + (Number(it.qty_picked) || 0), 0);
+        g.picker_name = outboxEntry.pickerName || g.picker_name;
+        g.catatan = outboxEntry.catatan || g.catatan;
+        g.status = 'SELESAI';
+      } else if (draftEntry && g.status !== 'SELESAI' && !storedCompletedSJs.has(sjUpper)) {
+        g.items = g.items.map((it) => {
+          const m = draftEntry.activeItems.find(
+            (x) => (x.id && x.id === it.id) || (x.sku || '').toUpperCase() === (it.sku || '').toUpperCase()
+          );
+          return m ? { ...it, qty_picked: m.qty_picked, lokasi_picked: m.lokasi_picked, status: m.status } : it;
+        });
+        g.unexpected_items = draftEntry.unexpectedItems || g.unexpected_items;
+        g.total_qty_picked =
+          g.items.reduce((s, it) => s + (Number(it.qty_picked) || 0), 0) +
+          g.unexpected_items.reduce((s, it) => s + (Number(it.qty_picked) || 0), 0);
+        if (draftEntry.rekapCatatan) g.catatan = draftEntry.rekapCatatan;
+      }
+
       // Sort items by lokasi (Rack location) to optimize picker route
       g.items.sort((a, b) => {
         const locA = (a.lokasi || '').toUpperCase().trim();
@@ -616,7 +851,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         return 0;
       });
 
-      const isCompletedLocally = storedCompletedSJs.has((g.no_sj || '').toUpperCase().trim());
+      const isCompletedLocally = Boolean(outboxEntry) || storedCompletedSJs.has(sjUpper);
       const isAllDone = isCompletedLocally || (g.items.length > 0 && g.items.every((it) => (it.status || '').toUpperCase().trim() === 'SELESAI'));
       const isAnyStarted = g.items.some((it) => Number(it.qty_picked) > 0 || (it.status || '').toUpperCase().trim() === 'SEDANG PICKING');
 
@@ -656,7 +891,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     });
 
     return result;
-  }, [rawItems]);
+  }, [rawItems, draftsRevision]);
 
   // Filtered SJ list for display
   const filteredSJs = React.useMemo(() => {
@@ -1230,7 +1465,10 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       return;
     }
 
-    // Set active workspace
+    const cleanNoSj = sj.no_sj.toUpperCase().trim();
+    const savedDraft = getPickingSjDraftsMap()[cleanNoSj];
+
+    // Set active workspace (restore per-SJ local draft if exists so zero scan progress is ever lost)
     const safeItems = Array.isArray(sj.items) ? sj.items : [];
     const itemsClone = safeItems
       .filter((it) => it && it.sku)
@@ -1257,20 +1495,37 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           }
         }
 
+        const draftItem = savedDraft?.activeItems?.find(
+          (d) => (d.id && d.id === it.id) || (d.sku || '').trim().toUpperCase() === cleanSku
+        );
+        const qtyPicked = draftItem ? Math.max(0, Number(draftItem.qty_picked) || 0) : Math.max(0, Number(it.qty_picked) || 0);
+        const rawLokasiPicked = draftItem?.lokasi_picked || it.lokasi_picked || '';
+        const cleanLokasiPicked = resolvePrimarySingleLocation(rawLokasiPicked) || '';
+
         return {
           ...it,
           sku: cleanSku,
           size: effectiveSize,
           nama_produk: effectiveName,
           lokasi: itemLokasi,
+          lokasi_picked: cleanLokasiPicked || undefined,
           qty_req: Math.max(1, Number(it.qty_req) || 1),
-          qty_picked: Math.max(0, Number(it.qty_picked) || 0),
-          status: it.status === 'SELESAI' ? ('SELESAI' as const) : ('SEDANG PICKING' as const),
+          qty_picked: qtyPicked,
+          status:
+            qtyPicked >= Math.max(1, Number(it.qty_req) || 1)
+              ? ('SELESAI' as const)
+              : ('SEDANG PICKING' as const),
           picker_name: it.picker_name || currentUser,
         };
       });
 
-    const safeUnexpected = Array.isArray(sj.unexpected_items) ? [...sj.unexpected_items] : [];
+    const safeUnexpected = savedDraft && Array.isArray(savedDraft.unexpectedItems) && savedDraft.unexpectedItems.length > 0
+      ? [...savedDraft.unexpectedItems]
+      : Array.isArray(sj.unexpected_items)
+      ? [...sj.unexpected_items]
+      : [];
+
+    const restoredActiveLoc = resolvePrimarySingleLocation(savedDraft?.activeLocation || '') || '';
 
     setActiveSJ({
       ...sj,
@@ -1279,21 +1534,53 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     });
     setActiveItems(itemsClone);
     setUnexpectedItems(safeUnexpected);
-    setRekapCatatan(sj.catatan || '');
-    setActiveLocation('');
+    setRekapCatatan(savedDraft?.rekapCatatan || sj.catatan || '');
+    setActiveLocation(restoredActiveLoc);
+    setIsMinimized(false);
     setRecentScans([]);
     playCategoryBeep();
-    onNotify(`Membuka Surat Jalan ${sj.no_sj}. Siap memindai barang!`, 'info');
+    const totalDraftPicked = itemsClone.reduce((s, it) => s + (Number(it.qty_picked) || 0), 0);
+    if (savedDraft && totalDraftPicked > 0) {
+      onNotify(`💾 Draft lokal SJ ${sj.no_sj} dipulihkan (${totalDraftPicked} pcs ter-scan). Lanjut picking!`, 'success');
+    } else {
+      onNotify(`Membuka Surat Jalan ${sj.no_sj}. Siap memindai barang!`, 'info');
+    }
   };
 
-  // Action: Petugas Klik Tombol Pilih/Alihkan ke Lokasi Alternatif
-  const handleSelectAlternativeLocation = (item: PickingListItem, targetLoc: string) => {
-    const locClean = String(targetLoc || '').trim().toUpperCase();
+  // Action: Petugas Klik Langsung Pill Lokasi pada Kartu SKU (Selalu 1 rak bersih + update item.lokasi_picked)
+  const handleSelectItemLocation = (itemIndex: number, rawLoc: string) => {
+    const locClean = resolvePrimarySingleLocation(rawLoc) || String(rawLoc || '').split(/[,/;\n|]+/)[0]?.trim().toUpperCase();
+    if (!locClean || /[,/;\n|]/.test(locClean)) return;
+
     setActiveLocation(locClean);
+    const targetItem = activeItems[itemIndex];
+    if (targetItem) {
+      const nextItems = [...activeItems];
+      nextItems[itemIndex] = {
+        ...targetItem,
+        lokasi_picked: locClean,
+      };
+      setActiveItems(nextItems);
+    }
+
     playCategoryBeep();
     vibrateDevice(50);
+
+    const nowTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    setRecentScans((prev) => [
+      {
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 4),
+        time: nowTime,
+        type: 'LOCATION',
+        text: `#LOK ${locClean}`,
+        detail: `📍 Rak aktif dipilih: ${locClean}${targetItem ? ` (${targetItem.sku})` : ''}`,
+        location: locClean,
+      },
+      ...prev.slice(0, 7),
+    ]);
+
     onNotify(
-      `📍 Rak aktif dialihkan ke ${locClean} untuk SKU ${item.sku}. Silakan scan atau ambil dari rak ini!`,
+      `📍 Rak aktif dipilih: ${locClean}${targetItem ? ` untuk SKU ${targetItem.sku}` : ''}!`,
       'info'
     );
   };
@@ -1344,7 +1631,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     const isLocationBarcode = /^(#?LOK[\s\-_:]*)/i.test(barcode);
 
     if (isLocationBarcode) {
-      const locClean = barcode.replace(/^(#?LOK[\s\-_:]*)/i, '').trim().toUpperCase();
+      const rawLocPart = barcode.replace(/^(#?LOK[\s\-_:]*)/i, '').trim().toUpperCase();
+      const locClean = resolvePrimarySingleLocation(rawLocPart) || rawLocPart.split(/[,/;\n|]+/)[0]?.trim().toUpperCase() || '';
       if (!locClean) {
         onNotify('Format barcode lokasi tidak valid. Contoh: #LOK A001', 'warning');
         return;
@@ -1390,7 +1678,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     // -------------------------------------------------------------
     // FASE 2: DETEKSI TEMBAK SKU PRODUK (SKU 1, SKU 2...)
     // -------------------------------------------------------------
-    const effectiveLocation = activeLocation || '';
+    const effectiveLocation = resolvePrimarySingleLocation(activeLocation || '') || '';
 
     // 1. Cari kecocokan SKU di Surat Jalan
     // Prioritaskan item di lokasi aktif jika ada (baik rak utama atau rak alternatif)
@@ -1411,12 +1699,13 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     if (matchIdx !== -1) {
       // Item TERDAFTAR di Surat Jalan
       const targetItem = activeItems[matchIdx];
-      const usedLocation = effectiveLocation || targetItem.lokasi || 'A-01';
+      const singleFallback = resolveSingleItemLocation(targetItem);
+      const usedLocation = effectiveLocation || singleFallback || 'A001';
       const newPicked = Number(targetItem.qty_picked || 0) + 1;
 
-      // Auto-set lokasi jika sebelumnya belum scan lokasi
-      if (!activeLocation && targetItem.lokasi) {
-        setActiveLocation(targetItem.lokasi);
+      // Auto-set lokasi (SELALU single rak bersih, bukan CSV multi-lokasi!) jika sebelumnya belum scan lokasi
+      if (!effectiveLocation && singleFallback) {
+        setActiveLocation(singleFallback);
       }
 
       const updatedItem: PickingListItem = {
@@ -1544,15 +1833,26 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     setScanInput('');
   };
 
-  // Adjust manual counter
+  // Adjust manual counter (always sets clean single-rack lokasi_picked so multi-location CSV never leaks)
   const handleAdjustQty = (index: number, delta: number) => {
     const target = activeItems[index];
     if (!target) return;
     const newQty = Math.max(0, target.qty_picked + delta);
+
+    const itemLocs = getProductLocations(target.sku, target.lokasi);
+    const cleanActive = resolvePrimarySingleLocation(activeLocation || '');
+    const activeBelongsToItem = Boolean(
+      cleanActive && itemLocs.some((l) => l.lokasi.toUpperCase() === cleanActive.toUpperCase())
+    );
+    const existingSingle = resolvePrimarySingleLocation(target.lokasi_picked || '');
+    const resolvedLoc =
+      existingSingle || (activeBelongsToItem ? cleanActive : resolveSingleItemLocation(target));
+
     const updated = {
       ...target,
       qty_picked: newQty,
-      status: (newQty >= target.qty_req ? 'SELESAI' : 'SEDANG PICKING') as any,
+      lokasi_picked: newQty > 0 ? resolvedLoc : target.lokasi_picked,
+      status: (newQty >= target.qty_req ? 'SELESAI' : newQty > 0 ? 'SEDANG PICKING' : 'PENDING') as any,
     };
     const nextList = [...activeItems];
     nextList[index] = updated;
@@ -1570,21 +1870,31 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     setUnexpectedItems(next);
   };
 
-  // Quick Action: Set picked to Max (Lengkap)
+  // Quick Action: Set picked to Max (Lengkap) with guaranteed single-rack resolution
   const handleSetItemMax = (index: number) => {
     const target = activeItems[index];
     if (!target) return;
+
+    const itemLocs = getProductLocations(target.sku, target.lokasi);
+    const cleanActive = resolvePrimarySingleLocation(activeLocation || '');
+    const activeBelongsToItem = Boolean(
+      cleanActive && itemLocs.some((l) => l.lokasi.toUpperCase() === cleanActive.toUpperCase())
+    );
+    const existingSingle = resolvePrimarySingleLocation(target.lokasi_picked || '');
+    const resolvedLoc =
+      existingSingle || (activeBelongsToItem ? cleanActive : resolveSingleItemLocation(target));
+
     const nextList = [...activeItems];
     nextList[index] = {
       ...target,
       qty_picked: target.qty_req,
-      lokasi_picked: activeLocation || target.lokasi || 'A-01',
+      lokasi_picked: resolvedLoc,
       status: 'SELESAI',
     };
     setActiveItems(nextList);
     playSuccessBeep();
     vibrateDevice(60);
-    onNotify(`✓ SKU ${target.sku} diset lengkap (${target.qty_req}/${target.qty_req} Pcs)`, 'success');
+    onNotify(`✓ SKU ${target.sku} diset lengkap (${target.qty_req}/${target.qty_req} Pcs) · Rak ${resolvedLoc}`, 'success');
   };
 
   // Quick Action: Reset picked to 0
@@ -1614,6 +1924,10 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   const handleOpenEditItem = (type: 'REGULAR' | 'UNEXPECTED', index: number) => {
     const it = type === 'REGULAR' ? activeItems[index] : unexpectedItems[index];
     if (!it) return;
+    const defaultSingleLoc =
+      resolvePrimarySingleLocation(it.lokasi_picked || '') ||
+      resolvePrimarySingleLocation(activeLocation || '') ||
+      resolveSingleItemLocation(it);
     setEditingItemData({
       type,
       index,
@@ -1623,7 +1937,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       qty_req: it.qty_req || 0,
       qty_picked: it.qty_picked || 0,
       lokasi: it.lokasi || 'A-01',
-      lokasi_picked: it.lokasi_picked || it.lokasi || activeLocation || 'A-01',
+      lokasi_picked: defaultSingleLoc || 'A001',
       targetSJItemSku: '',
     });
     setIsEditItemModalOpen(true);
@@ -1633,6 +1947,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   const handleSaveEditItem = () => {
     if (!editingItemData) return;
     const { type, index, qty_picked, lokasi_picked, targetSJItemSku } = editingItemData;
+    const cleanSingleLoc = resolvePrimarySingleLocation(lokasi_picked || '') || lokasi_picked.trim().toUpperCase();
 
     if (type === 'UNEXPECTED') {
       if (targetSJItemSku) {
@@ -1644,7 +1959,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           nextActive[matchIdx] = {
             ...nextActive[matchIdx],
             qty_picked: newPicked,
-            lokasi_picked: lokasi_picked || nextActive[matchIdx].lokasi,
+            lokasi_picked: cleanSingleLoc || resolveSingleItemLocation(nextActive[matchIdx]),
             status: newPicked >= nextActive[matchIdx].qty_req ? 'SELESAI' : 'SEDANG PICKING',
           };
           setActiveItems(nextActive);
@@ -1669,7 +1984,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           nextUnexp[index] = {
             ...nextUnexp[index],
             qty_picked: Number(qty_picked),
-            lokasi_picked: lokasi_picked.trim(),
+            lokasi_picked: cleanSingleLoc,
           };
         }
         setUnexpectedItems(nextUnexp);
@@ -1682,11 +1997,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       nextActive[index] = {
         ...nextActive[index],
         qty_picked: validPicked,
-        lokasi_picked: lokasi_picked.trim(),
+        lokasi_picked: cleanSingleLoc,
         status: validPicked >= nextActive[index].qty_req ? 'SELESAI' : 'SEDANG PICKING',
       };
       setActiveItems(nextActive);
-      onNotify(`SKU ${editingItemData.sku} diperbarui: ${validPicked}/${editingItemData.qty_req} pcs (Rak: ${lokasi_picked})`, 'success');
+      onNotify(`SKU ${editingItemData.sku} diperbarui: ${validPicked}/${editingItemData.qty_req} pcs (Rak: ${cleanSingleLoc})`, 'success');
     }
 
     setIsEditItemModalOpen(false);
@@ -1975,76 +2290,145 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     setIsRekapModalOpen(true);
   };
 
-  // Confirm Completion of SJ
+  // Confirm Completion of SJ (with full Offline Outbox Protection)
   const handleConfirmCompleteSJ = async () => {
     if (!activeSJ) return;
     setIsSubmittingRekap(true);
     showGlobalLoading('Menyimpan Rekap...');
 
+    const completedNoSj = activeSJ.no_sj;
+    const cleanNoSj = completedNoSj.toUpperCase().trim();
+    const sanitizedItems = activeItems.map((it) => ({
+      ...it,
+      lokasi_picked: resolveSingleItemLocation(it),
+    }));
+    const sanitizedUnexpected = unexpectedItems.map((unexp) => ({
+      ...unexp,
+      lokasi_picked: resolvePrimarySingleLocation(unexp.lokasi_picked || unexp.lokasi || '') || '-',
+    }));
+
+    const finalizeLocalSuccess = (queuedOffline: boolean) => {
+      playSaveSuccessChime();
+      vibrateDevice([100, 50, 100]);
+
+      if (queuedOffline) {
+        onNotify(
+          `📦 Mode Offline: Hasil picking ${completedNoSj} tersimpan aman di Antrean Offline & akan otomatis disinkronkan saat internet kembali!`,
+          'warning'
+        );
+      } else if (activeStats.statusType === 'SEMUA_PAS') {
+        try {
+          confetti({
+            particleCount: 70,
+            spread: 70,
+            origin: { y: 0.7 },
+            colors: ['#10b981', 'var(--theme-500)', '#ffffff'],
+          });
+        } catch {}
+        onNotify(`🎉 Surat Jalan ${completedNoSj} berhasil diselesaikan 100% LENGKAP!`, 'success');
+      } else {
+        onNotify(`Surat Jalan ${completedNoSj} selesai dengan catatan rekap!`, 'warning');
+      }
+
+      // Close workspace, modal & clear draft
+      removePickingSjDraft(cleanNoSj);
+      setIsRekapModalOpen(false);
+      setIsMinimized(false);
+      setActiveSJ(null);
+      setActiveItems([]);
+      setUnexpectedItems([]);
+      setActiveLocation('');
+      setRekapCatatan('');
+      setDraftsRevision((r) => r + 1);
+
+      // Optimistically update rawItems so SJ moves from Belum Selesai to Selesai immediately
+      setRawItems((prev) => {
+        const updated = prev.map((item) => {
+          if ((item.no_sj || '').toUpperCase().trim() === cleanNoSj) {
+            const matchedActive = sanitizedItems.find(
+              (it) => it.sku.toUpperCase().trim() === (item.sku || '').toUpperCase().trim()
+            );
+            return {
+              ...item,
+              status: 'SELESAI' as const,
+              qty_picked: matchedActive ? matchedActive.qty_picked : item.qty_picked,
+              lokasi_picked: matchedActive ? matchedActive.lokasi_picked : item.lokasi_picked,
+              picker_name: currentUser || 'Operator',
+              catatan: rekapCatatan || item.catatan,
+            };
+          }
+          return item;
+        });
+        try {
+          const activeOnly = updated.filter((it) => it.status !== 'SELESAI').slice(0, 100);
+          safeLocalStorageSet('wms_raw_picking_list_cache', JSON.stringify(activeOnly));
+        } catch {}
+        return updated;
+      });
+    };
+
     try {
+      const deviceOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+      if (deviceOffline) {
+        await completePickingSuratJalanSupabase(
+          cleanNoSj,
+          sanitizedItems,
+          sanitizedUnexpected,
+          currentUser || 'Operator',
+          rekapCatatan,
+          syncOutLog
+        );
+        enqueuePickingOutboxBatch({
+          no_sj: cleanNoSj,
+          tujuan: activeSJ.tujuan,
+          items: sanitizedItems,
+          unexpectedItems: sanitizedUnexpected,
+          pickerName: currentUser || 'Operator',
+          catatan: rekapCatatan,
+          syncOutToLog: syncOutLog,
+        });
+        setPickingOutboxCount(getPickingOutboxBatches().length);
+        finalizeLocalSuccess(true);
+        return;
+      }
+
       const success = await completePickingSuratJalanSupabase(
-        activeSJ.no_sj,
-        activeItems,
-        unexpectedItems,
+        cleanNoSj,
+        sanitizedItems,
+        sanitizedUnexpected,
         currentUser || 'Operator',
         rekapCatatan,
         syncOutLog
       );
 
       if (success) {
-        playSaveSuccessChime();
-        vibrateDevice([100, 50, 100]);
-
-        if (activeStats.statusType === 'SEMUA_PAS') {
-          try {
-            confetti({
-              particleCount: 70,
-              spread: 70,
-              origin: { y: 0.7 },
-              colors: ['#10b981', 'var(--theme-500)', '#ffffff'],
-            });
-          } catch {}
-          onNotify(`🎉 Surat Jalan ${activeSJ.no_sj} berhasil diselesaikan 100% LENGKAP!`, 'success');
-        } else {
-          onNotify(`Surat Jalan ${activeSJ.no_sj} selesai dengan catatan rekap!`, 'warning');
-        }
-
-        // Close workspace & modal
-        setIsRekapModalOpen(false);
-        const completedNoSj = activeSJ.no_sj;
-        setActiveSJ(null);
-        setActiveItems([]);
-        setUnexpectedItems([]);
-        
-        // Optimistically update rawItems so SJ moves from Belum Selesai to Selesai immediately
-        setRawItems((prev) => {
-          const cleanNoSj = completedNoSj.toUpperCase().trim();
-          const updated = prev.map((item) => {
-            if ((item.no_sj || '').toUpperCase().trim() === cleanNoSj) {
-              const matchedActive = activeItems.find(
-                (it) => it.sku.toUpperCase().trim() === (item.sku || '').toUpperCase().trim()
-              );
-              return {
-                ...item,
-                status: 'SELESAI' as const,
-                qty_picked: matchedActive ? matchedActive.qty_picked : item.qty_picked,
-                picker_name: currentUser || 'Operator',
-                catatan: rekapCatatan || item.catatan,
-              };
-            }
-            return item;
-          });
-          try {
-            const activeOnly = updated.filter((it) => it.status !== 'SELESAI').slice(0, 100);
-            safeLocalStorageSet('wms_raw_picking_list_cache', JSON.stringify(activeOnly));
-          } catch {}
-          return updated;
-        });
+        finalizeLocalSuccess(false);
       } else {
-        onNotify('Gagal menyimpan hasil rekap ke Database. Cek koneksi.', 'error');
+        // Network / remote failure -> queue safely into offline outbox so data is NEVER lost
+        enqueuePickingOutboxBatch({
+          no_sj: cleanNoSj,
+          tujuan: activeSJ.tujuan,
+          items: sanitizedItems,
+          unexpectedItems: sanitizedUnexpected,
+          pickerName: currentUser || 'Operator',
+          catatan: rekapCatatan,
+          syncOutToLog: syncOutLog,
+        });
+        setPickingOutboxCount(getPickingOutboxBatches().length);
+        finalizeLocalSuccess(true);
       }
-    } catch (e: any) {
-      onNotify(`Error: ${e.message || 'Gagal menyimpan'}`, 'error');
+    } catch {
+      enqueuePickingOutboxBatch({
+        no_sj: cleanNoSj,
+        tujuan: activeSJ.tujuan,
+        items: sanitizedItems,
+        unexpectedItems: sanitizedUnexpected,
+        pickerName: currentUser || 'Operator',
+        catatan: rekapCatatan,
+        syncOutToLog: syncOutLog,
+      });
+      setPickingOutboxCount(getPickingOutboxBatches().length);
+      finalizeLocalSuccess(true);
     } finally {
       setIsSubmittingRekap(false);
       hideGlobalLoading();
@@ -2163,35 +2547,69 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   // =========================================================================
   return (
     <>
-      {activeSJ ? (
+      {activeSJ && !isMinimized ? (
         <div className="w-full max-w-full space-y-2.5 pb-8">
           {/* Top Header Bar */}
           <div className="bg-white dark:bg-[#131d31] p-2 sm:p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            {!isOnline && (
+              <div className="mb-2 px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 flex items-center justify-between gap-2 text-[11px] font-bold text-amber-800 dark:text-amber-300">
+                <span className="flex items-center gap-1.5">
+                  <WifiOff className="w-3.5 h-3.5 shrink-0" />
+                  Mode Offline Aktif — Semua scan & perubahan progres picking otomatis tersimpan aman di perangkat.
+                </span>
+              </div>
+            )}
             <div className="flex flex-wrap justify-between items-start gap-3">
               <div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (activeStats.regularPicked > 0) {
-                      setConfirmDialog({
-                        isOpen: true,
-                        title: 'Kembali ke Daftar?',
-                        message: 'Progress picking belum diselesaikan. Kembali ke daftar Surat Jalan?',
-                        onConfirm: () => {
-                          setActiveSJ(null);
-                          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
-                        }
+                <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const sjUpper = activeSJ.no_sj.toUpperCase().trim();
+                      savePickingSjDraft({
+                        no_sj: sjUpper,
+                        tujuan: activeSJ.tujuan,
+                        tanggal: activeSJ.tanggal,
+                        activeItems,
+                        unexpectedItems,
+                        activeLocation: resolvePrimarySingleLocation(activeLocation || '') || '',
+                        rekapCatatan,
+                        updatedAt: Date.now(),
                       });
-                    } else {
+                      setInputMode((prev) => (prev === 'kamera' ? 'fisik' : prev));
+                      setIsMinimized(false);
                       setActiveSJ(null);
-                    }
-                  }}
-                  className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 mb-2 transition-colors cursor-pointer py-1 px-1.5 -ml-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95"
-                >
-                  <ArrowLeft className="w-4 h-4 text-primary-500" /> Kembali ke Daftar Surat Jalan
-                </button>
+                      setDraftsRevision((r) => r + 1);
+                      if (activeStats.regularPicked > 0) {
+                        onNotify(`💾 Progres SJ ${activeSJ.no_sj} (${activeStats.regularPicked} pcs) tersimpan di draft lokal.`, 'info');
+                      }
+                    }}
+                    className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer py-1 px-2 -ml-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95"
+                  >
+                    <ArrowLeft className="w-4 h-4 text-primary-500" /> Kembali ke Daftar SJ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleMinimizeActiveSJ}
+                    className="flex items-center gap-1.5 text-xs font-extrabold text-indigo-700 dark:text-indigo-300 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800/70 py-1 px-2.5 rounded-lg transition-all active:scale-95 cursor-pointer"
+                    title="Minimize sesi picking agar bisa buka menu lain tanpa kehilangan progres scan"
+                  >
+                    <Minimize2 className="w-3.5 h-3.5" />
+                    <span>Minimize Picking</span>
+                  </button>
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold border ${
+                      isOnline
+                        ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60'
+                        : 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                    }`}
+                  >
+                    <ShieldCheck className="w-3 h-3" />
+                    {isOnline ? 'Draft Aman · Online' : 'Offline · Tersimpan Lokal'}
+                  </span>
+                </div>
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-xl font-black text-slate-800 dark:text-white uppercase tracking-tight">
+                <h1 className="text-xl font-black font-mono text-slate-800 dark:text-white uppercase tracking-tight">
                   {activeSJ.no_sj}
                 </h1>
                 <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-primary-500/10 text-primary-500 border border-primary-500/20">
@@ -2720,13 +3138,13 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                           <button
                             key={locIdx}
                             type="button"
-                            onClick={() => handleBarcodeScanned(`#LOK ${loc}`)}
+                            onClick={() => handleSelectItemLocation(index, loc)}
                             className={`px-3.5 py-1.5 rounded-xl font-mono font-black text-sm sm:text-base flex items-center gap-2 transition-all shadow-xs cursor-pointer active:scale-95 max-w-[85%] sm:max-w-none ${
                               isThisCurrentShelf
                                 ? 'bg-primary-500 text-white shadow-md ring-2 ring-primary-500/50'
                                 : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-2 border-emerald-500/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
                             }`}
-                            title={`Klik untuk jadikan rak aktif: ${loc} (Sisa stok: ${locInfo.qty ?? 0} pcs)`}
+                            title={`Klik untuk pilih rak ${loc} untuk SKU ini (Sisa stok: ${locInfo.qty ?? 0} pcs)`}
                           >
                             <MapPin className="w-4 h-4 text-inherit shrink-0" />
                             <span className="truncate">{loc}</span>
@@ -2750,11 +3168,38 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                         <span>{item.lokasi && item.lokasi !== '-' && item.lokasi !== 'KOSONG' ? item.lokasi : (activeSJ?.tujuan || 'STORE')}</span>
                       </div>
                     ) : item.lokasi && item.lokasi !== '-' && item.lokasi !== 'KOSONG' ? (
-                      /* FULFILL MARKETPLACE WITH SPECIFIED LOCATION */
-                      <div className="px-3.5 py-1.5 rounded-xl font-mono font-black text-sm sm:text-base flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-2 border-emerald-500/30 shadow-xs">
-                        <MapPin className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                        <span>{item.lokasi}</span>
-                      </div>
+                      /* FULFILL MARKETPLACE: SPLIT MULTIPLE LOCATIONS INTO DEDUPED CLICKABLE SINGLE RACK PILLS */
+                      Array.from(
+                        new Set(
+                          String(item.lokasi)
+                            .split(/[,/;\n|]+/)
+                            .map((s) =>
+                              s
+                                .replace(/\([^)]*pcs[^)]*\)/gi, '')
+                                .trim()
+                                .toUpperCase()
+                            )
+                            .filter((s) => s && s !== '-' && s !== '--' && s !== 'KOSONG' && s !== 'WAREHOUSE')
+                        )
+                      ).map((tok, tokIdx) => {
+                        const isThisCurrentShelf = activeLocation && tok === activeLocation.toUpperCase();
+                        return (
+                          <button
+                            key={tokIdx}
+                            type="button"
+                            onClick={() => handleSelectItemLocation(index, tok)}
+                            className={`px-3.5 py-1.5 rounded-xl font-mono font-black text-sm sm:text-base flex items-center gap-2 transition-all shadow-xs cursor-pointer active:scale-95 ${
+                              isThisCurrentShelf
+                                ? 'bg-primary-500 text-white shadow-md ring-2 ring-primary-500/50'
+                                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-2 border-emerald-500/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
+                            }`}
+                            title={`Klik untuk pilih rak ${tok}`}
+                          >
+                            <MapPin className="w-4 h-4 text-inherit shrink-0" />
+                            <span>{tok}</span>
+                          </button>
+                        );
+                      })
                     ) : isRealtimeLoaded ? (
                       /* KETIKA STOK GUDANG 0 PCS (TIDAK MEREKOMENDASIKAN RAK KOSONG) */
                       <div
@@ -3113,6 +3558,105 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
          VIEW 1: DAFTAR SURAT JALAN / INVOICE (List Per SJ)
          ========================================================================= */
       <div className="w-full max-w-full space-y-2.5 animate-in fade-in duration-200">
+      {/* Minimized Active Picking Banner (quick resume right inside Tugas Picking list) */}
+      {activeSJ && isMinimized && (
+        <div className="bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-2xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-xs">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+              <ScanBarcode className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-300">
+                  Sesi Picking Diminimize
+                </span>
+                <span className="px-2 py-0.5 rounded bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-700 text-[11px] font-mono font-black text-slate-900 dark:text-white">
+                  {activeSJ.no_sj}
+                </span>
+                {activeLocation && (
+                  <span className="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 text-[10px] font-mono font-bold">
+                    Rak: {activeLocation}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300 truncate">
+                Progres: <strong className="font-mono">{activeStats.regularPicked}/{activeStats.totalReq} Pcs ({activeStats.percentage}%)</strong> · Tujuan: {activeSJ.tujuan}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsMinimized(false)}
+              className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+              <span>Lanjutkan Picking</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                savePickingSjDraft({
+                  no_sj: activeSJ.no_sj,
+                  tujuan: activeSJ.tujuan,
+                  tanggal: activeSJ.tanggal,
+                  activeItems,
+                  unexpectedItems,
+                  activeLocation: resolvePrimarySingleLocation(activeLocation || '') || '',
+                  rekapCatatan,
+                  updatedAt: Date.now(),
+                });
+                setIsMinimized(false);
+                setActiveSJ(null);
+                setDraftsRevision((r) => r + 1);
+                onNotify(`Sesi SJ ${activeSJ.no_sj} ditutup. Progres tetap aman di draft.`, 'info');
+              }}
+              className="px-2.5 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-xs font-bold cursor-pointer"
+              title="Tutup sesi dock (draft SJ tetap tersimpan)"
+            >
+              Tutup
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Offline Protection & Pending Outbox Banner */}
+      {(!isOnline || pickingOutboxCount > 0) && (
+        <div
+          className={`rounded-2xl p-3 border flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs ${
+            !isOnline
+              ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200'
+              : 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-200'
+          }`}
+        >
+          <div className="flex items-center gap-2 text-xs font-bold">
+            {!isOnline ? (
+              <WifiOff className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            ) : (
+              <CloudUpload className="w-4 h-4 shrink-0 text-blue-600 dark:text-blue-400" />
+            )}
+            <span>
+              {!isOnline
+                ? `Mode Offline Aktif — Anda tetap dapat melakukan scan & menyelesaikan picking. ${
+                    pickingOutboxCount > 0 ? `(${pickingOutboxCount} SJ selesai siap disinkronkan saat online)` : 'Progres tersimpan lokal.'
+                  }`
+                : `${pickingOutboxCount} Tugas Picking selesai secara offline dan siap disinkronkan ke Database.`}
+            </span>
+          </div>
+          {pickingOutboxCount > 0 && isOnline && (
+            <button
+              type="button"
+              onClick={handleSyncPickingOutboxNow}
+              disabled={isSyncingPickingOutbox}
+              className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold flex items-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingPickingOutbox ? 'animate-spin' : ''}`} />
+              <span>{isSyncingPickingOutbox ? 'Menyinkronkan...' : `Sinkronkan (${pickingOutboxCount} SJ)`}</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Filter Tabs & Search Bar */}
       <div className="bg-white dark:bg-[#131d31] p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

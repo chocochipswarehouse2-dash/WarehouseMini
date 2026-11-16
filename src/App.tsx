@@ -68,8 +68,11 @@ import {
   syncAllScannerOutboxBatches,
   getPendingScannerOutboxCount,
   getPendingRecountOutboxCount,
+  getPendingPickingOutboxCount,
   getActiveProduksiInputDraftSummary,
   getActiveRecountDraftSummary,
+  getActivePickingDraftSummary,
+  setActivePickingSessionMinimized,
 } from './services/scannerOutboxService';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { globalRealtimeStore } from './services/store';
@@ -840,6 +843,9 @@ export default function App() {
     setIsScannerPopupMinimized(true);
     setIsProduksiInputPopupMinimized(true);
     setIsHitungUlangPopupMinimized(true);
+    if (rawPage !== 'picking_tasks' && rawPage !== 'loading_dock') {
+      setActivePickingSessionMinimized(true);
+    }
 
     if (rawPage === 'cetak_barcode') setCetakLabelInitialTab('barcode');
     if (rawPage === 'picking_tasks') {
@@ -882,8 +888,10 @@ export default function App() {
           Boolean(rawDraft && JSON.parse(rawDraft)?.length > 0) ||
           getPendingScannerOutboxCount() > 0 ||
           getPendingRecountOutboxCount() > 0 ||
+          getPendingPickingOutboxCount() > 0 ||
           getActiveProduksiInputDraftSummary().hasDraft ||
-          getActiveRecountDraftSummary().hasActiveWorkspaceDraft;
+          getActiveRecountDraftSummary().hasActiveWorkspaceDraft ||
+          getActivePickingDraftSummary().hasSession;
       } catch {}
 
       if (!hasStagingScans) {
@@ -5716,6 +5724,13 @@ export default function App() {
               'info'
             );
           }
+        }}
+        onMaximizePickingTask={() => {
+          setIsScannerPopupMinimized(true);
+          setIsProduksiInputPopupMinimized(true);
+          setIsHitungUlangPopupMinimized(true);
+          setActivePickingSessionMinimized(false);
+          handleSelectPage('picking_tasks');
         }}
         onNotify={showToast}
       />

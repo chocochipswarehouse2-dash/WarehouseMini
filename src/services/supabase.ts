@@ -299,8 +299,11 @@ export function normalizeLokasi(lokasi: string): string {
 
 export function getAreaFromLokasi(lokasi: string, _area?: string): string {
   const raw = (lokasi || '').trim().toUpperCase();
+  if (!raw) return 'Anomali';
+  // Compound multi-location strings (e.g. "C093, R070, R071" or "B036, V007, SHOPEE") are NOT valid single racks -> Anomali
+  if (/[,;\n|]/.test(raw)) return 'Anomali';
   const l = normalizeLokasi(raw);
-  if (!l) return 'Anomali';
+  if (!l || /[,;\n|]/.test(l)) return 'Anomali';
   
   // 1. Warehouse: A001-A100, B001-B100, C001-C100, D001-D100 (supports 1-4 digits or dash e.g. A01, A-01, B005)
   // HARD CONSTRAINT (Rule 7A & 7C): Literal "WAREHOUSE" is NOT a valid rack code on the floor plan -> MUST be Anomali!
@@ -332,6 +335,43 @@ function stripLocationQtySuffix(raw: string): string {
   return String(raw || '')
     .replace(/\s*\([^)]*\)\s*$/g, '')
     .trim();
+}
+
+/**
+ * Resolve any raw location string (including compound comma-separated picking strings like "C093, R070, R071")
+ * down to a single clean highest-priority rack code so log_produk & stok_real_fisik never receive multi-location anomalies.
+ */
+export function resolvePrimarySingleLocation(lokasi: string, area?: string): string {
+  const raw = String(lokasi || '').trim();
+  if (!raw) return '';
+
+  const tokens = raw
+    .split(/[,/;\n|]+/)
+    .map((t) => stripLocationQtySuffix(t).trim().toUpperCase())
+    .filter(
+      (t) =>
+        t &&
+        t !== '-' &&
+        t !== '--' &&
+        t !== 'NONE' &&
+        t !== 'DEFAULT' &&
+        t !== 'NULL' &&
+        t !== 'UNDEFINED' &&
+        t !== 'UNKNOWN' &&
+        t !== 'BELUM ADA RAK' &&
+        t !== 'KOSONG' &&
+        t !== 'WAREHOUSE'
+    );
+
+  if (tokens.length === 0) return '';
+  if (tokens.length === 1) return normalizeLokasi(tokens[0]);
+
+  const sorted = [...tokens].sort((a, b) => {
+    const pA = getPickingPriority(a, area);
+    const pB = getPickingPriority(b, area);
+    return pA - pB;
+  });
+  return normalizeLokasi(sorted[0]);
 }
 
 /**
@@ -5718,13 +5758,32 @@ export async function completePickingSuratJalanSupabase(
     console.warn('Failed saving picking completion to local cache:', cacheErr);
   }
 
+  // Always record in persistent completed set & local cache first so UI stays consistent offline
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const compStr = localStorage.getItem('wms_completed_sjs_set');
+      const compSet = new Set<string>(compStr ? JSON.parse(compStr) : []);
+      compSet.add(cleanNoSj);
+      localStorage.setItem('wms_completed_sjs_set', JSON.stringify(Array.from(compSet)));
+    }
+  } catch {}
+
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return false;
+  }
+
+  let hasRemoteFailure = false;
+
   // 2. Sync to log_produk (OUT) automatically for picking fulfillment
   if (syncOutToLog) {
     try {
       const logsOut: LogProdukItem[] = [];
       const allPicked = [...items, ...unexpectedItems].filter((x) => x.qty_picked > 0);
       for (const it of allPicked) {
-        const actualLocation = it.lokasi_picked || it.lokasi || 'Warehouse';
+        const actualLocation =
+          resolvePrimarySingleLocation(it.lokasi_picked || '') ||
+          resolvePrimarySingleLocation(it.lokasi || '') ||
+          'Warehouse';
         logsOut.push({
           type: 'OUT',
           invoice: cleanNoSj,
@@ -5744,13 +5803,13 @@ export async function completePickingSuratJalanSupabase(
       }
     } catch (logErr) {
       console.warn('Error creating OUT log for picking:', logErr);
+      hasRemoteFailure = true;
     }
   }
 
   // 3. Update Supabase picking_list table
   try {
     for (const item of items) {
-      const isUuid = item.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(item.id));
       const condition = item.id && (typeof item.id === 'number' || (typeof item.id === 'string' && !item.id.startsWith('pick_')))
         ? `id=eq.${item.id}`
         : `no_sj=eq.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(item.sku)}`;
@@ -5767,16 +5826,22 @@ export async function completePickingSuratJalanSupabase(
         }
         await supabaseFetch('picking_list', 'PATCH', payload, condition);
       } catch (patchErr: any) {
-        // If failed due to unknown 'catatan' column, retry without catatan
-        try {
-          const minimalPayload = {
-            qty_picked: item.qty_picked,
-            status: 'SELESAI',
-            picker_name: pickerName,
-          };
-          await supabaseFetch('picking_list', 'PATCH', minimalPayload, condition);
-        } catch (innerErr) {
-          console.warn(`Supabase patch failed for item ${item.sku}:`, innerErr);
+        const errMsg = String(patchErr?.message || patchErr || '').toLowerCase();
+        if (errMsg.includes('column') || errMsg.includes('catatan') || errMsg.includes('400')) {
+          try {
+            const minimalPayload = {
+              qty_picked: item.qty_picked,
+              status: 'SELESAI',
+              picker_name: pickerName,
+            };
+            await supabaseFetch('picking_list', 'PATCH', minimalPayload, condition);
+          } catch (innerErr) {
+            console.warn(`Supabase patch failed for item ${item.sku}:`, innerErr);
+            hasRemoteFailure = true;
+          }
+        } else {
+          console.warn(`Supabase patch failed for item ${item.sku}:`, patchErr);
+          hasRemoteFailure = true;
         }
       }
     }
@@ -5791,14 +5856,16 @@ export async function completePickingSuratJalanSupabase(
         nama_produk: unexp.nama_produk || unexp.sku,
         qty_req: 0,
         qty_picked: unexp.qty_picked,
-        lokasi: unexp.lokasi || '-',
+        lokasi: resolvePrimarySingleLocation(unexp.lokasi_picked || unexp.lokasi || '') || '-',
         status: 'SELESAI',
         picker_name: pickerName,
         created_at: nowIso,
       }));
-      await insertPickingListRowsToSupabase(unexpPayloads).catch((unexpErr) => {
+      const okUnexp = await insertPickingListRowsToSupabase(unexpPayloads).catch((unexpErr) => {
         console.warn(`Failed inserting unexpected items to Supabase:`, unexpErr);
+        return false;
       });
+      if (!okUnexp) hasRemoteFailure = true;
     }
 
     // 5. Also sync to peminjaman (if SPS/PJM)
@@ -5808,20 +5875,10 @@ export async function completePickingSuratJalanSupabase(
       }, `no_peminjaman=ilike.${encodeURIComponent(cleanNoSj)}`).catch(() => {});
     }
 
-    // 6. Record in persistent completed set so it never bounces back
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        const compStr = localStorage.getItem('wms_completed_sjs_set');
-        const compSet = new Set<string>(compStr ? JSON.parse(compStr) : []);
-        compSet.add(cleanNoSj);
-        localStorage.setItem('wms_completed_sjs_set', JSON.stringify(Array.from(compSet)));
-      }
-    } catch {}
-
-    return true;
+    return !hasRemoteFailure;
   } catch (err) {
-    console.warn('Supabase remote sync failed, but task saved to local cache:', err);
-    return true;
+    console.warn('Supabase remote sync failed, queued for offline sync:', err);
+    return false;
   }
 }
 

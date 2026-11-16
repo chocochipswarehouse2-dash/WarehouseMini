@@ -3,7 +3,8 @@ import {
   StockOpnameQueueItem,
   ProductItem,
   PenerimaanProduksiItem,
-  PenerimaanRecountLogItem
+  PenerimaanRecountLogItem,
+  PickingListItem
 } from '../types';
 import {
   supabaseFetch,
@@ -15,7 +16,9 @@ import {
   invalidateStokFisikCache,
   saveRecountAuditRecord,
   savePenerimaanRecountLog,
-  invalidatePenerimaanProduksiCache
+  invalidatePenerimaanProduksiCache,
+  insertPickingListRowsToSupabase,
+  resolvePrimarySingleLocation
 } from './supabase';
 import {
   pushMasterRecountDeltaToGoogleSheet,
@@ -28,6 +31,9 @@ const OUTBOX_STORAGE_KEY = 'wms_scanner_outbox_queue_v1';
 const LEGACY_OFFLINE_LOGS_KEY = 'wms_offline_logs';
 const RECOUNT_OUTBOX_STORAGE_KEY = 'wms_recount_offline_outbox_v1';
 const RECOUNT_WORKSPACE_DRAFT_KEY = 'wms_recount_workspace_draft_v1';
+const PICKING_OUTBOX_STORAGE_KEY = 'wms_picking_offline_outbox_v1';
+const PICKING_SJ_DRAFTS_KEY = 'wms_picking_sj_drafts_v1';
+const ACTIVE_PICKING_SESSION_KEY = 'wms_active_picking_session';
 
 export interface ScannerOutboxBatch {
   batchId: string;
@@ -879,4 +885,489 @@ export function getActiveProduksiInputDraftSummary(): {
     return { hasDraft: false, noSuratJalan: '', kategori: 'Lokal CMT', modelCount: 0, totalPcs: 0 };
   }
 }
+
+// ============================================================================
+// TUGAS PICKING OFFLINE OUTBOX & MINIMIZE / PER-SJ DRAFT PERSISTENCE
+// ============================================================================
+
+export interface PickingOutboxBatch {
+  batchId: string;
+  no_sj: string;
+  tujuan: string;
+  items: PickingListItem[];
+  unexpectedItems: PickingListItem[];
+  pickerName: string;
+  catatan: string;
+  syncOutToLog: boolean;
+  logsSynced: boolean;
+  itemsSynced: boolean;
+  unexpectedSynced: boolean;
+  peminjamanSynced: boolean;
+  attempts: number;
+  lastError?: string;
+  status: 'PENDING' | 'SYNCING' | 'FAILED';
+  createdAtIso: string;
+}
+
+export interface PickingSjDraftEntry {
+  no_sj: string;
+  tujuan: string;
+  tanggal?: string;
+  activeItems: PickingListItem[];
+  unexpectedItems: PickingListItem[];
+  activeLocation: string;
+  rekapCatatan: string;
+  updatedAt: number;
+}
+
+let isPickingOutboxSyncing = false;
+
+function notifyPickingOutboxUpdated() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('wms_picking_outbox_updated'));
+    window.dispatchEvent(new CustomEvent('wms_scanner_outbox_updated'));
+  }
+}
+
+export function notifyPickingSessionUpdated() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('wms_picking_session_updated'));
+  }
+}
+
+export function getPickingOutboxBatches(): PickingOutboxBatch[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(PICKING_OUTBOX_STORAGE_KEY);
+    const parsed: PickingOutboxBatch[] = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function getPendingPickingOutboxCount(): number {
+  return getPickingOutboxBatches().length;
+}
+
+function savePickingOutboxBatches(batches: PickingOutboxBatch[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (batches.length === 0) {
+      localStorage.removeItem(PICKING_OUTBOX_STORAGE_KEY);
+    } else {
+      localStorage.setItem(PICKING_OUTBOX_STORAGE_KEY, JSON.stringify(batches));
+    }
+  } catch (err) {
+    console.warn('[PickingOutbox] Failed saving picking outbox:', err);
+  }
+  notifyPickingOutboxUpdated();
+}
+
+export function enqueuePickingOutboxBatch(params: {
+  no_sj: string;
+  tujuan?: string;
+  items: PickingListItem[];
+  unexpectedItems: PickingListItem[];
+  pickerName: string;
+  catatan: string;
+  syncOutToLog: boolean;
+  logsSynced?: boolean;
+  itemsSynced?: boolean;
+  unexpectedSynced?: boolean;
+  peminjamanSynced?: boolean;
+}): PickingOutboxBatch {
+  const cleanNoSj = String(params.no_sj || '').trim().toUpperCase();
+  const isPeminjamanSj = cleanNoSj.startsWith('SPS') || cleanNoSj.startsWith('PJM');
+  const newBatch: PickingOutboxBatch = {
+    batchId: `PICKING-${cleanNoSj}-${Date.now()}`,
+    no_sj: cleanNoSj,
+    tujuan: params.tujuan || params.items[0]?.tujuan || 'Marketplace',
+    items: params.items || [],
+    unexpectedItems: params.unexpectedItems || [],
+    pickerName: params.pickerName || 'Operator',
+    catatan: params.catatan || '',
+    syncOutToLog: Boolean(params.syncOutToLog),
+    logsSynced: Boolean(params.logsSynced || !params.syncOutToLog),
+    itemsSynced: Boolean(params.itemsSynced),
+    unexpectedSynced: Boolean(params.unexpectedSynced || (params.unexpectedItems || []).length === 0),
+    peminjamanSynced: Boolean(params.peminjamanSynced || !isPeminjamanSj),
+    attempts: 0,
+    status: 'PENDING',
+    createdAtIso: new Date().toISOString()
+  };
+
+  // Replace any older unsynced batch for the same no_sj so only latest completion state is synced
+  const current = getPickingOutboxBatches().filter(
+    (b) => String(b.no_sj || '').trim().toUpperCase() !== cleanNoSj
+  );
+  const updated = [...current, newBatch];
+  savePickingOutboxBatches(updated);
+  return newBatch;
+}
+
+export async function syncAllPickingOutboxBatches(): Promise<{
+  syncedBatches: number;
+  remainingBatches: number;
+  errors: string[];
+}> {
+  const current = getPickingOutboxBatches();
+  if (current.length === 0) {
+    return { syncedBatches: 0, remainingBatches: 0, errors: [] };
+  }
+
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return {
+      syncedBatches: 0,
+      remainingBatches: current.length,
+      errors: ['Perangkat sedang offline']
+    };
+  }
+
+  if (isPickingOutboxSyncing) {
+    return { syncedBatches: 0, remainingBatches: current.length, errors: [] };
+  }
+
+  isPickingOutboxSyncing = true;
+  let syncedBatches = 0;
+  const errors: string[] = [];
+  const workingList = [...current];
+
+  const isComplete = (b: PickingOutboxBatch) =>
+    b.logsSynced && b.itemsSynced && b.unexpectedSynced && b.peminjamanSynced;
+
+  try {
+    for (let i = 0; i < workingList.length; i++) {
+      const batch = workingList[i];
+      const cleanNoSj = String(batch.no_sj || '').trim().toUpperCase();
+      batch.status = 'SYNCING';
+      savePickingOutboxBatches(workingList.filter((b) => !isComplete(b)));
+
+      try {
+        // Step 1: Idempotent sync to log_produk (#OUT) with pre-flight delta check
+        if (!batch.logsSynced && batch.syncOutToLog) {
+          const allPicked = [...(batch.items || []), ...(batch.unexpectedItems || [])].filter(
+            (x) => (Number(x.qty_picked) || 0) > 0
+          );
+          if (allPicked.length > 0) {
+            const existingRows = await supabaseFetch<Array<{ sku: string; lokasi: string; qty: number }>>(
+              'log_produk',
+              'GET',
+              undefined,
+              `select=sku,lokasi,qty&invoice=eq.${encodeURIComponent(cleanNoSj)}&type=eq.OUT`
+            );
+
+            const existingCounts = new Map<string, number>();
+            (existingRows || []).forEach((row) => {
+              const key = `${String(row.sku || '').toUpperCase()}|${String(row.lokasi || '').toUpperCase()}|${Number(row.qty)}`;
+              existingCounts.set(key, (existingCounts.get(key) || 0) + 1);
+            });
+
+            const logsOut: LogProdukItem[] = [];
+            for (const it of allPicked) {
+              const actualLocation =
+                resolvePrimarySingleLocation(it.lokasi_picked || '') ||
+                resolvePrimarySingleLocation(it.lokasi || '') ||
+                'Warehouse';
+              const key = `${String(it.sku || '').toUpperCase()}|${String(actualLocation).toUpperCase()}|${Number(it.qty_picked)}`;
+              const count = existingCounts.get(key) || 0;
+              if (count > 0) {
+                existingCounts.set(key, count - 1);
+                continue;
+              }
+              logsOut.push({
+                type: 'OUT',
+                invoice: cleanNoSj,
+                sku: it.sku,
+                nama_produk: it.nama_produk || it.sku,
+                size: it.size || '',
+                area: getAreaFromLokasi(actualLocation),
+                lokasi: actualLocation,
+                qty: it.qty_picked,
+                operator: batch.pickerName || 'Picker',
+                keterangan: `[#OUT PICKING] Surat Jalan ${cleanNoSj} (Lokasi: ${actualLocation}) ${batch.catatan ? `- ${batch.catatan}` : ''}`.trim(),
+                created_at: batch.createdAtIso || new Date().toISOString()
+              });
+            }
+
+            if (logsOut.length > 0) {
+              const CHUNK_SIZE = 100;
+              for (let c = 0; c < logsOut.length; c += CHUNK_SIZE) {
+                await supabaseFetch('log_produk', 'POST', logsOut.slice(c, c + CHUNK_SIZE));
+              }
+            }
+          }
+          batch.logsSynced = true;
+          savePickingOutboxBatches(workingList.filter((b) => !isComplete(b)));
+        } else {
+          batch.logsSynced = true;
+        }
+
+        // Step 2: Patch picking_list rows as SELESAI
+        if (!batch.itemsSynced) {
+          for (const item of batch.items || []) {
+            const condition =
+              item.id && (typeof item.id === 'number' || (typeof item.id === 'string' && !item.id.startsWith('pick_')))
+                ? `id=eq.${item.id}`
+                : `no_sj=eq.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(item.sku)}`;
+
+            try {
+              const payload: Record<string, any> = {
+                qty_picked: item.qty_picked,
+                status: 'SELESAI',
+                picker_name: batch.pickerName
+              };
+              if (batch.catatan) {
+                payload.catatan = batch.catatan;
+              }
+              await supabaseFetch('picking_list', 'PATCH', payload, condition);
+            } catch (patchErr: any) {
+              const errMsg = String(patchErr?.message || patchErr || '').toLowerCase();
+              if (errMsg.includes('column') || errMsg.includes('catatan') || errMsg.includes('400')) {
+                const minimalPayload = {
+                  qty_picked: item.qty_picked,
+                  status: 'SELESAI',
+                  picker_name: batch.pickerName
+                };
+                await supabaseFetch('picking_list', 'PATCH', minimalPayload, condition);
+              } else {
+                throw patchErr;
+              }
+            }
+          }
+          batch.itemsSynced = true;
+          savePickingOutboxBatches(workingList.filter((b) => !isComplete(b)));
+        }
+
+        // Step 3: Insert unexpected items if any
+        if (!batch.unexpectedSynced && (batch.unexpectedItems || []).length > 0) {
+          const nowIso = batch.createdAtIso || new Date().toISOString();
+          const unexpPayloads = batch.unexpectedItems.map((unexp) => ({
+            no_sj: cleanNoSj,
+            tanggal: nowIso.slice(0, 10),
+            tujuan: batch.tujuan || batch.items[0]?.tujuan || 'Marketplace',
+            sku: unexp.sku,
+            nama_produk: unexp.nama_produk || unexp.sku,
+            qty_req: 0,
+            qty_picked: unexp.qty_picked,
+            lokasi: resolvePrimarySingleLocation(unexp.lokasi_picked || unexp.lokasi || '') || '-',
+            status: 'SELESAI',
+            picker_name: batch.pickerName,
+            created_at: nowIso
+          }));
+          const ok = await insertPickingListRowsToSupabase(unexpPayloads);
+          if (!ok) {
+            throw new Error('Gagal menyimpan item tambahan picking ke Supabase');
+          }
+          batch.unexpectedSynced = true;
+          savePickingOutboxBatches(workingList.filter((b) => !isComplete(b)));
+        } else {
+          batch.unexpectedSynced = true;
+        }
+
+        // Step 4: Patch peminjaman if SPS / PJM
+        if (!batch.peminjamanSynced && (cleanNoSj.startsWith('SPS') || cleanNoSj.startsWith('PJM'))) {
+          await supabaseFetch(
+            'peminjaman',
+            'PATCH',
+            { status: 'SELESAI' },
+            `no_peminjaman=ilike.${encodeURIComponent(cleanNoSj)}`
+          ).catch(() => {});
+          batch.peminjamanSynced = true;
+        } else {
+          batch.peminjamanSynced = true;
+        }
+
+        batch.status = 'PENDING';
+        batch.lastError = undefined;
+        syncedBatches++;
+      } catch (err: any) {
+        batch.attempts = (batch.attempts || 0) + 1;
+        batch.status = 'FAILED';
+        batch.lastError = err?.message || 'Gangguan jaringan saat sinkronisasi tugas picking';
+        errors.push(batch.lastError!);
+      }
+
+      savePickingOutboxBatches(workingList.filter((b) => !isComplete(b)));
+    }
+
+    if (syncedBatches > 0) {
+      invalidateStokFisikCache();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('wms_picking_list_updated'));
+      }
+    }
+  } finally {
+    isPickingOutboxSyncing = false;
+  }
+
+  const remaining = getPickingOutboxBatches();
+  return {
+    syncedBatches,
+    remainingBatches: remaining.length,
+    errors
+  };
+}
+
+// ============================================================================
+// PER-SJ DRAFT MAP & ACTIVE PICKING SESSION HELPERS
+// ============================================================================
+
+export function getPickingSjDraftsMap(): Record<string, PickingSjDraftEntry> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(PICKING_SJ_DRAFTS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function savePickingSjDraft(entry: PickingSjDraftEntry): void {
+  if (typeof window === 'undefined') return;
+  const cleanNoSj = String(entry.no_sj || '').trim().toUpperCase();
+  if (!cleanNoSj) return;
+  try {
+    const map = getPickingSjDraftsMap();
+    map[cleanNoSj] = {
+      ...entry,
+      no_sj: cleanNoSj,
+      updatedAt: Date.now()
+    };
+    // Keep up to 30 most recent SJ drafts to avoid localStorage bloat
+    const keys = Object.keys(map);
+    if (keys.length > 30) {
+      const sorted = keys.sort((a, b) => (map[b]?.updatedAt || 0) - (map[a]?.updatedAt || 0));
+      sorted.slice(30).forEach((k) => delete map[k]);
+    }
+    localStorage.setItem(PICKING_SJ_DRAFTS_KEY, JSON.stringify(map));
+    notifyPickingSessionUpdated();
+  } catch (err) {
+    console.warn('[PickingDraft] Failed saving per-SJ draft:', err);
+  }
+}
+
+export function removePickingSjDraft(no_sj: string): void {
+  if (typeof window === 'undefined') return;
+  const cleanNoSj = String(no_sj || '').trim().toUpperCase();
+  if (!cleanNoSj) return;
+  try {
+    const map = getPickingSjDraftsMap();
+    if (map[cleanNoSj]) {
+      delete map[cleanNoSj];
+      if (Object.keys(map).length === 0) {
+        localStorage.removeItem(PICKING_SJ_DRAFTS_KEY);
+      } else {
+        localStorage.setItem(PICKING_SJ_DRAFTS_KEY, JSON.stringify(map));
+      }
+      notifyPickingSessionUpdated();
+    }
+  } catch {}
+}
+
+export function getActivePickingDraftSummary(): {
+  hasSession: boolean;
+  isMinimized: boolean;
+  noSj: string;
+  tujuan: string;
+  totalSku: number;
+  completedSku: number;
+  totalReq: number;
+  totalPicked: number;
+  progressPct: number;
+  activeLocation: string;
+  unexpectedCount: number;
+  savedDraftsCount: number;
+} {
+  const empty = {
+    hasSession: false,
+    isMinimized: false,
+    noSj: '',
+    tujuan: '',
+    totalSku: 0,
+    completedSku: 0,
+    totalReq: 0,
+    totalPicked: 0,
+    progressPct: 0,
+    activeLocation: '',
+    unexpectedCount: 0,
+    savedDraftsCount: 0
+  };
+  if (typeof window === 'undefined') return empty;
+  try {
+    const draftsMap = getPickingSjDraftsMap();
+    const savedDraftsCount = Object.keys(draftsMap).length;
+    const raw = localStorage.getItem(ACTIVE_PICKING_SESSION_KEY);
+    if (!raw) {
+      return { ...empty, savedDraftsCount };
+    }
+    const parsed = JSON.parse(raw);
+    const activeSJ = parsed?.activeSJ;
+    if (!activeSJ || !activeSJ.no_sj) {
+      return { ...empty, savedDraftsCount };
+    }
+    const items: PickingListItem[] = Array.isArray(parsed.activeItems)
+      ? parsed.activeItems
+      : Array.isArray(activeSJ.items)
+      ? activeSJ.items
+      : [];
+    const unexpected: PickingListItem[] = Array.isArray(parsed.unexpectedItems)
+      ? parsed.unexpectedItems
+      : [];
+
+    const totalSku = items.length;
+    const completedSku = items.filter((it) => (Number(it.qty_picked) || 0) >= (Number(it.qty_req) || 1)).length;
+    const totalReq = items.reduce((s, it) => s + (Number(it.qty_req) || 0), 0);
+    const totalPicked = items.reduce((s, it) => s + (Number(it.qty_picked) || 0), 0);
+    const progressPct = totalReq > 0 ? Math.min(100, Math.round((totalPicked / totalReq) * 100)) : 0;
+
+    return {
+      hasSession: true,
+      isMinimized: Boolean(parsed.isMinimized),
+      noSj: String(activeSJ.no_sj || '').trim(),
+      tujuan: String(activeSJ.tujuan || 'Marketplace').trim(),
+      totalSku,
+      completedSku,
+      totalReq,
+      totalPicked,
+      progressPct,
+      activeLocation: String(parsed.activeLocation || '').trim(),
+      unexpectedCount: unexpected.reduce((s, it) => s + (Number(it.qty_picked) || 0), 0),
+      savedDraftsCount
+    };
+  } catch {
+    return empty;
+  }
+}
+
+export function setActivePickingSessionMinimized(minimized: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const raw = localStorage.getItem(ACTIVE_PICKING_SESSION_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !parsed.activeSJ) return;
+    parsed.isMinimized = Boolean(minimized);
+    parsed.timestamp = Date.now();
+    localStorage.setItem(ACTIVE_PICKING_SESSION_KEY, JSON.stringify(parsed));
+    notifyPickingSessionUpdated();
+    if (!minimized) {
+      window.dispatchEvent(new CustomEvent('wms_maximize_picking_session'));
+    } else {
+      window.dispatchEvent(new CustomEvent('wms_minimize_picking_session'));
+    }
+  } catch {}
+}
+
+export function clearActivePickingSession(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(ACTIVE_PICKING_SESSION_KEY);
+    notifyPickingSessionUpdated();
+    window.dispatchEvent(new CustomEvent('wms_close_picking_session'));
+  } catch {}
+}
+
 

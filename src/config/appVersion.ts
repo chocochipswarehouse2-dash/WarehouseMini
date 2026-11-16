@@ -15,19 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.18.5",
-  "versionCode": 385,
+  "version": "v2.18.6",
+  "versionCode": 386,
   "buildDate": "16 November 2026",
-  "buildHash": "wms-261116-v385-1226",
-  "releaseTitle": "WMS v2.18.5 — Submit Sekaligus Antrean Pengecekan Surat Jalan",
+  "buildHash": "wms-261116-v386-1312",
+  "releaseTitle": "WMS v2.18.6 — Minimize Tugas Picking, Perlindungan Offline & Perbaikan Lokasi Tunggal",
   "releaseNotes": [
-    "Tambah tombol Submit Sekaligus / Submit Semua di Antrean Pengecekan SJ dengan modal ringkasan qty, pilihan status PENDING/SELESAI, dan simpan massal ke Supabase",
-    "Rapikan hierarki tombol toolbar Antrean Pengecekan (1 primary solid + tombol sekunder outline)"
+    "Tambah tombol Minimize Picking di workspace Tugas Picking lengkap dengan banner lanjutkan di Daftar SJ & bubble floating draggable di dock lintas menu",
+    "Tambah perlindungan offline Tugas Picking: auto-save draft per SJ, indikator Online/Offline, antrean outbox wms_picking_offline_outbox_v1, dan auto-sync ke Supabase saat kembali online",
+    "Perbaiki bug klik pill lokasi dan tombol +1/Maks yang sebelumnya memicu log multi-lokasi anomali (koma/gabungan) agar selalu mencatat 1 rak tunggal prioritas serta flag Anomali di getAreaFromLokasi"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.18.5",
+    "versionCode": 385,
+    "buildDate": "16 November 2026",
+    "buildHash": "wms-261116-v385-1226",
+    "releaseTitle": "WMS v2.18.5 — Submit Sekaligus Antrean Pengecekan Surat Jalan",
+    "releaseNotes": [
+      "Tambah tombol Submit Sekaligus / Submit Semua di Antrean Pengecekan SJ dengan modal ringkasan qty, pilihan status PENDING/SELESAI, dan simpan massal ke Supabase",
+      "Rapikan hierarki tombol toolbar Antrean Pengecekan (1 primary solid + tombol sekunder outline)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.18.4",
     "versionCode": 384,
@@ -110,18 +123,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Tambahkan tombol & panel Pemilih Emoticon/Emoji lengkap (Gudang & Kerja, Ekspresi, Gestur, Simbol) pada kolom ketik Live Chat Desktop & HP",
       "Tambahkan fitur Reaksi Emoticon cepat (👍 🙏 ✅ ❤️ 😂 🔥 📦 👀) pada setiap balon pesan Live Chat"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.17.2",
-    "versionCode": 372,
-    "buildDate": "15 November 2026",
-    "buildHash": "wms-261115-v372-2108",
-    "releaseTitle": "WMS v2.17.2 — Multi-Tab Desktop 4 Tab & Opsi Font Bawaan Sistem",
-    "releaseNotes": [
-      "Naikkan batas maksimal tab Keep-Alive Desktop dari 3 menjadi 4 tab",
-      "Tambahkan opsi font Bawaan Sistem (Laptop) pada pengaturan Tema & Tampilan"
     ],
     "minSupportedVersion": "v2.0.0"
   }

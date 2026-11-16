@@ -6,6 +6,7 @@ import { DistribusiStoreTab } from './PesananSaya/DistribusiStoreTab';
 import { PickingTasksView } from './PickingTasksView';
 import { hasPermission, isSuperadmin } from '../services/permissions';
 import { getUserPersonName } from '../utils/userResolver';
+import { setActivePickingSessionMinimized } from '../services/scannerOutboxService';
 import { UserSession, ProductItem } from '../types';
 
 export type LoadingDockTab = 'penerimaan' | 'pengiriman' | 'transfer_order' | 'picking_tasks';
@@ -103,6 +104,8 @@ export function LoadingDockView({
   useEffect(() => {
     if (activeTab === 'picking_tasks' && onClearPickingAlert) {
       onClearPickingAlert();
+    } else if (activeTab !== 'picking_tasks') {
+      setActivePickingSessionMinimized(true);
     }
   }, [activeTab, onClearPickingAlert]);
 
