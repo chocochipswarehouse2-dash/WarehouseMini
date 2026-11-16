@@ -1880,7 +1880,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 )}
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate hidden sm:block">
-                Klik zona untuk memfokuskan rak (A=Dress, B=Bottom, C=Top, D=Sale, R/V/Z=Koli, Blok F)
+                Pilih zona penyimpanan untuk menyaring daftar rak
               </p>
             </div>
           </button>
@@ -1993,11 +1993,11 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                     Rekomendasi Pindah &amp; Refill Rak
                   </h4>
                   <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-purple-200/80 dark:bg-purple-900/70 text-purple-900 dark:text-purple-200">
-                    Konsolidasi Tugas Picker — WA &amp; SJ A4
+                    Tugas Picker — WA &amp; SJ A4
                   </span>
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                  Suplai stok dari <strong>Rak Koli (R, V, Z) ➔ Rak Utama (ABCD)</strong> saat stok di ABCD kosong, atau rapikan rak overload. Sistem otomatis <strong>memadatkan rak tujuan (anti-acak)</strong> agar picker mudah mengambil barang (Blok F &amp; Perbaikan dipisahkan).
+                  Kelola suplai stok dari <strong>Rak Koli (R, V, Z) ke Rak Utama (ABCD)</strong>, penataan rak melebihi kapasitas, serta konsolidasi lokasi SKU.
                 </p>
               </div>
             </div>
@@ -2241,7 +2241,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               </div>
 
               <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-                Prinsip WMS: <strong>Stok rak picking (ABCD) tidak boleh dikosongkan total!</strong> Picker selalu membutuhkan stok aktif di rak utama untuk mengambil pesanan harian tanpa harus berjalan ke area Kolian.
+                Pastikan stok minimum tetap tersedia di rak utama (ABCD) untuk kebutuhan pengambilan pesanan harian sebelum memindahkan kelebihan stok ke area Kolian.
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">

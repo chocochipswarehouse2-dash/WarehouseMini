@@ -163,7 +163,7 @@ export const HitungUlangPopupModal: React.FC<HitungUlangPopupModalProps> = ({
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-tight truncate">
-                  Popup Antrean &amp; Audit Hitung Ulang
+                  Audit Hitung Ulang
                 </h2>
                 <span
                   className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border ${
@@ -173,7 +173,7 @@ export const HitungUlangPopupModal: React.FC<HitungUlangPopupModalProps> = ({
                   }`}
                 >
                   {isOnline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-                  <span>{isOnline ? 'Online · Outbox Siap' : 'Offline · Auto-Queue Aktif'}</span>
+                  <span>{isOnline ? 'Online' : 'Mode Offline'}</span>
                 </span>
                 {draftSummary.hasActiveWorkspaceDraft && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
@@ -183,13 +183,9 @@ export const HitungUlangPopupModal: React.FC<HitungUlangPopupModalProps> = ({
                     </span>
                   </span>
                 )}
-                <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                  <ShieldCheck className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                  <span>Anti-Freeze &amp; Pelindung Offline</span>
-                </span>
               </div>
               <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate hidden sm:block mt-0.5">
-                Angka hitung fisik tersimpan otomatis di draft per kode · Aman di-minimize atau ditutup tanpa kehilangan input
+                Verifikasi jumlah fisik penerimaan produksi per kode dan ukuran
               </p>
             </div>
           </div>
@@ -257,12 +253,11 @@ export const HitungUlangPopupModal: React.FC<HitungUlangPopupModalProps> = ({
                 {outboxBatches.length > 0 ? (
                   <span>
                     <strong className="font-mono">{outboxBatches.length} kode</strong> (
-                    <strong className="font-mono">{totalPendingRows} baris varian</strong>) berada di{' '}
-                    <strong>Outbox Hitung Ulang Offline</strong> — Siap di-update idempoten ke Supabase &amp; Sheet tanpa double-input.
+                    <strong className="font-mono">{totalPendingRows} baris varian</strong>) menunggu sinkronisasi ke server.
                   </span>
                 ) : (
                   <span>
-                    <strong>Mode Offline Aktif:</strong> Silakan lanjut input angka fisik dan klik Simpan &amp; Push. Data akan masuk ke Outbox lokal dan otomatis dikirim saat sinyal kembali.
+                    <strong>Mode Offline:</strong> Data hitung fisik yang disimpan akan disinkronkan otomatis saat koneksi kembali terhubung.
                   </span>
                 )}
               </div>

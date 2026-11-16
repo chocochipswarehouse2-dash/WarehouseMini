@@ -152,8 +152,8 @@ export const OfflineProtectionBar: React.FC<OfflineProtectionBarProps> = ({ onNo
             <WifiOff className="w-4 h-4 shrink-0 text-amber-950 dark:text-white" />
             <span className="leading-snug">
               <strong>Mode Offline</strong>
-              <span className="hidden sm:inline"> — Internet terputus. Pekerjaan tersimpan aman di perangkat (IndexedDB &amp; Cache Lokal).</span>
-              <span className="sm:hidden"> — Data tersimpan aman di perangkat.</span>
+              <span className="hidden sm:inline"> — Koneksi terputus. Data tersimpan di perangkat dan akan disinkronkan saat kembali online.</span>
+              <span className="sm:hidden"> — Data tersimpan di perangkat.</span>
             </span>
           </>
         ) : (

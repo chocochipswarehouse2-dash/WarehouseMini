@@ -17,6 +17,11 @@ import {
   RotateCcw,
   ShieldAlert,
   Boxes,
+  Plus,
+  Trash2,
+  ClipboardPaste,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import type { ProductItem, StockRealtimeItem, UserSession } from '../../types';
 import { getAreaFromLokasi, normalizeLokasi, fetchDistinctDatabaseLocations } from '../../services/supabase';
@@ -31,9 +36,12 @@ import {
   fetchLocationRelocationPreview,
   fetchMultiLocationRelocationPreview,
   executeLocationRelocation,
+  executeBatchLocationRelocation,
   isInvalidLocationToken,
   type RelocationPreviewResult,
   type ExecuteLocationRelocationResult,
+  type ExecuteBatchLocationRelocationResult,
+  type BatchRelocationRoutePayload,
 } from '../../services/locationRelocationService';
 
 export interface LocationRelocationModalProps {
@@ -47,10 +55,27 @@ export interface LocationRelocationModalProps {
   initialFromLocations?: string[];
   initialToLocation?: string;
   onNotify?: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
-  onSuccess?: (result: ExecuteLocationRelocationResult) => void;
+  onSuccess?: (result: ExecuteLocationRelocationResult | ExecuteBatchLocationRelocationResult) => void;
 }
 
 type RelocationMode = 'FULL' | 'PARTIAL';
+type RelocationScope = 'SINGLE_TARGET' | 'MULTI_ROUTE';
+
+interface BatchRouteRowState {
+  id: string;
+  fromInput: string;
+  toInput: string;
+}
+
+interface BatchPreviewCacheEntry {
+  loading: boolean;
+  data?: RelocationPreviewResult;
+  error?: string;
+}
+
+function makeBatchRowId(): string {
+  return `route_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+}
 
 function getAreaBadgeClass(area: string): string {
   switch (area) {
@@ -124,6 +149,7 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
   }, [isOpen]);
 
   // Form states
+  const [relocationScope, setRelocationScope] = useState<RelocationScope>('SINGLE_TARGET');
   const [fromInput, setFromInput] = useState('');
   const [multiFromLocations, setMultiFromLocations] = useState<string[]>([]);
   const [toInput, setToInput] = useState('');
@@ -131,11 +157,23 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
   const [notes, setNotes] = useState('');
   const [itemSearch, setItemSearch] = useState('');
 
+  // Multi-route states
+  const [batchRoutes, setBatchRoutes] = useState<BatchRouteRowState[]>([]);
+  const [batchPreviewCache, setBatchPreviewCache] = useState<Record<string, BatchPreviewCacheEntry>>({});
+  const batchPreviewCacheRef = useRef(batchPreviewCache);
+  batchPreviewCacheRef.current = batchPreviewCache;
+  const batchFetchingRef = useRef<Set<string>>(new Set());
+  const [activeBatchDropdown, setActiveBatchDropdown] = useState<{ rowId: string; field: 'from' | 'to' } | null>(null);
+  const [expandedBatchRowId, setExpandedBatchRowId] = useState<string | null>(null);
+  const [showQuickPaste, setShowQuickPaste] = useState(false);
+  const [quickPasteText, setQuickPasteText] = useState('');
+
   // Dropdown visibility states
   const [showFromDropdown, setShowFromDropdown] = useState(false);
   const [showToDropdown, setShowToDropdown] = useState(false);
   const fromBoxRef = useRef<HTMLDivElement>(null);
   const toBoxRef = useRef<HTMLDivElement>(null);
+  const batchListRef = useRef<HTMLDivElement>(null);
 
   // Preview states
   const [preview, setPreview] = useState<RelocationPreviewResult | null>(null);
@@ -149,6 +187,7 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
   const [isConfirming, setIsConfirming] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionResult, setExecutionResult] = useState<ExecuteLocationRelocationResult | null>(null);
+  const [batchExecutionResult, setBatchExecutionResult] = useState<ExecuteBatchLocationRelocationResult | null>(null);
   const [copiedWa, setCopiedWa] = useState(false);
 
   // Initialize inputs on open
@@ -167,13 +206,20 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
         )
       : [];
 
+    setRelocationScope('SINGLE_TARGET');
     if (multiList.length > 1) {
       setMultiFromLocations(multiList);
       setFromInput(multiList.join(', '));
+      setBatchRoutes(multiList.map((loc) => ({ id: makeBatchRowId(), fromInput: loc, toInput: '' })));
     } else {
       setMultiFromLocations([]);
       const initFrom = (multiList[0] || initialFromLocation || '').trim().toUpperCase();
       setFromInput(initFrom);
+      setBatchRoutes([
+        { id: makeBatchRowId(), fromInput: initFrom, toInput: (initialToLocation || '').trim().toUpperCase() },
+        { id: makeBatchRowId(), fromInput: '', toInput: '' },
+        { id: makeBatchRowId(), fromInput: '', toInput: '' },
+      ]);
     }
     const initTo = (initialToLocation || '').trim().toUpperCase();
     setToInput(initTo);
@@ -186,6 +232,13 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
     setIsConfirming(false);
     setIsExecuting(false);
     setExecutionResult(null);
+    setBatchExecutionResult(null);
+    setBatchPreviewCache({});
+    batchFetchingRef.current.clear();
+    setActiveBatchDropdown(null);
+    setExpandedBatchRowId(null);
+    setShowQuickPaste(false);
+    setQuickPasteText('');
     setCopiedWa(false);
     setShowFromDropdown(false);
     setShowToDropdown(false);
@@ -199,6 +252,9 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
       }
       if (toBoxRef.current && !toBoxRef.current.contains(e.target as Node)) {
         setShowToDropdown(false);
+      }
+      if (batchListRef.current && !batchListRef.current.contains(e.target as Node)) {
+        setActiveBatchDropdown(null);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -499,9 +555,355 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
     };
   }, [isOpen, cleanTo, toArea, slotByLokasi, relocationPlan.movedTotalPcs]);
 
+  // =========================================================================
+  // MULTI-ROUTE RELOCATION LOGIC (R116 -> R086, R186 -> R054, X110 -> R023)
+  // =========================================================================
+
+  // Reusable suggestions lists (all source racks with stock > 0, all valid destination racks)
+  const allSourceOptions = useMemo(() => {
+    if (!isOpen) return [];
+    const map = new Map<string, { lokasi: string; area: string; qty: number; skuCount: number }>();
+    for (const s of effectiveSlots) {
+      if (s.currentQty > 0) {
+        map.set(s.lokasi.toUpperCase(), {
+          lokasi: s.lokasi.toUpperCase(),
+          area: s.area,
+          qty: s.currentQty,
+          skuCount: s.skuCount,
+        });
+      }
+    }
+    for (const r of stockRows) {
+      const rawLoc = String(r.lokasi || '').trim().toUpperCase();
+      if (!rawLoc || isInvalidLocationToken(rawLoc)) continue;
+      const qty = Number(r.sisa_stok) || 0;
+      if (qty <= 0) continue;
+      const norm = (normalizeLokasi(rawLoc) || rawLoc).toUpperCase();
+      if (!map.has(norm)) {
+        map.set(norm, {
+          lokasi: norm,
+          area: getAreaFromLokasi(norm),
+          qty,
+          skuCount: 1,
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => {
+      if (b.qty !== a.qty) return b.qty - a.qty;
+      return a.lokasi.localeCompare(b.lokasi, undefined, { numeric: true });
+    });
+  }, [isOpen, effectiveSlots, stockRows]);
+
+  const allTargetOptions = useMemo(() => {
+    if (!isOpen) return [];
+    const map = new Map<
+      string,
+      { lokasi: string; area: string; currentQty: number; maxCapacity: number; availableSpace: number }
+    >();
+    for (const s of effectiveSlots) {
+      const loc = s.lokasi.toUpperCase();
+      if (s.area === 'Anomali') continue;
+      map.set(loc, {
+        lokasi: loc,
+        area: s.area,
+        currentQty: s.currentQty,
+        maxCapacity: s.maxCapacity,
+        availableSpace: s.availableSpace,
+      });
+    }
+    for (const d of dbLocations) {
+      const norm = (normalizeLokasi(d.trim().toUpperCase()) || d.trim().toUpperCase());
+      if (!norm || isInvalidLocationToken(norm)) continue;
+      const area = getAreaFromLokasi(norm);
+      if (area === 'Anomali') continue;
+      if (!map.has(norm)) {
+        map.set(norm, {
+          lokasi: norm,
+          area,
+          currentQty: 0,
+          maxCapacity: 40,
+          availableSpace: 40,
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => {
+      const aEmpty = a.currentQty === 0 ? 0 : 1;
+      const bEmpty = b.currentQty === 0 ? 0 : 1;
+      if (aEmpty !== bEmpty) return aEmpty - bEmpty;
+      return a.lokasi.localeCompare(b.lokasi, undefined, { numeric: true });
+    });
+  }, [isOpen, effectiveSlots, dbLocations]);
+
+  const getBatchSourceSuggestions = useCallback(
+    (query: string) => {
+      const q = (query || '').trim().toUpperCase();
+      return allSourceOptions
+        .filter((it) => !q || it.lokasi.includes(q) || it.area.toUpperCase().includes(q))
+        .slice(0, 25);
+    },
+    [allSourceOptions]
+  );
+
+  const getBatchTargetSuggestions = useCallback(
+    (query: string, excludeSource: string) => {
+      const q = (query || '').trim().toUpperCase();
+      return allTargetOptions
+        .filter((it) => {
+          if (it.lokasi === excludeSource) return false;
+          if (!q) return true;
+          return it.lokasi.includes(q) || it.area.toUpperCase().includes(q);
+        })
+        .sort((a, b) => {
+          if (q) {
+            const aStarts = a.lokasi.startsWith(q) ? 0 : 1;
+            const bStarts = b.lokasi.startsWith(q) ? 0 : 1;
+            if (aStarts !== bStarts) return aStarts - bStarts;
+          }
+          const aEmpty = a.currentQty === 0 ? 0 : 1;
+          const bEmpty = b.currentQty === 0 ? 0 : 1;
+          if (aEmpty !== bEmpty) return aEmpty - bEmpty;
+          return a.lokasi.localeCompare(b.lokasi, undefined, { numeric: true });
+        })
+        .slice(0, 25);
+    },
+    [allTargetOptions]
+  );
+
+  // Normalized route metadata
+  const normalizedBatchRoutes = useMemo(() => {
+    return batchRoutes.map((row, idx) => {
+      const rawFrom = row.fromInput.trim().toUpperCase();
+      const cleanFromLoc = normalizeLokasi(rawFrom) || rawFrom;
+      const rawTo = row.toInput.trim().toUpperCase();
+      const cleanToLoc = normalizeLokasi(rawTo) || rawTo;
+      const fromAreaLoc = cleanFromLoc ? getAreaFromLokasi(cleanFromLoc) : '';
+      const toAreaLoc = cleanToLoc ? getAreaFromLokasi(cleanToLoc) : '';
+      const cacheEntry = cleanFromLoc ? batchPreviewCache[cleanFromLoc] : undefined;
+      return {
+        ...row,
+        index: idx,
+        cleanFrom: cleanFromLoc,
+        cleanTo: cleanToLoc,
+        fromArea: fromAreaLoc,
+        toArea: toAreaLoc,
+        isBlank: !rawFrom && !rawTo,
+        previewEntry: cacheEntry,
+      };
+    });
+  }, [batchRoutes, batchPreviewCache]);
+
+  // Auto-fetch live preview for unique valid source locations in Multi-Route mode
+  const batchSourceKeysString = useMemo(() => {
+    const keys = new Set<string>();
+    for (const r of normalizedBatchRoutes) {
+      if (r.cleanFrom && !isInvalidLocationToken(r.cleanFrom)) {
+        keys.add(r.cleanFrom);
+      }
+    }
+    return Array.from(keys).sort().join('|');
+  }, [normalizedBatchRoutes]);
+
+  useEffect(() => {
+    if (!isOpen || relocationScope !== 'MULTI_ROUTE' || batchExecutionResult) return;
+    if (!batchSourceKeysString) return;
+
+    const timer = setTimeout(() => {
+      const sources = batchSourceKeysString.split('|').filter(Boolean);
+      for (const src of sources) {
+        if (batchPreviewCacheRef.current[src] || batchFetchingRef.current.has(src)) continue;
+        batchFetchingRef.current.add(src);
+        setBatchPreviewCache((prev) => ({
+          ...prev,
+          [src]: { loading: true },
+        }));
+
+        const extraVariants: string[] = [];
+        for (const r of stockRows) {
+          const rLoc = String(r.lokasi || '').trim();
+          const rNorm = normalizeLokasi(rLoc.toUpperCase()) || rLoc.toUpperCase();
+          if (rLoc && (rLoc.toUpperCase() === src || rNorm === src)) {
+            extraVariants.push(rLoc);
+          }
+        }
+        for (const d of dbLocations) {
+          const dLoc = String(d || '').trim();
+          const dNorm = normalizeLokasi(dLoc.toUpperCase()) || dLoc.toUpperCase();
+          if (dLoc && (dLoc.toUpperCase() === src || dNorm === src)) {
+            extraVariants.push(dLoc);
+          }
+        }
+
+        fetchLocationRelocationPreview(src, catalogMap, extraVariants)
+          .then((res) => {
+            setBatchPreviewCache((prev) => ({
+              ...prev,
+              [src]: { loading: false, data: res },
+            }));
+          })
+          .catch((err: any) => {
+            setBatchPreviewCache((prev) => ({
+              ...prev,
+              [src]: {
+                loading: false,
+                error: err?.message || `Gagal memuat stok ${src}`,
+              },
+            }));
+          })
+          .finally(() => {
+            batchFetchingRef.current.delete(src);
+          });
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [isOpen, relocationScope, batchExecutionResult, batchSourceKeysString, stockRows, dbLocations, catalogMap]);
+
+  // Aggregate target incoming pcs across active batch routes + compute batch validation
+  const batchPlanSummary = useMemo(() => {
+    const nonBlankRoutes = normalizedBatchRoutes.filter((r) => !r.isBlank);
+    const seenSources = new Map<string, number>();
+    const targetIncomingPcs = new Map<string, number>();
+    let isAnyLoading = false;
+    let firstError: string | null = null;
+    let totalSkus = 0;
+    let totalPcs = 0;
+    let pendingSoTotal = 0;
+
+    if (nonBlankRoutes.length === 0) {
+      firstError = 'Tambahkan minimal 1 pasangan rute relokasi (Rak Asal → Rak Tujuan).';
+    }
+
+    const perRowStatus = normalizedBatchRoutes.map((r) => {
+      if (r.isBlank) {
+        return { ...r, rowError: null as string | null, isReady: false };
+      }
+
+      let rowError: string | null = null;
+      if (!r.cleanFrom || isInvalidLocationToken(r.cleanFrom)) {
+        rowError = 'Rak asal belum valid.';
+      } else {
+        const prevIdx = seenSources.get(r.cleanFrom);
+        if (prevIdx !== undefined) {
+          rowError = `Rak asal ${r.cleanFrom} duplikat dengan Baris #${prevIdx + 1}.`;
+        } else {
+          seenSources.set(r.cleanFrom, r.index);
+        }
+      }
+
+      if (!rowError && (!r.cleanTo || isInvalidLocationToken(r.cleanTo))) {
+        rowError = 'Rak tujuan wajib diisi.';
+      } else if (!rowError && r.cleanFrom === r.cleanTo) {
+        rowError = 'Rak asal dan tujuan tidak boleh sama.';
+      } else if (!rowError && r.toArea === 'Anomali') {
+        rowError = `Rak tujuan "${r.cleanTo}" tidak dikenali denah.`;
+      }
+
+      const pEntry = r.previewEntry;
+      if (pEntry?.loading) {
+        isAnyLoading = true;
+      } else if (!rowError) {
+        if (pEntry?.error) {
+          rowError = pEntry.error;
+        } else if (!pEntry?.data) {
+          isAnyLoading = true;
+        } else if (pEntry.data.items.length === 0 || pEntry.data.totalPcs <= 0) {
+          rowError = `Lokasi ${r.cleanFrom} kosong (0 pcs).`;
+        }
+      }
+
+      const isReady = !rowError && !pEntry?.loading && Boolean(pEntry?.data && pEntry.data.totalPcs > 0);
+      if (isReady && pEntry?.data) {
+        totalSkus += pEntry.data.totalSkus;
+        totalPcs += pEntry.data.totalPcs;
+        pendingSoTotal += pEntry.data.pendingSoCount || 0;
+        targetIncomingPcs.set(r.cleanTo, (targetIncomingPcs.get(r.cleanTo) || 0) + pEntry.data.totalPcs);
+      }
+
+      if (rowError && !firstError) {
+        firstError = `Baris #${r.index + 1}: ${rowError}`;
+      }
+
+      return { ...r, rowError, isReady };
+    });
+
+    const readyRoutes = perRowStatus.filter((r) => r.isReady);
+    if (!firstError && !isAnyLoading && readyRoutes.length === 0) {
+      firstError = 'Tambahkan minimal 1 rute relokasi yang valid.';
+    }
+
+    return {
+      rows: perRowStatus,
+      nonBlankCount: nonBlankRoutes.length,
+      readyRoutes,
+      targetIncomingPcs,
+      isAnyLoading,
+      validationError: firstError,
+      totalSkus,
+      totalPcs,
+      pendingSoTotal,
+    };
+  }, [normalizedBatchRoutes]);
+
+  const handleApplyQuickPaste = () => {
+    const lines = quickPasteText
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (lines.length === 0) {
+      onNotify('Tempel daftar rute terlebih dahulu (contoh: R116 --> R086).', 'warning');
+      return;
+    }
+
+    const parsed: BatchRouteRowState[] = [];
+    for (const line of lines) {
+      // Support R116 --> R086, R116 -> R086, R116 => R086, R116 > R086, R116 → R086, R116, R086, R116\tR086, R116 R086
+      const cleaned = line
+        .replace(/^(\d+[\.\)]\s*|[-*•]\s*)/, '')
+        .trim();
+      const arrowParts = cleaned.split(/\s*(?:-->|->|=>|—>|→|>|,|;|\t|\s-\s)\s*/);
+      let fromPart = '';
+      let toPart = '';
+      if (arrowParts.length >= 2) {
+        fromPart = arrowParts[0].trim().toUpperCase();
+        toPart = arrowParts[1].trim().toUpperCase();
+      } else {
+        const spaceParts = cleaned.split(/\s+/);
+        if (spaceParts.length >= 2) {
+          fromPart = spaceParts[0].trim().toUpperCase();
+          toPart = spaceParts[1].trim().toUpperCase();
+        }
+      }
+      if (fromPart || toPart) {
+        parsed.push({
+          id: makeBatchRowId(),
+          fromInput: normalizeLokasi(fromPart) || fromPart,
+          toInput: normalizeLokasi(toPart) || toPart,
+        });
+      }
+    }
+
+    if (parsed.length === 0) {
+      onNotify('Format tidak terbaca. Gunakan format per baris seperti: R116 --> R086', 'warning');
+      return;
+    }
+
+    setBatchRoutes((prev) => {
+      const existingNonEmpty = prev.filter((r) => r.fromInput.trim() || r.toInput.trim());
+      return existingNonEmpty.length > 0 ? [...existingNonEmpty, ...parsed] : parsed;
+    });
+    setQuickPasteText('');
+    setShowQuickPaste(false);
+    setIsConfirming(false);
+    onNotify(`${parsed.length} baris rute berhasil ditambahkan.`, 'success');
+  };
+
   // Validation
   const validationError = useMemo(() => {
     if (!isOpen) return null;
+    if (relocationScope === 'MULTI_ROUTE') {
+      return batchPlanSummary.validationError;
+    }
     if (!isMultiSourceMode && (!cleanFrom || isInvalidLocationToken(cleanFrom))) {
       return 'Pilih atau ketik lokasi rak asal.';
     }
@@ -518,7 +920,7 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
       return `Kode rak tujuan "${cleanTo}" tidak dikenali denah (Anomali). Periksa format (misal: V004, A001, R012).`;
     }
     return null;
-  }, [isOpen, isMultiSourceMode, multiFromLocations, cleanFrom, cleanTo, toArea, preview, relocationPlan.movedTotalPcs]);
+  }, [isOpen, relocationScope, batchPlanSummary.validationError, isMultiSourceMode, multiFromLocations, cleanFrom, cleanTo, toArea, preview, relocationPlan.movedTotalPcs]);
 
   const handleSwapLocations = () => {
     const prevFrom = fromInput;
@@ -540,6 +942,7 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
 
   const handleExecute = async () => {
     if (validationError || isExecuting) return;
+    if (relocationScope === 'MULTI_ROUTE' && batchPlanSummary.isAnyLoading) return;
     if (!isConfirming) {
       setIsConfirming(true);
       return;
@@ -548,6 +951,41 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
     setIsExecuting(true);
     try {
       const operatorName = session?.name || session?.username || 'Admin';
+
+      if (relocationScope === 'MULTI_ROUTE') {
+        const routePayloads: BatchRelocationRoutePayload[] = batchPlanSummary.readyRoutes.map((r) => ({
+          id: r.id,
+          sourceLokasi: r.cleanFrom,
+          targetLokasi: r.cleanTo,
+          items: (r.previewEntry?.data?.items || []).map((it) => ({
+            sku: it.sku,
+            nama_produk: it.nama_produk,
+            size: it.size,
+            moveQty: it.totalQty,
+            buckets: it.buckets,
+          })),
+        }));
+
+        const res = await executeBatchLocationRelocation({
+          routes: routePayloads,
+          operatorName,
+          notes,
+        });
+
+        if (res.success) {
+          setBatchExecutionResult(res);
+          setIsConfirming(false);
+          onNotify(
+            `Relokasi ${res.totalRoutes} rute berhasil! Total ${res.totalSkus} SKU (${res.totalPcs} pcs) dipindahkan.`,
+            'success'
+          );
+          onSuccess?.(res);
+        } else {
+          onNotify(res.error || 'Gagal mengeksekusi relokasi multi-rute.', 'error');
+        }
+        return;
+      }
+
       const activeItems = relocationPlan.itemsToMove
         .filter((it) => it.moveQty > 0)
         .map((it) => ({
@@ -778,6 +1216,195 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
     }
   };
 
+  const handleCopyBatchWaSummary = async () => {
+    if (!batchExecutionResult) return;
+    const dateStr = new Date(batchExecutionResult.createdAt).toLocaleString('id-ID', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const lines: string[] = [
+      `*RELOKASI MULTI-RUTE RAK GUDANG*`,
+      `No. Dokumen: *${batchExecutionResult.invoice}*`,
+      `Tanggal: ${dateStr}`,
+      `Total Rute: *${batchExecutionResult.totalRoutes} rute* (${batchExecutionResult.totalSkus} SKU / ${batchExecutionResult.totalPcs} pcs)`,
+      notes.trim() ? `Catatan: ${notes.trim()}` : '',
+      `────────────────────`,
+    ].filter(Boolean);
+
+    batchExecutionResult.routes.forEach((r, rIdx) => {
+      lines.push(`*${rIdx + 1}. ${r.sourceLokasi} → ${r.targetLokasi}* (${r.totalSkus} SKU / ${r.totalPcs} pcs)`);
+      r.movedItems.forEach((it) => {
+        lines.push(
+          `   • *${it.sku}* — ${it.nama_produk}${it.size && it.size !== '-' ? ` (${it.size})` : ''} : *${it.qty} pcs*`
+        );
+      });
+    });
+
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      setCopiedWa(true);
+      onNotify('Ringkasan relokasi multi-rute berhasil disalin!', 'success');
+      setTimeout(() => setCopiedWa(false), 2500);
+    } catch {
+      onNotify('Gagal menyalin teks ke clipboard.', 'error');
+    }
+  };
+
+  const handlePrintBatchRelocationA4 = () => {
+    if (!batchExecutionResult) return;
+    const dateStr = new Date(batchExecutionResult.createdAt).toLocaleString('id-ID', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const operatorName = session?.name || session?.username || 'Admin Gudang';
+
+    const escapeHtml = (s: string) =>
+      String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+    let rowNo = 0;
+    const rowsHtml = batchExecutionResult.routes
+      .flatMap((r) =>
+        r.movedItems.map((it) => {
+          rowNo++;
+          return `
+      <tr>
+        <td style="text-align:center;font-family:monospace;">${rowNo}</td>
+        <td style="text-align:center;font-family:monospace;font-weight:800;">${escapeHtml(r.sourceLokasi)} → ${escapeHtml(r.targetLokasi)}</td>
+        <td style="font-family:monospace;font-weight:700;">${escapeHtml(it.sku)}</td>
+        <td>${escapeHtml(it.nama_produk)}</td>
+        <td style="text-align:center;font-family:monospace;font-weight:700;">${escapeHtml(it.size || '-')}</td>
+        <td style="text-align:right;font-family:monospace;font-weight:900;">${it.qty} pcs</td>
+        <td style="text-align:center;font-family:monospace;">[ &nbsp; ] Sesuai</td>
+      </tr>`;
+        })
+      )
+      .join('');
+
+    const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Bukti Relokasi Multi-Rute ${escapeHtml(batchExecutionResult.invoice)}</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; margin: 0; font-size: 11px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 8px; margin-bottom: 12px; }
+    .title { font-size: 16px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.4px; }
+    .subtitle { font-size: 11px; color: #475569; margin-top: 2px; }
+    .meta { text-align: right; font-size: 10px; line-height: 1.5; }
+    .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+    .card { border: 1px solid #cbd5e1; padding: 8px; border-radius: 6px; }
+    .card-label { font-size: 9px; text-transform: uppercase; color: #64748b; font-weight: 700; }
+    .card-val { font-size: 13px; font-weight: 900; font-family: monospace; margin-top: 2px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+    th, td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10px; }
+    th { background: #0f172a; color: #ffffff; text-transform: uppercase; font-size: 9px; font-weight: 800; }
+    .note { border: 1px solid #cbd5e1; background: #f8fafc; padding: 8px 10px; border-radius: 6px; font-size: 10px; margin-bottom: 18px; }
+    .signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; text-align: center; margin-top: 24px; font-size: 10px; }
+    .sig-line { margin-top: 46px; border-top: 1px solid #334155; padding-top: 4px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="title">BERITA ACARA RELOKASI MULTI-RUTE RAK</div>
+      <div class="subtitle">Pemindahan Stok Fisik Antar Lokasi Gudang</div>
+    </div>
+    <div class="meta">
+      <div><strong>No. Dokumen:</strong> <span style="font-family:monospace;">${escapeHtml(batchExecutionResult.invoice)}</span></div>
+      <div><strong>Waktu Eksekusi:</strong> ${escapeHtml(dateStr)}</div>
+      <div><strong>Operator:</strong> ${escapeHtml(operatorName)}</div>
+    </div>
+  </div>
+
+  <div class="summary">
+    <div class="card">
+      <div class="card-label">Jumlah Rute</div>
+      <div class="card-val">${batchExecutionResult.totalRoutes} Rute</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Jumlah Baris SKU</div>
+      <div class="card-val">${batchExecutionResult.totalSkus} SKU</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Total Kuantitas</div>
+      <div class="card-val">${batchExecutionResult.totalPcs} Pcs</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:28px;">No</th>
+        <th style="width:115px;">Rute (Asal → Tujuan)</th>
+        <th style="width:110px;">SKU</th>
+        <th>Nama Produk</th>
+        <th style="width:45px;">Size</th>
+        <th style="width:65px;">Qty</th>
+        <th style="width:85px;">Cek Fisik</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHtml}
+    </tbody>
+  </table>
+
+  <div class="note">
+    <strong>Catatan Relokasi:</strong> ${escapeHtml(notes.trim() || `Relokasi Multi-Rute (${batchExecutionResult.routes.map((r) => `${r.sourceLokasi} -> ${r.targetLokasi}`).join(', ')})`)}
+  </div>
+
+  <div class="signatures">
+    <div>
+      <div>Admin / Pembuat Dokumen</div>
+      <div class="sig-line">${escapeHtml(operatorName)}</div>
+    </div>
+    <div>
+      <div>Pelaksana Pemindahan (Gudang)</div>
+      <div class="sig-line">( ........................................ )</div>
+    </div>
+    <div>
+      <div>Diverifikasi Oleh (Supervisor / QC)</div>
+      <div class="sig-line">( ........................................ )</div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow?.document;
+    if (doc) {
+      doc.open();
+      doc.write(htmlContent);
+      doc.close();
+      setTimeout(() => {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+        setTimeout(() => {
+          if (document.body.contains(iframe)) {
+            document.body.removeChild(iframe);
+          }
+        }, 2000);
+      }, 250);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -820,9 +1447,9 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
 
         {/* Modal Body */}
         <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
-          {executionResult ? (
+          {batchExecutionResult ? (
             /* ================================================================
-               SUCCESS RESULT VIEW
+               MULTI-ROUTE SUCCESS RESULT VIEW
                ================================================================ */
             <div className="space-y-4">
               <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -832,7 +1459,96 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
                   </div>
                   <div>
                     <div className="text-sm font-black text-emerald-900 dark:text-emerald-200">
-                      Relokasi Stok Berhasil Dicatat ke Ledger!
+                      Relokasi {batchExecutionResult.totalRoutes} Rute Berhasil Dicatat!
+                    </div>
+                    <div className="text-xs text-emerald-800/90 dark:text-emerald-300/90 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <span>
+                        Invoice: <strong className="font-mono">{batchExecutionResult.invoice}</strong>
+                      </span>
+                      <span aria-hidden="true">·</span>
+                      <strong className="font-mono tabular-nums">
+                        {batchExecutionResult.totalRoutes} Rute · {batchExecutionResult.totalSkus} SKU ({batchExecutionResult.totalPcs} pcs)
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleCopyBatchWaSummary}
+                    className="px-3 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {copiedWa ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5 text-slate-500" />
+                    )}
+                    <span>{copiedWa ? 'Tersalin' : 'Salin WA'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePrintBatchRelocationA4}
+                    className="px-3 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Cetak Bukti A4</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                {batchExecutionResult.routes.map((route, idx) => (
+                  <div
+                    key={`${route.sourceLokasi}_${route.targetLokasi}_${idx}`}
+                    className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden"
+                  >
+                    <div className="px-3.5 py-2 bg-slate-50 dark:bg-[#0f172a] border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-2 font-mono font-black text-slate-900 dark:text-white">
+                        <span className="text-[10px] font-sans text-slate-500">#{idx + 1}</span>
+                        <span>{route.sourceLokasi}</span>
+                        <ArrowRight className="w-3.5 h-3.5 text-emerald-500" />
+                        <span className="text-emerald-600 dark:text-emerald-400">{route.targetLokasi}</span>
+                      </div>
+                      <span className="font-mono text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                        {route.totalSkus} SKU · {route.totalPcs} pcs
+                      </span>
+                    </div>
+                    <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {route.movedItems.map((it) => (
+                        <div
+                          key={`${route.sourceLokasi}_${it.sku}`}
+                          className="px-3.5 py-1.5 flex items-center justify-between gap-3 text-xs"
+                        >
+                          <div className="min-w-0 truncate">
+                            <span className="font-bold text-slate-900 dark:text-white">{it.nama_produk}</span>{' '}
+                            <span className="font-mono text-[11px] text-slate-500">
+                              ({it.sku}{it.size && it.size !== '-' ? ` · ${it.size}` : ''})
+                            </span>
+                          </div>
+                          <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 shrink-0">
+                            {it.qty} pcs
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : executionResult ? (
+            /* ================================================================
+               SINGLE-TARGET SUCCESS RESULT VIEW
+               ================================================================ */
+            <div className="space-y-4">
+              <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-black text-emerald-900 dark:text-emerald-200">
+                      Relokasi Stok Berhasil Dicatat!
                     </div>
                     <div className="text-xs text-emerald-800/90 dark:text-emerald-300/90 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                       <span>
@@ -918,6 +1634,388 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
                RELOCATION BUILDER VIEW
                ================================================================ */
             <>
+              {/* Scope Mode Switcher: 1 Tujuan vs Multi-Rute */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
+                <div className="inline-flex p-1 rounded-xl bg-slate-100 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRelocationScope('SINGLE_TARGET');
+                      setIsConfirming(false);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      relocationScope === 'SINGLE_TARGET'
+                        ? 'bg-white dark:bg-[#131d31] text-indigo-600 dark:text-indigo-400 shadow-2xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    1 Tujuan (Standar)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRelocationScope('MULTI_ROUTE');
+                      setIsConfirming(false);
+                      // Sync current single/multi selection into batchRoutes if batchRoutes are still blank
+                      const allBlank = batchRoutes.every((r) => !r.fromInput.trim() && !r.toInput.trim());
+                      if (allBlank) {
+                        if (multiFromLocations.length > 0) {
+                          setBatchRoutes(
+                            multiFromLocations.map((loc) => ({
+                              id: makeBatchRowId(),
+                              fromInput: loc,
+                              toInput: '',
+                            }))
+                          );
+                        } else if (cleanFrom) {
+                          setBatchRoutes([
+                            { id: makeBatchRowId(), fromInput: cleanFrom, toInput: cleanTo },
+                            { id: makeBatchRowId(), fromInput: '', toInput: '' },
+                            { id: makeBatchRowId(), fromInput: '', toInput: '' },
+                          ]);
+                        }
+                      }
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      relocationScope === 'MULTI_ROUTE'
+                        ? 'bg-white dark:bg-[#131d31] text-indigo-600 dark:text-indigo-400 shadow-2xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <span>Multi-Rute (Sekaligus)</span>
+                  </button>
+                </div>
+
+                {relocationScope === 'MULTI_ROUTE' && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowQuickPaste((v) => !v)}
+                      className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-1.5 transition-colors cursor-pointer ${
+                        showQuickPaste
+                          ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <ClipboardPaste className="w-3.5 h-3.5" />
+                      <span>Tempel Daftar Rute</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBatchRoutes((prev) => [...prev, { id: makeBatchRowId(), fromInput: '', toInput: '' }]);
+                        setIsConfirming(false);
+                      }}
+                      className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Tambah Baris</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {relocationScope === 'MULTI_ROUTE' ? (
+                /* ==============================================================
+                   MULTI-ROUTE BUILDER (R116 -> R086, R186 -> R054, X110 -> R023)
+                   ============================================================== */
+                <div ref={batchListRef} className="space-y-3">
+                  {/* Optional Quick Paste Panel */}
+                  {showQuickPaste && (
+                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#0b1324] border border-indigo-200 dark:border-indigo-800/70 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                          Tempel Daftar Pasangan Rak (1 rute per baris)
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowQuickPaste(false)}
+                          className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <textarea
+                        rows={4}
+                        value={quickPasteText}
+                        onChange={(e) => setQuickPasteText(e.target.value)}
+                        placeholder={'R116 --> R086\nR186 --> R054\nX110 --> R023'}
+                        className="w-full px-3 py-2 text-xs font-mono bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                      />
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10.5px] text-slate-500 dark:text-slate-400">
+                          Pemisah didukung: --&gt;, -&gt;, koma, tab, atau spasi.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleApplyQuickPaste}
+                          className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer"
+                        >
+                          Terapkan ke Baris
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Multi-Route Rows */}
+                  <div className="space-y-2">
+                    {batchPlanSummary.rows.map((row) => {
+                      const pData = row.previewEntry?.data;
+                      const pLoading = Boolean(row.previewEntry?.loading);
+                      const fromSuggestionsList =
+                        activeBatchDropdown?.rowId === row.id && activeBatchDropdown.field === 'from'
+                          ? getBatchSourceSuggestions(row.fromInput)
+                          : [];
+                      const toSuggestionsList =
+                        activeBatchDropdown?.rowId === row.id && activeBatchDropdown.field === 'to'
+                          ? getBatchTargetSuggestions(row.toInput, row.cleanFrom)
+                          : [];
+
+                      const targetSlot = row.cleanTo && row.toArea !== 'Anomali' ? slotByLokasi.get(row.cleanTo) : undefined;
+                      const targetBaseQty = targetSlot?.currentQty ?? 0;
+                      const targetMaxCap = targetSlot?.maxCapacity ?? (row.toArea === 'Kolian' || row.toArea === 'Transit' ? 40 : 75);
+                      const incomingToThisTarget = row.cleanTo ? batchPlanSummary.targetIncomingPcs.get(row.cleanTo) || 0 : 0;
+                      const targetAfterQty = targetBaseQty + incomingToThisTarget;
+                      const isExpanded = expandedBatchRowId === row.id;
+
+                      return (
+                        <div
+                          key={row.id}
+                          className={`p-3 rounded-xl border transition-colors ${
+                            row.rowError
+                              ? 'bg-rose-50/40 dark:bg-rose-950/15 border-rose-200 dark:border-rose-900/60'
+                              : row.isReady
+                              ? 'bg-emerald-50/30 dark:bg-emerald-950/10 border-emerald-200/80 dark:border-emerald-900/50'
+                              : 'bg-slate-50 dark:bg-[#0b1324] border-slate-200 dark:border-slate-800'
+                          }`}
+                        >
+                          <div className="flex flex-col md:flex-row md:items-center gap-2">
+                            <div className="flex items-center justify-between md:justify-start gap-2 shrink-0">
+                              <span className="w-6 h-6 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] font-mono font-bold text-slate-600 dark:text-slate-300 flex items-center justify-center">
+                                {row.index + 1}
+                              </span>
+                              <button
+                                type="button"
+                                disabled={batchRoutes.length <= 1 || isExecuting}
+                                onClick={() => {
+                                  setBatchRoutes((prev) => prev.filter((x) => x.id !== row.id));
+                                  setIsConfirming(false);
+                                }}
+                                className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-rose-600 disabled:opacity-30 cursor-pointer"
+                                title="Hapus baris"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            {/* Source Rack Input */}
+                            <div className="relative flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="text"
+                                  value={row.fromInput}
+                                  onFocus={() => setActiveBatchDropdown({ rowId: row.id, field: 'from' })}
+                                  onChange={(e) => {
+                                    const val = e.target.value.toUpperCase();
+                                    setBatchRoutes((prev) =>
+                                      prev.map((x) => (x.id === row.id ? { ...x, fromInput: val } : x))
+                                    );
+                                    setActiveBatchDropdown({ rowId: row.id, field: 'from' });
+                                    setIsConfirming(false);
+                                  }}
+                                  placeholder="Rak Asal (mis. R116)"
+                                  className="w-full px-3 py-1.5 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-mono font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 uppercase"
+                                />
+                                {row.cleanFrom && !isInvalidLocationToken(row.cleanFrom) && (
+                                  <span className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold border shrink-0 ${getAreaBadgeClass(row.fromArea)}`}>
+                                    {row.fromArea}
+                                  </span>
+                                )}
+                              </div>
+
+                              {fromSuggestionsList.length > 0 && (
+                                <div className="absolute left-0 right-0 top-9 z-40 bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl max-h-48 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                                  {fromSuggestionsList.map((s) => (
+                                    <button
+                                      key={s.lokasi}
+                                      type="button"
+                                      onClick={() => {
+                                        setBatchRoutes((prev) =>
+                                          prev.map((x) => (x.id === row.id ? { ...x, fromInput: s.lokasi } : x))
+                                        );
+                                        setActiveBatchDropdown(null);
+                                        setIsConfirming(false);
+                                      }}
+                                      className="w-full px-3 py-1.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800/70 flex items-center justify-between gap-2 text-xs cursor-pointer"
+                                    >
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="font-mono font-black text-slate-900 dark:text-white">{s.lokasi}</span>
+                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${getAreaBadgeClass(s.area)}`}>{s.area}</span>
+                                      </div>
+                                      <span className="font-mono text-[11px] font-bold text-slate-600 dark:text-slate-300">{s.qty} pcs</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex items-center justify-center text-slate-400 shrink-0">
+                              <ArrowRight className="w-4 h-4 hidden md:block" />
+                              <ArrowDown className="w-3.5 h-3.5 md:hidden" />
+                            </div>
+
+                            {/* Target Rack Input */}
+                            <div className="relative flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="text"
+                                  value={row.toInput}
+                                  onFocus={() => setActiveBatchDropdown({ rowId: row.id, field: 'to' })}
+                                  onChange={(e) => {
+                                    const val = e.target.value.toUpperCase();
+                                    setBatchRoutes((prev) =>
+                                      prev.map((x) => (x.id === row.id ? { ...x, toInput: val } : x))
+                                    );
+                                    setActiveBatchDropdown({ rowId: row.id, field: 'to' });
+                                    setIsConfirming(false);
+                                  }}
+                                  placeholder="Rak Tujuan (mis. R086)"
+                                  className="w-full px-3 py-1.5 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-mono font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 uppercase"
+                                />
+                                {row.cleanTo && !isInvalidLocationToken(row.cleanTo) && (
+                                  <span className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold border shrink-0 ${getAreaBadgeClass(row.toArea)}`}>
+                                    {row.toArea}
+                                  </span>
+                                )}
+                              </div>
+
+                              {toSuggestionsList.length > 0 && (
+                                <div className="absolute left-0 right-0 top-9 z-40 bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl max-h-48 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                                  {toSuggestionsList.map((s) => (
+                                    <button
+                                      key={s.lokasi}
+                                      type="button"
+                                      onClick={() => {
+                                        setBatchRoutes((prev) =>
+                                          prev.map((x) => (x.id === row.id ? { ...x, toInput: s.lokasi } : x))
+                                        );
+                                        setActiveBatchDropdown(null);
+                                        setIsConfirming(false);
+                                      }}
+                                      className="w-full px-3 py-1.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800/70 flex items-center justify-between gap-2 text-xs cursor-pointer"
+                                    >
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="font-mono font-black text-slate-900 dark:text-white">{s.lokasi}</span>
+                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${getAreaBadgeClass(s.area)}`}>{s.area}</span>
+                                      </div>
+                                      <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                                        {s.currentQty === 0 ? `Kosong (Max ${s.maxCapacity})` : `${s.currentQty}/${s.maxCapacity} pcs`}
+                                      </span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Delete Row Button (Desktop) */}
+                            <button
+                              type="button"
+                              disabled={batchRoutes.length <= 1 || isExecuting}
+                              onClick={() => {
+                                setBatchRoutes((prev) => prev.filter((x) => x.id !== row.id));
+                                setIsConfirming(false);
+                              }}
+                              className="hidden md:flex p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 disabled:opacity-30 cursor-pointer shrink-0"
+                              title="Hapus baris rute"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          {/* Per-Row Status & Capacity Bar */}
+                          {!row.isBlank && (
+                            <div className="mt-2 pt-2 border-t border-slate-200/70 dark:border-slate-800/70 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                              <div className="flex flex-wrap items-center gap-2 min-w-0">
+                                {pLoading ? (
+                                  <span className="inline-flex items-center gap-1 text-indigo-600 dark:text-indigo-400">
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                    Memeriksa stok {row.cleanFrom}...
+                                  </span>
+                                ) : row.rowError ? (
+                                  <span className="text-rose-600 dark:text-rose-400 font-semibold">
+                                    {row.rowError}
+                                  </span>
+                                ) : pData ? (
+                                  <>
+                                    <span className="font-mono font-bold text-slate-700 dark:text-slate-200">
+                                      {pData.totalSkus} SKU ({pData.totalPcs} pcs)
+                                    </span>
+                                    {row.cleanTo && row.toArea !== 'Anomali' && (
+                                      <span
+                                        className={`font-mono ${
+                                          targetAfterQty > targetMaxCap
+                                            ? 'text-amber-600 dark:text-amber-400 font-bold'
+                                            : 'text-slate-500 dark:text-slate-400'
+                                        }`}
+                                      >
+                                        · Tujuan {row.cleanTo}: {targetBaseQty} → {targetAfterQty}/{targetMaxCap} pcs
+                                      </span>
+                                    )}
+                                    {pData.pendingSoCount > 0 && (
+                                      <span className="text-amber-600 dark:text-amber-400 font-semibold">
+                                        · {pData.pendingSoCount} SO Pending
+                                      </span>
+                                    )}
+                                    {pData.negativeAnomalyItems.length > 0 && (
+                                      <span className="text-rose-600 dark:text-rose-400 font-semibold">
+                                        · {pData.negativeAnomalyItems.length} SKU minus dilewati
+                                      </span>
+                                    )}
+                                  </>
+                                ) : null}
+                              </div>
+
+                              {pData && pData.items.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedBatchRowId(isExpanded ? null : row.id)}
+                                  className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5 cursor-pointer shrink-0"
+                                >
+                                  <span>{isExpanded ? 'Tutup SKU' : 'Lihat SKU'}</span>
+                                  {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Expandable SKU Preview for This Row */}
+                          {isExpanded && pData && pData.items.length > 0 && (
+                            <div className="mt-2 rounded-lg bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 max-h-40 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                              {pData.items.map((it) => (
+                                <div key={it.sku} className="px-2.5 py-1.5 flex items-center justify-between gap-2 text-[11px]">
+                                  <div className="min-w-0 truncate">
+                                    <span className="font-bold text-slate-900 dark:text-white">{it.nama_produk}</span>{' '}
+                                    <span className="font-mono text-slate-500">
+                                      ({it.sku}{it.size && it.size !== '-' ? ` · ${it.size}` : ''})
+                                    </span>
+                                  </div>
+                                  <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400 shrink-0">
+                                    {it.totalQty} pcs
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                /* ==============================================================
+                   SINGLE-TARGET BUILDER (EXISTING)
+                   ============================================================== */
+                <>
               {/* 1. Source & Destination Location Pickers */}
               <div className="grid grid-cols-1 md:grid-cols-11 gap-2.5 items-stretch">
                 {/* SOURCE LOCATION */}
@@ -1456,6 +2554,8 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
                   </div>
                 )}
               </div>
+                </>
+              )}
 
               {/* 3. Notes */}
               <div className="space-y-1.5">
@@ -1467,7 +2567,9 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder={
-                    sourceDisplayLabel && cleanTo
+                    relocationScope === 'MULTI_ROUTE'
+                      ? 'Contoh: Penataan ulang rak kolian ke lokasi baru'
+                      : sourceDisplayLabel && cleanTo
                       ? `Contoh: Pindah ${effectiveMode === 'FULL' ? 'full' : 'sebagian'} isi rak ${sourceDisplayLabel} ke ${cleanTo}`
                       : 'Contoh: Penataan ulang area / konsolidasi koli'
                   }
@@ -1478,19 +2580,29 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
               {/* Inline Confirmation Bar */}
               {isConfirming && !validationError && (
                 <div className="p-3.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                  <div className="text-indigo-950 dark:text-indigo-100">
-                    <span className="font-black">Konfirmasi Eksekusi:</span> Pindahkan{' '}
-                    <strong className="font-mono">
-                      {relocationPlan.movedSkuCount} SKU ({relocationPlan.movedTotalPcs} pcs)
-                    </strong>{' '}
-                    dari <strong className="font-mono">{sourceDisplayLabel}</strong> ke{' '}
-                    <strong className="font-mono">{cleanTo}</strong>?
-                    {relocationPlan.remainingAtSourcePcs === 0 && (
-                      <span className="ml-1 text-emerald-700 dark:text-emerald-300 font-bold">
-                        ({isMultiSourceMode ? `${multiFromLocations.length} rak asal` : `Rak ${cleanFrom}`} akan menjadi 0 pcs)
-                      </span>
-                    )}
-                  </div>
+                  {relocationScope === 'MULTI_ROUTE' ? (
+                    <div className="text-indigo-950 dark:text-indigo-100">
+                      <span className="font-black">Konfirmasi Eksekusi Multi-Rute:</span> Pindahkan{' '}
+                      <strong className="font-mono">
+                        {batchPlanSummary.readyRoutes.length} rute ({batchPlanSummary.totalSkus} SKU · {batchPlanSummary.totalPcs} pcs)
+                      </strong>{' '}
+                      sekaligus ({batchPlanSummary.readyRoutes.map((r) => `${r.cleanFrom} → ${r.cleanTo}`).join(', ')})?
+                    </div>
+                  ) : (
+                    <div className="text-indigo-950 dark:text-indigo-100">
+                      <span className="font-black">Konfirmasi Eksekusi:</span> Pindahkan{' '}
+                      <strong className="font-mono">
+                        {relocationPlan.movedSkuCount} SKU ({relocationPlan.movedTotalPcs} pcs)
+                      </strong>{' '}
+                      dari <strong className="font-mono">{sourceDisplayLabel}</strong> ke{' '}
+                      <strong className="font-mono">{cleanTo}</strong>?
+                      {relocationPlan.remainingAtSourcePcs === 0 && (
+                        <span className="ml-1 text-emerald-700 dark:text-emerald-300 font-bold">
+                          ({isMultiSourceMode ? `${multiFromLocations.length} rak asal` : `Rak ${cleanFrom}`} akan menjadi 0 pcs)
+                        </span>
+                      )}
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={() => setIsConfirming(false)}
@@ -1507,20 +2619,28 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
 
         {/* Modal Footer */}
         <div className="px-4 sm:px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-[#0f172a]/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
-          {executionResult ? (
+          {executionResult || batchExecutionResult ? (
             <>
               <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                Stok database dan tampilan rak otomatis diperbarui.
+                Stok database dan tampilan rak telah diperbarui.
               </div>
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <button
                   type="button"
                   onClick={() => {
                     setExecutionResult(null);
+                    setBatchExecutionResult(null);
                     setMultiFromLocations([]);
                     setFromInput('');
                     setToInput('');
                     setPreview(null);
+                    setBatchRoutes([
+                      { id: makeBatchRowId(), fromInput: '', toInput: '' },
+                      { id: makeBatchRowId(), fromInput: '', toInput: '' },
+                      { id: makeBatchRowId(), fromInput: '', toInput: '' },
+                    ]);
+                    setBatchPreviewCache({});
+                    batchFetchingRef.current.clear();
                     setNotes('');
                   }}
                   className="flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/60 flex items-center justify-center gap-1.5 cursor-pointer"
@@ -1544,6 +2664,16 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
                   <span className="font-sans text-amber-600 dark:text-amber-400 font-semibold">
                     {validationError}
                   </span>
+                ) : relocationScope === 'MULTI_ROUTE' ? (
+                  batchPlanSummary.isAnyLoading ? (
+                    <span className="font-sans text-indigo-600 dark:text-indigo-400">
+                      Memeriksa stok rak asal...
+                    </span>
+                  ) : (
+                    <span>
+                      {batchPlanSummary.readyRoutes.length} rute siap · {batchPlanSummary.totalSkus} SKU ({batchPlanSummary.totalPcs} pcs)
+                    </span>
+                  )
                 ) : (
                   <span>
                     {sourceDisplayLabel} (Sisa {relocationPlan.remainingAtSourcePcs} pcs) → {cleanTo} (+
@@ -1564,7 +2694,11 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
                 <button
                   type="button"
                   onClick={handleExecute}
-                  disabled={Boolean(validationError) || isExecuting || isLoadingPreview}
+                  disabled={
+                    Boolean(validationError) ||
+                    isExecuting ||
+                    (relocationScope === 'MULTI_ROUTE' ? batchPlanSummary.isAnyLoading : isLoadingPreview)
+                  }
                   className={`flex-1 sm:flex-none px-5 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                     isConfirming
                       ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'
@@ -1579,14 +2713,19 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
                   ) : isConfirming ? (
                     <>
                       <CheckCircle2 className="w-4 h-4" />
-                      <span>Ya, Eksekusi Relokasi ({relocationPlan.movedTotalPcs} pcs)</span>
+                      <span>
+                        {relocationScope === 'MULTI_ROUTE'
+                          ? `Ya, Eksekusi ${batchPlanSummary.readyRoutes.length} Rute (${batchPlanSummary.totalPcs} pcs)`
+                          : `Ya, Eksekusi Relokasi (${relocationPlan.movedTotalPcs} pcs)`}
+                      </span>
                     </>
                   ) : (
                     <>
                       <ArrowRightLeft className="w-4 h-4" />
                       <span>
-                        {effectiveMode === 'FULL' ? 'Pindah Full' : 'Pindah Terpilih'} (
-                        {relocationPlan.movedTotalPcs} pcs)
+                        {relocationScope === 'MULTI_ROUTE'
+                          ? `Eksekusi ${batchPlanSummary.readyRoutes.length} Rute (${batchPlanSummary.totalPcs} pcs)`
+                          : `${effectiveMode === 'FULL' ? 'Pindah Full' : 'Pindah Terpilih'} (${relocationPlan.movedTotalPcs} pcs)`}
                       </span>
                     </>
                   )}

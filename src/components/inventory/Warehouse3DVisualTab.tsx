@@ -1378,11 +1378,11 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
                     Presentasi 3D Gudang
                   </span>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                    LIVE SYNC
+                    {summaryStats.totalRacks.toLocaleString('id-ID')} Rak
                   </span>
                 </div>
                 <p className="text-[10px] text-slate-400 hidden sm:block">
-                  Kapasitas Real-Time &amp; Tur 360° ({summaryStats.totalRacks.toLocaleString('id-ID')} Rak)
+                  Visualisasi Kapasitas &amp; Tur 360°
                 </p>
               </div>
             </div>
@@ -1693,17 +1693,17 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
                 <div className="flex items-center gap-2 flex-wrap">
                   <h2 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white">
                     {viewMode === '2d'
-                      ? 'Denah 2D Gudang — Setup Penamaan Area & Kode Lokasi'
-                      : 'Visualisasi 3D Layout & Kapasitas Gudang (4 Lantai)'}
+                      ? 'Denah 2D Gudang — Penamaan Area & Kode Lokasi'
+                      : 'Visualisasi 3D Layout & Kapasitas Gudang'}
                   </h2>
                   <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
-                    LIVE SYNC ({summaryStats.totalRacks.toLocaleString('id-ID')} Rak)
+                    {summaryStats.totalRacks.toLocaleString('id-ID')} Rak Terdaftar
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
                   {viewMode === '2d'
-                    ? 'Atur penamaan area/zona dan kode rak WMS langsung di denah atas; perubahan otomatis tersinkron ke tampilan 3D.'
-                    : 'Klik rak pada gedung 3D untuk inspeksi kapasitas real-time, atau pindah ke Denah 2D untuk setup area & kode lokasi.'}
+                    ? 'Pengaturan penamaan zona, area, dan kode lokasi rak gudang per lantai'
+                    : 'Pemantauan tingkat keterisian rak gudang secara visual per lantai'}
                 </p>
               </div>
             </div>

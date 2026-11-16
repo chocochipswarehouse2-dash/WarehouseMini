@@ -1,12 +1,12 @@
 {
-  "version": "v2.17.3",
-  "versionCode": 373,
-  "buildDate": "15 November 2026",
-  "buildHash": "wms-261115-v373-2350",
-  "releaseTitle": "WMS v2.17.3 — Emoji Picker & Reaksi Emoticon Live Chat",
+  "version": "v2.18.0",
+  "versionCode": 380,
+  "buildDate": "16 November 2026",
+  "buildHash": "wms-261116-v380-0137",
+  "releaseTitle": "WMS v2.18.0 — Relokasi Rak Multi-Rute Sekaligus",
   "releaseNotes": [
-    "Tambahkan tombol & panel Pemilih Emoticon/Emoji lengkap (Gudang & Kerja, Ekspresi, Gestur, Simbol) pada kolom ketik Live Chat Desktop & HP",
-    "Tambahkan fitur Reaksi Emoticon cepat (👍 🙏 ✅ ❤️ 😂 🔥 📦 👀) pada setiap balon pesan Live Chat"
+    "Tambah mode Multi-Rute di modal Relokasi Rak untuk memindahkan banyak pasangan rak sekaligus dalam 1 aksi",
+    "Dukungan tempel daftar rute otomatis, pratinjau stok & simulasi kapasitas per baris, serta bukti A4 & ringkasan WA batch"
   ],
   "minSupportedVersion": "v2.0.0"
 }

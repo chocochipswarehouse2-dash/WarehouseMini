@@ -1000,15 +1000,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               Dashboard Operasional
             </h1>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60">
-              <Sparkles className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-indigo-500" />
-              Live WMS
-            </span>
-            <span
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] sm:text-[10px] font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-800/40"
-              title="Menggunakan cache lokal & delta sync agar ringan dan hemat kuota Supabase"
-            >
-              <ShieldCheck className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-600 dark:text-emerald-400" />
-              Hemat Kuota
+              Ringkasan Operasional
             </span>
           </div>
           <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate">
@@ -1180,10 +1172,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
             <div className="min-w-0">
               <h2 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
-                Kapasitas Penyimpanan Gudang &amp; Channel Live
+                Kapasitas Penyimpanan Gudang &amp; Channel
               </h2>
               <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                Okupansi real-time Warehouse Global (Rak ABCD + Koli) serta Blok F: Shopee, TikTok, Studio &amp; IG Live
+                Tingkat keterisian area gudang utama (Rak ABCD + Koli) dan area channel
               </p>
             </div>
           </div>
@@ -1314,7 +1306,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   Status Manual Shipment &amp; Alteration
                 </h2>
                 <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                  Rekap real-time pesanan baru, sedang diproses, dan selesai (klik tahap untuk langsung buka)
+                  Ringkasan status pemenuhan pesanan cabang dan perbaikan
                 </p>
               </div>
             </div>
@@ -1444,7 +1436,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <h2 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
-                      Peringatan Anomali Data Scan
+                      Status Integritas Data Stok
                     </h2>
                     <span
                       className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-extrabold border ${
@@ -1457,7 +1449,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </span>
                   </div>
                   <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    Lokasi non-rak, stok fisik minus, SKU rusak/tak terdaftar &amp; mismatch master
+                    Pemeriksaan lokasi rak, saldo stok fisik, dan kesesuaian data master
                   </p>
                 </div>
               </div>
@@ -1530,15 +1522,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2">
             <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
               {anomalySummary.recentLogAnomalies.length > 0
-                ? `⚠️ ${anomalySummary.recentLogAnomalies.length} scan terbaru berlokasi non-rak`
-                : 'Audit otomatis stok fisik & log scan'}
+                ? `${anomalySummary.recentLogAnomalies.length} mutasi terbaru berlokasi non-rak`
+                : 'Pemeriksaan data stok & mutasi'}
             </span>
             <button
               type="button"
               onClick={() => setIsAnomalyModalOpen(true)}
               className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center gap-1 cursor-pointer shrink-0 shadow-2xs"
             >
-              <span>Inspeksi Anomali</span>
+              <span>Rincian Data</span>
               <ArrowRight className="w-3 h-3" />
             </button>
           </div>
@@ -1701,7 +1693,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     )}
                   </div>
                   <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    Klik kode untuk langsung buka Popup Hitung Ulang (sinkron dengan Audit Hitung Ulang)
+                    Daftar kode produksi yang memerlukan verifikasi fisik
                   </p>
                 </div>
               </div>
@@ -1712,7 +1704,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer shrink-0"
               >
                 <Scale className="w-3.5 h-3.5" />
-                <span>Buka Popup</span>
+                <span>Buka Hitung Ulang</span>
               </button>
             </div>
 
@@ -1742,7 +1734,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           </span>
                         </div>
                         <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                          {item.catatan_petunjuk ? item.catatan_petunjuk : 'Klik untuk input hitung ulang fisik'}
+                          {item.catatan_petunjuk ? item.catatan_petunjuk : 'Menunggu verifikasi jumlah fisik'}
                         </p>
                       </div>
                       <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all shrink-0" />

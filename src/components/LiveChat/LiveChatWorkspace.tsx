@@ -657,10 +657,10 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
     try {
       const res = await compressAndUploadChatImage(file, myUsername);
       if (!res.success || !res.url) {
-        onNotify?.(res.error || 'Gagal mengunggah gambar ke Google Drive', 'error');
+        onNotify?.(res.error || 'Gagal mengunggah gambar', 'error');
       } else {
         setPendingAttachmentUrl(res.url);
-        onNotify?.('Foto berhasil dikompresi & diunggah ke Google Drive CDN (0 Byte Supabase)', 'success');
+        onNotify?.('Foto berhasil dilampirkan', 'success');
       }
     } finally {
       setIsUploadingImage(false);
@@ -859,7 +859,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                   }
                 }}
                 className="p-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-colors cursor-pointer"
-                title="Segarkan daftar chat & user online (Sinkronisasi Supabase)"
+                title="Segarkan daftar percakapan"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isSyncingRooms || chatState.isLoadingRooms ? 'animate-spin text-indigo-600' : ''}`} />
               </button>
@@ -1235,18 +1235,11 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                 <MessageSquare className="w-6 h-6" />
               </div>
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                Pilih Percakapan atau User Online
+                Pilih Percakapan
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mt-1">
-                Klik nama rekan di daftar sebelah kiri untuk memulai chat langsung, atau buka Ruang Diskusi Grup untuk koordinasi lintas divisi.
+                Pilih rekan kerja atau ruang diskusi grup di sebelah kiri untuk memulai percakapan.
               </p>
-              <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
-                <span>✓✓ Status Baca Akurat</span>
-                <span aria-hidden="true">·</span>
-                <span>Edit/Hapus &le; 5 Menit (Sebelum Dibaca)</span>
-                <span aria-hidden="true">·</span>
-                <span>Foto via Google Drive CDN</span>
-              </div>
             </div>
           ) : (
             <>
@@ -1479,7 +1472,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                                 }`}
                               >
                                 <ShieldCheck className="w-3 h-3 shrink-0" />
-                                <span>Update Otomatis WMS</span>
+                                <span>Notifikasi Pesanan</span>
                                 {msg.actor_name && (
                                   <span className="font-normal opacity-85 truncate max-w-[160px]">
                                     · {msg.actor_name}
@@ -1951,7 +1944,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                           referrerPolicy="no-referrer"
                           className="w-6 h-6 rounded object-cover"
                         />
-                        <span>Foto siap dikirim (Google Drive CDN)</span>
+                        <span>Foto terlampir</span>
                         <button
                           type="button"
                           onClick={() => setPendingAttachmentUrl('')}
@@ -2188,7 +2181,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                           disabled={isUploadingImage}
                           onClick={() => fileInputRef.current?.click()}
                           className="p-2.5 sm:p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-colors cursor-pointer disabled:opacity-50"
-                          title="Lampirkan Foto dari Galeri / Screenshot (Otomatis disimpan di Google Drive CDN)"
+                          title="Lampirkan foto dari perangkat"
                           aria-label="Lampirkan foto dari galeri"
                         >
                           {isUploadingImage ? (
@@ -2283,7 +2276,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                       placeholder={
                         editingMessage
                           ? 'Ketik perubahan pesan...'
-                          : 'Ketik pesan... (@tag user, #tag dokumen, paste foto)'
+                          : 'Tulis pesan...'
                       }
                       className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-base sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 resize-none max-h-28 overflow-y-auto"
                     />
@@ -2572,7 +2565,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
             <div className="pt-1 text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
               <Lock className="w-3.5 h-3.5 shrink-0 text-amber-500" />
               <span>
-                Aturan Akuntabilitas: Pesan hanya dapat diedit/dihapus dalam 5 menit & sebelum dibaca penerima.
+                Pesan dapat diedit atau dihapus dalam 5 menit selama belum dibaca penerima.
               </span>
             </div>
           </div>

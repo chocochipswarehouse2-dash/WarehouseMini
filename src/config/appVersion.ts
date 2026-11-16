@@ -15,19 +15,43 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.17.3",
-  "versionCode": 373,
-  "buildDate": "15 November 2026",
-  "buildHash": "wms-261115-v373-2350",
-  "releaseTitle": "WMS v2.17.3 — Emoji Picker & Reaksi Emoticon Live Chat",
+  "version": "v2.18.0",
+  "versionCode": 380,
+  "buildDate": "16 November 2026",
+  "buildHash": "wms-261116-v380-0137",
+  "releaseTitle": "WMS v2.18.0 — Relokasi Rak Multi-Rute Sekaligus",
   "releaseNotes": [
-    "Tambahkan tombol & panel Pemilih Emoticon/Emoji lengkap (Gudang & Kerja, Ekspresi, Gestur, Simbol) pada kolom ketik Live Chat Desktop & HP",
-    "Tambahkan fitur Reaksi Emoticon cepat (👍 🙏 ✅ ❤️ 😂 🔥 📦 👀) pada setiap balon pesan Live Chat"
+    "Tambah mode Multi-Rute di modal Relokasi Rak untuk memindahkan banyak pasangan rak sekaligus dalam 1 aksi",
+    "Dukungan tempel daftar rute otomatis, pratinjau stok & simulasi kapasitas per baris, serta bukti A4 & ringkasan WA batch"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.17.4",
+    "versionCode": 374,
+    "buildDate": "16 November 2026",
+    "buildHash": "wms-261116-v374-0116",
+    "releaseTitle": "WMS v2.17.4 — Audit Tampilan & Standarisasi Bahasa Antarmuka Profesional",
+    "releaseNotes": [
+      "Standarisasi istilah, label, dan petunjuk antarmuka di Dashboard, Kapasitas Rak, Denah 2D/3D, Popup Operasional, dan Live Chat agar ringkas dan profesional",
+      "Hilangkan jargon teknis internal dan kalimat instruksi bertele-tele pada komponen antarmuka"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
+  {
+    "version": "v2.17.3",
+    "versionCode": 373,
+    "buildDate": "15 November 2026",
+    "buildHash": "wms-261115-v373-2350",
+    "releaseTitle": "WMS v2.17.3 — Emoji Picker & Reaksi Emoticon Live Chat",
+    "releaseNotes": [
+      "Tambahkan tombol & panel Pemilih Emoticon/Emoji lengkap (Gudang & Kerja, Ekspresi, Gestur, Simbol) pada kolom ketik Live Chat Desktop & HP",
+      "Tambahkan fitur Reaksi Emoticon cepat (👍 🙏 ✅ ❤️ 😂 🔥 📦 👀) pada setiap balon pesan Live Chat"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.17.2",
     "versionCode": 372,
@@ -100,32 +124,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Grup Live Chat WMS otomatis per Store (@warehouse + @chocoadm + 1 Store terkait) untuk seluruh update Manual Shipment & Alteration (submit, edit, resi, batal, SJ Marketplace, sold out, dan alur 2-arah)",
       "Isolasi penuh Inter-Store Fulfillment: Store penyedia menerima permintaan kirim terpisah di grupnya sendiri dengan mirroring progres ke grup Store pemohon",
       "Picking WA Grup (Fonnte) khusus Admin difilter ketat hanya untuk item Marketplace / Gudang Utama serta pembaruan FAQ bantuan Store"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.14.0",
-    "versionCode": 340,
-    "buildDate": "15 November 2026",
-    "buildHash": "wms-261115-v340-0910",
-    "releaseTitle": "WMS v2.14.0 — Popup Input Produksi, Antrean Hitung Ulang & Anti-Freeze Minimize Dock",
-    "releaseNotes": [
-      "Pintasan Dashboard & Popup Luas Input Penerimaan Produksi (bisa minimize, auto-save draft & pelindung offline anti double-input)",
-      "Kartu Antrean Kode Butuh Hitung Ulang di Dashboard + Popup Audit Hitung Ulang (auto-save draft per kode & Outbox Hitung Ulang Offline)",
-      "Unified Minimized Workspaces Dock (Anti-Collision & Zero-DOM Anti-Freeze saat banyak jendela kerja diminimize bersamaan)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.13.0",
-    "versionCode": 330,
-    "buildDate": "15 November 2026",
-    "buildHash": "wms-261115-v330-0823",
-    "releaseTitle": "WMS v2.13.0 — Upgrade Asisten AI Pintar (Agenda/Project, Audit, PDF/Voice) & Popup Scanner Luas Anti-Duplikat Offline",
-    "releaseNotes": [
-      "Ekspansi 19 Tool Asisten AI Pintar: integrasi Agenda & Project, audit stok/mutasi/rak, picking, QC/perbaikan, retur, HR, draft form, PDF & Voice-to-Text",
-      "Popup Scanner Gudang luas yang dapat di-minimize (auto-pause kamera) saat bekerja di halaman lain",
-      "Idempotent Offline Outbox Queue (Zero Double Input, Zero Data Loss & Zero Tabrakan dengan Webhook WA)"
     ],
     "minSupportedVersion": "v2.0.0"
   }

@@ -140,7 +140,7 @@ export const ScannerPopupModal: React.FC<ScannerPopupModalProps> = ({
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-tight truncate">
-                  Popup Scanner Gudang
+                  Scanner Gudang
                 </h2>
                 <span
                   className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border ${
@@ -150,7 +150,7 @@ export const ScannerPopupModal: React.FC<ScannerPopupModalProps> = ({
                   }`}
                 >
                   {isOnline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-                  <span>{isOnline ? 'Online · Outbox Siap' : 'Offline · Auto-Queue Aktif'}</span>
+                  <span>{isOnline ? 'Online' : 'Mode Offline'}</span>
                 </span>
                 {currentCategory && (
                   <span
@@ -173,7 +173,7 @@ export const ScannerPopupModal: React.FC<ScannerPopupModalProps> = ({
                 )}
               </div>
               <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate hidden sm:block mt-0.5">
-                Bisa diminimize sambil cek halaman lain · Anti double-input &amp; otomatis lanjut kirim saat sinyal kembali
+                Pemindaian mutasi stok masuk (#IN), keluar (#OUT), dan Stock Opname (#SO)
               </p>
             </div>
           </div>
@@ -285,15 +285,11 @@ export const ScannerPopupModal: React.FC<ScannerPopupModalProps> = ({
                 {outboxBatches.length > 0 ? (
                   <span>
                     <strong className="font-mono">{outboxBatches.length} batch</strong> (
-                    <strong className="font-mono">{pendingOutboxItemsCount} item</strong>) berada di{' '}
-                    <strong>Outbox Anti-Duplikat</strong>
-                    {outboxBatches.some((b) => b.logsSynced && !b.soSynced)
-                      ? ' — Step 1 (Log Produk) sudah masuk, menunggu Step 2 (Antrean SO) tanpa mengulang Step 1.'
-                      : ' — Siap dikirim otomatis tanpa double input maupun tabrakan dengan Webhook WA.'}
+                    <strong className="font-mono">{pendingOutboxItemsCount} item</strong>) menunggu sinkronisasi ke server.
                   </span>
                 ) : (
                   <span>
-                    <strong>Mode Offline Aktif:</strong> Silakan lanjut scan dan klik Simpan. Seluruh batch akan diamankan di Outbox lokal dan otomatis dikirim saat sinyal kembali.
+                    <strong>Mode Offline:</strong> Data scan yang disimpan akan dikirim otomatis saat koneksi kembali stabil.
                   </span>
                 )}
               </div>

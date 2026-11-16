@@ -81,6 +81,51 @@ export interface ExecuteLocationRelocationResult {
   error?: string;
 }
 
+export interface BatchRelocationRouteInput {
+  id: string;
+  sourceLokasi: string;
+  targetLokasi: string;
+}
+
+export interface BatchRelocationRoutePayload {
+  id: string;
+  sourceLokasi: string;
+  targetLokasi: string;
+  items: ExecuteLocationRelocationItem[];
+}
+
+export interface BatchRelocationRouteResultItem {
+  sourceLokasi: string;
+  sourceArea: string;
+  targetLokasi: string;
+  targetArea: string;
+  totalSkus: number;
+  totalPcs: number;
+  movedItems: Array<{
+    sku: string;
+    nama_produk: string;
+    size: string;
+    qty: number;
+  }>;
+}
+
+export interface ExecuteBatchLocationRelocationParams {
+  routes: BatchRelocationRoutePayload[];
+  operatorName: string;
+  notes?: string;
+}
+
+export interface ExecuteBatchLocationRelocationResult {
+  success: boolean;
+  invoice: string;
+  routes: BatchRelocationRouteResultItem[];
+  totalRoutes: number;
+  totalSkus: number;
+  totalPcs: number;
+  createdAt: string;
+  error?: string;
+}
+
 const INVALID_LOCATION_TOKENS = new Set([
   '',
   '-',
@@ -674,6 +719,261 @@ export async function executeLocationRelocation(
       movedItems: [],
       createdAt,
       error: err?.message || 'Gagal menyimpan log mutasi relokasi ke Supabase.',
+    };
+  }
+}
+
+/**
+ * Executes multiple independent rack-to-rack relocations simultaneously in 1 action
+ * (e.g. R116 -> R086, R186 -> R054, X110 -> R023) under a single batch invoice.
+ */
+export async function executeBatchLocationRelocation(
+  params: ExecuteBatchLocationRelocationParams
+): Promise<ExecuteBatchLocationRelocationResult> {
+  const operator = (params.operatorName || 'Admin').trim() || 'Admin';
+  const invoice = generateRelocationInvoice();
+  const createdAt = new Date().toISOString();
+  const noteSuffix = params.notes?.trim() ? ` - ${params.notes.trim()}` : '';
+
+  const rawRoutes = Array.isArray(params.routes) ? params.routes : [];
+  if (rawRoutes.length === 0) {
+    return {
+      success: false,
+      invoice,
+      routes: [],
+      totalRoutes: 0,
+      totalSkus: 0,
+      totalPcs: 0,
+      createdAt,
+      error: 'Minimal harus ada 1 rute relokasi yang valid.',
+    };
+  }
+
+  const seenSources = new Set<string>();
+  const logsToInsert: LogProdukItem[] = [];
+  const routeResults: BatchRelocationRouteResultItem[] = [];
+  const movedSkuSet = new Set<string>();
+
+  for (let idx = 0; idx < rawRoutes.length; idx++) {
+    const r = rawRoutes[idx];
+    const rawSource = (r.sourceLokasi || '').trim().toUpperCase();
+    const cleanSource = normalizeLokasi(rawSource) || rawSource;
+    const sourceArea = getAreaFromLokasi(cleanSource);
+
+    const rawTarget = (r.targetLokasi || '').trim().toUpperCase();
+    const cleanTarget = normalizeLokasi(rawTarget) || rawTarget;
+    const targetArea = getAreaFromLokasi(cleanTarget);
+
+    if (!cleanSource || isInvalidLocationToken(cleanSource)) {
+      return {
+        success: false,
+        invoice,
+        routes: [],
+        totalRoutes: 0,
+        totalSkus: 0,
+        totalPcs: 0,
+        createdAt,
+        error: `Rute #${idx + 1}: Lokasi asal tidak valid.`,
+      };
+    }
+
+    if (seenSources.has(cleanSource)) {
+      return {
+        success: false,
+        invoice,
+        routes: [],
+        totalRoutes: 0,
+        totalSkus: 0,
+        totalPcs: 0,
+        createdAt,
+        error: `Rute #${idx + 1}: Rak asal "${cleanSource}" muncul lebih dari 1 kali. Satu rak asal hanya boleh dipindahkan satu kali per batch.`,
+      };
+    }
+    seenSources.add(cleanSource);
+
+    if (!cleanTarget || isInvalidLocationToken(cleanTarget)) {
+      return {
+        success: false,
+        invoice,
+        routes: [],
+        totalRoutes: 0,
+        totalSkus: 0,
+        totalPcs: 0,
+        createdAt,
+        error: `Rute #${idx + 1} (${cleanSource}): Lokasi tujuan wajib diisi.`,
+      };
+    }
+
+    if (cleanSource === cleanTarget) {
+      return {
+        success: false,
+        invoice,
+        routes: [],
+        totalRoutes: 0,
+        totalSkus: 0,
+        totalPcs: 0,
+        createdAt,
+        error: `Rute #${idx + 1}: Lokasi asal dan tujuan (${cleanSource}) tidak boleh sama.`,
+      };
+    }
+
+    if (targetArea === 'Anomali') {
+      return {
+        success: false,
+        invoice,
+        routes: [],
+        totalRoutes: 0,
+        totalSkus: 0,
+        totalPcs: 0,
+        createdAt,
+        error: `Rute #${idx + 1}: Kode rak tujuan "${cleanTarget}" tidak sesuai standar denah gudang.`,
+      };
+    }
+
+    const validItems = (r.items || []).filter((it) => Math.floor(Number(it.moveQty) || 0) > 0);
+    if (validItems.length === 0) {
+      return {
+        success: false,
+        invoice,
+        routes: [],
+        totalRoutes: 0,
+        totalSkus: 0,
+        totalPcs: 0,
+        createdAt,
+        error: `Rute #${idx + 1} (${cleanSource} → ${cleanTarget}): Tidak ada stok fisik (> 0 pcs) untuk dipindahkan.`,
+      };
+    }
+
+    const routeMovedItems: Array<{ sku: string; nama_produk: string; size: string; qty: number }> = [];
+
+    for (const item of validItems) {
+      const requestedQty = Math.floor(Number(item.moveQty) || 0);
+      if (requestedQty <= 0) continue;
+
+      let remaining = requestedQty;
+      let actualDeducted = 0;
+
+      const buckets =
+        item.buckets && item.buckets.length > 0
+          ? item.buckets
+          : [{ lokasiExact: cleanSource, areaExact: sourceArea, qty: requestedQty }];
+
+      for (const bucket of buckets) {
+        if (remaining <= 0) break;
+        const available = Math.max(0, Math.floor(Number(bucket.qty) || 0));
+        if (available <= 0) continue;
+        const take = Math.min(remaining, available);
+        if (take <= 0) continue;
+
+        logsToInsert.push({
+          type: 'OUT',
+          invoice,
+          sku: item.sku,
+          nama_produk: item.nama_produk || item.sku,
+          size: item.size || '-',
+          area: bucket.areaExact || getAreaFromLokasi(bucket.lokasiExact),
+          lokasi: bucket.lokasiExact,
+          qty: take,
+          operator,
+          keterangan: `Relokasi Multi-Rute ${bucket.lokasiExact || cleanSource} -> ${cleanTarget}${noteSuffix}`,
+          created_at: createdAt,
+        });
+
+        remaining -= take;
+        actualDeducted += take;
+      }
+
+      if (actualDeducted > 0) {
+        logsToInsert.push({
+          type: 'IN',
+          invoice,
+          sku: item.sku,
+          nama_produk: item.nama_produk || item.sku,
+          size: item.size || '-',
+          area: targetArea,
+          lokasi: cleanTarget,
+          qty: actualDeducted,
+          operator,
+          keterangan: `Relokasi Multi-Rute ${cleanSource} -> ${cleanTarget}${noteSuffix}`,
+          created_at: createdAt,
+        });
+
+        routeMovedItems.push({
+          sku: item.sku,
+          nama_produk: item.nama_produk || item.sku,
+          size: item.size || '-',
+          qty: actualDeducted,
+        });
+        movedSkuSet.add(item.sku);
+      }
+    }
+
+    if (routeMovedItems.length > 0) {
+      routeResults.push({
+        sourceLokasi: cleanSource,
+        sourceArea,
+        targetLokasi: cleanTarget,
+        targetArea,
+        totalSkus: routeMovedItems.length,
+        totalPcs: routeMovedItems.reduce((sum, it) => sum + it.qty, 0),
+        movedItems: routeMovedItems,
+      });
+    }
+  }
+
+  if (logsToInsert.length === 0 || routeResults.length === 0) {
+    return {
+      success: false,
+      invoice,
+      routes: [],
+      totalRoutes: 0,
+      totalSkus: 0,
+      totalPcs: 0,
+      createdAt,
+      error: 'Gagal menyusun log mutasi relokasi multi-rute.',
+    };
+  }
+
+  try {
+    const CHUNK_SIZE = 150;
+    for (let i = 0; i < logsToInsert.length; i += CHUNK_SIZE) {
+      const chunk = logsToInsert.slice(i, i + CHUNK_SIZE);
+      await supabaseFetch('log_produk', 'POST', chunk);
+    }
+
+    invalidateStokFisikCache();
+    await fetchStockForSkus(Array.from(movedSkuSet)).catch(() => {});
+    bumpCloudCacheEpoch('STOCK_RESET').catch(() => {});
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('wms_inventory_updated'));
+      window.dispatchEvent(new CustomEvent('wms_stock_updated'));
+      window.dispatchEvent(new CustomEvent('wms_mutasi_updated'));
+    }
+
+    const totalPcs = routeResults.reduce((sum, r) => sum + r.totalPcs, 0);
+    const totalSkus = routeResults.reduce((sum, r) => sum + r.totalSkus, 0);
+
+    return {
+      success: true,
+      invoice,
+      routes: routeResults,
+      totalRoutes: routeResults.length,
+      totalSkus,
+      totalPcs,
+      createdAt,
+    };
+  } catch (err: any) {
+    console.error('[LocationRelocation] Error inserting batch relocation logs:', err);
+    return {
+      success: false,
+      invoice,
+      routes: [],
+      totalRoutes: 0,
+      totalSkus: 0,
+      totalPcs: 0,
+      createdAt,
+      error: err?.message || 'Gagal menyimpan log mutasi relokasi multi-rute ke server.',
     };
   }
 }

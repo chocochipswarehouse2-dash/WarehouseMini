@@ -136,7 +136,7 @@ export const ProduksiInputPopupModal: React.FC<ProduksiInputPopupModalProps> = (
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight truncate">
-                  Input Penerimaan Produksi — Popup Luas
+                  Input Penerimaan Produksi
                 </h2>
                 <span
                   className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
@@ -148,12 +148,12 @@ export const ProduksiInputPopupModal: React.FC<ProduksiInputPopupModalProps> = (
                   {isOnline ? (
                     <>
                       <Wifi className="w-3 h-3 text-emerald-500" />
-                      <span>Online · Auto-Save Draft</span>
+                      <span>Online</span>
                     </>
                   ) : (
                     <>
                       <WifiOff className="w-3 h-3 text-amber-500" />
-                      <span>Mode Offline · Pelindung Data Aktif</span>
+                      <span>Mode Offline</span>
                     </>
                   )}
                 </span>
@@ -165,7 +165,7 @@ export const ProduksiInputPopupModal: React.FC<ProduksiInputPopupModalProps> = (
                 )}
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                Bisa di-minimize sambil mengerjakan menu lain. Draft Surat Jalan &amp; matriks ukuran tersimpan otomatis tanpa risiko hilang.
+                Pencatatan Surat Jalan konveksi dan rincian kuantitas per ukuran
               </p>
             </div>
           </div>
@@ -217,13 +217,13 @@ export const ProduksiInputPopupModal: React.FC<ProduksiInputPopupModalProps> = (
               <div className="min-w-0">
                 {pendingOfflineCount > 0 ? (
                   <span>
-                    <strong>Pelindung Outbox Produksi Aktif:</strong>{' '}
+                    <strong>Antrean Sinkronisasi:</strong>{' '}
                     <span className="font-mono font-bold">{pendingOfflineCount} baris varian</span>{' '}
-                    tersimpan di antrean perangkat. Sistem memeriksa duplikasi Surat Jalan secara otomatis sebelum mengirim ulang (Zero Double-Input).
+                    tersimpan di perangkat dan siap dikirim ke server.
                   </span>
                 ) : (
                   <span>
-                    <strong>Mode Offline Aktif:</strong> Anda tetap dapat menginput Surat Jalan &amp; varian ukuran. Saat disimpan, data diamankan di perangkat dan dikirim otomatis begitu internet kembali.
+                    <strong>Mode Offline:</strong> Data Surat Jalan yang disimpan akan disinkronkan otomatis saat koneksi kembali tersedia.
                   </span>
                 )}
               </div>
