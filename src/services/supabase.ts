@@ -5483,8 +5483,18 @@ export function extractPickingItemFromRow(row: any): PickingListItem | null {
     }
   }
 
+  const rawStatus = String(row.status || 'PENDING').trim().toUpperCase();
+  const rawPickerName = String(row.picker_name || row.picker || '').trim();
+  const pickerList = rawPickerName
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const lastPickedBy = pickerList.length > 0 ? pickerList[pickerList.length - 1] : undefined;
+  const isKosong = rawStatus === 'KOSONG';
+
   return {
     id: String(row.id || `pick_${no_sj}_${sku}_${Date.now()}`),
+    invoice_picking: row.invoice_picking ? String(row.invoice_picking).trim() : undefined,
     no_sj,
     tanggal: String(row.tanggal || row.date || row.created_at || nowIso.slice(0, 10)).slice(0, 10),
     tujuan: rawTujuan,
@@ -5494,10 +5504,273 @@ export function extractPickingItemFromRow(row: any): PickingListItem | null {
     qty_req: isNaN(rawQtyReq) || rawQtyReq <= 0 ? 1 : rawQtyReq,
     qty_picked: isNaN(rawQtyPicked) || rawQtyPicked < 0 ? 0 : rawQtyPicked,
     lokasi: rawLokasi,
-    status: (String(row.status || 'PENDING').trim().toUpperCase() as any) || 'PENDING',
-    picker_name: row.picker_name || row.picker || '',
+    status: (rawStatus as any) || 'PENDING',
+    picker_name: rawPickerName,
+    last_picked_by: (rawQtyPicked > 0 || isKosong) ? lastPickedBy : undefined,
+    is_kosong: isKosong,
     catatan: row.catatan || row.notes || row.keterangan || '',
     created_at: row.created_at || nowIso,
+  };
+}
+
+export function parsePickerNamesList(rawPickerName?: string): string[] {
+  if (!rawPickerName) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  String(rawPickerName)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .forEach((name) => {
+      const key = name.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push(name);
+      }
+    });
+  return result;
+}
+
+export function mergePickerNamesWithLastActor(existingPickerName: string | undefined, actorUsername: string): string {
+  const cleanActor = String(actorUsername || '').trim();
+  const existing = parsePickerNamesList(existingPickerName);
+  if (!cleanActor) return existing.join(', ');
+  const withoutActor = existing.filter((n) => n.toLowerCase() !== cleanActor.toLowerCase());
+  return [...withoutActor, cleanActor].join(', ');
+}
+
+export async function fetchActiveSjRealtimeRowsSupabase(no_sj: string): Promise<PickingListItem[]> {
+  const cleanNoSj = String(no_sj || '').trim().toUpperCase();
+  if (!cleanNoSj) return [];
+  const rows = await supabaseFetch<any[]>(
+    'picking_list',
+    'GET',
+    null,
+    `no_sj=ilike.${encodeURIComponent(cleanNoSj)}&select=id,no_sj,tanggal,tujuan,sku,nama_produk,qty_req,qty_picked,lokasi,status,picker_name,created_at,invoice_picking`
+  );
+  if (!Array.isArray(rows)) return [];
+  const parsed: PickingListItem[] = [];
+  for (const r of rows) {
+    const it = extractPickingItemFromRow(r);
+    if (it) parsed.push(it);
+  }
+  return parsed;
+}
+
+export async function claimOrJoinPickingSJSupabase(
+  no_sj: string,
+  username: string
+): Promise<{ items: PickingListItem[]; activePickers: string[] }> {
+  const cleanNoSj = String(no_sj || '').trim().toUpperCase();
+  const cleanUser = String(username || '').trim();
+  if (!cleanNoSj || !cleanUser) return { items: [], activePickers: [] };
+
+  try {
+    const currentRows = await fetchActiveSjRealtimeRowsSupabase(cleanNoSj);
+    const allPickersSet = new Set<string>();
+    currentRows.forEach((r) => {
+      parsePickerNamesList(r.picker_name).forEach((p) => allPickersSet.add(p));
+    });
+    const existingPickers = Array.from(allPickersSet);
+    const hasUser = existingPickers.some((p) => p.toLowerCase() === cleanUser.toLowerCase());
+    const mergedPickers = hasUser ? existingPickers : [...existingPickers, cleanUser];
+    const mergedPickerStr = mergedPickers.join(', ');
+
+    // Update rows in Supabase that are not SELESAI so other users in the queue immediately see "Sedang dikerjakan oleh ..."
+    for (const row of currentRows) {
+      if (row.status === 'SELESAI') continue;
+      const rowHasPicked = (Number(row.qty_picked) || 0) > 0 || row.status === 'KOSONG';
+      // Preserve last actor at the end if this item was already picked by someone else
+      let nextPickerField = mergedPickerStr;
+      if (rowHasPicked && row.last_picked_by && row.last_picked_by.toLowerCase() !== cleanUser.toLowerCase()) {
+        nextPickerField = mergePickerNamesWithLastActor(mergedPickerStr, row.last_picked_by);
+      }
+      const nextStatus = row.status === 'KOSONG' ? 'KOSONG' : 'SEDANG PICKING';
+      const condition =
+        row.id && !String(row.id).startsWith('pick_')
+          ? `id=eq.${row.id}`
+          : `no_sj=ilike.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(row.sku)}`;
+      await supabaseFetch(
+        'picking_list',
+        'PATCH',
+        {
+          status: nextStatus,
+          picker_name: nextPickerField,
+        },
+        condition
+      ).catch(() => {});
+    }
+
+    invalidatePickingListCache();
+    const updatedRows = await fetchActiveSjRealtimeRowsSupabase(cleanNoSj);
+    return { items: updatedRows, activePickers: mergedPickers };
+  } catch (err) {
+    console.warn('Failed to claim/join picking SJ in Supabase:', err);
+    return { items: [], activePickers: [cleanUser] };
+  }
+}
+
+export async function leavePickingSJSupabase(no_sj: string, username: string): Promise<boolean> {
+  const cleanNoSj = String(no_sj || '').trim().toUpperCase();
+  const cleanUser = String(username || '').trim();
+  if (!cleanNoSj || !cleanUser) return false;
+
+  try {
+    const currentRows = await fetchActiveSjRealtimeRowsSupabase(cleanNoSj);
+    const anyPicked = currentRows.some((r) => (Number(r.qty_picked) || 0) > 0 || r.status === 'KOSONG');
+    for (const row of currentRows) {
+      if (row.status === 'SELESAI') continue;
+      const rowPickers = parsePickerNamesList(row.picker_name).filter(
+        (p) => p.toLowerCase() !== cleanUser.toLowerCase()
+      );
+      const nextPickerStr = rowPickers.join(', ');
+      const nextStatus =
+        row.status === 'KOSONG'
+          ? 'KOSONG'
+          : rowPickers.length > 0 || anyPicked
+          ? 'SEDANG PICKING'
+          : 'PENDING';
+      const condition =
+        row.id && !String(row.id).startsWith('pick_')
+          ? `id=eq.${row.id}`
+          : `no_sj=ilike.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(row.sku)}`;
+      await supabaseFetch(
+        'picking_list',
+        'PATCH',
+        {
+          status: nextStatus,
+          picker_name: nextPickerStr,
+        },
+        condition
+      ).catch(() => {});
+    }
+    invalidatePickingListCache();
+    return true;
+  } catch (err) {
+    console.warn('Failed to leave picking SJ in Supabase:', err);
+    return false;
+  }
+}
+
+export async function syncSinglePickingItemRealtimeSupabase(params: {
+  id?: string | number;
+  no_sj: string;
+  sku: string;
+  delta?: number;
+  absoluteQty?: number;
+  markKosong?: boolean;
+  lokasi_picked?: string;
+  username: string;
+  currentItem?: PickingListItem;
+}): Promise<{
+  item: PickingListItem | null;
+  isOverPick: boolean;
+  previousPicker: string;
+  serverQtyBefore: number;
+  newQty: number;
+}> {
+  const cleanNoSj = String(params.no_sj || '').trim().toUpperCase();
+  const cleanSku = String(params.sku || '').trim().toUpperCase();
+  const cleanUser = String(params.username || 'Operator').trim();
+
+  const condition =
+    params.id && !String(params.id).startsWith('pick_')
+      ? `id=eq.${params.id}`
+      : `no_sj=ilike.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(cleanSku)}`;
+
+  let serverRow: PickingListItem | null = null;
+  try {
+    const rows = await supabaseFetch<any[]>(
+      'picking_list',
+      'GET',
+      null,
+      `${condition}&select=id,no_sj,tanggal,tujuan,sku,nama_produk,qty_req,qty_picked,lokasi,status,picker_name,created_at,invoice_picking`
+    );
+    if (Array.isArray(rows) && rows.length > 0) {
+      serverRow = extractPickingItemFromRow(rows[0]);
+    }
+  } catch {}
+
+  const baseItem = serverRow || params.currentItem || null;
+  const qtyReq = Math.max(1, Number(baseItem?.qty_req ?? params.currentItem?.qty_req ?? 1) || 1);
+  const serverQtyBefore = Math.max(0, Number(serverRow?.qty_picked ?? params.currentItem?.qty_picked ?? 0) || 0);
+  const previousPickerList = parsePickerNamesList(serverRow?.picker_name || params.currentItem?.picker_name);
+  const previousLastPicker =
+    serverQtyBefore > 0 && previousPickerList.length > 0
+      ? previousPickerList[previousPickerList.length - 1]
+      : '';
+
+  let newQty = serverQtyBefore;
+  if (typeof params.delta === 'number') {
+    newQty = Math.max(0, serverQtyBefore + params.delta);
+  } else if (typeof params.absoluteQty === 'number') {
+    newQty = Math.max(0, params.absoluteQty);
+  }
+
+  const isKosong = Boolean(params.markKosong);
+  const nextStatus: PickingListItem['status'] = isKosong
+    ? 'KOSONG'
+    : newQty > 0
+    ? 'SEDANG PICKING'
+    : 'PENDING';
+
+  const mergedPickerName = mergePickerNamesWithLastActor(
+    serverRow?.picker_name || params.currentItem?.picker_name,
+    cleanUser
+  );
+
+  const isOverPick = newQty > qtyReq && (typeof params.delta === 'number' ? params.delta > 0 : newQty > serverQtyBefore);
+
+  try {
+    await supabaseFetch(
+      'picking_list',
+      'PATCH',
+      {
+        qty_picked: newQty,
+        status: nextStatus,
+        picker_name: mergedPickerName,
+      },
+      condition
+    );
+    invalidatePickingListCache();
+  } catch (err) {
+    console.warn('Realtime single item patch failed (will sync on completion):', err);
+  }
+
+  const updatedItem: PickingListItem | null = baseItem
+    ? {
+        ...baseItem,
+        qty_picked: newQty,
+        lokasi_picked: params.lokasi_picked || baseItem.lokasi_picked,
+        status: nextStatus,
+        picker_name: mergedPickerName,
+        last_picked_by: newQty > 0 || isKosong ? cleanUser : undefined,
+        is_kosong: isKosong,
+      }
+    : null;
+
+  // Also update local cache immediately
+  if (updatedItem) {
+    try {
+      const cached: PickingListItem[] = JSON.parse(localStorage.getItem('wms_picking_cache') || '[]');
+      const idx = cached.findIndex(
+        (c) =>
+          (updatedItem.id && c.id === updatedItem.id) ||
+          (c.no_sj?.toUpperCase() === cleanNoSj && c.sku?.toUpperCase() === cleanSku)
+      );
+      if (idx >= 0) {
+        cached[idx] = { ...cached[idx], ...updatedItem };
+        localStorage.setItem('wms_picking_cache', JSON.stringify(cached));
+      }
+    } catch {}
+  }
+
+  return {
+    item: updatedItem,
+    isOverPick,
+    previousPicker: previousLastPicker || cleanUser,
+    serverQtyBefore,
+    newQty,
   };
 }
 
@@ -5709,6 +5982,14 @@ export async function completePickingSuratJalanSupabase(
   const nowIso = new Date().toISOString();
   const cleanNoSj = (no_sj || '').trim().toUpperCase();
 
+  // Combine all participating pickers from items + current submitter
+  const combinedPickersSet = new Set<string>();
+  items.forEach((it) => {
+    parsePickerNamesList(it.picker_name).forEach((p) => combinedPickersSet.add(p));
+  });
+  parsePickerNamesList(pickerName).forEach((p) => combinedPickersSet.add(p));
+  const finalPickerName = Array.from(combinedPickersSet).join(', ') || pickerName || 'Operator';
+
   // 1. ALWAYS update local cache first so work is never lost
   try {
     const cached: PickingListItem[] = JSON.parse(localStorage.getItem('wms_picking_cache') || '[]');
@@ -5722,7 +6003,7 @@ export async function completePickingSuratJalanSupabase(
             ...c,
             qty_picked: matchingItem.qty_picked,
             status: 'SELESAI' as const,
-            picker_name: pickerName || c.picker_name || 'Operator',
+            picker_name: finalPickerName,
             catatan: catatan || matchingItem.catatan || c.catatan || '',
           };
         }
@@ -5746,7 +6027,7 @@ export async function completePickingSuratJalanSupabase(
           qty_picked: unexp.qty_picked,
           lokasi: unexp.lokasi || '-',
           status: 'SELESAI',
-          picker_name: pickerName || 'Operator',
+          picker_name: finalPickerName,
           catatan: `[SALAH AMBIL / TAMBAHAN] ${catatan || ''}`.trim(),
           created_at: nowIso,
         });
@@ -5774,8 +6055,17 @@ export async function completePickingSuratJalanSupabase(
 
   let hasRemoteFailure = false;
 
-  // 2. Sync to log_produk (OUT) automatically for picking fulfillment
-  if (syncOutToLog) {
+  // Check if another co-picker already marked this SJ as SELESAI in Supabase to prevent duplicate #OUT logs
+  let alreadyCompletedRemotely = false;
+  try {
+    const remoteRows = await fetchActiveSjRealtimeRowsSupabase(cleanNoSj);
+    if (remoteRows.length > 0 && remoteRows.every((r) => r.status === 'SELESAI')) {
+      alreadyCompletedRemotely = true;
+    }
+  } catch {}
+
+  // 2. Sync to log_produk (OUT) automatically for picking fulfillment (only once per SJ)
+  if (syncOutToLog && !alreadyCompletedRemotely) {
     try {
       const logsOut: LogProdukItem[] = [];
       const allPicked = [...items, ...unexpectedItems].filter((x) => x.qty_picked > 0);
@@ -5793,7 +6083,7 @@ export async function completePickingSuratJalanSupabase(
           area: getAreaFromLokasi(actualLocation),
           lokasi: actualLocation,
           qty: it.qty_picked,
-          operator: pickerName || 'Picker',
+          operator: finalPickerName,
           keterangan: `[#OUT PICKING] Surat Jalan ${cleanNoSj} (Lokasi: ${actualLocation}) ${catatan ? `- ${catatan}` : ''}`.trim(),
           created_at: nowIso,
         });
@@ -5819,7 +6109,7 @@ export async function completePickingSuratJalanSupabase(
         const payload: Record<string, any> = {
           qty_picked: item.qty_picked,
           status: 'SELESAI',
-          picker_name: pickerName,
+          picker_name: finalPickerName,
         };
         if (catatan) {
           payload.catatan = catatan;
@@ -5832,7 +6122,7 @@ export async function completePickingSuratJalanSupabase(
             const minimalPayload = {
               qty_picked: item.qty_picked,
               status: 'SELESAI',
-              picker_name: pickerName,
+              picker_name: finalPickerName,
             };
             await supabaseFetch('picking_list', 'PATCH', minimalPayload, condition);
           } catch (innerErr) {
@@ -5847,7 +6137,7 @@ export async function completePickingSuratJalanSupabase(
     }
 
     // 4. Insert unexpected/wrong items scanned to Supabase
-    if (unexpectedItems.length > 0) {
+    if (unexpectedItems.length > 0 && !alreadyCompletedRemotely) {
       const unexpPayloads = unexpectedItems.map((unexp) => ({
         no_sj: cleanNoSj,
         tanggal: nowIso.slice(0, 10),
@@ -5858,7 +6148,7 @@ export async function completePickingSuratJalanSupabase(
         qty_picked: unexp.qty_picked,
         lokasi: resolvePrimarySingleLocation(unexp.lokasi_picked || unexp.lokasi || '') || '-',
         status: 'SELESAI',
-        picker_name: pickerName,
+        picker_name: finalPickerName,
         created_at: nowIso,
       }));
       const okUnexp = await insertPickingListRowsToSupabase(unexpPayloads).catch((unexpErr) => {
@@ -5875,6 +6165,7 @@ export async function completePickingSuratJalanSupabase(
       }, `no_peminjaman=ilike.${encodeURIComponent(cleanNoSj)}`).catch(() => {});
     }
 
+    invalidatePickingListCache();
     return !hasRemoteFailure;
   } catch (err) {
     console.warn('Supabase remote sync failed, queued for offline sync:', err);

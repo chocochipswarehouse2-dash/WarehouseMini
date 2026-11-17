@@ -808,7 +808,7 @@ export interface SimpanPenerimaanPayload {
   items?: Partial<PenerimaanProduksiItem>[];
 }
 
-export type PickingStatus = 'PENDING' | 'SEDANG PICKING' | 'TERCETAK' | 'SELESAI';
+export type PickingStatus = 'PENDING' | 'SEDANG PICKING' | 'TERCETAK' | 'SELESAI' | 'KOSONG';
 
 export interface PickingListItem {
   id?: string | number;
@@ -825,6 +825,8 @@ export interface PickingListItem {
   lokasi_picked?: string;
   status: PickingStatus;
   picker_name?: string;
+  last_picked_by?: string;
+  is_kosong?: boolean;
   catatan?: string;
   created_at?: string;
   is_unexpected?: boolean;
@@ -838,6 +840,7 @@ export interface PickingSuratJalanGroup {
   tujuan: string;
   status: PickingStatus;
   picker_name?: string;
+  active_pickers?: string[];
   catatan?: string;
   total_items: number;
   total_qty_req: number;
