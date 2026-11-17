@@ -113,6 +113,10 @@ import { JneRekapView } from './components/JneRekapView';
 import { LiveChatWorkspace } from './components/LiveChat/LiveChatWorkspace';
 import { LiveChatFloatingWidget } from './components/LiveChat/LiveChatFloatingWidget';
 import { liveChatManager } from './services/liveChatService';
+import {
+  ensureStoreOpsGroupsForSession,
+  ensureIncomingOrderChatSynced,
+} from './services/orderChatNotificationService';
 import { SupabaseMigrationView } from './components/SupabaseMigrationView';
 import { SettingsView } from './components/SettingsView';
 import { processPickingSync } from './services/pickingSync';
@@ -616,6 +620,10 @@ export default function App() {
       return;
     }
     liveChatManager.initForSession(session, activePage).catch(() => {});
+    const timer = setTimeout(() => {
+      void ensureStoreOpsGroupsForSession(session);
+    }, 1500);
+    return () => clearTimeout(timer);
   }, [session?.username, session?.role]);
 
   useEffect(() => {
@@ -2720,6 +2728,11 @@ export default function App() {
       savePersistedNotifiedOrderIds(notifiedOrderIdsRef.current);
       setLastOrderCheckTimestamp(Date.now());
       syncNotifiedOrdersToServiceWorker(Array.from(notifiedOrderIdsRef.current));
+
+      const myUname = String(session.username || '').trim().toLowerCase();
+      if (myUname === 'warehouse' || myUname === 'chocoadm') {
+        void ensureIncomingOrderChatSynced(row);
+      }
 
       const orderId = String(row.no_pesanan || row.no_transaksi_customer || 'Pesanan Baru').trim();
       const storeName = String(row.nama_pengirim || 'Store').trim();

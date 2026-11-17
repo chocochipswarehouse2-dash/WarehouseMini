@@ -827,11 +827,16 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
         );
 
         // OTOMATIS LIVE CHAT WMS: Buat / perbarui grup Store Ops (@warehouse + @chocoadm + Store) & kirim SPK Alterasi
-        void notifyOrderSubmittedToChat(newOrderPayload, {
-          actorName: formPicPemohon.trim() || session?.name || session?.username || 'PIC Store',
-        }).then(() => {
-          onShowToast(`Notifikasi tiket ${regNo} dikirim ke Grup Live Chat WMS (${asalDisplayName})`, 'info');
-        });
+        await Promise.race([
+          notifyOrderSubmittedToChat(newOrderPayload, {
+            actorName: formPicPemohon.trim() || session?.name || session?.username || 'PIC Store',
+          }).then((res) => {
+            if (res.requesterSent || res.interStoreSentCount > 0) {
+              onShowToast(`Notifikasi tiket ${regNo} dikirim ke Grup Live Chat WMS (${asalDisplayName})`, 'info');
+            }
+          }),
+          new Promise<void>((r) => setTimeout(r, 6000)),
+        ]);
 
         // Reset form
         setFormItems([createDefaultItem()]);

@@ -2095,6 +2095,264 @@ class LiveChatManager {
   }
 
   /**
+   * Checks whether a specific Order ID has already been logged in a room's messages
+   * (checks local memory, IndexedDB, and authoritative Supabase hot store to prevent duplicates).
+   */
+  public async hasOrderMessageInRoom(
+    roomId: string,
+    orderId: string
+  ): Promise<{ ok: boolean; found: boolean }> {
+    const cleanRoomId = String(roomId || '').trim();
+    const cleanOrderId = String(orderId || '').trim().toUpperCase();
+    if (!cleanRoomId || !cleanOrderId || cleanOrderId === '-') {
+      return { ok: true, found: false };
+    }
+
+    const matchesOrder = (msgs: ChatMessage[]): boolean =>
+      msgs.some((m) => {
+        if (!m || m.is_deleted) return false;
+        if (String(m.order_context?.order_id || '').trim().toUpperCase() === cleanOrderId) {
+          return true;
+        }
+        if (
+          Array.isArray(m.context_tags) &&
+          m.context_tags.some(
+            (t) => t?.type === 'ORDER' && String(t.code || '').trim().toUpperCase() === cleanOrderId
+          )
+        ) {
+          return true;
+        }
+        const upperText = String(m.text || '').toUpperCase();
+        return upperText.includes(`#${cleanOrderId}`);
+      });
+
+    const memMsgs = this.state.messagesByRoom[cleanRoomId];
+    if (Array.isArray(memMsgs) && matchesOrder(memMsgs)) {
+      return { ok: true, found: true };
+    }
+
+    const idbMsgs = await idbGetRoomMessages(cleanRoomId);
+    if (Array.isArray(idbMsgs) && matchesOrder(idbMsgs)) {
+      return { ok: true, found: true };
+    }
+
+    const srvRes = await fetchSystemDocJsonDetailed<ChatMessage[]>(`${ROOM_MSGS_DOC_PREFIX}${cleanRoomId}`);
+    if (!srvRes.ok) {
+      // Fail-safe: do not post potential duplicate if server read failed/timed out
+      return { ok: false, found: false };
+    }
+    if (Array.isArray(srvRes.data) && matchesOrder(srvRes.data)) {
+      return { ok: true, found: true };
+    }
+
+    return { ok: true, found: false };
+  }
+
+  /**
+   * Batch-ensures permanent Store Ops ([MS & Alter]) group rooms in a single atomic CAS write.
+   * Existing rooms with matching participants & metadata are left untouched.
+   */
+  public async ensureBatchStoreOpsGroupRooms(
+    stores: Array<{ storeName: string; storeCode?: string }>
+  ): Promise<ChatRoom[]> {
+    if (!Array.isArray(stores) || stores.length === 0) return [];
+
+    if (this.state.allUsersDirectory.length === 0) {
+      await this.refreshUsersDirectory();
+    }
+
+    const [indexRes, tombRes] = await Promise.all([
+      fetchSystemDocJsonDetailed<ChatRoom[]>(ROOMS_INDEX_DOC_KEY),
+      fetchSystemDocJsonDetailed<Record<string, string>>(ROOMS_TOMBSTONE_DOC_KEY),
+    ]);
+
+    if (!indexRes.ok || !tombRes.ok) {
+      return [];
+    }
+
+    if (tombRes.data && typeof tombRes.data === 'object') {
+      Object.assign(this.deletedRoomTombstones, tombRes.data);
+      saveLocalDeletedTombstones(this.deletedRoomTombstones);
+    }
+
+    const serverRooms = Array.isArray(indexRes.data) ? indexRes.data : [];
+    const serverById = new Map<string, ChatRoom>();
+    for (const r of serverRooms) {
+      if (r?.id) serverById.set(r.id, r);
+    }
+
+    const buildProfile = (
+      uname: string,
+      storeUsername: string,
+      storeProfile: ChatParticipantProfile,
+      fullStoreName: string
+    ): ChatParticipantProfile => {
+      if (uname === storeUsername) {
+        return { ...storeProfile, username: storeUsername, store_name: storeProfile.store_name || fullStoreName };
+      }
+      const dirMatch = this.state.allUsersDirectory.find((u) => u.username.toLowerCase() === uname);
+      if (dirMatch) return dirMatch;
+      return {
+        username: uname,
+        name: getUserPersonName(uname) || (uname === 'chocoadm' ? 'Admin Warehouse' : 'Warehouse'),
+        role: 'Superadmin',
+      };
+    };
+
+    const toUpsert: ChatRoom[] = [];
+    const seenRoomIds = new Set<string>();
+    let tombstonesDirty = false;
+
+    for (const st of stores) {
+      const resolved = await this.resolveStoreAccountForGroup(st.storeName, st.storeCode);
+      if (!resolved) continue;
+
+      const { canonicalCodeLower, fullStoreName, storeProfile } = resolved;
+      const storeUsername = String(storeProfile.username || '').trim().toLowerCase();
+      if (!storeUsername) continue;
+
+      const roomId = `group_ops_${canonicalCodeLower}`;
+      if (seenRoomIds.has(roomId)) continue;
+      seenRoomIds.add(roomId);
+
+      const targetParticipants = Array.from(
+        new Set<string>([...WAREHOUSE_OPS_CORE_ACCOUNTS, storeUsername])
+      );
+
+      const existing = serverById.get(roomId);
+      if (existing && !isRoomDeletedByTombstone(existing, this.deletedRoomTombstones)) {
+        const currentParticipants = (existing.participants || []).map((p) => p.toLowerCase());
+        const participantsExactMatch =
+          currentParticipants.length === targetParticipants.length &&
+          targetParticipants.every((p) => currentParticipants.includes(p));
+        const metadataMatch =
+          existing.system_group_kind === 'store_ops' &&
+          existing.store_code === canonicalCodeLower.toUpperCase() &&
+          existing.store_name === fullStoreName;
+
+        if (participantsExactMatch && metadataMatch) {
+          continue;
+        }
+
+        const nextProfiles: Record<string, ChatParticipantProfile> = {};
+        for (const p of targetParticipants) {
+          nextProfiles[p] =
+            existing.participant_profiles?.[p] || buildProfile(p, storeUsername, storeProfile, fullStoreName);
+        }
+
+        toUpsert.push({
+          ...existing,
+          name: `[MS & Alter] ${fullStoreName}`,
+          topic: `Koordinasi Manual Shipment & Alteration (${fullStoreName})`,
+          theme_color: existing.theme_color || 'indigo',
+          participants: targetParticipants,
+          participant_profiles: nextProfiles,
+          system_group_kind: 'store_ops',
+          store_code: canonicalCodeLower.toUpperCase(),
+          store_name: fullStoreName,
+          updated_at: new Date().toISOString(),
+        });
+        continue;
+      }
+
+      const prevDeletedIso = this.deletedRoomTombstones[roomId];
+      const prevDeletedMs = prevDeletedIso ? new Date(prevDeletedIso).getTime() : 0;
+      const safeNowMs = Math.max(Date.now(), Number.isFinite(prevDeletedMs) ? prevDeletedMs + 2000 : 0);
+      const nowIso = new Date(safeNowMs).toISOString();
+
+      if (this.deletedRoomTombstones[roomId]) {
+        delete this.deletedRoomTombstones[roomId];
+        tombstonesDirty = true;
+      }
+
+      const profiles: Record<string, ChatParticipantProfile> = {};
+      for (const p of targetParticipants) {
+        profiles[p] = buildProfile(p, storeUsername, storeProfile, fullStoreName);
+      }
+
+      toUpsert.push({
+        id: roomId,
+        type: 'group',
+        name: `[MS & Alter] ${fullStoreName}`,
+        topic: `Koordinasi Manual Shipment & Alteration (${fullStoreName})`,
+        theme_color: 'indigo',
+        participants: targetParticipants,
+        participant_profiles: profiles,
+        created_by: 'warehouse',
+        created_by_name: 'WMS System',
+        created_at: nowIso,
+        updated_at: nowIso,
+        unread_by: [],
+        unread_counts: {},
+        system_group_kind: 'store_ops',
+        store_code: canonicalCodeLower.toUpperCase(),
+        store_name: fullStoreName,
+      });
+    }
+
+    if (tombstonesDirty) {
+      saveLocalDeletedTombstones(this.deletedRoomTombstones);
+    }
+
+    if (toUpsert.length === 0) {
+      return [];
+    }
+
+    for (const r of toUpsert) {
+      this.pendingUpsertRooms.set(r.id, r);
+      this.recentlyUpsertedRooms.set(r.id, {
+        room: r,
+        expiresAt: Date.now() + 20_000,
+      });
+    }
+
+    const myRoomsToSave: ChatRoom[] = [];
+    for (const r of toUpsert) {
+      if (this.isUserInRoom(r)) {
+        const idx = this.state.rooms.findIndex((x) => x.id === r.id);
+        if (idx >= 0) {
+          this.state.rooms[idx] = r;
+        } else {
+          this.state.rooms.push(r);
+        }
+        myRoomsToSave.push(r);
+      }
+    }
+    if (myRoomsToSave.length > 0) {
+      this.state.rooms.sort((a, b) => this.getRoomSortTime(b) - this.getRoomSortTime(a));
+      this.notify();
+      await idbSaveRooms(myRoomsToSave);
+    }
+
+    const persisted = await this.mutateRoomsIndexOnServer({
+      mode: 'upsert',
+      upsertRooms: toUpsert,
+    });
+
+    if (persisted) {
+      for (const r of toUpsert) {
+        this.pendingUpsertRooms.delete(r.id);
+        try {
+          this.channel?.send({
+            type: 'broadcast',
+            event: 'chat:room_updated',
+            payload: { room: r, clientInstanceId: this.clientInstanceId },
+          });
+        } catch {}
+      }
+    } else {
+      for (const r of toUpsert) {
+        this.recentlyUpsertedRooms.set(r.id, {
+          room: r,
+          expiresAt: Date.now() + 60_000,
+        });
+      }
+    }
+
+    return toUpsert;
+  }
+
+  /**
    * Sends an automated WMS system notification message into a Store Ops group.
    * Supports cross-store dispatch (when Store A triggers an update for Store B's group)
    * without leaking Store B's room into Store A's local sidebar or IndexedDB.
@@ -2159,10 +2417,19 @@ class LiveChatManager {
     };
 
     const minValidMs = this.getMinValidMessageTimeMs(room.id, room);
-    const existingMessages = senderInRoom
-      ? this.state.messagesByRoom[room.id] || (await idbGetRoomMessages(room.id))
-      : (await fetchSystemDocJson<ChatMessage[]>(`${ROOM_MSGS_DOC_PREFIX}${room.id}`)) || [];
+    const [localMsgs, serverHotMsgs] = await Promise.all([
+      senderInRoom
+        ? (async () => {
+            const mem = this.state.messagesByRoom[room.id];
+            return Array.isArray(mem) && mem.length > 0 ? mem : await idbGetRoomMessages(room.id);
+          })()
+        : Promise.resolve([] as ChatMessage[]),
+      fetchSystemDocJson<ChatMessage[]>(`${ROOM_MSGS_DOC_PREFIX}${room.id}`).then((arr) =>
+        Array.isArray(arr) ? arr : []
+      ),
+    ]);
 
+    const existingMessages = mergeMessagesIdempotent(localMsgs, serverHotMsgs, minValidMs);
     const updatedMessages = mergeMessagesIdempotent(existingMessages, [newMsg], minValidMs);
 
     const previewLine =

@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.18.11",
-  "versionCode": 391,
+  "version": "v2.18.12",
+  "versionCode": 392,
   "buildDate": "17 November 2026",
-  "buildHash": "wms-261117-v391-1343",
-  "releaseTitle": "WMS v2.18.11 — Multi-PIC Delegasi Tugas Agenda",
+  "buildHash": "wms-261117-v392-0935",
+  "releaseTitle": "WMS v2.18.12 — Auto-Provisioning & Pemulihan Grup Chat [MS & Alter] Store",
   "releaseNotes": [
-    "Dukungan pilih lebih dari 1 PIC saat buat/edit Delegasi Tugas di modul Agenda & Tasks",
-    "Tampilan badge multi-PIC pada kartu tugas dan pencocokan Tugas Saya untuk semua PIC terpilih"
+    "Provisioning batch seluruh grup [MS & Alter] Store resmi via 1 atomic CAS + sinkronisasi otomatis pesanan yang terlewat (backfill 48 jam & Realtime receiver healing)",
+    "Perbaikan await notifikasi Live Chat saat submit pesanan Store serta merge server sebelum simpan agar riwayat chat tidak pernah tertimpa"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.18.11",
+    "versionCode": 391,
+    "buildDate": "17 November 2026",
+    "buildHash": "wms-261117-v391-1343",
+    "releaseTitle": "WMS v2.18.11 — Multi-PIC Delegasi Tugas Agenda",
+    "releaseNotes": [
+      "Dukungan pilih lebih dari 1 PIC saat buat/edit Delegasi Tugas di modul Agenda & Tasks",
+      "Tampilan badge multi-PIC pada kartu tugas dan pencocokan Tugas Saya untuk semua PIC terpilih"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.18.10",
     "versionCode": 390,
@@ -110,19 +122,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Semua bubble minimize (Update Database, Reset Lokasi, Dock Scanner/Produksi/Hitung Ulang, Asisten AI, Update Aplikasi) kini bisa digeser bebas ke seluruh area layar (mouse & sentuh)",
       "Posisi kustom tiap bubble tersimpan otomatis di perangkat dengan batas aman viewport dan reset cepat klik 2x pada grip handle"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.18.3",
-    "versionCode": 383,
-    "buildDate": "16 November 2026",
-    "buildHash": "wms-261116-v383-0802",
-    "releaseTitle": "WMS v2.18.3 — Perbaikan Stabilitas Indeks Live Chat (Anti-Hilang & Atomic CAS)",
-    "releaseNotes": [
-      "Proteksi atomic CAS PATCH + antrean sinkronisasi pada wms_chat_rooms_index_v1 agar grup & chat tidak pernah terhapus akibat gangguan jaringan atau tulis bersamaan",
-      "Sinkronisasi CAS di Service Worker (pwa-extras.js) untuk aksi Balas Cepat & Tandai Dibaca",
-      "Pemulihan 5 ruang chat non-tombstone (termasuk grup tim QC & chat store) dari riwayat pesan Supabase"
     ],
     "minSupportedVersion": "v2.0.0"
   }

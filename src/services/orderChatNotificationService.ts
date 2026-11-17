@@ -8,18 +8,22 @@
  * - Zero WA Fonnte dependency for Store/Admin WH coordination (Picking WA Grup remains Marketplace-only in ManualShipmentTab).
  */
 
-import { ManualShipmentOrder, ManualShipmentItem } from '../types';
+import { ManualShipmentOrder, ManualShipmentItem, UserSession } from '../types';
 import {
   liveChatManager,
   ChatContextTag,
   ChatOrderContext,
 } from './liveChatService';
 import {
+  DEFAULT_OUTLETS,
+  getAllStoreContacts,
   getFullStoreName,
   isSameStore,
   resolveOrderFulfillmentStores,
 } from './gasManualShipment';
-import { isRealAlterItem, hasRealAlterItems } from '../utils/alterationUtils';
+import { supabaseFetch } from './supabase';
+import { isStoreAccountSession } from './permissions';
+import { isRealAlterItem, hasRealAlterItems, hasValidArData } from '../utils/alterationUtils';
 
 function getOrderId(order: ManualShipmentOrder): string {
   return String(order.no_pesanan || order.no_transaksi_customer || (order as any).id || '-').trim();
@@ -933,3 +937,310 @@ export async function notifyStoreFulfillmentGroupManualToChat(
     return false;
   }
 }
+
+// =============================================================================
+// AUTO-HEALING & BACKFILL FOR MISSED ORDERS / OLD CACHED STORE CLIENTS
+// =============================================================================
+
+const inFlightOrderChatSync = new Map<string, Promise<{ createdOrSent: number }>>();
+const completedOrderChatSyncKeys = new Set<string>();
+let lastSessionStoreOpsSyncAt = 0;
+let activeSessionStoreOpsSyncPromise: Promise<{ ensuredCount: number; backfilledOrders: number }> | null = null;
+
+function normalizeRawManualShipmentRow(item: any): ManualShipmentOrder | null {
+  if (!item || typeof item !== 'object') return null;
+  const noPesanan = String(item.no_pesanan || '').trim().toUpperCase();
+  const rawNotes = String(item.notes_paket || '');
+  if (noPesanan.startsWith('RTR-') || rawNotes.includes('[RETUR_BARANG]:')) {
+    return null;
+  }
+
+  let alteration_repair_data = item.alteration_repair_data;
+  if (!alteration_repair_data && rawNotes.includes('[ALTERATION_REPAIR]:')) {
+    try {
+      const part = rawNotes.split('[ALTERATION_REPAIR]:')[1] || '';
+      const nextIdx = part.search(/\[(HISTORI_LOGS|STORE_METADATA)\]:/);
+      const jsonStr = nextIdx !== -1 ? part.substring(0, nextIdx) : part;
+      alteration_repair_data = JSON.parse(jsonStr.trim());
+    } catch {}
+  }
+
+  let parsedItems = item.items;
+  if (typeof parsedItems === 'string' && parsedItems.trim()) {
+    try {
+      parsedItems = JSON.parse(parsedItems);
+    } catch {
+      parsedItems = [];
+    }
+  }
+  if (!Array.isArray(parsedItems)) {
+    parsedItems = item.nama_produk || item.sku
+      ? [
+          {
+            sku: item.sku || '-',
+            nama_produk: item.nama_produk || 'Produk Pesanan',
+            size: item.size || '-',
+            qty: Number(item.qty) || 1,
+            fulfillment: item.fulfillment || undefined,
+          },
+        ]
+      : [];
+  }
+
+  const isMsPrefix = noPesanan.startsWith('MS');
+  const isArPrefix = noPesanan.startsWith('AR-') || noPesanan.startsWith('REP-') || noPesanan.startsWith('ALT-');
+  const isAlter = !isMsPrefix && (isArPrefix || hasValidArData(alteration_repair_data));
+
+  return {
+    ...item,
+    items: parsedItems,
+    alteration_repair_data,
+    order_type: item.order_type || (isAlter ? 'alteration_repair' : 'manual_shipment'),
+  } as ManualShipmentOrder;
+}
+
+function buildSubmittedOrderMessageText(order: ManualShipmentOrder): string {
+  const requesterStore = getRequesterStoreName(order);
+  const orderId = getOrderId(order);
+  const isAlterOrder = hasRealAlterItems(order) || order.order_type === 'alteration_repair';
+  if (isAlterOrder) {
+    return formatAlterWorkOrderText(order);
+  }
+  const items = Array.isArray(order.items) ? order.items : [];
+  const totalQty = items.reduce((s, it) => s + (Number(it.qty) || 0), 0);
+  const itemsListStr = items
+    .map(
+      (it, idx) =>
+        `  ${idx + 1}. [${it.sku || '-'}] ${it.nama_produk} (Qty: ${it.qty || 1} pcs, Fulfillment: ${it.fulfillment || '-'})` +
+        (it.needs_alteration
+          ? `\n     ✂️ [Alteration: ${it.id_form_alter || 'Auto'}] ${it.alteration_detail || '-'}`
+          : '')
+    )
+    .join('\n');
+
+  return (
+    `📦 KONFIRMASI PESANAN MANUAL SHIPMENT BARU\n` +
+    `────────────────────────────────────\n` +
+    `• Order ID: #${orderId}\n` +
+    `• Store Pengirim: ${requesterStore} (PIC: ${order.pic_store || '-'})\n` +
+    `• No. DealPOS: ${formatDealposStr(order)}\n` +
+    `• Customer: ${order.nama_tujuan || '-'} (${order.no_telp_tujuan || '-'})\n` +
+    `• Alamat: ${order.alamat_tujuan || '-'}\n` +
+    `• Jasa Kirim: ${order.jasa_kirim || '-'}\n\n` +
+    `📋 Daftar Produk (${totalQty} pcs):\n${itemsListStr}\n\n` +
+    `📝 Catatan Paket: ${order.notes_paket || '-'}`
+  );
+}
+
+/**
+ * Idempotently ensures the Store Ops group(s) and initial submission message exist for a single order.
+ * Checks Supabase hot messages per room first so updated Store clients never trigger duplicates.
+ */
+export async function ensureSingleOrderSubmittedChatSynced(
+  order: ManualShipmentOrder
+): Promise<{ createdOrSent: number }> {
+  const orderId = getOrderId(order);
+  if (!orderId || orderId === '-') return { createdOrSent: 0 };
+  if (String(order.status || '').trim().toLowerCase() === 'batal') {
+    return { createdOrSent: 0 };
+  }
+
+  const dedupeKey = orderId.toUpperCase();
+  if (completedOrderChatSyncKeys.has(dedupeKey)) {
+    return { createdOrSent: 0 };
+  }
+  const existingPromise = inFlightOrderChatSync.get(dedupeKey);
+  if (existingPromise) {
+    return existingPromise;
+  }
+
+  const task = (async (): Promise<{ createdOrSent: number }> => {
+    let createdOrSent = 0;
+    try {
+      const requesterStore = getRequesterStoreName(order);
+      const actor = order.pic_store || order.alteration_repair_data?.pic_pemohon || order.submitted_by || 'Tim Store';
+
+      if (requesterStore) {
+        const resolvedReq = await liveChatManager.resolveStoreAccountForGroup(requesterStore);
+        if (resolvedReq) {
+          const roomId = `group_ops_${resolvedReq.canonicalCodeLower}`;
+          const check = await liveChatManager.hasOrderMessageInRoom(roomId, orderId);
+          if (check.ok && !check.found) {
+            const msgText = buildSubmittedOrderMessageText(order);
+            if (msgText) {
+              const res = await liveChatManager.sendSystemGroupMessage({
+                storeName: requesterStore,
+                text: msgText,
+                contextTags: buildOrderTags(order),
+                orderContext: buildOrderContext(order),
+                eventType: 'order_submit',
+                actorName: actor,
+              });
+              if (res.success) createdOrSent++;
+            }
+          }
+        }
+      }
+
+      const fulfillmentData = resolveOrderFulfillmentStores(order);
+      for (const group of fulfillmentData.groups) {
+        if (!group.isInterStore || group.isGudangGroup) continue;
+        const resolvedSup = await liveChatManager.resolveStoreAccountForGroup(group.storeName);
+        if (!resolvedSup) continue;
+        const supRoomId = `group_ops_${resolvedSup.canonicalCodeLower}`;
+        const supCheck = await liveChatManager.hasOrderMessageInRoom(supRoomId, orderId);
+        if (supCheck.ok && !supCheck.found) {
+          const interStoreText = formatInterStoreRequestText(
+            order,
+            group.storeName,
+            fulfillmentData.requesterStoreName,
+            group.items
+          );
+          const interRes = await liveChatManager.sendSystemGroupMessage({
+            storeName: group.storeName,
+            text: interStoreText,
+            contextTags: buildOrderTags({ ...order, items: group.items }),
+            orderContext: buildOrderContext(order),
+            eventType: 'interstore_request',
+            actorName: actor,
+          });
+          if (interRes.success) createdOrSent++;
+        }
+      }
+
+      completedOrderChatSyncKeys.add(dedupeKey);
+    } catch (err) {
+      console.warn('[OrderChatNotify] ensureSingleOrderSubmittedChatSynced error:', err);
+    } finally {
+      inFlightOrderChatSync.delete(dedupeKey);
+    }
+    return { createdOrSent };
+  })();
+
+  inFlightOrderChatSync.set(dedupeKey, task);
+  return task;
+}
+
+/**
+ * Receiver-side auto-healing when @warehouse / @chocoadm receives a new order notification.
+ * Waits 3.2s so updated Store browsers finish sending first, then creates/backfills the group if still missing
+ * (e.g. if the Store submitted from an old cached PWA bundle or closed the tab right after submit).
+ */
+export async function ensureIncomingOrderChatSynced(rawRow: any): Promise<void> {
+  const order = normalizeRawManualShipmentRow(rawRow);
+  if (!order) return;
+  const orderId = getOrderId(order);
+  if (!orderId || orderId === '-') return;
+  if (completedOrderChatSyncKeys.has(orderId.toUpperCase())) return;
+
+  await new Promise((r) => setTimeout(r, 3200));
+  await ensureSingleOrderSubmittedChatSynced(order);
+}
+
+/**
+ * Ensures permanent Store Ops ([MS & Alter]) groups exist for the current session:
+ * - Store accounts: ensures their own `[MS & Alter] <Store>` group exists immediately on login.
+ * - Core Warehouse/Admin (`@warehouse` / `@chocoadm`): batch-ensures all official Store Ops groups
+ *   AND backfills any recent orders from the last 48h that are missing from their Store's chat group.
+ */
+export async function ensureStoreOpsGroupsForSession(
+  session: UserSession | null,
+  options?: { forceBackfill?: boolean }
+): Promise<{ ensuredCount: number; backfilledOrders: number }> {
+  if (!session?.username) return { ensuredCount: 0, backfilledOrders: 0 };
+
+  const uname = session.username.trim().toLowerCase();
+  const roleLower = String(session.role || '').trim().toLowerCase();
+  if (roleLower === 'customer service' || uname.startsWith('chococs')) {
+    return { ensuredCount: 0, backfilledOrders: 0 };
+  }
+
+  // Store accounts only ensure their own Store Ops group
+  if (isStoreAccountSession(session)) {
+    const myStore = String(session.store_name || session.name || '').trim();
+    const myCode = String(session.store_code || '').trim();
+    if (!myStore && !myCode) return { ensuredCount: 0, backfilledOrders: 0 };
+    const room = await liveChatManager.ensureStoreOpsGroupRoom({
+      storeName: myStore || myCode,
+      storeCode: myCode || undefined,
+      targetStoreUsername: uname,
+    });
+    return { ensuredCount: room ? 1 : 0, backfilledOrders: 0 };
+  }
+
+  // Only core Warehouse / Admin accounts provision all Store Ops groups & backfill missed orders
+  if (uname !== 'warehouse' && uname !== 'chocoadm') {
+    return { ensuredCount: 0, backfilledOrders: 0 };
+  }
+
+  const now = Date.now();
+  if (!options?.forceBackfill && now - lastSessionStoreOpsSyncAt < 2 * 60 * 1000) {
+    return { ensuredCount: 0, backfilledOrders: 0 };
+  }
+
+  if (activeSessionStoreOpsSyncPromise) {
+    return activeSessionStoreOpsSyncPromise;
+  }
+
+  activeSessionStoreOpsSyncPromise = (async () => {
+    lastSessionStoreOpsSyncAt = Date.now();
+    let ensuredCount = 0;
+    let backfilledOrders = 0;
+
+    try {
+      const storeMap = new Map<string, { storeName: string; storeCode?: string }>();
+      for (const o of DEFAULT_OUTLETS) {
+        if (o?.nama) {
+          storeMap.set(o.nama.toLowerCase(), { storeName: o.nama, storeCode: o.kode });
+        }
+      }
+      const contacts = getAllStoreContacts();
+      for (const c of Object.values(contacts)) {
+        if (c?.nama && !isGudangFulfillment(c.nama)) {
+          const full = getFullStoreName(c.nama) || c.nama;
+          if (!storeMap.has(full.toLowerCase())) {
+            storeMap.set(full.toLowerCase(), { storeName: full, storeCode: c.kode });
+          }
+        }
+      }
+
+      const upsertedRooms = await liveChatManager.ensureBatchStoreOpsGroupRooms(
+        Array.from(storeMap.values())
+      );
+      ensuredCount = upsertedRooms.length;
+
+      // Backfill any recent orders (last 48 hours) that never reached their Store Ops group
+      const cutoffIso = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+      const recentRows = await supabaseFetch<any[]>(
+        'manual_shipment',
+        'GET',
+        null,
+        `select=*&created_at=gte.${encodeURIComponent(cutoffIso)}&order=created_at.desc&limit=50`
+      );
+
+      if (Array.isArray(recentRows) && recentRows.length > 0) {
+        // Process chronological oldest-first so messages appear in proper time order
+        const chronological = [...recentRows].reverse();
+        for (const row of chronological) {
+          const createdMs = row?.created_at ? new Date(row.created_at).getTime() : 0;
+          if (createdMs > 0 && Date.now() - createdMs < 4000) continue; // Let live sender finish
+          const normalized = normalizeRawManualShipmentRow(row);
+          if (!normalized) continue;
+          const res = await ensureSingleOrderSubmittedChatSynced(normalized);
+          if (res.createdOrSent > 0) {
+            backfilledOrders += res.createdOrSent;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[OrderChatNotify] ensureStoreOpsGroupsForSession warning:', err);
+    } finally {
+      activeSessionStoreOpsSyncPromise = null;
+    }
+
+    return { ensuredCount, backfilledOrders };
+  })();
+
+  return activeSessionStoreOpsSyncPromise;
+}
+

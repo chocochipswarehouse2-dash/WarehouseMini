@@ -1481,24 +1481,30 @@ _WMS Warehouse System_`;
           changes,
         });
 
-        void notifyOrderSubmittedToChat(orderData, {
-          isEdit: true,
-          diffChanges: changes,
-          actorName,
-        }).then((ok) => {
-          if (ok) {
-            onShowToast('Pembaruan pesanan dikirim ke Grup Live Chat WMS!', 'info');
-          }
-        });
+        await Promise.race([
+          notifyOrderSubmittedToChat(orderData, {
+            isEdit: true,
+            diffChanges: changes,
+            actorName,
+          }).then((res) => {
+            if (res.requesterSent || res.interStoreSentCount > 0) {
+              onShowToast('Pembaruan pesanan dikirim ke Grup Live Chat WMS!', 'info');
+            }
+          }),
+          new Promise<void>((r) => setTimeout(r, 6000)),
+        ]);
       } else {
-        void notifyOrderSubmittedToChat(orderData, {
-          isEdit: false,
-          actorName,
-        }).then((ok) => {
-          if (ok) {
-            onShowToast(`Notifikasi pesanan dikirim ke Grup Live Chat WMS (${orderData.nama_pengirim})`, 'info');
-          }
-        });
+        await Promise.race([
+          notifyOrderSubmittedToChat(orderData, {
+            isEdit: false,
+            actorName,
+          }).then((res) => {
+            if (res.requesterSent || res.interStoreSentCount > 0) {
+              onShowToast(`Notifikasi pesanan dikirim ke Grup Live Chat WMS (${orderData.nama_pengirim})`, 'info');
+            }
+          }),
+          new Promise<void>((r) => setTimeout(r, 6000)),
+        ]);
       }
 
       resetForm();

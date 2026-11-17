@@ -51,6 +51,7 @@ import {
   isProtectedStoreOpsGroup,
 } from '../../services/liveChatService';
 import { canManageChatGroups } from '../../services/permissions';
+import { ensureStoreOpsGroupsForSession } from '../../services/orderChatNotificationService';
 import { getUserPersonName } from '../../utils/userResolver';
 
 interface LiveChatWorkspaceProps {
@@ -852,9 +853,17 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                 onClick={async () => {
                   setIsSyncingRooms(true);
                   try {
+                    const syncRes = await ensureStoreOpsGroupsForSession(session, { forceBackfill: true });
                     await liveChatManager.syncRoomsFromServer(true);
                     await liveChatManager.refreshUsersDirectory(true);
-                    onNotify?.('Daftar percakapan & user berhasil disegarkan.', 'success');
+                    if (syncRes.ensuredCount > 0 || syncRes.backfilledOrders > 0) {
+                      onNotify?.(
+                        `Daftar chat disegarkan (${syncRes.ensuredCount} grup Store dipulihkan, ${syncRes.backfilledOrders} notif pesanan disinkronkan).`,
+                        'success'
+                      );
+                    } else {
+                      onNotify?.('Daftar percakapan & user berhasil disegarkan.', 'success');
+                    }
                   } finally {
                     setIsSyncingRooms(false);
                   }
