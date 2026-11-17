@@ -15,19 +15,30 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.18.9",
-  "versionCode": 389,
+  "version": "v2.18.10",
+  "versionCode": 390,
   "buildDate": "17 November 2026",
-  "buildHash": "wms-261117-v389-1307",
-  "releaseTitle": "WMS v2.18.9 — Filter Asal, Tujuan, Tanggal, Sort & Stay on Pengecekan SJ",
+  "buildHash": "wms-261117-v390-1314",
+  "releaseTitle": "WMS v2.18.10 — Multi-Choice Dropsearch Filter Asal & Tujuan Pengecekan SJ",
   "releaseNotes": [
-    "Tambah filter Asal, Tujuan, Tanggal (Dari-Sampai) & Sort Asal/Tujuan/Tanggal di Riwayat Pengecekan SJ",
-    "Tetap berada di tab Pengecekan setelah submit Pending/Selesai (satuan & massal)"
+    "Ubah filter Asal dan Tujuan di Riwayat Pengecekan SJ menjadi Multi-Select Dropsearch dengan pencarian dan jumlah SJ per opsi"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.18.9",
+    "versionCode": 389,
+    "buildDate": "17 November 2026",
+    "buildHash": "wms-261117-v389-1307",
+    "releaseTitle": "WMS v2.18.9 — Filter Asal, Tujuan, Tanggal, Sort & Stay on Pengecekan SJ",
+    "releaseNotes": [
+      "Tambah filter Asal, Tujuan, Tanggal (Dari-Sampai) & Sort Asal/Tujuan/Tanggal di Riwayat Pengecekan SJ",
+      "Tetap berada di tab Pengecekan setelah submit Pending/Selesai (satuan & massal)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.18.8",
     "versionCode": 388,
@@ -112,18 +123,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Kunci akses hapus & keluar grup chat operasional Store Manual/Alter (store_ops) bagi Store maupun Admin Warehouse",
       "Simpan otomatis data Pengecekan SJ ke database Supabase (status PENDING) sejak import CSV pertama dan saat revisi timpa file"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.18.1",
-    "versionCode": 381,
-    "buildDate": "16 November 2026",
-    "buildHash": "wms-261116-v381-0703",
-    "releaseTitle": "WMS v2.18.1 — Muat Penuh Semua Riwayat Pengecekan SJ (Hapus Batas 200)",
-    "releaseNotes": [
-      "Hapus batas limit=200 pada fetch pengecekan_sj dengan pagination penuh (supabaseFetchAllPages) sehingga seluruh 666+ SJ dapat ditemukan & diekspor",
-      "Simpan cache lengkap riwayat pengecekan_sj di IndexedDB (anti limit 5MB localStorage) & ubah simpan ulang menjadi PATCH atomik"
     ],
     "minSupportedVersion": "v2.0.0"
   }

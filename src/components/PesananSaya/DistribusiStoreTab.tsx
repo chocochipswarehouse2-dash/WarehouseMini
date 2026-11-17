@@ -43,6 +43,7 @@ import { formatProductNameWithSize, resolveProductName, resolveProductDisplaySiz
 import { lookupProductBySku } from '../../utils/productLookup';
 import { isWarehouseLocation } from '../../services/supabase';
 import { DistribusiPickingModal } from './DistribusiPickingModal';
+import { MultiSelectDropsearch } from '../common/MultiSelectDropsearch';
 import { DistribusiSelisihWaModal } from './DistribusiSelisihWaModal';
 import {
   buildOrGetQcMutasiJob,
@@ -108,20 +109,20 @@ function parseCsvContent(content: string, fileName: string, productCatalog?: Pro
       h === 'delivery note'
     ),
     category: headers.findIndex(h => h === 'category' || h === 'kategori'),
-    product:  headers.findIndex(h =>
+    product: headers.findIndex(h =>
       h === 'product' || h === 'produk' || h === 'nama produk' || h === 'nama_produk' ||
       h === 'product name' || h === 'item name' || h === 'nama barang' || h === 'nama_barang' ||
       h === 'nama item' || h === 'nama_item' || h === 'description' || h === 'deskripsi' ||
       h === 'item' || h === 'name' || h === 'title'
     ),
-    variant:  headers.findIndex(h =>
+    variant: headers.findIndex(h =>
       h === 'variant' || h === 'variasi' || h === 'varian' || h === 'size' || h === 'warna' || h === 'ukuran'
     ),
-    code:     headers.findIndex(h => h === 'code' || h === 'sku' || h === 'item code' || h === 'kode produk' || h === 'barcode' || h === 'kode barang'),
-    qty:      headers.findIndex(h => h === 'qty' || h === 'quantity' || h === 'jumlah' || h === 'qty sj'),
-    source:   headers.findIndex(h => h === 'source' || h === 'asal' || h === 'dari' || h === 'pengirim' || h === 'outlet asal'),
-    dest:     headers.findIndex(h => h === 'destination' || h === 'tujuan' || h === 'ke' || h === 'penerima' || h === 'outlet tujuan'),
-    lokasi:   headers.findIndex(h => h === 'location' || h === 'lokasi' || h === 'rak' || h === 'rack' || h === 'bin' || h === 'bin location' || h === 'storage' || h === 'posisi'),
+    code: headers.findIndex(h => h === 'code' || h === 'sku' || h === 'item code' || h === 'kode produk' || h === 'barcode' || h === 'kode barang'),
+    qty: headers.findIndex(h => h === 'qty' || h === 'quantity' || h === 'jumlah' || h === 'qty sj'),
+    source: headers.findIndex(h => h === 'source' || h === 'asal' || h === 'dari' || h === 'pengirim' || h === 'outlet asal'),
+    dest: headers.findIndex(h => h === 'destination' || h === 'tujuan' || h === 'ke' || h === 'penerima' || h === 'outlet tujuan'),
+    lokasi: headers.findIndex(h => h === 'location' || h === 'lokasi' || h === 'rak' || h === 'rack' || h === 'bin' || h === 'bin location' || h === 'storage' || h === 'posisi'),
   };
 
   if (col.code < 0) {
@@ -161,7 +162,7 @@ function parseCsvContent(content: string, fileName: string, productCatalog?: Pro
     const rowDest = get(col.dest) || 'Tujuan';
     const rowDate = normalizeDateToIso(get(col.date));
     const qty = parseInt(get(col.qty) || '0', 10) || 0;
-    
+
     // Utamakan nama produk dari kolom produk, baru fallback ke varian
     const rawProd = get(col.product);
     const rawVar = get(col.variant);
@@ -236,9 +237,9 @@ function parseCsvContent(content: string, fileName: string, productCatalog?: Pro
 // ==========================================
 const StatusBadge = ({ status }: { status: string }) => {
   const styles: Record<string, string> = {
-    COCOK:   'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800',
-    KURANG:  'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-300 dark:border-rose-800',
-    LEBIH:   'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400 border border-amber-300 dark:border-amber-800',
+    COCOK: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800',
+    KURANG: 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-300 dark:border-rose-800',
+    LEBIH: 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400 border border-amber-300 dark:border-amber-800',
     SELISIH: 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-300 dark:border-rose-800',
     PENDING: 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400 border border-blue-300 dark:border-blue-800',
     SELESAI: 'bg-teal-100 text-teal-700 dark:bg-teal-950/60 dark:text-teal-400 border border-teal-300 dark:border-teal-800',
@@ -285,14 +286,14 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   useEffect(() => {
     saveSJDrafts(drafts);
     if (activeDraftId) {
-      try { localStorage.setItem('wms_active_sj_draft_id', activeDraftId); } catch {}
+      try { localStorage.setItem('wms_active_sj_draft_id', activeDraftId); } catch { }
     }
     // Jika activeDraftId tidak lagi ada di daftar, reset ke draft pertama
     if (drafts.length > 0 && (!activeDraftId || !drafts.some(d => d.id === activeDraftId))) {
       setActiveDraftId(drafts[0].id);
     } else if (drafts.length === 0) {
       setActiveDraftId(null);
-      try { localStorage.removeItem('wms_active_sj_draft_id'); } catch {}
+      try { localStorage.removeItem('wms_active_sj_draft_id'); } catch { }
     }
   }, [drafts, activeDraftId]);
 
@@ -343,7 +344,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
           return Array.from(map.values());
         });
       }
-    }).catch(() => {});
+    }).catch(() => { });
     return () => { isMounted = false; };
   }, []);
 
@@ -364,7 +365,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
           return timeB - timeA;
         });
       }
-    } catch {}
+    } catch { }
     return [];
   });
   const [loadingRecords, setLoadingRecords] = useState(false);
@@ -373,8 +374,8 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   const [searchFilter, setSearchFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'SELESAI' | 'COCOK' | 'SELISIH'>('ALL');
   const [riwayatTypeFilter, setRiwayatTypeFilter] = useState<'ALL' | 'PENERIMAAN' | 'PENGIRIMAN'>('ALL');
-  const [sourceFilter, setSourceFilter] = useState<string>('ALL');
-  const [destinationFilter, setDestinationFilter] = useState<string>('ALL');
+  const [sourceFilter, setSourceFilter] = useState<string[]>([]);
+  const [destinationFilter, setDestinationFilter] = useState<string[]>([]);
   const [dateFromFilter, setDateFromFilter] = useState<string>('');
   const [dateToFilter, setDateToFilter] = useState<string>('');
   const [riwayatSortBy, setRiwayatSortBy] = useState<
@@ -477,7 +478,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         });
         setRecords((prev) => (sortedCached.length > prev.length ? sortedCached : prev));
       })
-      .catch(() => {});
+      .catch(() => { });
     loadRecords(false);
     return () => {
       mounted = false;
@@ -497,7 +498,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
       const cleanSku = (item.sku || '').trim().toUpperCase();
       const prod = productCatalog?.find(
         p => (p.k && p.k.trim().toUpperCase() === cleanSku) ||
-             (p.sku && String(p.sku).trim().toUpperCase() === cleanSku)
+          (p.sku && String(p.sku).trim().toUpperCase() === cleanSku)
       );
 
       const resolvedSize = resolveProductDisplaySize(
@@ -529,11 +530,11 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
     if (!activeDraft) {
       return { total_sj: 0, total_scan: 0, cocok: 0, kurang: 0, lebih: 0, unexpectedCount: 0, total_unexpected_qty: 0, has_selisih: false };
     }
-    const total_sj    = comparisonData.reduce((s, i) => s + i.qty_sj, 0);
-    const total_scan  = comparisonData.reduce((s, i) => s + i.qty_scan, 0);
-    const cocok       = comparisonData.filter(i => i.status === 'COCOK').length;
-    const kurang      = comparisonData.filter(i => i.status === 'KURANG').length;
-    const lebih       = comparisonData.filter(i => i.status === 'LEBIH').length;
+    const total_sj = comparisonData.reduce((s, i) => s + i.qty_sj, 0);
+    const total_scan = comparisonData.reduce((s, i) => s + i.qty_scan, 0);
+    const cocok = comparisonData.filter(i => i.status === 'COCOK').length;
+    const kurang = comparisonData.filter(i => i.status === 'KURANG').length;
+    const lebih = comparisonData.filter(i => i.status === 'LEBIH').length;
     const unexpectedCount = Object.keys(activeDraft.unexpected || {}).length;
     const total_unexpected_qty = Object.values(activeDraft.unexpected || {}).reduce((s, v) => s + v.qty, 0);
     const has_selisih = kurang > 0 || lebih > 0 || unexpectedCount > 0;
@@ -664,8 +665,8 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
           } else if (inRiwayat || inDrafts) {
             const reason = inRiwayat
               ? (inRiwayat.status === 'pending'
-                  ? `Sudah ada di Riwayat Pengecekan (Status: PENDING, ${inRiwayat.total_qty_terima || 0}/${inRiwayat.total_qty_sj || 0} pcs diselesaikan oleh ${inRiwayat.submitted_by || 'Admin'})`
-                  : `Sudah pernah selesai dicek di Riwayat (Status: SELESAI, ${inRiwayat.total_qty_terima || 0}/${inRiwayat.total_qty_sj || 0} pcs)`)
+                ? `Sudah ada di Riwayat Pengecekan (Status: PENDING, ${inRiwayat.total_qty_terima || 0}/${inRiwayat.total_qty_sj || 0} pcs diselesaikan oleh ${inRiwayat.submitted_by || 'Admin'})`
+                : `Sudah pernah selesai dicek di Riwayat (Status: SELESAI, ${inRiwayat.total_qty_terima || 0}/${inRiwayat.total_qty_sj || 0} pcs)`)
               : `Sudah ada di Antrean Draft Aktif yang sedang dikerjakan`;
 
             if (!conflicts.some(c => c.no_sj.trim().toUpperCase() === cleanNoSj && c.file_name === file.name)) {
@@ -707,8 +708,8 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         syncRes.syncedCount === validNewDrafts.length
           ? 'dan langsung tersimpan ke Supabase!'
           : syncRes.offlineCount > 0
-          ? '(antre sinkronisasi Supabase saat online).'
-          : 'dengan sebagian antre sinkronisasi ulang.';
+            ? '(antre sinkronisasi Supabase saat online).'
+            : 'dengan sebagian antre sinkronisasi ulang.';
 
       if (conflicts.length === 0) {
         onShowToast(
@@ -812,7 +813,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
       // TIDAK ADA DI SURAT JALAN -> Cari nama produk di master catalog
       const masterProduct = productCatalog.find(
         p => (p.k && p.k.toUpperCase() === cleanSku) ||
-             (p.sku && String(p.sku).toUpperCase() === cleanSku)
+          (p.sku && String(p.sku).toUpperCase() === cleanSku)
       );
 
       const baseName = resolveProductName(cleanSku, undefined, masterProduct);
@@ -1357,7 +1358,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
     }
 
     const recordsToUpdate = filteredRecords.filter(r => selectedRecords.has(r.id) && r.status !== newStatus);
-    
+
     if (recordsToUpdate.length === 0) {
       onShowToast(`Semua data yang dipilih sudah berstatus ${newStatus.toUpperCase()}.`, 'warning');
       return;
@@ -1372,10 +1373,10 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         setIsBulkUpdating(true);
         setBulkStatusAction(newStatus);
         let successCount = 0;
-        
+
         try {
           const updatedRecordsList: PengecekanSJRecord[] = [];
-          
+
           // Perform updates sequentially to avoid overwhelming the GAS endpoint
           for (const rec of recordsToUpdate) {
             const updatedRecord: PengecekanSJRecord = {
@@ -1383,7 +1384,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
               status: newStatus,
               updated_at: new Date().toISOString()
             };
-            
+
             const success = await editPengecekanSJ(updatedRecord);
             if (success) {
               updatedRecordsList.push(updatedRecord);
@@ -1448,27 +1449,31 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   }, []);
 
   const { asalOptions, tujuanOptions } = useMemo(() => {
-    const asalSet = new Set<string>();
-    const tujuanSet = new Set<string>();
+    const asalMap = new Map<string, number>();
+    const tujuanMap = new Map<string, number>();
     records.forEach((r) => {
       const src = (r.source || '').trim();
       const dst = (r.destination || '').trim();
-      if (src) asalSet.add(src);
-      if (dst) tujuanSet.add(dst);
+      if (src) asalMap.set(src, (asalMap.get(src) || 0) + 1);
+      if (dst) tujuanMap.set(dst, (tujuanMap.get(dst) || 0) + 1);
     });
     return {
-      asalOptions: Array.from(asalSet).sort((a, b) => a.localeCompare(b, 'id', { sensitivity: 'base' })),
-      tujuanOptions: Array.from(tujuanSet).sort((a, b) => a.localeCompare(b, 'id', { sensitivity: 'base' })),
+      asalOptions: Array.from(asalMap.entries())
+        .map(([value, count]) => ({ value, count }))
+        .sort((a, b) => a.value.localeCompare(b.value, 'id', { sensitivity: 'base' })),
+      tujuanOptions: Array.from(tujuanMap.entries())
+        .map(([value, count]) => ({ value, count }))
+        .sort((a, b) => a.value.localeCompare(b.value, 'id', { sensitivity: 'base' })),
     };
   }, [records]);
 
   const hasActiveRiwayatFilters = Boolean(
     searchFilter ||
-      statusFilter !== 'ALL' ||
-      sourceFilter !== 'ALL' ||
-      destinationFilter !== 'ALL' ||
-      dateFromFilter ||
-      dateToFilter
+    statusFilter !== 'ALL' ||
+    sourceFilter.length > 0 ||
+    destinationFilter.length > 0 ||
+    dateFromFilter ||
+    dateToFilter
   );
 
   // FILTERED & SORTED RIWAYAT RECORDS
@@ -1502,10 +1507,12 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         (statusFilter === 'SELISIH' && r.status_komparasi === 'SELISIH');
 
       const matchSource =
-        sourceFilter === 'ALL' || (r.source || '').trim().toLowerCase() === sourceFilter.toLowerCase();
+        sourceFilter.length === 0 ||
+        sourceFilter.some((src) => src.toLowerCase() === (r.source || '').trim().toLowerCase());
 
       const matchDestination =
-        destinationFilter === 'ALL' || (r.destination || '').trim().toLowerCase() === destinationFilter.toLowerCase();
+        destinationFilter.length === 0 ||
+        destinationFilter.some((dst) => dst.toLowerCase() === (r.destination || '').trim().toLowerCase());
 
       let matchDate = true;
       if (dateFromFilter || dateToFilter) {
@@ -1592,11 +1599,10 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
 
           {/* Quick Action Export Semua & Status Indikator */}
           <div className="flex items-center gap-2">
-            <div className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${
-              isOnline
+            <div className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${isOnline
                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
                 : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
-            }`}>
+              }`}>
               {isOnline ? (
                 <>
                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -1652,11 +1658,10 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
               type="button"
               disabled={isSyncingOffline || !isOnline}
               onClick={handleManualSyncOffline}
-              className={`px-3 py-1 rounded-lg text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
-                !isOnline
+              className={`px-3 py-1 rounded-lg text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${!isOnline
                   ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
                   : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm'
-              }`}
+                }`}
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncingOffline ? 'animate-spin' : ''}`} />
               <span>{isSyncingOffline ? 'Menyinkronkan...' : isOnline ? 'Sinkronkan Sekarang' : 'Menunggu Internet'}</span>
@@ -1671,21 +1676,19 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
               type="button"
               id="tab-distribusi-pengecekan"
               onClick={() => setActiveTab('pengecekan')}
-              className={`py-2 px-3.5 text-xs font-extrabold flex items-center justify-center gap-2 rounded-xl transition-all cursor-pointer select-none whitespace-nowrap shrink-0 relative ${
-                activeTab === 'pengecekan'
+              className={`py-2 px-3.5 text-xs font-extrabold flex items-center justify-center gap-2 rounded-xl transition-all cursor-pointer select-none whitespace-nowrap shrink-0 relative ${activeTab === 'pengecekan'
                   ? 'bg-emerald-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
-              }`}
+                }`}
             >
               <ScanLine className="w-4 h-4 shrink-0" />
               <span>Pengecekan</span>
               {drafts.length > 0 && (
                 <span
-                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-black leading-none ${
-                    activeTab === 'pengecekan'
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-black leading-none ${activeTab === 'pengecekan'
                       ? 'bg-white/25 text-white'
                       : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
-                  }`}
+                    }`}
                 >
                   {drafts.length}
                 </span>
@@ -1696,21 +1699,19 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
               type="button"
               id="tab-distribusi-riwayat"
               onClick={() => setActiveTab('riwayat')}
-              className={`py-2 px-3.5 text-xs font-extrabold flex items-center justify-center gap-2 rounded-xl transition-all cursor-pointer select-none whitespace-nowrap shrink-0 relative ${
-                activeTab === 'riwayat'
+              className={`py-2 px-3.5 text-xs font-extrabold flex items-center justify-center gap-2 rounded-xl transition-all cursor-pointer select-none whitespace-nowrap shrink-0 relative ${activeTab === 'riwayat'
                   ? 'bg-indigo-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
-              }`}
+                }`}
             >
               <FileText className="w-4 h-4 shrink-0" />
               <span>Riwayat</span>
               {records.length > 0 && (
                 <span
-                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-black leading-none ${
-                    activeTab === 'riwayat'
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-black leading-none ${activeTab === 'riwayat'
                       ? 'bg-white/25 text-white'
                       : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                  }`}
+                    }`}
                 >
                   {records.length}
                 </span>
@@ -1918,20 +1919,19 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                     const isPernahSelesai = records.some(r => r.no_sj.trim().toUpperCase() === draft.no_sj.trim().toUpperCase());
                     const totalQtySj = draft.items.reduce((s, i) => s + i.qty_sj, 0);
                     const totalScanned = Object.values(draft.scanQty).reduce((s, v) => s + v, 0) +
-                                         Object.values(draft.unexpected || {}).reduce((s, v) => s + v.qty, 0);
+                      Object.values(draft.unexpected || {}).reduce((s, v) => s + v.qty, 0);
                     const progressPercent = totalQtySj > 0 ? Math.min(100, Math.round((totalScanned / totalQtySj) * 100)) : 0;
 
                     return (
                       <div
                         key={draft.id}
                         onClick={() => setActiveDraftId(draft.id)}
-                        className={`p-3.5 rounded-xl border transition-all cursor-pointer relative flex flex-col justify-between ${
-                          isSelected
+                        className={`p-3.5 rounded-xl border transition-all cursor-pointer relative flex flex-col justify-between ${isSelected
                             ? 'border-primary-500 bg-primary-50/30 dark:bg-primary-950/20 ring-2 ring-primary-500/20 shadow-sm'
                             : isCheckedForBulk
-                            ? 'border-emerald-500/60 bg-emerald-50/20 dark:bg-emerald-950/15 ring-1 ring-emerald-500/20'
-                            : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 hover:border-slate-300 dark:hover:border-slate-700'
-                        }`}
+                              ? 'border-emerald-500/60 bg-emerald-50/20 dark:bg-emerald-950/15 ring-1 ring-emerald-500/20'
+                              : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 hover:border-slate-300 dark:hover:border-slate-700'
+                          }`}
                       >
                         <div>
                           <div className="flex items-center justify-between mb-1.5 gap-2">
@@ -1966,9 +1966,8 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                   ✓ Picking App
                                 </span>
                               )}
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                isSelected ? 'bg-primary-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                              }`}>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isSelected ? 'bg-primary-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                                }`}>
                                 {isSelected ? 'Sedang Dicek' : 'Antrean'}
                               </span>
                             </div>
@@ -1996,9 +1995,8 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                             </div>
                             <div className="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
                               <div
-                                className={`h-full transition-all ${
-                                  progressPercent === 100 ? 'bg-emerald-500' : 'bg-primary-500'
-                                }`}
+                                className={`h-full transition-all ${progressPercent === 100 ? 'bg-emerald-500' : 'bg-primary-500'
+                                  }`}
                                 style={{ width: `${progressPercent}%` }}
                               />
                             </div>
@@ -2066,11 +2064,10 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                 e.stopPropagation();
                                 setActiveDraftId(draft.id);
                               }}
-                              className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
-                                isSelected
+                              className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${isSelected
                                   ? 'bg-primary-500 text-white shadow-xs'
                                   : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'
-                              }`}
+                                }`}
                             >
                               {isSelected ? 'Aktif' : 'Pilih SJ'}
                             </button>
@@ -2186,11 +2183,10 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                     <button
                       type="button"
                       onClick={() => setShowCameraScanner(prev => !prev)}
-                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm ${
-                        showCameraScanner
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm ${showCameraScanner
                           ? 'bg-rose-500 hover:bg-rose-600 text-white shadow-rose-500/20'
                           : 'bg-primary-500 hover:bg-primary-600 text-white shadow-primary-500/20'
-                      }`}
+                        }`}
                     >
                       <Camera className="w-3.5 h-3.5" />
                       <span>{showCameraScanner ? 'Tutup Kamera HP' : '📷 Buka Kamera HP'}</span>
@@ -2249,10 +2245,10 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                   ].map(({ id, label, value, color, bg, clickable }) => {
                     const isFilterActive = (id === 'cocok' && detailFilter === 'COCOK') || (id === 'selisih' && detailFilter === 'SELISIH');
                     const ringStyle = isFilterActive ? 'ring-2 ring-primary-500 ring-offset-1 dark:ring-offset-slate-900' : '';
-                    
+
                     return (
-                      <div 
-                        key={label} 
+                      <div
+                        key={label}
                         onClick={() => {
                           if (!clickable) return;
                           if (id === 'cocok') setDetailFilter(prev => prev === 'COCOK' ? 'ALL' : 'COCOK');
@@ -2370,11 +2366,10 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                         }).map(item => (
                           <tr
                             key={item.sku}
-                            className={`transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/40 ${
-                              item.status === 'COCOK'  ? 'bg-emerald-50/40 dark:bg-emerald-950/10' :
-                              item.status === 'KURANG' ? 'bg-rose-50/40 dark:bg-rose-950/10' :
-                              item.status === 'LEBIH'  ? 'bg-amber-50/40 dark:bg-amber-950/10' : ''
-                            }`}
+                            className={`transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/40 ${item.status === 'COCOK' ? 'bg-emerald-50/40 dark:bg-emerald-950/10' :
+                                item.status === 'KURANG' ? 'bg-rose-50/40 dark:bg-rose-950/10' :
+                                  item.status === 'LEBIH' ? 'bg-amber-50/40 dark:bg-amber-950/10' : ''
+                              }`}
                           >
                             {/* 1. Nama Produk */}
                             <td className="px-3.5 py-3 min-w-[200px] align-middle">
@@ -2440,10 +2435,9 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
 
                             {/* 6. Selisih */}
                             <td className="px-3 py-3 text-center align-middle">
-                              <span className={`font-mono font-black text-xs ${
-                                item.selisih === 0 ? 'text-emerald-500' :
-                                item.selisih < 0  ? 'text-rose-500' : 'text-amber-500'
-                              }`}>
+                              <span className={`font-mono font-black text-xs ${item.selisih === 0 ? 'text-emerald-500' :
+                                  item.selisih < 0 ? 'text-rose-500' : 'text-amber-500'
+                                }`}>
                                 {item.selisih > 0 ? `+${item.selisih}` : item.selisih}
                               </span>
                             </td>
@@ -2477,11 +2471,10 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                 </div>
 
                 {/* SUBMIT ke Database (STATUS PENDING) */}
-                <div className={`rounded-2xl border-2 p-4 ${
-                  summary.has_selisih
+                <div className={`rounded-2xl border-2 p-4 ${summary.has_selisih
                     ? 'bg-rose-50/70 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800'
                     : 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800'
-                }`}>
+                  }`}>
                   <div className="flex items-start gap-2 mb-3">
                     {summary.has_selisih
                       ? <AlertTriangle className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
@@ -2495,7 +2488,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 mb-2">
                         Keseluruhan data per baris produk akan ditulis ke Database.
                       </p>
-                      
+
                       {summary.has_selisih && (
                         <div className="flex items-center gap-2 flex-wrap mt-2">
                           {summary.kurang > 0 && (
@@ -2581,24 +2574,24 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Tentukan Status Surat Jalan:</label>
                     <div className="flex items-center gap-4">
                       <label className="flex items-center gap-1.5 cursor-pointer">
-                        <input 
-                          type="radio" 
-                          name="submitStatus" 
-                          value="pending" 
-                          checked={submitStatus === 'pending'} 
-                          onChange={() => setSubmitStatus('pending')} 
-                          className="w-4 h-4 text-primary-600 border-slate-300 focus:ring-primary-500" 
+                        <input
+                          type="radio"
+                          name="submitStatus"
+                          value="pending"
+                          checked={submitStatus === 'pending'}
+                          onChange={() => setSubmitStatus('pending')}
+                          className="w-4 h-4 text-primary-600 border-slate-300 focus:ring-primary-500"
                         />
                         <span className="text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded">PENDING</span>
                       </label>
                       <label className="flex items-center gap-1.5 cursor-pointer">
-                        <input 
-                          type="radio" 
-                          name="submitStatus" 
-                          value="selesai" 
-                          checked={submitStatus === 'selesai'} 
-                          onChange={() => setSubmitStatus('selesai')} 
-                          className="w-4 h-4 text-emerald-600 border-slate-300 focus:ring-emerald-500" 
+                        <input
+                          type="radio"
+                          name="submitStatus"
+                          value="selesai"
+                          checked={submitStatus === 'selesai'}
+                          onChange={() => setSubmitStatus('selesai')}
+                          className="w-4 h-4 text-emerald-600 border-slate-300 focus:ring-emerald-500"
                         />
                         <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded">SELESAI</span>
                       </label>
@@ -2656,17 +2649,15 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                   type="button"
                   id="btn-riwayat-semua"
                   onClick={() => setRiwayatTypeFilter('ALL')}
-                  className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer select-none shrink-0 ${
-                    riwayatTypeFilter === 'ALL'
+                  className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer select-none shrink-0 ${riwayatTypeFilter === 'ALL'
                       ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
+                    }`}
                 >
                   <Package className="w-3.5 h-3.5" />
                   <span>Semua Riwayat</span>
-                  <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold ${
-                    riwayatTypeFilter === 'ALL' ? 'bg-slate-700 dark:bg-slate-200 text-white dark:text-slate-900' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                  }`}>
+                  <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold ${riwayatTypeFilter === 'ALL' ? 'bg-slate-700 dark:bg-slate-200 text-white dark:text-slate-900' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                    }`}>
                     {riwayatCounts.all}
                   </span>
                 </button>
@@ -2675,17 +2666,15 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                   type="button"
                   id="btn-riwayat-penerimaan"
                   onClick={() => setRiwayatTypeFilter('PENERIMAAN')}
-                  className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer select-none shrink-0 ${
-                    riwayatTypeFilter === 'PENERIMAAN'
+                  className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer select-none shrink-0 ${riwayatTypeFilter === 'PENERIMAAN'
                       ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25'
                       : 'text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400'
-                  }`}
+                    }`}
                 >
                   <ArrowDownToLine className="w-3.5 h-3.5" />
                   <span>Penerimaan / Mutasi Masuk</span>
-                  <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold ${
-                    riwayatTypeFilter === 'PENERIMAAN' ? 'bg-white/20 text-white' : 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300'
-                  }`}>
+                  <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold ${riwayatTypeFilter === 'PENERIMAAN' ? 'bg-white/20 text-white' : 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300'
+                    }`}>
                     {riwayatCounts.penerimaan}
                   </span>
                 </button>
@@ -2694,17 +2683,15 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                   type="button"
                   id="btn-riwayat-pengiriman"
                   onClick={() => setRiwayatTypeFilter('PENGIRIMAN')}
-                  className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer select-none shrink-0 ${
-                    riwayatTypeFilter === 'PENGIRIMAN'
+                  className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer select-none shrink-0 ${riwayatTypeFilter === 'PENGIRIMAN'
                       ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25'
                       : 'text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400'
-                  }`}
+                    }`}
                 >
                   <Truck className="w-3.5 h-3.5" />
                   <span>Pengiriman / Transfer Toko</span>
-                  <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold ${
-                    riwayatTypeFilter === 'PENGIRIMAN' ? 'bg-white/20 text-white' : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
-                  }`}>
+                  <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold ${riwayatTypeFilter === 'PENGIRIMAN' ? 'bg-white/20 text-white' : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                    }`}>
                     {riwayatCounts.pengiriman}
                   </span>
                 </button>
@@ -2732,11 +2719,10 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                       key={st}
                       type="button"
                       onClick={() => setStatusFilter(st)}
-                      className={`px-2.5 py-1.5 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer ${
-                        statusFilter === st
+                      className={`px-2.5 py-1.5 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer ${statusFilter === st
                           ? 'bg-primary-500 text-white shadow-xs'
                           : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
+                        }`}
                     >
                       {st === 'ALL' ? 'Semua' : st}
                     </button>
@@ -2766,38 +2752,26 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
 
               {/* FILTER ASAL, TUJUAN, TANGGAL & SORTING */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/80 items-center">
-                {/* Filter Asal */}
+                {/* Filter Asal (Multi-Select Dropsearch) */}
                 <div className="lg:col-span-3">
-                  <select
-                    aria-label="Filter Asal"
-                    value={sourceFilter}
-                    onChange={(e) => setSourceFilter(e.target.value)}
-                    className="w-full text-xs px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 focus:outline-none focus:border-primary-500"
-                  >
-                    <option value="ALL">Asal: Semua ({asalOptions.length})</option>
-                    {asalOptions.map((src) => (
-                      <option key={src} value={src}>
-                        Asal: {src}
-                      </option>
-                    ))}
-                  </select>
+                  <MultiSelectDropsearch
+                    label="Asal"
+                    options={asalOptions}
+                    selected={sourceFilter}
+                    onChange={setSourceFilter}
+                    searchPlaceholder="Cari asal..."
+                  />
                 </div>
 
-                {/* Filter Tujuan */}
+                {/* Filter Tujuan (Multi-Select Dropsearch) */}
                 <div className="lg:col-span-3">
-                  <select
-                    aria-label="Filter Tujuan"
-                    value={destinationFilter}
-                    onChange={(e) => setDestinationFilter(e.target.value)}
-                    className="w-full text-xs px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 focus:outline-none focus:border-primary-500"
-                  >
-                    <option value="ALL">Tujuan: Semua ({tujuanOptions.length})</option>
-                    {tujuanOptions.map((dst) => (
-                      <option key={dst} value={dst}>
-                        Tujuan: {dst}
-                      </option>
-                    ))}
-                  </select>
+                  <MultiSelectDropsearch
+                    label="Tujuan"
+                    options={tujuanOptions}
+                    selected={destinationFilter}
+                    onChange={setDestinationFilter}
+                    searchPlaceholder="Cari tujuan..."
+                  />
                 </div>
 
                 {/* Filter Tanggal (Dari - Sampai) */}
@@ -2850,8 +2824,8 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                       onClick={() => {
                         setSearchFilter('');
                         setStatusFilter('ALL');
-                        setSourceFilter('ALL');
-                        setDestinationFilter('ALL');
+                        setSourceFilter([]);
+                        setDestinationFilter([]);
                         setDateFromFilter('');
                         setDateToFilter('');
                       }}
@@ -2985,8 +2959,8 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                         setRiwayatTypeFilter('ALL');
                         setStatusFilter('ALL');
                         setSearchFilter('');
-                        setSourceFilter('ALL');
-                        setDestinationFilter('ALL');
+                        setSourceFilter([]);
+                        setDestinationFilter([]);
                         setDateFromFilter('');
                         setDateToFilter('');
                       }}
@@ -3032,19 +3006,18 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                             />
                           </div>
                         )}
-                        <div 
+                        <div
                           className="shrink-0 cursor-pointer pt-2"
                           onClick={() => {
                             if (!isEditing) setExpandedRow(isExpanded ? null : rec.id);
                           }}
                         >
-                          <div className={`w-2.5 h-2.5 rounded-full ${
-                            rec.status === 'pending' ? 'bg-blue-500' :
-                            rec.status_komparasi === 'COCOK' ? 'bg-emerald-500' : 'bg-rose-500'
-                          }`} />
+                          <div className={`w-2.5 h-2.5 rounded-full ${rec.status === 'pending' ? 'bg-blue-500' :
+                              rec.status_komparasi === 'COCOK' ? 'bg-emerald-500' : 'bg-rose-500'
+                            }`} />
                         </div>
 
-                        <div 
+                        <div
                           className="flex-1 min-w-0 cursor-pointer flex flex-col gap-1.5"
                           onClick={() => {
                             if (!isEditing) setExpandedRow(isExpanded ? null : rec.id);
@@ -3055,11 +3028,10 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                             <span className="text-[13px] sm:text-sm font-black text-slate-800 dark:text-white font-mono shrink-0">{rec.no_sj}</span>
                             <div className="flex gap-1 flex-wrap justify-end">
                               {rec.tipe_import && (
-                                <span className={`inline-flex items-center justify-center text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-                                  rec.tipe_import === 'Penerimaan' 
+                                <span className={`inline-flex items-center justify-center text-[10px] font-extrabold px-2 py-0.5 rounded-full ${rec.tipe_import === 'Penerimaan'
                                     ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800'
                                     : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
-                                }`}>
+                                  }`}>
                                   {rec.tipe_import}
                                 </span>
                               )}
@@ -3077,7 +3049,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                               )}
                             </div>
                           </div>
-                          
+
                           {/* ROW 2: SOURCE->DEST & QTY */}
                           <div className="flex items-start justify-between gap-2 mt-0.5">
                             <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 leading-snug line-clamp-2">
@@ -3270,24 +3242,24 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                 <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Status SJ</label>
                                 <div className="flex items-center gap-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1 h-[26px]">
                                   <label className="flex items-center gap-1 cursor-pointer">
-                                    <input 
-                                      type="radio" 
-                                      name={`status-${editFormData.id}`} 
-                                      value="pending" 
-                                      checked={editFormData.status === 'pending'} 
-                                      onChange={() => setEditFormData({ ...editFormData, status: 'pending' })} 
-                                      className="w-3 h-3 text-blue-600 border-slate-300 focus:ring-blue-500" 
+                                    <input
+                                      type="radio"
+                                      name={`status-${editFormData.id}`}
+                                      value="pending"
+                                      checked={editFormData.status === 'pending'}
+                                      onChange={() => setEditFormData({ ...editFormData, status: 'pending' })}
+                                      className="w-3 h-3 text-blue-600 border-slate-300 focus:ring-blue-500"
                                     />
                                     <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">PENDING</span>
                                   </label>
                                   <label className="flex items-center gap-1 cursor-pointer">
-                                    <input 
-                                      type="radio" 
-                                      name={`status-${editFormData.id}`} 
-                                      value="selesai" 
-                                      checked={editFormData.status === 'selesai'} 
-                                      onChange={() => setEditFormData({ ...editFormData, status: 'selesai' })} 
-                                      className="w-3 h-3 text-emerald-600 border-slate-300 focus:ring-emerald-500" 
+                                    <input
+                                      type="radio"
+                                      name={`status-${editFormData.id}`}
+                                      value="selesai"
+                                      checked={editFormData.status === 'selesai'}
+                                      onChange={() => setEditFormData({ ...editFormData, status: 'selesai' })}
+                                      className="w-3 h-3 text-emerald-600 border-slate-300 focus:ring-emerald-500"
                                     />
                                     <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">SELESAI</span>
                                   </label>
@@ -3354,9 +3326,9 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                       <tr
                                         key={`${item.sku}-${i}`}
                                         className={
-                                          item.status_item === 'COCOK'  ? 'bg-emerald-50/30 dark:bg-emerald-950/10' :
-                                          item.status_item === 'KURANG' ? 'bg-rose-50/30 dark:bg-rose-950/10' :
-                                          item.status_item === 'LEBIH'  ? 'bg-amber-50/30 dark:bg-amber-950/10' : ''
+                                          item.status_item === 'COCOK' ? 'bg-emerald-50/30 dark:bg-emerald-950/10' :
+                                            item.status_item === 'KURANG' ? 'bg-rose-50/30 dark:bg-rose-950/10' :
+                                              item.status_item === 'LEBIH' ? 'bg-amber-50/30 dark:bg-amber-950/10' : ''
                                         }
                                       >
                                         {/* 1. Nama Produk */}
@@ -3391,46 +3363,45 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                         <td className="px-3 py-2 text-center font-bold text-slate-700 dark:text-slate-300">
                                           {item.qty_sj}
                                         </td>
-                                      <td className="px-3 py-2 text-center font-bold">
-                                        {isEditing && editFormData ? (
-                                          <input
-                                            type="number"
-                                            value={item.qty_scan}
-                                            onFocus={e => e.target.select()}
-                                            onChange={e => {
-                                              const raw = e.target.value;
-                                              const newQty = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
-                                              const newItems = [...editFormData.items];
-                                              newItems[i] = {
-                                                ...newItems[i],
-                                                qty_scan: newQty,
-                                                selisih: newQty - newItems[i].qty_sj,
-                                                status_item: (newQty - newItems[i].qty_sj) === 0 ? 'COCOK' : (newQty - newItems[i].qty_sj) < 0 ? 'KURANG' : 'LEBIH',
-                                              };
-                                              setEditFormData({ ...editFormData, items: newItems });
-                                            }}
-                                            className="w-14 text-center font-bold px-1 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs"
-                                            min={0}
-                                          />
-                                        ) : (
-                                          item.qty_scan
-                                        )}
-                                      </td>
-                                      <td className="px-3 py-2 text-center">
-                                        <span className={`font-extrabold ${
-                                          selisih === 0 ? 'text-emerald-500' :
-                                          selisih < 0  ? 'text-rose-500' : 'text-amber-500'
-                                        }`}>
-                                          {selisih > 0 ? `+${selisih}` : selisih}
-                                        </span>
-                                      </td>
-                                      <td className="px-3 py-2 text-center">
-                                        <StatusBadge status={item.status_item} />
-                                      </td>
-                                    </tr>
-                                  );
-                                })
-                              )}
+                                        <td className="px-3 py-2 text-center font-bold">
+                                          {isEditing && editFormData ? (
+                                            <input
+                                              type="number"
+                                              value={item.qty_scan}
+                                              onFocus={e => e.target.select()}
+                                              onChange={e => {
+                                                const raw = e.target.value;
+                                                const newQty = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
+                                                const newItems = [...editFormData.items];
+                                                newItems[i] = {
+                                                  ...newItems[i],
+                                                  qty_scan: newQty,
+                                                  selisih: newQty - newItems[i].qty_sj,
+                                                  status_item: (newQty - newItems[i].qty_sj) === 0 ? 'COCOK' : (newQty - newItems[i].qty_sj) < 0 ? 'KURANG' : 'LEBIH',
+                                                };
+                                                setEditFormData({ ...editFormData, items: newItems });
+                                              }}
+                                              className="w-14 text-center font-bold px-1 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs"
+                                              min={0}
+                                            />
+                                          ) : (
+                                            item.qty_scan
+                                          )}
+                                        </td>
+                                        <td className="px-3 py-2 text-center">
+                                          <span className={`font-extrabold ${selisih === 0 ? 'text-emerald-500' :
+                                              selisih < 0 ? 'text-rose-500' : 'text-amber-500'
+                                            }`}>
+                                            {selisih > 0 ? `+${selisih}` : selisih}
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-2 text-center">
+                                          <StatusBadge status={item.status_item} />
+                                        </td>
+                                      </tr>
+                                    );
+                                  })
+                                )}
                               </tbody>
                             </table>
                           </div>
@@ -3535,11 +3506,10 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                             {qtyScan} / {qtySj} pcs
                           </span>
                           <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                              isExactMatch
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${isExactMatch
                                 ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
                                 : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
-                            }`}
+                              }`}
                           >
                             {isExactMatch ? 'COCOK' : 'SELISIH'}
                           </span>
@@ -3616,11 +3586,10 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
           <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
             <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 max-w-sm w-full shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
               <div className="flex items-start gap-3">
-                <div className={`p-2.5 rounded-xl shrink-0 ${
-                  confirmModal.isDanger
+                <div className={`p-2.5 rounded-xl shrink-0 ${confirmModal.isDanger
                     ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
                     : 'bg-primary-500/15 text-primary-600 dark:text-primary-400'
-                }`}>
+                  }`}>
                   <AlertTriangle className="w-5 h-5" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -3648,11 +3617,10 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                     setConfirmModal(null);
                     await action();
                   }}
-                  className={`px-4 py-2 text-xs font-bold rounded-xl transition-all shadow-md active:scale-95 cursor-pointer ${
-                    confirmModal.isDanger
+                  className={`px-4 py-2 text-xs font-bold rounded-xl transition-all shadow-md active:scale-95 cursor-pointer ${confirmModal.isDanger
                       ? 'bg-rose-600 hover:bg-rose-500 text-white'
                       : 'bg-primary-600 hover:bg-primary-500 text-white'
-                  }`}
+                    }`}
                 >
                   {confirmModal.confirmLabel || 'Ya, Lanjutkan'}
                 </button>

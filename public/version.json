@@ -1,12 +1,11 @@
 {
-  "version": "v2.18.9",
-  "versionCode": 389,
+  "version": "v2.18.10",
+  "versionCode": 390,
   "buildDate": "17 November 2026",
-  "buildHash": "wms-261117-v389-1307",
-  "releaseTitle": "WMS v2.18.9 — Filter Asal, Tujuan, Tanggal, Sort & Stay on Pengecekan SJ",
+  "buildHash": "wms-261117-v390-1314",
+  "releaseTitle": "WMS v2.18.10 — Multi-Choice Dropsearch Filter Asal & Tujuan Pengecekan SJ",
   "releaseNotes": [
-    "Tambah filter Asal, Tujuan, Tanggal (Dari-Sampai) & Sort Asal/Tujuan/Tanggal di Riwayat Pengecekan SJ",
-    "Tetap berada di tab Pengecekan setelah submit Pending/Selesai (satuan & massal)"
+    "Ubah filter Asal dan Tujuan di Riwayat Pengecekan SJ menjadi Multi-Select Dropsearch dengan pencarian dan jumlah SJ per opsi"
   ],
   "minSupportedVersion": "v2.0.0"
 }
