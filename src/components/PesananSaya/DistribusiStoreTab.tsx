@@ -4,7 +4,7 @@ import {
   AlertTriangle, Package, FileText, Trash2, ClipboardCheck, X,
   Minus, Plus, RotateCcw, ArrowUpDown, ScanLine, Camera, Download,
   Edit3, ArrowLeftRight, Check, Search, Filter, Layers, ListFilter,
-  Wifi, WifiOff, CloudOff, ArrowDownToLine, Truck
+  Wifi, WifiOff, CloudOff, ArrowDownToLine, Truck, Calendar
 } from 'lucide-react';
 import {
   UserSession,
@@ -373,6 +373,13 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   const [searchFilter, setSearchFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'SELESAI' | 'COCOK' | 'SELISIH'>('ALL');
   const [riwayatTypeFilter, setRiwayatTypeFilter] = useState<'ALL' | 'PENERIMAAN' | 'PENGIRIMAN'>('ALL');
+  const [sourceFilter, setSourceFilter] = useState<string>('ALL');
+  const [destinationFilter, setDestinationFilter] = useState<string>('ALL');
+  const [dateFromFilter, setDateFromFilter] = useState<string>('');
+  const [dateToFilter, setDateToFilter] = useState<string>('');
+  const [riwayatSortBy, setRiwayatSortBy] = useState<
+    'tanggal_desc' | 'tanggal_asc' | 'asal_asc' | 'asal_desc' | 'tujuan_asc' | 'tujuan_desc'
+  >('tanggal_desc');
   const [pickingModalDraft, setPickingModalDraft] = useState<PengecekanSJDraft | null>(null);
   const [pickingModalDrafts, setPickingModalDrafts] = useState<PengecekanSJDraft[]>([]);
   const [pickingModalInitialTab, setPickingModalInitialTab] = useState<'print' | 'whatsapp' | 'app'>('app');
@@ -1006,8 +1013,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         });
         setPendingOfflineCount(getPendingOfflinePengecekanSJ().length);
 
-        // Buka tab Riwayat Pengecekan
-        setActiveTab('riwayat');
+        // Tetap di halaman pengecekan agar operator bisa langsung lanjut cek SJ berikutnya
         // Refresh silently dari Supabase agar sinkron dengan ID/kolom dari database
         loadRecords(false);
       } else {
@@ -1144,7 +1150,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
           setActiveDraftId(null);
         }
         setPendingOfflineCount(getPendingOfflinePengecekanSJ().length);
-        setActiveTab('riwayat');
+        // Tetap di halaman pengecekan setelah bulk submit
         void loadRecords(false);
       }
 
@@ -1431,9 +1437,43 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
     };
   }, [records]);
 
-  // FILTERED RIWAYAT RECORDS
+  const getRecordIsoDate = useCallback((rec: PengecekanSJRecord): string => {
+    if (rec.tanggal_sj && rec.tanggal_sj.trim()) {
+      return normalizeDateToIso(rec.tanggal_sj);
+    }
+    if (rec.created_at) {
+      return rec.created_at.slice(0, 10);
+    }
+    return '';
+  }, []);
+
+  const { asalOptions, tujuanOptions } = useMemo(() => {
+    const asalSet = new Set<string>();
+    const tujuanSet = new Set<string>();
+    records.forEach((r) => {
+      const src = (r.source || '').trim();
+      const dst = (r.destination || '').trim();
+      if (src) asalSet.add(src);
+      if (dst) tujuanSet.add(dst);
+    });
+    return {
+      asalOptions: Array.from(asalSet).sort((a, b) => a.localeCompare(b, 'id', { sensitivity: 'base' })),
+      tujuanOptions: Array.from(tujuanSet).sort((a, b) => a.localeCompare(b, 'id', { sensitivity: 'base' })),
+    };
+  }, [records]);
+
+  const hasActiveRiwayatFilters = Boolean(
+    searchFilter ||
+      statusFilter !== 'ALL' ||
+      sourceFilter !== 'ALL' ||
+      destinationFilter !== 'ALL' ||
+      dateFromFilter ||
+      dateToFilter
+  );
+
+  // FILTERED & SORTED RIWAYAT RECORDS
   const filteredRecords = useMemo(() => {
-    return records.filter(r => {
+    const filtered = records.filter((r) => {
       const isPenerimaan =
         r.tipe_import === 'Penerimaan' ||
         (!r.tipe_import &&
@@ -1446,12 +1486,13 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         (riwayatTypeFilter === 'PENERIMAAN' && isPenerimaan) ||
         (riwayatTypeFilter === 'PENGIRIMAN' && !isPenerimaan);
 
+      const q = searchFilter.trim().toLowerCase();
       const matchSearch =
-        !searchFilter ||
-        r.no_sj.toLowerCase().includes(searchFilter.toLowerCase()) ||
-        r.source.toLowerCase().includes(searchFilter.toLowerCase()) ||
-        r.destination.toLowerCase().includes(searchFilter.toLowerCase()) ||
-        r.items.some(i => i.sku.toLowerCase().includes(searchFilter.toLowerCase()) || i.nama_produk.toLowerCase().includes(searchFilter.toLowerCase()));
+        !q ||
+        r.no_sj.toLowerCase().includes(q) ||
+        (r.source || '').toLowerCase().includes(q) ||
+        (r.destination || '').toLowerCase().includes(q) ||
+        r.items.some((i) => i.sku.toLowerCase().includes(q) || i.nama_produk.toLowerCase().includes(q));
 
       const matchStatus =
         statusFilter === 'ALL' ||
@@ -1460,9 +1501,72 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         (statusFilter === 'COCOK' && r.status_komparasi === 'COCOK') ||
         (statusFilter === 'SELISIH' && r.status_komparasi === 'SELISIH');
 
-      return matchType && matchSearch && matchStatus;
+      const matchSource =
+        sourceFilter === 'ALL' || (r.source || '').trim().toLowerCase() === sourceFilter.toLowerCase();
+
+      const matchDestination =
+        destinationFilter === 'ALL' || (r.destination || '').trim().toLowerCase() === destinationFilter.toLowerCase();
+
+      let matchDate = true;
+      if (dateFromFilter || dateToFilter) {
+        const recDate = getRecordIsoDate(r);
+        if (!recDate) {
+          matchDate = false;
+        } else {
+          if (dateFromFilter && recDate < dateFromFilter) matchDate = false;
+          if (dateToFilter && recDate > dateToFilter) matchDate = false;
+        }
+      }
+
+      return matchType && matchSearch && matchStatus && matchSource && matchDestination && matchDate;
     });
-  }, [records, searchFilter, statusFilter, riwayatTypeFilter]);
+
+    const compareDateDesc = (a: PengecekanSJRecord, b: PengecekanSJRecord) => {
+      const dateA = getRecordIsoDate(a);
+      const dateB = getRecordIsoDate(b);
+      if (dateA !== dateB) return dateB.localeCompare(dateA);
+      const timeA = new Date(a.created_at || 0).getTime();
+      const timeB = new Date(b.created_at || 0).getTime();
+      return timeB - timeA;
+    };
+
+    return [...filtered].sort((a, b) => {
+      switch (riwayatSortBy) {
+        case 'tanggal_asc':
+          return -compareDateDesc(a, b);
+        case 'asal_asc': {
+          const cmp = (a.source || '').trim().localeCompare((b.source || '').trim(), 'id', { sensitivity: 'base' });
+          return cmp !== 0 ? cmp : compareDateDesc(a, b);
+        }
+        case 'asal_desc': {
+          const cmp = (b.source || '').trim().localeCompare((a.source || '').trim(), 'id', { sensitivity: 'base' });
+          return cmp !== 0 ? cmp : compareDateDesc(a, b);
+        }
+        case 'tujuan_asc': {
+          const cmp = (a.destination || '').trim().localeCompare((b.destination || '').trim(), 'id', { sensitivity: 'base' });
+          return cmp !== 0 ? cmp : compareDateDesc(a, b);
+        }
+        case 'tujuan_desc': {
+          const cmp = (b.destination || '').trim().localeCompare((a.destination || '').trim(), 'id', { sensitivity: 'base' });
+          return cmp !== 0 ? cmp : compareDateDesc(a, b);
+        }
+        case 'tanggal_desc':
+        default:
+          return compareDateDesc(a, b);
+      }
+    });
+  }, [
+    records,
+    searchFilter,
+    statusFilter,
+    riwayatTypeFilter,
+    sourceFilter,
+    destinationFilter,
+    dateFromFilter,
+    dateToFilter,
+    riwayatSortBy,
+    getRecordIsoDate,
+  ]);
 
   // ==========================================
   // RENDER VIEW
@@ -2608,54 +2712,157 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
             </div>
 
             {/* HEADER FILTER & STATS */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-[#131d31] p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800">
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={searchFilter}
-                  onChange={e => setSearchFilter(e.target.value)}
-                  placeholder="Cari No SJ, Asal, Tujuan, atau SKU..."
-                  className="w-full text-xs pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white focus:outline-none focus:border-primary-500"
-                />
+            <div className="bg-white dark:bg-[#131d31] p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={searchFilter}
+                    onChange={e => setSearchFilter(e.target.value)}
+                    placeholder="Cari No SJ, Asal, Tujuan, atau SKU..."
+                    className="w-full text-xs pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white focus:outline-none focus:border-primary-500"
+                  />
+                </div>
+
+                {/* Status Filter Buttons */}
+                <div className="flex items-center gap-1 flex-wrap">
+                  {(['ALL', 'PENDING', 'SELESAI', 'COCOK', 'SELISIH'] as const).map(st => (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => setStatusFilter(st)}
+                      className={`px-2.5 py-1.5 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer ${
+                        statusFilter === st
+                          ? 'bg-primary-500 text-white shadow-xs'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      {st === 'ALL' ? 'Semua' : st}
+                    </button>
+                  ))}
+
+                  <button
+                    type="button"
+                    onClick={loadRecords}
+                    className="px-2 py-1.5 flex items-center gap-1 text-slate-500 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg transition-all cursor-pointer ml-1 text-xs font-medium"
+                    title="Refresh delta (hanya data baru)"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${loadingRecords ? 'animate-spin' : ''}`} />
+                    <span className="hidden sm:inline">Refresh</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={forceReloadRecords}
+                    className="px-2 py-1.5 flex items-center gap-1 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/20 rounded-lg transition-all cursor-pointer text-xs font-medium"
+                    title="Muat ulang SEMUA data dari awal (reset cache lokal)"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${loadingRecords ? 'animate-spin' : ''}`} />
+                    <span className="hidden sm:inline">Muat Ulang Penuh</span>
+                  </button>
+                </div>
               </div>
 
-              {/* Status Filter Buttons */}
-              <div className="flex items-center gap-1 flex-wrap">
-                {(['ALL', 'PENDING', 'SELESAI', 'COCOK', 'SELISIH'] as const).map(st => (
-                  <button
-                    key={st}
-                    type="button"
-                    onClick={() => setStatusFilter(st)}
-                    className={`px-2.5 py-1.5 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer ${
-                      statusFilter === st
-                        ? 'bg-primary-500 text-white shadow-xs'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                    }`}
+              {/* FILTER ASAL, TUJUAN, TANGGAL & SORTING */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/80 items-center">
+                {/* Filter Asal */}
+                <div className="lg:col-span-3">
+                  <select
+                    aria-label="Filter Asal"
+                    value={sourceFilter}
+                    onChange={(e) => setSourceFilter(e.target.value)}
+                    className="w-full text-xs px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 focus:outline-none focus:border-primary-500"
                   >
-                    {st === 'ALL' ? 'Semua' : st}
-                  </button>
-                ))}
+                    <option value="ALL">Asal: Semua ({asalOptions.length})</option>
+                    {asalOptions.map((src) => (
+                      <option key={src} value={src}>
+                        Asal: {src}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-                <button
-                  type="button"
-                  onClick={loadRecords}
-                  className="px-2 py-1.5 flex items-center gap-1 text-slate-500 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg transition-all cursor-pointer ml-1 text-xs font-medium"
-                  title="Refresh delta (hanya data baru)"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${loadingRecords ? 'animate-spin' : ''}`} />
-                  <span className="hidden sm:inline">Refresh</span>
-                </button>
+                {/* Filter Tujuan */}
+                <div className="lg:col-span-3">
+                  <select
+                    aria-label="Filter Tujuan"
+                    value={destinationFilter}
+                    onChange={(e) => setDestinationFilter(e.target.value)}
+                    className="w-full text-xs px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 focus:outline-none focus:border-primary-500"
+                  >
+                    <option value="ALL">Tujuan: Semua ({tujuanOptions.length})</option>
+                    {tujuanOptions.map((dst) => (
+                      <option key={dst} value={dst}>
+                        Tujuan: {dst}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-                <button
-                  type="button"
-                  onClick={forceReloadRecords}
-                  className="px-2 py-1.5 flex items-center gap-1 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/20 rounded-lg transition-all cursor-pointer text-xs font-medium"
-                  title="Muat ulang SEMUA data dari awal (reset cache lokal)"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${loadingRecords ? 'animate-spin' : ''}`} />
-                  <span className="hidden sm:inline">Muat Ulang Penuh</span>
-                </button>
+                {/* Filter Tanggal (Dari - Sampai) */}
+                <div className="sm:col-span-2 lg:col-span-3 flex items-center gap-1.5">
+                  <div className="relative flex-1 min-w-0">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="date"
+                      aria-label="Dari Tanggal"
+                      title="Dari Tanggal SJ"
+                      value={dateFromFilter}
+                      onChange={(e) => setDateFromFilter(e.target.value)}
+                      className="w-full text-xs pl-8 pr-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 focus:outline-none focus:border-primary-500"
+                    />
+                  </div>
+                  <span className="text-[11px] text-slate-400 shrink-0">s/d</span>
+                  <div className="relative flex-1 min-w-0">
+                    <input
+                      type="date"
+                      aria-label="Sampai Tanggal"
+                      title="Sampai Tanggal SJ"
+                      value={dateToFilter}
+                      onChange={(e) => setDateToFilter(e.target.value)}
+                      className="w-full text-xs px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 focus:outline-none focus:border-primary-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Sort Asal / Tujuan / Tanggal + Reset */}
+                <div className="sm:col-span-2 lg:col-span-3 flex items-center gap-1.5">
+                  <div className="relative flex-1">
+                    <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <select
+                      aria-label="Urutkan Riwayat"
+                      value={riwayatSortBy}
+                      onChange={(e) => setRiwayatSortBy(e.target.value as any)}
+                      className="w-full text-xs pl-8 pr-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 focus:outline-none focus:border-primary-500 font-semibold"
+                    >
+                      <option value="tanggal_desc">Urut: Tanggal Terbaru</option>
+                      <option value="tanggal_asc">Urut: Tanggal Terlama</option>
+                      <option value="asal_asc">Urut: Asal (A → Z)</option>
+                      <option value="asal_desc">Urut: Asal (Z → A)</option>
+                      <option value="tujuan_asc">Urut: Tujuan (A → Z)</option>
+                      <option value="tujuan_desc">Urut: Tujuan (Z → A)</option>
+                    </select>
+                  </div>
+                  {hasActiveRiwayatFilters && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchFilter('');
+                        setStatusFilter('ALL');
+                        setSourceFilter('ALL');
+                        setDestinationFilter('ALL');
+                        setDateFromFilter('');
+                        setDateToFilter('');
+                      }}
+                      title="Reset semua filter"
+                      className="px-2.5 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center gap-1 shrink-0 cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span className="hidden xl:inline">Reset</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -2778,6 +2985,10 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                         setRiwayatTypeFilter('ALL');
                         setStatusFilter('ALL');
                         setSearchFilter('');
+                        setSourceFilter('ALL');
+                        setDestinationFilter('ALL');
+                        setDateFromFilter('');
+                        setDateToFilter('');
                       }}
                       className="mt-4 px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
                     >

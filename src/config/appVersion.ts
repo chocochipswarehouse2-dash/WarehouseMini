@@ -15,20 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.18.8",
-  "versionCode": 388,
-  "buildDate": "16 November 2026",
-  "buildHash": "wms-261116-v388-1406",
-  "releaseTitle": "WMS v2.18.8 — Perketat Kunci Portrait-Primary & Opsi Orientasi Layar Per-Perangkat",
+  "version": "v2.18.9",
+  "versionCode": 389,
+  "buildDate": "17 November 2026",
+  "buildHash": "wms-261117-v389-1307",
+  "releaseTitle": "WMS v2.18.9 — Filter Asal, Tujuan, Tanggal, Sort & Stay on Pengecekan SJ",
   "releaseNotes": [
-    "Ubah manifest PWA ke orientation portrait-primary (kunci 0 derajat tegak, hilangkan fallback SENSOR_PORTRAIT yang memicu sensor putar pada sebagian ROM Android)",
-    "Perbaiki deteksi isMobilePhoneDevice untuk HP DPI kecil/Situs Desktop serta tambah listener orientationchange & gesture lock ulang",
-    "Tambah kontrol Orientasi Layar HP di Pengaturan Perangkat (Kunci Tegak Default vs Ikuti Pengaturan HP OS)"
+    "Tambah filter Asal, Tujuan, Tanggal (Dari-Sampai) & Sort Asal/Tujuan/Tanggal di Riwayat Pengecekan SJ",
+    "Tetap berada di tab Pengecekan setelah submit Pending/Selesai (satuan & massal)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.18.8",
+    "versionCode": 388,
+    "buildDate": "16 November 2026",
+    "buildHash": "wms-261116-v388-1406",
+    "releaseTitle": "WMS v2.18.8 — Perketat Kunci Portrait-Primary & Opsi Orientasi Layar Per-Perangkat",
+    "releaseNotes": [
+      "Ubah manifest PWA ke orientation portrait-primary (kunci 0 derajat tegak, hilangkan fallback SENSOR_PORTRAIT yang memicu sensor putar pada sebagian ROM Android)",
+      "Perbaiki deteksi isMobilePhoneDevice untuk HP DPI kecil/Situs Desktop serta tambah listener orientationchange & gesture lock ulang",
+      "Tambah kontrol Orientasi Layar HP di Pengaturan Perangkat (Kunci Tegak Default vs Ikuti Pengaturan HP OS)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.18.7",
     "versionCode": 387,
@@ -112,18 +124,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Hapus batas limit=200 pada fetch pengecekan_sj dengan pagination penuh (supabaseFetchAllPages) sehingga seluruh 666+ SJ dapat ditemukan & diekspor",
       "Simpan cache lengkap riwayat pengecekan_sj di IndexedDB (anti limit 5MB localStorage) & ubah simpan ulang menjadi PATCH atomik"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.18.0",
-    "versionCode": 380,
-    "buildDate": "16 November 2026",
-    "buildHash": "wms-261116-v380-0137",
-    "releaseTitle": "WMS v2.18.0 — Relokasi Rak Multi-Rute Sekaligus",
-    "releaseNotes": [
-      "Tambah mode Multi-Rute di modal Relokasi Rak untuk memindahkan banyak pasangan rak sekaligus dalam 1 aksi",
-      "Dukungan tempel daftar rute otomatis, pratinjau stok & simulasi kapasitas per baris, serta bukti A4 & ringkasan WA batch"
     ],
     "minSupportedVersion": "v2.0.0"
   }
