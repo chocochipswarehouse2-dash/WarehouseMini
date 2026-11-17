@@ -1,11 +1,12 @@
 {
-  "version": "v2.18.10",
-  "versionCode": 390,
+  "version": "v2.18.11",
+  "versionCode": 391,
   "buildDate": "17 November 2026",
-  "buildHash": "wms-261117-v390-1314",
-  "releaseTitle": "WMS v2.18.10 — Multi-Choice Dropsearch Filter Asal & Tujuan Pengecekan SJ",
+  "buildHash": "wms-261117-v391-1343",
+  "releaseTitle": "WMS v2.18.11 — Multi-PIC Delegasi Tugas Agenda",
   "releaseNotes": [
-    "Ubah filter Asal dan Tujuan di Riwayat Pengecekan SJ menjadi Multi-Select Dropsearch dengan pencarian dan jumlah SJ per opsi"
+    "Dukungan pilih lebih dari 1 PIC saat buat/edit Delegasi Tugas di modul Agenda & Tasks",
+    "Tampilan badge multi-PIC pada kartu tugas dan pencocokan Tugas Saya untuk semua PIC terpilih"
   ],
   "minSupportedVersion": "v2.0.0"
 }

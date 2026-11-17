@@ -15,18 +15,30 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.18.10",
-  "versionCode": 390,
+  "version": "v2.18.11",
+  "versionCode": 391,
   "buildDate": "17 November 2026",
-  "buildHash": "wms-261117-v390-1314",
-  "releaseTitle": "WMS v2.18.10 — Multi-Choice Dropsearch Filter Asal & Tujuan Pengecekan SJ",
+  "buildHash": "wms-261117-v391-1343",
+  "releaseTitle": "WMS v2.18.11 — Multi-PIC Delegasi Tugas Agenda",
   "releaseNotes": [
-    "Ubah filter Asal dan Tujuan di Riwayat Pengecekan SJ menjadi Multi-Select Dropsearch dengan pencarian dan jumlah SJ per opsi"
+    "Dukungan pilih lebih dari 1 PIC saat buat/edit Delegasi Tugas di modul Agenda & Tasks",
+    "Tampilan badge multi-PIC pada kartu tugas dan pencocokan Tugas Saya untuk semua PIC terpilih"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.18.10",
+    "versionCode": 390,
+    "buildDate": "17 November 2026",
+    "buildHash": "wms-261117-v390-1314",
+    "releaseTitle": "WMS v2.18.10 — Multi-Choice Dropsearch Filter Asal & Tujuan Pengecekan SJ",
+    "releaseNotes": [
+      "Ubah filter Asal dan Tujuan di Riwayat Pengecekan SJ menjadi Multi-Select Dropsearch dengan pencarian dan jumlah SJ per opsi"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.18.9",
     "versionCode": 389,
@@ -111,18 +123,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Proteksi atomic CAS PATCH + antrean sinkronisasi pada wms_chat_rooms_index_v1 agar grup & chat tidak pernah terhapus akibat gangguan jaringan atau tulis bersamaan",
       "Sinkronisasi CAS di Service Worker (pwa-extras.js) untuk aksi Balas Cepat & Tandai Dibaca",
       "Pemulihan 5 ruang chat non-tombstone (termasuk grup tim QC & chat store) dari riwayat pesan Supabase"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.18.2",
-    "versionCode": 382,
-    "buildDate": "16 November 2026",
-    "buildHash": "wms-261116-v382-0744",
-    "releaseTitle": "WMS v2.18.2 — Kunci Hapus Grup Chat Store MS/Alter & Auto-Save Import Awal Pengecekan SJ",
-    "releaseNotes": [
-      "Kunci akses hapus & keluar grup chat operasional Store Manual/Alter (store_ops) bagi Store maupun Admin Warehouse",
-      "Simpan otomatis data Pengecekan SJ ke database Supabase (status PENDING) sejak import CSV pertama dan saat revisi timpa file"
     ],
     "minSupportedVersion": "v2.0.0"
   }

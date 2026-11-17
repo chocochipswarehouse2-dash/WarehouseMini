@@ -16,6 +16,8 @@ import {
   UploadCloud,
   Briefcase,
   User,
+  Users,
+  Check,
   Send,
 } from 'lucide-react';
 import {
@@ -127,10 +129,40 @@ export const TasksTab: React.FC<TasksTabProps> = ({
     return ['admin', 'superadmin', 'manager', 'hr', 'hr & admin'].includes(role);
   }, [session]);
 
+  const parseTaskAssignees = (task: Partial<DelegatedTask> | null | undefined) => {
+    if (!task) return [] as { id: string; name: string; role: string }[];
+    const ids = String(task.assigned_to_id || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const names = String(task.assigned_to_name || '')
+      .split(',')
+      .map((s) => s.trim());
+    const roles = String(task.assigned_to_role || '')
+      .split(',')
+      .map((s) => s.trim());
+    if (ids.length === 0 && names.filter(Boolean).length > 0) {
+      return names
+        .filter(Boolean)
+        .map((name, idx) => ({ id: name, name, role: roles[idx] || '' }));
+    }
+    return ids.map((id, idx) => ({
+      id,
+      name: names[idx] || id,
+      role: roles[idx] || '',
+    }));
+  };
+
   const isMyTask = (task: DelegatedTask) => {
-    const targetId = String(task.assigned_to_id || '').trim().toLowerCase();
-    const targetName = String(task.assigned_to_name || '').trim().toLowerCase();
-    return actorIdentifiers.has(targetId) || actorIdentifiers.has(targetName);
+    const ids = String(task.assigned_to_id || '')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    const names = String(task.assigned_to_name || '')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    return ids.some((id) => actorIdentifiers.has(id)) || names.some((name) => actorIdentifiers.has(name));
   };
 
   // Load directory of WMS Users (Admin, CS, etc.) + Karyawan (NIK)
@@ -583,20 +615,30 @@ export const TasksTab: React.FC<TasksTabProps> = ({
 
                   {/* Meta Info */}
                   <div className="space-y-1.5 pt-1 text-[11px] text-slate-600 dark:text-slate-300">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <User className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                      <span className="font-bold text-slate-800 dark:text-slate-100">
-                        {task.assigned_to_name || task.assigned_to_id}
-                      </span>
-                      <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                        {task.assigned_to_id}
-                      </span>
-                      {task.assigned_to_role && (
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                          ({task.assigned_to_role})
-                        </span>
-                      )}
-                    </div>
+                    {(() => {
+                      const assignees = parseTaskAssignees(task);
+                      return (
+                        <div className="flex items-start gap-1.5 flex-wrap">
+                          {assignees.length > 1 ? (
+                            <Users className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" />
+                          ) : (
+                            <User className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" />
+                          )}
+                          <div className="flex flex-wrap gap-1">
+                            {assignees.map((pic) => (
+                              <span
+                                key={pic.id}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/70 dark:border-indigo-800/60 text-[11px]"
+                                title={pic.role ? `${pic.name} (${pic.role})` : pic.name}
+                              >
+                                <span className="font-bold text-slate-800 dark:text-slate-100">{pic.name}</span>
+                                <span className="font-mono text-[10px] text-indigo-600 dark:text-indigo-300">{pic.id}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     <div className="flex items-center gap-3 flex-wrap text-[11px] text-slate-500 dark:text-slate-400">
                       {task.due_date && (
@@ -741,74 +783,117 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                 />
               </div>
 
-              {/* Assignee Picker */}
-              <div className="space-y-1.5">
-                <label className="block font-bold text-slate-700 dark:text-slate-200">
-                  Delegasikan Kepada (Admin / CS / ID Karyawan) <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={assigneeSearch}
-                  onChange={(e) => setAssigneeSearch(e.target.value)}
-                  placeholder="Cari nama, role, atau ID karyawan (misal: WH0004, chococs1)..."
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
-                {editingTask.assigned_to_id && (
-                  <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300">
-                    <span className="font-bold">
-                      Terpilih: {editingTask.assigned_to_name} (<span className="font-mono">{editingTask.assigned_to_id}</span>)
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setEditingTask({
-                          ...editingTask,
-                          assigned_to_id: '',
-                          assigned_to_name: '',
-                          assigned_to_role: '',
-                        })
-                      }
-                      className="text-[10px] underline cursor-pointer"
-                    >
-                      Ganti
-                    </button>
+              {/* Assignee Picker (Multi-PIC) */}
+              {(() => {
+                const selectedAssignees = parseTaskAssignees(editingTask);
+                const selectedIdSet = new Set(selectedAssignees.map((a) => a.id.toLowerCase()));
+                const updateAssignees = (nextList: { id: string; name: string; role: string }[]) => {
+                  setEditingTask({
+                    ...editingTask,
+                    assigned_to_id: nextList.map((a) => a.id).join(', '),
+                    assigned_to_name: nextList.map((a) => a.name).join(', '),
+                    assigned_to_role: nextList.map((a) => a.role).join(', '),
+                  });
+                };
+                const toggleAssignee = (opt: AssigneeOption) => {
+                  const key = opt.id.toLowerCase();
+                  if (selectedIdSet.has(key)) {
+                    updateAssignees(selectedAssignees.filter((a) => a.id.toLowerCase() !== key));
+                  } else {
+                    updateAssignees([
+                      ...selectedAssignees,
+                      { id: opt.id, name: opt.name, role: opt.role },
+                    ]);
+                  }
+                };
+                return (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="block font-bold text-slate-700 dark:text-slate-200">
+                        Delegasikan Kepada (Bisa Lebih Dari 1 PIC) <span className="text-rose-500">*</span>
+                      </label>
+                      {selectedAssignees.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => updateAssignees([])}
+                          className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
+                        >
+                          Hapus Semua ({selectedAssignees.length})
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      value={assigneeSearch}
+                      onChange={(e) => setAssigneeSearch(e.target.value)}
+                      placeholder="Cari nama, role, atau ID karyawan (misal: WH0004, chococs1)..."
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                    {selectedAssignees.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 p-2 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800">
+                        {selectedAssignees.map((pic) => (
+                          <span
+                            key={pic.id}
+                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 text-[11px] font-bold shadow-2xs"
+                          >
+                            <span>{pic.name}</span>
+                            <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400">({pic.id})</span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateAssignees(
+                                  selectedAssignees.filter((a) => a.id.toLowerCase() !== pic.id.toLowerCase())
+                                )
+                              }
+                              className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 cursor-pointer"
+                              aria-label={`Hapus ${pic.name}`}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="max-h-36 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-xl divide-y divide-slate-100 dark:divide-slate-800">
+                      {filteredAssignees.slice(0, 30).map((opt) => {
+                        const selected = selectedIdSet.has(opt.id.toLowerCase());
+                        return (
+                          <button
+                            key={`${opt.source}-${opt.id}`}
+                            type="button"
+                            onClick={() => toggleAssignee(opt)}
+                            className={`w-full px-3 py-2 text-left flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer ${
+                              selected ? 'bg-indigo-50 dark:bg-indigo-950/40' : ''
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span
+                                className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                                  selected
+                                    ? 'bg-indigo-600 border-indigo-600 text-white'
+                                    : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
+                                }`}
+                              >
+                                {selected && <Check className="w-3 h-3" strokeWidth={3} />}
+                              </span>
+                              <div className="min-w-0">
+                                <div className="font-bold text-slate-800 dark:text-slate-100 truncate">{opt.name}</div>
+                                <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{opt.role}</div>
+                              </div>
+                            </div>
+                            <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 shrink-0">
+                              {opt.id}
+                            </span>
+                          </button>
+                        );
+                      })}
+                      {filteredAssignees.length === 0 && (
+                        <div className="p-3 text-center text-slate-400">Tidak ditemukan</div>
+                      )}
+                    </div>
                   </div>
-                )}
-                <div className="max-h-36 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-xl divide-y divide-slate-100 dark:divide-slate-800">
-                  {filteredAssignees.slice(0, 30).map((opt) => {
-                    const selected =
-                      editingTask.assigned_to_id?.toLowerCase() === opt.id.toLowerCase();
-                    return (
-                      <button
-                        key={`${opt.source}-${opt.id}`}
-                        type="button"
-                        onClick={() =>
-                          setEditingTask({
-                            ...editingTask,
-                            assigned_to_id: opt.id,
-                            assigned_to_name: opt.name,
-                            assigned_to_role: opt.role,
-                          })
-                        }
-                        className={`w-full px-3 py-2 text-left flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer ${
-                          selected ? 'bg-indigo-50 dark:bg-indigo-950/40' : ''
-                        }`}
-                      >
-                        <div>
-                          <div className="font-bold text-slate-800 dark:text-slate-100">{opt.name}</div>
-                          <div className="text-[10px] text-slate-500 dark:text-slate-400">{opt.role}</div>
-                        </div>
-                        <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                          {opt.id}
-                        </span>
-                      </button>
-                    );
-                  })}
-                  {filteredAssignees.length === 0 && (
-                    <div className="p-3 text-center text-slate-400">Tidak ditemukan</div>
-                  )}
-                </div>
-              </div>
+                );
+              })()}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
