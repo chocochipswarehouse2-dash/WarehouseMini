@@ -25,8 +25,9 @@ import {
   getActivePickingDraftSummary,
   setActivePickingSessionMinimized,
   clearActivePickingSession,
+  removePickingSjDraft,
 } from '../../services/scannerOutboxService';
-import { syncOfflinePenerimaanProduksi } from '../../services/supabase';
+import { syncOfflinePenerimaanProduksi, leavePickingSJSupabase } from '../../services/supabase';
 import { getPendingOfflineProduksiCount } from '../../services/localDb';
 import { DraggableFloatingBubble, BubbleDragHandle } from './DraggableFloatingBubble';
 
@@ -236,11 +237,37 @@ export const MinimizedWorkspacesDock: React.FC<MinimizedWorkspacesDockProps> = (
   const handleClosePickingPill = (e: React.MouseEvent) => {
     e.stopPropagation();
     const currentNoSj = pickingDraft.noSj;
+    let snapshotItems: any[] = [];
+    let currentUserName = 'Operator';
+    try {
+      const rawSession = localStorage.getItem('wms_active_picking_session');
+      if (rawSession) {
+        const parsedSession = JSON.parse(rawSession);
+        if (Array.isArray(parsedSession?.activeItems)) {
+          snapshotItems = parsedSession.activeItems;
+        }
+      }
+      const rawUserSession = localStorage.getItem('wms_session');
+      if (rawUserSession) {
+        const parsedUser = JSON.parse(rawUserSession);
+        currentUserName = parsedUser?.name || parsedUser?.username || 'Operator';
+      }
+    } catch {}
+
     clearActivePickingSession();
     refreshDockState();
+
+    if (currentNoSj && (typeof navigator === 'undefined' || navigator.onLine)) {
+      leavePickingSJSupabase(currentNoSj, currentUserName, snapshotItems)
+        .then((ok) => {
+          if (ok) removePickingSjDraft(currentNoSj);
+        })
+        .catch(() => {});
+    }
+
     if (currentNoSj) {
       onNotify?.(
-        `Sesi Tugas Picking SJ ${currentNoSj} ditutup dari dock. Progres scan Anda tetap tersimpan aman di draft perangkat.`,
+        `Sesi Tugas Picking SJ ${currentNoSj} ditutup dari dock. Progres terpicking tersimpan & status Sedang Dikerjakan dilepas.`,
         'info'
       );
     }

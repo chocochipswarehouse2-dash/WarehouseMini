@@ -281,13 +281,14 @@ function bucketOf(l: string, a: string): Bucket {
   if (isStudio) return 'STUDIO';
   if (l.startsWith('CC') || l.includes('CUCI') || a.includes('CUCI')) return 'OTHER';
   if (l.startsWith('PMK') || l.includes('PERMAK') || a.includes('PERMAK')) return 'OTHER';
+  if (l.startsWith('ST') || l.includes('SORTIR') || a.includes('SORTIR')) return 'OTHER';
   if (
     (a === 'PERBAIKAN' || a.includes('DEFECT') || a.includes('CACAT')) &&
     (l.startsWith('DF') || l.includes('DEFECT') || l.includes('CACAT'))
   ) {
     return 'OTHER';
   }
-  if (a.includes('PERBAIKAN') || a.includes('DEFECT') || a.includes('PERMAK')) return 'OTHER';
+  if (a.includes('PERBAIKAN') || a.includes('DEFECT') || a.includes('PERMAK') || a.includes('SORTIR')) return 'OTHER';
   if (a === 'DEALPOS OFFLINE' && (l === 'WH' || l === 'QC' || l === 'DD' || l === 'DEFECT' || l === 'GA')) return 'OTHER';
   return 'MAP';
 }
@@ -324,6 +325,7 @@ export function aggregateSku(rows: StockRealtimeItem[]): SkuStock | null {
 
     if (l.startsWith('CC') || l.includes('CUCI') || a.includes('CUCI')) cuci += qty;
     else if (l.startsWith('PMK') || l.includes('PERMAK') || a.includes('PERMAK')) permak += qty;
+    else if (l.startsWith('ST') || l.includes('SORTIR') || a.includes('SORTIR')) permak += qty;
     else if (l.startsWith('DF') || l.includes('DEFECT') || l.includes('CACAT') || a.includes('DEFECT') || a.includes('CACAT')) defect += qty;
 
     const bucket = bucketOf(l, a);
@@ -818,7 +820,14 @@ export interface InventorySkuGroup {
 
 export const isPerbaikanArea = (area: string): boolean => {
   const a = (area || '').toUpperCase();
-  return a.includes('PERBAIKAN') || a.includes('CUCI') || a.includes('PERMAK') || a.includes('DEFECT');
+  return (
+    a.includes('PERBAIKAN') ||
+    a.includes('CUCI') ||
+    a.includes('PERMAK') ||
+    a.includes('DEFECT') ||
+    a.includes('SORTIR') ||
+    a.startsWith('ST')
+  );
 };
 
 export function groupRowsBySku(rows: InventoryAreaRow[]): InventorySkuGroup[] {
@@ -906,14 +915,14 @@ export function composeAreaRows(
 
   const seenSkus = new Set<string>();
 
-  // Helper prioritizing areas: Warehouse, Koli, Blok F, Transit, Aksesoris, Sortir, then Perbaikan
+  // Helper prioritizing areas: Warehouse, Koli, Blok F, Transit, Aksesoris, then Sortir & Perbaikan
   const areaPriority: Record<string, number> = {
     'Warehouse': 1,
     'Koli': 2,
     'Blok F': 3,
     'Transit': 4,
     'Aksesoris': 5,
-    'Sortir': 6,
+    'Sortir': 9,
     'Perbaikan': 10,
     'Anomali': 99,
   };
@@ -1282,7 +1291,13 @@ export function filterAreaRows(rows: InventoryAreaRow[], f: InventoryAreaFilter)
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     if (f.onlyActive && !r.active) continue;
-    if (selArea && r.areaLower !== selArea && !r.areaLower.includes(selArea)) continue;
+    if (selArea) {
+      if (selArea === 'perbaikan') {
+        if (r.groupType !== 'PERBAIKAN' && r.areaLower !== 'perbaikan' && r.areaLower !== 'sortir') continue;
+      } else if (r.areaLower !== selArea && !r.areaLower.includes(selArea)) {
+        continue;
+      }
+    }
 
     let ok = true;
     for (let k = 0; k < keywords.length; k++) {

@@ -90,8 +90,10 @@ import {
   fetchActiveSjRealtimeRowsSupabase,
   claimOrJoinPickingSJSupabase,
   leavePickingSJSupabase,
+  cancelOrResetPickingSJSupabase,
   syncSinglePickingItemRealtimeSupabase,
   invalidatePickingListCache,
+  isSameOperatorIdentity,
 } from '../services/supabase';
 import {
   getPickingOutboxBatches,
@@ -210,46 +212,63 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     }>
   >([]);
 
-  // Memoized Catalog Map for ultra-fast product name & size resolution
-  const catalogMap = useMemo(() => {
-    const map = new Map<string, ProductItem>();
+  // Memoized Catalog Maps for O(1) product name, size & rack resolution across ~29,000 SKUs
+  const { catalogMap, catalogCompactMap } = useMemo(() => {
+    const exact = new Map<string, ProductItem>();
+    const compact = new Map<string, ProductItem>();
     if (Array.isArray(productCatalog)) {
-      productCatalog.forEach(p => {
-        if (p.k) map.set(p.k.trim().toUpperCase(), p);
-        if ((p as any).sku) map.set(String((p as any).sku).trim().toUpperCase(), p);
-      });
-    }
-    return map;
-  }, [productCatalog]);
-
-  const resolveProductName = useCallback((sku: string, rawName?: string) => {
-    const cleanSku = (sku || '').trim().toUpperCase();
-    const cleanRaw = (rawName || '').trim();
-    const isSku = !cleanRaw || cleanRaw.toUpperCase() === cleanSku || cleanRaw.toUpperCase().replace(/\s+/g, '') === cleanSku.replace(/\s+/g, '');
-    if (!isSku && cleanRaw) return cleanRaw;
-
-    const cat = catalogMap.get(cleanSku)
-      || productCatalog?.find(p => (p.k && p.k.trim().toUpperCase() === cleanSku) || ((p as any).sku && String((p as any).sku).trim().toUpperCase() === cleanSku))
-      || productCatalog?.find(p => p.k && p.k.replace(/\s+/g, '').toUpperCase() === cleanSku.replace(/\s+/g, ''));
-
-    const catName = (cat?.p || cat?.nama_produk || cat?.n || (cat as any)?.nama || (cat as any)?.name || '').trim();
-    if (catName) return catName;
-
-    try {
-      const cacheRaw = localStorage.getItem('wms_product_cache');
-      if (cacheRaw) {
-        const cacheList = JSON.parse(cacheRaw);
-        if (Array.isArray(cacheList)) {
-          const found = cacheList.find((p: any) => (p.k && p.k.trim().toUpperCase() === cleanSku) || (p.sku && String(p.sku).trim().toUpperCase() === cleanSku));
-          if (found && (found.p || found.nama_produk || found.n)) {
-            return (found.p || found.nama_produk || found.n || '').trim();
+      for (let i = 0; i < productCatalog.length; i++) {
+        const p = productCatalog[i];
+        if (!p) continue;
+        if (p.k) {
+          const kUpper = p.k.trim().toUpperCase();
+          if (kUpper) {
+            exact.set(kUpper, p);
+            const kComp = kUpper.replace(/\s+/g, '');
+            if (kComp && !compact.has(kComp)) compact.set(kComp, p);
+          }
+        }
+        const altSku = (p as any).sku;
+        if (altSku) {
+          const sUpper = String(altSku).trim().toUpperCase();
+          if (sUpper) {
+            if (!exact.has(sUpper)) exact.set(sUpper, p);
+            const sComp = sUpper.replace(/\s+/g, '');
+            if (sComp && !compact.has(sComp)) compact.set(sComp, p);
           }
         }
       }
-    } catch {}
+    }
+    return { catalogMap: exact, catalogCompactMap: compact };
+  }, [productCatalog]);
 
-    return cleanRaw || cleanSku;
-  }, [catalogMap, productCatalog]);
+  const fastFindCatalogProduct = useCallback(
+    (rawSku?: string): ProductItem | undefined => {
+      const cleanSku = String(rawSku || '').trim().toUpperCase();
+      if (!cleanSku) return undefined;
+      return catalogMap.get(cleanSku) || catalogCompactMap.get(cleanSku.replace(/\s+/g, ''));
+    },
+    [catalogMap, catalogCompactMap]
+  );
+
+  const resolveProductName = useCallback(
+    (sku: string, rawName?: string) => {
+      const cleanSku = (sku || '').trim().toUpperCase();
+      const cleanRaw = (rawName || '').trim();
+      const isSku =
+        !cleanRaw ||
+        cleanRaw.toUpperCase() === cleanSku ||
+        cleanRaw.toUpperCase().replace(/\s+/g, '') === cleanSku.replace(/\s+/g, '');
+      if (!isSku && cleanRaw) return cleanRaw;
+
+      const cat = fastFindCatalogProduct(cleanSku);
+      const catName = (cat?.p || cat?.nama_produk || cat?.n || (cat as any)?.nama || (cat as any)?.name || '').trim();
+      if (catName) return catName;
+
+      return cleanRaw || cleanSku;
+    },
+    [fastFindCatalogProduct]
+  );
 
   // Scanner & Input Modes: 'fisik' | 'manual' | 'kamera'
   const [inputMode, setInputMode] = useState<'fisik' | 'manual' | 'kamera'>('fisik');
@@ -319,9 +338,30 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     itemIndex: number;
   } | null>(null);
 
+  // Modal Batal Ambil / Batal Bantu / Simpan Progres Picking
+  const [cancelPickingModal, setCancelPickingModal] = useState<{
+    isOpen: boolean;
+    group: PickingSuratJalanGroup;
+    isCoPickingWithOthers: boolean;
+    pickedQty: number;
+    kosongCount: number;
+    unexpectedQty: number;
+    totalReq: number;
+    otherPickers: string[];
+    source: 'VIEW1' | 'VIEW2';
+    intent: 'EXIT_FORM' | 'CANCEL_PICK' | 'RESET_ONLY';
+  } | null>(null);
+  const [isCancellingPicking, setIsCancellingPicking] = useState(false);
+
   // Realtime Multi-Picker Collaboration Refs
   const collabChannelRef = useRef<any>(null);
   const pendingLocalSyncSkusRef = useRef<Map<string, number>>(new Map());
+  const recentlyMutatedSjRef = useRef<Map<string, number>>(new Map());
+  const markSjLocallyMutated = useCallback((noSj: string, ttlMs = 4500) => {
+    const key = String(noSj || '').toUpperCase().trim();
+    if (!key) return;
+    recentlyMutatedSjRef.current.set(key, Date.now() + ttlMs);
+  }, []);
   const activeSJRef = useRef<PickingSuratJalanGroup | null>(activeSJ);
   activeSJRef.current = activeSJ;
   const isSubmittingRekapRef = useRef<boolean>(false);
@@ -347,7 +387,10 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
   // Broadcast helper for instant peer-to-peer multi-picker updates
   const broadcastPickingCollabEvent = useCallback(
-    (eventType: 'item_updated' | 'picker_joined' | 'picker_left' | 'sj_completed', payload: Record<string, any>) => {
+    (
+      eventType: 'item_updated' | 'picker_joined' | 'picker_left' | 'sj_completed' | 'sj_cancelled',
+      payload: Record<string, any>
+    ) => {
       try {
         if (collabChannelRef.current) {
           collabChannelRef.current.send({
@@ -367,10 +410,14 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
   // Merge remote rows into activeSJ & rawItems without clobbering in-flight local scans
   const applyRemoteSjRowsToState = useCallback(
-    (noSj: string, remoteRows: PickingListItem[]) => {
+    (noSj: string, remoteRows: PickingListItem[], forceApply = false) => {
       if (!remoteRows || remoteRows.length === 0) return;
       const cleanNoSj = noSj.toUpperCase().trim();
       const nowMs = Date.now();
+      const suppressUntil = recentlyMutatedSjRef.current.get(cleanNoSj) || 0;
+      if (!forceApply && nowMs < suppressUntil) {
+        return;
+      }
 
       // Check if SJ was completed by a co-picker
       const isRemotelyCompleted =
@@ -450,7 +497,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               rem.qty_picked !== localIt.qty_picked ||
               remStatus !== localIt.status ||
               Boolean(remIsKosong) !== Boolean(localIt.is_kosong) ||
-              rem.picker_name !== localIt.picker_name
+              (rem.picker_name ?? '') !== (localIt.picker_name ?? '')
             ) {
               changed = true;
               return {
@@ -459,7 +506,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                 qty_picked: rem.qty_picked,
                 status: remStatus,
                 is_kosong: remIsKosong,
-                picker_name: rem.picker_name || localIt.picker_name,
+                picker_name: rem.picker_name !== undefined ? rem.picker_name : localIt.picker_name,
                 last_picked_by: rem.last_picked_by || localIt.last_picked_by,
               };
             }
@@ -468,11 +515,16 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           return changed ? next : prev;
         });
 
-        const nextActivePickers = Array.from(allPickersSet);
+        const nextActivePickers: string[] = [];
+        allPickersSet.forEach((p) => {
+          if (!nextActivePickers.some((ex) => isSameOperatorIdentity(ex, p))) {
+            nextActivePickers.push(p);
+          }
+        });
         setActiveSJ((prevSj) => {
           if (!prevSj || prevSj.no_sj.toUpperCase().trim() !== cleanNoSj) return prevSj;
           const joinedStr = nextActivePickers.join(', ');
-          if (prevSj.picker_name === joinedStr) return prevSj;
+          if ((prevSj.picker_name || '') === joinedStr) return prevSj;
           return {
             ...prevSj,
             picker_name: joinedStr,
@@ -519,20 +571,41 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     loadPickingList();
   }, []);
 
-  // Supabase Realtime Channel (Broadcast + Postgres Changes) & Fast Polling for Multi-Picker Sync
+  // Supabase Realtime Channel (Broadcast + Postgres Changes) & Coalesced Polling for Multi-Picker Sync
   useEffect(() => {
     let channel: any = null;
     const sb = getSupabaseClient();
+    const pendingRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    const inFlightSjSet = new Set<string>();
+
+    const scheduleRealtimeSjRefresh = (rawNoSj: string, delayMs = 260) => {
+      const targetSj = String(rawNoSj || '').toUpperCase().trim();
+      if (!targetSj) return;
+      const existingTimer = pendingRefreshTimers.get(targetSj);
+      if (existingTimer) clearTimeout(existingTimer);
+      pendingRefreshTimers.set(
+        targetSj,
+        setTimeout(() => {
+          pendingRefreshTimers.delete(targetSj);
+          if (inFlightSjSet.has(targetSj)) return;
+          inFlightSjSet.add(targetSj);
+          fetchActiveSjRealtimeRowsSupabase(targetSj)
+            .then((rows) => applyRemoteSjRowsToState(targetSj, rows))
+            .catch(() => {})
+            .finally(() => {
+              inFlightSjSet.delete(targetSj);
+            });
+        }, delayMs)
+      );
+    };
+
     if (sb) {
       channel = sb
         .channel('wms_picking_live_collab')
         .on('broadcast', { event: 'item_updated' }, (msg: any) => {
           const p = msg?.payload;
           if (!p || !p.no_sj || p.actor === currentUser) return;
-          const targetSj = String(p.no_sj).toUpperCase().trim();
-          fetchActiveSjRealtimeRowsSupabase(targetSj)
-            .then((rows) => applyRemoteSjRowsToState(targetSj, rows))
-            .catch(() => {});
+          scheduleRealtimeSjRefresh(p.no_sj, 150);
         })
         .on('broadcast', { event: 'picker_joined' }, (msg: any) => {
           const p = msg?.payload;
@@ -549,61 +622,108 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               'info'
             );
           }
-          fetchActiveSjRealtimeRowsSupabase(targetSj)
-            .then((rows) => applyRemoteSjRowsToState(targetSj, rows))
-            .catch(() => {});
+          scheduleRealtimeSjRefresh(targetSj, 150);
         })
         .on('broadcast', { event: 'picker_left' }, (msg: any) => {
           const p = msg?.payload;
           if (!p || !p.no_sj) return;
           const targetSj = String(p.no_sj).toUpperCase().trim();
-          fetchActiveSjRealtimeRowsSupabase(targetSj)
-            .then((rows) => applyRemoteSjRowsToState(targetSj, rows))
-            .catch(() => {});
+          if (
+            p.actor &&
+            p.actor !== currentUser &&
+            activeSJRef.current &&
+            activeSJRef.current.no_sj.toUpperCase().trim() === targetSj
+          ) {
+            onNotify(
+              `👋 ${formatOperatorWithPersonName(p.actor)} batal bantu / keluar dari SJ ${targetSj}.`,
+              'info'
+            );
+          }
+          scheduleRealtimeSjRefresh(targetSj, 150);
+        })
+        .on('broadcast', { event: 'sj_cancelled' }, (msg: any) => {
+          const p = msg?.payload;
+          if (!p || !p.no_sj) return;
+          const targetSj = String(p.no_sj).toUpperCase().trim();
+          if (
+            p.actor &&
+            p.actor !== currentUser &&
+            activeSJRef.current &&
+            activeSJRef.current.no_sj.toUpperCase().trim() === targetSj
+          ) {
+            removePickingSjDraft(targetSj);
+            setIsMinimized(false);
+            setIsRekapModalOpen(false);
+            setOverPickAlertModal(null);
+            setActiveSJ(null);
+            setActiveItems([]);
+            setUnexpectedItems([]);
+            setActiveLocation('');
+            setRekapCatatan('');
+            setDraftsRevision((r) => r + 1);
+            onNotify(
+              `↺ Surat Jalan ${targetSj} dibatalkan & dikembalikan ke PENDING oleh ${formatOperatorWithPersonName(p.actor)}.`,
+              'warning'
+            );
+          }
+          scheduleRealtimeSjRefresh(targetSj, 150);
         })
         .on('broadcast', { event: 'sj_completed' }, (msg: any) => {
           const p = msg?.payload;
           if (!p || !p.no_sj || p.actor === currentUser) return;
-          const targetSj = String(p.no_sj).toUpperCase().trim();
-          fetchActiveSjRealtimeRowsSupabase(targetSj)
-            .then((rows) => applyRemoteSjRowsToState(targetSj, rows))
-            .catch(() => {});
+          scheduleRealtimeSjRefresh(p.no_sj, 150);
         })
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'picking_list' },
           (payload: any) => {
-            const changedSj = String(
-              payload?.new?.no_sj || payload?.old?.no_sj || ''
-            )
+            const changedSj = String(payload?.new?.no_sj || payload?.old?.no_sj || '')
               .toUpperCase()
               .trim();
-            if (changedSj) {
-              fetchActiveSjRealtimeRowsSupabase(changedSj)
-                .then((rows) => applyRemoteSjRowsToState(changedSj, rows))
-                .catch(() => {});
-            }
+            if (!changedSj) return;
+            const currentOpenSj = activeSJRef.current?.no_sj?.toUpperCase().trim();
+            // Coalesce burst row updates (e.g. 40 rows updated at once) into 1 single fetch per SJ
+            scheduleRealtimeSjRefresh(changedSj, currentOpenSj === changedSj ? 220 : 500);
           }
         )
         .subscribe();
       collabChannelRef.current = channel;
     }
 
-    // Fast polling fallback (every 3.5s for active SJ, every 7s for queue list)
+    // Throttled polling fallback (skips hidden tabs & pauses View 1 polling when unnecessary)
     let tickCount = 0;
     const pollInterval = setInterval(() => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
       tickCount += 1;
       const currentActive = activeSJRef.current;
       if (currentActive && currentActive.no_sj) {
-        fetchActiveSjRealtimeRowsSupabase(currentActive.no_sj)
-          .then((rows) => applyRemoteSjRowsToState(currentActive.no_sj, rows))
-          .catch(() => {});
-      } else if (tickCount % 2 === 0) {
+        scheduleRealtimeSjRefresh(currentActive.no_sj, 50);
+      } else if (tickCount % 3 === 0) {
         fetchPickingListFromSupabase(true)
           .then((data) => {
             if (Array.isArray(data) && data.length > 0) {
-              setRawItems(data);
+              const now = Date.now();
+              setRawItems((prev) => {
+                const guardedSjs = new Set<string>();
+                recentlyMutatedSjRef.current.forEach((until, sjKey) => {
+                  if (now < until) guardedSjs.add(sjKey);
+                  else recentlyMutatedSjRef.current.delete(sjKey);
+                });
+                if (guardedSjs.size === 0) return data;
+                const prevBySj = new Map<string, PickingListItem[]>();
+                prev.forEach((it) => {
+                  const k = (it.no_sj || '').toUpperCase().trim();
+                  if (guardedSjs.has(k)) {
+                    const arr = prevBySj.get(k) || [];
+                    arr.push(it);
+                    prevBySj.set(k, arr);
+                  }
+                });
+                const merged = data.filter((it) => !guardedSjs.has((it.no_sj || '').toUpperCase().trim()));
+                prevBySj.forEach((arr) => merged.push(...arr));
+                return merged;
+              });
             }
           })
           .catch(() => {});
@@ -612,6 +732,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
     return () => {
       clearInterval(pollInterval);
+      pendingRefreshTimers.forEach((t) => clearTimeout(t));
+      pendingRefreshTimers.clear();
       if (sb && channel) {
         sb.removeChannel(channel).catch(() => {});
       }
@@ -691,8 +813,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     };
   }, []);
 
-  // Save active picking session + per-SJ draft to localStorage to persist across minimize / refresh / offline
-  useEffect(() => {
+  // Persist active picking session & per-SJ draft with light debounce (flush immediately on minimize/exit/unload)
+  const flushActivePickingSessionNow = useCallback(() => {
     try {
       if (activeSJ) {
         const cleanActiveLoc = resolvePrimarySingleLocation(activeLocation || '') || '';
@@ -703,11 +825,10 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           activeLocation: cleanActiveLoc,
           rekapCatatan,
           isMinimized,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
         };
         const saved = safeLocalStorageSet('wms_active_picking_session', JSON.stringify(sessionData));
         if (!saved) {
-          // Fallback lightweight session (hanya simpan info esensial jika storage hampir penuh)
           const lightweightSession = {
             activeSJ,
             activeItems: activeItems.map((it) => ({
@@ -731,7 +852,6 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           safeLocalStorageSet('wms_active_picking_session', JSON.stringify(lightweightSession));
         }
 
-        // Also keep per-SJ draft safe so switching to another SJ or navigating back never loses scans
         savePickingSjDraft({
           no_sj: activeSJ.no_sj,
           tujuan: activeSJ.tujuan,
@@ -752,10 +872,29 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     }
   }, [activeSJ, activeItems, unexpectedItems, activeLocation, rekapCatatan, isMinimized]);
 
+  const flushSessionRef = useRef(flushActivePickingSessionNow);
+  flushSessionRef.current = flushActivePickingSessionNow;
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      flushActivePickingSessionNow();
+    }, 220);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [flushActivePickingSessionNow]);
+
+  useEffect(() => {
+    return () => {
+      flushSessionRef.current();
+    };
+  }, []);
+
   // Proteksi reload / tab close / force-close saat proses picking aktif sedang berlangsung
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (activeSJ) {
+        flushSessionRef.current();
         const hasPicked = activeItems.some((it) => (it.qty_picked || 0) > 0) || unexpectedItems.length > 0;
         if (hasPicked) {
           e.preventDefault();
@@ -870,7 +1009,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       });
     }
 
-    const catMatch = productCatalog.find((p) => p.k && p.k.trim().toUpperCase() === cleanSku);
+    const catMatch = fastFindCatalogProduct(cleanSku);
     if (catMatch && Array.isArray(catMatch.locList)) {
       catMatch.locList.forEach((itemLoc) => {
         if (typeof itemLoc === 'object' && itemLoc && itemLoc.lokasi) {
@@ -970,33 +1109,27 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     return emptyLocs;
   };
 
-  // Key to track unique SKUs across active items AND pending SJs for reactive realtime stock fetching
-  const allPendingAndActiveSkusKey = React.useMemo(() => {
+  // Scope realtime warehouse stock fetches ONLY to the active open SJ so View 1 Queue never lags fetching hundreds of SKUs
+  const activeSjSkusKey = React.useMemo(() => {
+    if (!activeSJ || isMinimized) return '';
     const skuSet = new Set<string>();
     (activeItems || []).forEach((it) => {
       const s = (it.sku || '').trim().toUpperCase();
       if (s) skuSet.add(s);
     });
-    (rawItems || []).forEach((it) => {
-      if (it.status !== 'SELESAI') {
-        const s = (it.sku || '').trim().toUpperCase();
-        if (s) skuSet.add(s);
-      }
-    });
     return Array.from(skuSet).sort().join(',');
-  }, [activeItems, rawItems]);
+  }, [activeSJ?.no_sj, isMinimized, activeItems]);
 
-  // Fetch realtime inventory by SKUs across warehouse locations whenever active or pending SJ items change
+  // Fetch realtime inventory by SKUs across warehouse locations strictly for the currently opened SJ
   useEffect(() => {
-    if (!allPendingAndActiveSkusKey) return;
-    const uniqueSkus = allPendingAndActiveSkusKey.split(',').filter(Boolean);
+    if (!activeSjSkusKey) return;
+    const uniqueSkus = activeSjSkusKey.split(',').filter(Boolean);
     if (!uniqueSkus.length) return;
 
     fetchStockForSkus(uniqueSkus)
       .then((stocks) => {
         setRealtimeSkuStocks((prev) => {
           const map: Record<string, StockRealtimeItem[]> = { ...prev };
-          // Pre-initialize all requested SKUs so we know they were checked
           uniqueSkus.forEach((s) => {
             map[s] = [];
           });
@@ -1009,7 +1142,16 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         });
       })
       .catch((err) => console.warn('Gagal memuat stok lokasi realtime:', err));
-  }, [allPendingAndActiveSkusKey, activeSJ?.no_sj]);
+  }, [activeSjSkusKey, activeSJ?.no_sj]);
+
+  // Memoized Set of SJ numbers pending in offline outbox (eliminates localStorage JSON.parse per queue card)
+  const outboxSjSet = React.useMemo(() => {
+    const set = new Set<string>();
+    getPickingOutboxBatches().forEach((b) => {
+      if (b?.no_sj) set.add(b.no_sj.toUpperCase().trim());
+    });
+    return set;
+  }, [draftsRevision, pickingOutboxCount]);
 
   // Group items by no_sj
   const sjGroups: PickingSuratJalanGroup[] = React.useMemo(() => {
@@ -1034,7 +1176,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       }
 
       const group = map.get(sjKey)!;
-      const catMatch = productCatalog.find((p) => p.k && p.k.trim().toUpperCase() === item.sku?.toUpperCase());
+      const catMatch = fastFindCatalogProduct(item.sku);
       const catSize = catMatch?.s || (catMatch as any)?.size || (catMatch as any)?.variant;
       const effectiveSize = (item.size && item.size !== '-') 
         ? item.size 
@@ -1140,9 +1282,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             is_kosong: mergedKosong,
             status: mergedKosong
               ? ('KOSONG' as const)
-              : mergedQty > 0 || m.status === 'SEDANG PICKING' || it.status === 'SEDANG PICKING'
+              : it.status === 'SEDANG PICKING'
               ? ('SEDANG PICKING' as const)
-              : it.status,
+              : ('PENDING' as const),
           };
         });
         g.unexpected_items = draftEntry.unexpectedItems || g.unexpected_items;
@@ -1152,16 +1294,23 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         if (draftEntry.rekapCatatan) g.catatan = draftEntry.rekapCatatan;
       }
 
-      // Collect all unique active pickers across all items in this SJ
-      const pickersSet = new Set<string>();
-      parsePickerNamesList(g.picker_name).forEach((p) => pickersSet.add(p));
+      // Collect all unique ACTIVE pickers currently working on non-SELESAI items in this SJ
+      const pickersList: string[] = [];
+      const addPickerUnique = (rawName?: string) => {
+        parsePickerNamesList(rawName).forEach((p) => {
+          if (!pickersList.some((ex) => isSameOperatorIdentity(ex, p))) {
+            pickersList.push(p);
+          }
+        });
+      };
+      addPickerUnique(g.picker_name);
       g.items.forEach((it) => {
-        parsePickerNamesList(it.picker_name).forEach((p) => pickersSet.add(p));
+        if ((it.status || '').toUpperCase().trim() !== 'SELESAI') {
+          addPickerUnique(it.picker_name);
+        }
       });
-      g.active_pickers = Array.from(pickersSet);
-      if (g.active_pickers.length > 0) {
-        g.picker_name = g.active_pickers.join(', ');
-      }
+      g.active_pickers = pickersList;
+      g.picker_name = pickersList.length > 0 ? pickersList.join(', ') : '';
 
       // Sort items by lokasi (Rack location) to optimize picker route
       g.items.sort((a, b) => {
@@ -1183,16 +1332,12 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       const isAllDone =
         isCompletedLocally ||
         (g.items.length > 0 && g.items.every((it) => (it.status || '').toUpperCase().trim() === 'SELESAI'));
-      const isAnyStarted =
-        (g.active_pickers && g.active_pickers.length > 0) ||
-        g.items.some((it) => {
-          const st = (it.status || '').toUpperCase().trim();
-          return Number(it.qty_picked) > 0 || st === 'SEDANG PICKING' || st === 'KOSONG';
-        });
+      // "SEDANG PICKING" applies ONLY when at least one active picker is currently working on the form!
+      const isActivelyWorkedOn = g.active_pickers.length > 0;
 
       if (isAllDone) {
         g.status = 'SELESAI';
-      } else if (isAnyStarted) {
+      } else if (isActivelyWorkedOn) {
         g.status = 'SEDANG PICKING';
       } else {
         g.status = 'PENDING';
@@ -1226,7 +1371,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     });
 
     return result;
-  }, [rawItems, draftsRevision]);
+  }, [rawItems, draftsRevision, fastFindCatalogProduct]);
 
   // Filtered SJ list for display
   const filteredSJs = React.useMemo(() => {
@@ -1804,20 +1949,20 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     const savedDraft = getPickingSjDraftsMap()[cleanNoSj];
     const existingPickers = parsePickerNamesList(sj.picker_name);
     const otherPickers = existingPickers.filter(
-      (p) => p.toLowerCase() !== (currentUser || '').toLowerCase()
+      (p) => !isSameOperatorIdentity(p, currentUser)
     );
-    const mergedPickers = Array.from(
-      new Set([...existingPickers, currentUser].filter(Boolean))
-    );
+    const mergedPickers = existingPickers.some((p) => isSameOperatorIdentity(p, currentUser))
+      ? existingPickers
+      : [...existingPickers, currentUser].filter(Boolean);
     const mergedPickerStr = mergedPickers.join(', ');
 
-    // Set active workspace (restore per-SJ local draft if exists so zero scan progress is ever lost)
+    // Set active workspace (restore saved Supabase & local draft progress so zero scan progress is ever lost)
     const safeItems = Array.isArray(sj.items) ? sj.items : [];
     const itemsClone = safeItems
       .filter((it) => it && it.sku)
       .map((it) => {
         const cleanSku = String(it.sku || '').trim().toUpperCase();
-        const catMatch = productCatalog.find((p) => p.k && p.k.trim().toUpperCase() === cleanSku);
+        const catMatch = fastFindCatalogProduct(cleanSku);
         const catSize = catMatch?.s || (catMatch as any)?.size || (catMatch as any)?.variant;
         const effectiveSize = (it.size && it.size !== '-') 
           ? it.size 
@@ -1895,7 +2040,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     // Update rawItems immediately so queue reflects currentUser working on this SJ
     setRawItems((prev) =>
       prev.map((item) => {
-        if ((item.no_sj || '').toUpperCase().trim() !== cleanNoSj) return item;
+        if ((item.no_sj || '').toUpperCase().trim() !== cleanNoSj || item.status === 'SELESAI') return item;
         return {
           ...item,
           status: item.status === 'KOSONG' ? 'KOSONG' : 'SEDANG PICKING',
@@ -1913,45 +2058,224 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             active_pickers: res.activePickers,
           });
           if (res.items.length > 0) {
-            applyRemoteSjRowsToState(cleanNoSj, res.items);
+            applyRemoteSjRowsToState(cleanNoSj, res.items, true);
           }
         })
         .catch(() => {});
     }
 
-    const totalDraftPicked = itemsClone.reduce((s, it) => s + (Number(it.qty_picked) || 0), 0);
+    const totalInitialPicked = itemsClone.reduce((s, it) => s + (Number(it.qty_picked) || 0), 0);
+    const totalReqCount = itemsClone.reduce((s, it) => s + (Number(it.qty_req) || 0), 0);
     if (otherPickers.length > 0) {
       const otherNames = otherPickers.map((p) => formatOperatorWithPersonName(p)).join(', ');
       onNotify(
         `🤝 Ikut membantu pengerjaan SJ ${sj.no_sj} bersama ${otherNames}. Item yang sudah diambil otomatis di-hide secara realtime!`,
         'success'
       );
-    } else if (savedDraft && totalDraftPicked > 0) {
-      onNotify(`💾 Draft lokal SJ ${sj.no_sj} dipulihkan (${totalDraftPicked} pcs ter-scan). Lanjut picking!`, 'success');
+    } else if (totalInitialPicked > 0) {
+      onNotify(
+        `📦 Melanjutkan SJ ${sj.no_sj} (${totalInitialPicked}/${totalReqCount} Pcs sudah terpicking). Silakan lanjutkan sisa item!`,
+        'success'
+      );
     } else {
       onNotify(`Membuka Surat Jalan ${sj.no_sj}. Status aktif: Sedang Dikerjakan oleh ${formatOperatorWithPersonName(currentUser)}.`, 'info');
     }
   };
 
-  // Action: Petugas keluar dari kolaborasi SJ (batal ikut kerjakan / lepas tugas tanpa menyelesaikan SJ)
-  const handleLeavePickingSJ = async () => {
-    if (!activeSJ) return;
-    const cleanNoSj = activeSJ.no_sj.toUpperCase().trim();
-    removePickingSjDraft(cleanNoSj);
-    setIsMinimized(false);
-    setActiveSJ(null);
-    setActiveItems([]);
-    setUnexpectedItems([]);
-    setActiveLocation('');
-    setRekapCatatan('');
-    setDraftsRevision((r) => r + 1);
+  // Buka konfirmasi Keluar / Simpan Progres / Batalkan Pengambilan Picking (View 1 Kartu maupun View 2 Workspace)
+  const handleOpenCancelPickingModal = useCallback(
+    (
+      sjGroup: PickingSuratJalanGroup,
+      source: 'VIEW1' | 'VIEW2',
+      intent: 'EXIT_FORM' | 'CANCEL_PICK' | 'RESET_ONLY' = 'CANCEL_PICK'
+    ) => {
+      if (!sjGroup) return;
+      const cleanNoSj = sjGroup.no_sj.toUpperCase().trim();
+      const isEditingActive = activeSJ?.no_sj?.toUpperCase().trim() === cleanNoSj;
+      const itemsToInspect = isEditingActive ? activeItems : sjGroup.items || [];
+      const unexpectedToInspect = isEditingActive ? unexpectedItems : sjGroup.unexpected_items || [];
 
-    if (typeof navigator === 'undefined' || navigator.onLine) {
-      await leavePickingSJSupabase(cleanNoSj, currentUser || 'Operator');
-      broadcastPickingCollabEvent('picker_left', { no_sj: cleanNoSj });
-      loadPickingList();
+      const pickedQty = itemsToInspect.reduce((acc, it) => acc + (Number(it.qty_picked) || 0), 0);
+      const unexpectedQty = unexpectedToInspect.reduce((acc, it) => acc + (Number(it.qty_picked) || 0), 0);
+      const totalReq = itemsToInspect.reduce((acc, it) => acc + (Number(it.qty_req) || 0), 0);
+      const kosongCount = itemsToInspect.filter((it) => it.is_kosong || it.status === 'KOSONG').length;
+
+      const pickersList: string[] = [];
+      const addPickerUnique = (rawName?: string) => {
+        parsePickerNamesList(rawName).forEach((p) => {
+          if (!pickersList.some((ex) => isSameOperatorIdentity(ex, p))) {
+            pickersList.push(p);
+          }
+        });
+      };
+      addPickerUnique(sjGroup.picker_name);
+      (sjGroup.active_pickers || []).forEach((p) => addPickerUnique(p));
+      itemsToInspect.forEach((it) => addPickerUnique(it.picker_name));
+
+      const otherPickers = pickersList.filter(
+        (p) => !isSameOperatorIdentity(p, currentUser)
+      );
+
+      setCancelPickingModal({
+        isOpen: true,
+        group: sjGroup,
+        isCoPickingWithOthers: otherPickers.length > 0,
+        pickedQty,
+        kosongCount,
+        unexpectedQty,
+        totalReq,
+        otherPickers,
+        source,
+        intent,
+      });
+    },
+    [activeSJ, activeItems, unexpectedItems, currentUser]
+  );
+
+  // Eksekusi Keluar Simpan Progres ATAU Batalkan Picking (Reset Total ke PENDING 0 Pcs)
+  const handleExecuteCancelPicking = async (mode: 'LEAVE_KEEP_PROGRESS' | 'RESET_TO_PENDING') => {
+    if (!cancelPickingModal || isCancellingPicking) return;
+    const { group, otherPickers, pickedQty } = cancelPickingModal;
+    const cleanNoSj = group.no_sj.toUpperCase().trim();
+    const isOnlineNow = typeof navigator === 'undefined' || navigator.onLine;
+    setIsCancellingPicking(true);
+    markSjLocallyMutated(cleanNoSj, 6000);
+
+    // Snapshot latest items from View 2 before clearing state so they can be flushed accurately to Supabase
+    const isCurrentlyOpenSj = activeSJ && activeSJ.no_sj.toUpperCase().trim() === cleanNoSj;
+    const itemsSnapshot = isCurrentlyOpenSj ? [...activeItems] : [...(group.items || [])];
+    const snapshotByKey = new Map<string, PickingListItem>();
+    itemsSnapshot.forEach((it) => {
+      if (it.id) snapshotByKey.set(String(it.id), it);
+      if (it.sku) snapshotByKey.set(it.sku.trim().toUpperCase(), it);
+    });
+
+    try {
+      // Close active workspace & active session pointer immediately
+      if (isCurrentlyOpenSj) {
+        setInputMode((prev) => (prev === 'kamera' ? 'fisik' : prev));
+        setIsMinimized(false);
+        setIsRekapModalOpen(false);
+        setOverPickAlertModal(null);
+        setActiveSJ(null);
+        setActiveItems([]);
+        setUnexpectedItems([]);
+        setActiveLocation('');
+        setRekapCatatan('');
+      }
+      try {
+        const storedActiveRaw = localStorage.getItem('wms_active_picking_session');
+        if (storedActiveRaw) {
+          const parsedActive = JSON.parse(storedActiveRaw);
+          if ((parsedActive?.activeSJ?.no_sj || '').toUpperCase().trim() === cleanNoSj) {
+            safeLocalStorageRemove('wms_active_picking_session');
+            notifyPickingSessionUpdated();
+          }
+        }
+      } catch {}
+
+      if (mode === 'RESET_TO_PENDING' || !isOnlineNow) {
+        if (mode === 'RESET_TO_PENDING') {
+          removePickingSjDraft(cleanNoSj);
+        }
+      }
+      setDraftsRevision((r) => r + 1);
+
+      // Optimistically update queue state so View 1 immediately loses "Sedang Dikerjakan" & shows accurate state
+      setRawItems((prev) => {
+        const nextRaw = prev.map((item) => {
+          if ((item.no_sj || '').toUpperCase().trim() !== cleanNoSj || item.status === 'SELESAI') {
+            return item;
+          }
+          if (mode === 'RESET_TO_PENDING') {
+            return {
+              ...item,
+              status: 'PENDING' as const,
+              qty_picked: 0,
+              picker_name: '',
+              last_picked_by: undefined,
+              is_kosong: false,
+            };
+          }
+          const snap = (item.id ? snapshotByKey.get(String(item.id)) : undefined) || snapshotByKey.get((item.sku || '').trim().toUpperCase());
+          const remainingPickers = parsePickerNamesList(item.picker_name).filter(
+            (p) => !isSameOperatorIdentity(p, currentUser)
+          );
+          const nextKosong = Boolean(snap?.is_kosong || snap?.status === 'KOSONG' || item.is_kosong || item.status === 'KOSONG');
+          const nextQty = snap ? Math.max(0, Number(snap.qty_picked) || 0) : Math.max(0, Number(item.qty_picked) || 0);
+          return {
+            ...item,
+            qty_picked: nextQty,
+            lokasi_picked: snap?.lokasi_picked || item.lokasi_picked,
+            is_kosong: nextKosong,
+            picker_name: remainingPickers.join(', '),
+            status: nextKosong
+              ? ('KOSONG' as const)
+              : remainingPickers.length > 0
+              ? ('SEDANG PICKING' as const)
+              : ('PENDING' as const),
+          };
+        });
+        try {
+          const activeOnly = nextRaw.filter((it) => it.status !== 'SELESAI').slice(0, 100);
+          safeLocalStorageSet('wms_raw_picking_list_cache', JSON.stringify(activeOnly));
+        } catch {}
+        return nextRaw;
+      });
+
+      setCancelPickingModal(null);
+
+      let syncedOnline = true;
+      if (isOnlineNow) {
+        if (mode === 'RESET_TO_PENDING') {
+          syncedOnline = await cancelOrResetPickingSJSupabase(cleanNoSj);
+          if (syncedOnline) {
+            markSjLocallyMutated(cleanNoSj, 1500);
+            broadcastPickingCollabEvent('sj_cancelled', { no_sj: cleanNoSj });
+          }
+        } else {
+          syncedOnline = await leavePickingSJSupabase(cleanNoSj, currentUser || 'Operator', itemsSnapshot);
+          if (syncedOnline) {
+            // Cleanly flush to Supabase succeeded — remove local draft so Supabase is single truth across all users
+            removePickingSjDraft(cleanNoSj);
+            setDraftsRevision((r) => r + 1);
+            markSjLocallyMutated(cleanNoSj, 1500);
+            broadcastPickingCollabEvent('picker_left', { no_sj: cleanNoSj });
+            // Verify & hydrate exact DB rows
+            fetchActiveSjRealtimeRowsSupabase(cleanNoSj)
+              .then((rows) => {
+                if (rows && rows.length > 0) applyRemoteSjRowsToState(cleanNoSj, rows, true);
+              })
+              .catch(() => {});
+          }
+        }
+      }
+
+      playCategoryBeep();
+      if (!syncedOnline) {
+        onNotify(
+          `⚠️ Koneksi server terkendala saat memperbarui SJ ${cleanNoSj}. Progres tetap diamankan secara lokal.`,
+          'warning'
+        );
+      } else if (mode === 'RESET_TO_PENDING') {
+        onNotify(
+          `↺ Picking SJ ${cleanNoSj} dibatalkan & di-reset kembali ke 0 Pcs (PENDING).`,
+          'info'
+        );
+      } else if (otherPickers.length > 0) {
+        onNotify(
+          `👋 Anda keluar / batal bantu pada SJ ${cleanNoSj}. Rekan tim (${otherPickers.map((p) => formatOperatorWithPersonName(p)).join(', ')}) tetap melanjutkan pengerjaan.`,
+          'info'
+        );
+      } else {
+        onNotify(
+          `✓ Progres terakhir SJ ${cleanNoSj} (${pickedQty} Pcs) tersimpan & status "Sedang Dikerjakan" dilepas. Siapa pun dapat melanjutkan sisanya.`,
+          'success'
+        );
+      }
+    } finally {
+      setIsCancellingPicking(false);
     }
-    onNotify(`Anda telah keluar dari pengerjaan Surat Jalan ${cleanNoSj}.`, 'info');
   };
 
   // Helper: Sync single item change in real time to Supabase & detect multi-picker Over-Pick collision
@@ -2050,7 +2374,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           vibrateDevice([250, 100, 250, 100, 250]);
           const lookup = lookupProductBySku(
             params.targetItem.sku,
-            productCatalog,
+            catalogMap,
             params.targetItem.nama_produk,
             params.targetItem.size
           );
@@ -2252,7 +2576,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         // Peringatan kelebihan barang (Over-pick) pada petugas terakhir
         playErrorBeep();
         vibrateDevice([250, 100, 250, 100, 250]);
-        const lookup = lookupProductBySku(targetItem.sku, productCatalog, targetItem.nama_produk, targetItem.size);
+        const lookup = lookupProductBySku(targetItem.sku, catalogMap, targetItem.nama_produk, targetItem.size);
         setOverPickAlertModal({
           isOpen: true,
           sku: targetItem.sku,
@@ -2327,9 +2651,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       playErrorBeep();
       vibrateDevice([200, 100, 200, 100]);
 
-      const catProd = productCatalog.find(
-        (p) => p.k.toUpperCase() === barcode || p.k.toUpperCase().includes(barcode)
-      );
+      const catProd =
+        fastFindCatalogProduct(barcode) ||
+        productCatalog.find((p) => p.k.toUpperCase().includes(barcode));
 
       const pickedLoc = effectiveLocation || catProd?.lokasi || '-';
 
@@ -2418,7 +2742,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     if (delta > 0 && newQty > target.qty_req) {
       playErrorBeep();
       vibrateDevice([250, 100, 250, 100, 250]);
-      const lookup = lookupProductBySku(target.sku, productCatalog, target.nama_produk, target.size);
+      const lookup = lookupProductBySku(target.sku, catalogMap, target.nama_produk, target.size);
       setOverPickAlertModal({
         isOpen: true,
         sku: target.sku,
@@ -2741,9 +3065,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       return;
     }
     const cleanSku = newSjSkuInput.trim().toUpperCase();
-    const catProd = productCatalog.find(
-      (p) => p.k && p.k.toUpperCase() === cleanSku
-    );
+    const catProd = fastFindCatalogProduct(cleanSku);
     const targetNoSj = editingSJGroup?.no_sj || activeSJ?.no_sj || '';
     const catSize = catProd?.s || (catProd as any)?.size || (catProd as any)?.variant;
     const cleanSize = (newSjSkuSize.trim() && newSjSkuSize.trim() !== '-')
@@ -2803,7 +3125,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         .filter((r) => r && r.sku && r.sku.trim())
         .map((r, idx) => {
           const cleanSku = String(r.sku || '').trim().toUpperCase();
-          const catMatch = productCatalog.find((p) => p.k && p.k.trim().toUpperCase() === cleanSku);
+          const catMatch = fastFindCatalogProduct(cleanSku);
           const catSize = catMatch?.s || (catMatch as any)?.size || (catMatch as any)?.variant;
           const effectiveSize = (r.size && r.size !== '-') 
             ? r.size 
@@ -3233,7 +3555,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
     // Auto-fill from catalog if sku changed
     if (field === 'sku' && productCatalog.length > 0) {
-      const found = productCatalog.find((p) => p.k.toUpperCase() === String(value).toUpperCase().trim());
+      const found = fastFindCatalogProduct(String(value));
       if (found) {
         next[index].nama_produk = found.p;
         next[index].size = found.s || '-';
@@ -3302,24 +3624,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                   <button
                     type="button"
                     onClick={() => {
-                      const sjUpper = activeSJ.no_sj.toUpperCase().trim();
-                      savePickingSjDraft({
-                        no_sj: sjUpper,
-                        tujuan: activeSJ.tujuan,
-                        tanggal: activeSJ.tanggal,
-                        activeItems,
-                        unexpectedItems,
-                        activeLocation: resolvePrimarySingleLocation(activeLocation || '') || '',
-                        rekapCatatan,
-                        updatedAt: Date.now(),
-                      });
-                      setInputMode((prev) => (prev === 'kamera' ? 'fisik' : prev));
-                      setIsMinimized(false);
-                      setActiveSJ(null);
-                      setDraftsRevision((r) => r + 1);
-                      if (activeStats.regularPicked > 0) {
-                        onNotify(`💾 Progres SJ ${activeSJ.no_sj} (${activeStats.regularPicked} pcs) tersimpan di draft lokal.`, 'info');
-                      }
+                      flushActivePickingSessionNow();
+                      handleOpenCancelPickingModal(activeSJ, 'VIEW2', 'EXIT_FORM');
                     }}
                     className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer py-1 px-2 -ml-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95"
                   >
@@ -3327,22 +3633,48 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                   </button>
                   <button
                     type="button"
-                    onClick={handleMinimizeActiveSJ}
+                    onClick={() => {
+                      flushActivePickingSessionNow();
+                      handleMinimizeActiveSJ();
+                    }}
                     className="flex items-center gap-1.5 text-xs font-extrabold text-indigo-700 dark:text-indigo-300 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800/70 py-1 px-2.5 rounded-lg transition-all active:scale-95 cursor-pointer"
                     title="Minimize sesi picking agar bisa buka menu lain tanpa kehilangan progres scan"
                   >
                     <Minimize2 className="w-3.5 h-3.5" />
                     <span>Minimize Picking</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={handleLeavePickingSJ}
-                    className="flex items-center gap-1 text-xs font-bold text-slate-600 dark:text-slate-300 bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 py-1 px-2.5 rounded-lg transition-all active:scale-95 cursor-pointer"
-                    title="Keluar dari pengerjaan SJ ini (progres yang sudah ter-pick tetap tersimpan di server)"
-                  >
-                    <LogOut className="w-3.5 h-3.5 text-rose-500" />
-                    <span>Keluar Bantu</span>
-                  </button>
+                  {(() => {
+                    const pickersList: string[] = [];
+                    const addUnique = (raw?: string) => {
+                      parsePickerNamesList(raw).forEach((p) => {
+                        if (!pickersList.some((ex) => isSameOperatorIdentity(ex, p))) pickersList.push(p);
+                      });
+                    };
+                    addUnique(activeSJ.picker_name);
+                    activeItems.forEach((it) => addUnique(it.picker_name));
+                    const otherPickers = pickersList.filter(
+                      (p) => !isSameOperatorIdentity(p, currentUser)
+                    );
+                    const isCoPicking = otherPickers.length > 0;
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          flushActivePickingSessionNow();
+                          handleOpenCancelPickingModal(activeSJ, 'VIEW2', 'CANCEL_PICK');
+                        }}
+                        className="flex items-center gap-1 text-xs font-bold text-rose-600 dark:text-rose-400 bg-white hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-950/50 border border-rose-200 dark:border-rose-800/70 py-1 px-2.5 rounded-lg transition-all active:scale-95 cursor-pointer"
+                        title={
+                          isCoPicking
+                            ? 'Batal ikut bantu pengerjaan SJ ini (rekan tim tetap lanjut)'
+                            : 'Batalkan pengambilan SJ ini atau simpan status terakhir & keluar'
+                        }
+                      >
+                        <LogOut className="w-3.5 h-3.5 text-rose-500" />
+                        <span>{isCoPicking ? 'Batal Bantu' : 'Batal Ambil'}</span>
+                      </button>
+                    );
+                  })()}
                   <span
                     className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold border ${
                       isOnline
@@ -3377,13 +3709,17 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     Tujuan: <b className="text-slate-700 dark:text-slate-200">{activeSJ.tujuan}</b>
                   </span>
                   {(() => {
-                    const pickersSet = new Set<string>();
-                    parsePickerNamesList(activeSJ.picker_name).forEach((p) => pickersSet.add(p));
-                    activeItems.forEach((it) => {
-                      parsePickerNamesList(it.picker_name).forEach((p) => pickersSet.add(p));
-                    });
-                    if (currentUser) pickersSet.add(currentUser);
-                    const pickersArr = Array.from(pickersSet);
+                    const pickersArr: string[] = [];
+                    const addUnique = (raw?: string) => {
+                      parsePickerNamesList(raw).forEach((p) => {
+                        if (!pickersArr.some((ex) => isSameOperatorIdentity(ex, p))) pickersArr.push(p);
+                      });
+                    };
+                    addUnique(activeSJ.picker_name);
+                    activeItems.forEach((it) => addUnique(it.picker_name));
+                    if (currentUser && !pickersArr.some((ex) => isSameOperatorIdentity(ex, currentUser))) {
+                      pickersArr.push(currentUser);
+                    }
                     return (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-extrabold text-[11px]">
                         <Users className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
@@ -3589,12 +3925,17 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                             const sjMatches = activeItems.filter((it) =>
                               partialSearchMatch(searchQuery, it.sku, it.nama_produk, it.size, it.lokasi)
                             );
-                            // 2. Search in global catalog
-                            const catMatches = productCatalog
-                              .filter((p) =>
-                                partialSearchMatch(searchQuery, p.k, p.p, p.s, p.lokasi, p.category)
-                              )
-                              .slice(0, 12);
+                            // 2. Early-exit search in global catalog (stops at 12 matches instead of scanning 29,000 items)
+                            const catMatches: ProductItem[] = [];
+                            if (searchQuery.trim().length >= 2) {
+                              for (let idx = 0; idx < productCatalog.length; idx++) {
+                                const p = productCatalog[idx];
+                                if (partialSearchMatch(searchQuery, p.k, p.p, p.s, p.lokasi, p.category)) {
+                                  catMatches.push(p);
+                                  if (catMatches.length >= 12) break;
+                                }
+                              }
+                            }
 
                             if (sjMatches.length === 0 && catMatches.length === 0) {
                               return (
@@ -3907,24 +4248,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               );
             }
 
-            let catMatch = catalogMap.get(itemSku)
-              || productCatalog?.find((p) => p.k && p.k.trim().toUpperCase() === itemSku)
-              || productCatalog?.find((p) => (p as any).sku && String((p as any).sku).trim().toUpperCase() === itemSku)
-              || productCatalog?.find((p) => p.k && p.k.replace(/\s+/g, '').toUpperCase() === itemSku.replace(/\s+/g, ''));
-
-            if (!catMatch) {
-              try {
-                const cacheRaw = localStorage.getItem('wms_product_cache');
-                if (cacheRaw) {
-                  const cacheList = JSON.parse(cacheRaw);
-                  if (Array.isArray(cacheList)) {
-                    catMatch = cacheList.find((p: any) => (p.k && p.k.trim().toUpperCase() === itemSku) || (p.sku && String(p.sku).trim().toUpperCase() === itemSku));
-                  }
-                }
-              } catch {}
-            }
-
-            const lookup = lookupProductBySku(item.sku, productCatalog, item.nama_produk, item.size);
+            const lookup = lookupProductBySku(item.sku, catalogMap, item.nama_produk, item.size);
             const displayName = lookup.nama_produk;
             const displaySize = (item.size && item.size !== '-') 
               ? item.size 
@@ -4616,7 +4940,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
             <button
               type="button"
               onClick={() => setIsMinimized(false)}
@@ -4627,26 +4951,29 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             </button>
             <button
               type="button"
+              onClick={() => handleOpenCancelPickingModal(activeSJ, 'VIEW2', 'CANCEL_PICK')}
+              className="px-2.5 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/70 text-xs font-bold cursor-pointer flex items-center gap-1"
+              title="Batalkan pengambilan / keluar bantu dari SJ ini"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>
+                {parsePickerNamesList(activeSJ.picker_name).some(
+                  (p) => !isSameOperatorIdentity(p, currentUser)
+                )
+                  ? 'Batal Bantu'
+                  : 'Batal Ambil'}
+              </span>
+            </button>
+            <button
+              type="button"
               onClick={() => {
-                savePickingSjDraft({
-                  no_sj: activeSJ.no_sj,
-                  tujuan: activeSJ.tujuan,
-                  tanggal: activeSJ.tanggal,
-                  activeItems,
-                  unexpectedItems,
-                  activeLocation: resolvePrimarySingleLocation(activeLocation || '') || '',
-                  rekapCatatan,
-                  updatedAt: Date.now(),
-                });
-                setIsMinimized(false);
-                setActiveSJ(null);
-                setDraftsRevision((r) => r + 1);
-                onNotify(`Sesi SJ ${activeSJ.no_sj} ditutup. Progres tetap aman di draft.`, 'info');
+                flushActivePickingSessionNow();
+                handleOpenCancelPickingModal(activeSJ, 'VIEW2', 'EXIT_FORM');
               }}
               className="px-2.5 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-xs font-bold cursor-pointer"
-              title="Tutup sesi dock (draft SJ tetap tersimpan)"
+              title="Akhiri sesi aktif & pilih simpan progres terakhir atau reset"
             >
-              Tutup
+              Keluar Sesi
             </button>
           </div>
         </div>
@@ -4837,10 +5164,12 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             const isCurrentlyMinimizedSj = Boolean(
               activeSJ && isMinimized && activeSJ.no_sj.toUpperCase().trim() === sjUpper
             );
-            const hasSavedLocalDraft = Boolean(!isDone && group.total_qty_picked > 0);
-            const isPendingOfflineOutbox = getPickingOutboxBatches().some(
-              (b) => (b.no_sj || '').toUpperCase().trim() === sjUpper
+            const hasSavedProgress = Boolean(
+              !isDone &&
+                (group.total_qty_picked > 0 ||
+                  group.items.some((it) => it.is_kosong || it.status === 'KOSONG'))
             );
+            const isPendingOfflineOutbox = outboxSjSet.has(sjUpper);
             const percent =
               group.total_qty_req > 0
                 ? Math.min(100, Math.round((group.total_qty_picked / group.total_qty_req) * 100))
@@ -4851,12 +5180,12 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                 ? group.active_pickers
                 : parsePickerNamesList(group.picker_name);
             const isCurrentUserInPickers = activePickers.some(
-              (p) => p.toLowerCase() === (currentUser || '').trim().toLowerCase()
+              (p) => isSameOperatorIdentity(p, currentUser)
             );
             const otherPickersWorking = activePickers.filter(
-              (p) => p.toLowerCase() !== (currentUser || '').trim().toLowerCase()
+              (p) => !isSameOperatorIdentity(p, currentUser)
             );
-            const isBeingWorkedOn = !isDone && (group.status === 'SEDANG PICKING' || activePickers.length > 0);
+            const isBeingWorkedOn = !isDone && activePickers.length > 0;
 
             return (
               <div
@@ -4866,6 +5195,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     ? 'border-indigo-400 dark:border-indigo-500 ring-1 ring-indigo-400/30'
                     : isBeingWorkedOn
                     ? 'border-indigo-300 dark:border-indigo-800 bg-indigo-50/15 dark:bg-indigo-950/15'
+                    : hasSavedProgress
+                    ? 'border-amber-300/80 dark:border-amber-800/80 bg-amber-50/10 dark:bg-amber-950/10'
                     : isDone
                     ? 'border-emerald-200 dark:border-emerald-950 bg-emerald-50/10'
                     : 'border-slate-200 dark:border-slate-800 hover:border-primary-500'
@@ -4891,8 +5222,10 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                               : group.total_qty_picked === 0
                               ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400 border border-rose-300 dark:border-rose-700/50'
                               : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 border border-amber-300 dark:border-amber-700/50'
-                            : group.status === 'SEDANG PICKING'
+                            : isBeingWorkedOn
                             ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400 border border-blue-200'
+                            : hasSavedProgress
+                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700/60'
                             : 'bg-primary-500/10 text-primary-500 border border-primary-500/20'
                         }`}
                       >
@@ -4902,9 +5235,13 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                             : group.total_qty_picked === 0
                             ? 'SELESAI (0 PCS)'
                             : 'SELESAI (SEBAGIAN)'
-                          : group.status}
+                          : isBeingWorkedOn
+                          ? 'SEDANG PICKING'
+                          : hasSavedProgress
+                          ? 'PENDING (PROGRES TERSIMPAN)'
+                          : 'PENDING'}
                       </span>
-                      {isBeingWorkedOn && activePickers.length > 0 && (
+                      {isBeingWorkedOn && (
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-black bg-indigo-100 dark:bg-indigo-950/80 text-indigo-800 dark:text-indigo-200 border border-indigo-300 dark:border-indigo-700 shadow-xs">
                           <span className="w-2 h-2 rounded-full bg-indigo-500 animate-ping" />
                           <Users className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
@@ -4920,9 +5257,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                           📌 Diminimize
                         </span>
                       )}
-                      {!isCurrentlyMinimizedSj && hasSavedLocalDraft && (
+                      {!isCurrentlyMinimizedSj && hasSavedProgress && (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
-                          💾 Progres Picking ({group.total_qty_picked}/{group.total_qty_req} pcs)
+                          💾 Progres Tersimpan ({group.total_qty_picked}/{group.total_qty_req} pcs)
                         </span>
                       )}
                       {isPendingOfflineOutbox && (
@@ -4938,10 +5275,10 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       </span>
                       <span>•</span>
                       <span>📅 {group.tanggal}</span>
-                      {group.picker_name && (
+                      {activePickers.length > 0 && (
                         <>
                           <span>•</span>
-                          <span>Picker: <b>{formatOperatorWithPersonName(group.picker_name)}</b></span>
+                          <span>Picker: <b>{activePickers.map((p) => formatOperatorWithPersonName(p)).join(', ')}</b></span>
                         </>
                       )}
                     </div>
@@ -5000,6 +5337,40 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                         <Printer className="w-4 h-4" /> Cetak Hasil
                       </button>
                     )}
+                    {!isDone && (isCurrentUserInPickers || isCurrentlyMinimizedSj) && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleOpenCancelPickingModal(group, 'VIEW1', 'CANCEL_PICK');
+                        }}
+                        className="px-2.5 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/70 transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                        title={
+                          otherPickersWorking.length > 0
+                            ? 'Batal ikut bantu SJ ini (rekan tim tetap lanjut)'
+                            : 'Keluar atau batalkan pengambilan SJ ini'
+                        }
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                        <span>{otherPickersWorking.length > 0 ? 'Batal Bantu' : 'Batal Ambil'}</span>
+                      </button>
+                    )}
+                    {!isDone && !isCurrentUserInPickers && !isCurrentlyMinimizedSj && activePickers.length === 0 && hasSavedProgress && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleOpenCancelPickingModal(group, 'VIEW1', 'RESET_ONLY');
+                        }}
+                        className="px-2.5 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/70 transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                        title="Reset progres picking tersimpan kembali ke 0 Pcs (PENDING)"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Reset 0 Pcs</span>
+                      </button>
+                    )}
                     <button
                       onClick={() => handleSelectSJ(group)}
                       className={`px-3 py-2 rounded-xl text-xs font-extrabold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer ${
@@ -5018,7 +5389,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                         <>
                           <UserPlus className="w-4 h-4" /> 🤝 Ikut Bantu Picking
                         </>
-                      ) : isCurrentlyMinimizedSj || isCurrentUserInPickers || hasSavedLocalDraft ? (
+                      ) : isCurrentlyMinimizedSj || isCurrentUserInPickers || hasSavedProgress ? (
                         <>
                           <Maximize2 className="w-3.5 h-3.5" /> Lanjutkan Picking
                         </>
@@ -5244,7 +5615,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       onChange={(e) => {
                         const val = e.target.value;
                         setNewSjSkuInput(val);
-                        const match = productCatalog.find((p) => p.k.toUpperCase() === val.trim().toUpperCase());
+                        const match = fastFindCatalogProduct(val);
                         if (match) {
                           setNewSjSkuNama(match.p);
                           setNewSjSkuSize(match.s || '-');
@@ -5663,6 +6034,159 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                   <CheckCircle2 className="w-4 h-4" /> Simpan Koreksi
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL KELUAR / SIMPAN PROGRES / BATALKAN PICKING */}
+      {cancelPickingModal && cancelPickingModal.isOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-[#131d31] w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0f172a] flex items-start justify-between gap-2 shrink-0">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400">
+                  {cancelPickingModal.isCoPickingWithOthers
+                    ? 'Keluar / Batal Ikut Bantu Tim Picking'
+                    : cancelPickingModal.intent === 'RESET_ONLY'
+                    ? 'Reset Progres Picking ke 0 Pcs'
+                    : cancelPickingModal.intent === 'EXIT_FORM'
+                    ? 'Tinggalkan Form Picking Aktif'
+                    : 'Batalkan Pengambilan Tugas'}
+                </span>
+                <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white mt-0.5 font-mono">
+                  {cancelPickingModal.group.no_sj}
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Tujuan: <b className="text-slate-700 dark:text-slate-300">{cancelPickingModal.group.tujuan}</b>
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={isCancellingPicking}
+                onClick={() => setCancelPickingModal(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 text-xs">
+              {cancelPickingModal.isCoPickingWithOthers ? (
+                <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 space-y-1">
+                  <div className="font-extrabold flex items-center gap-1.5">
+                    <Users className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    <span>Rekan Tim Tetap Melanjutkan</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed">
+                    Saat ini Anda berkolaborasi dengan{' '}
+                    <b>{cancelPickingModal.otherPickers.map((p) => formatOperatorWithPersonName(p)).join(', ')}</b>.
+                    Dengan memilih <b>Simpan &amp; Keluar</b>, nama Anda dilepas sementara progres scan ({cancelPickingModal.pickedQty} pcs) tetap aman di layar rekan Anda.
+                  </p>
+                </div>
+              ) : cancelPickingModal.pickedQty === 0 &&
+                cancelPickingModal.kosongCount === 0 &&
+                cancelPickingModal.unexpectedQty === 0 ? (
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 space-y-1">
+                  <div className="font-extrabold">Belum Ada Barang Terpicking (0 Pcs)</div>
+                  <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+                    Nama Anda akan dilepas dan status SJ dikembalikan ke antrean awal (<b>PENDING · 0 Pcs</b>) sehingga status <i>Sedang Dikerjakan</i> hilang dan bisa diambil kapan saja.
+                  </p>
+                </div>
+              ) : cancelPickingModal.intent === 'RESET_ONLY' ? (
+                <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-200 space-y-1">
+                  <div className="font-extrabold flex items-center gap-1.5">
+                    <RotateCcw className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                    <span>
+                      Reset Total Progres ({cancelPickingModal.pickedQty}/{cancelPickingModal.totalReq} Pcs)?
+                    </span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed">
+                    Semua barang yang sudah terpicking pada SJ ini akan di-reset kembali ke <b>0 Pcs</b> dan status menjadi <b>PENDING</b>.
+                  </p>
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 space-y-1.5">
+                  <div className="font-extrabold flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <span>
+                      Progres Terpicking Saat Ini: {cancelPickingModal.pickedQty} / {cancelPickingModal.totalReq} Pcs
+                      {cancelPickingModal.kosongCount > 0 ? ` (${cancelPickingModal.kosongCount} Kosong)` : ''}
+                    </span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed">
+                    Pilih <b>Simpan Status Terakhir &amp; Keluar</b> untuk menyimpan {cancelPickingModal.pickedQty} pcs agar Anda atau petugas lain bisa melanjutkan sisanya (tanpa status <i>Sedang Dikerjakan</i>), atau pilih <b>Batalkan Picking</b> untuk mereset kembali ke <b>0 Pcs</b>.
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-2 pt-1">
+                {cancelPickingModal.isCoPickingWithOthers ? (
+                  <button
+                    type="button"
+                    disabled={isCancellingPicking}
+                    onClick={() => handleExecuteCancelPicking('LEAVE_KEEP_PROGRESS')}
+                    className="w-full py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
+                  >
+                    {isCancellingPicking ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
+                    <span>Simpan Hasil Scan &amp; Keluar (Batal Bantu)</span>
+                  </button>
+                ) : cancelPickingModal.intent === 'RESET_ONLY' ? (
+                  <button
+                    type="button"
+                    disabled={isCancellingPicking}
+                    onClick={() => handleExecuteCancelPicking('RESET_TO_PENDING')}
+                    className="w-full py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
+                  >
+                    {isCancellingPicking ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                    <span>Ya, Reset Total ke 0 Pcs (PENDING)</span>
+                  </button>
+                ) : cancelPickingModal.pickedQty === 0 &&
+                  cancelPickingModal.kosongCount === 0 &&
+                  cancelPickingModal.unexpectedQty === 0 ? (
+                  <button
+                    type="button"
+                    disabled={isCancellingPicking}
+                    onClick={() => handleExecuteCancelPicking('RESET_TO_PENDING')}
+                    className="w-full py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
+                  >
+                    {isCancellingPicking ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                    <span>Ya, Batalkan Picking &amp; Kembalikan ke PENDING</span>
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      disabled={isCancellingPicking}
+                      onClick={() => handleExecuteCancelPicking('LEAVE_KEEP_PROGRESS')}
+                      className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
+                    >
+                      {isCancellingPicking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                      <span>Simpan Status Terakhir &amp; Keluar ({cancelPickingModal.pickedQty} Pcs)</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isCancellingPicking}
+                      onClick={() => handleExecuteCancelPicking('RESET_TO_PENDING')}
+                      className="w-full py-2.5 px-4 rounded-xl bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 font-bold text-xs flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer disabled:opacity-50"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      <span>Batalkan Picking (Reset ke 0 Pcs / PENDING)</span>
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0f172a] flex justify-end shrink-0">
+              <button
+                type="button"
+                disabled={isCancellingPicking}
+                onClick={() => setCancelPickingModal(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl cursor-pointer"
+              >
+                {cancelPickingModal.source === 'VIEW2' ? 'Tetap di Form Picking' : 'Kembali'}
+              </button>
             </div>
           </div>
         </div>
