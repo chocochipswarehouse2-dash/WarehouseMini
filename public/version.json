@@ -1,12 +1,12 @@
 {
-  "version": "v2.18.12",
-  "versionCode": 392,
+  "version": "v2.19.0",
+  "versionCode": 390,
   "buildDate": "17 November 2026",
-  "buildHash": "wms-261117-v392-0935",
-  "releaseTitle": "WMS v2.18.12 — Auto-Provisioning & Pemulihan Grup Chat [MS & Alter] Store",
+  "buildHash": "wms-261117-v390-1951",
+  "releaseTitle": "WMS v2.19.0 — Area Sortir (ST) & Smart Picking Filter Pengecekan SJ",
   "releaseNotes": [
-    "Provisioning batch seluruh grup [MS & Alter] Store resmi via 1 atomic CAS + sinkronisasi otomatis pesanan yang terlewat (backfill 48 jam & Realtime receiver healing)",
-    "Perbaikan await notifikasi Live Chat saat submit pesanan Store serta merge server sebelum simpan agar riwayat chat tidak pernah tertimpa"
+    "Tambah Area Sortir (ST001-STnnn) ke seluruh modul WMS",
+    "Filter Picking Pengecekan SJ hanya tampilkan lokasi Warehouse, Kolian, dan Transit"
   ],
   "minSupportedVersion": "v2.0.0"
 }

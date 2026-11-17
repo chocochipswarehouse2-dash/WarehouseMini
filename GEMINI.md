@@ -109,6 +109,7 @@ All location string inputs MUST be strictly mapped to their respective areas usi
 - **Kolian**: `R0...`, `V0...`, `Z0...`
 - **Blok F**: `TIKTOK`, `SHOPEE`, `STUDIO`, `IGLIVE` (termasuk `IGlive` / `IG LIVE`)
 - **Perbaikan**: `CC...` (Cuci), `PMK...` (Permak), `DF...` (Defect)
+- **Sortir**: `ST001`-`ST999` (Staging Buffer Sortir, rentang dapat diatur di Setup Kapasitas)
 - **Anomaly**: Any location string not fitting the above patterns MUST be flagged as an anomaly.
 
 ### B. Picking Prioritization Hierarchy
@@ -116,10 +117,12 @@ Agents modifying UI sorting or task allocation MUST strictly enforce the followi
 1. **Priority 1**: Warehouse + Aksesoris + Transit
 2. **Priority 2**: Kolian
 3. **Priority 3**: Blok F
-4. **Priority 4 (Fallback)**: Empty / Null locations
+4. **Priority 4 (Fallback & Buffer)**: Sortir (`ST...`) + Empty / Null locations (TIDAK direkomendasikan untuk picking otomatis umum)
 5. **DO NOT PICK**: `Perbaikan` (Cuci, Permak, Defect) and `Anomali` areas are strictly excluded from automated picking recommendations.
 
-*Note: The frontend UI must display ALL valid picking locations simultaneously (grouped/sorted by priority) so that pickers have full visibility if Priority 1 stock is insufficient.*
+*Note (Pengecekan Surat Jalan)*: Khusus picking dari Modul Pengecekan Surat Jalan (`DistribusiPickingModal`), filter lokasi hanya menampilkan **Priority 1 (Warehouse + Aksesoris + Transit)** dan **Priority 2 (Kolian)** via helper `isPickingEligibleForPengecekan()`. Lokasi Blok F, Sortir, Perbaikan, dan Anomali tidak ditampilkan.
+
+*Note (General UI)*: The frontend UI must display ALL valid picking locations simultaneously (grouped/sorted by priority) so that pickers have full visibility if Priority 1 stock is insufficient.
 
 ### C. Standar Resolusi Anomali Area vs Anomali Lokasi
 1. **Kasus 1: Lokasi Valid, Area Salah/Anomali (Area Mismatch)**:

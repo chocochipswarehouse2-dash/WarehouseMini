@@ -906,13 +906,14 @@ export function composeAreaRows(
 
   const seenSkus = new Set<string>();
 
-  // Helper prioritizing areas: Warehouse, Koli, Blok F, Transit, Aksesoris, then Perbaikan
+  // Helper prioritizing areas: Warehouse, Koli, Blok F, Transit, Aksesoris, Sortir, then Perbaikan
   const areaPriority: Record<string, number> = {
     'Warehouse': 1,
     'Koli': 2,
     'Blok F': 3,
     'Transit': 4,
     'Aksesoris': 5,
+    'Sortir': 6,
     'Perbaikan': 10,
     'Anomali': 99,
   };

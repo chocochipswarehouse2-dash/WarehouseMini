@@ -11,6 +11,7 @@ function getAreaFromLokasi(lokasi) {
   if (/^[RVZ]-?\d+$/.test(l) || l.startsWith('KOLI')) return 'Kolian';
   if (/^(TIKTOK|SHOPEE|STUDIO|IGLIVE)$/.test(l) || l.includes('BLOK F') || l.includes('SHOPEE') || l.includes('TIKTOK') || l.includes('STUDIO') || l.includes('IGLIVE') || l.includes('IG LIVE')) return 'Blok F';
   if (/^(CC|PMK|DF)-?\d*$/.test(l) || l.includes('PERBAIKAN') || l.includes('CUCI') || l.includes('PERMAK') || l.includes('DEFECT')) return 'Perbaikan';
+  if (/^ST-?\d+$/.test(l)) return 'Sortir';
   return 'Anomali';
 }
 

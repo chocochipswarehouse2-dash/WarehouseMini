@@ -584,7 +584,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
 
   // Unique areas for dropdown
   const uniqueAreas = useMemo(() => {
-    const set = new Set<string>(['Warehouse', 'Blok F', 'Kolian', 'Aksesoris', 'Transit', 'Perbaikan', 'Anomali']);
+    const set = new Set<string>(['Warehouse', 'Blok F', 'Kolian', 'Aksesoris', 'Transit', 'Perbaikan', 'Sortir', 'Anomali']);
     logs.forEach((it) => {
       const a = getAreaFromLokasi(it.lokasi || '');
       if (a) set.add(a);

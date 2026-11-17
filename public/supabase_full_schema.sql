@@ -679,6 +679,7 @@ SELECT
     WHEN UPPER(TRIM(lp.lokasi)) ~ '^(BELT|CARD|GIFT|BOX)[0-9]{3}$' THEN 'Aksesoris'
     WHEN UPPER(TRIM(lp.lokasi)) ~ '^[RVZ][0-9]{3}$' THEN 'Kolian'
     WHEN UPPER(TRIM(lp.lokasi)) ~ '^X[0-9]{3}$' OR UPPER(TRIM(lp.lokasi)) = 'TRANSIT' THEN 'Transit'
+    WHEN UPPER(TRIM(lp.lokasi)) ~ '^ST-?[0-9]+$' THEN 'Sortir'
     ELSE COALESCE(MAX(lp.area), 'Warehouse')
   END as area,
   MAX(lp.nama_produk) as nama_produk,

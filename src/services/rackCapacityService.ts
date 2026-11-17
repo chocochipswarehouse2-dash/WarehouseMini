@@ -15,7 +15,7 @@ export type RackZoneColor = 'rose' | 'blue' | 'emerald' | 'amber' | 'purple' | '
 
 export interface RackZoneRule {
   id: string;
-  area: string;         // e.g. 'Warehouse', 'Koli', 'Blok F', 'Aksesoris', 'Transit', 'Perbaikan'
+  area: string;         // e.g. 'Warehouse', 'Koli', 'Blok F', 'Aksesoris', 'Transit', 'Perbaikan', 'Sortir'
   zoneName: string;     // e.g. 'Rak A', 'Rak B', 'Rak C', 'Rak D'
   prefix: string;       // e.g. 'A', 'B', 'C', 'D', 'R', 'BELT'
   startNum: number;     // e.g. 1
@@ -369,6 +369,18 @@ export const DEFAULT_RACK_ZONES: RackZoneRule[] = [
     category: 'Defect (DF)',
     defaultMaxCapacity: 50,
     color: 'rose',
+  },
+  {
+    id: 'zone_sortir_st',
+    area: 'Sortir',
+    zoneName: 'Area Sortir ST',
+    prefix: 'ST',
+    startNum: 1,
+    endNum: 50,
+    padLength: 3,
+    category: 'Sortir Staging',
+    defaultMaxCapacity: 50,
+    color: 'emerald',
   },
 ];
 

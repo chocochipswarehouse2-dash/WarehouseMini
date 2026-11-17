@@ -5,7 +5,7 @@ import {
   CheckCircle2, AlertTriangle, FileText, ChevronRight, Layers
 } from 'lucide-react';
 import { PengecekanSJDraft, ProductItem, UserSession, ProductLocationInfo, StockRealtimeItem } from '../../types';
-import { createPickingSuratJalanSupabase, fetchStockForSkus, isWarehouseLocation, getPickingPriority } from '../../services/supabase';
+import { createPickingSuratJalanSupabase, fetchStockForSkus, isPickingEligibleForPengecekan, getPickingPriority } from '../../services/supabase';
 import { getWhatsAppWebUrl, getFonnteConfig, sendFonnteMessage, generateRefillPickingGroupMessage } from '../../services/whatsapp';
 import { playSaveSuccessChime, playSuccessBeep } from '../../services/audio';
 import { cleanProductName, extractCleanSizeToken } from '../../utils/sortUtils';
@@ -154,7 +154,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
       realtimeList.forEach((stk) => {
         const loc = String(stk.lokasi || '').trim().toUpperCase();
         const qty = Number(stk.sisa_stok) || 0;
-        if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc, stk.area) && qty > 0) {
+        if (loc && loc !== '-' && loc !== '--' && isPickingEligibleForPengecekan(loc, stk.area) && qty > 0) {
           const existing = map.get(loc);
           if (existing) {
             existing.qty = (existing.qty || 0) + qty;
@@ -196,7 +196,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
             const qty = Number(itemLoc.qty) || 0;
             const parts = rawLocStr.split(/[,/;\n|]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
             parts.forEach((loc) => {
-              if (loc && isWarehouseLocation(loc) && qty > 0 && !map.has(loc)) {
+              if (loc && isPickingEligibleForPengecekan(loc) && qty > 0 && !map.has(loc)) {
                 map.set(loc, {
                   lokasi: loc,
                   qty: parts.length === 1 ? qty : 0,
@@ -208,7 +208,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
           } else if (typeof itemLoc === 'string') {
             const parts = itemLoc.split(/[,/;\n|]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
             parts.forEach((loc) => {
-              if (loc && isWarehouseLocation(loc) && !map.has(loc)) {
+              if (loc && isPickingEligibleForPengecekan(loc) && !map.has(loc)) {
                 map.set(loc, {
                   lokasi: loc,
                   qty: 0,
@@ -241,7 +241,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
       const parts = strItemLokasi
         .split(/[,/;\n|]+/)
         .map((s) => String(s || '').trim().toUpperCase())
-        .filter((loc) => loc && isWarehouseLocation(loc));
+        .filter((loc) => loc && isPickingEligibleForPengecekan(loc));
       parts.forEach((loc) => {
         if (!map.has(loc)) {
           map.set(loc, {
@@ -254,7 +254,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
       });
     }
 
-    const allLocs = Array.from(map.values()).filter((l) => l && l.lokasi && isWarehouseLocation(l.lokasi, l.area));
+    const allLocs = Array.from(map.values()).filter((l) => l && l.lokasi && isPickingEligibleForPengecekan(l.lokasi, l.area));
     allLocs.sort((a, b) => {
       const pA = getPickingPriority(a.lokasi, a.area);
       const pB = getPickingPriority(b.lokasi, b.area);
@@ -278,7 +278,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
     list.forEach((stk) => {
       const loc = String(stk.lokasi || '').trim().toUpperCase();
       const qty = Number(stk.sisa_stok) || 0;
-      if (loc && isWarehouseLocation(loc, stk.area) && qty <= 0) {
+      if (loc && isPickingEligibleForPengecekan(loc, stk.area) && qty <= 0) {
         if (!emptyLocs.includes(loc)) emptyLocs.push(loc);
       }
     });

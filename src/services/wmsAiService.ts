@@ -576,7 +576,7 @@ const AI_TOOLS = [
             },
             area: {
               type: 'STRING',
-              description: 'Filter area rak untuk mode rack_capacity, misal "Warehouse", "Kolian", "Blok F", "Transit"'
+              description: 'Filter area rak untuk mode rack_capacity, misal "Warehouse", "Kolian", "Blok F", "Transit", "Sortir"'
             },
             rack_filter: {
               type: 'STRING',

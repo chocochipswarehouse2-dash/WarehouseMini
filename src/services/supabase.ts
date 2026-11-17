@@ -324,7 +324,10 @@ export function getAreaFromLokasi(lokasi: string, _area?: string): string {
   // 6. Perbaikan: CC... (Cuci), PMK... (Permak), DF... (Defect)
   if (/^(CC|PMK|DF)-?\d*$/.test(l) || l.includes('PERBAIKAN') || l.includes('CUCI') || l.includes('PERMAK') || l.includes('DEFECT')) return 'Perbaikan';
 
-  // 7. Any location string not fitting the above patterns (including literal "Warehouse", "-", etc.) MUST be flagged as an anomaly
+  // 7. Sortir: ST001-ST999 (staging/buffer area sebelum ke rak utama)
+  if (/^ST-?\d+$/.test(l)) return 'Sortir';
+
+  // 8. Any location string not fitting the above patterns (including literal "Warehouse", "-", etc.) MUST be flagged as an anomaly
   return 'Anomali';
 }
 
@@ -401,6 +404,7 @@ export function getPickingPriority(lokasi: string, area?: string): number {
   if (locArea === 'Warehouse' || locArea === 'Aksesoris' || locArea === 'Transit') return 1;
   if (locArea === 'Kolian') return 2;
   if (locArea === 'Blok F') return 3;
+  if (locArea === 'Sortir') return 4;
   if (locArea === 'Perbaikan') return 5;
   return 4; // Anomali / Unknown
 }
@@ -429,6 +433,24 @@ export function isWarehouseLocation(lokasi: string, area?: string): boolean {
   const priority = getPickingPriority(lok, area);
   // Recommend for picking if Priority is 1 (Warehouse/Aksesoris/Transit), 2 (Kolian R/V/Z), or 3 (Blok F)
   return priority <= 3;
+}
+
+/**
+ * Narrower picking eligibility for Pengecekan Surat Jalan (DistribusiPickingModal).
+ * Only shows Warehouse/Aksesoris/Transit (priority 1) and Kolian (priority 2).
+ * Blok F, Sortir, Perbaikan, Anomali are excluded.
+ */
+export function isPickingEligibleForPengecekan(lokasi: string, area?: string): boolean {
+  if (!lokasi) return false;
+  const lok = stripLocationQtySuffix(String(lokasi || '')).toUpperCase();
+  if (!lok || lok === '-' || lok === '--' || lok === 'NONE' || lok === 'DEFAULT' ||
+      lok === 'NULL' || lok === 'UNDEFINED' || lok === 'UNKNOWN' ||
+      lok === 'BELUM ADA RAK' || lok === 'KOSONG') {
+    return false;
+  }
+  const priority = getPickingPriority(lok, area);
+  // Priority 1 = Warehouse/Aksesoris/Transit, Priority 2 = Kolian — only these two
+  return priority <= 2;
 }
 
 /**

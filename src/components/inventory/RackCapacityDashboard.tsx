@@ -377,6 +377,15 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     return false;
   }, []);
 
+  // 4. Kapasitas Sortir = ST001..STnnn (Staging Buffer Sortir)
+  const isSortirSlot = useCallback((s: ComputedRackSlot) => {
+    const a = (s.area || '').toUpperCase();
+    const l = (s.lokasi || '').toUpperCase();
+    if (a === 'SORTIR') return true;
+    if (/^ST-?\d+/i.test(l)) return true;
+    return false;
+  }, []);
+
   // Kapasitas Warehouse = Penyimpanan RAK + Koli secara total kapasitas
   const isWarehouseSlot = useCallback((s: ComputedRackSlot) => {
     return isRakSlot(s) || isKoliSlot(s);
@@ -428,6 +437,18 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       overloadCount: 0,
     };
 
+    // Category 4: Sortir (ST001-STnnn Staging Buffer)
+    const sortirStats = {
+      rackCount: 0,
+      totalCapacity: 0,
+      totalFilled: 0,
+      totalSimulated: 0,
+      emptyCount: 0,
+      safeCount: 0,
+      warningFullCount: 0,
+      overloadCount: 0,
+    };
+
     const zoneStatsMap = new Map<
       string,
       {
@@ -468,6 +489,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       const isRak = isRakSlot(s);
       const isKoli = isKoliSlot(s);
       const isBlokF = isBlokFSlot(s);
+      const isSortir = isSortirSlot(s);
 
       const areaUpper = (s.area || '').toUpperCase();
       const lokUpper = (s.lokasi || '').toUpperCase();
@@ -510,6 +532,16 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
         else if (s.status === 'SAFE') blokFStats.safeCount++;
         else if (s.status === 'WARNING' || s.status === 'FULL') blokFStats.warningFullCount++;
         else if (s.status === 'OVERLOAD') blokFStats.overloadCount++;
+      } else if (isSortir) {
+        sortirStats.rackCount += 1;
+        sortirStats.totalCapacity += s.maxCapacity;
+        sortirStats.totalFilled += s.currentQty;
+        sortirStats.totalSimulated += s.simulatedQty;
+
+        if (s.status === 'EMPTY') sortirStats.emptyCount++;
+        else if (s.status === 'SAFE') sortirStats.safeCount++;
+        else if (s.status === 'WARNING' || s.status === 'FULL') sortirStats.warningFullCount++;
+        else if (s.status === 'OVERLOAD') sortirStats.overloadCount++;
       }
 
       let zs = zoneStatsMap.get(s.zoneId);
@@ -544,6 +576,8 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       koliStats.totalCapacity > 0 ? Math.round((koliStats.totalFilled / koliStats.totalCapacity) * 100) : 0;
     const blokFPercent =
       blokFStats.totalCapacity > 0 ? Math.round((blokFStats.totalFilled / blokFStats.totalCapacity) * 100) : 0;
+    const sortirPercent =
+      sortirStats.totalCapacity > 0 ? Math.round((sortirStats.totalFilled / sortirStats.totalCapacity) * 100) : 0;
 
     // Kapasitas Warehouse = Penyimpanan RAK + Koli secara total kapasitas
     const whTotalCapacity = rakStats.totalCapacity + koliStats.totalCapacity;
@@ -620,6 +654,20 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       };
       kpiTitle = 'KAPASITAS BLOK F';
       kpiSubtitle = 'Studio, Shopee, TikTok, IGlive (Area Terpisah)';
+    } else if (selAreaUp === 'SORTIR') {
+      activeKpi = {
+        totalRacks: sortirStats.rackCount,
+        totalCapacity: sortirStats.totalCapacity,
+        totalFilled: sortirStats.totalFilled,
+        totalSimulated: sortirStats.totalSimulated,
+        overallPercent: sortirPercent,
+        emptyCount: sortirStats.emptyCount,
+        safeCount: sortirStats.safeCount,
+        warningFullCount: sortirStats.warningFullCount,
+        overloadCount: sortirStats.overloadCount,
+      };
+      kpiTitle = 'KAPASITAS AREA SORTIR';
+      kpiSubtitle = 'ST001-STnnn (Staging Buffer Sortir)';
     }
 
     return {
@@ -687,9 +735,13 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
         rackCount: koliStats.rackCount,
         overloadCount: koliStats.overloadCount,
       },
+      sortir: {
+        ...sortirStats,
+        overallPercent: sortirPercent,
+      },
       zones: Array.from(zoneStatsMap.values()).filter((z) => z.rackCount > 0),
     };
-  }, [allSlots, config.zones, selectedArea, simulationMoves.length, isRakSlot, isKoliSlot, isBlokFSlot]);
+  }, [allSlots, config.zones, selectedArea, simulationMoves.length, isRakSlot, isKoliSlot, isBlokFSlot, isSortirSlot]);
 
   // Distinct Areas & Categories for Filter
   const availableAreas = useMemo(() => {
@@ -717,6 +769,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       const isRak = isRakSlot(s);
       const isKoli = isKoliSlot(s);
       const isBlokF = isBlokFSlot(s);
+      const isSortir = isSortirSlot(s);
 
       if (selAreaUp === 'RAK_ABCD' || selAreaUp === 'WAREHOUSE') {
         if (!isRak) return false;
@@ -724,6 +777,8 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
         if (!isKoli) return false;
       } else if (selAreaUp === 'BLOK_F' || selAreaUp === 'BLOK F') {
         if (!isBlokF) return false;
+      } else if (selAreaUp === 'SORTIR') {
+        if (!isSortir) return false;
       } else if (selAreaUp === 'ALL') {
         // Warehouse Total: Rak ABCD + Koli
         if (!isRak && !isKoli) return false;
@@ -767,6 +822,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     isRakSlot,
     isKoliSlot,
     isBlokFSlot,
+    isSortirSlot,
   ]);
 
   const filteredFilledSlots = useMemo(
@@ -1714,6 +1770,17 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 cap: summaryStats.blokF.totalCapacity,
                 overload: summaryStats.blokF.overloadCount,
                 barColor: 'bg-purple-600',
+              },
+              {
+                key: 'Sortir',
+                active: selectedArea === 'Sortir',
+                title: 'Sortir (Staging)',
+                subtitle: `ST001-STnnn (buffer sortir)`,
+                percent: summaryStats.sortir?.overallPercent ?? 0,
+                filled: summaryStats.sortir?.totalFilled ?? 0,
+                cap: summaryStats.sortir?.totalCapacity ?? 0,
+                overload: summaryStats.sortir?.overloadCount ?? 0,
+                barColor: 'bg-teal-500',
               },
             ] as const
           ).map((seg) => (

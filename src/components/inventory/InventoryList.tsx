@@ -26,6 +26,8 @@ export const AreaBadge: React.FC<{ area: string }> = ({ area }) => {
     color = 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800';
   } else if (a === 'Transit') {
     color = 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
+  } else if (a === 'Sortir') {
+    color = 'bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800';
   }
 
   return (
