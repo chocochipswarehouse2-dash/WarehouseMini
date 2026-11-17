@@ -16,9 +16,9 @@ export interface VersionInfo {
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
   "version": "v2.19.0",
-  "versionCode": 390,
+  "versionCode": 393,
   "buildDate": "17 November 2026",
-  "buildHash": "wms-261117-v390-1951",
+  "buildHash": "wms-261117-v393-2002",
   "releaseTitle": "WMS v2.19.0 — Area Sortir (ST) & Smart Picking Filter Pengecekan SJ",
   "releaseNotes": [
     "Tambah Area Sortir (ST001-STnnn) ke seluruh modul WMS",
