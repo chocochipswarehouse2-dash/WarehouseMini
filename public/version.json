@@ -1,12 +1,12 @@
 {
-  "version": "v2.19.0",
-  "versionCode": 393,
-  "buildDate": "17 November 2026",
-  "buildHash": "wms-261117-v393-2002",
-  "releaseTitle": "WMS v2.19.0 — Area Sortir (ST) & Smart Picking Filter Pengecekan SJ",
+  "version": "v2.19.1",
+  "versionCode": 391,
+  "buildDate": "18 November 2026",
+  "buildHash": "wms-261118-v391-1336",
+  "releaseTitle": "WMS v2.19.1 — Setup Kapasitas Lokasi SORTIR (Area Perbaikan)",
   "releaseNotes": [
-    "Tambah Area Sortir (ST001-STnnn) ke seluruh modul WMS",
-    "Filter Picking Pengecekan SJ hanya tampilkan lokasi Warehouse, Kolian, dan Transit"
+    "Setup Kapasitas lokasi SORTIR dibuat 1 lokasi statis (sama seperti Shopee/TikTok/Studio)",
+    "Pemetaan lokasi SORTIR otomatis mengikuti Area Perbaikan"
   ],
   "minSupportedVersion": "v2.0.0"
 }

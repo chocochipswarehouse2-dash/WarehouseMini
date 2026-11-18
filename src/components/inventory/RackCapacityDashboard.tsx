@@ -356,14 +356,14 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     return false;
   }, []);
 
-  // 2. Kapasitas Penyimpanan Koli = R, V, Z, X, CC, PMK, DF
+  // 2. Kapasitas Penyimpanan Koli = R, V, Z, X, CC, PMK, DF, SORTIR
   const isKoliSlot = useCallback((s: ComputedRackSlot) => {
     const a = (s.area || '').toUpperCase();
     const l = (s.lokasi || '').toUpperCase();
     if (a === 'KOLIAN' || a === 'KOLI' || a === 'TRANSIT' || a === 'PERBAIKAN') return true;
     if (/^[RVZ]-?\d+/i.test(l)) return true;
     if (/^X-?\d*/i.test(l) || l === 'X' || l === 'TRANSIT') return true;
-    if (/^(CC|PMK|DF)-?\d*/i.test(l)) return true;
+    if (/^(CC|PMK|DF)-?\d*/i.test(l) || l === 'SORTIR') return true;
     return false;
   }, []);
 
@@ -374,15 +374,6 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     if (a === 'BLOK F') return true;
     if (['SHOPEE', 'TIKTOK', 'IGLIVE', 'STUDIO'].includes(l)) return true;
     if (l.includes('IG LIVE') || l.includes('IGLIVE')) return true;
-    return false;
-  }, []);
-
-  // 4. Kapasitas Sortir = ST001..STnnn (Staging Buffer Sortir)
-  const isSortirSlot = useCallback((s: ComputedRackSlot) => {
-    const a = (s.area || '').toUpperCase();
-    const l = (s.lokasi || '').toUpperCase();
-    if (a === 'SORTIR') return true;
-    if (/^ST-?\d+/i.test(l)) return true;
     return false;
   }, []);
 
@@ -408,7 +399,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       overloadCount: 0,
     };
 
-    // Category 2: Koli (R, V, Z, X, CC, PMK, DF)
+    // Category 2: Koli (R, V, Z, X, CC, PMK, DF, SORTIR)
     const koliStats = {
       rackCount: 0,
       totalCapacity: 0,
@@ -427,18 +418,6 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
 
     // Category 3: Blok F (Studio, Shopee, Tiktok, IGLive)
     const blokFStats = {
-      rackCount: 0,
-      totalCapacity: 0,
-      totalFilled: 0,
-      totalSimulated: 0,
-      emptyCount: 0,
-      safeCount: 0,
-      warningFullCount: 0,
-      overloadCount: 0,
-    };
-
-    // Category 4: Sortir (ST001-STnnn Staging Buffer)
-    const sortirStats = {
       rackCount: 0,
       totalCapacity: 0,
       totalFilled: 0,
@@ -489,7 +468,6 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       const isRak = isRakSlot(s);
       const isKoli = isKoliSlot(s);
       const isBlokF = isBlokFSlot(s);
-      const isSortir = isSortirSlot(s);
 
       const areaUpper = (s.area || '').toUpperCase();
       const lokUpper = (s.lokasi || '').toUpperCase();
@@ -519,7 +497,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
           koliStats.breakdown.kolianFilled += s.currentQty;
         } else if (areaUpper === 'TRANSIT' || /^X-?\d*/i.test(lokUpper) || lokUpper === 'X') {
           koliStats.breakdown.transitFilled += s.currentQty;
-        } else if (areaUpper === 'PERBAIKAN' || /^(CC|PMK|DF)-?\d*/i.test(lokUpper)) {
+        } else if (areaUpper === 'PERBAIKAN' || /^(CC|PMK|DF)-?\d*/i.test(lokUpper) || lokUpper === 'SORTIR') {
           koliStats.breakdown.perbaikanFilled += s.currentQty;
         }
       } else if (isBlokF) {
@@ -532,16 +510,6 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
         else if (s.status === 'SAFE') blokFStats.safeCount++;
         else if (s.status === 'WARNING' || s.status === 'FULL') blokFStats.warningFullCount++;
         else if (s.status === 'OVERLOAD') blokFStats.overloadCount++;
-      } else if (isSortir) {
-        sortirStats.rackCount += 1;
-        sortirStats.totalCapacity += s.maxCapacity;
-        sortirStats.totalFilled += s.currentQty;
-        sortirStats.totalSimulated += s.simulatedQty;
-
-        if (s.status === 'EMPTY') sortirStats.emptyCount++;
-        else if (s.status === 'SAFE') sortirStats.safeCount++;
-        else if (s.status === 'WARNING' || s.status === 'FULL') sortirStats.warningFullCount++;
-        else if (s.status === 'OVERLOAD') sortirStats.overloadCount++;
       }
 
       let zs = zoneStatsMap.get(s.zoneId);
@@ -576,8 +544,6 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       koliStats.totalCapacity > 0 ? Math.round((koliStats.totalFilled / koliStats.totalCapacity) * 100) : 0;
     const blokFPercent =
       blokFStats.totalCapacity > 0 ? Math.round((blokFStats.totalFilled / blokFStats.totalCapacity) * 100) : 0;
-    const sortirPercent =
-      sortirStats.totalCapacity > 0 ? Math.round((sortirStats.totalFilled / sortirStats.totalCapacity) * 100) : 0;
 
     // Kapasitas Warehouse = Penyimpanan RAK + Koli secara total kapasitas
     const whTotalCapacity = rakStats.totalCapacity + koliStats.totalCapacity;
@@ -639,7 +605,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
         overloadCount: koliStats.overloadCount,
       };
       kpiTitle = 'KAPASITAS PENYIMPANAN KOLI';
-      kpiSubtitle = 'Penampungan Koli (R, V, Z, X, CC, PMK, DF)';
+      kpiSubtitle = 'Penampungan Koli (R, V, Z, X, CC, PMK, DF, SORTIR)';
     } else if (selAreaUp === 'BLOK_F' || selAreaUp === 'BLOK F') {
       activeKpi = {
         totalRacks: blokFStats.rackCount,
@@ -654,20 +620,6 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       };
       kpiTitle = 'KAPASITAS BLOK F';
       kpiSubtitle = 'Studio, Shopee, TikTok, IGlive (Area Terpisah)';
-    } else if (selAreaUp === 'SORTIR') {
-      activeKpi = {
-        totalRacks: sortirStats.rackCount,
-        totalCapacity: sortirStats.totalCapacity,
-        totalFilled: sortirStats.totalFilled,
-        totalSimulated: sortirStats.totalSimulated,
-        overallPercent: sortirPercent,
-        emptyCount: sortirStats.emptyCount,
-        safeCount: sortirStats.safeCount,
-        warningFullCount: sortirStats.warningFullCount,
-        overloadCount: sortirStats.overloadCount,
-      };
-      kpiTitle = 'KAPASITAS AREA SORTIR';
-      kpiSubtitle = 'ST001-STnnn (Staging Buffer Sortir)';
     }
 
     return {
@@ -735,13 +687,9 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
         rackCount: koliStats.rackCount,
         overloadCount: koliStats.overloadCount,
       },
-      sortir: {
-        ...sortirStats,
-        overallPercent: sortirPercent,
-      },
       zones: Array.from(zoneStatsMap.values()).filter((z) => z.rackCount > 0),
     };
-  }, [allSlots, config.zones, selectedArea, simulationMoves.length, isRakSlot, isKoliSlot, isBlokFSlot, isSortirSlot]);
+  }, [allSlots, config.zones, selectedArea, simulationMoves.length, isRakSlot, isKoliSlot, isBlokFSlot]);
 
   // Distinct Areas & Categories for Filter
   const availableAreas = useMemo(() => {
@@ -769,7 +717,6 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       const isRak = isRakSlot(s);
       const isKoli = isKoliSlot(s);
       const isBlokF = isBlokFSlot(s);
-      const isSortir = isSortirSlot(s);
 
       if (selAreaUp === 'RAK_ABCD' || selAreaUp === 'WAREHOUSE') {
         if (!isRak) return false;
@@ -777,8 +724,6 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
         if (!isKoli) return false;
       } else if (selAreaUp === 'BLOK_F' || selAreaUp === 'BLOK F') {
         if (!isBlokF) return false;
-      } else if (selAreaUp === 'SORTIR') {
-        if (!isSortir) return false;
       } else if (selAreaUp === 'ALL') {
         // Warehouse Total: Rak ABCD + Koli
         if (!isRak && !isKoli) return false;
@@ -822,7 +767,6 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     isRakSlot,
     isKoliSlot,
     isBlokFSlot,
-    isSortirSlot,
   ]);
 
   const filteredFilledSlots = useMemo(
@@ -1753,7 +1697,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                   selectedArea === 'Transit' ||
                   selectedArea === 'Perbaikan',
                 title: 'Penyimpanan Koli',
-                subtitle: `R/V/Z, X, CC/PMK/DF (${summaryStats.koli.rackCount} lokasi)`,
+                subtitle: `R/V/Z, X, CC/PMK/DF/SORTIR (${summaryStats.koli.rackCount} lokasi)`,
                 percent: summaryStats.koli.overallPercent,
                 filled: summaryStats.koli.totalFilled,
                 cap: summaryStats.koli.totalCapacity,
@@ -1770,17 +1714,6 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 cap: summaryStats.blokF.totalCapacity,
                 overload: summaryStats.blokF.overloadCount,
                 barColor: 'bg-purple-600',
-              },
-              {
-                key: 'Sortir',
-                active: selectedArea === 'Sortir',
-                title: 'Sortir (Staging)',
-                subtitle: `ST001-STnnn (buffer sortir)`,
-                percent: summaryStats.sortir?.overallPercent ?? 0,
-                filled: summaryStats.sortir?.totalFilled ?? 0,
-                cap: summaryStats.sortir?.totalCapacity ?? 0,
-                overload: summaryStats.sortir?.overloadCount ?? 0,
-                barColor: 'bg-teal-500',
               },
             ] as const
           ).map((seg) => (
@@ -3720,7 +3653,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-slate-500">
-                      Ubah kategori produk, prefix &amp; rentang nomor, serta kapasitas maksimal default untuk Warehouse (A–D), Transit (X), Kolian/Koli (R, V, Z), Blok F (Shopee, TikTok, IGlive, Studio), dan Perbaikan (Cuci CC, Permak PMK, Defect DF).
+                      Ubah kategori produk, prefix &amp; rentang nomor, serta kapasitas maksimal default untuk Warehouse (A–D), Transit (X), Kolian/Koli (R, V, Z), Blok F (Shopee, TikTok, IGlive, Studio), dan Perbaikan (Cuci CC, Permak PMK, Defect DF, Sortir SORTIR).
                     </span>
                     <button
                       type="button"

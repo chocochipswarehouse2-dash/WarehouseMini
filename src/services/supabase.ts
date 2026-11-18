@@ -321,13 +321,10 @@ export function getAreaFromLokasi(lokasi: string, _area?: string): string {
   // 5. Blok F: TIKTOK, SHOPEE, STUDIO, IGLIVE
   if (/^(TIKTOK|SHOPEE|STUDIO|IGLIVE)$/.test(l) || l.includes('BLOK F') || l.includes('SHOPEE') || l.includes('TIKTOK') || l.includes('STUDIO') || l.includes('IGLIVE') || l.includes('IG LIVE')) return 'Blok F';
 
-  // 6. Perbaikan: CC... (Cuci), PMK... (Permak), DF... (Defect)
-  if (/^(CC|PMK|DF)-?\d*$/.test(l) || l.includes('PERBAIKAN') || l.includes('CUCI') || l.includes('PERMAK') || l.includes('DEFECT')) return 'Perbaikan';
+  // 6. Perbaikan: CC... (Cuci), PMK... (Permak), DF... (Defect), SORTIR (Sortir)
+  if (l === 'SORTIR' || /^(CC|PMK|DF)-?\d*$/.test(l) || /^ST-?\d+$/.test(l) || l.includes('PERBAIKAN') || l.includes('CUCI') || l.includes('PERMAK') || l.includes('DEFECT') || l.includes('SORTIR')) return 'Perbaikan';
 
-  // 7. Sortir: ST001-ST999 (staging/buffer area sebelum ke rak utama)
-  if (/^ST-?\d+$/.test(l)) return 'Sortir';
-
-  // 8. Any location string not fitting the above patterns (including literal "Warehouse", "-", etc.) MUST be flagged as an anomaly
+  // 7. Any location string not fitting the above patterns (including literal "Warehouse", "-", etc.) MUST be flagged as an anomaly
   return 'Anomali';
 }
 

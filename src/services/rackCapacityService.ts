@@ -15,9 +15,9 @@ export type RackZoneColor = 'rose' | 'blue' | 'emerald' | 'amber' | 'purple' | '
 
 export interface RackZoneRule {
   id: string;
-  area: string;         // e.g. 'Warehouse', 'Koli', 'Blok F', 'Aksesoris', 'Transit', 'Perbaikan', 'Sortir'
+  area: string;         // e.g. 'Warehouse', 'Koli', 'Blok F', 'Aksesoris', 'Transit', 'Perbaikan'
   zoneName: string;     // e.g. 'Rak A', 'Rak B', 'Rak C', 'Rak D'
-  prefix: string;       // e.g. 'A', 'B', 'C', 'D', 'R', 'BELT'
+  prefix: string;       // e.g. 'A', 'B', 'C', 'D', 'R', 'BELT', 'SORTIR'
   startNum: number;     // e.g. 1
   endNum: number;       // e.g. 100
   padLength: number;    // e.g. 3 -> A001..A100 (0 means exact/static list or no padding)
@@ -371,22 +371,23 @@ export const DEFAULT_RACK_ZONES: RackZoneRule[] = [
     color: 'rose',
   },
   {
-    id: 'zone_sortir_st',
-    area: 'Sortir',
-    zoneName: 'Area Sortir ST',
-    prefix: 'ST',
-    startNum: 1,
-    endNum: 50,
-    padLength: 3,
-    category: 'Sortir Staging',
-    defaultMaxCapacity: 50,
+    id: 'zone_perbaikan_sortir',
+    area: 'Perbaikan',
+    zoneName: 'SORTIR',
+    prefix: 'SORTIR',
+    startNum: 0,
+    endNum: 0,
+    padLength: 0,
+    staticLocations: ['SORTIR'],
+    category: 'Sortir (Perbaikan)',
+    defaultMaxCapacity: 100,
     color: 'emerald',
   },
 ];
 
 export function getDefaultRackCapacityConfig(): RackCapacityConfig {
   return {
-    version: 6,
+    version: 7,
     updatedAt: new Date().toISOString(),
     zones: DEFAULT_RACK_ZONES,
     overrides: {},
@@ -399,13 +400,13 @@ export function getDefaultRackCapacityConfig(): RackCapacityConfig {
 }
 
 /**
- * Ensures any previously saved v1/v2/v3/v4 config automatically upgrades:
+ * Ensures any previously saved v1/v2/v3/v4/v6 config automatically upgrades:
  * 1. Area Transit ('zone_transit') from static ['X', 'TRANSIT'] to variable range X (X001 - X100)
  * 2. Missing Koli / Kolian zones (prefix R, V, Z: R001-R100, V001-V100, Z001-Z100)
  * 3. Splits combined 'zone_blok_f' (['TIKTOK', 'SHOPEE', 'STUDIO']) into 3 independent zones
  *    so SHOPEE, TIKTOK, and STUDIO each have their own independent maxCapacity.
- * 4. Adds Area Perbaikan zones ('zone_perbaikan_cc', 'zone_perbaikan_pmk', 'zone_perbaikan_df')
- *    so Cuci (CC), Permak (PMK), and Defect (DF) each have their own setup row & capacity.
+ * 4. Adds Area Perbaikan zones ('zone_perbaikan_cc', 'zone_perbaikan_pmk', 'zone_perbaikan_df', 'zone_perbaikan_sortir')
+ *    so Cuci (CC), Permak (PMK), Defect (DF), and Sortir (SORTIR) each have their own setup row & capacity.
  * 5. Migrates evacuationRule & refillMaxPerSkuAbcd for customizable picker buffer configuration.
  */
 export function normalizeAndMigrateRackConfig(raw: RackCapacityConfig): RackCapacityConfig {
@@ -441,7 +442,7 @@ export function normalizeAndMigrateRackConfig(raw: RackCapacityConfig): RackCapa
       continue;
     }
 
-    // 2. Split legacy combined zone_blok_f into 3 separate zones (SHOPEE, TIKTOK, STUDIO)
+    // 2. Split legacy combined zone_blok_f into separate zones (SHOPEE, TIKTOK, IGLIVE, STUDIO)
     if (
       z.id === 'zone_blok_f' ||
       (z.area === 'Blok F' && Array.isArray(z.staticLocations) && z.staticLocations.length > 1)
@@ -462,6 +463,36 @@ export function normalizeAndMigrateRackConfig(raw: RackCapacityConfig): RackCapa
       continue;
     }
 
+    // 3. Migrate legacy zone_sortir_st / Sortir range to static location SORTIR under Area Perbaikan
+    if (
+      z.id === 'zone_sortir_st' ||
+      z.id === 'zone_perbaikan_sortir' ||
+      z.area === 'Sortir' ||
+      z.prefix?.toUpperCase() === 'ST' ||
+      z.prefix?.toUpperCase() === 'SORTIR'
+    ) {
+      if (!upgradedZones.some((uz) => uz.id === 'zone_perbaikan_sortir')) {
+        upgradedZones.push({
+          id: 'zone_perbaikan_sortir',
+          area: 'Perbaikan',
+          zoneName:
+            z.zoneName && z.zoneName !== 'Area Sortir ST' ? z.zoneName : 'SORTIR',
+          prefix: 'SORTIR',
+          startNum: 0,
+          endNum: 0,
+          padLength: 0,
+          staticLocations: ['SORTIR'],
+          category:
+            z.category && z.category !== 'Sortir Staging'
+              ? z.category
+              : 'Sortir (Perbaikan)',
+          defaultMaxCapacity: z.defaultMaxCapacity || 100,
+          color: z.color || 'emerald',
+        });
+      }
+      continue;
+    }
+
     if (z.area === 'Koli') {
       upgradedZones.push({ ...z, area: 'Kolian' });
       continue;
@@ -470,7 +501,7 @@ export function normalizeAndMigrateRackConfig(raw: RackCapacityConfig): RackCapa
     upgradedZones.push(z);
   }
 
-  // Ensure Koli R, V, Z, Transit X, separate Blok F (SHOPEE, TIKTOK, IGLIVE, STUDIO), and Perbaikan (CC, PMK, DF) exist
+  // Ensure Koli R, V, Z, Transit X, separate Blok F (SHOPEE, TIKTOK, IGLIVE, STUDIO), and Perbaikan (CC, PMK, DF, SORTIR) exist
   const requiredZones = DEFAULT_RACK_ZONES.filter((dz) =>
     [
       'zone_transit',
@@ -484,6 +515,7 @@ export function normalizeAndMigrateRackConfig(raw: RackCapacityConfig): RackCapa
       'zone_perbaikan_cc',
       'zone_perbaikan_pmk',
       'zone_perbaikan_df',
+      'zone_perbaikan_sortir',
     ].includes(dz.id)
   );
 
@@ -527,7 +559,7 @@ export function normalizeAndMigrateRackConfig(raw: RackCapacityConfig): RackCapa
     : { ...DEFAULT_ABCD_TO_KOLI_RULE };
 
   return {
-    version: Math.max(6, raw.version || 6),
+    version: Math.max(7, raw.version || 7),
     updatedAt: raw.updatedAt || new Date().toISOString(),
     updatedBy: raw.updatedBy,
     zones: upgradedZones,
@@ -727,10 +759,20 @@ function inferZoneForUnmappedLocation(lokasi: string): {
         color: 'rose',
       };
     }
+    if (loc === 'SORTIR' || loc.includes('SORTIR') || loc.startsWith('ST')) {
+      return {
+        area: 'Perbaikan',
+        zoneId: 'zone_perbaikan_sortir',
+        zoneName: 'SORTIR',
+        category: 'Sortir (Perbaikan)',
+        defaultMaxCapacity: 100,
+        color: 'emerald',
+      };
+    }
     return {
       area: 'Perbaikan',
       zoneId: 'zone_auto_perbaikan',
-      zoneName: 'Area Perbaikan (CC / PMK / DF)',
+      zoneName: 'Area Perbaikan (CC / PMK / DF / SORTIR)',
       category: 'Perbaikan',
       defaultMaxCapacity: 50,
       color: 'slate',
@@ -815,8 +857,8 @@ export function isExcludedFromWarehouseRelocation(area: string, lokasi: string):
   const a = (area || '').trim().toUpperCase();
   const l = (lokasi || '').trim().toUpperCase();
   if (a === 'BLOK F' || a === 'PERBAIKAN' || a === 'ANOMALI') return true;
-  if (l === 'SHOPEE' || l === 'TIKTOK' || l === 'STUDIO' || l === 'IGLIVE' || l === 'IG LIVE') return true;
-  if (/^(CC|PMK|DF)\d*/i.test(l)) return true;
+  if (l === 'SHOPEE' || l === 'TIKTOK' || l === 'STUDIO' || l === 'IGLIVE' || l === 'IG LIVE' || l === 'SORTIR') return true;
+  if (/^(CC|PMK|DF|ST)\d*/i.test(l)) return true;
   return false;
 }
 

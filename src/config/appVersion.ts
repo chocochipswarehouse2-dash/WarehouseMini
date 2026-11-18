@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.19.0",
-  "versionCode": 393,
-  "buildDate": "17 November 2026",
-  "buildHash": "wms-261117-v393-2002",
-  "releaseTitle": "WMS v2.19.0 — Area Sortir (ST) & Smart Picking Filter Pengecekan SJ",
+  "version": "v2.19.1",
+  "versionCode": 391,
+  "buildDate": "18 November 2026",
+  "buildHash": "wms-261118-v391-1336",
+  "releaseTitle": "WMS v2.19.1 — Setup Kapasitas Lokasi SORTIR (Area Perbaikan)",
   "releaseNotes": [
-    "Tambah Area Sortir (ST001-STnnn) ke seluruh modul WMS",
-    "Filter Picking Pengecekan SJ hanya tampilkan lokasi Warehouse, Kolian, dan Transit"
+    "Setup Kapasitas lokasi SORTIR dibuat 1 lokasi statis (sama seperti Shopee/TikTok/Studio)",
+    "Pemetaan lokasi SORTIR otomatis mengikuti Area Perbaikan"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.19.0",
+    "versionCode": 393,
+    "buildDate": "17 November 2026",
+    "buildHash": "wms-261117-v393-2002",
+    "releaseTitle": "WMS v2.19.0 — Area Sortir (ST) & Smart Picking Filter Pengecekan SJ",
+    "releaseNotes": [
+      "Tambah Area Sortir (ST001-STnnn) ke seluruh modul WMS",
+      "Filter Picking Pengecekan SJ hanya tampilkan lokasi Warehouse, Kolian, dan Transit"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.18.12",
     "versionCode": 392,
@@ -110,18 +122,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Tambah tombol Minimize Picking di workspace Tugas Picking lengkap dengan banner lanjutkan di Daftar SJ & bubble floating draggable di dock lintas menu",
       "Tambah perlindungan offline Tugas Picking: auto-save draft per SJ, indikator Online/Offline, antrean outbox wms_picking_offline_outbox_v1, dan auto-sync ke Supabase saat kembali online",
       "Perbaiki bug klik pill lokasi dan tombol +1/Maks yang sebelumnya memicu log multi-lokasi anomali (koma/gabungan) agar selalu mencatat 1 rak tunggal prioritas serta flag Anomali di getAreaFromLokasi"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.18.5",
-    "versionCode": 385,
-    "buildDate": "16 November 2026",
-    "buildHash": "wms-261116-v385-1226",
-    "releaseTitle": "WMS v2.18.5 — Submit Sekaligus Antrean Pengecekan Surat Jalan",
-    "releaseNotes": [
-      "Tambah tombol Submit Sekaligus / Submit Semua di Antrean Pengecekan SJ dengan modal ringkasan qty, pilihan status PENDING/SELESAI, dan simpan massal ke Supabase",
-      "Rapikan hierarki tombol toolbar Antrean Pengecekan (1 primary solid + tombol sekunder outline)"
     ],
     "minSupportedVersion": "v2.0.0"
   }

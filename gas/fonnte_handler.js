@@ -49,8 +49,7 @@ function getArea(lokasi) {
   if (l === 'X' || /^X-?\d*$/.test(l) || l === 'TRANSIT' || l.indexOf('TRANSIT') === 0) return 'Transit';
   if (/^[RVZ]-?\d+$/.test(l) || l.indexOf('KOLI') === 0) return 'Kolian';
   if (/^(TIKTOK|SHOPEE|STUDIO|IGLIVE)$/.test(l) || l.indexOf('BLOK F') > -1 || l.indexOf('SHOPEE') > -1 || l.indexOf('TIKTOK') > -1 || l.indexOf('STUDIO') > -1 || l.indexOf('IGLIVE') > -1 || l.indexOf('IG LIVE') > -1) return 'Blok F';
-  if (/^(CC|PMK|DF)-?\d*$/.test(l) || l.indexOf('PERBAIKAN') > -1 || l.indexOf('CUCI') > -1 || l.indexOf('PERMAK') > -1 || l.indexOf('DEFECT') > -1) return 'Perbaikan';
-  if (/^ST-?\d+$/.test(l)) return 'Sortir';
+  if (l === 'SORTIR' || /^(CC|PMK|DF)-?\d*$/.test(l) || /^ST-?\d+$/.test(l) || l.indexOf('PERBAIKAN') > -1 || l.indexOf('CUCI') > -1 || l.indexOf('PERMAK') > -1 || l.indexOf('DEFECT') > -1 || l.indexOf('SORTIR') > -1) return 'Perbaikan';
   return 'Anomali';
 }
 

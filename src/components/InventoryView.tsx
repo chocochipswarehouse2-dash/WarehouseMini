@@ -84,7 +84,6 @@ const AVAILABLE_AREAS = [
   { id: 'Perbaikan', label: 'Perbaikan' },
   { id: 'Aksesoris', label: 'Aksesoris' },
   { id: 'Transit', label: 'Transit' },
-  { id: 'Sortir', label: 'Sortir' },
 ];
 
 export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
