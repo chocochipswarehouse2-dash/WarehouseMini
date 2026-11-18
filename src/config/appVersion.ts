@@ -15,18 +15,30 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.19.2",
-  "versionCode": 392,
+  "version": "v2.19.3",
+  "versionCode": 393,
   "buildDate": "18 November 2026",
-  "buildHash": "wms-261118-v392-1349",
-  "releaseTitle": "WMS v2.19.2 — Hotfix Format Picker Pengecekan Surat Jalan",
+  "buildHash": "wms-261118-v393-1603",
+  "releaseTitle": "WMS v2.19.3 — Minimize & Perlindungan Offline Form Input Kargo + Auto-Fallback Server AI",
   "releaseNotes": [
-    "Perbaikan error 'isWarehouseLocation is not defined' saat klik Format Picker di Pengecekan Surat Jalan"
+    "Form Input Penerimaan Kargo & CMT kini memiliki tombol Minimize ke Dock Bawah, Mode Popup, dan Perlindungan Offline terpisah per kategori",
+    "Multi-model auto-fallback pada endpoint /api/ai untuk mencegah error 503 High Demand"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.19.2",
+    "versionCode": 392,
+    "buildDate": "18 November 2026",
+    "buildHash": "wms-261118-v392-1349",
+    "releaseTitle": "WMS v2.19.2 — Hotfix Format Picker Pengecekan Surat Jalan",
+    "releaseNotes": [
+      "Perbaikan error 'isWarehouseLocation is not defined' saat klik Format Picker di Pengecekan Surat Jalan"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.19.1",
     "versionCode": 391,
@@ -108,18 +120,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Ubah manifest PWA ke orientation portrait-primary (kunci 0 derajat tegak, hilangkan fallback SENSOR_PORTRAIT yang memicu sensor putar pada sebagian ROM Android)",
       "Perbaiki deteksi isMobilePhoneDevice untuk HP DPI kecil/Situs Desktop serta tambah listener orientationchange & gesture lock ulang",
       "Tambah kontrol Orientasi Layar HP di Pengaturan Perangkat (Kunci Tegak Default vs Ikuti Pengaturan HP OS)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.18.7",
-    "versionCode": 387,
-    "buildDate": "16 November 2026",
-    "buildHash": "wms-261116-v387-1316",
-    "releaseTitle": "WMS v2.18.7 — Minimize Proses Tugas Picking & Perlindungan Offline",
-    "releaseNotes": [
-      "Fitur Minimize saat proses picking aktif (di header, sticky scanner bar, dan bar bawah) ke dock mengambang yang bebas digeser",
-      "Perlindungan Offline penuh untuk Tugas Picking: auto-save draft per Surat Jalan ke memori lokal dan Outbox Offline idempotent saat penyelesaian SJ tanpa koneksi"
     ],
     "minSupportedVersion": "v2.0.0"
   }

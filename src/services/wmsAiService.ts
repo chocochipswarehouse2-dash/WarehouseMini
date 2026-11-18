@@ -3781,17 +3781,43 @@ export async function sendChatMessageToGemini(
   const activeSystemInstruction = buildFullSystemInstruction(session);
 
   const postToServerAi = async (payload: any): Promise<any> => {
-    const response = await fetch('/api/ai', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data?.error || `HTTP ${response.status}`);
+    const attemptModels = [payload.requestedModel || 'gemini-4-hydrogen', 'gemini-2.5-flash'];
+    let lastErr: any = null;
+    for (let attempt = 0; attempt < attemptModels.length; attempt++) {
+      try {
+        const response = await fetch('/api/ai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...payload, requestedModel: attemptModels[attempt] })
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          const errMsg = String(data?.error || `HTTP ${response.status}`);
+          if (
+            attempt < attemptModels.length - 1 &&
+            (response.status === 503 ||
+              response.status === 429 ||
+              response.status === 502 ||
+              response.status === 504 ||
+              errMsg.toLowerCase().includes('unavailable') ||
+              errMsg.toLowerCase().includes('high demand'))
+          ) {
+            await new Promise((r) => setTimeout(r, 400));
+            continue;
+          }
+          throw new Error(errMsg);
+        }
+        if (data?.model) modelUsed = data.model;
+        return data;
+      } catch (err: any) {
+        lastErr = err;
+        if (attempt < attemptModels.length - 1) {
+          await new Promise((r) => setTimeout(r, 400));
+          continue;
+        }
+      }
     }
-    if (data?.model) modelUsed = data.model;
-    return data;
+    throw lastErr || new Error('Gagal menghubungi server AI.');
   };
 
   let loopCount = 0;

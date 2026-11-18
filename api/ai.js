@@ -2,18 +2,40 @@ import { GoogleGenAI } from '@google/genai';
 
 const PRIMARY_MODEL = 'gemini-4-hydrogen';
 const FALLBACK_MODEL = 'gemini-3.1-flash-lite';
+const BACKUP_GA_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-3-flash-preview',
+  'gemini-2.5-flash-lite',
+  'gemini-2.0-flash',
+];
 const DEFAULT_USER_AGENT = 'aistudio-build';
 
 function isModelUnavailableError(err) {
-  const status = err?.status || err?.code;
+  const status = Number(err?.status || err?.code) || 0;
   const msg = String(err?.message || err || '').toLowerCase();
   return (
-    status === 404 ||
     status === 400 ||
+    status === 404 ||
+    status === 408 ||
+    status === 429 ||
+    status === 500 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504 ||
+    msg.includes('503') ||
+    msg.includes('429') ||
+    msg.includes('unavailable') ||
+    msg.includes('high demand') ||
+    msg.includes('overloaded') ||
+    msg.includes('resource_exhausted') ||
+    msg.includes('rate limit') ||
+    msg.includes('quota') ||
     msg.includes('not found') ||
     msg.includes('not supported') ||
     msg.includes('unknown model') ||
-    msg.includes('invalid model')
+    msg.includes('invalid model') ||
+    msg.includes('temporarily') ||
+    msg.includes('try again')
   );
 }
 
@@ -116,11 +138,12 @@ export default async function handler(req, res) {
     };
 
     const modelsToTry = [];
-    if (requestedModel === PRIMARY_MODEL || requestedModel === FALLBACK_MODEL) {
+    if (requestedModel && typeof requestedModel === 'string') {
       modelsToTry.push(requestedModel);
     }
-    if (!modelsToTry.includes(PRIMARY_MODEL)) modelsToTry.push(PRIMARY_MODEL);
-    if (!modelsToTry.includes(FALLBACK_MODEL)) modelsToTry.push(FALLBACK_MODEL);
+    for (const m of [PRIMARY_MODEL, FALLBACK_MODEL, ...BACKUP_GA_MODELS]) {
+      if (!modelsToTry.includes(m)) modelsToTry.push(m);
+    }
 
     let lastError = null;
     for (let i = 0; i < modelsToTry.length; i++) {

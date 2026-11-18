@@ -153,7 +153,9 @@ export const MinimizedWorkspacesDock: React.FC<MinimizedWorkspacesDockProps> = (
   ]);
 
   const showScannerPill = isScannerOpen && isScannerMinimized;
-  const showProduksiPill = isProduksiInputOpen && isProduksiInputMinimized;
+  const showProduksiPill =
+    (isProduksiInputOpen && isProduksiInputMinimized) ||
+    (!isProduksiInputOpen && produksiOutboxCount > 0);
   const showHitungUlangPill = isHitungUlangOpen && isHitungUlangMinimized;
   const showPickingPill = (pickingDraft.hasSession && pickingDraft.isMinimized) || pickingOutboxCount > 0;
 
@@ -412,6 +414,8 @@ export const MinimizedWorkspacesDock: React.FC<MinimizedWorkspacesDockProps> = (
                     ? 'bg-amber-600'
                     : syncingKey === 'produksi'
                     ? 'bg-emerald-600 animate-pulse'
+                    : produksiDraft.kategori === 'Kargo'
+                    ? 'bg-blue-600'
                     : 'bg-emerald-600'
                 }`}
               >
@@ -421,21 +425,30 @@ export const MinimizedWorkspacesDock: React.FC<MinimizedWorkspacesDockProps> = (
               <div className="flex flex-col pr-1 min-w-0">
                 <div className="flex items-center gap-1 flex-wrap">
                   <span className="text-[11px] font-extrabold text-slate-900 dark:text-white truncate">
-                    Input Produksi
+                    {produksiDraft.kategori === 'Kargo' ? 'Input Kargo' : 'Input Produksi'}
+                  </span>
+                  <span
+                    className={`px-1 py-0.2 rounded text-[9px] font-black uppercase ${
+                      produksiDraft.kategori === 'Kargo'
+                        ? 'bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300'
+                        : 'bg-teal-100 dark:bg-teal-950/70 text-teal-700 dark:text-teal-300'
+                    }`}
+                  >
+                    {produksiDraft.kategori === 'Kargo' ? 'KARGO' : 'CMT'}
                   </span>
                   {produksiDraft.noSuratJalan && (
                     <span className="px-1 py-0.2 rounded bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 text-[9px] font-mono font-bold">
-                      SJ {produksiDraft.noSuratJalan}
+                      {produksiDraft.noSuratJalan}
                     </span>
                   )}
                 </div>
 
                 <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[165px] sm:max-w-[210px]">
                   {produksiDraft.hasDraft
-                    ? `${produksiDraft.totalPcs} pcs (${produksiDraft.modelCount} model) di draft`
+                    ? `${produksiDraft.totalPcs} pcs (${produksiDraft.modelCount} kode) di draft`
                     : produksiOutboxCount > 0
                     ? `${produksiOutboxCount} item menunggu sync`
-                    : 'Draft siap · Klik buka'}
+                    : 'Draft aman · Klik lanjutkan'}
                 </span>
               </div>
             </div>

@@ -130,14 +130,31 @@ export const ProduksiInputPopupModal: React.FC<ProduksiInputPopupModalProps> = (
         {/* Top Header Bar */}
         <div className="px-3.5 sm:px-5 py-2.5 sm:py-3.5 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2.5 shrink-0">
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-teal-600 text-white flex items-center justify-center shadow-sm shadow-teal-500/20 shrink-0">
+            <div
+              className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl text-white flex items-center justify-center shadow-sm shrink-0 ${
+                draftSummary.kategori === 'Kargo'
+                  ? 'bg-blue-600 shadow-blue-500/20'
+                  : 'bg-teal-600 shadow-teal-500/20'
+              }`}
+            >
               <Factory className="w-5 h-5" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight truncate">
-                  Input Penerimaan Produksi
+                  {draftSummary.kategori === 'Kargo'
+                    ? 'Form Input Penerimaan Kargo'
+                    : 'Form Input Penerimaan Produksi (CMT & Kargo)'}
                 </h2>
+                <span
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                    draftSummary.kategori === 'Kargo'
+                      ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200/60 dark:border-blue-800/60'
+                      : 'bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border-teal-200/60 dark:border-teal-800/60'
+                  }`}
+                >
+                  {draftSummary.kategori === 'Kargo' ? '🚚 Kargo' : '🏭 Lokal CMT'}
+                </span>
                 <span
                   className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
                     isOnline
@@ -148,24 +165,24 @@ export const ProduksiInputPopupModal: React.FC<ProduksiInputPopupModalProps> = (
                   {isOnline ? (
                     <>
                       <Wifi className="w-3 h-3 text-emerald-500" />
-                      <span>Online</span>
+                      <span>Online · Auto-Save Aktif</span>
                     </>
                   ) : (
                     <>
                       <WifiOff className="w-3 h-3 text-amber-500" />
-                      <span>Mode Offline</span>
+                      <span>Mode Offline · Draft Terlindungi</span>
                     </>
                   )}
                 </span>
                 {draftSummary.hasDraft && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border border-teal-200/60 dark:border-teal-800/60">
                     <FileText className="w-3 h-3" />
-                    Draft: {draftSummary.noSuratJalan || 'SJ Baru'} ({draftSummary.modelCount} Kode · {draftSummary.totalPcs} pcs)
+                    Draft: {draftSummary.noSuratJalan || 'SJ/Resi Baru'} ({draftSummary.modelCount} Kode · {draftSummary.totalPcs} pcs)
                   </span>
                 )}
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                Pencatatan Surat Jalan konveksi dan rincian kuantitas per ukuran
+                Pencatatan kedatangan Lokal CMT &amp; Kargo dengan penyimpanan draft otomatis &amp; antrean offline
               </p>
             </div>
           </div>

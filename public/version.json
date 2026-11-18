@@ -1,11 +1,12 @@
 {
-  "version": "v2.19.2",
-  "versionCode": 392,
+  "version": "v2.19.3",
+  "versionCode": 393,
   "buildDate": "18 November 2026",
-  "buildHash": "wms-261118-v392-1349",
-  "releaseTitle": "WMS v2.19.2 — Hotfix Format Picker Pengecekan Surat Jalan",
+  "buildHash": "wms-261118-v393-1603",
+  "releaseTitle": "WMS v2.19.3 — Minimize & Perlindungan Offline Form Input Kargo + Auto-Fallback Server AI",
   "releaseNotes": [
-    "Perbaikan error 'isWarehouseLocation is not defined' saat klik Format Picker di Pengecekan Surat Jalan"
+    "Form Input Penerimaan Kargo & CMT kini memiliki tombol Minimize ke Dock Bawah, Mode Popup, dan Perlindungan Offline terpisah per kategori",
+    "Multi-model auto-fallback pada endpoint /api/ai untuk mencegah error 503 High Demand"
   ],
   "minSupportedVersion": "v2.0.0"
 }

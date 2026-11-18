@@ -849,6 +849,9 @@ export default function App() {
 
     // Auto-minimize any open maximized popup into the bottom Dock when navigating between main pages
     setIsScannerPopupMinimized(true);
+    if (getActiveProduksiInputDraftSummary().hasDraft) {
+      setIsProduksiInputPopupOpen(true);
+    }
     setIsProduksiInputPopupMinimized(true);
     setIsHitungUlangPopupMinimized(true);
     if (rawPage !== 'picking_tasks' && rawPage !== 'loading_dock') {
@@ -1111,6 +1114,35 @@ export default function App() {
   const [isProduksiInputPopupMinimized, setIsProduksiInputPopupMinimized] = useState<boolean>(() => {
     return getActiveProduksiInputDraftSummary().hasDraft;
   });
+
+  useEffect(() => {
+    const handleMinimizeProduksiInput = () => {
+      setIsProduksiInputPopupOpen(true);
+      setIsProduksiInputPopupMinimized(true);
+    };
+    const handleOpenProduksiInputPopup = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      setIsScannerPopupMinimized(true);
+      setIsHitungUlangPopupMinimized(true);
+      setIsProduksiInputPopupOpen(true);
+      setIsProduksiInputPopupMinimized(false);
+      if (detail?.kategori) {
+        setTimeout(() => {
+          window.dispatchEvent(
+            new CustomEvent('wms_prefill_penerimaan_produksi_form', {
+              detail: { formKategori: detail.kategori },
+            })
+          );
+        }, 40);
+      }
+    };
+    window.addEventListener('wms_minimize_produksi_input', handleMinimizeProduksiInput);
+    window.addEventListener('wms_open_produksi_input_popup', handleOpenProduksiInputPopup);
+    return () => {
+      window.removeEventListener('wms_minimize_produksi_input', handleMinimizeProduksiInput);
+      window.removeEventListener('wms_open_produksi_input_popup', handleOpenProduksiInputPopup);
+    };
+  }, []);
 
   // Popup Antrean & Audit Hitung Ulang (Minimizable & Offline Safe)
   const [isHitungUlangPopupOpen, setIsHitungUlangPopupOpen] = useState<boolean>(() => {
@@ -5457,7 +5489,10 @@ export default function App() {
               })
             );
           }
-          handleSelectPage('produksi');
+          setIsScannerPopupMinimized(true);
+          setIsHitungUlangPopupMinimized(true);
+          setIsProduksiInputPopupOpen(true);
+          setIsProduksiInputPopupMinimized(false);
         }}
         onNavigateToManualShipmentForm={() => {
           handleSelectPage('pesanan_saya');

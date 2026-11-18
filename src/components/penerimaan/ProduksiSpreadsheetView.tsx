@@ -1864,6 +1864,22 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
 
           <button
             type="button"
+            onClick={() => {
+              window.dispatchEvent(
+                new CustomEvent('wms_open_produksi_input_popup', {
+                  detail: { kategori: activeTab === 'Kargo' ? 'Kargo' : 'Lokal CMT' },
+                })
+              );
+            }}
+            className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-blue-700 dark:text-blue-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border border-blue-200 dark:border-blue-800 shadow-2xs"
+            title={`Buka Form Input Penerimaan ${activeTab === 'Kargo' ? 'Kargo' : 'Lokal CMT'} (Bisa Diminimize & Perlindungan Offline)`}
+          >
+            <Plus className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+            <span>Form Input {activeTab}</span>
+          </button>
+
+          <button
+            type="button"
             onClick={handleAddNewBlock}
             className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border border-slate-200 dark:border-slate-700 shadow-2xs"
             title="Tambah Tabel Kode Baru"
