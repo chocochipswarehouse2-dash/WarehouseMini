@@ -15,19 +15,30 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.19.1",
-  "versionCode": 391,
+  "version": "v2.19.2",
+  "versionCode": 392,
   "buildDate": "18 November 2026",
-  "buildHash": "wms-261118-v391-1336",
-  "releaseTitle": "WMS v2.19.1 — Setup Kapasitas Lokasi SORTIR (Area Perbaikan)",
+  "buildHash": "wms-261118-v392-1349",
+  "releaseTitle": "WMS v2.19.2 — Hotfix Format Picker Pengecekan Surat Jalan",
   "releaseNotes": [
-    "Setup Kapasitas lokasi SORTIR dibuat 1 lokasi statis (sama seperti Shopee/TikTok/Studio)",
-    "Pemetaan lokasi SORTIR otomatis mengikuti Area Perbaikan"
+    "Perbaikan error 'isWarehouseLocation is not defined' saat klik Format Picker di Pengecekan Surat Jalan"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.19.1",
+    "versionCode": 391,
+    "buildDate": "18 November 2026",
+    "buildHash": "wms-261118-v391-1336",
+    "releaseTitle": "WMS v2.19.1 — Setup Kapasitas Lokasi SORTIR (Area Perbaikan)",
+    "releaseNotes": [
+      "Setup Kapasitas lokasi SORTIR dibuat 1 lokasi statis (sama seperti Shopee/TikTok/Studio)",
+      "Pemetaan lokasi SORTIR otomatis mengikuti Area Perbaikan"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.19.0",
     "versionCode": 393,
@@ -109,19 +120,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Fitur Minimize saat proses picking aktif (di header, sticky scanner bar, dan bar bawah) ke dock mengambang yang bebas digeser",
       "Perlindungan Offline penuh untuk Tugas Picking: auto-save draft per Surat Jalan ke memori lokal dan Outbox Offline idempotent saat penyelesaian SJ tanpa koneksi"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.18.6",
-    "versionCode": 386,
-    "buildDate": "16 November 2026",
-    "buildHash": "wms-261116-v386-1312",
-    "releaseTitle": "WMS v2.18.6 — Minimize Tugas Picking, Perlindungan Offline & Perbaikan Lokasi Tunggal",
-    "releaseNotes": [
-      "Tambah tombol Minimize Picking di workspace Tugas Picking lengkap dengan banner lanjutkan di Daftar SJ & bubble floating draggable di dock lintas menu",
-      "Tambah perlindungan offline Tugas Picking: auto-save draft per SJ, indikator Online/Offline, antrean outbox wms_picking_offline_outbox_v1, dan auto-sync ke Supabase saat kembali online",
-      "Perbaiki bug klik pill lokasi dan tombol +1/Maks yang sebelumnya memicu log multi-lokasi anomali (koma/gabungan) agar selalu mencatat 1 rak tunggal prioritas serta flag Anomali di getAreaFromLokasi"
     ],
     "minSupportedVersion": "v2.0.0"
   }

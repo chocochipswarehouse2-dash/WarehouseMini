@@ -5,7 +5,7 @@ import {
   CheckCircle2, AlertTriangle, FileText, ChevronRight, Layers
 } from 'lucide-react';
 import { PengecekanSJDraft, ProductItem, UserSession, ProductLocationInfo, StockRealtimeItem } from '../../types';
-import { createPickingSuratJalanSupabase, fetchStockForSkus, isPickingEligibleForPengecekan, getPickingPriority } from '../../services/supabase';
+import { createPickingSuratJalanSupabase, fetchStockForSkus, isPickingEligibleForPengecekan, isWarehouseLocation, getPickingPriority } from '../../services/supabase';
 import { getWhatsAppWebUrl, getFonnteConfig, sendFonnteMessage, generateRefillPickingGroupMessage } from '../../services/whatsapp';
 import { playSaveSuccessChime, playSuccessBeep } from '../../services/audio';
 import { cleanProductName, extractCleanSizeToken } from '../../utils/sortUtils';
@@ -223,7 +223,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
       if (catMatch.lokasi && map.size === 0) {
         const parts = String(catMatch.lokasi).split(/[,/;\n|]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
         parts.forEach((loc) => {
-          if (loc && isWarehouseLocation(loc) && !map.has(loc)) {
+          if (loc && isPickingEligibleForPengecekan(loc) && !map.has(loc)) {
             map.set(loc, {
               lokasi: loc,
               qty: 0,

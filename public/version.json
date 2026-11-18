@@ -1,12 +1,11 @@
 {
-  "version": "v2.19.1",
-  "versionCode": 391,
+  "version": "v2.19.2",
+  "versionCode": 392,
   "buildDate": "18 November 2026",
-  "buildHash": "wms-261118-v391-1336",
-  "releaseTitle": "WMS v2.19.1 — Setup Kapasitas Lokasi SORTIR (Area Perbaikan)",
+  "buildHash": "wms-261118-v392-1349",
+  "releaseTitle": "WMS v2.19.2 — Hotfix Format Picker Pengecekan Surat Jalan",
   "releaseNotes": [
-    "Setup Kapasitas lokasi SORTIR dibuat 1 lokasi statis (sama seperti Shopee/TikTok/Studio)",
-    "Pemetaan lokasi SORTIR otomatis mengikuti Area Perbaikan"
+    "Perbaikan error 'isWarehouseLocation is not defined' saat klik Format Picker di Pengecekan Surat Jalan"
   ],
   "minSupportedVersion": "v2.0.0"
 }
