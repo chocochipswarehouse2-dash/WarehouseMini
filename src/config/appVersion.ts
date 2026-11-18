@@ -15,20 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.19.7",
-  "versionCode": 397,
+  "version": "v2.19.8",
+  "versionCode": 398,
   "buildDate": "18 November 2026",
-  "buildHash": "wms-261118-v397-1950",
-  "releaseTitle": "WMS v2.19.7 — Perbaikan Batal Ambil & Input Lokasi Manual Picking",
+  "buildHash": "wms-261118-v398-2005",
+  "releaseTitle": "WMS v2.19.8 — Perbaikan Status Sedang Dikerjakan dari Baris SELESAI di Picking",
   "releaseNotes": [
-    "Menambahkan input lokasi rak manual langsung pada kartu SKU di Tugas Picking",
-    "Menambahkan notifikasi rekomendasi Stock Opname jika stok rak minus saat picking jujur",
-    "Memperbaiki sinkronisasi Batal Ambil dan hapus SJ agar status Sedang Dikerjakan tidak muncul kembali"
+    "Memastikan active_pickers di Tugas Picking hanya membaca baris item yang belum SELESAI",
+    "Mencegah status Sedang Dikerjakan muncul kembali setelah Batal Ambil pada SJ dengan baris historis SELESAI"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.19.7",
+    "versionCode": 397,
+    "buildDate": "18 November 2026",
+    "buildHash": "wms-261118-v397-1950",
+    "releaseTitle": "WMS v2.19.7 — Perbaikan Batal Ambil & Input Lokasi Manual Picking",
+    "releaseNotes": [
+      "Menambahkan input lokasi rak manual langsung pada kartu SKU di Tugas Picking",
+      "Menambahkan notifikasi rekomendasi Stock Opname jika stok rak minus saat picking jujur",
+      "Memperbaiki sinkronisasi Batal Ambil dan hapus SJ agar status Sedang Dikerjakan tidak muncul kembali"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.19.6",
     "versionCode": 396,
@@ -110,18 +122,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Tambah Area Sortir (ST001-STnnn) ke seluruh modul WMS",
       "Filter Picking Pengecekan SJ hanya tampilkan lokasi Warehouse, Kolian, dan Transit"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.18.12",
-    "versionCode": 392,
-    "buildDate": "17 November 2026",
-    "buildHash": "wms-261117-v392-0935",
-    "releaseTitle": "WMS v2.18.12 — Auto-Provisioning & Pemulihan Grup Chat [MS & Alter] Store",
-    "releaseNotes": [
-      "Provisioning batch seluruh grup [MS & Alter] Store resmi via 1 atomic CAS + sinkronisasi otomatis pesanan yang terlewat (backfill 48 jam & Realtime receiver healing)",
-      "Perbaikan await notifikasi Live Chat saat submit pesanan Store serta merge server sebelum simpan agar riwayat chat tidak pernah tertimpa"
     ],
     "minSupportedVersion": "v2.0.0"
   }

@@ -1168,7 +1168,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           tanggal: item.tanggal || item.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
           tujuan: item.tujuan || 'Marketplace / Store',
           status: item.status || 'PENDING',
-          picker_name: item.picker_name || '',
+          picker_name: (item.status || '').toUpperCase().trim() === 'SELESAI' ? '' : (item.picker_name || ''),
           catatan: item.catatan || '',
           total_items: 0,
           total_qty_req: 0,
@@ -1306,14 +1306,30 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           }
         });
       };
-      addPickerUnique(g.picker_name);
       g.items.forEach((it) => {
         if ((it.status || '').toUpperCase().trim() !== 'SELESAI') {
           addPickerUnique(it.picker_name);
         }
       });
+      g.unexpected_items.forEach((it) => {
+        if ((it.status || '').toUpperCase().trim() !== 'SELESAI') {
+          addPickerUnique(it.picker_name);
+        }
+      });
       g.active_pickers = pickersList;
-      g.picker_name = pickersList.length > 0 ? pickersList.join(', ') : '';
+      if (pickersList.length > 0) {
+        g.picker_name = pickersList.join(', ');
+      } else if (g.items.length > 0 && g.items.every((it) => (it.status || '').toUpperCase().trim() === 'SELESAI')) {
+        const donePickers: string[] = [];
+        g.items.forEach((it) => {
+          parsePickerNamesList(it.picker_name).forEach((p) => {
+            if (!donePickers.some((ex) => isSameOperatorIdentity(ex, p))) donePickers.push(p);
+          });
+        });
+        g.picker_name = donePickers.join(', ');
+      } else {
+        g.picker_name = '';
+      }
 
       // Sort items by lokasi (Rack location) to optimize picker route
       g.items.sort((a, b) => {
