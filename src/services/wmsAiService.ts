@@ -35,13 +35,6 @@ import {
 import { getGlobalProductCatalogMap, lookupProductBySku, setGlobalProductCatalog, ProductLookupResult } from '../utils/productLookup';
 import { cleanProductName, resolveProductDisplaySize, extractSizeFromSku } from '../utils/sortUtils';
 import { getAllProductsFromLocalDb } from './localDb';
-import {
-  normalizeLookupCode,
-  matchTrelloByCode,
-  refreshTrelloLookupDictionaryFromCloud,
-  extractTrelloMetadataFromItem,
-  embedTrelloMetadataIntoKeterangan
-} from '../utils/trelloProduksiMatcher';
 import { getLocalCachedTrelloItems, extractBaseItemCode } from './trelloSyncService';
 import { fetchRackCapacityConfig, computeAllRackSlots, buildEnrichedCatalogMap } from './rackCapacityService';
 import { fetchReturOrders } from './returBarangService';
@@ -1520,6 +1513,8 @@ function formatLocalYmd(d: Date): string {
  * Helper mencari kandidat kartu Trello UP (Membedakan Kode Persis vs Kode Mirip seperti 6612 vs 6612-1)
  * beserta URL Foto Google Drive & Trello asli untuk ditampilkan di balon chat AI.
  */
+const normalizeLookupCode = (code?: string): string => (code || '').trim().toUpperCase().replace(/\s+/g, '');
+
 function findTrelloCandidatesForCode(rawCode: string): {
   requestedCode: string;
   hasExactCodeMatch: boolean;
@@ -1528,99 +1523,12 @@ function findTrelloCandidatesForCode(rawCode: string): {
   candidates: TrelloCandidatePreview[];
 } {
   const code = normalizeLookupCode(rawCode);
-  if (!code) {
-    return {
-      requestedCode: '',
-      hasExactCodeMatch: false,
-      needsSimilarCodeConfirmation: false,
-      exactCandidate: null,
-      candidates: []
-    };
-  }
-
-  const localTrelloList: TrelloUpItem[] = getLocalCachedTrelloItems().items || [];
-  const baseRequested = extractBaseItemCode(code);
-  const trelloMatch = matchTrelloByCode(code);
-
-  const rawMatchedItems: TrelloUpItem[] = [];
-  const seenCardIds = new Set<string>();
-
-  const pushItem = (item?: TrelloUpItem) => {
-    if (!item) return;
-    const itemCodeNorm = normalizeLookupCode(item.item_code || item.card_name);
-    const key = `${itemCodeNorm}_${item.up_code || item.list_name || ''}`;
-    if (!seenCardIds.has(key)) {
-      seenCardIds.add(key);
-      rawMatchedItems.push(item);
-    }
-  };
-
-  // 1. Cari yang persis (6612 === 6612) atau awalan/varian (6612-1, 6612-2, 6612A, dll)
-  localTrelloList.forEach((t) => {
-    const tCode = normalizeLookupCode(t.item_code);
-    const tBase = extractBaseItemCode(t.item_code || t.card_name);
-    if (!tCode) return;
-
-    if (
-      tCode === code ||
-      tCode.startsWith(code + '-') ||
-      tCode.startsWith(code + '_') ||
-      tCode.startsWith(code + '/') ||
-      tCode.startsWith(code + ' ') ||
-      (baseRequested && baseRequested.length >= 3 && tBase === baseRequested) ||
-      (code.length >= 4 && (tCode.includes(code) || code.includes(tCode)))
-    ) {
-      pushItem(t);
-    }
-  });
-
-  // 2. Tambahkan dari hasil matcher 4-tier jika belum masuk
-  if (trelloMatch) {
-    pushItem(trelloMatch.matchedItem);
-    if (Array.isArray(trelloMatch.alternateCandidates)) {
-      trelloMatch.alternateCandidates.slice(0, 4).forEach((alt) => pushItem(alt));
-    }
-  }
-
-  // Urutkan: Prioritas 1 = Exact Match (6612 === 6612), Prioritas 2 = Punya Foto, Prioritas 3 = UP terbaru
-  rawMatchedItems.sort((a, b) => {
-    const aExact = normalizeLookupCode(a.item_code) === code ? 1 : 0;
-    const bExact = normalizeLookupCode(b.item_code) === code ? 1 : 0;
-    if (aExact !== bExact) return bExact - aExact;
-
-    const aHasPhoto = a.gdrive_image_url || a.trello_image_url ? 1 : 0;
-    const bHasPhoto = b.gdrive_image_url || b.trello_image_url ? 1 : 0;
-    if (aHasPhoto !== bHasPhoto) return bHasPhoto - aHasPhoto;
-
-    return Number(b.list_pos ?? b.pos ?? 0) - Number(a.list_pos ?? a.pos ?? 0);
-  });
-
-  const hasExact = rawMatchedItems.some((item) => normalizeLookupCode(item.item_code) === code);
-
-  const candidates: TrelloCandidatePreview[] = rawMatchedItems.slice(0, 5).map((item) => {
-    const mCode = normalizeLookupCode(item.item_code || item.card_name) || code;
-    const isExact = mCode === code;
-    return {
-      requestedCode: code,
-      matchedCode: mCode,
-      isExactCodeMatch: isExact,
-      needsConfirmation: !hasExact || !isExact,
-      productName: item.item_name || item.card_name || 'Tanpa Nama Produk',
-      upCode: item.up_code || item.list_name || 'Tanpa UP',
-      photoUrl: item.gdrive_image_url || item.trello_image_url || undefined,
-      fallbackPhotoUrl: item.trello_image_url || undefined
-    };
-  });
-
-  const exactCandidate = candidates.find((c) => c.isExactCodeMatch) || null;
-  const needsSimilarCodeConfirmation = !hasExact && candidates.length > 0;
-
   return {
     requestedCode: code,
-    hasExactCodeMatch: hasExact,
-    needsSimilarCodeConfirmation,
-    exactCandidate,
-    candidates
+    hasExactCodeMatch: false,
+    needsSimilarCodeConfirmation: false,
+    exactCandidate: null,
+    candidates: []
   };
 }
 
@@ -1645,14 +1553,6 @@ async function executeLookupProductionCode(
   if (codeListRaw.length === 0) {
     return { error: 'Kode produksi kosong' };
   }
-
-  // Pastikan kamus Trello tersedia; jika kosong, muat dari cloud
-  try {
-    const localTrello = getLocalCachedTrelloItems();
-    if (!localTrello.items || localTrello.items.length === 0) {
-      await refreshTrelloLookupDictionaryFromCloud();
-    }
-  } catch {}
 
   const allPenerimaan = await fetchPenerimaanProduksiFromSupabase({ limit: 1500 }).catch(() => [] as PenerimaanProduksiItem[]);
   const collectedPreviews: TrelloCandidatePreview[] = [];
@@ -1682,8 +1582,6 @@ async function executeLookupProductionCode(
 
     matchedReceipts.forEach((r) => {
       const sjKey = `${r.tanggal_penerimaan}_${r.no_surat_jalan}_${r.kode_produksi}`;
-      const meta = extractTrelloMetadataFromItem(r);
-      const primaryCand = candidateAnalysis.exactCandidate || candidateAnalysis.candidates[0];
       const qty = Number(r.qty ?? (r as any).total_pcs ?? (r as any).total_qty ?? 0);
       if (!sjMap.has(sjKey)) {
         sjMap.set(sjKey, {
@@ -1691,8 +1589,8 @@ async function executeLookupProductionCode(
           no_surat_jalan: r.no_surat_jalan,
           kategori: r.kategori || 'Lokal CMT',
           kode_produksi: r.kode_produksi,
-          nama_produk: meta.productName || primaryCand?.productName || r.nama_produk || '-',
-          up_vendor: meta.upCode || primaryCand?.upCode || '-',
+          nama_produk: r.nama_produk || '-',
+          up_vendor: r.keterangan || '-',
           total_pcs: 0,
           rincian_warna_size: []
         });
@@ -1751,13 +1649,6 @@ async function executeQueryProductionReceipts(args: {
   category?: string;
   keyword?: string;
 }): Promise<any> {
-  try {
-    const localTrello = getLocalCachedTrelloItems();
-    if (!localTrello.items || localTrello.items.length === 0) {
-      await refreshTrelloLookupDictionaryFromCloud();
-    }
-  } catch {}
-
   const startDate = args.start_date ? String(args.start_date).trim() : undefined;
   const endDate = args.end_date ? String(args.end_date).trim() : undefined;
   const rawCategory = args.category ? String(args.category).trim() : '';
@@ -1801,11 +1692,8 @@ async function executeQueryProductionReceipts(args: {
   // Filter Keyword jika ada
   if (rawKeyword) {
     items = items.filter((it) => {
-      const meta = extractTrelloMetadataFromItem(it);
-      const trello = matchTrelloByCode(it.kode_produksi);
-      const prodName = (meta.productName || trello?.productName || it.nama_produk || '').toLowerCase();
-      const upVendor = (meta.upCode || trello?.upCode || '').toLowerCase();
-      const targetStr = `${it.kode_produksi || ''} ${it.no_surat_jalan || ''} ${prodName} ${upVendor} ${it.warna || ''} ${it.keterangan || ''} ${it.operator || ''}`.toLowerCase();
+      const prodName = (it.nama_produk || '').toLowerCase();
+      const targetStr = `${it.kode_produksi || ''} ${it.no_surat_jalan || ''} ${prodName} ${it.warna || ''} ${it.keterangan || ''} ${it.operator || ''}`.toLowerCase();
       return targetStr.includes(rawKeyword);
     });
   }
@@ -1896,12 +1784,10 @@ async function executeQueryProductionReceipts(args: {
 
     const groupKey = `${tgl}___${cat}___${sj}___${kode}`;
     if (!codeGroupsMap.has(groupKey)) {
-      const meta = extractTrelloMetadataFromItem(it);
-      const trello = matchTrelloByCode(kode);
       codeGroupsMap.set(groupKey, {
         kode_produksi: kode,
-        nama_produk: meta.productName || trello?.productName || it.nama_produk || 'Belum Ada Nama di Trello',
-        up_vendor: meta.upCode || trello?.upCode || '-',
+        nama_produk: it.nama_produk || '-',
+        up_vendor: it.keterangan || '-',
         kategori: cat,
         no_surat_jalan: sj,
         tanggal_penerimaan: tgl,
@@ -2033,9 +1919,7 @@ async function executeGenerateProductionRecap(args: { month: number; year: numbe
     if (it.kode_produksi) categorySummary[cat].kode.add(it.kode_produksi);
 
     const kode = (it.kode_produksi || 'TANPA-KODE').trim().toUpperCase();
-    const meta = extractTrelloMetadataFromItem(it);
-    const trello = matchTrelloByCode(kode);
-    const displayName = meta.productName || trello?.productName || it.nama_produk || kode;
+    const displayName = it.nama_produk || kode;
     const key = `${kode} (${displayName})`;
     if (!productSummary[key]) {
       productSummary[key] = { nama: key, pcs: 0, kategori: cat };
@@ -2096,13 +1980,6 @@ async function executePrepareProductionReceiptForm(
     return { error: 'Daftar produk untuk form penerimaan kosong.' };
   }
 
-  try {
-    const localTrello = getLocalCachedTrelloItems();
-    if (!localTrello.items || localTrello.items.length === 0) {
-      await refreshTrelloLookupDictionaryFromCloud();
-    }
-  } catch {}
-
   // Baca draft saat ini jika mode === 'append'
   let existingDraft: any = null;
   try {
@@ -2143,47 +2020,10 @@ async function executePrepareProductionReceiptForm(
 
   const newBlocks = args.products.map((prod, bIdx) => {
     const kode = String(prod.kode_produksi || '').trim().toUpperCase();
-    const candidateAnalysis = findTrelloCandidatesForCode(kode);
-
-    // Lampirkan kartu foto produk di chat (baik cocok persis maupun kandidat mirip)
-    if (candidateAnalysis.candidates.length > 0) {
-      collectedPreviews.push(...candidateAnalysis.candidates.slice(0, 4));
-    }
-
     let catatan = String(prod.catatan || '').trim();
     let fotoUrl = '';
-    let statusTrelloLabel = 'Belum terdaftar di Trello UP';
+    let statusTrelloLabel = '-';
     let upVendorLabel = '-';
-
-    // ATURAN PENTING:
-    // Hanya tempelkan Nama Produk & Foto Trello secara otomatis ke Form Input JIKA kode cocok persis (EXACT, misal 6612 == 6612).
-    // Jika kode di Trello ternyata BEDA / MIRIP (misal user sebut "6612" tapi di Trello adanya "6612-1"),
-    // JANGAN langsung auto-match ke form tanpa izin! Tanyakan dulu ke user sambil menampilkan Fotonya!
-    if (candidateAnalysis.hasExactCodeMatch && candidateAnalysis.exactCandidate) {
-      const exact = candidateAnalysis.exactCandidate;
-      catatan = embedTrelloMetadataIntoKeterangan(catatan, exact.upCode, exact.productName);
-      if (exact.photoUrl) {
-        fotoUrl = exact.photoUrl;
-      }
-      statusTrelloLabel = exact.productName;
-      upVendorLabel = exact.upCode;
-
-      // Jika selain yang persis ada juga varian mirip lainnya (misal ada 6612 dan ada 6612-1), beri info ke user
-      const otherVariants = candidateAnalysis.candidates.filter((c) => !c.isExactCodeMatch);
-      if (otherVariants.length > 0) {
-        similarCodeWarnings.push(
-          `Untuk kode "${kode}", selain kode persis "${kode}" ditemukan juga varian kode mirip di Trello: ${otherVariants.map((v) => `${v.matchedCode} (${v.productName} - ${v.upCode})`).join(', ')}. Pastikan dengan pengguna apakah yang dimaksud "${kode}" atau "${otherVariants[0].matchedCode}" sesuai foto terlampir.`
-        );
-      }
-    } else if (candidateAnalysis.needsSimilarCodeConfirmation && candidateAnalysis.candidates.length > 0) {
-      const simList = candidateAnalysis.candidates
-        .map((c) => `${c.matchedCode} (${c.productName} - ${c.upCode})`)
-        .join(', ');
-      statusTrelloLabel = `⚠️ BELUM AUTO-MATCH (Menunggu Konfirmasi User: Apakah maksudnya ${simList}?)`;
-      similarCodeWarnings.push(
-        `Kode "${kode}" TIDAK ditemukan persis di Trello UP, tetapi ada kode yang mirip yaitu: ${simList}. JANGAN auto-match diam-diam! WAJIB TANYA DULU ke pengguna apakah benar produk "${candidateAnalysis.candidates[0].matchedCode}" (${candidateAnalysis.candidates[0].productName}) seperti pada FOTO TERLAMPIR di bawah yang dimaksud! Jika pengguna menjawab "Ya", panggil kembali prepare_production_receipt_form dengan kode "${candidateAnalysis.candidates[0].matchedCode}".`
-      );
-    }
 
     const rawVariants = Array.isArray(prod.variants) ? prod.variants : [];
     const allSizeDetected =
@@ -2260,21 +2100,8 @@ async function executePrepareProductionReceiptForm(
 
     preparedSummary.push({
       kode_diminta: kode,
-      status_kecocokan_trello: candidateAnalysis.hasExactCodeMatch
-        ? 'COCOK_PERSIS'
-        : candidateAnalysis.needsSimilarCodeConfirmation
-        ? 'PERLU_KONFIRMASI_KODE_MIRIP'
-        : 'TIDAK_ADA_DI_TRELLO',
       nama_produk_trello: statusTrelloLabel,
       up_vendor_trello: upVendorLabel,
-      kandidat_kode_mirip_di_trello: candidateAnalysis.needsSimilarCodeConfirmation
-        ? candidateAnalysis.candidates.map((c) => ({
-            kode_trello: c.matchedCode,
-            nama_produk: c.productName,
-            up_vendor: c.upCode,
-            foto_sudah_dilampirkan_di_chat: Boolean(c.photoUrl)
-          }))
-        : undefined,
       foto_otomatis_terpasang: Boolean(fotoUrl),
       mode_ukuran: sizeMode === 'allsize' ? 'ALL SIZE' : `Multi-Size (${sizeColumns.join(', ')})`,
       rincian_warna: warnasFormatted.map((w) => ({

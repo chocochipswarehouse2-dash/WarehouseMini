@@ -1,12 +1,12 @@
 {
-  "version": "v2.19.3",
-  "versionCode": 393,
+  "version": "v2.19.5",
+  "versionCode": 395,
   "buildDate": "18 November 2026",
-  "buildHash": "wms-261118-v393-1603",
-  "releaseTitle": "WMS v2.19.3 — Minimize & Perlindungan Offline Form Input Kargo + Auto-Fallback Server AI",
+  "buildHash": "wms-261118-v395-1901",
+  "releaseTitle": "WMS v2.19.5 — Hapus Auto-Fill Trello di Penerimaan Produksi",
   "releaseNotes": [
-    "Form Input Penerimaan Kargo & CMT kini memiliki tombol Minimize ke Dock Bawah, Mode Popup, dan Perlindungan Offline terpisah per kategori",
-    "Multi-model auto-fallback pada endpoint /api/ai untuk mencegah error 503 High Demand"
+    "Menghapus fitur auto-lookup dan auto-fill otomatis dari Trello UP di Form Penerimaan Produksi, Spreadsheet, Push Sheets, dan Asisten AI",
+    "Mencegah anomali data nama produk, UP vendor, dan foto akibat pencocokan otomatis"
   ],
   "minSupportedVersion": "v2.0.0"
 }

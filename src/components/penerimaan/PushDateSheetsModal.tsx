@@ -13,8 +13,11 @@ import {
   Sparkles,
   ChevronRight,
   RotateCw,
+  Minimize2,
+  Maximize2,
 } from 'lucide-react';
 import { PenerimaanProduksiItem, ProductItem } from '../../types';
+import { DraggableFloatingBubble, BubbleDragHandle } from '../common/DraggableFloatingBubble';
 import {
   pushProduksiPerTanggalToGoogleSheet,
   pushPenerimaanProduksiToGoogleSheet,
@@ -26,7 +29,6 @@ import {
 } from '../../services/gasProduksiSync';
 import { MatrixProductBlock } from './ProduksiSpreadsheetView';
 import { alignItemWithMasterProduct, buildProductLookupMap, lookupProductBySku } from '../../utils/productLookup';
-import { matchTrelloByCode } from '../../utils/trelloProduksiMatcher';
 
 interface PushDateSheetsModalProps {
   isOpen: boolean;
@@ -132,29 +134,43 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
 
   const [isPushing, setIsPushing] = useState<boolean>(false);
   const [isRefreshingIndex, setIsRefreshingIndex] = useState<boolean>(false);
+  const [isMinimized, setIsMinimized] = useState<boolean>(false);
+  const [pushStep, setPushStep] = useState<'idle' | 'pushing' | 'completed' | 'failed'>('idle');
+  const [progressCur, setProgressCur] = useState<number>(0);
+  const [progressTot, setProgressTot] = useState<number>(0);
   const [progressMsg, setProgressMsg] = useState<string>('');
   const [lastSheetUrl, setLastSheetUrl] = useState<string | null>(null);
 
   const handleRefreshIndex = async () => {
     try {
       setIsRefreshingIndex(true);
+      setPushStep('pushing');
+      setProgressMsg('Menata ulang Indeks DAFTAR_TANGGAL di Google Spreadsheet...');
       const res = await refreshProduksiSpreadsheetIndex();
       if (res.success) {
+        setPushStep('completed');
         onShowToast(res.message || 'Sukses memperbarui Indeks DAFTAR_TANGGAL di Spreadsheet!', 'success');
         if (res.sheetUrl) setLastSheetUrl(res.sheetUrl);
       } else {
+        setPushStep('failed');
         onShowToast(res.message || 'Gagal memperbarui indeks', 'error');
       }
     } catch (err: any) {
+      setPushStep('failed');
       onShowToast('Gagal refresh indeks: ' + (err?.message || err), 'error');
     } finally {
       setIsRefreshingIndex(false);
+      setProgressMsg('');
     }
   };
 
   // Sync state if modal reopens or tab switches
   React.useEffect(() => {
     if (isOpen) {
+      setIsMinimized(false);
+      if (!isPushing && !isRefreshingIndex) {
+        setPushStep('idle');
+      }
       if (initialDateFilter && initialDateFilter !== 'all' && availableDates.includes(initialDateFilter)) {
         setMode('single');
         setSelectedDate(initialDateFilter);
@@ -163,7 +179,9 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
           setSelectedDate(availableDates[0]);
         }
       }
-      setLastSheetUrl(null);
+      if (!isPushing) {
+        setLastSheetUrl(null);
+      }
     }
   }, [isOpen, initialDateFilter, availableDates, currentTab]);
 
@@ -222,11 +240,14 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
     }
   }, [mode, selectedDate, dateSummaries, totalMasterQty, categoryItems.length, currentTab]);
 
-  if (!isOpen) return null;
+  if (!isOpen && !isPushing && !isRefreshingIndex) return null;
 
   const handleExecutePush = async () => {
     try {
       setIsPushing(true);
+      setPushStep('pushing');
+      setProgressCur(0);
+      setProgressTot(mode === 'master' ? 1 : Math.max(1, activeSummary.targetCount));
 
       // Ensure blocks strictly match currentTab (prevent cross-contamination between CMT and Kargo)
       const baseBlocks = (currentTab === initialActiveTab && blocks && blocks.length > 0)
@@ -237,16 +258,15 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
         ? baseBlocks
         : buildMatrixBlocksFromItems(categoryItems, currentTab === 'CMT');
 
-      // Pastikan productName dan upVendor selalu ter-enrich dari Trello Matcher & Master Catalog
+      // Pastikan productName dan upVendor ter-enrich dari Master Catalog
       const enrichedBlocks = effectiveBlocks.map((b) => {
-        const trelloMatch = matchTrelloByCode(b.code);
         const lookup = lookupProductBySku(b.code, productCatalog, b.productName);
         return {
           ...b,
-          productName: b.productName || trelloMatch?.productName || (lookup.found ? lookup.nama_produk : '') || '',
+          productName: b.productName || (lookup.found ? lookup.nama_produk : '') || '',
           upVendor: (b.upVendor && b.upVendor !== 'KARGO' && b.upVendor !== 'CMT')
             ? b.upVendor
-            : (trelloMatch?.upCode || b.upVendor || (currentTab === 'CMT' ? 'CMT' : 'KARGO')),
+            : (b.upVendor || (currentTab === 'CMT' ? 'CMT' : 'KARGO')),
         };
       });
 
@@ -259,11 +279,14 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
         });
 
         if (res.success) {
+          setProgressCur(1);
+          setPushStep('completed');
           onShowToast(res.message || `Sukses update tab Master Produksi (${currentTab})!`, 'success');
           if (res.sheetUrl) {
             setLastSheetUrl(res.sheetUrl);
           }
         } else {
+          setPushStep('failed');
           onShowToast(res.message || 'Gagal push Master Produksi', 'error');
         }
       } else {
@@ -276,27 +299,157 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
           activeTab: currentTab,
           targetDate: target,
           onProgress: (cur, tot, sheetName) => {
+            setProgressCur(cur);
+            setProgressTot(tot);
             setProgressMsg(`Mengirim tab ${cur}/${tot}: ${sheetName}...`);
           },
         });
 
         if (res.success) {
+          setProgressCur(progressTot || activeSummary.targetCount);
+          setPushStep('completed');
           onShowToast(res.message, 'success');
           if (res.sheetUrl) {
             setLastSheetUrl(res.sheetUrl);
           }
         } else {
+          setPushStep('failed');
           onShowToast(res.message || 'Gagal push ke Google Sheets', 'error');
         }
       }
     } catch (err: any) {
       console.error('Error in handleExecutePush:', err);
+      setPushStep('failed');
       onShowToast('Terjadi kesalahan saat push: ' + (err?.message || err), 'error');
     } finally {
       setIsPushing(false);
       setProgressMsg('');
     }
   };
+
+  const isBusy = isPushing || isRefreshingIndex;
+  const progressPct =
+    progressTot > 0
+      ? Math.min(100, Math.round((progressCur / progressTot) * 100))
+      : isBusy
+        ? 45
+        : pushStep === 'completed'
+          ? 100
+          : 0;
+
+  // Floating Minimized Bubble when minimized or closed while background push is still running
+  if (isMinimized || !isOpen) {
+    return (
+      <DraggableFloatingBubble
+        storageKey="push_date_sheets_minimized"
+        defaultAnchor="bottom-left"
+        defaultOffset={{ x: 16, y: 76 }}
+        zIndexClass="z-[70]"
+        className="w-[calc(100vw-2rem)] sm:w-96"
+        ariaLabel="Push Update Sheet Minimized"
+      >
+        <div className="w-full bg-slate-900/95 dark:bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-700/80 p-3.5 backdrop-blur-md animate-in slide-in-from-bottom-4 duration-200">
+          <div className="flex items-start justify-between gap-2.5 mb-2">
+            <div
+              onClick={() => setIsMinimized(false)}
+              className="flex items-center gap-2 min-w-0 cursor-pointer hover:opacity-90"
+            >
+              <BubbleDragHandle tone="dark" className="-ml-1" />
+              <div
+                className={`p-2 rounded-xl shrink-0 ${pushStep === 'completed' && !isBusy
+                    ? 'bg-emerald-500/20 text-emerald-400'
+                    : pushStep === 'failed' && !isBusy
+                      ? 'bg-rose-500/20 text-rose-400'
+                      : 'bg-blue-500/20 text-blue-400'
+                  }`}
+              >
+                {isBusy ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : pushStep === 'completed' ? (
+                  <CheckCircle2 className="w-4 h-4" />
+                ) : (
+                  <FileSpreadsheet className="w-4 h-4" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-extrabold tracking-tight truncate flex items-center gap-1.5">
+                  <span>
+                    {isBusy
+                      ? `Push Sheet ${currentTab} (${progressPct}%)`
+                      : pushStep === 'completed'
+                        ? `Push Sheet ${currentTab} Selesai!`
+                        : `Push Sheet ${currentTab}`}
+                  </span>
+                  <span
+                    className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase ${currentTab === 'Kargo'
+                        ? 'bg-blue-500/30 text-blue-300'
+                        : 'bg-rose-500/30 text-rose-300'
+                      }`}
+                  >
+                    {currentTab}
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-400 truncate font-mono">
+                  {isBusy
+                    ? progressMsg || 'Mengirim data ke Google Sheets...'
+                    : `${activeSummary.targetCount} Tab Sheet • ${activeSummary.totalQty.toLocaleString('id-ID')} pcs`}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0">
+              {lastSheetUrl && !isBusy && (
+                <a
+                  href={lastSheetUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-2 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-[10px] font-bold text-white flex items-center gap-1 transition-colors"
+                  title="Buka Google Spreadsheet"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  <span>Sheet</span>
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsMinimized(false)}
+                title="Perbesar Jendela Push Sheet"
+                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-200 flex items-center gap-1 transition-colors cursor-pointer"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span>Buka</span>
+              </button>
+              {!isBusy && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMinimized(false);
+                    onClose();
+                  }}
+                  title="Tutup"
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {(isBusy || pushStep === 'completed') && (
+            <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div
+                className={`h-full transition-all duration-300 rounded-full ${pushStep === 'completed' && !isBusy
+                    ? 'bg-emerald-500'
+                    : 'bg-gradient-to-r from-blue-500 to-emerald-500'
+                  }`}
+                style={{ width: `${pushStep === 'completed' && !isBusy ? 100 : Math.max(12, progressPct)}%` }}
+              />
+            </div>
+          )}
+        </div>
+      </DraggableFloatingBubble>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-in fade-in duration-150">
@@ -319,14 +472,31 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isPushing}
-            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setIsMinimized(true)}
+              className="px-2.5 py-1.5 text-xs font-bold text-indigo-200 hover:text-white bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+              title="Minimize ke Bubble Mengambang (Proses push tetap berjalan di latar belakang)"
+            >
+              <Minimize2 className="w-3.5 h-3.5" />
+              <span>Minimize</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (isPushing || isRefreshingIndex) {
+                  setIsMinimized(true);
+                } else {
+                  onClose();
+                }
+              }}
+              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition cursor-pointer"
+              title={isPushing || isRefreshingIndex ? 'Minimize ke latar belakang' : 'Tutup'}
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* MODAL BODY */}
@@ -379,11 +549,10 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
             <button
               type="button"
               onClick={() => setCurrentTab('CMT')}
-              className={`flex-1 py-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-2 cursor-pointer ${
-                currentTab === 'CMT'
+              className={`flex-1 py-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-2 cursor-pointer ${currentTab === 'CMT'
                   ? 'bg-rose-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
+                }`}
             >
               <span>🧵 Lokal CMT</span>
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${currentTab === 'CMT' ? 'bg-rose-700 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
@@ -394,11 +563,10 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
             <button
               type="button"
               onClick={() => setCurrentTab('Kargo')}
-              className={`flex-1 py-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-2 cursor-pointer ${
-                currentTab === 'Kargo'
+              className={`flex-1 py-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-2 cursor-pointer ${currentTab === 'Kargo'
                   ? 'bg-blue-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
+                }`}
             >
               <span>📦 Kargo</span>
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${currentTab === 'Kargo' ? 'bg-blue-700 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
@@ -417,11 +585,10 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
               {/* OPSI 1: HANYA TANGGAL TERTENTU */}
               <div
                 onClick={() => setMode('single')}
-                className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
-                  mode === 'single'
+                className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all ${mode === 'single'
                     ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30 shadow-xs'
                     : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-50/50 dark:bg-slate-850/50'
-                }`}
+                  }`}
               >
                 <div className="flex items-start gap-2.5">
                   <input
@@ -472,11 +639,10 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
               {/* OPSI 2: SEMUA TANGGAL */}
               <div
                 onClick={() => setMode('all')}
-                className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
-                  mode === 'all'
+                className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all ${mode === 'all'
                     ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30 shadow-xs'
                     : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-50/50 dark:bg-slate-850/50'
-                }`}
+                  }`}
               >
                 <div className="flex items-start gap-2.5">
                   <input
@@ -505,11 +671,10 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
               {/* OPSI 3: MASTER PRODUKSI REKAP */}
               <div
                 onClick={() => setMode('master')}
-                className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
-                  mode === 'master'
+                className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all ${mode === 'master'
                     ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30 shadow-xs'
                     : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-50/50 dark:bg-slate-850/50'
-                }`}
+                  }`}
               >
                 <div className="flex items-start gap-2.5">
                   <input
@@ -644,11 +809,25 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={onClose}
-              disabled={isPushing}
+              onClick={() => setIsMinimized(true)}
+              className="px-3.5 py-2 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+              title="Minimize jendela ini ke pojok layar (tetap berjalan di latar belakang)"
+            >
+              <Minimize2 className="w-3.5 h-3.5" />
+              <span>Minimize</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (isPushing || isRefreshingIndex) {
+                  setIsMinimized(true);
+                } else {
+                  onClose();
+                }
+              }}
               className="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition cursor-pointer"
             >
-              Tutup
+              {isPushing || isRefreshingIndex ? 'Sembunyikan' : 'Tutup'}
             </button>
             <button
               type="button"
@@ -668,8 +847,8 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
                     {mode === 'single'
                       ? `Push Sheet Tanggal ${formatDateIndo(selectedDate)}`
                       : mode === 'master'
-                      ? `Push Update Tab Master Produksi (${currentTab})`
-                      : `Push Semua (${activeSummary.targetCount} Sheet Tanggal)`}
+                        ? `Push Update Tab Master Produksi (${currentTab})`
+                        : `Push Semua (${activeSummary.targetCount} Sheet Tanggal)`}
                   </span>
                 </>
               )}

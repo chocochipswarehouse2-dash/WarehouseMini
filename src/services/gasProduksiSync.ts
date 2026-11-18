@@ -9,10 +9,6 @@ import {
   getRecountAuditMap,
   fetchRecountAuditMapFromCloud,
 } from './supabase';
-import {
-  matchTrelloByCode,
-  extractTrelloMetadataFromItem,
-} from '../utils/trelloProduksiMatcher';
 import { lookupProductBySku } from '../utils/productLookup';
 
 export const PRODUKSI_SPREADSHEET_ID = '1fnW49pCI8X8-lYtmXljxB0GsZWKkQtKshV2R5-mlodk';
@@ -349,29 +345,19 @@ export function buildBlocksFromRawItems(
     });
     const distinctSjs = Array.from(sjMap.values()).sort((a, b) => b.qty - a.qty);
 
-    // Auto-lookup Trello UP jika nama_produk atau keterangan/UP masih kosong
-    const trelloMatch = matchTrelloByCode(code);
-    const trelloExtracted = items.map(it => extractTrelloMetadataFromItem(it)).find(x => x.upCode || x.productName);
     const lookup = lookupProductBySku(code, undefined, firstItem.nama_produk);
 
     const resolvedProductName =
       firstItem.nama_produk ||
-      trelloMatch?.productName ||
-      trelloExtracted?.productName ||
       (lookup.found ? lookup.nama_produk : '') ||
       (/^[A-Za-z\s]+$/.test(code) && code.length > 3 ? code.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()) : '') ||
       '';
 
     const resolvedUpVendor =
-      trelloMatch?.upCode ||
-      trelloExtracted?.upCode ||
       (firstItem.keterangan && firstItem.keterangan !== 'KARGO' && firstItem.keterangan !== 'CMT' ? firstItem.keterangan : '') ||
       (activeTab === 'CMT' ? 'CMT' : 'KARGO');
 
-    const resolvedPhotoUrl =
-      firstItem.foto_url ||
-      trelloMatch?.photoUrl ||
-      '';
+    const resolvedPhotoUrl = firstItem.foto_url || '';
 
     resultBlocks.push({
       id: code,
@@ -522,12 +508,11 @@ export async function pushProduksiPerTanggalToGoogleSheet(
     const formattedDateItems = dateItems.map((it) => {
       const codeKey = (it.kode_produksi || '').trim().toUpperCase();
       const bMatch = dateBlocks?.find(b => (b.code || '').trim().toUpperCase() === codeKey);
-      const trelloMatch = matchTrelloByCode(codeKey);
       const lookup = lookupProductBySku(codeKey, undefined, it.nama_produk);
-      const finalName = it.nama_produk || bMatch?.productName || trelloMatch?.productName || (lookup.found ? lookup.nama_produk : '');
+      const finalName = it.nama_produk || bMatch?.productName || (lookup.found ? lookup.nama_produk : '');
       const finalUp = (it.keterangan && it.keterangan !== 'KARGO' && it.keterangan !== 'CMT')
         ? it.keterangan
-        : (bMatch?.upVendor || trelloMatch?.upCode || it.keterangan || (activeTab === 'CMT' ? 'CMT' : 'KARGO'));
+        : (bMatch?.upVendor || it.keterangan || (activeTab === 'CMT' ? 'CMT' : 'KARGO'));
 
       return {
         tanggal_penerimaan: it.tanggal_penerimaan || dStr,
@@ -580,14 +565,13 @@ export async function pushProduksiPerTanggalToGoogleSheet(
         ? ds.blocks
         : buildBlocksFromRawItems(ds.items, [ds.tanggal], activeTab)
       ).map((b) => {
-        const trelloMatch = matchTrelloByCode(b.code);
         const lookup = lookupProductBySku(b.code, undefined, b.productName);
         return {
           ...b,
-          productName: b.productName || trelloMatch?.productName || (lookup.found ? lookup.nama_produk : '') || '',
+          productName: b.productName || (lookup.found ? lookup.nama_produk : '') || '',
           upVendor: (b.upVendor && b.upVendor !== 'KARGO' && b.upVendor !== 'CMT')
             ? b.upVendor
-            : (trelloMatch?.upCode || b.upVendor || (activeTab === 'CMT' ? 'CMT' : 'KARGO')),
+            : (b.upVendor || (activeTab === 'CMT' ? 'CMT' : 'KARGO')),
         };
       });
 
@@ -679,28 +663,19 @@ export function buildMatrixBlocksFromItems(items: PenerimaanProduksiItem[], isCM
 
   for (const [code, codeItems] of codeMap.entries()) {
     const first = codeItems[0];
-    const trelloMatch = matchTrelloByCode(code);
-    const trelloExtracted = codeItems.map(it => extractTrelloMetadataFromItem(it)).find(x => x.upCode || x.productName);
     const lookup = lookupProductBySku(code, undefined, first?.nama_produk);
 
     const productName =
       first?.nama_produk ||
-      trelloMatch?.productName ||
-      trelloExtracted?.productName ||
       (lookup.found ? lookup.nama_produk : '') ||
       (/^[A-Za-z\s]+$/.test(code) && code.length > 3 ? code.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()) : '') ||
       '';
 
     const upVendor =
-      trelloMatch?.upCode ||
-      trelloExtracted?.upCode ||
       (first?.keterangan && first.keterangan !== 'KARGO' && first.keterangan !== 'CMT' ? first.keterangan : '') ||
       (isCMT ? 'CMT' : 'KARGO');
 
-    const photoUrl =
-      first?.foto_url ||
-      trelloMatch?.photoUrl ||
-      '';
+    const photoUrl = first?.foto_url || '';
 
     const dateSet = new Set<string>();
     codeItems.forEach((it) => {
@@ -834,18 +809,17 @@ export async function pushPenerimaanProduksiToGoogleSheet(
       ? b.totalRecountFisik
       : b.totalNet;
 
-    const trelloMatch = matchTrelloByCode(b.code);
     const lookup = lookupProductBySku(b.code, undefined, b.productName);
-    const resolvedProductName = b.productName || trelloMatch?.productName || (lookup.found ? lookup.nama_produk : '') || '';
+    const resolvedProductName = b.productName || (lookup.found ? lookup.nama_produk : '') || '';
     const resolvedUpVendor = (b.upVendor && b.upVendor !== 'KARGO' && b.upVendor !== 'CMT')
       ? b.upVendor
-      : (trelloMatch?.upCode || b.upVendor || (activeTab === 'CMT' ? 'CMT' : 'KARGO'));
+      : (b.upVendor || (activeTab === 'CMT' ? 'CMT' : 'KARGO'));
 
     return {
       ...b,
       productName: resolvedProductName,
       upVendor: resolvedUpVendor,
-      photoUrl: formatImageUrlForSheets(b.photoUrl || trelloMatch?.photoUrl),
+      photoUrl: formatImageUrlForSheets(b.photoUrl),
       qtyNota: resolvedQtyNota,
       selisihNota: resolvedQtyNota !== null && resolvedQtyNota !== undefined ? effectiveFisik - Number(resolvedQtyNota) : null,
     };
@@ -862,12 +836,11 @@ export async function pushPenerimaanProduksiToGoogleSheet(
   const formattedItems = items && Array.isArray(items) ? items.map((it) => {
     const codeKey = (it.kode_produksi || '').trim().toUpperCase();
     const bInfo = blockMap.get(codeKey);
-    const trelloMatch = !bInfo?.productName ? matchTrelloByCode(codeKey) : null;
     const lookup = lookupProductBySku(codeKey, undefined, it.nama_produk);
-    const finalName = it.nama_produk || bInfo?.productName || trelloMatch?.productName || (lookup.found ? lookup.nama_produk : '') || (/^[A-Za-z\s]+$/.test(codeKey) && codeKey.length > 3 ? codeKey.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()) : '');
+    const finalName = it.nama_produk || bInfo?.productName || (lookup.found ? lookup.nama_produk : '') || (/^[A-Za-z\s]+$/.test(codeKey) && codeKey.length > 3 ? codeKey.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()) : '');
     const finalUp = (it.keterangan && it.keterangan !== 'KARGO' && it.keterangan !== 'CMT')
       ? it.keterangan
-      : (bInfo?.upVendor || trelloMatch?.upCode || it.keterangan || (activeTab === 'CMT' ? 'CMT' : 'KARGO'));
+      : (bInfo?.upVendor || it.keterangan || (activeTab === 'CMT' ? 'CMT' : 'KARGO'));
 
     return {
       tanggal_penerimaan: it.tanggal_penerimaan || '',

@@ -9,8 +9,13 @@ import {
   Layers,
   Calendar,
   AlertCircle,
+  Minimize2,
+  Maximize2,
+  CheckCircle2,
+  Loader2,
 } from 'lucide-react';
 import { PenerimaanProduksiItem } from '../../types';
+import { DraggableFloatingBubble, BubbleDragHandle } from '../common/DraggableFloatingBubble';
 import {
   pushSuratJalanToGoogleSheet,
   SuratJalanPushPayload,
@@ -48,7 +53,18 @@ export const PushSuratJalanModal: React.FC<PushSuratJalanModalProps> = ({
     preSelectedNoSJ ? [preSelectedNoSJ] : []
   );
   const [isPushing, setIsPushing] = useState<boolean>(false);
+  const [isMinimized, setIsMinimized] = useState<boolean>(false);
+  const [pushStep, setPushStep] = useState<'idle' | 'pushing' | 'completed' | 'failed'>('idle');
   const [lastPushUrl, setLastPushUrl] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setIsMinimized(false);
+      if (!isPushing) {
+        setPushStep('idle');
+      }
+    }
+  }, [isOpen]);
 
   // Kelompokkan data penerimaan produksi berdasarkan No Surat Jalan
   const groupedSuratJalan = useMemo(() => {
@@ -121,7 +137,7 @@ export const PushSuratJalanModal: React.FC<PushSuratJalanModalProps> = ({
     };
   }, [groupedSuratJalan, selectedSJList]);
 
-  if (!isOpen) return null;
+  if (!isOpen && !isPushing) return null;
 
   // Toggle selection
   const handleToggleSJ = (noSj: string) => {
@@ -150,6 +166,7 @@ export const PushSuratJalanModal: React.FC<PushSuratJalanModalProps> = ({
 
     try {
       setIsPushing(true);
+      setPushStep('pushing');
       const payloads: SuratJalanPushPayload[] = selectedSummary.groups.map((g) => ({
         no_surat_jalan: g.no_surat_jalan,
         tanggal: g.tanggal,
@@ -171,6 +188,7 @@ export const PushSuratJalanModal: React.FC<PushSuratJalanModalProps> = ({
       const res = await pushSuratJalanToGoogleSheet(payloads);
 
       if (res.success) {
+        setPushStep('completed');
         onShowToast(
           res.message ||
             `Sukses mengirim ${payloads.length} Surat Jalan ke tab masing-masing!`,
@@ -180,15 +198,91 @@ export const PushSuratJalanModal: React.FC<PushSuratJalanModalProps> = ({
           setLastPushUrl(res.sheetUrl);
         }
       } else {
+        setPushStep('failed');
         onShowToast(res.message || 'Gagal push ke Google Sheets', 'error');
       }
     } catch (err: any) {
       console.error('Error executing push SJ:', err);
+      setPushStep('failed');
       onShowToast('Gagal mengirim ke Google Sheets: ' + (err?.message || err), 'error');
     } finally {
       setIsPushing(false);
     }
   };
+
+  if (isMinimized || !isOpen) {
+    return (
+      <DraggableFloatingBubble
+        storageKey="push_sj_sheets_minimized"
+        defaultAnchor="bottom-left"
+        defaultOffset={{ x: 16, y: 140 }}
+        zIndexClass="z-[70]"
+        className="w-[calc(100vw-2rem)] sm:w-96"
+        ariaLabel="Push Surat Jalan Sheet Minimized"
+      >
+        <div className="w-full bg-slate-900/95 dark:bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-700/80 p-3.5 backdrop-blur-md animate-in slide-in-from-bottom-4 duration-200">
+          <div className="flex items-start justify-between gap-2.5">
+            <div
+              onClick={() => setIsMinimized(false)}
+              className="flex items-center gap-2 min-w-0 cursor-pointer hover:opacity-90"
+            >
+              <BubbleDragHandle tone="dark" className="-ml-1" />
+              <div
+                className={`p-2 rounded-xl shrink-0 ${
+                  pushStep === 'completed' && !isPushing
+                    ? 'bg-emerald-500/20 text-emerald-400'
+                    : 'bg-blue-500/20 text-blue-400'
+                }`}
+              >
+                {isPushing ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : pushStep === 'completed' ? (
+                  <CheckCircle2 className="w-4 h-4" />
+                ) : (
+                  <FileSpreadsheet className="w-4 h-4" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-extrabold tracking-tight truncate">
+                  {isPushing
+                    ? `Mengirim ${selectedSummary.count} SJ ke Sheets...`
+                    : pushStep === 'completed'
+                    ? 'Push Surat Jalan Selesai!'
+                    : 'Push Surat Jalan ke Sheets'}
+                </div>
+                <div className="text-[11px] text-slate-400 truncate font-mono">
+                  {selectedSummary.count} SJ terpilih • {selectedSummary.totalQty.toLocaleString('id-ID')} pcs
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsMinimized(false)}
+                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-200 flex items-center gap-1 transition-colors cursor-pointer"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span>Buka</span>
+              </button>
+              {!isPushing && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMinimized(false);
+                    onClose();
+                  }}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </DraggableFloatingBubble>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-in fade-in duration-150">
@@ -211,13 +305,30 @@ export const PushSuratJalanModal: React.FC<PushSuratJalanModalProps> = ({
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setIsMinimized(true)}
+              className="px-2.5 py-1.5 text-xs font-bold text-indigo-200 hover:text-white bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+              title="Minimize ke Bubble Mengambang"
+            >
+              <Minimize2 className="w-3.5 h-3.5" />
+              <span>Minimize</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (isPushing) {
+                  setIsMinimized(true);
+                } else {
+                  onClose();
+                }
+              }}
+              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* SEARCH & TOOLBAR BAR */}
@@ -377,11 +488,24 @@ export const PushSuratJalanModal: React.FC<PushSuratJalanModalProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={onClose}
-              disabled={isPushing}
+              onClick={() => setIsMinimized(true)}
+              className="px-3.5 py-2 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <Minimize2 className="w-3.5 h-3.5" />
+              <span>Minimize</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (isPushing) {
+                  setIsMinimized(true);
+                } else {
+                  onClose();
+                }
+              }}
               className="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition cursor-pointer"
             >
-              Tutup
+              {isPushing ? 'Sembunyikan' : 'Tutup'}
             </button>
             <button
               type="button"

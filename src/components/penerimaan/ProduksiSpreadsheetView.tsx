@@ -50,7 +50,6 @@ import {
 } from '../../services/supabase';
 import { PushSuratJalanModal } from './PushSuratJalanModal';
 import { PushDateSheetsModal } from './PushDateSheetsModal';
-import { matchTrelloByCode, extractTrelloMetadataFromItem, refreshTrelloLookupDictionaryFromCloud } from '../../utils/trelloProduksiMatcher';
 import { lookupProductBySku } from '../../utils/productLookup';
 
 interface ProduksiSpreadsheetViewProps {
@@ -175,7 +174,6 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     getCachedProduksiQtyNotaMapSync()
   );
   const [isSyncingQtyNota, setIsSyncingQtyNota] = useState<boolean>(false);
-  const [isSyncingTrello, setIsSyncingTrello] = useState<boolean>(false);
 
   // Hasil Audit Hitung Ulang (Cloud + Local) agar kolom Fisik Hitung terisi walau belum tertulis ke item penerimaan
   const [recountAuditMapRaw, setRecountAuditMapRaw] = useState<Record<string, any>>(() => getRecountAuditMap());
@@ -301,29 +299,12 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       let photoUrl = items.find((i) => i.foto_url && i.foto_url.trim().length > 0)?.foto_url;
       const firstItem = items[0];
 
-      // Auto-Lookup Trello UP Catalog
+      // Clean UP / Vendor & Product Name logic based on Master Catalog & Kategori
       const cleanCode = code.trim().toUpperCase();
-      const trelloMatch = matchTrelloByCode(cleanCode);
-
-      // Clean UP / Vendor & Product Name logic based on Tab & Trello Auto-Lookup
       let upVendor = '';
       let productName = '';
 
-      // Prioritas 1: Ambil dari Trello Match jika ada
-      if (trelloMatch) {
-        if (trelloMatch.productName) productName = trelloMatch.productName;
-        if (trelloMatch.upCode) upVendor = trelloMatch.upCode;
-        if (!photoUrl && trelloMatch.photoUrl) photoUrl = trelloMatch.photoUrl;
-      }
-
-      // Prioritas 2: Ekstrak dari metadata keterangan item (jika pernah disave sebelumnya)
-      if (firstItem) {
-        const extracted = extractTrelloMetadataFromItem(firstItem);
-        if (!upVendor && extracted.upCode) upVendor = extracted.upCode;
-        if (!productName && extracted.productName) productName = extracted.productName;
-      }
-
-      // Prioritas 3: Fallback ke Master Produk gudang & Kategori
+      // Fallback ke Master Produk gudang & Kategori
       if (!productName) {
         const lookup = lookupProductBySku(cleanCode, productCatalog, firstItem?.nama_produk);
         if (lookup.found && lookup.nama_produk) {
@@ -672,8 +653,6 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         kategori: targetCategory,
         photoUrl,
         catatan,
-        matchedItem: trelloMatch?.matchedItem,
-        alternateCandidates: trelloMatch?.alternateCandidates,
         distinctSjs,
         dateToSjMap,
         colorGroups,
@@ -814,40 +793,6 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       );
     } else if (finalNota !== null) {
       onShowToast(`Qty Nota Kode ${cleanCode} disimpan (${finalNota} pcs — Sesuai / Klop).`, 'success');
-    }
-  };
-
-  // Handler Sinkronisasi Nama Produk, UP, dan Foto dari Trello UP Catalog
-  const handleSyncTrelloDetails = async () => {
-    try {
-      setIsSyncingTrello(true);
-      await refreshTrelloLookupDictionaryFromCloud();
-
-      let matchedCount = 0;
-      setBlocks((prev) =>
-        prev.map((b) => {
-          const match = matchTrelloByCode(b.code);
-          if (!match) return b;
-          matchedCount++;
-          return {
-            ...b,
-            productName: b.productName || match.productName,
-            upVendor: b.upVendor || match.upCode,
-            photoUrl: b.photoUrl || match.photoUrl,
-          };
-        })
-      );
-
-      if (matchedCount > 0) {
-        onShowToast(`✨ Berhasil mencocokkan & melengkapi ${matchedCount} kode produksi dari Trello UP!`, 'success');
-      } else {
-        onShowToast('Semua kode produksi sudah terisi atau belum ditemukan di data Trello UP.', 'info');
-      }
-    } catch (err: any) {
-      console.warn('Gagal sync data Trello di spreadsheet:', err);
-      onShowToast('Gagal memuat data Trello UP: ' + (err?.message || 'Error'), 'error');
-    } finally {
-      setIsSyncingTrello(false);
     }
   };
 
@@ -1897,17 +1842,6 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
           >
             <RefreshCw className={`w-3.5 h-3.5 text-amber-500 ${isSyncingQtyNota ? 'animate-spin' : ''}`} />
             <span>{isSyncingQtyNota ? 'Sync Nota...' : 'Tarik Qty Nota'}</span>
-          </button>
-
-          <button
-            type="button"
-            disabled={isSyncingTrello}
-            onClick={handleSyncTrelloDetails}
-            className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 disabled:opacity-50 text-violet-700 dark:text-violet-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border border-violet-200 dark:border-violet-800 shadow-2xs"
-            title="Lengkapi Nama Produk, UP Vendor, dan Foto otomatis dari data Trello UP Catalog"
-          >
-            <Sparkles className={`w-3.5 h-3.5 text-violet-500 ${isSyncingTrello ? 'animate-spin' : ''}`} />
-            <span>{isSyncingTrello ? 'Sync Trello...' : 'Lengkapi Trello'}</span>
           </button>
 
           <button
