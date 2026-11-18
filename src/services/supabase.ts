@@ -5916,16 +5916,31 @@ export async function cancelOrResetPickingSJSupabase(no_sj: string): Promise<boo
   if (!cleanNoSj) return false;
 
   try {
-    await supabaseFetch(
+    const patchBody = {
+      status: 'PENDING',
+      qty_picked: 0,
+      picker_name: '',
+    };
+
+    const updatedRows = await supabaseFetch<PickingListItem[]>(
       'picking_list',
       'PATCH',
-      {
-        status: 'PENDING',
-        qty_picked: 0,
-        picker_name: '',
-      },
-      `no_sj=ilike.${encodeURIComponent(cleanNoSj)}&or=(status.is.null,status.neq.SELESAI)`
+      patchBody,
+      `no_sj=ilike.${encodeURIComponent(cleanNoSj)}&or=(status.is.null,status.neq.SELESAI)`,
+      true
     );
+
+    // Fallback: if PostgREST filter didn't return/update rows, fetch active rows and patch by explicit IDs
+    if (!Array.isArray(updatedRows) || updatedRows.length === 0) {
+      const activeRows = await fetchActiveSjRealtimeRowsSupabase(cleanNoSj);
+      const nonDoneIds = activeRows
+        .filter((r) => (r.status || '').toUpperCase().trim() !== 'SELESAI' && r.id && !String(r.id).startsWith('pick_'))
+        .map((r) => String(r.id));
+      for (let i = 0; i < nonDoneIds.length; i += 50) {
+        const chunk = nonDoneIds.slice(i, i + 50);
+        await supabaseFetch('picking_list', 'PATCH', patchBody, `id=in.(${chunk.join(',')})`);
+      }
+    }
 
     const resetCachedList = (storageKey: string) => {
       try {

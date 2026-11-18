@@ -15,19 +15,45 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.19.5",
-  "versionCode": 395,
+  "version": "v2.19.7",
+  "versionCode": 397,
   "buildDate": "18 November 2026",
-  "buildHash": "wms-261118-v395-1901",
-  "releaseTitle": "WMS v2.19.5 — Hapus Auto-Fill Trello di Penerimaan Produksi",
+  "buildHash": "wms-261118-v397-1950",
+  "releaseTitle": "WMS v2.19.7 — Perbaikan Batal Ambil & Input Lokasi Manual Picking",
   "releaseNotes": [
-    "Menghapus fitur auto-lookup dan auto-fill otomatis dari Trello UP di Form Penerimaan Produksi, Spreadsheet, Push Sheets, dan Asisten AI",
-    "Mencegah anomali data nama produk, UP vendor, dan foto akibat pencocokan otomatis"
+    "Menambahkan input lokasi rak manual langsung pada kartu SKU di Tugas Picking",
+    "Menambahkan notifikasi rekomendasi Stock Opname jika stok rak minus saat picking jujur",
+    "Memperbaiki sinkronisasi Batal Ambil dan hapus SJ agar status Sedang Dikerjakan tidak muncul kembali"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.19.6",
+    "versionCode": 396,
+    "buildDate": "18 November 2026",
+    "buildHash": "wms-261118-v396-1943",
+    "releaseTitle": "WMS v2.19.6 — Input Lokasi Manual & Notif Rekomendasi SO di Tugas Picking",
+    "releaseNotes": [
+      "Menambahkan input lokasi rak manual langsung pada kartu SKU di Tugas Picking",
+      "Menghapus fallback lokasi palsu A-01/A001 agar pencatatan OUT jujur sesuai rak aktual",
+      "Menambahkan notifikasi pemberitahuan rekomendasi Stock Opname jika stok rak menjadi minus"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
+  {
+    "version": "v2.19.5",
+    "versionCode": 395,
+    "buildDate": "18 November 2026",
+    "buildHash": "wms-261118-v395-1901",
+    "releaseTitle": "WMS v2.19.5 — Hapus Auto-Fill Trello di Penerimaan Produksi",
+    "releaseNotes": [
+      "Menghapus fitur auto-lookup dan auto-fill otomatis dari Trello UP di Form Penerimaan Produksi, Spreadsheet, Push Sheets, dan Asisten AI",
+      "Mencegah anomali data nama produk, UP vendor, dan foto akibat pencocokan otomatis"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.19.4",
     "versionCode": 394,
@@ -96,29 +122,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Provisioning batch seluruh grup [MS & Alter] Store resmi via 1 atomic CAS + sinkronisasi otomatis pesanan yang terlewat (backfill 48 jam & Realtime receiver healing)",
       "Perbaikan await notifikasi Live Chat saat submit pesanan Store serta merge server sebelum simpan agar riwayat chat tidak pernah tertimpa"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.18.11",
-    "versionCode": 391,
-    "buildDate": "17 November 2026",
-    "buildHash": "wms-261117-v391-1343",
-    "releaseTitle": "WMS v2.18.11 — Multi-PIC Delegasi Tugas Agenda",
-    "releaseNotes": [
-      "Dukungan pilih lebih dari 1 PIC saat buat/edit Delegasi Tugas di modul Agenda & Tasks",
-      "Tampilan badge multi-PIC pada kartu tugas dan pencocokan Tugas Saya untuk semua PIC terpilih"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.18.10",
-    "versionCode": 390,
-    "buildDate": "17 November 2026",
-    "buildHash": "wms-261117-v390-1314",
-    "releaseTitle": "WMS v2.18.10 — Multi-Choice Dropsearch Filter Asal & Tujuan Pengecekan SJ",
-    "releaseNotes": [
-      "Ubah filter Asal dan Tujuan di Riwayat Pengecekan SJ menjadi Multi-Select Dropsearch dengan pencarian dan jumlah SJ per opsi"
     ],
     "minSupportedVersion": "v2.0.0"
   }

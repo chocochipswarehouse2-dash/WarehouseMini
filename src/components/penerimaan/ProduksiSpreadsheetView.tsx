@@ -181,7 +181,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     let alive = true;
     fetchRecountAuditMapFromCloud()
       .then((m) => { if (alive && m) setRecountAuditMapRaw(m); })
-      .catch(() => {});
+      .catch(() => { });
     const onAudit = (e: any) => {
       setRecountAuditMapRaw(e?.detail?.auditMap || getRecountAuditMap());
     };
@@ -629,8 +629,8 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         notaRec && notaRec.qty_nota !== null && notaRec.qty_nota !== undefined
           ? Number(notaRec.qty_nota)
           : itemNotaFallback !== null
-          ? Number(itemNotaFallback)
-          : null;
+            ? Number(itemNotaFallback)
+            : null;
       // Jika sudah ada hasil hitung ulang fisik, pembanding akhir dengan Qty Nota adalah Qty Hitung Ulang!
       // Jika belum dihitung ulang, pembandingnya adalah Total Diterima awal (totalNet).
       const effectiveFisik =
@@ -641,8 +641,8 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         resolvedQtyNota !== null && !isNaN(resolvedQtyNota)
           ? effectiveFisik - resolvedQtyNota
           : blockHasRecount && blockRecountFisik !== null && blockRecountFisik !== undefined
-          ? blockRecountFisik - totalNet
-          : null;
+            ? blockRecountFisik - totalNet
+            : null;
 
       parsedBlocks.push({
         id: code,
@@ -751,11 +751,11 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
           selisihNota:
             finalNota !== null
               ? (b.hasRecount && b.totalRecountFisik !== null && b.totalRecountFisik !== undefined
-                  ? b.totalRecountFisik
-                  : b.totalNet) - finalNota
+                ? b.totalRecountFisik
+                : b.totalNet) - finalNota
               : (b.hasRecount && b.totalRecountFisik !== null && b.totalRecountFisik !== undefined
-                  ? b.totalRecountFisik - b.totalNet
-                  : null),
+                ? b.totalRecountFisik - b.totalNet
+                : null),
         };
       })
     );
@@ -781,13 +781,12 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       qty_nota: finalNota,
       kategori,
       tanggal: selectedDateFilter !== 'all' ? selectedDateFilter.split('||')[0] : undefined,
-    }).catch(() => {});
+    }).catch(() => { });
 
     const updatedRec = syncRes.notaMap?.[cleanCode];
     if (updatedRec && updatedRec.selisih_nota !== null && updatedRec.selisih_nota !== 0) {
       onShowToast(
-        `Qty Nota Kode ${cleanCode} disimpan (${finalNota} pcs). Selisih ${
-          updatedRec.selisih_nota > 0 ? '+' + updatedRec.selisih_nota : updatedRec.selisih_nota
+        `Qty Nota Kode ${cleanCode} disimpan (${finalNota} pcs). Selisih ${updatedRec.selisih_nota > 0 ? '+' + updatedRec.selisih_nota : updatedRec.selisih_nota
         } pcs otomatis masuk Antrian Audit Hitung Ulang!`,
         'warning'
       );
@@ -1167,7 +1166,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     setCustomMetrics(updatedMetrics);
     try {
       localStorage.setItem(STORAGE_KEY_METRICS, JSON.stringify(updatedMetrics));
-    } catch {}
+    } catch { }
 
     const isCMT = activeTab === 'CMT';
     const fallbackCategory = targetBlock.kategori || (isCMT ? 'Lokal CMT' : 'Kargo');
@@ -1365,19 +1364,19 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       }));
       list = [...finalItems, ...list];
       localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(list));
-    } catch {}
+    } catch { }
 
     // Patch photo if updated
     if (targetBlock.photoUrl) {
       try {
         await updatePenerimaanPhotoInSupabase(targetBlock.code, targetBlock.photoUrl);
-      } catch {}
+      } catch { }
     }
 
     if (onRefreshData) {
       try {
         await onRefreshData();
-      } catch {}
+      } catch { }
     }
 
     // Dispatch global event
@@ -1388,7 +1387,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
             detail: { action: 'block_save', code: targetBlock.code },
           })
         );
-      } catch {}
+      } catch { }
     }
 
     setEditingBlockId(null);
@@ -1408,7 +1407,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     setActiveTab(tab);
     try {
       localStorage.setItem(STORAGE_KEY_TAB, tab);
-    } catch {}
+    } catch { }
   };
 
   // Cell Text Typing (Datang)
@@ -1747,11 +1746,10 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
           <button
             type="button"
             onClick={() => handleTabChange('CMT')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1.5 cursor-pointer ${
-              activeTab === 'CMT'
-                ? 'bg-rose-500 text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1.5 cursor-pointer ${activeTab === 'CMT'
+              ? 'bg-rose-500 text-white shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
           >
             <span>🧵</span>
             <span>Lokal CMT</span>
@@ -1760,11 +1758,10 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
           <button
             type="button"
             onClick={() => handleTabChange('Kargo')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1.5 cursor-pointer ${
-              activeTab === 'Kargo'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1.5 cursor-pointer ${activeTab === 'Kargo'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
           >
             <span>📦</span>
             <span>Kargo</span>
@@ -1982,11 +1979,10 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                     return (
                       <label
                         key={dStr}
-                        className={`flex items-center gap-2 p-1.5 rounded-lg text-xs font-mono font-semibold cursor-pointer border transition ${
-                          isChecked
-                            ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
-                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
-                        }`}
+                        className={`flex items-center gap-2 p-1.5 rounded-lg text-xs font-mono font-semibold cursor-pointer border transition ${isChecked
+                          ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                          }`}
                       >
                         <input
                           type="checkbox"
@@ -2039,11 +2035,10 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                     return (
                       <label
                         key={sjStr}
-                        className={`flex items-center gap-2 p-1.5 rounded-lg text-xs font-mono font-semibold cursor-pointer border transition ${
-                          isChecked
-                            ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-300 dark:border-blue-800 text-blue-900 dark:text-blue-200'
-                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
-                        }`}
+                        className={`flex items-center gap-2 p-1.5 rounded-lg text-xs font-mono font-semibold cursor-pointer border transition ${isChecked
+                          ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-300 dark:border-blue-800 text-blue-900 dark:text-blue-200'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                          }`}
                       >
                         <input
                           type="checkbox"
@@ -2138,8 +2133,8 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                   {filteredBlocks.length === 0
                     ? 0
                     : pageSize === -1
-                    ? `1 - ${filteredBlocks.length}`
-                    : `${(currentPage - 1) * pageSize + 1} - ${Math.min(currentPage * pageSize, filteredBlocks.length)}`}
+                      ? `1 - ${filteredBlocks.length}`
+                      : `${(currentPage - 1) * pageSize + 1} - ${Math.min(currentPage * pageSize, filteredBlocks.length)}`}
                 </strong>{' '}
                 dari <strong className="text-slate-800 dark:text-slate-100 font-bold">{filteredBlocks.length}</strong> Kode Produksi
               </span>
@@ -2192,950 +2187,939 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
 
           <div className="space-y-6">
             {paginatedBlocks.map((block) => {
-            const isEditingThisBlock = editingBlockId === block.id;
+              const isEditingThisBlock = editingBlockId === block.id;
 
-            const totalSubRows = block.colorGroups.reduce(
-              (acc, c) => acc + Math.max(1, c.sizes.length),
-              0
-            );
+              const totalSubRows = block.colorGroups.reduce(
+                (acc, c) => acc + Math.max(1, c.sizes.length),
+                0
+              );
 
-            let renderedRowsCount = 0;
-            const returSlots = isCMT ? block.returDateSlots || ['', '', '', '', ''] : [];
+              let renderedRowsCount = 0;
+              const returSlots = isCMT ? block.returDateSlots || ['', '', '', '', ''] : [];
 
-            return (
-              <div
-                key={block.id}
-                className={`bg-white dark:bg-slate-900 rounded-xl shadow-xs overflow-hidden transition-all print:border-black ${
-                  isEditingThisBlock
+              return (
+                <div
+                  key={block.id}
+                  className={`bg-white dark:bg-slate-900 rounded-xl shadow-xs overflow-hidden transition-all print:border-black ${isEditingThisBlock
                     ? 'border-2 border-rose-500 ring-4 ring-rose-500/10'
                     : 'border border-slate-300 dark:border-slate-700'
-                }`}
-              >
-                {/* Block Header Toolbar */}
-                <div
-                  className={`px-3.5 py-2.5 border-b flex items-center justify-between text-xs font-bold flex-wrap gap-2 ${
-                    isEditingThisBlock
+                    }`}
+                >
+                  {/* Block Header Toolbar */}
+                  <div
+                    className={`px-3.5 py-2.5 border-b flex items-center justify-between text-xs font-bold flex-wrap gap-2 ${isEditingThisBlock
                       ? 'bg-rose-50 dark:bg-rose-950/50 border-rose-200 dark:border-rose-800'
                       : 'bg-slate-50 dark:bg-slate-800/90 border-slate-200 dark:border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-200 font-mono text-[11px] font-black border border-rose-300 dark:border-rose-800">
-                      KODE: {block.code}
-                    </span>
-
-                    {isEditingThisBlock && (
-                      <span className="px-2 py-0.5 rounded bg-amber-500 text-white text-[10px] font-black uppercase tracking-wider animate-pulse">
-                        MODE EDIT AKTIF
+                      }`}
+                  >
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-200 font-mono text-[11px] font-black border border-rose-300 dark:border-rose-800">
+                        KODE: {block.code}
                       </span>
-                    )}
 
-                    <span className="text-slate-400">•</span>
-                    <span>Total Datang: <strong className="text-slate-900 dark:text-white">{block.totalDatang} pcs</strong></span>
-                    {isCMT && (
-                      <>
-                        <span className="text-slate-400">•</span>
-                        <span>Retur: <strong className="text-red-600 dark:text-red-400">{block.totalRetur || 0} pcs</strong></span>
-                        <span className="text-slate-400">•</span>
-                        <span>Net: <strong className="text-emerald-600 dark:text-emerald-400">{block.totalNet} pcs</strong></span>
-                      </>
-                    )}
-                    {block.hasRecount && block.totalRecountFisik !== null && block.totalRecountFisik !== undefined && (
-                      <>
-                        <span className="text-slate-400">•</span>
-                        <span className="px-2 py-0.5 rounded-md bg-emerald-100/80 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 text-[11px] font-mono">
-                          Hitung Ulang: <strong>{block.totalRecountFisik} pcs</strong>
+                      {isEditingThisBlock && (
+                        <span className="px-2 py-0.5 rounded bg-amber-500 text-white text-[10px] font-black uppercase tracking-wider animate-pulse">
+                          MODE EDIT AKTIF
                         </span>
-                      </>
-                    )}
-                    {block.qtyNota !== null && block.qtyNota !== undefined && (
-                      <>
-                        <span className="text-slate-400">•</span>
-                        <span className="px-2 py-0.5 rounded-md bg-amber-100/80 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800 text-[11px] font-mono">
-                          Qty Nota: <strong>{block.qtyNota} pcs</strong>
-                        </span>
-                      </>
-                    )}
-                    {(() => {
-                      const hasNota = block.qtyNota !== null && block.qtyNota !== undefined;
-                      const hasRecount = block.hasRecount && block.totalRecountFisik !== null && block.totalRecountFisik !== undefined;
-                      let selisih: number | null = null;
-                      if (hasNota) {
-                        const base = hasRecount ? block.totalRecountFisik! : block.totalNet;
-                        selisih = base - Number(block.qtyNota);
-                      } else if (hasRecount) {
-                        selisih = block.totalRecountFisik! - block.totalNet;
-                      }
-                      if (selisih === null) return null;
-                      const isMatch = selisih === 0;
-                      const isKurang = selisih < 0;
-                      return (
+                      )}
+
+                      <span className="text-slate-400">•</span>
+                      <span>Total Datang: <strong className="text-slate-900 dark:text-white">{block.totalDatang} pcs</strong></span>
+                      {isCMT && (
                         <>
                           <span className="text-slate-400">•</span>
-                          <span
-                            className={`px-2 py-0.5 rounded-md text-[11px] font-mono font-black border ${
-                              isMatch
-                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
-                                : isKurang
-                                ? 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800'
-                                : 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800'
-                            }`}
-                          >
-                            Selisih {hasNota ? 'Nota' : 'SJ'}: {selisih > 0 ? `+${selisih}` : selisih} pcs
+                          <span>Retur: <strong className="text-red-600 dark:text-red-400">{block.totalRetur || 0} pcs</strong></span>
+                          <span className="text-slate-400">•</span>
+                          <span>Net: <strong className="text-emerald-600 dark:text-emerald-400">{block.totalNet} pcs</strong></span>
+                        </>
+                      )}
+                      {block.hasRecount && block.totalRecountFisik !== null && block.totalRecountFisik !== undefined && (
+                        <>
+                          <span className="text-slate-400">•</span>
+                          <span className="px-2 py-0.5 rounded-md bg-emerald-100/80 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 text-[11px] font-mono">
+                            Hitung Ulang: <strong>{block.totalRecountFisik} pcs</strong>
                           </span>
                         </>
-                      );
-                    })()}
-
-                    {/* SURAT JALAN BADGES & QUICK EDIT */}
-                    <span className="text-slate-400">•</span>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
-                        <FileText className="w-3.5 h-3.5 text-blue-600" />
-                        <span>No. SJ ({block.distinctSjs?.length || 0}):</span>
-                      </span>
-                      {(!block.distinctSjs || block.distinctSjs.length === 0) ? (
-                        <span className="text-[11px] text-slate-400 italic">Otomatis (SJ-{block.code})</span>
-                      ) : (
-                        block.distinctSjs.map((sjObj) => (
-                          <button
-                            key={sjObj.no_surat_jalan}
-                            type="button"
-                            onClick={() => onOpenEditBatch && onOpenEditBatch(sjObj.no_surat_jalan)}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-mono text-[11px] font-bold border border-blue-200 dark:border-blue-800 transition cursor-pointer group shadow-2xs"
-                            title={`Klik untuk Edit Surat Jalan ${sjObj.no_surat_jalan} (Total ${sjObj.qty} pcs, ${sjObj.tanggal})`}
-                          >
-                            <span>📄 {sjObj.no_surat_jalan}</span>
-                            <span className="text-[10px] text-blue-500 font-semibold">({sjObj.qty} pcs)</span>
-                            <Edit3 className="w-3 h-3 text-blue-400 group-hover:text-blue-600 transition" />
-                          </button>
-                        ))
                       )}
+                      {block.qtyNota !== null && block.qtyNota !== undefined && (
+                        <>
+                          <span className="text-slate-400">•</span>
+                          <span className="px-2 py-0.5 rounded-md bg-amber-100/80 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800 text-[11px] font-mono">
+                            Qty Nota: <strong>{block.qtyNota} pcs</strong>
+                          </span>
+                        </>
+                      )}
+                      {(() => {
+                        const hasNota = block.qtyNota !== null && block.qtyNota !== undefined;
+                        const hasRecount = block.hasRecount && block.totalRecountFisik !== null && block.totalRecountFisik !== undefined;
+                        let selisih: number | null = null;
+                        if (hasNota) {
+                          const base = hasRecount ? block.totalRecountFisik! : block.totalNet;
+                          selisih = base - Number(block.qtyNota);
+                        } else if (hasRecount) {
+                          selisih = block.totalRecountFisik! - block.totalNet;
+                        }
+                        if (selisih === null) return null;
+                        const isMatch = selisih === 0;
+                        const isKurang = selisih < 0;
+                        return (
+                          <>
+                            <span className="text-slate-400">•</span>
+                            <span
+                              className={`px-2 py-0.5 rounded-md text-[11px] font-mono font-black border ${isMatch
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+                                : isKurang
+                                  ? 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800'
+                                  : 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800'
+                                }`}
+                            >
+                              Selisih {hasNota ? 'Nota' : 'SJ'}: {selisih > 0 ? `+${selisih}` : selisih} pcs
+                            </span>
+                          </>
+                        );
+                      })()}
+
+                      {/* SURAT JALAN BADGES & QUICK EDIT */}
+                      <span className="text-slate-400">•</span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
+                          <FileText className="w-3.5 h-3.5 text-blue-600" />
+                          <span>No. SJ ({block.distinctSjs?.length || 0}):</span>
+                        </span>
+                        {(!block.distinctSjs || block.distinctSjs.length === 0) ? (
+                          <span className="text-[11px] text-slate-400 italic">Otomatis (SJ-{block.code})</span>
+                        ) : (
+                          block.distinctSjs.map((sjObj) => (
+                            <button
+                              key={sjObj.no_surat_jalan}
+                              type="button"
+                              onClick={() => onOpenEditBatch && onOpenEditBatch(sjObj.no_surat_jalan)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-mono text-[11px] font-bold border border-blue-200 dark:border-blue-800 transition cursor-pointer group shadow-2xs"
+                              title={`Klik untuk Edit Surat Jalan ${sjObj.no_surat_jalan} (Total ${sjObj.qty} pcs, ${sjObj.tanggal})`}
+                            >
+                              <span>📄 {sjObj.no_surat_jalan}</span>
+                              <span className="text-[10px] text-blue-500 font-semibold">({sjObj.qty} pcs)</span>
+                              <Edit3 className="w-3 h-3 text-blue-400 group-hover:text-blue-600 transition" />
+                            </button>
+                          ))
+                        )}
+                      </div>
+
+                      {/* DISPLAY CATATAN / KETERANGAN DATA */}
+                      {isEditingThisBlock ? (
+                        <div className="flex items-center gap-1.5 ml-1">
+                          <FileText className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <input
+                            type="text"
+                            placeholder="Edit catatan produk ini..."
+                            value={block.catatan || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setBlocks((prev) =>
+                                prev.map((b) => (b.id === block.id ? { ...b, catatan: val } : b))
+                              );
+                            }}
+                            className="px-2 py-0.5 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 rounded text-xs text-amber-900 dark:text-amber-200 outline-none w-48 sm:w-64"
+                          />
+                        </div>
+                      ) : block.catatan ? (
+                        <div className="flex items-center gap-1.5 px-2.5 py-0.5 bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 border border-amber-200/80 dark:border-amber-800 rounded-lg text-[11px] font-medium ml-1">
+                          <FileText className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <span><strong>Catatan:</strong> {block.catatan}</span>
+                        </div>
+                      ) : null}
                     </div>
 
-                    {/* DISPLAY CATATAN / KETERANGAN DATA */}
-                    {isEditingThisBlock ? (
-                      <div className="flex items-center gap-1.5 ml-1">
-                        <FileText className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                        <input
-                          type="text"
-                          placeholder="Edit catatan produk ini..."
-                          value={block.catatan || ''}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setBlocks((prev) =>
-                              prev.map((b) => (b.id === block.id ? { ...b, catatan: val } : b))
-                            );
-                          }}
-                          className="px-2 py-0.5 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 rounded text-xs text-amber-900 dark:text-amber-200 outline-none w-48 sm:w-64"
-                        />
-                      </div>
-                    ) : block.catatan ? (
-                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 border border-amber-200/80 dark:border-amber-800 rounded-lg text-[11px] font-medium ml-1">
-                        <FileText className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                        <span><strong>Catatan:</strong> {block.catatan}</span>
-                      </div>
-                    ) : null}
-                  </div>
-
-                  {/* Mode Edit & Save Controls */}
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {isEditingThisBlock ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleAddColor(block.id)}
-                          className="px-2.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-200 rounded-lg text-[11px] font-bold border border-slate-300 dark:border-slate-600 transition flex items-center gap-1 cursor-pointer"
-                          title="Tambah Warna Baru"
-                        >
-                          <Plus className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>+ Warna</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSaveBlockChanges(block.id)}
-                          className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-black transition flex items-center gap-1.5 shadow-sm cursor-pointer"
-                          title="Konfirmasi & Simpan Perubahan ke Supabase Cloud"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Simpan</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleCancelEditBlock(block.id)}
-                          className="px-2.5 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
-                          title="Batal Edit"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                          <span>Batal</span>
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        {/* Edit Surat Jalan Action Button */}
-                        {onOpenEditBatch && (
+                    {/* Mode Edit & Save Controls */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {isEditingThisBlock ? (
+                        <>
                           <button
                             type="button"
-                            onClick={() => {
-                              if (!block.distinctSjs || block.distinctSjs.length === 0) {
-                                onOpenEditBatch(`SJ-${block.code}`);
-                              } else if (block.distinctSjs.length === 1) {
-                                onOpenEditBatch(block.distinctSjs[0].no_surat_jalan);
-                              } else {
-                                const sjNames = block.distinctSjs
-                                  .map((s, i) => `${i + 1}. ${s.no_surat_jalan} (${s.qty} pcs, ${s.tanggal})`)
-                                  .join('\n');
-                                const selectedIdx = window.prompt(
-                                  `Kode ${block.code} memiliki ${block.distinctSjs.length} Nomor Surat Jalan:\n\n${sjNames}\n\nKetik nomor (1 - ${block.distinctSjs.length}) yang ingin diedit:`,
-                                  '1'
-                                );
-                                if (selectedIdx) {
-                                  const idx = parseInt(selectedIdx, 10) - 1;
-                                  if (block.distinctSjs[idx]) {
-                                    onOpenEditBatch(block.distinctSjs[idx].no_surat_jalan);
+                            onClick={() => handleAddColor(block.id)}
+                            className="px-2.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-200 rounded-lg text-[11px] font-bold border border-slate-300 dark:border-slate-600 transition flex items-center gap-1 cursor-pointer"
+                            title="Tambah Warna Baru"
+                          >
+                            <Plus className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>+ Warna</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleSaveBlockChanges(block.id)}
+                            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-black transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                            title="Konfirmasi & Simpan Perubahan ke Supabase Cloud"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Simpan</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleCancelEditBlock(block.id)}
+                            className="px-2.5 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                            title="Batal Edit"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                            <span>Batal</span>
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          {/* Edit Surat Jalan Action Button */}
+                          {onOpenEditBatch && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!block.distinctSjs || block.distinctSjs.length === 0) {
+                                  onOpenEditBatch(`SJ-${block.code}`);
+                                } else if (block.distinctSjs.length === 1) {
+                                  onOpenEditBatch(block.distinctSjs[0].no_surat_jalan);
+                                } else {
+                                  const sjNames = block.distinctSjs
+                                    .map((s, i) => `${i + 1}. ${s.no_surat_jalan} (${s.qty} pcs, ${s.tanggal})`)
+                                    .join('\n');
+                                  const selectedIdx = window.prompt(
+                                    `Kode ${block.code} memiliki ${block.distinctSjs.length} Nomor Surat Jalan:\n\n${sjNames}\n\nKetik nomor (1 - ${block.distinctSjs.length}) yang ingin diedit:`,
+                                    '1'
+                                  );
+                                  if (selectedIdx) {
+                                    const idx = parseInt(selectedIdx, 10) - 1;
+                                    if (block.distinctSjs[idx]) {
+                                      onOpenEditBatch(block.distinctSjs[idx].no_surat_jalan);
+                                    }
                                   }
                                 }
+                              }}
+                              className="px-2.5 py-1.5 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-bold border border-blue-200 dark:border-blue-800 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                              title={
+                                block.distinctSjs && block.distinctSjs.length > 1
+                                  ? `Pilih salah satu dari ${block.distinctSjs.length} Surat Jalan untuk diedit`
+                                  : `Buka Form Edit Surat Jalan untuk Kode ${block.code}`
                               }
-                            }}
-                            className="px-2.5 py-1.5 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-bold border border-blue-200 dark:border-blue-800 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                            title={
-                              block.distinctSjs && block.distinctSjs.length > 1
-                                ? `Pilih salah satu dari ${block.distinctSjs.length} Surat Jalan untuk diedit`
-                                : `Buka Form Edit Surat Jalan untuk Kode ${block.code}`
-                            }
-                          >
-                            <FileText className="w-3.5 h-3.5 text-blue-600" />
-                            <span>
-                              Edit SJ {block.distinctSjs && block.distinctSjs.length > 1 ? `(${block.distinctSjs.length})` : ''}
-                            </span>
-                          </button>
-                        )}
+                            >
+                              <FileText className="w-3.5 h-3.5 text-blue-600" />
+                              <span>
+                                Edit SJ {block.distinctSjs && block.distinctSjs.length > 1 ? `(${block.distinctSjs.length})` : ''}
+                              </span>
+                            </button>
+                          )}
 
-                        {onOpenHitungUlang && (
+                          {onOpenHitungUlang && (
+                            <button
+                              type="button"
+                              onClick={() => onOpenHitungUlang(block.code)}
+                              className="px-2.5 py-1.5 bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 text-rose-700 dark:text-rose-300 rounded-lg text-xs font-bold border border-rose-200 dark:border-rose-800 transition flex items-center gap-1 cursor-pointer"
+                              title={`Buka Lembar Hitung Ulang Fisik untuk Kode ${block.code}`}
+                            >
+                              <Layers className="w-3.5 h-3.5 text-rose-500" />
+                              <span>Hitung Ulang</span>
+                            </button>
+                          )}
+
                           <button
                             type="button"
-                            onClick={() => onOpenHitungUlang(block.code)}
-                            className="px-2.5 py-1.5 bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 text-rose-700 dark:text-rose-300 rounded-lg text-xs font-bold border border-rose-200 dark:border-rose-800 transition flex items-center gap-1 cursor-pointer"
-                            title={`Buka Lembar Hitung Ulang Fisik untuk Kode ${block.code}`}
+                            onClick={() => handleStartEditBlock(block)}
+                            className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg text-xs font-black border border-rose-300 dark:border-rose-800 transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                            title="Buka Mode Edit Inline untuk tabel ini"
                           >
-                            <Layers className="w-3.5 h-3.5 text-rose-500" />
-                            <span>Hitung Ulang</span>
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span>Edit Tabel</span>
                           </button>
-                        )}
 
-                        <button
-                          type="button"
-                          onClick={() => handleStartEditBlock(block)}
-                          className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg text-xs font-black border border-rose-300 dark:border-rose-800 transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                          title="Buka Mode Edit Inline untuk tabel ini"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                          <span>Edit Tabel</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteBlock(block.id)}
-                          className="p-1.5 hover:bg-red-100 dark:hover:bg-red-950/60 text-slate-400 hover:text-red-600 rounded-lg transition cursor-pointer"
-                          title="Hapus Tabel Ini"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-center border-collapse text-xs select-text border border-slate-300 dark:border-slate-700 min-w-[900px]">
-                    {/* SPREADSHEET HEADER */}
-                    <thead>
-                      {/* HEADER ROW 1 */}
-                      <tr className="bg-[#fce8e6] dark:bg-[#3d1e22] text-slate-900 dark:text-rose-100 font-bold uppercase text-[11px] tracking-wider border-b border-slate-300 dark:border-slate-700 divide-x divide-slate-300 dark:divide-slate-700">
-                        <th rowSpan={2} className="py-2.5 px-2.5 w-12 border-r border-slate-300 dark:border-slate-700">
-                          NO
-                        </th>
-                        <th rowSpan={2} className="py-2.5 px-3 min-w-[80px]">
-                          CODE
-                        </th>
-                        <th rowSpan={2} className="py-2.5 px-3 min-w-[120px]">
-                          PRODUCT NAME
-                        </th>
-                        <th rowSpan={2} className="py-2.5 px-2.5 w-16">
-                          UP
-                        </th>
-                        <th rowSpan={2} className="py-2.5 px-3 min-w-[160px]">
-                          PHOTO
-                        </th>
-                        <th rowSpan={2} className="py-2.5 px-3 min-w-[100px]">
-                          COLOR
-                        </th>
-                        <th rowSpan={2} className="py-2.5 px-2.5 w-14">
-                          SIZE
-                        </th>
-
-                        {/* 10 KOLOM QTY BARANG DATANG SPAN */}
-                        <th
-                          colSpan={FIXED_DATE_COLUMNS_COUNT}
-                          className="py-1.5 px-3 bg-[#fce8e6] dark:bg-[#3d1e22] text-center border-b border-slate-300 dark:border-slate-700"
-                        >
-                          QTY BARANG DATANG
-                        </th>
-
-                        {/* KHUSUS CMT: 5 KOLOM QTY BARANG RETUR SPAN */}
-                        {isCMT && (
-                          <th
-                            colSpan={FIXED_RETUR_COLUMNS_COUNT}
-                            className="py-1.5 px-3 bg-[#ffe4e6] dark:bg-[#4c1d24] text-red-900 dark:text-red-200 text-center border-b border-slate-300 dark:border-slate-700 font-black"
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteBlock(block.id)}
+                            className="p-1.5 hover:bg-red-100 dark:hover:bg-red-950/60 text-slate-400 hover:text-red-600 rounded-lg transition cursor-pointer"
+                            title="Hapus Tabel Ini"
                           >
-                            QTY BARANG RETUR
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-center border-collapse text-xs select-text border border-slate-300 dark:border-slate-700 min-w-[900px]">
+                      {/* SPREADSHEET HEADER */}
+                      <thead>
+                        {/* HEADER ROW 1 */}
+                        <tr className="bg-[#fce8e6] dark:bg-[#3d1e22] text-slate-900 dark:text-rose-100 font-bold uppercase text-[11px] tracking-wider border-b border-slate-300 dark:border-slate-700 divide-x divide-slate-300 dark:divide-slate-700">
+                          <th rowSpan={2} className="py-2.5 px-2.5 w-12 border-r border-slate-300 dark:border-slate-700">
+                            NO
                           </th>
-                        )}
+                          <th rowSpan={2} className="py-2.5 px-3 min-w-[80px]">
+                            CODE
+                          </th>
+                          <th rowSpan={2} className="py-2.5 px-3 min-w-[120px]">
+                            PRODUCT NAME
+                          </th>
+                          <th rowSpan={2} className="py-2.5 px-2.5 w-16">
+                            UP
+                          </th>
+                          <th rowSpan={2} className="py-2.5 px-3 min-w-[160px]">
+                            PHOTO
+                          </th>
+                          <th rowSpan={2} className="py-2.5 px-3 min-w-[100px]">
+                            COLOR
+                          </th>
+                          <th rowSpan={2} className="py-2.5 px-2.5 w-14">
+                            SIZE
+                          </th>
 
-                        {/* 1. TOTAL DATANG PER ROW (UNMERGED) */}
-                        <th rowSpan={2} className="py-2.5 px-2.5 min-w-[70px] bg-[#fdf2f1] dark:bg-[#341b1e] text-slate-800 dark:text-rose-200">
-                          TOTAL<br />DATANG
-                        </th>
+                          {/* 10 KOLOM QTY BARANG DATANG SPAN */}
+                          <th
+                            colSpan={FIXED_DATE_COLUMNS_COUNT}
+                            className="py-1.5 px-3 bg-[#fce8e6] dark:bg-[#3d1e22] text-center border-b border-slate-300 dark:border-slate-700"
+                          >
+                            QTY BARANG DATANG
+                          </th>
 
-                        {/* 2. TOTAL AWAL (NET BLOK) */}
-                        <th rowSpan={2} className="py-2.5 px-3 min-w-[85px] bg-[#fce8e6] dark:bg-[#3d1e22]">
-                          TOTAL AWAL<br />{isCMT ? '(NET)' : 'DITERIMA'}
-                        </th>
+                          {/* KHUSUS CMT: 5 KOLOM QTY BARANG RETUR SPAN */}
+                          {isCMT && (
+                            <th
+                              colSpan={FIXED_RETUR_COLUMNS_COUNT}
+                              className="py-1.5 px-3 bg-[#ffe4e6] dark:bg-[#4c1d24] text-red-900 dark:text-red-200 text-center border-b border-slate-300 dark:border-slate-700 font-black"
+                            >
+                              QTY BARANG RETUR
+                            </th>
+                          )}
 
-                        {/* 3. QTY NOTA (BLOK) */}
-                        <th
-                          rowSpan={2}
-                          className="py-2.5 px-3 min-w-[95px] bg-amber-100 dark:bg-amber-950/60 text-amber-950 dark:text-amber-200"
-                          title="Qty Nota diisi oleh Buyer di Google Sheet (atau langsung di tabel ini)"
-                        >
-                          QTY<br />NOTA
-                        </th>
+                          {/* 1. TOTAL DATANG PER ROW (UNMERGED) */}
+                          <th rowSpan={2} className="py-2.5 px-2.5 min-w-[70px] bg-[#fdf2f1] dark:bg-[#341b1e] text-slate-800 dark:text-rose-200">
+                            TOTAL<br />DATANG
+                          </th>
 
-                        {/* 4. TOTAL HITUNG ULANG (BLOK) */}
-                        <th
-                          rowSpan={2}
-                          className="py-2.5 px-3 min-w-[95px] bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200"
-                          title="Total Fisik Hasil Audit Hitung Ulang (Keseluruhan Ukuran Model Ini)"
-                        >
-                          TOTAL<br />HITUNG ULANG
-                        </th>
+                          {/* 2. TOTAL AWAL (NET BLOK) */}
+                          <th rowSpan={2} className="py-2.5 px-3 min-w-[85px] bg-[#fce8e6] dark:bg-[#3d1e22]">
+                            TOTAL AWAL<br />{isCMT ? '(NET)' : 'DITERIMA'}
+                          </th>
 
-                        {/* 5. SELISIH NOTA (BLOK) */}
-                        <th
-                          rowSpan={2}
-                          className="py-2.5 px-3 min-w-[95px] bg-sky-100 dark:bg-sky-950/60 text-sky-950 dark:text-sky-200"
-                          title="Formula Selisih: Total Hitung - Nota, atau Total Awal - Nota, atau Total Hitung - Awal jika Nota kosong"
-                        >
-                          SELISIH<br />NOTA
-                        </th>
+                          {/* 3. QTY NOTA (BLOK) */}
+                          <th
+                            rowSpan={2}
+                            className="py-2.5 px-3 min-w-[95px] bg-amber-100 dark:bg-amber-950/60 text-amber-950 dark:text-amber-200"
+                            title="Qty Nota diisi oleh Buyer di Google Sheet (atau langsung di tabel ini)"
+                          >
+                            QTY<br />NOTA
+                          </th>
 
-                        {/* 6-8. KOLOM RINCIAN AUDIT PER ROW */}
-                        <th rowSpan={2} className="py-2.5 px-2.5 min-w-[75px] bg-blue-50 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200">
-                          FISIK<br />HITUNG
-                        </th>
-                        <th rowSpan={2} className="py-2.5 px-2.5 min-w-[75px] bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200">
-                          SELISIH<br />FISIK
-                        </th>
-                        <th rowSpan={2} className="py-2.5 px-3 min-w-[90px] bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200">
-                          STATUS
-                        </th>
-                      </tr>
+                          {/* 4. TOTAL HITUNG ULANG (BLOK) */}
+                          <th
+                            rowSpan={2}
+                            className="py-2.5 px-3 min-w-[95px] bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200"
+                            title="Total Fisik Hasil Audit Hitung Ulang (Keseluruhan Ukuran Model Ini)"
+                          >
+                            TOTAL<br />HITUNG ULANG
+                          </th>
 
-                      {/* HEADER ROW 2 */}
-                      <tr className="bg-[#fce8e6] dark:bg-[#3d1e22] text-slate-800 dark:text-rose-200 font-bold uppercase text-[10px] border-b-2 border-slate-400 dark:border-slate-600 divide-x divide-slate-300 dark:divide-slate-700">
-                        {/* 10 Date Columns Header */}
-                        {block.dateSlots.map((dStr, idx) => {
-                          const slotDate = dStr ? dStr.split('||')[0] : '';
-                          const slotSj = dStr && dStr.includes('||') ? dStr.split('||')[1] : '';
-                          const cleanSjSubtitle = slotSj
-                            ? slotSj.replace(/^KARGOCHN\s*/i, '').replace(/^SJ-?/i, '').trim()
-                            : (slotDate && block.dateToSjMap?.[slotDate]?.length === 1
+                          {/* 5. SELISIH NOTA (BLOK) */}
+                          <th
+                            rowSpan={2}
+                            className="py-2.5 px-3 min-w-[95px] bg-sky-100 dark:bg-sky-950/60 text-sky-950 dark:text-sky-200"
+                            title="Formula Selisih: Total Hitung - Nota, atau Total Awal - Nota, atau Total Hitung - Awal jika Nota kosong"
+                          >
+                            SELISIH<br />NOTA
+                          </th>
+
+                          {/* 6-8. KOLOM RINCIAN AUDIT PER ROW */}
+                          <th rowSpan={2} className="py-2.5 px-2.5 min-w-[75px] bg-blue-50 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200">
+                            FISIK<br />HITUNG
+                          </th>
+                          <th rowSpan={2} className="py-2.5 px-2.5 min-w-[75px] bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200">
+                            SELISIH<br />FISIK
+                          </th>
+                          <th rowSpan={2} className="py-2.5 px-3 min-w-[90px] bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200">
+                            STATUS
+                          </th>
+                        </tr>
+
+                        {/* HEADER ROW 2 */}
+                        <tr className="bg-[#fce8e6] dark:bg-[#3d1e22] text-slate-800 dark:text-rose-200 font-bold uppercase text-[10px] border-b-2 border-slate-400 dark:border-slate-600 divide-x divide-slate-300 dark:divide-slate-700">
+                          {/* 10 Date Columns Header */}
+                          {block.dateSlots.map((dStr, idx) => {
+                            const slotDate = dStr ? dStr.split('||')[0] : '';
+                            const slotSj = dStr && dStr.includes('||') ? dStr.split('||')[1] : '';
+                            const cleanSjSubtitle = slotSj
+                              ? slotSj.replace(/^KARGOCHN\s*/i, '').replace(/^SJ-?/i, '').trim()
+                              : (slotDate && block.dateToSjMap?.[slotDate]?.length === 1
                                 ? block.dateToSjMap[slotDate][0].replace(/^KARGOCHN\s*/i, '').replace(/^SJ-?/i, '')
                                 : '');
 
-                          return (
-                            <th
-                              key={`datang-${idx}`}
-                              onClick={() => {
-                                if (isEditingThisBlock) {
-                                  handleEditDatePrompt(block.id, idx, 'datang', slotDate);
-                                }
-                              }}
-                              className={`py-1 px-1 min-w-[50px] max-w-[72px] font-mono text-[10px] font-bold text-slate-800 dark:text-slate-200 ${
-                                isEditingThisBlock ? 'cursor-pointer hover:bg-rose-300/80 bg-rose-100 dark:bg-rose-900/60' : ''
-                              }`}
-                              title={
-                                slotDate
-                                  ? `Tanggal ${slotDate}${slotSj ? ` - No. SJ: ${slotSj}` : ''}`
-                                  : isEditingThisBlock
-                                  ? 'Klik untuk ubah tanggal datang'
-                                  : undefined
-                              }
-                            >
-                              {dStr ? (
-                                <div className="flex flex-col items-center justify-center">
-                                  <span>{formatDateHeader(slotDate)}</span>
-                                  {cleanSjSubtitle && (
-                                    <span
-                                      className="text-[8px] font-mono text-blue-700 dark:text-blue-300 truncate max-w-[64px] block leading-tight mt-0.5 px-1 py-0.2 bg-blue-100/70 dark:bg-blue-900/60 rounded"
-                                      title={`No. SJ: ${slotSj || cleanSjSubtitle}`}
-                                    >
-                                      {cleanSjSubtitle}
-                                    </span>
-                                  )}
-                                </div>
-                              ) : isEditingThisBlock ? (
-                                <span className="text-rose-600 dark:text-rose-400 font-normal hover:underline">+ Tgl</span>
-                              ) : (
-                                ''
-                              )}
-                            </th>
-                          );
-                        })}
-
-                        {/* Retur Date Headers (CMT) */}
-                        {isCMT &&
-                          returSlots.map((rStr, rIdx) => (
-                            <th
-                              key={`retur-${rIdx}`}
-                              onClick={() => {
-                                if (isEditingThisBlock) {
-                                  handleEditDatePrompt(block.id, rIdx, 'retur', rStr);
-                                }
-                              }}
-                              className={`py-1 px-1.5 min-w-[48px] max-w-[55px] font-mono text-[10px] font-bold bg-[#ffe4e6] dark:bg-[#4c1d24] text-red-800 dark:text-red-200 ${
-                                isEditingThisBlock ? 'cursor-pointer hover:bg-red-300/80' : ''
-                              }`}
-                              title={isEditingThisBlock ? 'Klik untuk ubah tanggal retur' : undefined}
-                            >
-                              {rStr ? (
-                                formatDateHeader(rStr)
-                              ) : isEditingThisBlock ? (
-                                <span className="text-red-600 dark:text-red-400 font-normal hover:underline">+ Ret</span>
-                              ) : (
-                                ''
-                              )}
-                            </th>
-                          ))}
-                      </tr>
-                    </thead>
-
-                    {/* TABLE BODY */}
-                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">
-                      {block.colorGroups.map((colorGroup, colorIndex) => {
-                        const colorSubRows = colorGroup.sizes.length;
-
-                        return colorGroup.sizes.map((sizeItem, sizeIndex) => {
-                          const isFirstRowOfBlock = renderedRowsCount === 0;
-                          const isFirstRowOfColor = sizeIndex === 0;
-                          renderedRowsCount++;
-
-                          return (
-                            <tr
-                              key={`${block.id}-${colorGroup.color}-${sizeItem.size}`}
-                              className="border-b border-slate-200 dark:border-slate-800 hover:bg-slate-50/70 dark:hover:bg-slate-800/50 transition divide-x divide-slate-200 dark:divide-slate-800"
-                            >
-                              {/* 1. NO */}
-                              {isFirstRowOfBlock && (
-                                <td
-                                  rowSpan={totalSubRows}
-                                  className="py-3 px-2 font-bold text-slate-900 dark:text-white text-center align-top bg-white dark:bg-slate-900 border-r border-slate-300 dark:border-slate-700"
-                                >
-                                  {block.rowNumber}
-                                </td>
-                              )}
-
-                              {/* 2. CODE */}
-                              {isFirstRowOfBlock && (
-                                <td
-                                  rowSpan={totalSubRows}
-                                  className="py-3 px-2.5 font-bold text-slate-900 dark:text-white text-center align-top"
-                                >
-                                  {block.code}
-                                </td>
-                              )}
-
-                              {/* 3. PRODUCT NAME */}
-                              {isFirstRowOfBlock && (
-                                <td
-                                  rowSpan={totalSubRows}
-                                  className="py-3 px-2 text-center align-top bg-white dark:bg-slate-900"
-                                >
-                                  {isEditingThisBlock ? (
-                                    <input
-                                      type="text"
-                                      placeholder="Nama produk..."
-                                      value={block.productName || ''}
-                                      onChange={(e) => {
-                                        const val = e.target.value;
-                                        setBlocks((prev) =>
-                                          prev.map((b) => (b.id === block.id ? { ...b, productName: val } : b))
-                                        );
-                                      }}
-                                      className="w-full text-center bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded px-1.5 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-rose-500"
-                                    />
-                                  ) : (
-                                    <div className="flex flex-col items-center gap-1.5">
-                                      <span className="font-medium">{block.productName || ''}</span>
-                                      {block.alternateCandidates && block.alternateCandidates.length > 0 && (
-                                        <div className="flex flex-wrap justify-center gap-1 mt-0.5">
-                                          {block.alternateCandidates.map((alt: any) => (
-                                            <button
-                                              key={alt.id}
-                                              type="button"
-                                              onClick={() => handleSwitchTrelloCandidate(block.id, alt)}
-                                              title={`Tukar dengan "${alt.item_name || alt.card_name}"`}
-                                              className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 rounded text-[10px] font-bold flex items-center gap-1 transition shadow-2xs cursor-pointer active:scale-95"
-                                            >
-                                              <RefreshCw className="w-2.5 h-2.5" />
-                                              <span>⇄ Ganti: {(alt.item_name || alt.card_name).replace(/SAMPLE/i, '').trim()}</span>
-                                            </button>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-                                </td>
-                              )}
-
-                              {/* 4. UP */}
-                              {isFirstRowOfBlock && (
-                                <td
-                                  rowSpan={totalSubRows}
-                                  className="py-3 px-2 text-center align-top bg-white dark:bg-slate-900"
-                                >
-                                  {isEditingThisBlock ? (
-                                    <input
-                                      type="text"
-                                      placeholder="UP..."
-                                      value={block.upVendor || ''}
-                                      onChange={(e) => {
-                                        const val = e.target.value;
-                                        setBlocks((prev) =>
-                                          prev.map((b) => (b.id === block.id ? { ...b, upVendor: val } : b))
-                                        );
-                                      }}
-                                      className="w-full text-center bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded px-1.5 py-1 text-xs font-bold outline-none focus:ring-1 focus:ring-rose-500"
-                                    />
-                                  ) : (
-                                    <span>{block.upVendor || ''}</span>
-                                  )}
-                                </td>
-                              )}
-
-                              {/* 5. PHOTO (TAMPIL UTUH & PROPORSIONAL + DRAG & DROP + COPAS) */}
-                              {isFirstRowOfBlock && (
-                                <td
-                                  rowSpan={totalSubRows}
-                                  onDragOver={(e) => handleCellDragOver(e, block.id)}
-                                  onDragLeave={(e) => handleCellDragLeave(e, block.id)}
-                                  onDrop={(e) => handleCellDrop(e, block.id)}
-                                  className={`p-2 text-center align-middle transition-colors ${
-                                    dragOverBlockId === block.id
-                                      ? 'bg-rose-100/70 dark:bg-rose-950/70 ring-2 ring-rose-500 ring-inset'
-                                      : 'bg-slate-50/50 dark:bg-slate-850/50'
+                            return (
+                              <th
+                                key={`datang-${idx}`}
+                                onClick={() => {
+                                  if (isEditingThisBlock) {
+                                    handleEditDatePrompt(block.id, idx, 'datang', slotDate);
+                                  }
+                                }}
+                                className={`py-1 px-1 min-w-[50px] max-w-[72px] font-mono text-[10px] font-bold text-slate-800 dark:text-slate-200 ${isEditingThisBlock ? 'cursor-pointer hover:bg-rose-300/80 bg-rose-100 dark:bg-rose-900/60' : ''
                                   }`}
-                                >
-                                  {dragOverBlockId === block.id ? (
-                                    <div className="w-48 h-48 mx-auto rounded-2xl border-2 border-dashed border-rose-500 bg-rose-50/80 dark:bg-rose-950/80 flex flex-col items-center justify-center text-rose-600 animate-pulse p-4">
-                                      <UploadCloud className="w-8 h-8 mb-2" />
-                                      <span className="text-xs font-black">Lepaskan Foto di Sini!</span>
-                                      <span className="text-[10px] text-rose-500/80 mt-1">Otomatis Terkompresi WebP</span>
-                                    </div>
-                                  ) : block.photoUrl ? (
-                                    <div className="relative group w-64 h-64 sm:w-80 sm:h-80 mx-auto rounded-xl overflow-hidden border border-slate-300 dark:border-slate-700 shadow-xs bg-slate-100 dark:bg-slate-800 p-0.5">
-                                      <img
-                                        src={block.photoUrl}
-                                        alt={block.code}
-                                        loading="lazy"
-                                        decoding="async"
-                                        className="w-full h-full object-contain rounded-lg group-hover:scale-105 transition-transform duration-200 cursor-pointer"
-                                        referrerPolicy="no-referrer"
-                                        onClick={() =>
-                                          onOpenLightbox({
-                                            url: block.photoUrl!,
-                                            title: `Kode Produksi: ${block.code}`,
-                                            subtitle: `Total Net: ${block.totalNet} pcs`,
-                                          })
-                                        }
-                                      />
-                                      {isEditingThisBlock && (
-                                        <div className="absolute inset-x-0 bottom-0 p-1.5 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex items-center justify-center gap-1.5 opacity-90 group-hover:opacity-100 transition">
-                                          <button
-                                            type="button"
-                                            onClick={() => handleEditPhoto(block.id)}
-                                            className="px-2.5 py-1 bg-white/90 hover:bg-white text-slate-900 rounded-lg text-[10px] font-black shadow-xs transition flex items-center gap-1 cursor-pointer"
-                                          >
-                                            <Edit3 className="w-3 h-3" />
-                                            <span>Ganti / Copas</span>
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setBlocks((prev) =>
-                                                prev.map((b) => (b.id === block.id ? { ...b, photoUrl: '' } : b))
-                                              );
-                                            }}
-                                            className="p-1 bg-rose-600/90 hover:bg-rose-700 text-white rounded-lg text-[10px] transition cursor-pointer"
-                                            title="Hapus Foto"
-                                          >
-                                            <Trash2 className="w-3 h-3" />
-                                          </button>
-                                        </div>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <div
-                                      onClick={() => isEditingThisBlock && handleEditPhoto(block.id)}
-                                      className={`w-36 h-36 mx-auto rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400 bg-slate-100/50 dark:bg-slate-800/40 p-3 transition ${
-                                        isEditingThisBlock
-                                          ? 'hover:text-rose-600 hover:border-rose-400 hover:bg-rose-50/20 cursor-pointer group shadow-2xs'
-                                          : ''
-                                      }`}
-                                    >
-                                      <div className="p-2 rounded-xl bg-slate-200/60 dark:bg-slate-700 group-hover:bg-rose-100 dark:group-hover:bg-rose-950 text-slate-500 group-hover:text-rose-600 mb-1.5 transition">
-                                        <UploadCloud className="w-5 h-5" />
-                                      </div>
-                                      <span className="text-xs font-black text-slate-700 dark:text-slate-300 group-hover:text-rose-600">
-                                        {isEditingThisBlock ? '+ Tambah Foto' : 'No Photo'}
-                                      </span>
-                                      {isEditingThisBlock && (
-                                        <span className="text-[9px] text-slate-400 text-center mt-1 leading-tight">
-                                          Drag &amp; Drop / Klik / Copas (Ctrl+V)
-                                        </span>
-                                      )}
-                                    </div>
-                                  )}
-                                </td>
-                              )}
-
-                              {/* 6. COLOR */}
-                              {isFirstRowOfColor && (
-                                <td
-                                  rowSpan={colorSubRows}
-                                  className="py-2.5 px-3 font-bold text-slate-900 dark:text-white text-center align-middle bg-white dark:bg-slate-900 text-xs"
-                                >
-                                  <div className="flex flex-col items-center justify-center gap-1">
-                                    <span>{colorGroup.color}</span>
-                                    {isEditingThisBlock && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleAddSizeRow(block.id, colorIndex)}
-                                        className="text-[10px] text-emerald-600 dark:text-emerald-400 hover:underline font-bold cursor-pointer"
+                                title={
+                                  slotDate
+                                    ? `Tanggal ${slotDate}${slotSj ? ` - No. SJ: ${slotSj}` : ''}`
+                                    : isEditingThisBlock
+                                      ? 'Klik untuk ubah tanggal datang'
+                                      : undefined
+                                }
+                              >
+                                {dStr ? (
+                                  <div className="flex flex-col items-center justify-center">
+                                    <span>{formatDateHeader(slotDate)}</span>
+                                    {cleanSjSubtitle && (
+                                      <span
+                                        className="text-[8px] font-mono text-blue-700 dark:text-blue-300 truncate max-w-[64px] block leading-tight mt-0.5 px-1 py-0.2 bg-blue-100/70 dark:bg-blue-900/60 rounded"
+                                        title={`No. SJ: ${slotSj || cleanSjSubtitle}`}
                                       >
-                                        + Size
-                                      </button>
+                                        {cleanSjSubtitle}
+                                      </span>
                                     )}
                                   </div>
-                                </td>
-                              )}
+                                ) : isEditingThisBlock ? (
+                                  <span className="text-rose-600 dark:text-rose-400 font-normal hover:underline">+ Tgl</span>
+                                ) : (
+                                  ''
+                                )}
+                              </th>
+                            );
+                          })}
 
-                              {/* 7. SIZE */}
-                              <td className="py-2 px-2 text-center font-bold text-slate-800 dark:text-slate-200 text-xs bg-slate-50/40 dark:bg-slate-800/40">
-                                {sizeItem.size}
-                              </td>
+                          {/* Retur Date Headers (CMT) */}
+                          {isCMT &&
+                            returSlots.map((rStr, rIdx) => (
+                              <th
+                                key={`retur-${rIdx}`}
+                                onClick={() => {
+                                  if (isEditingThisBlock) {
+                                    handleEditDatePrompt(block.id, rIdx, 'retur', rStr);
+                                  }
+                                }}
+                                className={`py-1 px-1.5 min-w-[48px] max-w-[55px] font-mono text-[10px] font-bold bg-[#ffe4e6] dark:bg-[#4c1d24] text-red-800 dark:text-red-200 ${isEditingThisBlock ? 'cursor-pointer hover:bg-red-300/80' : ''
+                                  }`}
+                                title={isEditingThisBlock ? 'Klik untuk ubah tanggal retur' : undefined}
+                              >
+                                {rStr ? (
+                                  formatDateHeader(rStr)
+                                ) : isEditingThisBlock ? (
+                                  <span className="text-red-600 dark:text-red-400 font-normal hover:underline">+ Ret</span>
+                                ) : (
+                                  ''
+                                )}
+                              </th>
+                            ))}
+                        </tr>
+                      </thead>
 
-                              {/* 8. QTY BARANG DATANG */}
-                              {block.dateSlots.map((dStr, slotIdx) => {
-                                const qtyVal = dStr ? sizeItem.qtyByDate[dStr] : undefined;
-                                return (
+                      {/* TABLE BODY */}
+                      <tbody className="divide-y divide-slate-200 dark:divide-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">
+                        {block.colorGroups.map((colorGroup, colorIndex) => {
+                          const colorSubRows = colorGroup.sizes.length;
+
+                          return colorGroup.sizes.map((sizeItem, sizeIndex) => {
+                            const isFirstRowOfBlock = renderedRowsCount === 0;
+                            const isFirstRowOfColor = sizeIndex === 0;
+                            renderedRowsCount++;
+
+                            return (
+                              <tr
+                                key={`${block.id}-${colorGroup.color}-${sizeItem.size}`}
+                                className="border-b border-slate-200 dark:border-slate-800 hover:bg-slate-50/70 dark:hover:bg-slate-800/50 transition divide-x divide-slate-200 dark:divide-slate-800"
+                              >
+                                {/* 1. NO */}
+                                {isFirstRowOfBlock && (
                                   <td
-                                    key={`slot-datang-${slotIdx}`}
-                                    className={`p-0 text-center font-mono font-bold text-xs ${
-                                      qtyVal
-                                        ? 'bg-[#fff2cc] dark:bg-[#38311d] text-amber-950 dark:text-amber-100 border border-[#ffe599]/60 dark:border-amber-800/40'
-                                        : 'text-slate-300 dark:text-slate-700'
-                                    }`}
+                                    rowSpan={totalSubRows}
+                                    className="py-3 px-2 font-bold text-slate-900 dark:text-white text-center align-top bg-white dark:bg-slate-900 border-r border-slate-300 dark:border-slate-700"
+                                  >
+                                    {block.rowNumber}
+                                  </td>
+                                )}
+
+                                {/* 2. CODE */}
+                                {isFirstRowOfBlock && (
+                                  <td
+                                    rowSpan={totalSubRows}
+                                    className="py-3 px-2.5 font-bold text-slate-900 dark:text-white text-center align-top"
+                                  >
+                                    {block.code}
+                                  </td>
+                                )}
+
+                                {/* 3. PRODUCT NAME */}
+                                {isFirstRowOfBlock && (
+                                  <td
+                                    rowSpan={totalSubRows}
+                                    className="py-3 px-2 text-center align-top bg-white dark:bg-slate-900"
                                   >
                                     {isEditingThisBlock ? (
                                       <input
                                         type="text"
-                                        inputMode="numeric"
-                                        pattern="[0-9]*"
-                                        disabled={!dStr}
-                                        value={qtyVal !== undefined && qtyVal !== 0 ? String(qtyVal) : ''}
-                                        onChange={(e) =>
-                                          handleTypeQtyDatang(block.id, colorIndex, sizeIndex, dStr, e.target.value)
-                                        }
-                                        placeholder={dStr ? '-' : ''}
-                                        className="w-full h-8 text-center bg-transparent border-none outline-none font-bold text-xs focus:bg-amber-200 dark:focus:bg-amber-900/60 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                        placeholder="Nama produk..."
+                                        value={block.productName || ''}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setBlocks((prev) =>
+                                            prev.map((b) => (b.id === block.id ? { ...b, productName: val } : b))
+                                          );
+                                        }}
+                                        className="w-full text-center bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded px-1.5 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-rose-500"
                                       />
                                     ) : (
-                                      <div className="py-2 px-1">
-                                        {qtyVal || ''}
+                                      <div className="flex flex-col items-center gap-1.5">
+                                        <span className="font-medium">{block.productName || ''}</span>
+                                        {block.alternateCandidates && block.alternateCandidates.length > 0 && (
+                                          <div className="flex flex-wrap justify-center gap-1 mt-0.5">
+                                            {block.alternateCandidates.map((alt: any) => (
+                                              <button
+                                                key={alt.id}
+                                                type="button"
+                                                onClick={() => handleSwitchTrelloCandidate(block.id, alt)}
+                                                title={`Tukar dengan "${alt.item_name || alt.card_name}"`}
+                                                className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 rounded text-[10px] font-bold flex items-center gap-1 transition shadow-2xs cursor-pointer active:scale-95"
+                                              >
+                                                <RefreshCw className="w-2.5 h-2.5" />
+                                                <span>⇄ Ganti: {(alt.item_name || alt.card_name).replace(/SAMPLE/i, '').trim()}</span>
+                                              </button>
+                                            ))}
+                                          </div>
+                                        )}
                                       </div>
                                     )}
                                   </td>
-                                );
-                              })}
+                                )}
 
-                              {/* 9. QTY BARANG RETUR (Khusus CMT) */}
-                              {isCMT &&
-                                returSlots.map((rStr, rIdx) => {
-                                  const effectiveSlotDate = rStr || (block.returDateSlots && block.returDateSlots[rIdx]) || '';
-                                  const rQtyVal = effectiveSlotDate ? sizeItem.qtyReturByDate?.[effectiveSlotDate] : undefined;
+                                {/* 4. UP */}
+                                {isFirstRowOfBlock && (
+                                  <td
+                                    rowSpan={totalSubRows}
+                                    className="py-3 px-2 text-center align-top bg-white dark:bg-slate-900"
+                                  >
+                                    {isEditingThisBlock ? (
+                                      <input
+                                        type="text"
+                                        placeholder="UP..."
+                                        value={block.upVendor || ''}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setBlocks((prev) =>
+                                            prev.map((b) => (b.id === block.id ? { ...b, upVendor: val } : b))
+                                          );
+                                        }}
+                                        className="w-full text-center bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded px-1.5 py-1 text-xs font-bold outline-none focus:ring-1 focus:ring-rose-500"
+                                      />
+                                    ) : (
+                                      <span>{block.upVendor || ''}</span>
+                                    )}
+                                  </td>
+                                )}
+
+                                {/* 5. PHOTO (TAMPIL UTUH & PROPORSIONAL + DRAG & DROP + COPAS) */}
+                                {isFirstRowOfBlock && (
+                                  <td
+                                    rowSpan={totalSubRows}
+                                    onDragOver={(e) => handleCellDragOver(e, block.id)}
+                                    onDragLeave={(e) => handleCellDragLeave(e, block.id)}
+                                    onDrop={(e) => handleCellDrop(e, block.id)}
+                                    className={`p-2 text-center align-middle transition-colors ${dragOverBlockId === block.id
+                                      ? 'bg-rose-100/70 dark:bg-rose-950/70 ring-2 ring-rose-500 ring-inset'
+                                      : 'bg-slate-50/50 dark:bg-slate-850/50'
+                                      }`}
+                                  >
+                                    {dragOverBlockId === block.id ? (
+                                      <div className="w-48 h-48 mx-auto rounded-2xl border-2 border-dashed border-rose-500 bg-rose-50/80 dark:bg-rose-950/80 flex flex-col items-center justify-center text-rose-600 animate-pulse p-4">
+                                        <UploadCloud className="w-8 h-8 mb-2" />
+                                        <span className="text-xs font-black">Lepaskan Foto di Sini!</span>
+                                        <span className="text-[10px] text-rose-500/80 mt-1">Otomatis Terkompresi WebP</span>
+                                      </div>
+                                    ) : block.photoUrl ? (
+                                      <div className="relative group w-64 h-64 sm:w-80 sm:h-80 mx-auto rounded-xl overflow-hidden border border-slate-300 dark:border-slate-700 shadow-xs bg-slate-100 dark:bg-slate-800 p-0.5">
+                                        <img
+                                          src={block.photoUrl}
+                                          alt={block.code}
+                                          loading="lazy"
+                                          decoding="async"
+                                          className="w-full h-full object-contain rounded-lg group-hover:scale-105 transition-transform duration-200 cursor-pointer"
+                                          referrerPolicy="no-referrer"
+                                          onClick={() =>
+                                            onOpenLightbox({
+                                              url: block.photoUrl!,
+                                              title: `Kode Produksi: ${block.code}`,
+                                              subtitle: `Total Net: ${block.totalNet} pcs`,
+                                            })
+                                          }
+                                        />
+                                        {isEditingThisBlock && (
+                                          <div className="absolute inset-x-0 bottom-0 p-1.5 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex items-center justify-center gap-1.5 opacity-90 group-hover:opacity-100 transition">
+                                            <button
+                                              type="button"
+                                              onClick={() => handleEditPhoto(block.id)}
+                                              className="px-2.5 py-1 bg-white/90 hover:bg-white text-slate-900 rounded-lg text-[10px] font-black shadow-xs transition flex items-center gap-1 cursor-pointer"
+                                            >
+                                              <Edit3 className="w-3 h-3" />
+                                              <span>Ganti / Copas</span>
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setBlocks((prev) =>
+                                                  prev.map((b) => (b.id === block.id ? { ...b, photoUrl: '' } : b))
+                                                );
+                                              }}
+                                              className="p-1 bg-rose-600/90 hover:bg-rose-700 text-white rounded-lg text-[10px] transition cursor-pointer"
+                                              title="Hapus Foto"
+                                            >
+                                              <Trash2 className="w-3 h-3" />
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <div
+                                        onClick={() => isEditingThisBlock && handleEditPhoto(block.id)}
+                                        className={`w-36 h-36 mx-auto rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400 bg-slate-100/50 dark:bg-slate-800/40 p-3 transition ${isEditingThisBlock
+                                          ? 'hover:text-rose-600 hover:border-rose-400 hover:bg-rose-50/20 cursor-pointer group shadow-2xs'
+                                          : ''
+                                          }`}
+                                      >
+                                        <div className="p-2 rounded-xl bg-slate-200/60 dark:bg-slate-700 group-hover:bg-rose-100 dark:group-hover:bg-rose-950 text-slate-500 group-hover:text-rose-600 mb-1.5 transition">
+                                          <UploadCloud className="w-5 h-5" />
+                                        </div>
+                                        <span className="text-xs font-black text-slate-700 dark:text-slate-300 group-hover:text-rose-600">
+                                          {isEditingThisBlock ? '+ Tambah Foto' : 'No Photo'}
+                                        </span>
+                                        {isEditingThisBlock && (
+                                          <span className="text-[9px] text-slate-400 text-center mt-1 leading-tight">
+                                            Drag &amp; Drop / Klik / Copas (Ctrl+V)
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </td>
+                                )}
+
+                                {/* 6. COLOR */}
+                                {isFirstRowOfColor && (
+                                  <td
+                                    rowSpan={colorSubRows}
+                                    className="py-2.5 px-3 font-bold text-slate-900 dark:text-white text-center align-middle bg-white dark:bg-slate-900 text-xs"
+                                  >
+                                    <div className="flex flex-col items-center justify-center gap-1">
+                                      <span>{colorGroup.color}</span>
+                                      {isEditingThisBlock && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleAddSizeRow(block.id, colorIndex)}
+                                          className="text-[10px] text-emerald-600 dark:text-emerald-400 hover:underline font-bold cursor-pointer"
+                                        >
+                                          + Size
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                )}
+
+                                {/* 7. SIZE */}
+                                <td className="py-2 px-2 text-center font-bold text-slate-800 dark:text-slate-200 text-xs bg-slate-50/40 dark:bg-slate-800/40">
+                                  {sizeItem.size}
+                                </td>
+
+                                {/* 8. QTY BARANG DATANG */}
+                                {block.dateSlots.map((dStr, slotIdx) => {
+                                  const qtyVal = dStr ? sizeItem.qtyByDate[dStr] : undefined;
                                   return (
                                     <td
-                                      key={`slot-retur-${rIdx}`}
-                                      className={`p-0 text-center font-mono font-bold text-xs ${
-                                        rQtyVal
-                                          ? 'bg-[#ffe4e6] dark:bg-[#4c1d24] text-red-900 dark:text-red-100 border border-red-200 dark:border-red-900'
-                                          : 'text-slate-300 dark:text-slate-700'
-                                      }`}
+                                      key={`slot-datang-${slotIdx}`}
+                                      className={`p-0 text-center font-mono font-bold text-xs ${qtyVal
+                                        ? 'bg-[#fff2cc] dark:bg-[#38311d] text-amber-950 dark:text-amber-100 border border-[#ffe599]/60 dark:border-amber-800/40'
+                                        : 'text-slate-300 dark:text-slate-700'
+                                        }`}
                                     >
                                       {isEditingThisBlock ? (
                                         <input
                                           type="text"
                                           inputMode="numeric"
                                           pattern="[0-9]*"
-                                          value={rQtyVal !== undefined && rQtyVal !== 0 ? String(rQtyVal) : ''}
-                                          onChange={(e) => {
-                                            const activeReturDate = effectiveSlotDate || new Date().toISOString().split('T')[0];
-                                            handleTypeQtyRetur(block.id, colorIndex, sizeIndex, rIdx, activeReturDate, e.target.value);
-                                          }}
-                                          placeholder="-"
-                                          title={!effectiveSlotDate ? "Klik header +Ret untuk set tanggal retur spesifik, atau langsung ketik angka" : undefined}
-                                          className="w-full h-8 text-center bg-transparent border-none outline-none font-bold text-xs text-red-600 dark:text-red-400 focus:bg-red-200 dark:focus:bg-red-900/60 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                          disabled={!dStr}
+                                          value={qtyVal !== undefined && qtyVal !== 0 ? String(qtyVal) : ''}
+                                          onChange={(e) =>
+                                            handleTypeQtyDatang(block.id, colorIndex, sizeIndex, dStr, e.target.value)
+                                          }
+                                          placeholder={dStr ? '-' : ''}
+                                          className="w-full h-8 text-center bg-transparent border-none outline-none font-bold text-xs focus:bg-amber-200 dark:focus:bg-amber-900/60 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                         />
                                       ) : (
-                                        <div className="py-2 px-1 text-red-600 dark:text-red-400">
-                                          {rQtyVal || ''}
+                                        <div className="py-2 px-1">
+                                          {qtyVal || ''}
                                         </div>
                                       )}
                                     </td>
                                   );
                                 })}
 
-                              {/* 10a. TOTAL DATANG PER ROW (UNMERGED) */}
-                              <td className="py-2 px-2 text-center font-mono font-bold text-xs bg-slate-50/80 dark:bg-slate-800/40 text-slate-800 dark:text-slate-200 border-r border-slate-300 dark:border-slate-700">
-                                {sizeItem.totalSizeQty}
-                              </td>
+                                {/* 9. QTY BARANG RETUR (Khusus CMT) */}
+                                {isCMT &&
+                                  returSlots.map((rStr, rIdx) => {
+                                    const effectiveSlotDate = rStr || (block.returDateSlots && block.returDateSlots[rIdx]) || '';
+                                    const rQtyVal = effectiveSlotDate ? sizeItem.qtyReturByDate?.[effectiveSlotDate] : undefined;
+                                    return (
+                                      <td
+                                        key={`slot-retur-${rIdx}`}
+                                        className={`p-0 text-center font-mono font-bold text-xs ${rQtyVal
+                                          ? 'bg-[#ffe4e6] dark:bg-[#4c1d24] text-red-900 dark:text-red-100 border border-red-200 dark:border-red-900'
+                                          : 'text-slate-300 dark:text-slate-700'
+                                          }`}
+                                      >
+                                        {isEditingThisBlock ? (
+                                          <input
+                                            type="text"
+                                            inputMode="numeric"
+                                            pattern="[0-9]*"
+                                            value={rQtyVal !== undefined && rQtyVal !== 0 ? String(rQtyVal) : ''}
+                                            onChange={(e) => {
+                                              const activeReturDate = effectiveSlotDate || new Date().toISOString().split('T')[0];
+                                              handleTypeQtyRetur(block.id, colorIndex, sizeIndex, rIdx, activeReturDate, e.target.value);
+                                            }}
+                                            placeholder="-"
+                                            title={!effectiveSlotDate ? "Klik header +Ret untuk set tanggal retur spesifik, atau langsung ketik angka" : undefined}
+                                            className="w-full h-8 text-center bg-transparent border-none outline-none font-bold text-xs text-red-600 dark:text-red-400 focus:bg-red-200 dark:focus:bg-red-900/60 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                          />
+                                        ) : (
+                                          <div className="py-2 px-1 text-red-600 dark:text-red-400">
+                                            {rQtyVal || ''}
+                                          </div>
+                                        )}
+                                      </td>
+                                    );
+                                  })}
 
-                              {/* 10b. TOTAL AWAL (NET BLOK) — Merged Per Block */}
-                              {isFirstRowOfBlock && (
-                                <td
-                                  rowSpan={totalSubRows}
-                                  className="py-3 px-2 text-center align-middle font-mono font-black text-sm text-slate-900 dark:text-white bg-slate-100/60 dark:bg-slate-800/60 border-r border-slate-300 dark:border-slate-700"
-                                >
-                                  <div>{block.totalNet}</div>
-                                  {isCMT && block.totalRetur ? (
-                                    <div className="text-[10px] font-normal text-slate-500">
-                                      ({block.totalDatang} - {block.totalRetur})
-                                    </div>
-                                  ) : null}
+                                {/* 10a. TOTAL DATANG PER ROW (UNMERGED) */}
+                                <td className="py-2 px-2 text-center font-mono font-bold text-xs bg-slate-50/80 dark:bg-slate-800/40 text-slate-800 dark:text-slate-200 border-r border-slate-300 dark:border-slate-700">
+                                  {sizeItem.totalSizeQty}
                                 </td>
-                              )}
 
-                              {/* 10c. QTY NOTA (BUYER) — Merged Per Block */}
-                              {isFirstRowOfBlock && (
-                                <td
-                                  rowSpan={totalSubRows}
-                                  className="py-2 px-2 text-center align-middle font-mono bg-amber-50/40 dark:bg-amber-950/20 border-r border-slate-300 dark:border-slate-700"
-                                >
-                                  <div className="flex flex-col items-center justify-center gap-1">
-                                    <input
-                                      type="text"
-                                      inputMode="numeric"
-                                      pattern="[0-9]*"
-                                      defaultValue={
-                                        block.qtyNota !== null && block.qtyNota !== undefined
-                                          ? String(block.qtyNota)
-                                          : ''
-                                      }
-                                      key={`nota-${block.code}-${block.qtyNota ?? 'empty'}`}
-                                      placeholder="Isi Nota..."
-                                      title="Qty Nota Buyer (otomatis tersinkron dengan Google Sheet & dibackup ke Supabase. Tekan Enter atau klik di luar untuk simpan)"
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                          (e.target as HTMLInputElement).blur();
-                                        }
-                                      }}
-                                      onBlur={(e) => {
-                                        const val = e.target.value.trim();
-                                        const currentStr =
+                                {/* 10b. TOTAL AWAL (NET BLOK) — Merged Per Block */}
+                                {isFirstRowOfBlock && (
+                                  <td
+                                    rowSpan={totalSubRows}
+                                    className="py-3 px-2 text-center align-middle font-mono font-black text-sm text-slate-900 dark:text-white bg-slate-100/60 dark:bg-slate-800/60 border-r border-slate-300 dark:border-slate-700"
+                                  >
+                                    <div>{block.totalNet}</div>
+                                    {isCMT && block.totalRetur ? (
+                                      <div className="text-[10px] font-normal text-slate-500">
+                                        ({block.totalDatang} - {block.totalRetur})
+                                      </div>
+                                    ) : null}
+                                  </td>
+                                )}
+
+                                {/* 10c. QTY NOTA (BUYER) — Merged Per Block */}
+                                {isFirstRowOfBlock && (
+                                  <td
+                                    rowSpan={totalSubRows}
+                                    className="py-2 px-2 text-center align-middle font-mono bg-amber-50/40 dark:bg-amber-950/20 border-r border-slate-300 dark:border-slate-700"
+                                  >
+                                    <div className="flex flex-col items-center justify-center gap-1">
+                                      <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        pattern="[0-9]*"
+                                        defaultValue={
                                           block.qtyNota !== null && block.qtyNota !== undefined
                                             ? String(block.qtyNota)
-                                            : '';
-                                        if (val !== currentStr) {
-                                          handleUpdateBlockQtyNota(block.code, val, block.kategori);
+                                            : ''
                                         }
-                                      }}
-                                      className="w-20 px-2 py-1 text-center font-mono font-black text-xs rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-amber-900 dark:text-amber-200 focus:ring-2 focus:ring-amber-500 outline-none shadow-2xs"
-                                    />
-                                    {qtyNotaMap[block.code]?.source_sheet && (
-                                      <span className="text-[9px] text-slate-400 truncate max-w-[85px]" title={`Sumber: ${qtyNotaMap[block.code]?.source_sheet}`}>
-                                        {qtyNotaMap[block.code]?.source_sheet}
-                                      </span>
-                                    )}
-                                  </div>
-                                </td>
-                              )}
-
-                              {/* 10d. TOTAL HITUNG ULANG (FISIK) — Merged Per Block */}
-                              {isFirstRowOfBlock && (
-                                <td
-                                  rowSpan={totalSubRows}
-                                  className="py-2 px-2 text-center align-middle font-mono bg-emerald-50/30 dark:bg-emerald-950/10 border-r border-slate-300 dark:border-slate-700"
-                                  title="Total Fisik Hasil Audit Hitung Ulang untuk seluruh ukuran model ini"
-                                >
-                                  {block.hasRecount && block.totalRecountFisik !== null && block.totalRecountFisik !== undefined ? (
-                                    <div className="flex flex-col items-center">
-                                      <span className="font-mono font-black text-sm text-emerald-800 dark:text-emerald-300">
-                                        {block.totalRecountFisik}
-                                      </span>
-                                      <span className="text-[9px] text-slate-400">pcs fisik</span>
+                                        key={`nota-${block.code}-${block.qtyNota ?? 'empty'}`}
+                                        placeholder="Isi Nota..."
+                                        title="Qty Nota Buyer (otomatis tersinkron dengan Google Sheet & dibackup ke Supabase. Tekan Enter atau klik di luar untuk simpan)"
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            (e.target as HTMLInputElement).blur();
+                                          }
+                                        }}
+                                        onBlur={(e) => {
+                                          const val = e.target.value.trim();
+                                          const currentStr =
+                                            block.qtyNota !== null && block.qtyNota !== undefined
+                                              ? String(block.qtyNota)
+                                              : '';
+                                          if (val !== currentStr) {
+                                            handleUpdateBlockQtyNota(block.code, val, block.kategori);
+                                          }
+                                        }}
+                                        className="w-20 px-2 py-1 text-center font-mono font-black text-xs rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-amber-900 dark:text-amber-200 focus:ring-2 focus:ring-amber-500 outline-none shadow-2xs"
+                                      />
+                                      {qtyNotaMap[block.code]?.source_sheet && (
+                                        <span className="text-[9px] text-slate-400 truncate max-w-[85px]" title={`Sumber: ${qtyNotaMap[block.code]?.source_sheet}`}>
+                                          {qtyNotaMap[block.code]?.source_sheet}
+                                        </span>
+                                      )}
                                     </div>
-                                  ) : (
-                                    <span className="text-slate-300 dark:text-slate-700 text-xs">-</span>
-                                  )}
-                                </td>
-                              )}
+                                  </td>
+                                )}
 
-                              {/* 10e. SELISIH NOTA — Merged Per Block (Mengikuti 4 Kondisi Pasti) */}
-                              {isFirstRowOfBlock && (
-                                <td
-                                  rowSpan={totalSubRows}
-                                  className="py-2 px-2 text-center align-middle font-mono bg-sky-50/20 dark:bg-sky-950/10 border-r border-slate-300 dark:border-slate-700"
-                                >
-                                  {(() => {
-                                    const hasNota = block.qtyNota !== null && block.qtyNota !== undefined;
-                                    const hasRecount = block.hasRecount && block.totalRecountFisik !== null && block.totalRecountFisik !== undefined;
-                                    let selisih: number | null = null;
-                                    let label = '';
+                                {/* 10d. TOTAL HITUNG ULANG (FISIK) — Merged Per Block */}
+                                {isFirstRowOfBlock && (
+                                  <td
+                                    rowSpan={totalSubRows}
+                                    className="py-2 px-2 text-center align-middle font-mono bg-emerald-50/30 dark:bg-emerald-950/10 border-r border-slate-300 dark:border-slate-700"
+                                    title="Total Fisik Hasil Audit Hitung Ulang untuk seluruh ukuran model ini"
+                                  >
+                                    {block.hasRecount && block.totalRecountFisik !== null && block.totalRecountFisik !== undefined ? (
+                                      <div className="flex flex-col items-center">
+                                        <span className="font-mono font-black text-sm text-emerald-800 dark:text-emerald-300">
+                                          {block.totalRecountFisik}
+                                        </span>
+                                        <span className="text-[9px] text-slate-400">pcs fisik</span>
+                                      </div>
+                                    ) : (
+                                      <span className="text-slate-300 dark:text-slate-700 text-xs">-</span>
+                                    )}
+                                  </td>
+                                )}
 
-                                    // Kondisi 1 & 2: Jika Qty Nota terisi
-                                    if (hasNota) {
-                                      const base = hasRecount ? block.totalRecountFisik! : block.totalNet;
-                                      selisih = base - block.qtyNota!;
-                                      label = selisih === 0 ? '✅ Klop Nota' : (selisih < 0 ? `Kurang ${Math.abs(selisih)}` : `Lebih +${selisih}`);
-                                    } 
-                                    // Kondisi 3: Jika Qty Nota KOSONG tapi sudah ada Hitung Ulang
-                                    else if (hasRecount) {
-                                      selisih = block.totalRecountFisik! - block.totalNet;
-                                      label = selisih === 0 ? '✅ Klop SJ' : (selisih < 0 ? `Kurang ${Math.abs(selisih)}` : `Lebih +${selisih}`);
-                                    }
+                                {/* 10e. SELISIH NOTA — Merged Per Block (Mengikuti 4 Kondisi Pasti) */}
+                                {isFirstRowOfBlock && (
+                                  <td
+                                    rowSpan={totalSubRows}
+                                    className="py-2 px-2 text-center align-middle font-mono bg-sky-50/20 dark:bg-sky-950/10 border-r border-slate-300 dark:border-slate-700"
+                                  >
+                                    {(() => {
+                                      const hasNota = block.qtyNota !== null && block.qtyNota !== undefined;
+                                      const hasRecount = block.hasRecount && block.totalRecountFisik !== null && block.totalRecountFisik !== undefined;
+                                      let selisih: number | null = null;
+                                      let label = '';
 
-                                    // Kondisi 4: Jika Qty Nota KOSONG dan belum hitung ulang
-                                    if (selisih === null) {
-                                      return <span className="text-slate-300 dark:text-slate-700 text-xs">-</span>;
-                                    }
+                                      // Kondisi 1 & 2: Jika Qty Nota terisi
+                                      if (hasNota) {
+                                        const base = hasRecount ? block.totalRecountFisik! : block.totalNet;
+                                        selisih = base - block.qtyNota!;
+                                        label = selisih === 0 ? '✅ Klop Nota' : (selisih < 0 ? `Kurang ${Math.abs(selisih)}` : `Lebih +${selisih}`);
+                                      }
+                                      // Kondisi 3: Jika Qty Nota KOSONG tapi sudah ada Hitung Ulang
+                                      else if (hasRecount) {
+                                        selisih = block.totalRecountFisik! - block.totalNet;
+                                        label = selisih === 0 ? '✅ Klop SJ' : (selisih < 0 ? `Kurang ${Math.abs(selisih)}` : `Lebih +${selisih}`);
+                                      }
 
-                                    const isMatch = selisih === 0;
-                                    const isKurang = selisih < 0;
-                                    return (
-                                      <div className="flex flex-col items-center gap-1">
-                                        <span
-                                          className={`inline-block px-2 py-0.5 rounded-lg text-xs font-black border ${
-                                            isMatch
+                                      // Kondisi 4: Jika Qty Nota KOSONG dan belum hitung ulang
+                                      if (selisih === null) {
+                                        return <span className="text-slate-300 dark:text-slate-700 text-xs">-</span>;
+                                      }
+
+                                      const isMatch = selisih === 0;
+                                      const isKurang = selisih < 0;
+                                      return (
+                                        <div className="flex flex-col items-center gap-1">
+                                          <span
+                                            className={`inline-block px-2 py-0.5 rounded-lg text-xs font-black border ${isMatch
                                               ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
                                               : isKurang
-                                              ? 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800'
-                                              : 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800'
-                                          }`}
-                                        >
-                                          {selisih > 0 ? `+${selisih}` : selisih}
-                                        </span>
-                                        <span
-                                          className={`text-[9px] font-bold ${
-                                            isMatch
+                                                ? 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800'
+                                                : 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800'
+                                              }`}
+                                          >
+                                            {selisih > 0 ? `+${selisih}` : selisih}
+                                          </span>
+                                          <span
+                                            className={`text-[9px] font-bold ${isMatch
                                               ? 'text-emerald-600 dark:text-emerald-400'
                                               : isKurang
-                                              ? 'text-rose-600 dark:text-rose-400'
-                                              : 'text-blue-600 dark:text-blue-400'
-                                          }`}
-                                        >
-                                          {label}
-                                        </span>
-                                        {!isMatch && onOpenHitungUlang && (
-                                          <button
-                                            type="button"
-                                            onClick={() => onOpenHitungUlang(block.code)}
-                                            className="mt-0.5 px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-700 text-white text-[9px] font-bold transition cursor-pointer shadow-2xs"
-                                            title="Kode ini otomatis masuk Antrian Audit Hitung Ulang. Klik untuk buka lembar hitung ulang."
+                                                ? 'text-rose-600 dark:text-rose-400'
+                                                : 'text-blue-600 dark:text-blue-400'
+                                              }`}
                                           >
-                                            📋 Audit Antrian
-                                          </button>
-                                        )}
-                                      </div>
-                                    );
-                                  })()}
-                                </td>
-                              )}
-
-                              {/* 11. FISIK HITUNG (Per Varian Size) */}
-                              <td className="py-2 px-2 text-center font-mono font-bold text-xs bg-blue-50/20 dark:bg-blue-950/20">
-                                {sizeItem.recountFisik !== null && sizeItem.recountFisik !== undefined ? (
-                                  <div>
-                                    <span className="text-blue-700 dark:text-blue-300 font-black">{sizeItem.recountFisik}</span>
-                                    {sizeItem.recountRound ? (
-                                      <span className="block text-[9px] font-normal text-slate-400">Rev {sizeItem.recountRound}</span>
-                                    ) : null}
-                                  </div>
-                                ) : (
-                                  <span className="text-slate-300 dark:text-slate-700">-</span>
+                                            {label}
+                                          </span>
+                                          {!isMatch && onOpenHitungUlang && (
+                                            <button
+                                              type="button"
+                                              onClick={() => onOpenHitungUlang(block.code)}
+                                              className="mt-0.5 px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-700 text-white text-[9px] font-bold transition cursor-pointer shadow-2xs"
+                                              title="Kode ini otomatis masuk Antrian Audit Hitung Ulang. Klik untuk buka lembar hitung ulang."
+                                            >
+                                              📋 Audit Antrian
+                                            </button>
+                                          )}
+                                        </div>
+                                      );
+                                    })()}
+                                  </td>
                                 )}
-                              </td>
 
-                              {/* 12. SELISIH (Per Varian Size) */}
-                              <td className="py-2 px-1 text-center font-mono font-bold text-xs">
-                                {sizeItem.recountFisik !== null && sizeItem.recountFisik !== undefined ? (
-                                  sizeItem.recountSelisih !== null && sizeItem.recountSelisih !== undefined ? (
+                                {/* 11. FISIK HITUNG (Per Varian Size) */}
+                                <td className="py-2 px-2 text-center font-mono font-bold text-xs bg-blue-50/20 dark:bg-blue-950/20">
+                                  {sizeItem.recountFisik !== null && sizeItem.recountFisik !== undefined ? (
+                                    <div>
+                                      <span className="text-blue-700 dark:text-blue-300 font-black">{sizeItem.recountFisik}</span>
+                                      {sizeItem.recountRound ? (
+                                        <span className="block text-[9px] font-normal text-slate-400">Rev {sizeItem.recountRound}</span>
+                                      ) : null}
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-300 dark:text-slate-700">-</span>
+                                  )}
+                                </td>
+
+                                {/* 12. SELISIH (Per Varian Size) */}
+                                <td className="py-2 px-1 text-center font-mono font-bold text-xs">
+                                  {sizeItem.recountFisik !== null && sizeItem.recountFisik !== undefined ? (
+                                    sizeItem.recountSelisih !== null && sizeItem.recountSelisih !== undefined ? (
+                                      sizeItem.recountSelisih === 0 ? (
+                                        <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                          0
+                                        </span>
+                                      ) : sizeItem.recountSelisih < 0 ? (
+                                        <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-black bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">
+                                          {sizeItem.recountSelisih}
+                                        </span>
+                                      ) : (
+                                        <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-black bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300">
+                                          +{sizeItem.recountSelisih}
+                                        </span>
+                                      )
+                                    ) : (
+                                      <span className="text-slate-400">-</span>
+                                    )
+                                  ) : (
+                                    <span className="text-slate-300 dark:text-slate-700">-</span>
+                                  )}
+                                </td>
+
+                                {/* 13. STATUS (Per Varian Size) */}
+                                <td className="py-2 px-2 text-center text-[10px]">
+                                  {sizeItem.recountFisik !== null && sizeItem.recountFisik !== undefined ? (
                                     sizeItem.recountSelisih === 0 ? (
-                                      <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
-                                        0
+                                      <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800">
+                                        ✅ Match
                                       </span>
-                                    ) : sizeItem.recountSelisih < 0 ? (
-                                      <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-black bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">
-                                        {sizeItem.recountSelisih}
+                                    ) : (sizeItem.recountSelisih || 0) < 0 ? (
+                                      <span
+                                        className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full font-bold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:border-rose-800"
+                                        title={sizeItem.recountNotes ? `Catatan: ${sizeItem.recountNotes}` : undefined}
+                                      >
+                                        ⚠️ Kurang
                                       </span>
                                     ) : (
-                                      <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-black bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300">
-                                        +{sizeItem.recountSelisih}
+                                      <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full font-bold bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:border-blue-800">
+                                        📦 Lebih
                                       </span>
                                     )
                                   ) : (
-                                    <span className="text-slate-400">-</span>
-                                  )
-                                ) : (
-                                  <span className="text-slate-300 dark:text-slate-700">-</span>
-                                )}
-                              </td>
-
-                              {/* 13. STATUS (Per Varian Size) */}
-                              <td className="py-2 px-2 text-center text-[10px]">
-                                {sizeItem.recountFisik !== null && sizeItem.recountFisik !== undefined ? (
-                                  sizeItem.recountSelisih === 0 ? (
-                                    <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800">
-                                      ✅ Match
-                                    </span>
-                                  ) : (sizeItem.recountSelisih || 0) < 0 ? (
-                                    <span
-                                      className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full font-bold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:border-rose-800"
-                                      title={sizeItem.recountNotes ? `Catatan: ${sizeItem.recountNotes}` : undefined}
-                                    >
-                                      ⚠️ Kurang
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full font-bold bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:border-blue-800">
-                                      📦 Lebih
-                                    </span>
-                                  )
-                                ) : (
-                                  <span className="text-slate-400 text-[10px] italic">Belum</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        });
-                      })}
-                    </tbody>
-                  </table>
+                                    <span className="text-slate-400 text-[10px] italic">Belum</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          });
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
           </div>
 
           {/* Bottom Pagination Bar */}

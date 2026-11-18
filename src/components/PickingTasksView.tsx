@@ -105,6 +105,7 @@ import {
   notifyPickingSessionUpdated,
 } from '../services/scannerOutboxService';
 import { globalRealtimeStore } from '../services/store';
+import { addNotificationToHub } from '../services/notificationHubService';
 import {
   playSuccessBeep,
   playErrorBeep,
@@ -201,6 +202,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
   // 2-Phase Scanning State (Fase 1: Tembak Lokasi -> Fase 2: Tembak SKU)
   const [activeLocation, setActiveLocation] = useState<string>(initialStoredSession.activeLocation);
+  const [manualLocIndex, setManualLocIndex] = useState<number | null>(null);
+  const [manualLocInput, setManualLocInput] = useState<string>('');
   const [recentScans, setRecentScans] = useState<
     Array<{
       id: string;
@@ -1052,7 +1055,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       }
       const fromItemLoc = resolvePrimarySingleLocation(item.lokasi || '');
       if (fromItemLoc) return fromItemLoc;
-      return cleanPicked || 'A001';
+      return cleanPicked || '-';
     },
     [realtimeSkuStocks, productCatalog]
   );
@@ -1193,7 +1196,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         } else {
           const locItem = Array.isArray(catMatch?.locList) ? catMatch?.locList[0] : null;
           const locStr = typeof locItem === 'string' ? locItem : locItem?.lokasi;
-          effectiveLokasi = catMatch?.lokasi || locStr || 'A-01';
+          effectiveLokasi = catMatch?.lokasi || locStr || '';
         }
       }
 
@@ -1921,6 +1924,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
         const success = await deletePickingSuratJalanBatchSupabase([no_sj]);
         if (success) {
+          invalidatePickingListCache();
           onNotify(`Surat Jalan ${no_sj} berhasil dihapus`, 'success');
           const cleanNoSj = no_sj.toUpperCase().trim();
           setRawItems((prev) => {
@@ -2230,7 +2234,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         if (mode === 'RESET_TO_PENDING') {
           syncedOnline = await cancelOrResetPickingSJSupabase(cleanNoSj);
           if (syncedOnline) {
-            markSjLocallyMutated(cleanNoSj, 1500);
+            markSjLocallyMutated(cleanNoSj, 6000);
             broadcastPickingCollabEvent('sj_cancelled', { no_sj: cleanNoSj });
           }
         } else {
@@ -2239,7 +2243,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             // Cleanly flush to Supabase succeeded — remove local draft so Supabase is single truth across all users
             removePickingSjDraft(cleanNoSj);
             setDraftsRevision((r) => r + 1);
-            markSjLocallyMutated(cleanNoSj, 1500);
+            markSjLocallyMutated(cleanNoSj, 6000);
             broadcastPickingCollabEvent('picker_left', { no_sj: cleanNoSj });
             // Verify & hydrate exact DB rows
             fetchActiveSjRealtimeRowsSupabase(cleanNoSj)
@@ -3358,9 +3362,63 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       lokasi_picked: resolvePrimarySingleLocation(unexp.lokasi_picked || unexp.lokasi || '') || '-',
     }));
 
+    // Deteksi stok rak yang berpotensi minus setelah pencatatan OUT jujur (untuk notif rekomendasi Stock Opname)
+    const negativeStockAlerts: Array<{
+      sku: string;
+      lokasi: string;
+      currentQty: number;
+      pickedQty: number;
+      projectedQty: number;
+    }> = [];
+    if (syncOutLog) {
+      [...sanitizedItems, ...sanitizedUnexpected]
+        .filter((x) => (Number(x.qty_picked) || 0) > 0)
+        .forEach((it) => {
+          const skuKey = (it.sku || '').toUpperCase().trim();
+          const actualLoc = resolvePrimarySingleLocation(it.lokasi_picked || it.lokasi || '') || '';
+          if (!skuKey || !actualLoc || actualLoc === '-' || !(skuKey in realtimeSkuStocks)) return;
+          const rackList = realtimeSkuStocks[skuKey] || [];
+          const rackMatch = rackList.find(
+            (s) => (s.lokasi || '').trim().toUpperCase() === actualLoc.toUpperCase()
+          );
+          const currentQty = Number(rackMatch?.qty || 0);
+          const pickedQty = Number(it.qty_picked) || 0;
+          if (currentQty - pickedQty < 0) {
+            negativeStockAlerts.push({
+              sku: skuKey,
+              lokasi: actualLoc,
+              currentQty,
+              pickedQty,
+              projectedQty: currentQty - pickedQty,
+            });
+          }
+        });
+    }
+
     const finalizeLocalSuccess = (queuedOffline: boolean) => {
       playSaveSuccessChime();
       vibrateDevice([100, 50, 100]);
+
+      if (negativeStockAlerts.length > 0) {
+        const previewList = negativeStockAlerts
+          .slice(0, 3)
+          .map((a) => `${a.sku} @ ${a.lokasi} (Sisa: ${a.projectedQty})`)
+          .join(', ');
+        const moreSuffix = negativeStockAlerts.length > 3 ? ` (+${negativeStockAlerts.length - 3} lainnya)` : '';
+        const soBody = `Stok sistem rak minus setelah picking SJ ${completedNoSj}: ${previewList}${moreSuffix}. Rekomendasi: lakukan Stock Opname pada rak tersebut.`;
+        addNotificationToHub({
+          title: `Rekomendasi Stock Opname (${negativeStockAlerts.length} Rak Minus)`,
+          body: soBody,
+          category: 'so',
+          target: {
+            page: 'opname',
+            tag: `so-recommend-${cleanNoSj}`,
+          },
+        });
+        setTimeout(() => {
+          onNotify(`⚠️ ${soBody}`, 'warning');
+        }, 500);
+      }
 
       if (!queuedOffline) {
         broadcastPickingCollabEvent('sj_completed', {
@@ -4352,6 +4410,84 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                         <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
                         <span>Cek Stok Rak...</span>
                       </div>
+                    )}
+
+                    {/* Pill Lokasi Manual yang dipilih Picker (jika tidak ada di daftar rak otomatis) */}
+                    {(() => {
+                      const pickedManual = resolvePrimarySingleLocation(item.lokasi_picked || '');
+                      const alreadyListed = pickedManual && productLocs.some((l) => l.lokasi.toUpperCase() === pickedManual.toUpperCase());
+                      if (!pickedManual || pickedManual === '-' || alreadyListed) return null;
+                      const isThisManualActive = activeLocation && pickedManual.toUpperCase() === activeLocation.toUpperCase();
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => handleSelectItemLocation(index, pickedManual)}
+                          className={`px-3 py-1.5 rounded-xl font-mono font-black text-xs sm:text-sm flex items-center gap-1.5 transition-all shadow-xs cursor-pointer ${
+                            isThisManualActive
+                              ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-500/40'
+                              : 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-700 hover:bg-indigo-100'
+                          }`}
+                          title={`Lokasi manual dipilih: ${pickedManual}`}
+                        >
+                          <MapPin className="w-3.5 h-3.5 shrink-0" />
+                          <span>{pickedManual}</span>
+                          <span className="text-[10px] font-sans font-bold opacity-80">(Manual)</span>
+                        </button>
+                      );
+                    })()}
+
+                    {/* Input Lokasi Rak Manual untuk mengantisipasi barang tanpa data lokasi / rak berbeda */}
+                    {manualLocIndex === index ? (
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const clean = manualLocInput.trim().toUpperCase();
+                          if (!clean) return;
+                          handleSelectItemLocation(index, clean);
+                          setManualLocIndex(null);
+                          setManualLocInput('');
+                        }}
+                        className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/90 border border-indigo-300 dark:border-indigo-700 rounded-xl px-2 py-1 shadow-xs"
+                      >
+                        <input
+                          type="text"
+                          value={manualLocInput}
+                          onChange={(e) => setManualLocInput(e.target.value.toUpperCase())}
+                          placeholder="Ketik Rak (mis. A012)"
+                          autoFocus
+                          className="w-32 sm:w-36 px-2 py-1 text-xs font-mono font-bold uppercase bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                        <button
+                          type="submit"
+                          className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold cursor-pointer transition"
+                        >
+                          Pakai
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setManualLocIndex(null);
+                            setManualLocInput('');
+                          }}
+                          className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                          title="Batal"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </form>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setManualLocIndex(index);
+                          setManualLocInput(resolvePrimarySingleLocation(item.lokasi_picked || '') || '');
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition cursor-pointer shadow-2xs"
+                        title="Input lokasi rak manual jika barang diambil dari rak lain atau data lokasi kosong"
+                      >
+                        <Edit3 className="w-3 h-3 text-indigo-500" />
+                        <span>{productLocs.length === 0 ? 'Input Lokasi Manual' : '+ Rak Manual'}</span>
+                      </button>
                     )}
 
                     {isCurrentShelf && (

@@ -1,12 +1,13 @@
 {
-  "version": "v2.19.5",
-  "versionCode": 395,
+  "version": "v2.19.7",
+  "versionCode": 397,
   "buildDate": "18 November 2026",
-  "buildHash": "wms-261118-v395-1901",
-  "releaseTitle": "WMS v2.19.5 — Hapus Auto-Fill Trello di Penerimaan Produksi",
+  "buildHash": "wms-261118-v397-1950",
+  "releaseTitle": "WMS v2.19.7 — Perbaikan Batal Ambil & Input Lokasi Manual Picking",
   "releaseNotes": [
-    "Menghapus fitur auto-lookup dan auto-fill otomatis dari Trello UP di Form Penerimaan Produksi, Spreadsheet, Push Sheets, dan Asisten AI",
-    "Mencegah anomali data nama produk, UP vendor, dan foto akibat pencocokan otomatis"
+    "Menambahkan input lokasi rak manual langsung pada kartu SKU di Tugas Picking",
+    "Menambahkan notifikasi rekomendasi Stock Opname jika stok rak minus saat picking jujur",
+    "Memperbaiki sinkronisasi Batal Ambil dan hapus SJ agar status Sedang Dikerjakan tidak muncul kembali"
   ],
   "minSupportedVersion": "v2.0.0"
 }

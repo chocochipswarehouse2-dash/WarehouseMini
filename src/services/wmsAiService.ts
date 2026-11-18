@@ -162,7 +162,7 @@ export async function fetchAiConfig(): Promise<WmsAiConfig> {
       if (cached) {
         defaultConfig.allowedUsers = JSON.parse(cached);
       }
-    } catch {}
+    } catch { }
   }
 
   try {
@@ -239,14 +239,14 @@ function sanitizeSessionsForCloud(sessions: AiChatSession[]): AiChatSession[] {
       ...m,
       attachments: m.attachments
         ? m.attachments.map((att) => ({
-            id: att.id,
-            name: att.name,
-            type: att.type,
-            mimeType: att.mimeType,
-            sizeBytes: att.sizeBytes,
-            rowCount: att.rowCount,
-            extractedText: att.extractedText ? att.extractedText.slice(0, 2500) : undefined
-          }))
+          id: att.id,
+          name: att.name,
+          type: att.type,
+          mimeType: att.mimeType,
+          sizeBytes: att.sizeBytes,
+          rowCount: att.rowCount,
+          extractedText: att.extractedText ? att.extractedText.slice(0, 2500) : undefined
+        }))
         : undefined
     }))
   }));
@@ -862,10 +862,10 @@ export function getToolsForRole(role: AiUserRole, session?: UserSession | null) 
     role === 'hr' ||
     Boolean(
       perms.menu_hr_approval ||
-        perms.menu_hr_karyawan ||
-        perms.menu_hr_roster ||
-        perms.menu_hr_presensi ||
-        perms.menu_hr_lembur_cuti
+      perms.menu_hr_karyawan ||
+      perms.menu_hr_roster ||
+      perms.menu_hr_presensi ||
+      perms.menu_hr_lembur_cuti
     );
 
   const allowedDeclarations = ALL_TOOL_DECLARATIONS.filter((decl: any) => {
@@ -922,7 +922,7 @@ async function getResolvedMasterProducts(): Promise<ProductItem[]> {
         return parsed;
       }
     }
-  } catch {}
+  } catch { }
 
   return [];
 }
@@ -1055,8 +1055,8 @@ function computeOfficialDealposBreakdown(item: any): {
   const dpRaw = isObj(item.dealpos_channels)
     ? (item.dealpos_channels as Record<string, any>)
     : isObj(item.dealpos)
-    ? (item.dealpos as Record<string, any>)
-    : {};
+      ? (item.dealpos as Record<string, any>)
+      : {};
   const dpD = isObj(dpRaw.d) ? dpRaw.d : undefined;
   const dpCabang = isObj(dpRaw.cabang) ? dpRaw.cabang : undefined;
   const dpB = isObj(dpRaw.b) ? dpRaw.b : undefined;
@@ -1270,11 +1270,11 @@ async function searchSingleProductDetail(rawQuery: string, masterProducts: Produ
     const [freshMasterRows, freshStockRows] = await Promise.all([
       candidateSkus.length > 0
         ? supabaseFetch<any[]>(
-            'master_produk',
-            'GET',
-            null,
-            `select=sku,nama_produk,kategori,size,price,dealpos_channels&sku=in.${encodeURIComponent(encodedSkus)}`
-          ).catch(() => [])
+          'master_produk',
+          'GET',
+          null,
+          `select=sku,nama_produk,kategori,size,price,dealpos_channels&sku=in.${encodeURIComponent(encodedSkus)}`
+        ).catch(() => [])
         : Promise.resolve([]),
       fetchStockForSkus(candidateSkus).catch(() => [])
     ]);
@@ -1427,14 +1427,14 @@ async function searchSingleProductDetail(rawQuery: string, masterProducts: Produ
     varian_size_lain_produk_ini:
       requestedSize && allVariants.length > targetVariants.length
         ? allVariants
-            .filter((v) => v.normalized_size !== requestedSize)
-            .map((v) => ({
-              size: v.size,
-              sku: v.sku,
-              stok_fisik_rak: v.stok_fisik_rak,
-              lokasi_rak: v.lokasi_rak,
-              stok_dealpos: v.stok_dealpos
-            }))
+          .filter((v) => v.normalized_size !== requestedSize)
+          .map((v) => ({
+            size: v.size,
+            sku: v.sku,
+            stok_fisik_rak: v.stok_fisik_rak,
+            lokasi_rak: v.lokasi_rak,
+            stok_dealpos: v.stok_dealpos
+          }))
         : undefined
   };
 }
@@ -1474,8 +1474,7 @@ async function executeLookupProductStock(args: { query?: string; queries?: strin
           itemRes.products
             ?.map(
               (p: any) =>
-                `Size ${p.size}: Fisik ${p.stok_fisik_rak} pcs (${p.lokasi_rak}) | DealPOS: ${p.stok_dealpos}${
-                  p.stok_dealpos_perbaikan ? ` (+Perbaikan: ${p.stok_dealpos_perbaikan})` : ''
+                `Size ${p.size}: Fisik ${p.stok_fisik_rak} pcs (${p.lokasi_rak}) | DealPOS: ${p.stok_dealpos}${p.stok_dealpos_perbaikan ? ` (+Perbaikan: ${p.stok_dealpos_perbaikan})` : ''
                 }`
             )
             .join(' ; ') || itemRes.catatan_size || '-'
@@ -1607,8 +1606,8 @@ async function executeLookupProductionCode(
       instruksi_untuk_ai: candidateAnalysis.needsSimilarCodeConfirmation
         ? `Kode persis "${code}" TIDAK ada di Trello UP, tetapi ditemukan kode yang mirip yaitu: ${candidateAnalysis.candidates.map((c) => `${c.matchedCode} (${c.productName} - ${c.upCode})`).join(', ')}. WAJIB TANYA DULU ke pengguna apakah yang dimaksud adalah kode ${candidateAnalysis.candidates[0]?.matchedCode} sesuai FOTO PRODUK yang otomatis dilampirkan di bawah balon chat ini!`
         : candidateAnalysis.hasExactCodeMatch
-        ? `Kode "${code}" ditemukan persis di Trello UP (${candidateAnalysis.exactCandidate?.productName} - ${candidateAnalysis.exactCandidate?.upCode}). Foto produk juga otomatis ditampilkan di bawah balon chat.`
-        : `Kode "${code}" belum ditemukan di Trello UP.`,
+          ? `Kode "${code}" ditemukan persis di Trello UP (${candidateAnalysis.exactCandidate?.productName} - ${candidateAnalysis.exactCandidate?.upCode}). Foto produk juga otomatis ditampilkan di bawah balon chat.`
+          : `Kode "${code}" belum ditemukan di Trello UP.`,
       kandidat_di_trello: candidateAnalysis.candidates.map((c) => ({
         kode_trello: c.matchedCode,
         status_kecocokan: c.isExactCodeMatch ? 'COCOK_PERSIS' : `MIRIP_DENGAN_${code}`,
@@ -1626,10 +1625,10 @@ async function executeLookupProductionCode(
     codeListRaw.length === 1
       ? lookupSingleCode(codeListRaw[0])
       : {
-          is_batch: true,
-          total_kode_dicari: codeListRaw.length,
-          results: codeListRaw.map((c) => lookupSingleCode(c))
-        };
+        is_batch: true,
+        total_kode_dicari: codeListRaw.length,
+        results: codeListRaw.map((c) => lookupSingleCode(c))
+      };
 
   if (collectedPreviews.length > 0 && onCollectTrelloPreviews) {
     onCollectTrelloPreviews(collectedPreviews);
@@ -1739,7 +1738,7 @@ async function executeQueryProductionReceipts(args: {
           daftar_no_sj: Array.from(g.surat_jalan).join(', '),
           daftar_kode: Array.from(g.kode_list).slice(0, 8).join(', ')
         }));
-    } catch {}
+    } catch { }
   }
 
   // Kelompokkan hasil berdasarkan Surat Jalan & Kode Produksi
@@ -1859,9 +1858,9 @@ async function executeQueryProductionReceipts(args: {
     catatan_tambahan_jika_kosong:
       items.length === 0
         ? {
-            pesan: `Tidak ditemukan data penerimaan untuk filter tanggal ${startDate || ''} s/d ${endDate || ''} (${rawCategory || 'Semua Kategori'}).`,
-            tanggal_kedatangan_terakhir_di_database: fallbackRecentArrivals
-          }
+          pesan: `Tidak ditemukan data penerimaan untuk filter tanggal ${startDate || ''} s/d ${endDate || ''} (${rawCategory || 'Semua Kategori'}).`,
+          tanggal_kedatangan_terakhir_di_database: fallbackRecentArrivals
+        }
         : undefined
   };
 }
@@ -1985,7 +1984,7 @@ async function executePrepareProductionReceiptForm(
   try {
     const raw = typeof window !== 'undefined' ? localStorage.getItem('wms_penerimaan_produksi_form_draft') : null;
     if (raw) existingDraft = JSON.parse(raw);
-  } catch {}
+  } catch { }
 
   const isAppend = String(args.mode || 'replace').toLowerCase() === 'append' && existingDraft;
 
@@ -2308,7 +2307,7 @@ async function executeAddToInventoryCart(args: {
   try {
     const raw = typeof window !== 'undefined' ? localStorage.getItem('wms_inventory_picking_cart') : null;
     if (raw) currentCart = JSON.parse(raw);
-  } catch {}
+  } catch { }
 
   const updatedCartMap = new Map<string, any>();
   currentCart.forEach((c) => {
@@ -2360,7 +2359,7 @@ async function executeAddToInventoryCart(args: {
         })
       );
     }
-  } catch {}
+  } catch { }
 
   return {
     status: 'success',
@@ -2575,13 +2574,13 @@ async function executeAuditStockAndMutations(args: {
   const kwLower = kw.toLowerCase();
   const matchingSkus = kw
     ? catalog
-        .filter((p) => {
-          const sku = String(p.k || '').toLowerCase();
-          const nm = String(p.n || p.p || '').toLowerCase();
-          return sku.includes(kwLower) || nm.includes(kwLower);
-        })
-        .slice(0, 30)
-        .map((p) => String(p.k || '').toUpperCase())
+      .filter((p) => {
+        const sku = String(p.k || '').toLowerCase();
+        const nm = String(p.n || p.p || '').toLowerCase();
+        return sku.includes(kwLower) || nm.includes(kwLower);
+      })
+      .slice(0, 30)
+      .map((p) => String(p.k || '').toUpperCase())
     : [];
 
   const logs = await fetchLogsBySearch(kw, Math.max(limit * 2, 50), matchingSkus);
@@ -3080,7 +3079,7 @@ async function executePrepareManualShipmentDraft(args: {
     try {
       localStorage.setItem('wms_manual_shipment_ai_draft', JSON.stringify(draft));
       (window as any).__wms_pending_pesanan_target = { manualSubTab: 'form', draft };
-    } catch {}
+    } catch { }
   }
 
   return {
@@ -3150,7 +3149,7 @@ async function executePrepareReturBarangDraft(args: {
     try {
       localStorage.setItem('wms_retur_barang_ai_draft', JSON.stringify(draft));
       (window as any).__wms_pending_retur_target = draft;
-    } catch {}
+    } catch { }
   }
 
   return {
@@ -3414,19 +3413,19 @@ async function executePrepareAgendaOrProjectDraft(args: {
     try {
       localStorage.setItem('wms_agenda_ai_draft', JSON.stringify(payload));
       (window as any).__wms_pending_agenda_target = payload;
-    } catch {}
+    } catch { }
   }
 
   const label =
     draftType === 'task'
       ? 'Tugas Delegasi'
       : isDistribusi
-      ? 'Agenda Distribusi'
-      : draftType === 'project'
-      ? 'Project'
-      : draftType === 'note'
-      ? 'Sticky Note'
-      : 'Agenda Kalender';
+        ? 'Agenda Distribusi'
+        : draftType === 'project'
+          ? 'Project'
+          : draftType === 'note'
+            ? 'Sticky Note'
+            : 'Agenda Kalender';
   return {
     status: 'draft_ready',
     draft_type: draftType,
