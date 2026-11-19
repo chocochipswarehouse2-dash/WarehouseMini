@@ -10,7 +10,8 @@
 
 import { getSupabaseClient } from './supabase';
 import { TrelloUpItem } from '../types';
-import { uploadImageToGdrive } from './gdriveUpload';
+import { uploadImageToGdrive, uploadTrelloImageUrlToGdrive } from './gdriveUpload';
+import { getProxiedTrelloImageUrl } from '../components/Trello/TrelloImage';
 import baselineBoardLists from '../data/trelloBoardLists.json';
 
 export const DEFAULT_TRELLO_BOARD_ID = 'zCN7H9VD';
@@ -408,25 +409,37 @@ export function setLocalCachedTrelloItems(items: TrelloUpItem[]): void {
 }
 
 /**
- * Ambil seluruh data dari database Supabase (trello_up_catalog)
+ * Ambil seluruh data dari database Supabase (trello_up_catalog) dengan paginasi penuh
  */
 export async function fetchTrelloUpFromSupabase(): Promise<TrelloUpItem[]> {
   const supabase = getSupabaseClient();
   if (!supabase) return [];
 
   try {
-    const { data, error } = await supabase
-      .from('trello_up_catalog')
-      .select('*')
-      .eq('status', 'ACTIVE')
-      .order('sequence_order', { ascending: true });
+    const pageSize = 1000;
+    const maxRows = 10000;
+    const allRows: any[] = [];
 
-    if (error) {
-      console.warn('Gagal memuat trello_up_catalog dari Supabase:', error.message);
-      return [];
+    for (let offset = 0; offset < maxRows; offset += pageSize) {
+      const { data, error } = await supabase
+        .from('trello_up_catalog')
+        .select('*')
+        .eq('status', 'ACTIVE')
+        .order('sequence_order', { ascending: true })
+        .range(offset, offset + pageSize - 1);
+
+      if (error) {
+        console.warn('Gagal memuat trello_up_catalog dari Supabase:', error.message);
+        if (allRows.length === 0) return [];
+        break;
+      }
+
+      const batch = data || [];
+      allRows.push(...batch);
+      if (batch.length < pageSize) break;
     }
 
-    const rawItems = (data || []).map((row: any) => {
+    const rawItems = allRows.map((row: any) => {
       const meta = resolveTrelloListMeta(row.list_id, row.list_name);
       const parsed = parseCardName(row.card_name || '');
       return {
@@ -621,6 +634,24 @@ export async function syncTrelloUpCatalog(
     const cachedItems = getLocalCachedTrelloItems().items;
     const sbExistingItems = await fetchTrelloUpFromSupabase();
     const combinedRefs = [...sbExistingItems, ...cachedItems];
+
+    // Tandai kartu yang attachment cover-nya baru diganti di Trello agar GDrive lama di-clear & di-backup ulang
+    const prevById = new Map<string, TrelloUpItem>();
+    for (const ref of combinedRefs) {
+      if (ref?.id && !prevById.has(ref.id)) prevById.set(ref.id, ref);
+    }
+    const changedCoverIds = new Set<string>();
+    for (const item of rawTransformed) {
+      const prev = prevById.get(item.id);
+      if (
+        prev?.trello_attachment_id &&
+        item.trello_attachment_id &&
+        prev.trello_attachment_id !== item.trello_attachment_id
+      ) {
+        changedCoverIds.add(item.id);
+      }
+    }
+
     const transformedItems = enrichTrelloItemsWithPhotos(rawTransformed, combinedRefs);
 
     // Deteksi perubahan (edit / tambah / pindah list / geser urutan / ganti cover / hapus)
@@ -667,12 +698,22 @@ export async function syncTrelloUpCatalog(
             };
             if (item.gdrive_image_url) {
               payload.gdrive_image_url = item.gdrive_image_url;
-            }
-            if (item.gdrive_file_id) {
-              payload.gdrive_file_id = item.gdrive_file_id;
-            }
-            if (item.gdrive_folder_name) {
-              payload.gdrive_folder_name = item.gdrive_folder_name;
+              if (item.gdrive_file_id) {
+                payload.gdrive_file_id = item.gdrive_file_id;
+              }
+              if (item.gdrive_folder_name) {
+                payload.gdrive_folder_name = item.gdrive_folder_name;
+              }
+            } else if (changedCoverIds.has(item.id)) {
+              payload.gdrive_image_url = null;
+              payload.gdrive_file_id = null;
+            } else {
+              if (item.gdrive_file_id) {
+                payload.gdrive_file_id = item.gdrive_file_id;
+              }
+              if (item.gdrive_folder_name) {
+                payload.gdrive_folder_name = item.gdrive_folder_name;
+              }
             }
             return payload;
           });
@@ -774,29 +815,42 @@ export async function syncMissingTrelloPhotosToGdrive(
 
   const supabase = getSupabaseClient();
   const updatedMap = new Map<string, Partial<TrelloUpItem>>();
+  const authHeader = `OAuth oauth_consumer_key="${DEFAULT_TRELLO_KEY}", oauth_token="${DEFAULT_TRELLO_TOKEN}"`;
   let syncedCount = 0;
 
   for (let idx = 0; idx < candidates.length; idx++) {
     const item = candidates[idx];
     try {
-      const authHeader = `OAuth oauth_consumer_key="${DEFAULT_TRELLO_KEY}", oauth_token="${DEFAULT_TRELLO_TOKEN}"`;
-      const response = await fetch(item.trello_image_url!, {
-        headers: { Authorization: authHeader },
-      });
-      if (!response.ok) continue;
-
-      const blob = await response.blob();
-      const base64DataUrl = await blobToBase64DataUrl(blob);
       const safeName = `${item.up_code}_${item.sequence_order}_${item.item_code}`
         .replace(/[^a-zA-Z0-9_-]/g, '_')
         .slice(0, 80);
+      const fileName = `${safeName}.webp`;
+      const subFolder = item.up_code || item.list_name;
 
-      const uploadRes = await uploadImageToGdrive(base64DataUrl, `${safeName}.jpg`);
+      // 1. Primary: GAS unduh langsung dari Trello server-to-server -> upload ke Google Drive (anti-CORS)
+      let uploadRes = await uploadTrelloImageUrlToGdrive(
+        item.trello_image_url!,
+        fileName,
+        subFolder,
+        authHeader
+      );
+
+      // 2. Fallback: Unduh via Vercel serverless proxy (/api/trello-image) -> upload base64 ke GDrive
+      if (!uploadRes.success || !uploadRes.url) {
+        const proxiedUrl = getProxiedTrelloImageUrl(item.trello_image_url!);
+        const response = await fetch(proxiedUrl);
+        if (response.ok) {
+          const blob = await response.blob();
+          const base64DataUrl = await blobToBase64DataUrl(blob);
+          uploadRes = await uploadImageToGdrive(base64DataUrl, fileName, subFolder);
+        }
+      }
+
       if (uploadRes.success && uploadRes.url) {
         const patch: Partial<TrelloUpItem> = {
           gdrive_image_url: uploadRes.url,
           gdrive_file_id: uploadRes.fileId,
-          gdrive_folder_name: item.list_name || item.up_code,
+          gdrive_folder_name: subFolder,
         };
         updatedMap.set(item.id, patch);
         syncedCount++;

@@ -15,22 +15,36 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.20.1",
-  "versionCode": 401,
+  "version": "v2.20.2",
+  "versionCode": 402,
   "buildDate": "19 November 2026",
-  "buildHash": "wms-261119-v401-1450",
-  "releaseTitle": "WMS v2.20.1 — Fix Putaway Realtime, Master Kargo Push/Urutan, Excel Hitung Ulang & Bubble Draft",
+  "buildHash": "wms-261119-v402-1552",
+  "releaseTitle": "WMS v2.20.2 — Fix Foto Trello Anti-CORS & Auto-Backup Google Drive",
   "releaseNotes": [
-    "Fix crash Putaway Realtime channel subscription (subscribePutawayRealtime singleton hub)",
-    "Fix Push Sheet Master Kargo Hitung Ulang tanggal 18 & auto-heal cloud recount_audit_results",
-    "Urutan tabel Master Kargo/CMT & slot tanggal Terbaru -> Terlama + muat seluruh histori (>1000 baris)",
-    "Export Excel Master Produksi lengkap dengan kolom Hitung Ulang & tab Rekap Hitung Ulang",
-    "Fix floating bubble minimize Hitung Ulang agar tidak muncul terus-menerus setelah ditutup/disimpan"
+    "Tambah proxy serverless Vercel /api/trello-image untuk foto Trello bebas CORS",
+    "Upgrade auto-backup foto Trello via server GAS (trelloImageUrl) & fallback proxy",
+    "Sinkronisasi 18 foto tertunda (termasuk UP 340) ke Google Drive & paginasi penuh Supabase",
+    "Reset otomatis backup GDrive saat cover kartu Trello diganti & tombol backup cepat"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.20.1",
+    "versionCode": 401,
+    "buildDate": "19 November 2026",
+    "buildHash": "wms-261119-v401-1450",
+    "releaseTitle": "WMS v2.20.1 — Fix Putaway Realtime, Master Kargo Push/Urutan, Excel Hitung Ulang & Bubble Draft",
+    "releaseNotes": [
+      "Fix crash Putaway Realtime channel subscription (subscribePutawayRealtime singleton hub)",
+      "Fix Push Sheet Master Kargo Hitung Ulang tanggal 18 & auto-heal cloud recount_audit_results",
+      "Urutan tabel Master Kargo/CMT & slot tanggal Terbaru -> Terlama + muat seluruh histori (>1000 baris)",
+      "Export Excel Master Produksi lengkap dengan kolom Hitung Ulang & tab Rekap Hitung Ulang",
+      "Fix floating bubble minimize Hitung Ulang agar tidak muncul terus-menerus setelah ditutup/disimpan"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.20.0",
     "versionCode": 400,
@@ -116,17 +130,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Form Input Penerimaan Kargo & CMT kini memiliki tombol Minimize ke Dock Bawah, Mode Popup, dan Perlindungan Offline terpisah per kategori",
       "Multi-model auto-fallback pada endpoint /api/ai untuk mencegah error 503 High Demand"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.19.2",
-    "versionCode": 392,
-    "buildDate": "18 November 2026",
-    "buildHash": "wms-261118-v392-1349",
-    "releaseTitle": "WMS v2.19.2 — Hotfix Format Picker Pengecekan Surat Jalan",
-    "releaseNotes": [
-      "Perbaikan error 'isWarehouseLocation is not defined' saat klik Format Picker di Pengecekan Surat Jalan"
     ],
     "minSupportedVersion": "v2.0.0"
   }

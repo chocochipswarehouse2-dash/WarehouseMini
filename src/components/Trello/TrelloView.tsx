@@ -40,7 +40,7 @@ import {
 } from '../../services/trelloSyncService';
 import { TrelloPrintA4Modal } from './TrelloPrintA4Modal';
 import { TrelloMultiSelectDropdown, UpListOption } from './TrelloMultiSelectDropdown';
-import { TrelloImage } from './TrelloImage';
+import { TrelloImage, getProxiedTrelloImageUrl } from './TrelloImage';
 
 interface TrelloViewProps {
   session?: UserSession | null;
@@ -155,6 +155,8 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
           setItems(next);
           setLocalCachedTrelloItems(next);
           triggerBackgroundGdrivePhotoSync(next);
+        } else if (result.items.some((i) => !i.gdrive_image_url && !!i.trello_image_url && i.trello_image_url.includes('trello.com'))) {
+          triggerBackgroundGdrivePhotoSync(result.items);
         }
         setLastSynced(new Date().toISOString());
         if (!silent) {
@@ -279,9 +281,15 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
     });
   }, [items, sortMode]);
 
-  // Jumlah foto yang sudah tersimpan di Google Drive & jumlah kartu tanpa foto sama sekali
+  // Jumlah foto yang sudah tersimpan di Google Drive, menunggu backup GDrive & kartu tanpa foto sama sekali
   const gdriveSyncedCount = useMemo(() => {
     return items.filter((i) => !!(i.gdrive_image_url || i.trello_image_url)).length;
+  }, [items]);
+
+  const pendingGdriveBackupCount = useMemo(() => {
+    return items.filter(
+      (i) => !i.gdrive_image_url && !!i.trello_image_url && i.trello_image_url.includes('trello.com')
+    ).length;
   }, [items]);
 
   const missingPhotoCount = useMemo(() => {
@@ -515,6 +523,17 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                 <Loader2 className="w-3 h-3 animate-spin" />
                 <span>Backup GDrive ({gdriveBgSyncStatus.done}/{gdriveBgSyncStatus.total})</span>
               </span>
+            )}
+            {!gdriveBgSyncStatus && pendingGdriveBackupCount > 0 && (
+              <button
+                type="button"
+                onClick={() => triggerBackgroundGdrivePhotoSync(items)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 hover:text-indigo-600 dark:hover:text-indigo-300 transition cursor-pointer"
+                title="Backup foto Trello yang belum tersimpan ke Google Drive"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>Backup {pendingGdriveBackupCount} Foto ke GDrive</span>
+              </button>
             )}
             {missingPhotoCount > 0 && (
               <button
@@ -1064,9 +1083,9 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
                       {item.qty_note || '-'}
                     </td>
                     <td className="py-2.5 px-3 text-right">
-                      {item.trello_image_url && (
+                      {(item.gdrive_image_url || item.trello_image_url) && (
                         <a
-                          href={item.trello_image_url}
+                          href={item.gdrive_image_url || getProxiedTrelloImageUrl(item.trello_image_url)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="p-1.5 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 rounded-lg inline-flex"
@@ -1149,7 +1168,7 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
               <div className="flex items-center gap-3 shrink-0">
                 {(activePhotoModal.gdrive_image_url || activePhotoModal.trello_image_url) && (
                   <a
-                    href={activePhotoModal.gdrive_image_url || activePhotoModal.trello_image_url}
+                    href={activePhotoModal.gdrive_image_url || getProxiedTrelloImageUrl(activePhotoModal.trello_image_url)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"

@@ -1,35 +1,37 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Loader2, ImageOff, RefreshCw } from 'lucide-react';
-import { DEFAULT_TRELLO_KEY, DEFAULT_TRELLO_TOKEN } from '../../services/trelloSyncService';
 
 const imageBlobCache = new Map<string, string>();
 const inFlightRequests = new Map<string, Promise<string>>();
 
 /**
- * Antrean batas konkuren untuk unduhan langsung dari Trello API
- * Mencegah HTTP 429 Too Many Requests saat puluhan kartu dimuat bersamaan.
+ * Konversi URL lampiran Trello ke endpoint proxy server-side Vercel (/api/trello-image)
+ * agar browser tidak terblokir CORS dan tidak mengirim header OAuth lintas origin.
  */
-const MAX_CONCURRENT_TRELLO_FETCHES = 4;
-let activeTrelloFetches = 0;
-const pendingQueue: Array<() => void> = [];
-
-function acquireFetchSlot(): Promise<void> {
-  if (activeTrelloFetches < MAX_CONCURRENT_TRELLO_FETCHES) {
-    activeTrelloFetches++;
-    return Promise.resolve();
+export function getProxiedTrelloImageUrl(url?: string, retryNonce?: number): string {
+  if (!url) return '';
+  if (url.startsWith('/api/trello-image')) {
+    return retryNonce && retryNonce > 0
+      ? `${url}${url.includes('?') ? '&' : '?'}r=${retryNonce}`
+      : url;
   }
-  return new Promise<void>((resolve) => {
-    pendingQueue.push(() => {
-      activeTrelloFetches++;
-      resolve();
-    });
-  });
+  if (url.includes('trello.com')) {
+    return `/api/trello-image?url=${encodeURIComponent(url)}${
+      retryNonce && retryNonce > 0 ? `&r=${retryNonce}` : ''
+    }`;
+  }
+  return url;
 }
 
-function releaseFetchSlot(): void {
-  activeTrelloFetches = Math.max(0, activeTrelloFetches - 1);
-  const next = pendingQueue.shift();
-  if (next) next();
+function appendRetryParam(url: string, retryCount: number): string {
+  if (!url || retryCount <= 0 || url.startsWith('data:') || url.startsWith('blob:')) {
+    return url;
+  }
+  if (url.startsWith('/api/trello-image')) {
+    return url;
+  }
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}_r=${retryCount}`;
 }
 
 function extractGdriveFileIdFromUrl(url?: string): string | null {
@@ -43,43 +45,34 @@ function extractGdriveFileIdFromUrl(url?: string): string | null {
   return null;
 }
 
+/**
+ * Ambil URL / Object URL aman untuk gambar Trello (dipakai juga di cetak A4).
+ * Menggunakan proxy `/api/trello-image` sehingga bebas CORS browser.
+ */
 export async function fetchTrelloImageBlob(url: string): Promise<string> {
   if (!url) return '';
   if (imageBlobCache.has(url)) return imageBlobCache.get(url)!;
 
-  // Jika URL bukan dari trello.com (misal Google Drive thumbnail atau data URL), langsung kembalikan
-  if (!url.includes('trello.com')) return url;
+  if (!url.includes('trello.com') && !url.startsWith('/api/trello-image')) return url;
 
   if (inFlightRequests.has(url)) {
     return inFlightRequests.get(url)!;
   }
 
   const promise = (async () => {
-    await acquireFetchSlot();
     try {
-      const authHeader = `OAuth oauth_consumer_key="${DEFAULT_TRELLO_KEY}", oauth_token="${DEFAULT_TRELLO_TOKEN}"`;
+      const proxiedUrl = getProxiedTrelloImageUrl(url);
       let lastErr: any = null;
 
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (let attempt = 0; attempt < 2; attempt++) {
         try {
           if (attempt > 0) {
-            await new Promise((r) => setTimeout(r, attempt * 700));
+            await new Promise((r) => setTimeout(r, attempt * 600));
           }
-          const response = await fetch(url, {
-            headers: {
-              Authorization: authHeader,
-            },
-          });
-
-          if (response.status === 429) {
-            lastErr = new Error('HTTP 429 Rate Limited');
-            continue;
-          }
-
+          const response = await fetch(proxiedUrl);
           if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
           }
-
           const blob = await response.blob();
           const objectUrl = URL.createObjectURL(blob);
           imageBlobCache.set(url, objectUrl);
@@ -90,7 +83,6 @@ export async function fetchTrelloImageBlob(url: string): Promise<string> {
       }
       throw lastErr || new Error('Gagal memuat gambar Trello');
     } finally {
-      releaseFetchSlot();
       inFlightRequests.delete(url);
     }
   })();
@@ -116,100 +108,52 @@ export const TrelloImage: React.FC<TrelloImageProps> = ({
   fallbackText = 'No Photo',
   eager = false,
 }) => {
-  const effectivePrimary = src || fallbackSrc;
+  const effectivePrimary = src || fallbackSrc || '';
 
-  const [resolvedUrl, setResolvedUrl] = useState<string | null>(() => {
-    if (!effectivePrimary) return null;
-    if (imageBlobCache.has(effectivePrimary)) return imageBlobCache.get(effectivePrimary)!;
-    if (!effectivePrimary.includes('trello.com')) return effectivePrimary;
-    return null;
-  });
-  const [fallbackStage, setFallbackStage] = useState<number>(0);
-  const [isLoading, setIsLoading] = useState<boolean>(!resolvedUrl && !!effectivePrimary);
-  const [hasError, setHasError] = useState<boolean>(false);
+  const resolveInitialUrl = (rawUrl: string, retry: number): string | null => {
+    if (!rawUrl) return null;
+    if (imageBlobCache.has(rawUrl)) return imageBlobCache.get(rawUrl)!;
+    if (rawUrl.includes('trello.com') || rawUrl.startsWith('/api/trello-image')) {
+      return getProxiedTrelloImageUrl(rawUrl, retry);
+    }
+    return appendRetryParam(rawUrl, retry);
+  };
+
   const [retryCount, setRetryCount] = useState<number>(0);
-
-  const loadSource = useCallback(
-    (targetUrl: string, isMountedRef: { current: boolean }) => {
-      if (!targetUrl) {
-        if (isMountedRef.current) {
-          setResolvedUrl(null);
-          setIsLoading(false);
-        }
-        return;
-      }
-
-      if (imageBlobCache.has(targetUrl)) {
-        if (isMountedRef.current) {
-          setResolvedUrl(imageBlobCache.get(targetUrl)!);
-          setIsLoading(false);
-          setHasError(false);
-        }
-        return;
-      }
-
-      if (!targetUrl.includes('trello.com')) {
-        if (isMountedRef.current) {
-          setResolvedUrl(targetUrl);
-          setIsLoading(false);
-          setHasError(false);
-        }
-        return;
-      }
-
-      if (isMountedRef.current) {
-        setIsLoading(true);
-        setHasError(false);
-      }
-
-      fetchTrelloImageBlob(targetUrl)
-        .then((blobUrl) => {
-          if (isMountedRef.current) {
-            setResolvedUrl(blobUrl);
-            setIsLoading(false);
-            setHasError(false);
-          }
-        })
-        .catch((err) => {
-          console.warn('Gagal memuat gambar Trello via Auth:', targetUrl, err);
-          if (isMountedRef.current) {
-            setHasError(true);
-            setIsLoading(false);
-          }
-        });
-    },
-    []
+  const [resolvedUrl, setResolvedUrl] = useState<string | null>(() =>
+    resolveInitialUrl(effectivePrimary, 0)
   );
+  const [fallbackStage, setFallbackStage] = useState<number>(0);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [hasError, setHasError] = useState<boolean>(false);
 
   useEffect(() => {
-    const isMountedRef = { current: true };
     setFallbackStage(0);
     setHasError(false);
+    setIsLoading(false);
 
     if (!effectivePrimary) {
       setResolvedUrl(null);
-      setIsLoading(false);
       return;
     }
 
-    loadSource(effectivePrimary, isMountedRef);
-
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, [effectivePrimary, retryCount, loadSource]);
+    setResolvedUrl(resolveInitialUrl(effectivePrimary, retryCount));
+  }, [effectivePrimary, retryCount]);
 
   /**
    * Jika tag <img> gagal menampilkan URL utama (misal CDN Google Drive lh3 terkena rate-limit 429/403),
    * otomatis beralih ke:
    * - Stage 1: Google Drive Thumbnail endpoint (`drive.google.com/thumbnail?id=...&sz=w800`)
-   * - Stage 2: Trello Attachment Blob asli (`fallbackSrc` via OAuth)
+   * - Stage 2: Trello Attachment via Proxy `/api/trello-image` (`fallbackSrc`)
    */
   const handleImgError = () => {
     const fileId = extractGdriveFileIdFromUrl(resolvedUrl || effectivePrimary);
 
     if (fallbackStage === 0 && fileId) {
-      const thumbUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w800`;
+      const thumbUrl = appendRetryParam(
+        `https://drive.google.com/thumbnail?id=${fileId}&sz=w800`,
+        retryCount
+      );
       if (thumbUrl !== resolvedUrl) {
         setFallbackStage(1);
         setResolvedUrl(thumbUrl);
@@ -217,11 +161,16 @@ export const TrelloImage: React.FC<TrelloImageProps> = ({
       }
     }
 
-    if (fallbackStage <= 1 && fallbackSrc && fallbackSrc !== resolvedUrl) {
-      setFallbackStage(2);
-      const isMountedRef = { current: true };
-      loadSource(fallbackSrc, isMountedRef);
-      return;
+    if (fallbackStage <= 1 && fallbackSrc) {
+      const proxiedFallback =
+        fallbackSrc.includes('trello.com') || fallbackSrc.startsWith('/api/trello-image')
+          ? getProxiedTrelloImageUrl(fallbackSrc, retryCount)
+          : appendRetryParam(fallbackSrc, retryCount);
+      if (proxiedFallback && proxiedFallback !== resolvedUrl) {
+        setFallbackStage(2);
+        setResolvedUrl(proxiedFallback);
+        return;
+      }
     }
 
     setHasError(true);

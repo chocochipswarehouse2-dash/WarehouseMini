@@ -75,7 +75,8 @@ export interface GdriveUploadResult {
  */
 export async function uploadImageToGdrive(
   base64Data: string,
-  filename?: string
+  filename?: string,
+  subFolderName?: string
 ): Promise<GdriveUploadResult> {
   // Jika bukan base64 (sudah berupa URL web / http), tidak perlu diupload ulang
   if (!base64Data || !base64Data.startsWith('data:')) {
@@ -96,11 +97,14 @@ export async function uploadImageToGdrive(
     filename || `Reject_QC_${Date.now()}_${Math.floor(100 + Math.random() * 900)}.jpg`;
 
   try {
-    const payload = {
+    const payload: Record<string, any> = {
       base64File: base64Data, // standard webhook.js requirement
       fileName: generatedFilename, // standard webhook.js requirement
       folderId: folderId,
     };
+    if (subFolderName && subFolderName.trim()) {
+      payload.subFolderName = subFolderName.trim();
+    }
 
     // Ensure secret token is attached for the unified webhook.js
     let fetchUrl = gasUrl;
@@ -146,6 +150,84 @@ export async function uploadImageToGdrive(
       success: false,
       url: '', // STRICT NO-BASE64 FALLBACK
       error: err?.message || 'Koneksi ke GAS gagal',
+    };
+  }
+}
+
+/**
+ * Minta Google Apps Script mengunduh gambar langsung dari Trello (server-to-server)
+ * dan menyimpannya ke Google Drive tanpa melewati CORS browser.
+ */
+export async function uploadTrelloImageUrlToGdrive(
+  trelloImageUrl: string,
+  filename: string,
+  subFolderName?: string,
+  trelloAuthHeader?: string
+): Promise<GdriveUploadResult> {
+  if (!trelloImageUrl) {
+    return { success: false, url: '', error: 'URL foto Trello kosong.' };
+  }
+
+  const { folderId, gasUrl } = getGdriveConfig();
+  if (!gasUrl) {
+    return {
+      success: false,
+      url: '',
+      error: 'GAS Web App URL belum dikonfigurasi.',
+    };
+  }
+
+  try {
+    const payload: Record<string, any> = {
+      trelloImageUrl: trelloImageUrl.trim(),
+      fileName: filename,
+      folderId: folderId,
+    };
+    if (subFolderName && subFolderName.trim()) {
+      payload.subFolderName = subFolderName.trim();
+    }
+    if (trelloAuthHeader && trelloAuthHeader.trim()) {
+      payload.trelloAuthHeader = trelloAuthHeader.trim();
+    }
+
+    let fetchUrl = gasUrl;
+    if (fetchUrl && !fetchUrl.includes('secret=')) {
+      fetchUrl += (fetchUrl.includes('?') ? '&' : '?') + 'secret=wms-webhook-secret-2026';
+    }
+
+    const response = await fetch(fetchUrl, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error ${response.status}`);
+    }
+
+    const result = await response.json();
+    if ((result.status === 'success' || result.success === true) && (result.fileId || result.id)) {
+      const fileId = result.fileId || result.id;
+      const directCdnUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
+      return {
+        success: true,
+        url: directCdnUrl,
+        fileId: fileId,
+      };
+    }
+
+    return {
+      success: false,
+      url: '',
+      error: result.error || result.message || 'Gagal backup foto Trello ke Google Drive via GAS',
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      url: '',
+      error: err?.message || 'Koneksi ke GAS gagal saat backup foto Trello',
     };
   }
 }

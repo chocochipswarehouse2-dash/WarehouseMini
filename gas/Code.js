@@ -52,8 +52,8 @@ function doPost(e) {
       payload = payload.data;
     }
 
-    // 2. Intercept GDrive Image Upload (Foto komplain & bukti bayar)
-    if (payload.base64File && payload.fileName) {
+    // 2. Intercept GDrive Image Upload (Foto komplain, bukti bayar, & backup Trello)
+    if ((payload.base64File || payload.base64 || payload.trelloImageUrl) && (payload.fileName || payload.filename)) {
       return handleGDriveUpload(payload);
     }
 
@@ -606,13 +606,21 @@ function handlePushPenerimaanProduksi(data) {
   }
 }
 
+function isValidTrelloAttachmentUrl(url) {
+  var u = String(url || '').replace(/^\s+|\s+$/g, '');
+  var isAllowedPrefix =
+    u.indexOf('https://trello.com/1/cards/') === 0 ||
+    u.indexOf('https://api.trello.com/1/cards/') === 0;
+  return isAllowedPrefix && u.indexOf('/attachments/') > -1;
+}
+
 /**
- * Handle GDrive File Upload (Image: Bukti Bayar & Komplain)
+ * Handle GDrive File Upload (Image: Bukti Bayar, Komplain, & Backup Trello)
  */
 function handleGDriveUpload(payload) {
   try {
     payload = payload || {};
-    var folderId = payload.folderId || '185zUpQqnqOcxOO1Zng1ZwD1F2nXOmkIL';
+    var folderId = payload.folderId || '1oFx9WFm8Ch_DlOxw66WRy4nH-kIAXwcw';
     
     var folder;
     try {
@@ -621,21 +629,61 @@ function handleGDriveUpload(payload) {
       Logger.log('Folder ID tidak valid, menggunakan root folder: ' + fErr.toString());
       folder = DriveApp.getRootFolder();
     }
-    
-    var data = payload.base64File || payload.base64 || '';
-    if (!data) {
-      return jsonResponse({ success: false, error: 'Tidak ada data file base64 yang dikirim.' });
+
+    if (payload.subFolderName) {
+      try {
+        var subFolders = folder.getFoldersByName(String(payload.subFolderName).trim());
+        if (subFolders.hasNext()) {
+          folder = subFolders.next();
+        } else {
+          folder = folder.createFolder(String(payload.subFolderName).trim());
+          try {
+            folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+          } catch (shareErr) {}
+        }
+      } catch (subErr) {
+        Logger.log('Warning create subFolder: ' + subErr.toString());
+      }
     }
-    
-    if (data.indexOf(',') > -1) {
-      data = data.split(',')[1];
-    }
-    
+
     var fileName = payload.fileName || payload.filename || ('Upload_' + new Date().getTime() + '.jpg');
-    var mimeType = payload.mimeType || 'image/jpeg';
-    
-    var decoded = Utilities.base64Decode(data);
-    var blob = Utilities.newBlob(decoded, mimeType, fileName);
+    var data = payload.base64File || payload.base64 || '';
+    var trelloUrl = payload.trelloImageUrl || '';
+    var blob;
+
+    if (data) {
+      if (data.indexOf(',') > -1) {
+        data = data.split(',')[1];
+      }
+      var mimeType = payload.mimeType || 'image/jpeg';
+      var decoded = Utilities.base64Decode(data);
+      blob = Utilities.newBlob(decoded, mimeType, fileName);
+    } else if (trelloUrl) {
+      if (!isValidTrelloAttachmentUrl(trelloUrl)) {
+        return jsonResponse({ success: false, error: 'URL lampiran Trello tidak valid.' });
+      }
+      var authHeader = payload.trelloAuthHeader ||
+        'OAuth oauth_consumer_key="d4d21774e001c525d41aabbbb9b9940a", oauth_token="ATTA24c8656d86fe6a0499a0e81d8c8f2f0f200ec6e7d52a9259646c1e84e03943ac56487FCC"';
+      var trelloRes = UrlFetchApp.fetch(trelloUrl, {
+        method: 'get',
+        headers: { Authorization: authHeader },
+        muteHttpExceptions: true,
+        followRedirects: true
+      });
+      var statusCode = trelloRes.getResponseCode();
+      if (statusCode !== 200) {
+        return jsonResponse({ success: false, error: 'Gagal mengambil foto Trello (HTTP ' + statusCode + ')' });
+      }
+      blob = trelloRes.getBlob();
+      var fetchedType = String(blob.getContentType() || '').toLowerCase();
+      if (fetchedType.indexOf('image/') !== 0) {
+        return jsonResponse({ success: false, error: 'Respon Trello bukan file gambar (' + fetchedType + ')' });
+      }
+      blob.setName(fileName);
+    } else {
+      return jsonResponse({ success: false, error: 'Tidak ada data file base64 atau trelloImageUrl yang dikirim.' });
+    }
+
     var file = folder.createFile(blob);
     
     try {

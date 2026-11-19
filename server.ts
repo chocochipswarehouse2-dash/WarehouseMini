@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import aiHandler from './api/ai.js';
 import pushHandler from './api/push.js';
+import trelloImageHandler from './api/trello-image.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,6 +33,16 @@ async function startServer() {
     } catch (err: any) {
       if (!res.headersSent) {
         res.status(500).json({ error: err?.message || 'Internal push route error' });
+      }
+    }
+  });
+
+  app.all('/api/trello-image', async (req, res) => {
+    try {
+      await trelloImageHandler(req, res);
+    } catch (err: any) {
+      if (!res.headersSent) {
+        res.status(500).json({ error: err?.message || 'Internal trello image proxy error' });
       }
     }
   });

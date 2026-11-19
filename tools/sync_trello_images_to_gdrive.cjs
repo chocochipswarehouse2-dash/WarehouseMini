@@ -141,10 +141,11 @@ async function main() {
   console.log('===============================================================');
   console.log(`Konfigurasi: concurrency=${concurrency}, upFilter=${upFilter || 'SEMUA'}, limit=${limitCount || 'SEMUA'}`);
 
-  // Query Supabase untuk item yang belum punya gdrive_image_url
+  // Query Supabase untuk item aktif yang belum punya gdrive_image_url
   let query = sb
     .from('trello_up_catalog')
     .select('id, card_name, item_code, item_name, up_code, list_name, trello_image_url')
+    .eq('status', 'ACTIVE')
     .not('trello_image_url', 'is', null)
     .or('gdrive_image_url.is.null,gdrive_image_url.eq.""');
 
