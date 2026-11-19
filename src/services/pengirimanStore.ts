@@ -58,6 +58,29 @@ export function generateTripId(): string {
   return `SJP-${yy}${mm}${dd}-${rand}`;
 }
 
+// Parse foto_bukti_surat_jalan / foto_urls safely (supports JSON array string, single URL string, or string[])
+export function parseTripPhotoUrls(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return Array.from(new Set(raw.map((u) => String(u || '').trim()).filter(Boolean)));
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) return [];
+    if (trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return Array.from(new Set(parsed.map((u) => String(u || '').trim()).filter(Boolean)));
+        }
+      } catch {
+        // fallback below if malformed JSON string
+      }
+    }
+    return [trimmed];
+  }
+  return [];
+}
+
 // ==============================================================================
 // 1. FETCH & LOCAL STORAGE HELPERS
 // ==============================================================================
@@ -88,7 +111,13 @@ export function getCachedTrips(): PengirimanStoreTrip[] {
     const raw = localStorage.getItem(LOCAL_STORAGE_TRIPS);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        return parsed.map((t: any) => ({
+          ...t,
+          foto_urls: parseTripPhotoUrls(t.foto_urls ?? t.foto_bukti_surat_jalan),
+          foto_bukti_surat_jalan: t.foto_bukti_surat_jalan || '',
+        }));
+      }
     }
   } catch (e) {
     console.warn('Gagal membaca cache trips pengiriman store:', e);
@@ -165,22 +194,27 @@ export async function fetchPengirimanStoreTrips(): Promise<PengirimanStoreTrip[]
     );
 
     if (data && Array.isArray(data)) {
-      const remoteTrips: PengirimanStoreTrip[] = data.map((d: any) => ({
-        id: d.id,
-        tanggal_kirim: d.tanggal_kirim,
-        waktu_kirim: d.waktu_kirim || '',
-        dikirim_oleh: d.dikirim_oleh || '',
-        store_tujuan_list: typeof d.store_tujuan_list === 'string' ? JSON.parse(d.store_tujuan_list) : (d.store_tujuan_list || []),
-        report_ids: typeof d.report_ids === 'string' ? JSON.parse(d.report_ids) : (d.report_ids || []),
-        total_koli: Number(d.total_koli || 0),
-        armada: d.armada || '',
-        no_polisi: d.no_polisi || '',
-        catatan: d.catatan_kirim || d.catatan || '',
-        status: d.status || 'in_transit',
-        created_by_nama: d.pic_nama || d.created_by_nama || 'Petugas Gudang',
-        created_by_username: d.pic_username || d.created_by_username || 'operator',
-        created_at: d.created_at || new Date().toISOString(),
-      }));
+      const remoteTrips: PengirimanStoreTrip[] = data.map((d: any) => {
+        const parsedPhotos = parseTripPhotoUrls(d.foto_bukti_surat_jalan || d.foto_urls);
+        return {
+          id: d.id,
+          tanggal_kirim: d.tanggal_kirim,
+          waktu_kirim: d.waktu_kirim || '',
+          dikirim_oleh: d.dikirim_oleh || '',
+          store_tujuan_list: typeof d.store_tujuan_list === 'string' ? JSON.parse(d.store_tujuan_list) : (d.store_tujuan_list || []),
+          report_ids: typeof d.report_ids === 'string' ? JSON.parse(d.report_ids) : (d.report_ids || []),
+          total_koli: Number(d.total_koli || 0),
+          armada: d.armada || '',
+          no_polisi: d.no_polisi || '',
+          catatan: d.catatan_kirim || d.catatan || '',
+          foto_urls: parsedPhotos,
+          foto_bukti_surat_jalan: d.foto_bukti_surat_jalan || '',
+          status: d.status === 'cancelled' ? 'cancelled' : 'active',
+          created_by_nama: d.pic_nama || d.created_by_nama || 'Petugas Gudang',
+          created_by_username: d.pic_username || d.created_by_username || 'operator',
+          created_at: d.created_at || new Date().toISOString(),
+        };
+      });
 
       saveTripsToCache(remoteTrips);
       return remoteTrips;
@@ -418,6 +452,7 @@ export async function processKirimStoreReports(payload: {
   armada?: string;
   no_polisi?: string;
   catatan?: string;
+  foto_urls?: string[];
   pic_nama: string;
   pic_username: string;
 }): Promise<{ success: boolean; trip?: PengirimanStoreTrip; count: number; message: string }> {
@@ -429,6 +464,11 @@ export async function processKirimStoreReports(payload: {
     const cached = getCachedReports();
     const tripId = generateTripId();
     const nowIso = new Date().toISOString();
+
+    const cleanTripPhotos = Array.from(
+      new Set((payload.foto_urls || []).map((u) => String(u || '').trim()).filter(Boolean))
+    );
+    const serializedTripPhotos = cleanTripPhotos.length > 0 ? JSON.stringify(cleanTripPhotos) : '';
 
     const storeTujuanSet = new Set<string>();
     let totalKoliTrip = 0;
@@ -468,6 +508,9 @@ export async function processKirimStoreReports(payload: {
       armada: payload.armada,
       no_polisi: payload.no_polisi,
       catatan: payload.catatan,
+      foto_urls: cleanTripPhotos,
+      foto_bukti_surat_jalan: serializedTripPhotos,
+      status: 'active',
       created_by_nama: payload.pic_nama,
       created_by_username: payload.pic_username,
       created_at: nowIso,
@@ -511,6 +554,7 @@ export async function processKirimStoreReports(payload: {
           armada: tripRecord.armada || '',
           no_polisi: tripRecord.no_polisi || '',
           catatan_kirim: tripRecord.catatan || '',
+          foto_bukti_surat_jalan: serializedTripPhotos,
           status: 'in_transit',
           report_ids: JSON.stringify(tripRecord.report_ids),
           pic_nama: tripRecord.created_by_nama,
@@ -1109,6 +1153,7 @@ export async function editSuratJalanPengirimanTrip(
     armada?: string;
     no_polisi?: string;
     catatan?: string;
+    foto_urls?: string[];
     removeReportIds?: string[];
   },
   user: { name: string; username?: string }
@@ -1122,6 +1167,14 @@ export async function editSuratJalanPengirimanTrip(
     if (!targetTrip) {
       return { success: false, message: 'Surat Jalan Pengiriman tidak ditemukan' };
     }
+
+    const hasPhotoUpdate = updateData.foto_urls !== undefined;
+    const cleanTripPhotos = hasPhotoUpdate
+      ? Array.from(new Set((updateData.foto_urls || []).map((u) => String(u || '').trim()).filter(Boolean)))
+      : undefined;
+    const serializedTripPhotos = hasPhotoUpdate
+      ? (cleanTripPhotos && cleanTripPhotos.length > 0 ? JSON.stringify(cleanTripPhotos) : '')
+      : undefined;
 
     const removeSet = new Set(updateData.removeReportIds || []);
 
@@ -1167,6 +1220,12 @@ export async function editSuratJalanPengirimanTrip(
           armada: updateData.armada ?? t.armada,
           no_polisi: updateData.no_polisi ?? t.no_polisi,
           catatan: updateData.catatan ?? t.catatan,
+          ...(hasPhotoUpdate
+            ? {
+                foto_urls: cleanTripPhotos,
+                foto_bukti_surat_jalan: serializedTripPhotos,
+              }
+            : {}),
           updated_at: nowIso,
         };
       }
@@ -1196,17 +1255,22 @@ export async function editSuratJalanPengirimanTrip(
     }
 
     try {
+      const tripPatchPayload: Record<string, any> = {
+        tanggal_kirim: updateData.tanggal_kirim,
+        dikirim_oleh: updateData.dikirim_oleh,
+        armada: updateData.armada,
+        no_polisi: updateData.no_polisi,
+        catatan_kirim: updateData.catatan,
+        updated_at: nowIso,
+      };
+      if (hasPhotoUpdate) {
+        tripPatchPayload.foto_bukti_surat_jalan = serializedTripPhotos;
+      }
+
       await supabaseFetch(
         'pengiriman_store_trips',
         'PATCH',
-        {
-          tanggal_kirim: updateData.tanggal_kirim,
-          dikirim_oleh: updateData.dikirim_oleh,
-          armada: updateData.armada,
-          no_polisi: updateData.no_polisi,
-          catatan_kirim: updateData.catatan,
-          updated_at: nowIso,
-        },
+        tripPatchPayload,
         `id=eq.${tripId}`
       );
     } catch (e) {

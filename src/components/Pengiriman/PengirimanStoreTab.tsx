@@ -31,12 +31,12 @@ import {
   Eye,
   Loader2,
   UploadCloud,
-  Barcode as BarcodeIcon,
   Check,
   Edit3,
   X,
   Undo2,
   Sparkles,
+  Truck,
 } from 'lucide-react';
 import {
   UserSession,
@@ -62,6 +62,7 @@ import {
   editSuratJalanPengirimanTrip,
   generateKoliLabelsForReport,
   markReportsLabelAsPrinted,
+  parseTripPhotoUrls,
   getTodayDateString,
   getCurrentTimeString,
 } from '../../services/pengirimanStore';
@@ -87,7 +88,6 @@ interface ItemInputRow {
   deskripsi: string;
   qty: number | '';
   satuan: SatuanPengirimanStore;
-  keterangan: string;
   fotoBarang?: string;
   isCompressingPhoto?: boolean;
 }
@@ -105,8 +105,15 @@ export interface HistoriBatchItem {
   reports: PengirimanStoreReport[];
   totalKoli: number;
   totalItemCount: number;
+  tripPhotos: string[];
+  itemPhotos: string[];
   allPhotos: string[];
   createdAt: string;
+}
+
+function isValidNoSj(noSj?: string): boolean {
+  const val = String(noSj || '').trim();
+  return Boolean(val && val !== '-' && val.toLowerCase() !== 'tidak ada no surat jalan');
 }
 
 export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
@@ -136,15 +143,9 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
       deskripsi: '',
       qty: 1,
       satuan: 'Koli',
-      keterangan: '',
       fotoBarang: '',
     },
   ]);
-
-  // Overall shipment photos (Opsi B: Foto Pengiriman Keseluruhan / Koli / Packing)
-  const [overallPhotos, setOverallPhotos] = useState<string[]>([]);
-  const [isCompressingOverall, setIsCompressingOverall] = useState<boolean>(false);
-  const overallFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Modal Preview Foto
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
@@ -163,6 +164,9 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
   const [editTripNoPolisi, setEditTripNoPolisi] = useState<string>('');
   const [editTripCatatan, setEditTripCatatan] = useState<string>('');
   const [editTripSelectedReportIds, setEditTripSelectedReportIds] = useState<string[]>([]);
+  const [editTripPhotos, setEditTripPhotos] = useState<string[]>([]);
+  const [isCompressingEditTripPhotos, setIsCompressingEditTripPhotos] = useState<boolean>(false);
+  const editTripPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const [isSavingTripEdit, setIsSavingTripEdit] = useState<boolean>(false);
 
   // --------------------------------------------------------------------------
@@ -177,43 +181,37 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
   const [editingDispatchedReport, setEditingDispatchedReport] = useState<PengirimanStoreReport | null>(null);
   const [editStoreTujuan, setEditStoreTujuan] = useState<string>('');
   const [editItems, setEditItems] = useState<PengirimanStoreItem[]>([]);
+  const [editItemCompressingIdx, setEditItemCompressingIdx] = useState<number | null>(null);
   const [isSavingEditDispatched, setIsSavingEditDispatched] = useState<boolean>(false);
 
-  // Multi-Store Fast Batch Generator State (Form Laporan)
+  // Multi-Store Fast Batch Generator State (Form Input)
   const [isMultiStoreModalOpen, setIsMultiStoreModalOpen] = useState<boolean>(false);
   const [multiStoreSelected, setMultiStoreSelected] = useState<string[]>([]);
   const [multiStoreDeskripsi, setMultiStoreDeskripsi] = useState<string>('');
   const [multiStoreNoSJ, setMultiStoreNoSJ] = useState<string>('');
   const [multiStoreQty, setMultiStoreQty] = useState<number>(1);
   const [multiStoreSatuan, setMultiStoreSatuan] = useState<SatuanPengirimanStore>('Koli');
-  const [multiStoreKeterangan, setMultiStoreKeterangan] = useState<string>('');
 
   // --------------------------------------------------------------------------
   // 3. TAB KIRIM (SETUP PENGIRIMAN) STATE
-  // Sesuai instruksi user:
-  // - Pilih Store Tujuan -> daftar dispatched toko tersebut otomatis muncul
-  // - Bisa pilih semua atau pilih beberapa
-  // - Dikirim Oleh (perlu)
-  // - Catatan Kirim (perlu)
-  // - Jam berangkat (tidak perlu), Armada (tidak perlu), No kendaraan (tidak perlu)
   // --------------------------------------------------------------------------
   const [selectedStoreKirim, setSelectedStoreKirim] = useState<string>('');
   const [selectedReportIdsForKirim, setSelectedReportIdsForKirim] = useState<string[]>([]);
   const [tanggalKirim, setTanggalKirim] = useState<string>(getTodayDateString());
   const [dikirimOleh, setDikirimOleh] = useState<string>(session?.name || '');
   const [catatanKirim, setCatatanKirim] = useState<string>('');
+  const [kirimOverallPhotos, setKirimOverallPhotos] = useState<string[]>([]);
+  const [isCompressingKirimPhotos, setIsCompressingKirimPhotos] = useState<boolean>(false);
+  const kirimPhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingManualKirimSelectionRef = useRef<string[] | null>(null);
   const [isProcessingKirim, setIsProcessingKirim] = useState<boolean>(false);
 
   // --------------------------------------------------------------------------
   // 4. TAB HISTORI PENGIRIMAN STATE
-  // Sesuai instruksi user:
-  // - Cetak ulang surat jalan
-  // - Edit pengiriman
-  // - Delete atau Cancel (kembali ke dispatched)
-  // - Histori log audit edit / cancel
   // --------------------------------------------------------------------------
   const [searchHistori, setSearchHistori] = useState<string>('');
   const [filterStoreHistori, setFilterStoreHistori] = useState<string[]>([]);
+  const [filterStatusHistori, setFilterStatusHistori] = useState<'all' | 'active' | 'cancelled'>('all');
   const [selectedDetailReport, setSelectedDetailReport] = useState<PengirimanStoreReport | null>(null);
 
   // Modals for Histori: Edit, Cancel, Audit History
@@ -398,13 +396,23 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
   }, [dispatchedReports, selectedStoreKirim]);
 
   useEffect(() => {
-    if (selectedStoreKirim) {
-      const idsForThisStore = dispatchedReports
-        .filter((r) => isSameStore(r.store_tujuan, selectedStoreKirim))
-        .map((r) => r.id);
-      setSelectedReportIdsForKirim(idsForThisStore);
-    } else {
+    if (!selectedStoreKirim) {
       setSelectedReportIdsForKirim([]);
+      pendingManualKirimSelectionRef.current = null;
+      return;
+    }
+
+    const idsForThisStore = dispatchedReports
+      .filter((r) => isSameStore(r.store_tujuan, selectedStoreKirim))
+      .map((r) => r.id);
+    const validIdSet = new Set(idsForThisStore);
+
+    if (pendingManualKirimSelectionRef.current) {
+      const manualValid = pendingManualKirimSelectionRef.current.filter((id) => validIdSet.has(id));
+      pendingManualKirimSelectionRef.current = null;
+      setSelectedReportIdsForKirim(manualValid.length > 0 ? manualValid : idsForThisStore);
+    } else {
+      setSelectedReportIdsForKirim(idsForThisStore);
     }
   }, [selectedStoreKirim, dispatchedReports]);
 
@@ -425,7 +433,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
         deskripsi: '',
         qty: 1,
         satuan: 'Koli',
-        keterangan: '',
+        fotoBarang: '',
       },
     ]);
   };
@@ -436,7 +444,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
       return;
     }
     if (!multiStoreDeskripsi.trim()) {
-      onShowToast('Deskripsi barang wajib diisi', 'warning');
+      onShowToast('Nama / keterangan barang wajib diisi', 'warning');
       return;
     }
 
@@ -447,13 +455,13 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
       deskripsi: multiStoreDeskripsi.trim(),
       qty: Math.max(1, multiStoreQty),
       satuan: multiStoreSatuan,
-      keterangan: multiStoreKeterangan.trim(),
+      fotoBarang: '',
     }));
 
     // Jika baris pertama masih kosong default, replace atau gabungkan
     setItemRows((prev) => {
       const isFirstEmpty =
-        prev.length === 1 && !prev[0].deskripsi && !prev[0].noSuratJalan;
+        prev.length === 1 && !prev[0].deskripsi && !prev[0].noSuratJalan && !prev[0].fotoBarang;
       return isFirstEmpty ? newRows : [...prev, ...newRows];
     });
 
@@ -463,7 +471,6 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
     setMultiStoreDeskripsi('');
     setMultiStoreNoSJ('');
     setMultiStoreQty(1);
-    setMultiStoreKeterangan('');
   };
 
   const handleDuplicateRow = (index: number) => {
@@ -494,14 +501,14 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
     });
   };
 
-  // Handler Foto Per Baris (Opsi A)
+  // Handler Foto Per Barang (Form Input)
   const handleItemPhotoUpload = async (index: number, file: File) => {
     if (!file) return;
     handleUpdateRow(index, 'isCompressingPhoto', true);
     try {
       const result = await compressImage(file, 1200, 0.75);
       handleUpdateRow(index, 'fotoBarang', result.dataUrl);
-      onShowToast(`Foto barang #${index + 1} berhasil diambil`, 'success');
+      onShowToast(`Foto barang #${index + 1} berhasil ditambahkan`, 'success');
     } catch (err: any) {
       console.error('Compress photo failed:', err);
       onShowToast('Gagal memproses foto barang: ' + (err.message || ''), 'error');
@@ -514,39 +521,72 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
     handleUpdateRow(index, 'fotoBarang', '');
   };
 
-  // Handler Foto Keseluruhan / Koli / Packing (Opsi B)
-  const handleOverallPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handler Foto Dokumentasi Pengiriman Keseluruhan (Tab Kirim)
+  const handleKirimOverallPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    if (overallPhotos.length + files.length > 8) {
-      onShowToast('Maksimal 8 foto dokumentasi pengiriman', 'warning');
+    if (kirimOverallPhotos.length + files.length > 8) {
+      onShowToast('Maksimal 8 foto dokumentasi pengiriman keseluruhan', 'warning');
       return;
     }
 
-    setIsCompressingOverall(true);
+    setIsCompressingKirimPhotos(true);
     try {
       const newCompressedPhotos: string[] = [];
       for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const result = await compressImage(file, 1200, 0.75);
+        const result = await compressImage(files[i], 1200, 0.75);
         newCompressedPhotos.push(result.dataUrl);
       }
-      setOverallPhotos((prev) => [...prev, ...newCompressedPhotos]);
-      onShowToast(`${newCompressedPhotos.length} foto dokumentasi berhasil ditambahkan`, 'success');
+      setKirimOverallPhotos((prev) => [...prev, ...newCompressedPhotos]);
+      onShowToast(`${newCompressedPhotos.length} foto dokumentasi pengiriman ditambahkan`, 'success');
     } catch (err: any) {
-      console.error('Compress overall photos failed:', err);
+      console.error('Compress kirim overall photos failed:', err);
       onShowToast('Gagal memproses foto dokumentasi: ' + (err.message || ''), 'error');
     } finally {
-      setIsCompressingOverall(false);
-      if (overallFileInputRef.current) {
-        overallFileInputRef.current.value = '';
+      setIsCompressingKirimPhotos(false);
+      if (kirimPhotoInputRef.current) {
+        kirimPhotoInputRef.current.value = '';
       }
     }
   };
 
-  const handleRemoveOverallPhoto = (photoIdx: number) => {
-    setOverallPhotos((prev) => prev.filter((_, idx) => idx !== photoIdx));
+  const handleRemoveKirimOverallPhoto = (photoIdx: number) => {
+    setKirimOverallPhotos((prev) => prev.filter((_, idx) => idx !== photoIdx));
+  };
+
+  // Handler Foto Dokumentasi Pengiriman Keseluruhan (Modal Edit Trip Histori)
+  const handleEditTripPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    if (editTripPhotos.length + files.length > 8) {
+      onShowToast('Maksimal 8 foto dokumentasi pengiriman keseluruhan', 'warning');
+      return;
+    }
+
+    setIsCompressingEditTripPhotos(true);
+    try {
+      const compressed: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const res = await compressImage(files[i], 1200, 0.75);
+        compressed.push(res.dataUrl);
+      }
+      setEditTripPhotos((prev) => [...prev, ...compressed]);
+      onShowToast(`${compressed.length} foto dokumentasi ditambahkan`, 'success');
+    } catch (err: any) {
+      console.error('Compress edit trip photos failed:', err);
+      onShowToast('Gagal memproses foto: ' + (err.message || ''), 'error');
+    } finally {
+      setIsCompressingEditTripPhotos(false);
+      if (editTripPhotoInputRef.current) {
+        editTripPhotoInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleRemoveEditTripPhoto = (photoIdx: number) => {
+    setEditTripPhotos((prev) => prev.filter((_, idx) => idx !== photoIdx));
   };
 
   const formCalculatedKoli = useMemo(() => {
@@ -554,6 +594,14 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
       const q = Math.max(1, Number(row.qty) || 1);
       return acc + (row.satuan === 'Pcs' ? 1 : q);
     }, 0);
+  }, [itemRows]);
+
+  const uniqueInputStoreCount = useMemo(() => {
+    return new Set(
+      itemRows
+        .map((r) => (r.isCustomStore ? r.customStoreInput?.trim() : r.storeTujuan)?.trim())
+        .filter(Boolean)
+    ).size;
   }, [itemRows]);
 
   const handleSubmitReport = async (autoPrint: boolean = false) => {
@@ -565,14 +613,14 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
         return;
       }
       if (!row.deskripsi.trim()) {
-        onShowToast(`Baris #${i + 1}: Deskripsi barang tidak boleh kosong`, 'warning');
+        onShowToast(`Baris #${i + 1}: Nama / keterangan barang tidak boleh kosong`, 'warning');
         return;
       }
     }
 
     setIsSubmittingReport(true);
     try {
-      // 1. Upload foto barang per baris ke Google Drive jika ada
+      // Upload foto per barang ke Google Drive jika ada
       const uploadedRowPhotos: { [key: number]: string } = {};
       const rowsWithPhotos = itemRows
         .map((r, idx) => ({ idx, foto: r.fotoBarang }))
@@ -592,30 +640,13 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
         });
       }
 
-      // 2. Upload foto keseluruhan / koli / packing ke Google Drive jika ada
-      let finalOverallPhotoUrls: string[] = [];
-      const overallDataUrls = overallPhotos.filter((p) => p.startsWith('data:image/'));
-      const existingOverallUrls = overallPhotos.filter((p) => !p.startsWith('data:image/'));
-
-      if (overallDataUrls.length > 0) {
-        onShowToast(`Mengunggah ${overallDataUrls.length} foto koli/packing ke Google Drive...`, 'info');
-        const uploadOverallRes = await uploadMultipleImagesToGdrive(
-          overallDataUrls,
-          'WMS_Packing_Store'
-        );
-        const validUploaded = uploadOverallRes.filter((u) => Boolean(u));
-        finalOverallPhotoUrls = [...existingOverallUrls, ...validUploaded];
-      } else {
-        finalOverallPhotoUrls = existingOverallUrls;
-      }
-
       const payloadItems = itemRows.map((r, idx) => ({
         store_tujuan: r.isCustomStore ? r.customStoreInput?.trim() || 'Store' : r.storeTujuan,
         no_surat_jalan: r.noSuratJalan.trim() || 'Tidak ada no surat jalan',
         deskripsi: r.deskripsi.trim(),
         qty: r.qty,
         satuan: r.satuan,
-        keterangan: r.keterangan.trim(),
+        keterangan: '',
         foto_barang: uploadedRowPhotos[idx] || r.fotoBarang || '',
       }));
 
@@ -623,7 +654,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
         items: payloadItems,
         pic_nama: session?.name || 'Petugas Gudang',
         pic_username: session?.username || 'operator',
-        foto_urls: finalOverallPhotoUrls,
+        foto_urls: [],
       });
 
       if (res.success && res.reports.length > 0) {
@@ -651,11 +682,9 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
             deskripsi: '',
             qty: 1,
             satuan: 'Koli',
-            keterangan: '',
             fotoBarang: '',
           },
         ]);
-        setOverallPhotos([]);
 
         setActiveSubTab('dispatched');
       } else {
@@ -671,13 +700,23 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
   // --------------------------------------------------------------------------
   // DISPATCHED SELECTION
   // --------------------------------------------------------------------------
+  const totalAllDispatchedKoli = useMemo(() => {
+    return dispatchedReports.reduce((acc, r) => acc + (r.total_koli || 1), 0);
+  }, [dispatchedReports]);
+
   const filteredDispatched = useMemo(() => {
+    const q = searchDispatched.trim().toLowerCase();
     return dispatchedReports.filter((r) => {
       const matchSearch =
-        searchDispatched === '' ||
-        r.store_tujuan.toLowerCase().includes(searchDispatched.toLowerCase()) ||
-        r.id.toLowerCase().includes(searchDispatched.toLowerCase()) ||
-        r.items.some((it) => it.deskripsi.toLowerCase().includes(searchDispatched.toLowerCase()));
+        q === '' ||
+        r.store_tujuan.toLowerCase().includes(q) ||
+        r.id.toLowerCase().includes(q) ||
+        r.items.some(
+          (it) =>
+            it.deskripsi.toLowerCase().includes(q) ||
+            (it.no_surat_jalan && it.no_surat_jalan.toLowerCase().includes(q)) ||
+            (it.keterangan && it.keterangan.toLowerCase().includes(q))
+        );
 
       const matchStore =
         !filterStoreDispatched ||
@@ -725,8 +764,11 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
   }, [selectedDispatchedObjects]);
 
   const handleSendSelectedFromDispatched = (report: PengirimanStoreReport) => {
+    const targetIds = [report.id];
+    pendingManualKirimSelectionRef.current =
+      report.store_tujuan !== selectedStoreKirim ? targetIds : null;
     setSelectedStoreKirim(report.store_tujuan);
-    setSelectedReportIdsForKirim([report.id]);
+    setSelectedReportIdsForKirim(targetIds);
     setActiveSubTab('kirim');
   };
 
@@ -736,20 +778,23 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
       return;
     }
     const storeNames = Array.from(new Set(reportsToShip.map((r) => r.store_tujuan)));
+    const targetStore = storeNames[0];
+    const targetIds =
+      storeNames.length > 1
+        ? reportsToShip.filter((r) => r.store_tujuan === targetStore).map((r) => r.id)
+        : reportsToShip.map((r) => r.id);
+
     if (storeNames.length > 1) {
-      setSelectedStoreKirim(storeNames[0]);
-      const idsForFirstStore = reportsToShip
-        .filter((r) => r.store_tujuan === storeNames[0])
-        .map((r) => r.id);
-      setSelectedReportIdsForKirim(idsForFirstStore);
       onShowToast(
-        `Membuka setup kirim untuk store: ${storeNames[0]} (${idsForFirstStore.length} laporan terpilih)`,
+        `Membuka proses kirim untuk store: ${targetStore} (${targetIds.length} laporan terpilih)`,
         'info'
       );
-    } else {
-      setSelectedStoreKirim(storeNames[0]);
-      setSelectedReportIdsForKirim(reportsToShip.map((r) => r.id));
     }
+
+    pendingManualKirimSelectionRef.current =
+      targetStore !== selectedStoreKirim ? targetIds : null;
+    setSelectedStoreKirim(targetStore);
+    setSelectedReportIdsForKirim(targetIds);
     setActiveSubTab('kirim');
   };
 
@@ -837,6 +882,25 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
     setEditItems((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  const handleEditItemPhotoUpload = async (idx: number, file: File) => {
+    if (!file) return;
+    setEditItemCompressingIdx(idx);
+    try {
+      const result = await compressImage(file, 1200, 0.75);
+      handleUpdateEditItem(idx, 'foto_barang', result.dataUrl);
+      onShowToast(`Foto barang #${idx + 1} diperbarui`, 'success');
+    } catch (err: any) {
+      console.error('Compress edit item photo failed:', err);
+      onShowToast('Gagal memproses foto barang: ' + (err.message || ''), 'error');
+    } finally {
+      setEditItemCompressingIdx(null);
+    }
+  };
+
+  const handleRemoveEditItemPhoto = (idx: number) => {
+    handleUpdateEditItem(idx, 'foto_barang', '');
+  };
+
   const handleSaveEditDispatched = async () => {
     if (!editingDispatchedReport) return;
     if (!editStoreTujuan.trim()) {
@@ -849,18 +913,52 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
     }
     for (let i = 0; i < editItems.length; i++) {
       if (!editItems[i].deskripsi.trim()) {
-        onShowToast(`Baris #${i + 1}: Deskripsi barang tidak boleh kosong`, 'warning');
+        onShowToast(`Baris #${i + 1}: Nama / keterangan barang tidak boleh kosong`, 'warning');
         return;
       }
     }
 
     setIsSavingEditDispatched(true);
     try {
+      let itemsWithUploadedPhotos = [...editItems];
+      const newPhotoRows = editItems
+        .map((it, idx) => ({ idx, foto: it.foto_barang }))
+        .filter((r): r is { idx: number; foto: string } => Boolean(r.foto && r.foto.startsWith('data:image/')));
+
+      if (newPhotoRows.length > 0) {
+        onShowToast(`Mengunggah ${newPhotoRows.length} foto barang ke Google Drive...`, 'info');
+        const uploadedUrls = await uploadMultipleImagesToGdrive(
+          newPhotoRows.map((r) => r.foto),
+          'WMS_Barang_Store'
+        );
+        uploadedUrls.forEach((url, i) => {
+          if (url) {
+            const targetIdx = newPhotoRows[i].idx;
+            itemsWithUploadedPhotos[targetIdx] = {
+              ...itemsWithUploadedPhotos[targetIdx],
+              foto_barang: url,
+            };
+          }
+        });
+      }
+
+      const previousItemPhotos = new Set(
+        (editingDispatchedReport.items || []).map((it) => it.foto_barang).filter(Boolean) as string[]
+      );
+      const preservedExtraPhotos = (editingDispatchedReport.foto_urls || []).filter(
+        (u) => u && !previousItemPhotos.has(u)
+      );
+      const nextItemPhotos = itemsWithUploadedPhotos
+        .map((it) => it.foto_barang)
+        .filter((u): u is string => Boolean(u));
+      const nextReportPhotos = Array.from(new Set([...preservedExtraPhotos, ...nextItemPhotos]));
+
       const res = await editPengirimanStoreReportFull(
         editingDispatchedReport.id,
         {
           store_tujuan: editStoreTujuan.trim(),
-          items: editItems,
+          items: itemsWithUploadedPhotos,
+          foto_urls: nextReportPhotos,
         },
         {
           name: session?.name || 'Petugas Gudang',
@@ -902,12 +1000,29 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
 
     setIsProcessingKirim(true);
     try {
+      // Upload foto dokumentasi pengiriman keseluruhan ke Google Drive jika ada
+      let finalTripPhotoUrls: string[] = [];
+      const dataUrls = kirimOverallPhotos.filter((p) => p.startsWith('data:image/'));
+      const existingUrls = kirimOverallPhotos.filter((p) => !p.startsWith('data:image/'));
+
+      if (dataUrls.length > 0) {
+        onShowToast(`Mengunggah ${dataUrls.length} foto dokumentasi pengiriman ke Google Drive...`, 'info');
+        const uploadedRes = await uploadMultipleImagesToGdrive(dataUrls, 'WMS_Kirim_Store');
+        finalTripPhotoUrls = Array.from(
+          new Set([...existingUrls, ...uploadedRes.filter((u) => Boolean(u))])
+        );
+      } else {
+        finalTripPhotoUrls = Array.from(new Set(existingUrls));
+      }
+
+      const currentWaktu = getCurrentTimeString();
       const res = await processKirimStoreReports({
         report_ids: selectedReportIdsForKirim,
         tanggal_kirim: tanggalKirim,
-        waktu_kirim: getCurrentTimeString(),
+        waktu_kirim: currentWaktu,
         dikirim_oleh: finalDikirimOleh,
         catatan: catatanKirim.trim(),
+        foto_urls: finalTripPhotoUrls,
         pic_nama: session?.name || 'Petugas Gudang',
         pic_username: session?.username || 'operator',
       });
@@ -919,13 +1034,13 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
           ...r,
           status: 'sent' as const,
           tanggal_kirim: tanggalKirim,
-          waktu_kirim: getCurrentTimeString(),
+          waktu_kirim: currentWaktu,
           dikirim_oleh: finalDikirimOleh,
           catatan_kirim: catatanKirim.trim(),
           trip_id: res.trip?.id,
         }));
 
-        // Update state lokal langsung agar status produk berubah instan & tidak berkedip!
+        // Update state lokal langsung agar status produk & histori trip berubah instan!
         setReports((prev) =>
           prev.map((r) => {
             if (shippedReportIds.includes(r.id)) {
@@ -933,7 +1048,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                 ...r,
                 status: 'sent' as const,
                 tanggal_kirim: tanggalKirim,
-                waktu_kirim: getCurrentTimeString(),
+                waktu_kirim: currentWaktu,
                 dikirim_oleh: finalDikirimOleh,
                 catatan_kirim: catatanKirim.trim(),
                 trip_id: res.trip?.id,
@@ -944,11 +1059,16 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
           })
         );
 
+        if (res.trip) {
+          setTrips((prev) => [res.trip!, ...prev.filter((t) => t.id !== res.trip!.id)]);
+        }
+
         // Reset kirim form
         setSelectedReportIdsForKirim([]);
         setCatatanKirim('');
+        setKirimOverallPhotos([]);
 
-        // 1. Berpindah tab ke Histori Pengiriman & scroll ke atas
+        // 1. Berpindah tab ke Histori Kirim & scroll ke atas
         setActiveSubTab('histori');
         window.scrollTo({ top: 0, behavior: 'smooth' });
 
@@ -1092,6 +1212,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
     setEditTripNoPolisi(batch.noPolisi || '');
     setEditTripCatatan(batch.catatanKirim || '');
     setEditTripSelectedReportIds(batch.reports.map((r) => r.id));
+    setEditTripPhotos(batch.tripPhotos || []);
   };
 
   const handleSaveEditTrip = async () => {
@@ -1112,6 +1233,19 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
 
     setIsSavingTripEdit(true);
     try {
+      let finalTripPhotos: string[] = [];
+      const dataUrls = editTripPhotos.filter((p) => p.startsWith('data:image/'));
+      const existingUrls = editTripPhotos.filter((p) => !p.startsWith('data:image/'));
+      if (dataUrls.length > 0) {
+        onShowToast(`Mengunggah ${dataUrls.length} foto dokumentasi pengiriman...`, 'info');
+        const uploaded = await uploadMultipleImagesToGdrive(dataUrls, 'WMS_Kirim_Store');
+        finalTripPhotos = Array.from(
+          new Set([...existingUrls, ...uploaded.filter((u) => Boolean(u))])
+        );
+      } else {
+        finalTripPhotos = Array.from(new Set(existingUrls));
+      }
+
       const res = await editSuratJalanPengirimanTrip(
         editingTripBatch.tripId,
         {
@@ -1120,6 +1254,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
           armada: editTripArmada.trim(),
           no_polisi: editTripNoPolisi.trim(),
           catatan: editTripCatatan.trim(),
+          foto_urls: finalTripPhotos,
           removeReportIds: removedReportIds,
         },
         {
@@ -1328,15 +1463,22 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
 
       const totalItems = memberReports.reduce((acc, r) => acc + (r.items?.length || 0), 0);
 
-      const photoSet = new Set<string>();
+      const tripPhotoSet = new Set<string>(
+        parseTripPhotoUrls(t.foto_urls?.length ? t.foto_urls : t.foto_bukti_surat_jalan)
+      );
+      const itemPhotoSet = new Set<string>();
       memberReports.forEach((r) => {
-        (r.foto_urls || []).forEach((u) => {
-          if (u) photoSet.add(u);
-        });
         (r.items || []).forEach((it) => {
-          if (it.foto_barang) photoSet.add(it.foto_barang);
+          if (it.foto_barang) itemPhotoSet.add(it.foto_barang);
+        });
+        (r.foto_urls || []).forEach((u) => {
+          if (u && !tripPhotoSet.has(u)) itemPhotoSet.add(u);
         });
       });
+
+      const tripPhotos = Array.from(tripPhotoSet);
+      const itemPhotos = Array.from(itemPhotoSet);
+      const allPhotos = Array.from(new Set([...tripPhotos, ...itemPhotos]));
 
       batchesMap.set(t.id, {
         tripId: t.id,
@@ -1347,11 +1489,13 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
         armada: t.armada || '',
         noPolisi: t.no_polisi || '',
         catatanKirim: t.catatan || '',
-        status: t.status || 'active',
+        status: t.status === 'cancelled' ? 'cancelled' : 'active',
         reports: memberReports,
         totalKoli,
         totalItemCount: totalItems,
-        allPhotos: Array.from(photoSet),
+        tripPhotos,
+        itemPhotos,
+        allPhotos,
         createdAt: t.created_at || '',
       });
     });
@@ -1365,11 +1509,21 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
           cur.reports.push(r);
           cur.totalKoli += r.total_koli || 0;
           cur.totalItemCount += r.items?.length || 0;
-          (r.foto_urls || []).forEach((u) => {
-            if (u && !cur.allPhotos.includes(u)) cur.allPhotos.push(u);
-          });
           (r.items || []).forEach((it) => {
-            if (it.foto_barang && !cur.allPhotos.includes(it.foto_barang)) cur.allPhotos.push(it.foto_barang);
+            if (it.foto_barang && !cur.itemPhotos.includes(it.foto_barang)) {
+              cur.itemPhotos.push(it.foto_barang);
+            }
+            if (it.foto_barang && !cur.allPhotos.includes(it.foto_barang)) {
+              cur.allPhotos.push(it.foto_barang);
+            }
+          });
+          (r.foto_urls || []).forEach((u) => {
+            if (u && !cur.tripPhotos.includes(u) && !cur.itemPhotos.includes(u)) {
+              cur.itemPhotos.push(u);
+            }
+            if (u && !cur.allPhotos.includes(u)) {
+              cur.allPhotos.push(u);
+            }
           });
         }
       } else {
@@ -1380,21 +1534,32 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
             cur.reports.push(r);
             cur.totalKoli += r.total_koli || 0;
             cur.totalItemCount += r.items?.length || 0;
-            (r.foto_urls || []).forEach((u) => {
-              if (u && !cur.allPhotos.includes(u)) cur.allPhotos.push(u);
-            });
             (r.items || []).forEach((it) => {
-              if (it.foto_barang && !cur.allPhotos.includes(it.foto_barang)) cur.allPhotos.push(it.foto_barang);
+              if (it.foto_barang && !cur.itemPhotos.includes(it.foto_barang)) {
+                cur.itemPhotos.push(it.foto_barang);
+              }
+              if (it.foto_barang && !cur.allPhotos.includes(it.foto_barang)) {
+                cur.allPhotos.push(it.foto_barang);
+              }
+            });
+            (r.foto_urls || []).forEach((u) => {
+              if (u && !cur.tripPhotos.includes(u) && !cur.itemPhotos.includes(u)) {
+                cur.itemPhotos.push(u);
+              }
+              if (u && !cur.allPhotos.includes(u)) {
+                cur.allPhotos.push(u);
+              }
             });
           }
         } else {
-          const photoSet = new Set<string>();
-          (r.foto_urls || []).forEach((u) => {
-            if (u) photoSet.add(u);
-          });
+          const itemPhotoSet = new Set<string>();
           (r.items || []).forEach((it) => {
-            if (it.foto_barang) photoSet.add(it.foto_barang);
+            if (it.foto_barang) itemPhotoSet.add(it.foto_barang);
           });
+          (r.foto_urls || []).forEach((u) => {
+            if (u) itemPhotoSet.add(u);
+          });
+          const itemPhotos = Array.from(itemPhotoSet);
 
           batchesMap.set(key, {
             tripId: existingTripId || `SJP-${r.id}`,
@@ -1409,7 +1574,9 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
             reports: [r],
             totalKoli: r.total_koli || 0,
             totalItemCount: r.items?.length || 0,
-            allPhotos: Array.from(photoSet),
+            tripPhotos: [],
+            itemPhotos,
+            allPhotos: itemPhotos,
             createdAt: r.created_at || '',
           });
         }
@@ -1422,20 +1589,22 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
   }, [trips, reports, sentReports]);
 
   const filteredHistoriBatches = useMemo(() => {
+    const q = searchHistori.trim().toLowerCase();
     return historiBatches.filter((b) => {
       const matchSearch =
-        searchHistori === '' ||
-        b.tripId.toLowerCase().includes(searchHistori.toLowerCase()) ||
-        b.storeTujuan.toLowerCase().includes(searchHistori.toLowerCase()) ||
-        b.dikirimOleh.toLowerCase().includes(searchHistori.toLowerCase()) ||
-        b.catatanKirim.toLowerCase().includes(searchHistori.toLowerCase()) ||
+        q === '' ||
+        b.tripId.toLowerCase().includes(q) ||
+        b.storeTujuan.toLowerCase().includes(q) ||
+        b.dikirimOleh.toLowerCase().includes(q) ||
+        b.catatanKirim.toLowerCase().includes(q) ||
         b.reports.some(
           (r) =>
-            r.id.toLowerCase().includes(searchHistori.toLowerCase()) ||
+            r.id.toLowerCase().includes(q) ||
             r.items.some(
               (it) =>
-                (it.deskripsi && it.deskripsi.toLowerCase().includes(searchHistori.toLowerCase())) ||
-                (it.no_surat_jalan && it.no_surat_jalan.toLowerCase().includes(searchHistori.toLowerCase()))
+                (it.deskripsi && it.deskripsi.toLowerCase().includes(q)) ||
+                (it.keterangan && it.keterangan.toLowerCase().includes(q)) ||
+                (it.no_surat_jalan && it.no_surat_jalan.toLowerCase().includes(q))
             )
         );
 
@@ -1446,70 +1615,57 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
           ? filterStoreHistori.some((fs) => isSameStore(b.storeTujuan, fs))
           : isSameStore(b.storeTujuan, filterStoreHistori));
 
-      return matchSearch && matchStore;
+      const matchStatus =
+        filterStatusHistori === 'all' ||
+        (filterStatusHistori === 'active' && b.status !== 'cancelled') ||
+        (filterStatusHistori === 'cancelled' && b.status === 'cancelled');
+
+      return matchSearch && matchStore && matchStatus;
     });
-  }, [historiBatches, searchHistori, filterStoreHistori]);
+  }, [historiBatches, searchHistori, filterStoreHistori, filterStatusHistori]);
 
-  // Legacy compatibility for simple reports list if needed
-  const filteredHistori = useMemo(() => {
-    return sentReports.filter((r) => {
-      const matchSearch =
-        searchHistori === '' ||
-        r.store_tujuan.toLowerCase().includes(searchHistori.toLowerCase()) ||
-        (r.dikirim_oleh && r.dikirim_oleh.toLowerCase().includes(searchHistori.toLowerCase())) ||
-        (r.catatan_kirim && r.catatan_kirim.toLowerCase().includes(searchHistori.toLowerCase())) ||
-        r.id.toLowerCase().includes(searchHistori.toLowerCase()) ||
-        r.items.some((it) => it.deskripsi.toLowerCase().includes(searchHistori.toLowerCase()));
-
-      const matchStore =
-        !filterStoreHistori ||
-        filterStoreHistori.length === 0 ||
-        (Array.isArray(filterStoreHistori)
-          ? filterStoreHistori.some((fs) => isSameStore(r.store_tujuan, fs))
-          : isSameStore(r.store_tujuan, filterStoreHistori));
-
-      return matchSearch && matchStore;
-    });
-  }, [sentReports, searchHistori, filterStoreHistori]);
+  const totalKoliHistori = useMemo(() => {
+    return filteredHistoriBatches.reduce((acc, b) => acc + (b.totalKoli || 0), 0);
+  }, [filteredHistoriBatches]);
 
   return (
     <div className="space-y-4">
       {/* ==================================================================== */}
-      {/* NAVIGATION TABS: Laporan | Dispatched | Kirim | Histori              */}
+      {/* NAVIGATION TABS: 1. Input | 2. Dispatched | 3. Kirim | 4. Histori    */}
       {/* ==================================================================== */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-[#131d31] p-2.5 sm:p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
-        <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
-          {/* 1. Form Laporan */}
+      <div className="flex items-center justify-between gap-2 bg-white dark:bg-[#131d31] p-2 sm:p-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 flex-1 min-w-0">
+          {/* 1. Input Barang */}
           <button
             type="button"
             onClick={() => setActiveSubTab('laporan')}
-            className={`py-2 px-3 sm:px-3.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer select-none ${
+            className={`shrink-0 whitespace-nowrap py-2 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer select-none ${
               activeSubTab === 'laporan'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70'
             }`}
           >
-            <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span>Form Laporan</span>
+            <FileText className="w-3.5 h-3.5 shrink-0" />
+            <span>1. Input Barang</span>
           </button>
 
-          {/* 2. Dispatched Tab */}
+          {/* 2. Antrean Dispatched */}
           <button
             type="button"
             onClick={() => setActiveSubTab('dispatched')}
-            className={`py-2 px-3 sm:px-3.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer select-none ${
+            className={`shrink-0 whitespace-nowrap py-2 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer select-none ${
               activeSubTab === 'dispatched'
-                ? 'bg-amber-600 text-white shadow-md shadow-amber-600/20'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70'
             }`}
           >
-            <Box className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span>Dispatched</span>
+            <Box className="w-3.5 h-3.5 shrink-0" />
+            <span>2. Dispatched</span>
             {dispatchedReports.length > 0 && (
               <span
-                className={`ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none ${
                   activeSubTab === 'dispatched'
-                    ? 'bg-white text-amber-700'
+                    ? 'bg-white/20 text-white'
                     : 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300'
                 }`}
               >
@@ -1518,108 +1674,118 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
             )}
           </button>
 
-          {/* 3. Kirim Tab */}
+          {/* 3. Proses Kirim */}
           <button
             type="button"
             onClick={() => setActiveSubTab('kirim')}
-            className={`py-2 px-3 sm:px-3.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer select-none ${
+            className={`shrink-0 whitespace-nowrap py-2 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer select-none ${
               activeSubTab === 'kirim'
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70'
             }`}
           >
-            <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span>Kirim</span>
-            {dispatchedReports.length > 0 && (
-              <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-black bg-emerald-500 text-white">
+            <Send className="w-3.5 h-3.5 shrink-0" />
+            <span>3. Proses Kirim</span>
+            {dispatchedStoresList.length > 0 && (
+              <span
+                className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none ${
+                  activeSubTab === 'kirim'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
+                }`}
+              >
                 {dispatchedStoresList.length} Toko
               </span>
             )}
           </button>
 
-          {/* 4. Histori Tab */}
+          {/* 4. Histori Kirim */}
           <button
             type="button"
             onClick={() => setActiveSubTab('histori')}
-            className={`py-2 px-3 sm:px-3.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer select-none ${
+            className={`shrink-0 whitespace-nowrap py-2 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer select-none ${
               activeSubTab === 'histori'
-                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70'
             }`}
           >
-            <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span>Histori Pengiriman</span>
-            {sentReports.length > 0 && (
-              <span className="ml-1 text-[11px] opacity-80">({sentReports.length})</span>
+            <Clock className="w-3.5 h-3.5 shrink-0" />
+            <span>4. Histori Kirim</span>
+            {historiBatches.length > 0 && (
+              <span
+                className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none ${
+                  activeSubTab === 'histori'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300'
+                }`}
+              >
+                {historiBatches.length}
+              </span>
             )}
           </button>
         </div>
 
-        {/* Refresh button */}
+        {/* Refresh button (Neutral Outline) */}
         <button
           type="button"
           onClick={loadReportsList}
           disabled={loadingReports}
-          className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+          className="px-2.5 sm:px-3 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors"
           title="Segarkan Data"
         >
-          <RefreshCw className={`w-4 h-4 ${loadingReports ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-3.5 h-3.5 ${loadingReports ? 'animate-spin' : ''}`} />
+          <span className="hidden sm:inline">Segarkan</span>
         </button>
       </div>
 
       {/* ==================================================================== */}
-      {/* 1. SUB-TAB: FORM LAPORAN                                             */}
+      {/* 1. SUB-TAB: FORM INPUT BARANG                                        */}
       {/* ==================================================================== */}
       {activeSubTab === 'laporan' && (
-        <div className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 sm:p-5 space-y-5">
-          <div className="border-b border-slate-200/80 dark:border-slate-800/80 pb-4">
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <div>
-                <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                  <Store className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                  Form Laporan Pengiriman Store
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Input pengiriman barang cabang toko. Tiap baris memuat: Store Tujuan, No SJ, Deskripsi, Qty. Tanggal laporan otomatis timestamp submit.
-                </p>
-              </div>
+        <div className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 space-y-4">
+          {/* Header */}
+          <div className="border-b border-slate-200/80 dark:border-slate-800 pb-3.5 flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+                <Store className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                <span>Input Barang ke Antrean Dispatched</span>
+              </h3>
+              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                Catat barang per toko. Foto cukup per barang — dokumentasi muatan keseluruhan dilakukan saat proses Kirim.
+              </p>
+            </div>
 
-              <div className="flex items-center gap-2 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 px-3 py-1.5 rounded-xl">
-                <Box className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                <div className="text-xs">
-                  <span className="text-slate-500 dark:text-slate-400">Total: </span>
-                  <span className="font-black text-indigo-700 dark:text-indigo-300 text-sm">
-                    {formCalculatedKoli} Koli
-                  </span>
-                  <span className="text-[10px] text-slate-400 ml-1">({itemRows.length} Barang)</span>
-                </div>
-              </div>
+            <div className="inline-flex items-center gap-2 bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800/70 px-3 py-1.5 rounded-xl text-xs font-bold text-indigo-700 dark:text-indigo-300 shrink-0">
+              <Box className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                {itemRows.length} Baris · {uniqueInputStoreCount} Toko · {formCalculatedKoli} Koli
+              </span>
             </div>
           </div>
 
-          {/* Rows List */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <span className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <Layers className="w-4 h-4 text-indigo-500" />
-                Daftar Barang Dikirim ({itemRows.length} Baris)
+          {/* Section Toolbar */}
+          <div className="space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-indigo-500" />
+                <span>Daftar Barang ({itemRows.length})</span>
               </span>
 
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setIsMultiStoreModalOpen(true)}
-                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 border border-blue-200 dark:border-blue-800/60 flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
                   title="Tambah 1 jenis barang ke beberapa toko sekaligus"
                 >
-                  <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                  <span>⚡ Multi Toko (Multi-Choice)</span>
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Multi Toko</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={handleAddRow}
-                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1 cursor-pointer transition-colors"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Tambah Baris</span>
@@ -1627,7 +1793,8 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
               </div>
             </div>
 
-            <div className="space-y-3">
+            {/* Item Rows */}
+            <div className="space-y-2.5">
               {itemRows.map((row, index) => {
                 const rowQty = Math.max(1, Number(row.qty) || 1);
                 const rowKoli = row.satuan === 'Pcs' ? 1 : rowQty;
@@ -1635,17 +1802,18 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                 return (
                   <div
                     key={row.tempId}
-                    className="p-3 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/30 space-y-3 relative group transition-all hover:border-slate-300"
+                    className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/30 transition-colors hover:border-slate-300 dark:hover:border-slate-700"
                   >
-                    <div className="flex items-center justify-between border-b border-slate-200/80 dark:border-slate-700/60 pb-2">
+                    {/* Compact Row Header */}
+                    <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-200/70 dark:border-slate-700/60">
                       <div className="flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-lg bg-indigo-600 text-white font-black text-xs flex items-center justify-center">
+                        <span className="w-5 h-5 rounded-md bg-indigo-600 text-white font-bold text-[11px] flex items-center justify-center">
                           {index + 1}
                         </span>
-                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
                           Barang #{index + 1}
                         </span>
-                        <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
                           {rowKoli} Koli
                         </span>
                       </div>
@@ -1654,7 +1822,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                         <button
                           type="button"
                           onClick={() => handleDuplicateRow(index)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 transition-colors"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-white dark:hover:bg-slate-800 transition-colors cursor-pointer"
                           title="Duplikasi Baris"
                         >
                           <Copy className="w-3.5 h-3.5" />
@@ -1662,7 +1830,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                         <button
                           type="button"
                           onClick={() => handleRemoveRow(index)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 transition-colors"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-white dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-30"
                           title="Hapus Baris"
                           disabled={itemRows.length <= 1}
                         >
@@ -1671,12 +1839,14 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-                      {/* Store Tujuan (Drop Search) */}
-                      <div className="sm:col-span-4 space-y-1">
+                    {/* Unified 1-Row Desktop / Stacked Mobile Form Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2.5 items-end">
+                      {/* Store Tujuan */}
+                      <div className="sm:col-span-2 lg:col-span-3 space-y-1 min-w-0">
                         <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1">
-                          <Store className="w-3 h-3 text-indigo-500" />
-                          Store Tujuan <span className="text-rose-500">*</span>
+                          <Store className="w-3 h-3 text-indigo-500 shrink-0" />
+                          <span>Store Tujuan</span>
+                          <span className="text-rose-500">*</span>
                         </label>
                         <SearchableSelect
                           options={stores.map((s) => ({
@@ -1690,48 +1860,49 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                             handleUpdateRow(index, 'storeTujuan', val);
                             handleUpdateRow(index, 'customStoreInput', '');
                           }}
-                          placeholder="Cari Store..."
+                          placeholder="Pilih Store..."
                           searchPlaceholder="Ketik nama / kode toko..."
                           allowCustom={true}
                           size="sm"
                         />
                       </div>
 
-                      {/* No Surat Jalan */}
-                      <div className="sm:col-span-3 space-y-1">
+                      {/* No. Surat Jalan */}
+                      <div className="lg:col-span-2 space-y-1 min-w-0">
                         <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1">
-                          <FileText className="w-3 h-3 text-slate-400" />
-                          No. Surat Jalan
+                          <FileText className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span>No. Surat Jalan</span>
                         </label>
                         <input
                           type="text"
-                          placeholder="SJ-XXXX (Boleh kosong)"
+                          placeholder="Opsional, mis: TO.OMP..."
                           value={row.noSuratJalan}
                           onChange={(e) => handleUpdateRow(index, 'noSuratJalan', e.target.value)}
-                          className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-mono outline-none"
+                          className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-mono text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
                         />
                       </div>
 
-                      {/* Deskripsi Barang */}
-                      <div className="sm:col-span-5 space-y-1">
+                      {/* Nama / Keterangan Barang (Merged Field) */}
+                      <div className="sm:col-span-2 lg:col-span-3 space-y-1 min-w-0">
                         <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1">
-                          Deskripsi Barang <span className="text-rose-500">*</span>
+                          <span>Nama / Keterangan Barang</span>
+                          <span className="text-rose-500">*</span>
                         </label>
                         <input
                           type="text"
-                          placeholder="Contoh: Dress Satin Pink S / Brosur Toko..."
+                          placeholder="Mis: BIS, Koli Refill, Brosur..."
                           value={row.deskripsi}
                           onChange={(e) => handleUpdateRow(index, 'deskripsi', e.target.value)}
-                          className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs outline-none"
+                          className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
                         />
                       </div>
 
-                      {/* Qty & Satuan */}
-                      <div className="sm:col-span-4 flex gap-2">
-                        <div className="flex-1 space-y-1">
-                          <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
-                            Qty <span className="text-rose-500">*</span>
-                          </label>
+                      {/* Qty & Satuan Joined */}
+                      <div className="lg:col-span-2 space-y-1">
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block">
+                          Qty &amp; Satuan <span className="text-rose-500">*</span>
+                        </label>
+                        <div className="flex items-center gap-1.5">
                           <input
                             type="number"
                             min="1"
@@ -1740,17 +1911,12 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                               const val = e.target.value === '' ? '' : Math.max(1, Number(e.target.value));
                               handleUpdateRow(index, 'qty', val);
                             }}
-                            className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-center outline-none"
+                            className="flex-1 min-w-0 px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-center text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
                           />
-                        </div>
-                        <div className="w-24 space-y-1">
-                          <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
-                            Satuan
-                          </label>
                           <select
                             value={row.satuan}
                             onChange={(e) => handleUpdateRow(index, 'satuan', e.target.value as SatuanPengirimanStore)}
-                            className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold outline-none"
+                            className="w-20 shrink-0 px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
                           >
                             <option value="Koli">Koli</option>
                             <option value="Pcs">Pcs</option>
@@ -1758,98 +1924,74 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                         </div>
                       </div>
 
-                      {/* Keterangan */}
-                      <div className="sm:col-span-8 space-y-1">
-                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
-                          Keterangan Tambahan (opsional)
+                      {/* Foto Per Barang (Compact Inline Control) */}
+                      <div className="lg:col-span-2 space-y-1">
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block">
+                          Foto Barang
                         </label>
-                        <input
-                          type="text"
-                          placeholder="Catatan barang, nomor batch, instruksi..."
-                          value={row.keterangan}
-                          onChange={(e) => handleUpdateRow(index, 'keterangan', e.target.value)}
-                          className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs outline-none"
-                        />
-                      </div>
-
-                      {/* Dokumentasi Foto Barang (Opsi A) */}
-                      <div className="sm:col-span-12 pt-1 border-t border-slate-100 dark:border-slate-800">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                              <Camera className="w-3.5 h-3.5 text-indigo-500" />
-                              Foto Barang #{index + 1} (Opsional):
-                            </span>
-
-                            {row.fotoBarang ? (
-                              <div className="flex items-center gap-2">
-                                <div
-                                  onClick={() => {
-                                    setPreviewPhotoUrl(row.fotoBarang || null);
-                                    setPreviewPhotoTitle(`Foto Barang: ${row.deskripsi || 'Baris #' + (index + 1)}`);
-                                  }}
-                                  className="relative group cursor-pointer w-10 h-10 rounded-lg border border-indigo-200 dark:border-indigo-800 overflow-hidden shrink-0 bg-slate-100"
-                                >
-                                  <img
-                                    src={row.fotoBarang}
-                                    alt="Foto Barang"
-                                    className="w-full h-full object-cover"
-                                    referrerPolicy="no-referrer"
-                                  />
-                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white">
-                                    <Eye className="w-3.5 h-3.5" />
-                                  </div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setPreviewPhotoUrl(row.fotoBarang || null);
-                                    setPreviewPhotoTitle(`Foto Barang: ${row.deskripsi || 'Baris #' + (index + 1)}`);
-                                  }}
-                                  className="text-[11px] text-indigo-600 hover:text-indigo-700 font-bold cursor-pointer"
-                                >
-                                  Lihat Foto
-                                </button>
-                                <span className="text-slate-300 dark:text-slate-700">•</span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveItemPhoto(index)}
-                                  className="text-[11px] text-rose-500 hover:text-rose-700 font-bold cursor-pointer"
-                                >
-                                  Hapus Foto
-                                </button>
-                              </div>
-                            ) : (
-                              <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-dashed border-indigo-300 dark:border-indigo-700 bg-indigo-50/50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-[11px] font-bold hover:bg-indigo-100/60 cursor-pointer transition-colors">
-                                {row.isCompressingPhoto ? (
-                                  <>
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                    <span>Memproses Foto...</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Camera className="w-3.5 h-3.5" />
-                                    <span>Upload / Ambil Foto</span>
-                                  </>
-                                )}
-                                <input
-                                  type="file"
-                                  accept="image/*"
-                                  capture="environment"
-                                  className="hidden"
-                                  disabled={row.isCompressingPhoto}
-                                  onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file) handleItemPhotoUpload(index, file);
-                                  }}
-                                />
-                              </label>
-                            )}
+                        {row.fotoBarang ? (
+                          <div className="h-[34px] flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 rounded-lg px-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPreviewPhotoUrl(row.fotoBarang || null);
+                                setPreviewPhotoTitle(`Foto Barang: ${row.deskripsi || 'Barang #' + (index + 1)}`);
+                              }}
+                              className="w-6 h-6 rounded overflow-hidden shrink-0 border border-slate-200 dark:border-slate-700 cursor-pointer"
+                              title="Lihat Foto"
+                            >
+                              <img
+                                src={row.fotoBarang}
+                                alt="Foto Barang"
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPreviewPhotoUrl(row.fotoBarang || null);
+                                setPreviewPhotoTitle(`Foto Barang: ${row.deskripsi || 'Barang #' + (index + 1)}`);
+                              }}
+                              className="flex-1 text-left text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline truncate cursor-pointer"
+                            >
+                              Lihat
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveItemPhoto(index)}
+                              className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer shrink-0"
+                              title="Hapus Foto"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
-                          <span className="text-[10px] text-slate-400">
-                            Format otomatis dikompresi & disimpan ke Google Drive saat submit
-                          </span>
-                        </div>
+                        ) : (
+                          <label className="w-full h-[34px] inline-flex items-center justify-center gap-1.5 px-2.5 rounded-lg border border-dashed border-indigo-300 dark:border-indigo-700 bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 text-xs font-bold hover:bg-indigo-50 dark:hover:bg-indigo-950/40 cursor-pointer transition-colors">
+                            {row.isCompressingPhoto ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                                <span className="truncate">Proses...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Camera className="w-3.5 h-3.5 shrink-0" />
+                                <span className="truncate">Upload / Kamera</span>
+                              </>
+                            )}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              capture="environment"
+                              className="hidden"
+                              disabled={row.isCompressingPhoto}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleItemPhotoUpload(index, file);
+                              }}
+                            />
+                          </label>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1860,131 +2002,28 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
             <button
               type="button"
               onClick={handleAddRow}
-              className="w-full py-2.5 rounded-xl border border-dashed border-indigo-300 dark:border-indigo-800 bg-indigo-50/40 dark:bg-indigo-950/20 text-indigo-600 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+              className="w-full py-2.5 rounded-xl border border-dashed border-indigo-300 dark:border-indigo-800 bg-indigo-50/40 dark:bg-indigo-950/20 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
             >
-              <Plus className="w-4 h-4" />
-              <span>Tambah Baris Barang Lagi</span>
+              <Plus className="w-3.5 h-3.5" />
+              <span>Tambah Baris Barang</span>
             </button>
-
-            {/* DOKUMENTASI PENGIRIMAN KESELURUHAN (OPSI B: FOTO KOLI / PACKING / BUKTI KIRIM) */}
-            <div className="mt-5 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-850/60 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <h4 className="text-xs font-black uppercase text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                    <ImageIcon className="w-4 h-4 text-emerald-600" />
-                    Dokumentasi Pengiriman Keseluruhan (Foto Koli / Packing / Bukti Fisik)
-                  </h4>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                    Foto tumpukan koli, karung, kardus bersegel, atau kondisi fisik sebelum dikirim (Maks 8 foto).
-                  </p>
-                </div>
-
-                <div>
-                  <input
-                    ref={overallFileInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    capture="environment"
-                    className="hidden"
-                    disabled={isCompressingOverall}
-                    onChange={handleOverallPhotoUpload}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => overallFileInputRef.current?.click()}
-                    disabled={isCompressingOverall || overallPhotos.length >= 8}
-                    className="px-3 py-1.5 rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  >
-                    {isCompressingOverall ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Memproses Foto...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Camera className="w-3.5 h-3.5" />
-                        <span>+ Tambah Foto Koli / Packing</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {overallPhotos.length === 0 ? (
-                <div
-                  onClick={() => overallFileInputRef.current?.click()}
-                  className="p-6 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-white/60 dark:bg-slate-900/40 text-center space-y-1.5 cursor-pointer hover:bg-slate-100/70 transition-colors"
-                >
-                  <UploadCloud className="w-8 h-8 text-slate-400 mx-auto" />
-                  <p className="text-xs font-bold text-slate-600 dark:text-slate-400">
-                    Klik untuk upload foto packing keseluruhan (opsional)
-                  </p>
-                  <p className="text-[10px] text-slate-400">
-                    Bisa ambil langsung dari kamera HP atau pilih dari galeri
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2.5 pt-1">
-                  {overallPhotos.map((photo, pIdx) => (
-                    <div
-                      key={pIdx}
-                      className="group relative rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-900 aspect-square shadow-2xs"
-                    >
-                      <img
-                        src={photo}
-                        alt={`Foto Packing ${pIdx + 1}`}
-                        className="w-full h-full object-cover cursor-pointer"
-                        referrerPolicy="no-referrer"
-                        onClick={() => {
-                          setPreviewPhotoUrl(photo);
-                          setPreviewPhotoTitle(`Dokumentasi Pengiriman #${pIdx + 1}`);
-                        }}
-                      />
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 transition-opacity">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPreviewPhotoUrl(photo);
-                            setPreviewPhotoTitle(`Dokumentasi Pengiriman #${pIdx + 1}`);
-                          }}
-                          className="p-1 rounded-md bg-white/90 text-slate-800 hover:bg-white cursor-pointer"
-                          title="Lihat Foto"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveOverallPhoto(pIdx)}
-                          className="p-1 rounded-md bg-rose-600/90 text-white hover:bg-rose-700 cursor-pointer"
-                          title="Hapus Foto"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                      <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] px-1.5 py-0.5 rounded font-bold">
-                        #{pIdx + 1}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
 
-          <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="text-xs text-slate-500 dark:text-slate-400">
-              Barang yang disubmit langsung masuk ke antrean <strong className="text-amber-600">Dispatched</strong>.
-            </div>
+          {/* Footer Bar (Anti-Pelangi: 1 neutral outline + 1 solid primary) */}
+          <div className="pt-3.5 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+              Foto barang otomatis dikompresi &amp; tersimpan ke Google Drive. Barang masuk antrean{' '}
+              <strong className="text-amber-600 dark:text-amber-400">Dispatched</strong> dan masih bisa ditambah sebelum dikirim.
+            </p>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
               <button
                 type="button"
                 onClick={() => handleSubmitReport(false)}
                 disabled={isSubmittingReport}
-                className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                className="flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs"
               >
-                <CheckCircle2 className="w-4 h-4 text-slate-500" />
+                <CheckCircle2 className="w-3.5 h-3.5 text-slate-500" />
                 <span>Simpan ke Dispatched</span>
               </button>
 
@@ -1992,10 +2031,14 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                 type="button"
                 onClick={() => handleSubmitReport(true)}
                 disabled={isSubmittingReport}
-                className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-600/25 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                className="flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
-                <QrCode className="w-4 h-4" />
-                <span>Submit & Cetak Barcode Koli</span>
+                {isSubmittingReport ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <QrCode className="w-3.5 h-3.5" />
+                )}
+                <span>Submit &amp; Cetak Label Koli</span>
               </button>
             </div>
           </div>
@@ -2003,24 +2046,60 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
       )}
 
       {/* ==================================================================== */}
-      {/* 2. SUB-TAB: DISPATCHED (READY KIRIM)                                 */}
+      {/* 2. SUB-TAB: ANTREAN DISPATCHED (SIAP KIRIM)                          */}
       {/* ==================================================================== */}
       {activeSubTab === 'dispatched' && (
         <div className="space-y-3">
-          <div className="bg-white dark:bg-[#131d31] p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2 flex-1">
-              <div className="relative flex-1 min-w-[200px] max-w-md">
-                <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+          {/* Quick Store Queue Strip */}
+          {dispatchedStoresList.length > 0 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+              <button
+                type="button"
+                onClick={() => setFilterStoreDispatched([])}
+                className={`shrink-0 whitespace-nowrap px-2.5 py-1 rounded-full text-[11px] font-bold border transition-colors cursor-pointer ${
+                  filterStoreDispatched.length === 0
+                    ? 'bg-indigo-600 text-white border-indigo-600'
+                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                }`}
+              >
+                Semua Toko ({dispatchedReports.length} · {totalAllDispatchedKoli} Koli)
+              </button>
+              {dispatchedStoresList.map((ds) => {
+                const isOnlySelected =
+                  filterStoreDispatched.length === 1 && isSameStore(filterStoreDispatched[0], ds.storeName);
+                return (
+                  <button
+                    key={ds.storeName}
+                    type="button"
+                    onClick={() => setFilterStoreDispatched(isOnlySelected ? [] : [ds.storeName])}
+                    className={`shrink-0 whitespace-nowrap px-2.5 py-1 rounded-full text-[11px] font-bold border transition-colors cursor-pointer ${
+                      isOnlySelected
+                        ? 'bg-indigo-600 text-white border-indigo-600'
+                        : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    {ds.storeName} · {ds.koli} Koli ({ds.count})
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Filter & Batch Toolbar */}
+          <div className="bg-white dark:bg-[#131d31] p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs flex flex-wrap items-center justify-between gap-2.5">
+            <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
+              <div className="relative flex-1 min-w-[190px] max-w-sm">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Cari Store, ID, Deskripsi..."
+                  placeholder="Cari toko, barang, No. SJ, ID..."
                   value={searchDispatched}
                   onChange={(e) => setSearchDispatched(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-xs outline-none"
+                  className="w-full pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-lg text-xs outline-none focus:border-indigo-500"
                 />
               </div>
 
-              <div className="w-full sm:w-auto min-w-[220px]">
+              <div className="w-full sm:w-auto min-w-[200px]">
                 <SearchableSelect
                   multiple={true}
                   options={stores.map((s) => {
@@ -2034,15 +2113,14 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                   })}
                   value={filterStoreDispatched}
                   onChange={(val) => setFilterStoreDispatched(val)}
-                  placeholder="Filter Store (Multi-Choice)"
+                  placeholder="Filter Store"
                   searchPlaceholder="Cari toko..."
                   size="sm"
                   icon={<Store className="w-3.5 h-3.5" />}
                 />
               </div>
 
-              {/* Filter Status Cetak Label */}
-              <div className="w-full sm:w-auto min-w-[180px]">
+              <div className="w-full sm:w-auto min-w-[170px]">
                 <SearchableSelect
                   options={[
                     { value: 'all', label: 'Semua Status Label' },
@@ -2072,26 +2150,25 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
               <button
                 type="button"
                 onClick={handleSelectAllDispatched}
-                className="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 cursor-pointer"
+                className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center gap-1.5 cursor-pointer"
               >
                 {selectedDispatchedIds.length === filteredDispatched.length && filteredDispatched.length > 0 ? (
-                  <CheckSquare className="w-4 h-4 text-indigo-600" />
+                  <CheckSquare className="w-3.5 h-3.5 text-indigo-600" />
                 ) : (
-                  <Square className="w-4 h-4 text-slate-400" />
+                  <Square className="w-3.5 h-3.5 text-slate-400" />
                 )}
                 <span>Pilih Semua ({filteredDispatched.length})</span>
               </button>
 
-              {/* Tombol Cetak Barcode Koli Massal */}
               {selectedDispatchedIds.length > 0 ? (
                 <button
                   type="button"
                   onClick={() => handlePrintBulkLabels(selectedDispatchedObjects)}
-                  className="px-3.5 py-1.5 rounded-xl text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-600/25 flex items-center gap-1.5 cursor-pointer transition-all animate-in fade-in"
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-xs flex items-center gap-1.5 cursor-pointer"
                 >
-                  <Printer className="w-4 h-4" />
+                  <Printer className="w-3.5 h-3.5" />
                   <span>
-                    Cetak Barcode Terpilih ({selectedDispatchedIds.length} Lap • {totalKoliSelectedDispatched} Koli)
+                    Cetak Label ({selectedDispatchedIds.length} · {totalKoliSelectedDispatched} Koli)
                   </span>
                 </button>
               ) : (
@@ -2099,32 +2176,29 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                   type="button"
                   onClick={() => handlePrintBulkLabels(filteredDispatched)}
                   disabled={filteredDispatched.length === 0}
-                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800/80 flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                   title="Cetak barcode koli untuk seluruh hasil filter"
                 >
-                  <Printer className="w-4 h-4" />
-                  <span>Cetak Massal Semua ({totalKoliFilteredDispatched} Koli)</span>
+                  <Printer className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                  <span>Cetak Semua Label ({totalKoliFilteredDispatched} Koli)</span>
                 </button>
               )}
             </div>
           </div>
 
-          {/* Banner Toko Spesifik (Jika Filter Toko Aktif) */}
-          {filterStoreDispatched && filteredDispatched.length > 0 && (
-            <div className="bg-linear-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/40 dark:to-blue-950/40 border border-indigo-200/80 dark:border-indigo-800/80 rounded-2xl p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-indigo-600/20">
-                  <Store className="w-5 h-5" />
+          {/* Active Store Filter Banner (Fixed: check length > 0) */}
+          {filterStoreDispatched.length > 0 && filteredDispatched.length > 0 && (
+            <div className="bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/80 rounded-2xl p-3 sm:p-3.5 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                  <Store className="w-4 h-4" />
                 </div>
-                <div>
-                  <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase flex items-center gap-2">
-                    <span>{filterStoreDispatched}</span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-200 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200">
-                      Cabang Aktif
-                    </span>
+                <div className="min-w-0">
+                  <h4 className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white uppercase truncate">
+                    {filterStoreDispatched.join(', ')}
                   </h4>
-                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-                    Terdapat <strong className="text-indigo-600 dark:text-indigo-400">{filteredDispatched.length} laporan</strong> dengan total <strong className="text-indigo-600 dark:text-indigo-400">{totalKoliFilteredDispatched} Koli</strong> siap kirim.
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                    {filteredDispatched.length} laporan · {totalKoliFilteredDispatched} Koli siap dikirim
                   </p>
                 </div>
               </div>
@@ -2133,211 +2207,232 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                 <button
                   type="button"
                   onClick={() => handlePrintBulkLabels(filteredDispatched)}
-                  className="px-3.5 py-2 rounded-xl text-xs font-black text-indigo-700 dark:text-indigo-300 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950 border border-indigo-300 dark:border-indigo-700 flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 flex items-center gap-1.5 cursor-pointer"
                 >
-                  <Printer className="w-4 h-4 text-indigo-600" />
-                  <span>Cetak Barcode Koli {filterStoreDispatched} ({totalKoliFilteredDispatched} Koli)</span>
+                  <Printer className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                  <span>Cetak Label</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleSendSelectedBulkFromDispatched(filteredDispatched)}
-                  className="px-4 py-2 rounded-xl text-xs font-black text-white bg-blue-600 hover:bg-blue-700 flex items-center gap-1.5 shadow-md shadow-blue-600/25 cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 flex items-center gap-1.5 shadow-xs cursor-pointer"
                 >
-                  <Send className="w-4 h-4" />
-                  <span>Kirim Semua ({totalKoliFilteredDispatched} Koli)</span>
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Proses Kirim ({totalKoliFilteredDispatched} Koli)</span>
                 </button>
               </div>
             </div>
           )}
 
           {filteredDispatched.length === 0 ? (
-            <div className="bg-white dark:bg-[#131d31] p-10 rounded-2xl border border-slate-200 dark:border-slate-800 text-center space-y-3">
-              <Box className="w-12 h-12 text-slate-300 mx-auto" />
+            <div className="bg-white dark:bg-[#131d31] p-8 sm:p-10 rounded-2xl border border-slate-200 dark:border-slate-800 text-center space-y-2.5">
+              <Box className="w-10 h-10 text-slate-300 mx-auto" />
               <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                Tidak ada laporan dispatched yang menunggu kirim
+                Tidak ada antrean Dispatched
               </h4>
-              <p className="text-xs text-slate-500">
-                Silakan input barang di tab Form Laporan untuk mencatat barang yang ready dikirim.
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Gunakan tab <strong>1. Input Barang</strong> untuk menambahkan barang yang siap dikirim ke store.
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3.5">
               {filteredDispatched.map((rep) => {
                 const isChecked = selectedDispatchedIds.includes(rep.id);
+                const itemPhotoSet = new Set(
+                  (rep.items || []).map((it) => it.foto_barang).filter(Boolean) as string[]
+                );
+                const extraPhotos = (rep.foto_urls || []).filter(
+                  (u) => Boolean(u) && !itemPhotoSet.has(u)
+                );
 
                 return (
                   <div
                     key={rep.id}
-                    className={`bg-white dark:bg-[#131d31] rounded-2xl border transition-all p-4 space-y-3 ${
+                    className={`bg-white dark:bg-[#131d31] rounded-2xl border transition-all p-3.5 flex flex-col justify-between gap-3 ${
                       isChecked
-                        ? 'border-indigo-500 ring-2 ring-indigo-500/20 shadow-md'
-                        : 'border-slate-200 dark:border-slate-800 shadow-xs'
+                        ? 'border-indigo-500 ring-2 ring-indigo-500/20 shadow-sm'
+                        : 'border-slate-200 dark:border-slate-800 shadow-2xs'
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-3">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleSelectDispatched(rep.id)}
-                          className="mt-0.5 text-slate-400 hover:text-indigo-600 cursor-pointer"
-                        >
-                          {isChecked ? (
-                            <CheckSquare className="w-5 h-5 text-indigo-600" />
-                          ) : (
-                            <Square className="w-5 h-5 text-slate-400" />
-                          )}
-                        </button>
+                    <div className="space-y-2.5">
+                      {/* Card Top Header */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start gap-2.5 min-w-0">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleSelectDispatched(rep.id)}
+                            className="mt-0.5 text-slate-400 hover:text-indigo-600 cursor-pointer shrink-0"
+                            aria-label="Pilih laporan"
+                          >
+                            {isChecked ? (
+                              <CheckSquare className="w-4 h-4 text-indigo-600" />
+                            ) : (
+                              <Square className="w-4 h-4 text-slate-400" />
+                            )}
+                          </button>
 
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h4 className="text-base font-black text-slate-900 dark:text-white uppercase flex items-center gap-1.5">
-                              <Store className="w-4 h-4 text-indigo-500" />
+                          <div className="min-w-0">
+                            <h4
+                              className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white uppercase truncate"
+                              title={rep.store_tujuan}
+                            >
                               {rep.store_tujuan}
                             </h4>
-                            <span className="bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full uppercase">
-                              Dispatched
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                              <span className="font-mono">{rep.id}</span>
+                              {rep.tanggal_laporan && <span>· {rep.tanggal_laporan}</span>}
+                              {rep.pic_nama && <span>· {rep.pic_nama}</span>}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          <span className="px-2 py-0.5 rounded-lg text-xs font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                            {rep.total_koli} Koli
+                          </span>
+                          {rep.is_label_printed ? (
+                            <span
+                              className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700"
+                              title={`Label dicetak: ${rep.label_printed_at || 'Sudah'}`}
+                            >
+                              <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />
+                              Label Siap
                             </span>
-                            {rep.is_label_printed ? (
-                              <span
-                                className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700"
-                                title={`Label dicetak pada: ${rep.label_printed_at || 'Sebelumnya'}`}
-                              >
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                Sudah Cetak Label
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-300/80 dark:border-amber-700/80">
-                                <Printer className="w-3 h-3 text-amber-600 animate-pulse" />
-                                Belum Cetak Label
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                            {rep.tanggal_laporan} • PIC: {rep.pic_nama}
-                          </div>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700">
+                              <Printer className="w-2.5 h-2.5 shrink-0" />
+                              Belum Cetak
+                            </span>
+                          )}
                         </div>
                       </div>
 
-                      <div className="bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800/60 px-3 py-1 rounded-xl text-right">
-                        <span className="text-[10px] text-slate-400 block">Total Koli</span>
-                        <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">
-                          {rep.total_koli} Koli
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Rincian Barang */}
-                    <div className="bg-slate-50/80 dark:bg-slate-800/40 rounded-xl p-2.5 border border-slate-200/80 dark:border-slate-800/80">
-                      <div className="text-[10px] font-black uppercase text-slate-500 mb-1">
-                        Rincian Barang ({rep.items.length} item):
-                      </div>
-                      <div className="divide-y divide-slate-200/60 dark:divide-slate-700/60 text-xs">
-                        {rep.items.map((it, itIdx) => (
-                          <div key={it.id || itIdx} className="py-1 flex justify-between items-center gap-2">
-                            <div className="truncate flex items-center gap-1">
-                              <span className="font-mono text-[10px] text-slate-400 mr-1.5">
-                                [{it.no_surat_jalan}]
-                              </span>
-                              <span className="font-bold">{it.deskripsi}</span>
-                              {it.foto_barang && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setPreviewPhotoUrl(it.foto_barang || null);
-                                    setPreviewPhotoTitle(`Foto Barang: ${it.deskripsi}`);
-                                  }}
-                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 text-[10px] font-bold hover:bg-indigo-100 cursor-pointer shrink-0 ml-1"
-                                  title="Lihat Foto Dokumentasi Barang"
-                                >
-                                  <Camera className="w-3 h-3 text-indigo-500" />
-                                  <span>Foto</span>
-                                </button>
-                              )}
-                            </div>
-                            <div className="shrink-0 font-semibold">
-                              {it.qty} {it.satuan} ({it.hitung_koli} Koli)
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Foto Dokumentasi Pengiriman Keseluruhan (Jika Ada) */}
-                    {rep.foto_urls && rep.foto_urls.length > 0 && (
-                      <div className="flex items-center gap-2 pt-0.5">
-                        <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                          <ImageIcon className="w-3.5 h-3.5 text-emerald-600" />
-                          Dokumentasi Koli ({rep.foto_urls.length}):
-                        </span>
-                        <div className="flex items-center gap-1.5 overflow-x-auto py-1">
-                          {rep.foto_urls.map((photoUrl, pIdx) => (
-                            <div
-                              key={pIdx}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setPreviewPhotoUrl(photoUrl);
-                                setPreviewPhotoTitle(`Dokumentasi Pengiriman ${rep.store_tujuan} #${pIdx + 1}`);
-                              }}
-                              className="w-7 h-7 rounded-md border border-slate-300 dark:border-slate-700 overflow-hidden shrink-0 cursor-pointer hover:opacity-80 transition-opacity bg-slate-100"
-                              title="Klik untuk memperbesar"
-                            >
-                              <img
-                                src={photoUrl}
-                                alt="Dokumentasi"
-                                className="w-full h-full object-cover"
-                                referrerPolicy="no-referrer"
-                              />
+                      {/* Rincian Barang */}
+                      <div className="bg-slate-50/90 dark:bg-slate-800/50 rounded-xl p-2.5 border border-slate-200/80 dark:border-slate-700/70">
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1">
+                          Daftar Barang ({rep.items.length} item)
+                        </div>
+                        <div className="divide-y divide-slate-200/60 dark:divide-slate-700/60 text-xs">
+                          {rep.items.map((it, itIdx) => (
+                            <div key={it.id || itIdx} className="py-1.5 first:pt-0.5 last:pb-0.5 flex justify-between items-start gap-2">
+                              <div className="min-w-0 flex-1 space-y-0.5">
+                                <div className="font-semibold text-slate-800 dark:text-slate-100 leading-snug break-words">
+                                  {it.deskripsi}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  {isValidNoSj(it.no_surat_jalan) && (
+                                    <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-indigo-600 dark:text-indigo-400">
+                                      {it.no_surat_jalan}
+                                    </span>
+                                  )}
+                                  {it.foto_barang && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setPreviewPhotoUrl(it.foto_barang || null);
+                                        setPreviewPhotoTitle(`Foto Barang: ${it.deskripsi}`);
+                                      }}
+                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[10px] font-bold hover:bg-indigo-100 cursor-pointer"
+                                      title="Lihat Foto Barang"
+                                    >
+                                      <Camera className="w-2.5 h-2.5" />
+                                      <span>Foto</span>
+                                    </button>
+                                  )}
+                                </div>
+                                {it.keterangan && (
+                                  <div className="text-[11px] text-slate-500 dark:text-slate-400 italic leading-snug">
+                                    {it.keterangan}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="shrink-0 text-right font-bold text-slate-800 dark:text-slate-100">
+                                <span>{it.qty} {it.satuan}</span>
+                                {it.satuan === 'Pcs' && (
+                                  <span className="block text-[10px] font-medium text-slate-400">
+                                    ({it.hitung_koli} Koli)
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           ))}
                         </div>
                       </div>
-                    )}
 
-                    {/* Actions */}
-                    <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
-                      <div className="flex items-center gap-2">
+                      {/* Foto Tambahan Laporan (hanya tampil jika ada foto non-item legacy) */}
+                      {extraPhotos.length > 0 && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1 shrink-0">
+                            <ImageIcon className="w-3.5 h-3.5 text-indigo-500" />
+                            Lampiran ({extraPhotos.length}):
+                          </span>
+                          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                            {extraPhotos.map((photoUrl, pIdx) => (
+                              <button
+                                key={pIdx}
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPreviewPhotoUrl(photoUrl);
+                                  setPreviewPhotoTitle(`Lampiran ${rep.store_tujuan} #${pIdx + 1}`);
+                                }}
+                                className="w-7 h-7 rounded-md border border-slate-200 dark:border-slate-700 overflow-hidden shrink-0 cursor-pointer hover:opacity-80 bg-slate-100"
+                                title="Klik untuk memperbesar"
+                              >
+                                <img
+                                  src={photoUrl}
+                                  alt="Lampiran"
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Card Footer Actions (Anti-Pelangi) */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 flex-wrap gap-2">
+                      <div className="flex items-center gap-1.5">
                         <button
                           type="button"
                           onClick={() => handleOpenEditDispatched(rep)}
-                          className="px-2.5 py-1.5 rounded-xl text-xs font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 border border-amber-300 dark:border-amber-700 flex items-center gap-1 cursor-pointer transition-colors"
-                          title="Edit Rincian Barang / Toko Tujuan Laporan Ini"
+                          className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center gap-1 cursor-pointer"
+                          title="Edit rincian barang atau toko tujuan"
                         >
-                          <Edit3 className="w-3.5 h-3.5" />
+                          <Edit3 className="w-3.5 h-3.5 text-slate-500" />
                           <span>Edit</span>
                         </button>
 
                         <button
                           type="button"
                           onClick={() => handleDeleteReport(rep)}
-                          className="px-2.5 py-1.5 rounded-xl text-xs text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-800 font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                          className="p-1.5 rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-slate-200 dark:border-slate-700 cursor-pointer transition-colors"
+                          title="Batalkan laporan dari antrean"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
-                          <span>Hapus</span>
                         </button>
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <button
                           type="button"
                           onClick={() => handlePrintLabelsForReport(rep)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1 cursor-pointer transition-colors ${
-                            rep.is_label_printed
-                              ? 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 border-slate-300 dark:border-slate-700'
-                              : 'text-indigo-700 dark:text-indigo-300 bg-indigo-50/70 hover:bg-indigo-100 border-indigo-300 dark:border-indigo-800'
-                          }`}
+                          className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center gap-1 cursor-pointer"
                         >
-                          <Printer className="w-3.5 h-3.5" />
-                          <span>{rep.is_label_printed ? 'Cetak Ulang Label' : 'Cetak Label'}</span>
+                          <Printer className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                          <span>{rep.is_label_printed ? 'Cetak Ulang' : 'Label'}</span>
                         </button>
 
                         <button
                           type="button"
                           onClick={() => handleSendSelectedFromDispatched(rep)}
-                          className="px-3.5 py-1.5 rounded-xl text-xs font-black text-white bg-blue-600 hover:bg-blue-700 flex items-center gap-1 shadow-sm cursor-pointer"
+                          className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 flex items-center gap-1 shadow-2xs cursor-pointer"
                         >
-                          <span>Setup Kirim</span>
+                          <span>Kirim</span>
                           <ArrowRight className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -2348,23 +2443,18 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
             </div>
           )}
 
-          {/* Floating Sticky Action Bar saat ada Laporan Dispatched yang Terpilih */}
+          {/* Floating Sticky Action Bar saat ada Laporan Dispatched Terpilih */}
           {selectedDispatchedIds.length > 0 && (
-            <div className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-2xl bg-slate-900/95 dark:bg-slate-950/95 text-white backdrop-blur-md px-4 py-3 rounded-2xl border border-slate-700 shadow-2xl flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-4 duration-200">
-              <div className="flex items-center gap-2.5">
+            <div className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-2xl bg-slate-900/95 dark:bg-slate-950/95 text-white backdrop-blur-md px-3.5 py-2.5 rounded-2xl border border-slate-700 shadow-2xl flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5 min-w-0">
                 <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
                   <CheckSquare className="w-4 h-4" />
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-black">
-                      {selectedDispatchedIds.length} Laporan Dipilih
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-500/30 text-indigo-200 border border-indigo-400/30">
-                      {totalKoliSelectedDispatched} Koli Total
-                    </span>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold">
+                    {selectedDispatchedIds.length} Laporan · {totalKoliSelectedDispatched} Koli
                   </div>
-                  <div className="text-[11px] text-slate-400 truncate max-w-[200px] sm:max-w-[300px]">
+                  <div className="text-[11px] text-slate-400 truncate max-w-[180px] sm:max-w-[280px]">
                     {selectedDispatchedStoreNames.join(', ')}
                   </div>
                 </div>
@@ -2374,25 +2464,25 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                 <button
                   type="button"
                   onClick={() => handlePrintBulkLabels(selectedDispatchedObjects)}
-                  className="px-3.5 py-2 rounded-xl text-xs font-black bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1.5 shadow-lg shadow-indigo-600/30 cursor-pointer transition-all"
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white flex items-center gap-1.5 cursor-pointer"
                 >
                   <Printer className="w-3.5 h-3.5" />
-                  <span>Cetak Barcode Koli Massal</span>
+                  <span>Cetak Label</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleSendSelectedBulkFromDispatched(selectedDispatchedObjects)}
-                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-1.5 shadow-lg shadow-blue-600/30 cursor-pointer transition-all"
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1.5 cursor-pointer"
                 >
                   <Send className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Setup Kirim</span>
+                  <span>Proses Kirim</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setSelectedDispatchedIds([])}
-                  className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
                   title="Batal Pilih"
                 >
                   <X className="w-4 h-4" />
@@ -2404,50 +2494,62 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
       )}
 
       {/* ==================================================================== */}
-      {/* 3. SUB-TAB: TAB KIRIM (SETUP PENGIRIMAN SPESIFIK STORE)               */}
+      {/* 3. SUB-TAB: PROSES KIRIM (SETUP PENGIRIMAN & DOKUMENTASI MUATAN)      */}
       {/* ==================================================================== */}
       {activeSubTab === 'kirim' && (
-        <div className="space-y-4">
-          <div className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 sm:p-5 space-y-5">
-            {/* Header */}
-            <div className="border-b border-slate-200 dark:border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+          {/* KOLOM KIRI: LANGKAH 1 - PILIH TOKO & BARANG DIKIRIM */}
+          <div className="lg:col-span-7 xl:col-span-8 bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 space-y-4">
+            {/* Header & Toko Selector */}
+            <div className="space-y-3 border-b border-slate-200 dark:border-slate-800 pb-4">
               <div>
-                <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                  <Send className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                  Atur Pengiriman Barang ke Store
+                <h3 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+                  <Send className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                  <span>1. Pilih Toko &amp; Barang yang Dikirim</span>
                 </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Pilih Store Tujuan. Daftar barang dispatched toko tersebut akan otomatis muncul dan dapat dipilih untuk dikirim.
+                <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Pilih toko tujuan lalu centang antrean barang yang diberangkatkan dalam Surat Jalan Pengiriman ini.
                 </p>
               </div>
 
-              {/* Status summary */}
-              {selectedStoreKirim && (
-                <div className="bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800/80 px-3 py-1.5 rounded-xl text-xs">
-                  <span className="text-slate-500">Terpilih untuk dikirim: </span>
-                  <strong className="text-blue-700 dark:text-blue-300">
-                    {totalKoliSelectedForKirim} Koli ({selectedReportIdsForKirim.length} Laporan)
-                  </strong>
+              {/* Quick Store Pills (1 tap pilih toko yang punya antrean) */}
+              {dispatchedStoresList.length > 0 && (
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                  {dispatchedStoresList.map((ds) => {
+                    const isActive = isSameStore(selectedStoreKirim, ds.storeName);
+                    return (
+                      <button
+                        key={ds.storeName}
+                        type="button"
+                        onClick={() => setSelectedStoreKirim(ds.storeName)}
+                        className={`shrink-0 whitespace-nowrap px-2.5 py-1 rounded-full text-[11px] font-bold border transition-colors cursor-pointer ${
+                          isActive
+                            ? 'bg-indigo-600 text-white border-indigo-600'
+                            : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        {ds.storeName} ({ds.koli} Koli)
+                      </button>
+                    );
+                  })}
                 </div>
               )}
-            </div>
 
-            {/* FORM SETUP KIRIM */}
-            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3.5">
-              {/* 1. Pilih Store Tujuan (Searchable Dropdown) */}
-              <div className="sm:col-span-6 space-y-1">
-                <label className="text-xs font-black text-slate-800 dark:text-slate-200 flex items-center gap-1">
-                  <Store className="w-4 h-4 text-blue-600" />
-                  Pilih Store Tujuan <span className="text-rose-500">*</span>
+              {/* Searchable Store Dropdown */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1">
+                  <Store className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Store Tujuan</span>
+                  <span className="text-rose-500">*</span>
                 </label>
                 <SearchableSelect
                   options={[
                     ...dispatchedStoresList.map((ds) => ({
                       value: ds.storeName,
                       label: ds.storeName,
-                      badge: `${ds.koli} Koli Ready`,
+                      badge: `${ds.koli} Koli`,
                       badgeColor: 'emerald' as const,
-                      secondaryLabel: `${ds.count} Laporan Dispatched`,
+                      secondaryLabel: `${ds.count} Laporan Ready`,
                     })),
                     ...stores
                       .filter((s) => !dispatchedStoresList.some((ds) => isSameStore(ds.storeName, s.nama)))
@@ -2461,99 +2563,38 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                   ]}
                   value={selectedStoreKirim}
                   onChange={(val) => setSelectedStoreKirim(val)}
-                  placeholder="-- Cari atau Pilih Toko Cabang Tujuan --"
+                  placeholder="-- Pilih Toko Cabang Tujuan --"
                   searchPlaceholder="Ketik nama atau kode toko..."
                   allowCustom={true}
-                  size="md"
-                  buttonClassName="border-2 border-blue-400 dark:border-blue-600 font-black text-slate-900 dark:text-white"
-                />
-                <div className="text-[11px] text-slate-400">
-                  Saat store dipilih, seluruh barang yang ready kirim di toko ini otomatis muncul di bawah.
-                </div>
-              </div>
-
-              {/* 2. Dikirim Oleh (Driver / Kurir) - PERLU */}
-              <div className="sm:col-span-6 space-y-1">
-                <label className="text-xs font-black text-slate-800 dark:text-slate-200 flex items-center gap-1">
-                  <User className="w-4 h-4 text-blue-600" />
-                  Dikirim Oleh (Driver / Kurir) <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="Contoh: Pak Joko (Driver Internal) / Nama Petugas"
-                  value={dikirimOleh}
-                  onChange={(e) => setDikirimOleh(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                {/* Quick suggestions */}
-                <div className="flex gap-1.5 mt-1 flex-wrap">
-                  {['Driver Toko Internal', 'Kurir Operasional', 'Staff Logistik'].map((sug) => (
-                    <button
-                      key={sug}
-                      type="button"
-                      onClick={() => setDikirimOleh(sug)}
-                      className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 cursor-pointer"
-                    >
-                      {sug}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* 3. Tanggal Kirim */}
-              <div className="sm:col-span-4 space-y-1">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                  Tanggal Kirim
-                </label>
-                <input
-                  type="date"
-                  value={tanggalKirim}
-                  onChange={(e) => setTanggalKirim(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200 outline-none"
-                />
-              </div>
-
-              {/* 4. Catatan Kirim - PERLU */}
-              <div className="sm:col-span-8 space-y-1">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                  <FileText className="w-3.5 h-3.5 text-slate-400" />
-                  Catatan Kirim
-                </label>
-                <input
-                  type="text"
-                  placeholder="Catatan pengiriman untuk toko atau driver (opsional)..."
-                  value={catatanKirim}
-                  onChange={(e) => setCatatanKirim(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-200 outline-none"
+                  size="sm"
                 />
               </div>
             </div>
 
-            {/* DAFTAR BARANG DISPATCHED TOKO TERSEBUT (OTOMATIS MUNCUL) */}
-            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div>
-                  <h4 className="text-xs font-black uppercase text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                    <Box className="w-4 h-4 text-amber-500" />
-                    Daftar Dispatched Toko:{' '}
-                    <span className="text-blue-600 underline">{selectedStoreKirim || '(Pilih Toko di Atas)'}</span>
+            {/* Daftar Dispatched Toko Terpilih */}
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300 truncate">
+                    Antrean: {selectedStoreKirim || '-'}
                   </h4>
-                  <p className="text-[11px] text-slate-500">
-                    Centang barang yang akan diberangkatkan sekarang (bisa semua atau pilih beberapa).
-                  </p>
+                  {selectedStoreKirim && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0">
+                      {selectedReportIdsForKirim.length}/{dispatchedForSelectedStore.length} dipilih · {totalKoliSelectedForKirim} Koli
+                    </span>
+                  )}
                 </div>
 
                 {dispatchedForSelectedStore.length > 0 && (
                   <button
                     type="button"
                     onClick={handleToggleAllKirimForStore}
-                    className="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 flex items-center gap-1.5 cursor-pointer"
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center gap-1.5 cursor-pointer"
                   >
                     {selectedReportIdsForKirim.length === dispatchedForSelectedStore.length ? (
-                      <CheckSquare className="w-4 h-4 text-blue-600" />
+                      <CheckSquare className="w-3.5 h-3.5 text-indigo-600" />
                     ) : (
-                      <Square className="w-4 h-4 text-slate-400" />
+                      <Square className="w-3.5 h-3.5 text-slate-400" />
                     )}
                     <span>
                       {selectedReportIdsForKirim.length === dispatchedForSelectedStore.length
@@ -2565,203 +2606,175 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
               </div>
 
               {!selectedStoreKirim ? (
-                <div className="p-8 text-center bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-dashed border-slate-300 text-slate-400 text-xs">
-                  Pilih Store Tujuan pada dropdown di atas untuk memuat daftar barang dispatched toko tersebut.
+                <div className="p-8 text-center bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 text-slate-500 text-xs">
+                  Pilih Store Tujuan di atas untuk memuat barang yang siap dikirim.
                 </div>
               ) : dispatchedForSelectedStore.length === 0 ? (
-                <div className="p-8 text-center bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-dashed border-slate-300 space-y-2 text-xs">
+                <div className="p-8 text-center bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 space-y-2 text-xs">
                   <Box className="w-8 h-8 text-slate-300 mx-auto" />
-                  <p className="text-slate-500">
-                    Tidak ada barang di antrean Dispatched untuk store <strong>{selectedStoreKirim}</strong>.
+                  <p className="text-slate-500 dark:text-slate-400">
+                    Tidak ada antrean Dispatched untuk store <strong>{selectedStoreKirim}</strong>.
                   </p>
                   <button
                     type="button"
                     onClick={() => setActiveSubTab('laporan')}
-                    className="text-indigo-600 font-bold hover:underline cursor-pointer"
+                    className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer"
                   >
-                    + Buat Laporan Pengiriman Toko Ini
+                    + Tambah Barang ke Antrean
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
                   {dispatchedForSelectedStore.map((r) => {
                     const isSelected = selectedReportIdsForKirim.includes(r.id);
+                    const itemPhotoSet = new Set(
+                      (r.items || []).map((it) => it.foto_barang).filter(Boolean) as string[]
+                    );
+                    const extraPhotos = (r.foto_urls || []).filter(
+                      (u) => Boolean(u) && !itemPhotoSet.has(u)
+                    );
 
                     return (
                       <div
                         key={r.id}
                         onClick={() => handleToggleSelectKirimItem(r.id)}
-                        className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-2.5 ${
+                        className={`p-3 rounded-xl border transition-all cursor-pointer flex flex-col justify-between gap-2.5 ${
                           isSelected
-                            ? 'bg-blue-50/70 dark:bg-blue-950/30 border-blue-500 ring-2 ring-blue-500/20 shadow-sm'
-                            : 'bg-white dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                            ? 'bg-indigo-50/40 dark:bg-indigo-950/30 border-indigo-500 ring-2 ring-indigo-500/20'
+                            : 'bg-slate-50/60 dark:bg-slate-800/30 border-slate-200 dark:border-slate-800 hover:border-slate-300'
                         }`}
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleToggleSelectKirimItem(r.id);
-                              }}
-                              className="text-slate-400 hover:text-blue-600 cursor-pointer"
-                            >
-                              {isSelected ? (
-                                <CheckSquare className="w-5 h-5 text-blue-600" />
-                              ) : (
-                                <Square className="w-5 h-5 text-slate-400" />
-                              )}
-                            </button>
-                            <div>
-                              <div className="text-xs font-black text-slate-800 dark:text-slate-200 font-mono">
-                                {r.id}
+                        <div className="space-y-2">
+                          {/* Top Row */}
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-start gap-2 min-w-0">
+                              <span className="mt-0.5 shrink-0">
+                                {isSelected ? (
+                                  <CheckSquare className="w-4 h-4 text-indigo-600" />
+                                ) : (
+                                  <Square className="w-4 h-4 text-slate-400" />
+                                )}
+                              </span>
+                              <div className="min-w-0">
+                                <div className="text-xs font-mono font-bold text-slate-800 dark:text-slate-100 truncate">
+                                  {r.id}
+                                </div>
+                                <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                                  {r.tanggal_laporan}
+                                </div>
                               </div>
-                              <div className="text-[10px] text-slate-400">Tgl: {r.tanggal_laporan}</div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {r.is_label_printed ? (
+                                <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700">
+                                  <CheckCircle2 className="w-2.5 h-2.5" />
+                                  Label
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700">
+                                  Belum Cetak
+                                </span>
+                              )}
+                              <span className="bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold text-xs px-2 py-0.5 rounded-md">
+                                {r.total_koli} Koli
+                              </span>
                             </div>
                           </div>
 
-                          <span className="bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-black text-xs px-2 py-0.5 rounded-md">
-                            {r.total_koli} Koli
-                          </span>
-                        </div>
-
-                        {/* Rincian item: Detil Lengkap dengan No Surat Jalan & Foto */}
-                        <div className="space-y-2">
-                          <div className="text-[11px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                            <Box className="w-3.5 h-3.5 text-indigo-600" />
-                            <span>Rincian Barang ({r.items.length} Item):</span>
-                          </div>
-
-                          <div className="space-y-2">
-                            {r.items.map((it, i) => {
-                              const sjNumber =
-                                it.no_surat_jalan && it.no_surat_jalan !== 'Tidak ada no surat jalan'
-                                  ? it.no_surat_jalan
-                                  : r.id;
-
-                              return (
-                                <div
-                                  key={it.id || i}
-                                  className="bg-white dark:bg-slate-900/80 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs space-y-1.5 shadow-2xs"
-                                >
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div className="flex-1 min-w-0">
-                                      {/* No Surat Jalan Badge */}
-                                      <div className="inline-flex items-center gap-1 text-[11px] font-mono font-black text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800/80 mb-1">
-                                        <FileText className="w-3 h-3 text-indigo-500 shrink-0" />
-                                        <span>No. SJ: {sjNumber}</span>
-                                      </div>
-
-                                      {/* Nama / Deskripsi Barang */}
-                                      <div className="font-bold text-slate-900 dark:text-white text-xs leading-snug">
-                                        {it.deskripsi}
-                                      </div>
-
-                                      {/* Qty & Hitung Koli */}
-                                      <div className="text-[11px] font-medium text-slate-600 dark:text-slate-400 mt-0.5 flex flex-wrap items-center gap-1.5">
-                                        <span>
-                                          Qty: <strong className="text-slate-800 dark:text-slate-200">{it.qty} {it.satuan}</strong>
-                                        </span>
-                                        <span>•</span>
-                                        <span className="font-bold text-indigo-600 dark:text-indigo-400">
-                                          Muatan: {it.hitung_koli} Koli
-                                        </span>
-                                        {it.keterangan && (
-                                          <>
-                                            <span>•</span>
-                                            <span className="italic text-slate-500">"{it.keterangan}"</span>
-                                          </>
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    {/* Foto Barang jika tersedia */}
-                                    {it.foto_barang && (
-                                      <div
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setPreviewPhotoUrl(it.foto_barang!);
-                                          setPreviewPhotoTitle(`Foto Barang: ${it.deskripsi} (SJ: ${sjNumber})`);
-                                        }}
-                                        className="shrink-0 relative group cursor-pointer"
-                                        title="Klik untuk memperbesar foto barang"
-                                      >
-                                        <img
-                                          src={it.foto_barang}
-                                          alt={it.deskripsi}
-                                          className="w-14 h-14 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shadow-xs group-hover:ring-2 group-hover:ring-blue-500 transition-all"
-                                        />
-                                        <div className="absolute inset-0 bg-black/30 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white">
-                                          <Camera className="w-4 h-4" />
-                                        </div>
-                                      </div>
-                                    )}
+                          {/* Item List (Max 2 nesting levels — no inner cards) */}
+                          <div className="bg-white dark:bg-slate-900/70 rounded-lg border border-slate-200/80 dark:border-slate-800 px-2.5 py-1.5 divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+                            {r.items.map((it, i) => (
+                              <div key={it.id || i} className="py-1.5 flex items-start justify-between gap-2.5">
+                                <div className="flex-1 min-w-0 space-y-0.5">
+                                  <div className="font-semibold text-slate-900 dark:text-white leading-snug break-words">
+                                    {it.deskripsi}
                                   </div>
+                                  <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                                    {isValidNoSj(it.no_surat_jalan) && (
+                                      <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                                        {it.no_surat_jalan}
+                                      </span>
+                                    )}
+                                    <span className="font-bold text-slate-700 dark:text-slate-200">
+                                      {it.qty} {it.satuan}
+                                    </span>
+                                    {it.satuan === 'Pcs' && <span>({it.hitung_koli} Koli)</span>}
+                                  </div>
+                                  {it.keterangan && (
+                                    <div className="text-[11px] italic text-slate-500 dark:text-slate-400">
+                                      {it.keterangan}
+                                    </div>
+                                  )}
                                 </div>
-                              );
-                            })}
-                          </div>
 
-                          {/* Foto Dokumentasi Koli / Laporan jika tersedia */}
-                          {r.foto_urls && r.foto_urls.length > 0 && (
-                            <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80">
-                              <div className="text-[11px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1 mb-1.5">
-                                <Camera className="w-3.5 h-3.5 text-emerald-600" />
-                                <span>Foto Dokumentasi Koli ({r.foto_urls.length} Foto):</span>
-                              </div>
-                              <div className="flex items-center gap-2 overflow-x-auto py-1">
-                                {r.foto_urls.map((photoUrl, pIdx) => (
-                                  <div
-                                    key={pIdx}
+                                {it.foto_barang && (
+                                  <button
+                                    type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      setPreviewPhotoUrl(photoUrl);
-                                      setPreviewPhotoTitle(`Dokumentasi Koli ${r.store_tujuan} #${pIdx + 1}`);
+                                      setPreviewPhotoUrl(it.foto_barang!);
+                                      setPreviewPhotoTitle(`Foto Barang: ${it.deskripsi}`);
                                     }}
-                                    className="relative group shrink-0 cursor-pointer"
-                                    title="Klik untuk memperbesar foto koli"
+                                    className="shrink-0 w-10 h-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 cursor-pointer hover:ring-2 hover:ring-indigo-500 bg-slate-100"
+                                    title="Klik untuk memperbesar foto barang"
                                   >
                                     <img
-                                      src={photoUrl}
-                                      alt={`Koli ${pIdx + 1}`}
-                                      className="w-12 h-12 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shadow-xs group-hover:ring-2 group-hover:ring-emerald-500 transition-all"
+                                      src={it.foto_barang}
+                                      alt={it.deskripsi}
+                                      className="w-full h-full object-cover"
+                                      referrerPolicy="no-referrer"
                                     />
-                                    <div className="absolute inset-0 bg-black/30 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white">
-                                      <Eye className="w-3.5 h-3.5" />
-                                    </div>
-                                  </div>
-                                ))}
+                                  </button>
+                                )}
                               </div>
+                            ))}
+                          </div>
+
+                          {/* Foto Tambahan Laporan (hanya jika ada foto non-item legacy) */}
+                          {extraPhotos.length > 0 && (
+                            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-0.5">
+                              <span className="text-[10px] font-bold text-slate-500 shrink-0">
+                                Lampiran ({extraPhotos.length}):
+                              </span>
+                              {extraPhotos.map((photoUrl, pIdx) => (
+                                <button
+                                  key={pIdx}
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPreviewPhotoUrl(photoUrl);
+                                    setPreviewPhotoTitle(`Lampiran ${r.store_tujuan} #${pIdx + 1}`);
+                                  }}
+                                  className="w-8 h-8 rounded-md overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 cursor-pointer"
+                                  title="Lihat Foto"
+                                >
+                                  <img
+                                    src={photoUrl}
+                                    alt={`Lampiran ${pIdx + 1}`}
+                                    className="w-full h-full object-cover"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                </button>
+                              ))}
                             </div>
                           )}
                         </div>
 
-                        {/* Footer Card: Label Status & Edit Button */}
-                        <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/80 text-xs">
+                        {/* Footer */}
+                        <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/70 dark:border-slate-800 text-[11px]">
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               handleOpenEditDispatched(r);
                             }}
-                            className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 hover:text-amber-700 font-bold hover:underline cursor-pointer"
+                            className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 font-bold cursor-pointer"
                           >
                             <Edit3 className="w-3 h-3" />
-                            <span>Edit Laporan</span>
+                            <span>Edit Barang</span>
                           </button>
-
-                          {r.is_label_printed ? (
-                            <span className="inline-flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
-                              <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
-                              Label Siap
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
-                              <Printer className="w-2.5 h-2.5 text-amber-600" />
-                              Belum Cetak Label
-                            </span>
-                          )}
+                          <span className="text-slate-400">PIC: {r.pic_nama}</span>
                         </div>
                       </div>
                     );
@@ -2769,61 +2782,222 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                 </div>
               )}
             </div>
+          </div>
 
-            {/* SUBMIT BUTTON */}
-            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <div className="text-xs text-slate-500">
-                Alur: <strong>Submit Kirim</strong> → <strong>Cetak Surat Jalan (A4 Rangkap 2)</strong> → Masuk ke <strong>Histori</strong>.
+          {/* KOLOM KANAN STICKY: LANGKAH 2 - DETAIL PENGIRIMAN & DOKUMENTASI KESELURUHAN */}
+          <div className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-3 bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 space-y-4">
+            <div className="border-b border-slate-200 dark:border-slate-800 pb-3">
+              <h3 className="text-base font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+                <Truck className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                <span>2. Detail &amp; Dokumentasi Kirim</span>
+              </h3>
+              <div className="mt-2 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs flex items-center justify-between gap-2">
+                <span className="font-bold text-slate-700 dark:text-slate-200 truncate">
+                  {selectedStoreKirim || 'Belum pilih toko'}
+                </span>
+                <span className="font-bold text-indigo-600 dark:text-indigo-400 shrink-0">
+                  {selectedReportIdsForKirim.length} Lap · {totalKoliSelectedForKirim} Koli
+                </span>
+              </div>
+            </div>
+
+            {/* Form Detail Kirim */}
+            <div className="space-y-3 text-xs">
+              {/* Driver / Kurir */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                  <User className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Dikirim Oleh (Driver / Kurir)</span>
+                  <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Pak Joko / Kurir Internal"
+                  value={dikirimOleh}
+                  onChange={(e) => setDikirimOleh(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-indigo-500"
+                />
+                <div className="flex gap-1.5 pt-0.5 flex-wrap">
+                  {['Driver Toko Internal', 'Kurir Operasional', 'Staff Logistik'].map((sug) => (
+                    <button
+                      key={sug}
+                      type="button"
+                      onClick={() => setDikirimOleh(sug)}
+                      className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+                    >
+                      {sug}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <button
-                  type="button"
-                  onClick={() => handlePrintBulkLabels(selectedDispatchedObjectsForKirim)}
-                  disabled={selectedReportIdsForKirim.length === 0}
-                  className="flex-1 sm:flex-none px-4 py-3 rounded-xl text-xs font-black text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800/80 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                  title="Cetak barcode koli untuk barang yang dipilih"
-                >
-                  <Printer className="w-4 h-4" />
-                  <span>Cetak Label Koli ({totalKoliSelectedForKirim} Koli)</span>
-                </button>
+              {/* Tanggal Kirim */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Tanggal Kirim</span>
+                </label>
+                <input
+                  type="date"
+                  value={tanggalKirim}
+                  onChange={(e) => setTanggalKirim(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-indigo-500"
+                />
+              </div>
 
+              {/* Catatan Kirim */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                  <FileText className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Catatan Kirim (Opsional)</span>
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Catatan serah terima untuk toko atau driver..."
+                  value={catatanKirim}
+                  onChange={(e) => setCatatanKirim(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-indigo-500 resize-none"
+                />
+              </div>
+            </div>
+
+            {/* DOKUMENTASI PENGIRIMAN KESELURUHAN (PINDAH KE PROSES KIRIM) */}
+            <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h4 className="text-xs font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                    <Camera className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <span>Foto Muatan Keseluruhan ({kirimOverallPhotos.length}/8)</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                    Foto tumpukan koli final, kondisi muatan, atau bukti serah terima driver sebelum berangkat.
+                  </p>
+                </div>
+
+                <input
+                  ref={kirimPhotoInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  capture="environment"
+                  className="hidden"
+                  disabled={isCompressingKirimPhotos}
+                  onChange={handleKirimOverallPhotoUpload}
+                />
                 <button
                   type="button"
-                  onClick={handleSubmitKirim}
-                  disabled={isProcessingKirim || selectedReportIdsForKirim.length === 0}
-                  className="flex-1 sm:flex-none px-6 py-3 rounded-xl text-sm font-black text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/25 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  onClick={() => kirimPhotoInputRef.current?.click()}
+                  disabled={isCompressingKirimPhotos || kirimOverallPhotos.length >= 8}
+                  className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center gap-1 shrink-0 cursor-pointer disabled:opacity-50"
                 >
+                  {isCompressingKirimPhotos ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Plus className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                  )}
+                  <span>Foto</span>
+                </button>
+              </div>
+
+              {kirimOverallPhotos.length === 0 ? (
+                <div
+                  onClick={() => kirimPhotoInputRef.current?.click()}
+                  className="p-4 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/30 text-center space-y-1 cursor-pointer hover:bg-slate-100/70 dark:hover:bg-slate-800/50 transition-colors"
+                >
+                  <UploadCloud className="w-6 h-6 text-slate-400 mx-auto" />
+                  <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                    Upload / Ambil Foto Keseluruhan (Opsional)
+                  </p>
+                  <p className="text-[10px] text-slate-400">Maksimal 8 foto, otomatis dikompresi ke Google Drive</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                  {kirimOverallPhotos.map((photo, pIdx) => (
+                    <div
+                      key={pIdx}
+                      className="group relative rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-slate-100 aspect-square"
+                    >
+                      <img
+                        src={photo}
+                        alt={`Foto Muatan ${pIdx + 1}`}
+                        className="w-full h-full object-cover cursor-pointer"
+                        referrerPolicy="no-referrer"
+                        onClick={() => {
+                          setPreviewPhotoUrl(photo);
+                          setPreviewPhotoTitle(`Foto Muatan Keseluruhan #${pIdx + 1}`);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveKirimOverallPhoto(pIdx)}
+                        className="absolute top-1 right-1 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center text-[10px] shadow-xs cursor-pointer hover:bg-rose-700"
+                        title="Hapus Foto"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                      <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] px-1.5 py-0.5 rounded font-bold">
+                        #{pIdx + 1}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Action Footer (Anti-Pelangi: 1 neutral outline + 1 solid primary) */}
+            <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2">
+              <button
+                type="button"
+                onClick={() => handlePrintBulkLabels(selectedDispatchedObjectsForKirim)}
+                disabled={selectedReportIdsForKirim.length === 0}
+                className="w-full px-4 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Printer className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                <span>Cetak Label Koli ({totalKoliSelectedForKirim} Koli)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSubmitKirim}
+                disabled={isProcessingKirim || selectedReportIdsForKirim.length === 0}
+                className="w-full px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isProcessingKirim ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
                   <Send className="w-4 h-4" />
-                  <span>Submit Kirim & Cetak SJ</span>
-                </button>
-              </div>
+                )}
+                <span>Konfirmasi Kirim &amp; Cetak SJ</span>
+              </button>
+
+              <p className="text-[10px] text-center text-slate-400">
+                Setelah konfirmasi, Surat Jalan A4 Rangkap 2 otomatis siap dicetak dan masuk ke Histori Kirim.
+              </p>
             </div>
           </div>
         </div>
       )}
 
       {/* ==================================================================== */}
-      {/* 4. SUB-TAB: HISTORI PENGIRIMAN                                       */}
-      {/* Fitur: Cetak Ulang Surat Jalan, Edit, Cancel/Delete, Histori Log     */}
+      {/* 4. SUB-TAB: HISTORI KIRIM                                            */}
       {/* ==================================================================== */}
       {activeSubTab === 'histori' && (
         <div className="space-y-3">
           {/* Toolbar */}
-          <div className="bg-white dark:bg-[#131d31] p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2 flex-1">
-              <div className="relative flex-1 min-w-[200px] max-w-md">
-                <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+          <div className="bg-white dark:bg-[#131d31] p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs flex flex-wrap items-center justify-between gap-2.5">
+            <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
+              <div className="relative flex-1 min-w-[190px] max-w-sm">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Cari Store, Driver, Catatan, ID..."
+                  placeholder="Cari No. SJ, Store, Driver, Barang..."
                   value={searchHistori}
                   onChange={(e) => setSearchHistori(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-xs outline-none"
+                  className="w-full pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-lg text-xs outline-none focus:border-indigo-500"
                 />
               </div>
 
-              <div className="w-full sm:w-auto min-w-[220px]">
+              <div className="w-full sm:w-auto min-w-[200px]">
                 <SearchableSelect
                   multiple={true}
                   options={stores.map((s) => {
@@ -2832,218 +3006,368 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                       value: s.nama,
                       label: s.nama,
                       badge: countInHistori > 0 ? `${countInHistori} SJ` : undefined,
-                      badgeColor: 'blue' as const,
+                      badgeColor: 'indigo' as const,
                     };
                   })}
                   value={filterStoreHistori}
                   onChange={(val) => setFilterStoreHistori(val)}
-                  placeholder="Filter Store (Multi-Choice)"
+                  placeholder="Filter Store"
                   searchPlaceholder="Cari toko..."
                   size="sm"
                   icon={<Store className="w-3.5 h-3.5" />}
                 />
               </div>
+
+              {/* Status Filter */}
+              <div className="inline-flex items-center rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-0.5 text-[11px] font-bold">
+                {(
+                  [
+                    { id: 'all', label: 'Semua' },
+                    { id: 'active', label: 'Terkirim' },
+                    { id: 'cancelled', label: 'Dibatalkan' },
+                  ] as const
+                ).map((st) => (
+                  <button
+                    key={st.id}
+                    type="button"
+                    onClick={() => setFilterStatusHistori(st.id)}
+                    className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                      filterStatusHistori === st.id
+                        ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs'
+                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    {st.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <div className="text-xs font-bold text-slate-500">
-              Total <strong className="text-emerald-600">{filteredHistoriBatches.length}</strong> Surat Jalan Pengiriman (Batch)
+            <div className="text-xs font-bold text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 shrink-0">
+              {filteredHistoriBatches.length} SJ · {totalKoliHistori} Koli
             </div>
           </div>
 
           {filteredHistoriBatches.length === 0 ? (
-            <div className="bg-white dark:bg-[#131d31] p-10 rounded-2xl border border-slate-200 dark:border-slate-800 text-center space-y-3">
-              <Clock className="w-12 h-12 text-slate-300 mx-auto" />
+            <div className="bg-white dark:bg-[#131d31] p-8 sm:p-10 rounded-2xl border border-slate-200 dark:border-slate-800 text-center space-y-2.5">
+              <Clock className="w-10 h-10 text-slate-300 mx-auto" />
               <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">
                 Belum ada histori pengiriman
               </h4>
-              <p className="text-xs text-slate-500">
-                Laporan yang telah diproses di tab Kirim akan otomatis tercatat per Batch (1 Batch = 1 No SJ Pengiriman) di sini.
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Pengiriman yang diproses di tab <strong>3. Proses Kirim</strong> otomatis tercatat di sini per Nomor SJ.
               </p>
             </div>
           ) : (
-            <div className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs whitespace-nowrap">
-                  <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-800">
-                    <tr>
-                      <th className="px-3.5 py-3">No. SJ Pengiriman & Tgl</th>
-                      <th className="px-3.5 py-3">Store Tujuan</th>
-                      <th className="px-3.5 py-3">Dikirim Oleh / Driver</th>
-                      <th className="px-3.5 py-3">Muatan Koli & Barang</th>
-                      <th className="px-3.5 py-3">Foto Dokumentasi</th>
-                      <th className="px-3.5 py-3">Catatan</th>
-                      <th className="px-3.5 py-3">Status</th>
-                      <th className="px-3.5 py-3 text-right">Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {filteredHistoriBatches.map((batch) => {
-                      const isCancelled = batch.status === 'cancelled';
+            <>
+              {/* DESKTOP TABLE (lg:table-fixed proportional columns) */}
+              <div className="hidden md:block bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs overflow-hidden">
+                <div className="w-full overflow-x-auto">
+                  <table className="w-full lg:table-fixed text-left text-xs">
+                    <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-800">
+                      <tr>
+                        <th className="px-3.5 py-2.5 lg:w-[17%]">No. SJ &amp; Tanggal</th>
+                        <th className="px-3.5 py-2.5 lg:w-[18%]">Store Tujuan</th>
+                        <th className="px-3.5 py-2.5 lg:w-[19%]">Muatan &amp; Ringkasan</th>
+                        <th className="px-3.5 py-2.5 lg:w-[15%]">Driver &amp; Catatan</th>
+                        <th className="px-3.5 py-2.5 lg:w-[10%]">Dokumentasi</th>
+                        <th className="px-3.5 py-2.5 lg:w-[9%]">Status</th>
+                        <th className="px-3.5 py-2.5 lg:w-[12%] text-right">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {filteredHistoriBatches.map((batch) => {
+                        const isCancelled = batch.status === 'cancelled';
+                        const itemSummary = batch.reports
+                          .flatMap((r) => r.items)
+                          .map((it) => it.deskripsi)
+                          .filter(Boolean)
+                          .join(', ');
 
-                      return (
-                        <tr
-                          key={batch.tripId}
-                          onClick={() => setSelectedBatchDetail(batch)}
-                          className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors cursor-pointer group"
-                        >
-                          {/* No. SJ Pengiriman & Tgl */}
-                          <td className="px-3.5 py-3">
-                            <div className="font-mono font-black text-blue-600 dark:text-blue-400 group-hover:underline flex items-center gap-1.5">
-                              <FileText className="w-3.5 h-3.5 text-blue-500" />
-                              <span>{batch.tripId}</span>
-                            </div>
-                            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-                              {batch.tanggalKirim} {batch.waktuKirim && `• ${batch.waktuKirim}`}
-                            </div>
-                          </td>
-
-                          {/* Store Tujuan */}
-                          <td className="px-3.5 py-3">
-                            <div className="font-black text-slate-900 dark:text-white uppercase flex items-center gap-1.5">
-                              <Store className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                              <span className="truncate max-w-[200px]">{batch.storeTujuan}</span>
-                            </div>
-                            <div className="text-[10px] text-slate-400 mt-0.5">
-                              {batch.reports.length} Laporan SJB • {batch.totalItemCount} Macam Barang
-                            </div>
-                          </td>
-
-                          {/* Dikirim Oleh / Driver */}
-                          <td className="px-3.5 py-3">
-                            <div className="font-bold text-slate-800 dark:text-slate-200">
-                              {batch.dikirimOleh}
-                            </div>
-                            {(batch.armada || batch.noPolisi) && (
-                              <div className="text-[10px] text-slate-400 mt-0.5">
-                                {batch.armada} {batch.noPolisi && `(${batch.noPolisi})`}
+                        return (
+                          <tr
+                            key={batch.tripId}
+                            onClick={() => setSelectedBatchDetail(batch)}
+                            className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors cursor-pointer group"
+                          >
+                            {/* 1. No. SJ & Tanggal */}
+                            <td className="px-3.5 py-3 align-top">
+                              <div className="font-mono font-bold text-indigo-600 dark:text-indigo-400 group-hover:underline truncate" title={batch.tripId}>
+                                {batch.tripId}
                               </div>
-                            )}
-                          </td>
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                                {[batch.tanggalKirim, batch.waktuKirim].filter(Boolean).join(' · ')}
+                              </div>
+                            </td>
 
-                          {/* Muatan Koli & Barang */}
-                          <td className="px-3.5 py-3">
-                            <div className="inline-flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-black px-2.5 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800/60">
-                              <Box className="w-3.5 h-3.5 text-indigo-500" />
-                              <span>{batch.totalKoli} Koli</span>
-                            </div>
-                          </td>
+                            {/* 2. Store Tujuan */}
+                            <td className="px-3.5 py-3 align-top">
+                              <div
+                                className="font-extrabold text-slate-900 dark:text-white uppercase truncate"
+                                title={batch.storeTujuan}
+                              >
+                                {batch.storeTujuan}
+                              </div>
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                {batch.reports.length} lap · {batch.totalItemCount} barang
+                              </div>
+                            </td>
 
-                          {/* Foto Dokumentasi */}
-                          <td className="px-3.5 py-3" onClick={(e) => e.stopPropagation()}>
-                            {batch.allPhotos.length > 0 ? (
-                              <div className="flex items-center gap-1.5">
+                            {/* 3. Muatan & Ringkasan */}
+                            <td className="px-3.5 py-3 align-top">
+                              <span className="inline-flex items-center gap-1 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold text-[11px] px-2 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-800">
+                                {batch.totalKoli} Koli
+                              </span>
+                              {itemSummary && (
+                                <div
+                                  className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 truncate"
+                                  title={itemSummary}
+                                >
+                                  {itemSummary}
+                                </div>
+                              )}
+                            </td>
+
+                            {/* 4. Driver & Catatan */}
+                            <td className="px-3.5 py-3 align-top">
+                              <div className="font-semibold text-slate-800 dark:text-slate-200 truncate" title={batch.dikirimOleh}>
+                                {batch.dikirimOleh}
+                              </div>
+                              {batch.catatanKirim && (
+                                <div
+                                  className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5"
+                                  title={batch.catatanKirim}
+                                >
+                                  {batch.catatanKirim}
+                                </div>
+                              )}
+                            </td>
+
+                            {/* 5. Dokumentasi */}
+                            <td className="px-3.5 py-3 align-top" onClick={(e) => e.stopPropagation()}>
+                              {batch.allPhotos.length > 0 ? (
                                 <button
                                   type="button"
                                   onClick={() => {
                                     setPreviewPhotoUrl(batch.allPhotos[0]);
-                                    setPreviewPhotoTitle(`Foto Dokumentasi ${batch.tripId} - ${batch.storeTujuan}`);
+                                    setPreviewPhotoTitle(`Dokumentasi ${batch.tripId} — ${batch.storeTujuan}`);
                                   }}
-                                  className="relative group/photo shrink-0 cursor-pointer"
-                                  title="Klik untuk melihat foto"
+                                  className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 cursor-pointer"
+                                  title={`${batch.tripPhotos.length} foto kirim · ${batch.itemPhotos.length} foto barang`}
                                 >
                                   <img
                                     src={batch.allPhotos[0]}
                                     alt="Foto"
-                                    className="w-9 h-9 rounded-lg object-cover border border-slate-200 dark:border-slate-700 group-hover/photo:ring-2 group-hover/photo:ring-emerald-500"
+                                    className="w-5 h-5 rounded object-cover shrink-0"
+                                    referrerPolicy="no-referrer"
                                   />
+                                  <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200">
+                                    {batch.allPhotos.length} Foto
+                                  </span>
                                 </button>
-                                <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                                  {batch.allPhotos.length} Foto
+                              ) : (
+                                <span className="text-slate-400 text-[11px]">-</span>
+                              )}
+                            </td>
+
+                            {/* 6. Status */}
+                            <td className="px-3.5 py-3 align-top">
+                              {isCancelled ? (
+                                <span className="inline-flex items-center gap-1 bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800 font-bold text-[10px] px-2 py-0.5 rounded-full">
+                                  Dibatalkan
                                 </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700 font-bold text-[10px] px-2 py-0.5 rounded-full">
+                                  Terkirim
+                                </span>
+                              )}
+                            </td>
+
+                            {/* 7. Aksi (Neutral Outline/Ghost) */}
+                            <td className="px-3.5 py-3 align-top text-right" onClick={(e) => e.stopPropagation()}>
+                              <div className="inline-flex items-center justify-end gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedBatchDetail(batch)}
+                                  className="p-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 cursor-pointer"
+                                  title="Lihat Rincian & Foto"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleOpenSuratJalanPrint(batch.reports, {
+                                      id: batch.tripId,
+                                      tanggal_kirim: batch.tanggalKirim,
+                                      dikirim_oleh: batch.dikirimOleh,
+                                      armada: batch.armada,
+                                      no_polisi: batch.noPolisi,
+                                      catatan: batch.catatanKirim,
+                                    })
+                                  }
+                                  className="p-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-indigo-600 dark:text-indigo-400 hover:bg-slate-50 cursor-pointer"
+                                  title="Cetak Ulang Surat Jalan"
+                                >
+                                  <Printer className="w-3.5 h-3.5" />
+                                </button>
+
+                                {!isCancelled && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEditTrip(batch)}
+                                      className="p-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 cursor-pointer"
+                                      title="Edit Pengiriman & Foto"
+                                    >
+                                      <Edit className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenCancelTrip(batch)}
+                                      className="p-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                                      title="Batalkan Kirim (Kembali ke Dispatched)"
+                                    >
+                                      <XCircle className="w-3.5 h-3.5" />
+                                    </button>
+                                  </>
+                                )}
                               </div>
-                            ) : (
-                              <span className="text-slate-400 text-[11px] italic">Tidak ada foto</span>
-                            )}
-                          </td>
-
-                          {/* Catatan */}
-                          <td className="px-3.5 py-3 text-slate-600 dark:text-slate-400 max-w-[160px] truncate">
-                            {batch.catatanKirim || '-'}
-                          </td>
-
-                          {/* Status */}
-                          <td className="px-3.5 py-3">
-                            {isCancelled ? (
-                              <span className="bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300 font-black text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 w-fit">
-                                <XCircle className="w-3 h-3 text-rose-600" />
-                                Dibatalkan
-                              </span>
-                            ) : (
-                              <span className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 font-black text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 w-fit">
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                Terkirim
-                              </span>
-                            )}
-                          </td>
-
-                          {/* Aksi: Rincian, Cetak, Edit, Batal Kirim */}
-                          <td className="px-3.5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex items-center justify-end gap-1.5">
-                              {/* 1. Lihat Rincian Barang */}
-                              <button
-                                type="button"
-                                onClick={() => setSelectedBatchDetail(batch)}
-                                className="px-2.5 py-1 text-[11px] font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 rounded-lg flex items-center gap-1 cursor-pointer"
-                                title="Lihat Popup Rincian Data Barang yang Dikirim"
-                              >
-                                <Eye className="w-3 h-3 text-slate-500" />
-                                Rincian
-                              </button>
-
-                              {/* 2. Cetak Ulang Surat Jalan Pengiriman */}
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleOpenSuratJalanPrint(batch.reports, {
-                                    id: batch.tripId,
-                                    tanggal_kirim: batch.tanggalKirim,
-                                    dikirim_oleh: batch.dikirimOleh,
-                                    armada: batch.armada,
-                                    no_polisi: batch.noPolisi,
-                                    catatan: batch.catatanKirim,
-                                  })
-                                }
-                                className="px-2.5 py-1 text-[11px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 rounded-lg flex items-center gap-1 cursor-pointer"
-                                title="Cetak Surat Jalan Pengiriman (A4 Rangkap 2)"
-                              >
-                                <Printer className="w-3 h-3" />
-                                Cetak SJ
-                              </button>
-
-                              {/* 3. Edit Tanggal, Driver, Barang */}
-                              {!isCancelled && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenEditTrip(batch)}
-                                  className="px-2.5 py-1 text-[11px] font-bold text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-lg flex items-center gap-1 cursor-pointer"
-                                  title="Edit Tanggal, Driver/Kurir, dan Barang Pengiriman"
-                                >
-                                  <Edit className="w-3 h-3" />
-                                  Edit
-                                </button>
-                              )}
-
-                              {/* 4. Batal Kirim (Otomatis Balik ke Dispatched) */}
-                              {!isCancelled && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenCancelTrip(batch)}
-                                  className="px-2 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg flex items-center gap-1 cursor-pointer"
-                                  title="Batalkan Pengiriman (Semua barang otomatis kembali ke Dispatched)"
-                                >
-                                  <XCircle className="w-3 h-3" />
-                                  Batal Kirim
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
+
+              {/* MOBILE CARD LIST (HP / SELULER < md, zero horizontal scroll) */}
+              <div className="md:hidden space-y-2.5">
+                {filteredHistoriBatches.map((batch) => {
+                  const isCancelled = batch.status === 'cancelled';
+                  const itemSummary = batch.reports
+                    .flatMap((r) => r.items)
+                    .map((it) => it.deskripsi)
+                    .filter(Boolean)
+                    .join(', ');
+
+                  return (
+                    <div
+                      key={batch.tripId}
+                      onClick={() => setSelectedBatchDetail(batch)}
+                      className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 p-3.5 space-y-2.5 shadow-2xs cursor-pointer"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400 truncate">
+                          {batch.tripId}
+                        </span>
+                        {isCancelled ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800 shrink-0">
+                            Dibatalkan
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700 shrink-0">
+                            Terkirim
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <h4 className="text-sm font-extrabold text-slate-900 dark:text-white uppercase truncate">
+                            {batch.storeTujuan}
+                          </h4>
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                            {[batch.tanggalKirim, batch.waktuKirim, batch.dikirimOleh].filter(Boolean).join(' · ')}
+                          </div>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-lg text-xs font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0">
+                          {batch.totalKoli} Koli
+                        </span>
+                      </div>
+
+                      {(itemSummary || batch.allPhotos.length > 0) && (
+                        <div className="flex items-center justify-between gap-2 bg-slate-50 dark:bg-slate-800/50 rounded-xl p-2 border border-slate-200/70 dark:border-slate-700/60">
+                          <p className="text-[11px] text-slate-600 dark:text-slate-300 truncate flex-1 min-w-0">
+                            {itemSummary || `${batch.totalItemCount} barang`}
+                          </p>
+                          {batch.allPhotos.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPreviewPhotoUrl(batch.allPhotos[0]);
+                                setPreviewPhotoTitle(`Dokumentasi ${batch.tripId}`);
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-700 dark:text-slate-200 shrink-0"
+                            >
+                              <Camera className="w-3 h-3 text-indigo-500" />
+                              <span>{batch.allPhotos.length} Foto</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      <div
+                        className="flex items-center justify-between gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-800"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setSelectedBatchDetail(batch)}
+                          className="px-2.5 py-1 rounded-lg text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-1"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>Detail</span>
+                        </button>
+
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleOpenSuratJalanPrint(batch.reports, {
+                                id: batch.tripId,
+                                tanggal_kirim: batch.tanggalKirim,
+                                dikirim_oleh: batch.dikirimOleh,
+                                armada: batch.armada,
+                                no_polisi: batch.noPolisi,
+                                catatan: batch.catatanKirim,
+                              })
+                            }
+                            className="px-2.5 py-1 rounded-lg text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-indigo-600 dark:text-indigo-400 flex items-center gap-1"
+                          >
+                            <Printer className="w-3 h-3" />
+                            <span>SJ</span>
+                          </button>
+
+                          {!isCancelled && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditTrip(batch)}
+                                className="px-2.5 py-1 rounded-lg text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-1"
+                              >
+                                <Edit className="w-3 h-3" />
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenCancelTrip(batch)}
+                                className="px-2 py-1 rounded-lg text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-rose-600 dark:text-rose-400 flex items-center gap-1"
+                              >
+                                <XCircle className="w-3 h-3" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       )}
@@ -3361,21 +3685,20 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
       {/* MODAL: EDIT LAPORAN DISPATCHED                                       */}
       {/* ==================================================================== */}
       {editingDispatchedReport && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-in fade-in duration-150 overflow-y-auto">
-          <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl max-w-3xl w-full my-6 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             {/* Header */}
-            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/60">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-950/60 flex items-center justify-center text-amber-600">
-                  <Edit3 className="w-5 h-5" />
+            <div className="px-4 sm:px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/60 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-950/60 flex items-center justify-center text-amber-600 shrink-0">
+                  <Edit3 className="w-4 h-4" />
                 </div>
-                <div>
-                  <h3 className="text-base font-black text-slate-900 dark:text-white">
-                    Edit Laporan Dispatched
+                <div className="min-w-0">
+                  <h3 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white truncate">
+                    Edit Antrean Dispatched
                   </h3>
-                  <p className="text-xs text-slate-500 font-mono">
-                    ID: {editingDispatchedReport.id} • Toko Asal:{' '}
-                    <strong>{editingDispatchedReport.store_tujuan}</strong>
+                  <p className="text-[11px] text-slate-500 font-mono truncate">
+                    {editingDispatchedReport.id} · {editingDispatchedReport.store_tujuan}
                   </p>
                 </div>
               </div>
@@ -3383,19 +3706,20 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
               <button
                 type="button"
                 onClick={() => setEditingDispatchedReport(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Body */}
-            <div className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
-              {/* Toko Tujuan (Searchable Dropdown) */}
+            <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 text-xs">
+              {/* Store Tujuan */}
               <div className="space-y-1.5">
-                <label className="text-xs font-black text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                   <Store className="w-4 h-4 text-indigo-500" />
-                  Store Tujuan <span className="text-rose-500">*</span>
+                  <span>Store Tujuan</span>
+                  <span className="text-rose-500">*</span>
                 </label>
                 <SearchableSelect
                   options={stores.map((s) => ({
@@ -3408,47 +3732,48 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                   placeholder="Pilih Store Tujuan..."
                   searchPlaceholder="Ketik nama store..."
                   allowCustom={true}
-                  size="md"
+                  size="sm"
                 />
               </div>
 
               {/* Rincian Items */}
               <div className="space-y-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
                 <div className="flex items-center justify-between">
-                  <span className="font-black text-slate-800 dark:text-slate-200 uppercase text-xs flex items-center gap-1.5">
-                    <Package className="w-4 h-4 text-amber-500" />
-                    Daftar Barang ({editItems.length} Item)
+                  <span className="font-extrabold text-slate-800 dark:text-slate-200 uppercase text-xs flex items-center gap-1.5">
+                    <Package className="w-4 h-4 text-indigo-500" />
+                    Daftar Barang ({editItems.length})
                   </span>
 
                   <button
                     type="button"
                     onClick={handleAddEditItemRow}
-                    className="px-2.5 py-1 rounded-lg text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 flex items-center gap-1 cursor-pointer"
+                    className="px-2.5 py-1 rounded-lg text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1 cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Tambah Barang</span>
                   </button>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-2.5">
                   {editItems.map((item, idx) => {
                     const rowKoli =
                       item.satuan === 'Pcs' ? 1 : Math.max(1, Math.round(Number(item.qty) || 1));
+                    const isLegacyNotePresent = Boolean(item.keterangan && item.keterangan.trim());
 
                     return (
                       <div
                         key={item.id || idx}
-                        className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2.5"
+                        className="p-3 bg-slate-50/80 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2.5"
                       >
                         <div className="flex items-center justify-between border-b border-slate-200/80 dark:border-slate-700/60 pb-1.5">
                           <div className="flex items-center gap-2">
-                            <span className="w-5 h-5 rounded-md bg-amber-500 text-white font-black text-[11px] flex items-center justify-center">
+                            <span className="w-5 h-5 rounded-md bg-indigo-600 text-white font-bold text-[11px] flex items-center justify-center">
                               {idx + 1}
                             </span>
                             <span className="font-bold text-slate-700 dark:text-slate-300 text-xs">
                               Barang #{idx + 1}
                             </span>
-                            <span className="text-[10px] font-black px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
                               {rowKoli} Koli
                             </span>
                           </div>
@@ -3464,25 +3789,25 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                           </button>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                          <div className="sm:col-span-4 space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500">
-                              No Surat Jalan
+                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
+                          <div className="sm:col-span-3 space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                              No. Surat Jalan
                             </label>
                             <input
                               type="text"
-                              value={item.no_surat_jalan || ''}
+                              value={isValidNoSj(item.no_surat_jalan) ? item.no_surat_jalan : ''}
                               onChange={(e) =>
                                 handleUpdateEditItem(idx, 'no_surat_jalan', e.target.value)
                               }
-                              placeholder="No SJ (Opsional)..."
-                              className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs outline-none"
+                              placeholder="Opsional..."
+                              className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-mono outline-none"
                             />
                           </div>
 
-                          <div className="sm:col-span-5 space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500">
-                              Deskripsi Barang <span className="text-rose-500">*</span>
+                          <div className="sm:col-span-4 space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                              Nama / Keterangan Barang <span className="text-rose-500">*</span>
                             </label>
                             <input
                               type="text"
@@ -3490,14 +3815,14 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                               onChange={(e) =>
                                 handleUpdateEditItem(idx, 'deskripsi', e.target.value)
                               }
-                              placeholder="Nama produk / barang..."
-                              className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold outline-none"
+                              placeholder="Nama / keterangan barang..."
+                              className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-semibold outline-none"
                             />
                           </div>
 
                           <div className="sm:col-span-3 grid grid-cols-2 gap-1.5">
                             <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-slate-500">Qty</label>
+                              <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400">Qty</label>
                               <input
                                 type="number"
                                 min={1}
@@ -3514,7 +3839,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                             </div>
 
                             <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-slate-500">Satuan</label>
+                              <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400">Satuan</label>
                               <select
                                 value={item.satuan}
                                 onChange={(e) =>
@@ -3522,27 +3847,85 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                                 }
                                 className="w-full px-1.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold outline-none"
                               >
-                                <option value="Pcs">Pcs</option>
                                 <option value="Koli">Koli</option>
+                                <option value="Pcs">Pcs</option>
                               </select>
                             </div>
                           </div>
+
+                          {/* Foto Per Barang */}
+                          <div className="sm:col-span-2 space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                              Foto Barang
+                            </label>
+                            {item.foto_barang ? (
+                              <div className="h-[34px] flex items-center gap-1 bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 rounded-lg px-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPreviewPhotoUrl(item.foto_barang || null);
+                                    setPreviewPhotoTitle(`Foto Barang: ${item.deskripsi || 'Barang #' + (idx + 1)}`);
+                                  }}
+                                  className="w-6 h-6 rounded overflow-hidden shrink-0 cursor-pointer"
+                                  title="Lihat Foto"
+                                >
+                                  <img
+                                    src={item.foto_barang}
+                                    alt="Foto"
+                                    className="w-full h-full object-cover"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveEditItemPhoto(idx)}
+                                  className="ml-auto p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
+                                  title="Hapus Foto"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <label className="w-full h-[34px] inline-flex items-center justify-center gap-1 px-2 rounded-lg border border-dashed border-indigo-300 dark:border-indigo-700 bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 text-[11px] font-bold hover:bg-indigo-50 cursor-pointer">
+                                {editItemCompressingIdx === idx ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <>
+                                    <Camera className="w-3.5 h-3.5 shrink-0" />
+                                    <span>Foto</span>
+                                  </>
+                                )}
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  capture="environment"
+                                  className="hidden"
+                                  disabled={editItemCompressingIdx === idx}
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleEditItemPhotoUpload(idx, file);
+                                  }}
+                                />
+                              </label>
+                            )}
+                          </div>
                         </div>
 
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-slate-500">
-                            Keterangan Tambahan
-                          </label>
-                          <input
-                            type="text"
-                            value={item.keterangan || ''}
-                            onChange={(e) =>
-                              handleUpdateEditItem(idx, 'keterangan', e.target.value)
-                            }
-                            placeholder="Catatan khusus, nomor seri, dll..."
-                            className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs outline-none"
-                          />
-                        </div>
+                        {isLegacyNotePresent && (
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500">
+                              Keterangan Tambahan (Data Lama)
+                            </label>
+                            <input
+                              type="text"
+                              value={item.keterangan || ''}
+                              onChange={(e) =>
+                                handleUpdateEditItem(idx, 'keterangan', e.target.value)
+                              }
+                              className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs outline-none"
+                            />
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -3550,12 +3933,12 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
               </div>
 
               {/* Total Summary */}
-              <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 rounded-xl flex items-center justify-between text-xs">
-                <span className="text-amber-800 dark:text-amber-300 font-bold">
+              <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/50 rounded-xl flex items-center justify-between text-xs">
+                <span className="text-slate-700 dark:text-slate-300 font-bold">
                   Total Dihitung Ulang:
                 </span>
-                <span className="font-black text-amber-900 dark:text-amber-200">
-                  {editItems.length} Item •{' '}
+                <span className="font-extrabold text-indigo-700 dark:text-indigo-300">
+                  {editItems.length} Barang ·{' '}
                   {editItems.reduce(
                     (acc, curr) =>
                       acc + (curr.satuan === 'Pcs' ? 1 : Math.max(1, Math.round(Number(curr.qty) || 1))),
@@ -3567,12 +3950,12 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
             </div>
 
             {/* Footer */}
-            <div className="px-5 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-end gap-2">
+            <div className="px-4 sm:px-5 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-end gap-2 shrink-0">
               <button
                 type="button"
                 onClick={() => setEditingDispatchedReport(null)}
                 disabled={isSavingEditDispatched}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer disabled:opacity-50"
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 cursor-pointer disabled:opacity-50"
               >
                 Batal
               </button>
@@ -3581,7 +3964,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                 type="button"
                 onClick={handleSaveEditDispatched}
                 disabled={isSavingEditDispatched}
-                className="px-5 py-2 rounded-xl text-xs font-black text-white bg-amber-600 hover:bg-amber-700 shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
                 {isSavingEditDispatched ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -3597,44 +3980,42 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
 
       {/* ==================================================================== */}
       {/* MODAL: POPUP RINCIAN DATA BARANG YANG DIKIRIM (BESERTA FOTO)        */}
-      {/* 1 batch kirim = 1 no SJ di histori kirim                            */}
-      {/* Saat diklik muncul popup rincian data barang yg dikirim, beserta    */}
-      {/* foto jika ada.                                                      */}
       {/* ==================================================================== */}
       {selectedBatchDetail && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-[#131d31] rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden my-4">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-[#131d31] rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
             {/* Header Modal */}
-            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex flex-wrap items-center justify-between gap-3">
-              <div className="space-y-1">
+            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex flex-wrap items-center justify-between gap-3 shrink-0">
+              <div className="space-y-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-blue-100 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
                     <FileText className="w-4 h-4" />
                   </div>
-                  <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                    Surat Jalan Pengiriman: <span className="font-mono text-blue-600 dark:text-blue-400">{selectedBatchDetail.tripId}</span>
+                  <h3 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white truncate">
+                    Surat Jalan: <span className="font-mono text-indigo-600 dark:text-indigo-400">{selectedBatchDetail.tripId}</span>
                   </h3>
                 </div>
-                <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 dark:text-slate-400 font-medium">
-                  <span className="flex items-center gap-1 font-bold text-slate-800 dark:text-slate-200">
-                    <Store className="w-3.5 h-3.5 text-indigo-500" />
-                    Tujuan: {selectedBatchDetail.storeTujuan}
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-600 dark:text-slate-400">
+                  <span className="font-bold text-slate-800 dark:text-slate-200 uppercase">
+                    {selectedBatchDetail.storeTujuan}
                   </span>
-                  <span>•</span>
-                  <span>Tgl: <strong>{selectedBatchDetail.tanggalKirim} {selectedBatchDetail.waktuKirim}</strong></span>
-                  <span>•</span>
+                  <span>·</span>
+                  <span>
+                    {[selectedBatchDetail.tanggalKirim, selectedBatchDetail.waktuKirim].filter(Boolean).join(' ')}
+                  </span>
+                  <span>·</span>
                   <span>Driver: <strong>{selectedBatchDetail.dikirimOleh}</strong></span>
                   {selectedBatchDetail.armada && (
                     <>
-                      <span>•</span>
-                      <span>Armada: <strong>{selectedBatchDetail.armada} {selectedBatchDetail.noPolisi}</strong></span>
+                      <span>·</span>
+                      <span>{selectedBatchDetail.armada} {selectedBatchDetail.noPolisi}</span>
                     </>
                   )}
                 </div>
               </div>
 
               {/* Action Buttons */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() =>
@@ -3647,7 +4028,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                       catatan: selectedBatchDetail.catatanKirim,
                     })
                   }
-                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 border border-blue-200 dark:border-blue-800/80 flex items-center gap-1.5 cursor-pointer"
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-indigo-600 dark:text-indigo-400 hover:bg-slate-50 flex items-center gap-1.5 cursor-pointer"
                   title="Cetak Surat Jalan Pengiriman (A4 Rangkap 2)"
                 >
                   <Printer className="w-3.5 h-3.5" />
@@ -3658,7 +4039,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                   <button
                     type="button"
                     onClick={() => handleOpenEditTrip(selectedBatchDetail)}
-                    className="px-3 py-1.5 rounded-xl text-xs font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 border border-amber-200 dark:border-amber-800/80 flex items-center gap-1.5 cursor-pointer"
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 flex items-center gap-1.5 cursor-pointer"
                   >
                     <Edit className="w-3.5 h-3.5" />
                     <span>Edit</span>
@@ -3670,19 +4051,18 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                   onClick={() => setSelectedBatchDetail(null)}
                   className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                 >
-                  ✕
+                  <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
             {/* Modal Body */}
-            <div className="p-4 sm:p-6 overflow-y-auto space-y-5 flex-1 text-xs">
-              {/* Catatan pengiriman jika ada */}
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1 text-xs">
               {selectedBatchDetail.catatanKirim && (
-                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex items-start gap-2 text-slate-600 dark:text-slate-400">
-                  <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex items-start gap-2 text-slate-600 dark:text-slate-300">
+                  <Info className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
                   <div>
-                    <span className="font-bold text-slate-800 dark:text-slate-200">Catatan Pengiriman: </span>
+                    <span className="font-bold text-slate-800 dark:text-slate-100">Catatan Kirim: </span>
                     {selectedBatchDetail.catatanKirim}
                   </div>
                 </div>
@@ -3692,55 +4072,51 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
               <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/60">
                 <div className="flex items-center gap-2">
                   <Box className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                  <span className="font-black text-slate-800 dark:text-slate-200">
+                  <span className="font-extrabold text-slate-800 dark:text-slate-100">
                     Total Muatan: {selectedBatchDetail.totalKoli} Koli
                   </span>
-                  <span className="text-slate-400">•</span>
-                  <span className="text-slate-600 dark:text-slate-400 font-bold">
-                    {selectedBatchDetail.totalItemCount} Macam Barang ({selectedBatchDetail.reports.length} Laporan SJB)
+                  <span className="text-slate-400">·</span>
+                  <span className="text-slate-600 dark:text-slate-300 font-semibold">
+                    {selectedBatchDetail.totalItemCount} Barang ({selectedBatchDetail.reports.length} Laporan)
                   </span>
                 </div>
                 {selectedBatchDetail.status === 'cancelled' ? (
-                  <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-100 text-rose-700 border border-rose-300">
-                    Pengiriman Dibatalkan
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                    Dibatalkan
                   </span>
                 ) : (
-                  <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-100 text-emerald-700 border border-emerald-300">
-                    Sedang Dikirim / Selesai
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    Terkirim
                   </span>
                 )}
               </div>
 
               {/* Tabel Rincian Data Barang */}
-              <div className="space-y-3">
-                <h4 className="font-black text-xs uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                  <Box className="w-4 h-4 text-blue-600" />
+              <div className="space-y-2.5">
+                <h4 className="font-extrabold text-xs uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Box className="w-4 h-4 text-indigo-600" />
                   <span>Rincian Barang yang Dikirim</span>
                 </h4>
 
                 <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-2xs">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs whitespace-nowrap">
+                  <div className="w-full overflow-x-auto">
+                    <table className="w-full text-left text-xs">
                       <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 font-bold border-b border-slate-200 dark:border-slate-800">
                         <tr>
-                          <th className="px-3.5 py-2.5">Foto</th>
-                          <th className="px-3.5 py-2.5">No. Surat Jalan</th>
-                          <th className="px-3.5 py-2.5">Deskripsi Barang</th>
-                          <th className="px-3.5 py-2.5">Jumlah (Qty)</th>
-                          <th className="px-3.5 py-2.5">Hitung Koli</th>
-                          <th className="px-3.5 py-2.5">Keterangan</th>
+                          <th className="px-3.5 py-2.5 w-14">Foto</th>
+                          <th className="px-3.5 py-2.5">No. SJ</th>
+                          <th className="px-3.5 py-2.5">Nama / Keterangan Barang</th>
+                          <th className="px-3.5 py-2.5">Qty / Koli</th>
                           {selectedBatchDetail.status !== 'cancelled' && (
-                            <th className="px-3.5 py-2.5 text-right">Aksi Item</th>
+                            <th className="px-3.5 py-2.5 text-right">Aksi</th>
                           )}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                         {selectedBatchDetail.reports.flatMap((rep) =>
                           rep.items.map((it, idx) => {
-                            const sjNumber =
-                              it.no_surat_jalan && it.no_surat_jalan !== 'Tidak ada no surat jalan'
-                                ? it.no_surat_jalan
-                                : rep.id;
+                            const hasSj = isValidNoSj(it.no_surat_jalan);
+                            const displaySj = hasSj ? it.no_surat_jalan : '-';
 
                             return (
                               <tr
@@ -3748,25 +4124,24 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                                 className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
                               >
                                 {/* Foto Barang */}
-                                <td className="px-3.5 py-2">
+                                <td className="px-3.5 py-2 align-top">
                                   {it.foto_barang ? (
-                                    <div
+                                    <button
+                                      type="button"
                                       onClick={() => {
                                         setPreviewPhotoUrl(it.foto_barang!);
-                                        setPreviewPhotoTitle(`Foto Barang: ${it.deskripsi} (SJ: ${sjNumber})`);
+                                        setPreviewPhotoTitle(`Foto Barang: ${it.deskripsi}`);
                                       }}
-                                      className="relative group shrink-0 cursor-pointer w-10 h-10"
+                                      className="relative group shrink-0 cursor-pointer w-10 h-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700"
                                       title="Perbesar foto barang"
                                     >
                                       <img
                                         src={it.foto_barang}
                                         alt={it.deskripsi}
-                                        className="w-10 h-10 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shadow-2xs group-hover:ring-2 group-hover:ring-blue-500"
+                                        className="w-full h-full object-cover"
+                                        referrerPolicy="no-referrer"
                                       />
-                                      <div className="absolute inset-0 bg-black/30 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 text-white">
-                                        <Camera className="w-3 h-3" />
-                                      </div>
-                                    </div>
+                                    </button>
                                   ) : (
                                     <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-300">
                                       <ImageIcon className="w-4 h-4" />
@@ -3775,49 +4150,49 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                                 </td>
 
                                 {/* No. Surat Jalan */}
-                                <td className="px-3.5 py-2">
-                                  <span className="font-mono font-black text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800/60 text-[11px]">
-                                    {sjNumber}
-                                  </span>
+                                <td className="px-3.5 py-2 align-top whitespace-nowrap">
+                                  <div className="font-mono font-bold text-indigo-700 dark:text-indigo-300">
+                                    {displaySj}
+                                  </div>
                                   <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                                    Laporan: {rep.id}
+                                    {rep.id}
                                   </div>
                                 </td>
 
-                                {/* Deskripsi Barang */}
-                                <td className="px-3.5 py-2">
+                                {/* Nama / Keterangan Barang */}
+                                <td className="px-3.5 py-2 align-top">
                                   <div className="font-bold text-slate-900 dark:text-white leading-snug">
                                     {it.deskripsi}
                                   </div>
+                                  {it.keterangan && (
+                                    <div className="text-[11px] text-slate-500 dark:text-slate-400 italic mt-0.5">
+                                      {it.keterangan}
+                                    </div>
+                                  )}
                                 </td>
 
-                                {/* Qty */}
-                                <td className="px-3.5 py-2 font-black text-slate-800 dark:text-slate-200">
-                                  {it.qty} {it.satuan}
+                                {/* Qty / Koli */}
+                                <td className="px-3.5 py-2 align-top whitespace-nowrap">
+                                  <div className="font-bold text-slate-800 dark:text-slate-200">
+                                    {it.qty} {it.satuan}
+                                  </div>
+                                  {it.satuan === 'Pcs' && (
+                                    <div className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold">
+                                      {it.hitung_koli} Koli
+                                    </div>
+                                  )}
                                 </td>
 
-                                {/* Hitung Koli */}
-                                <td className="px-3.5 py-2">
-                                  <span className="font-black text-indigo-600 dark:text-indigo-400">
-                                    {it.hitung_koli} Koli
-                                  </span>
-                                </td>
-
-                                {/* Keterangan */}
-                                <td className="px-3.5 py-2 text-slate-500 italic max-w-[150px] truncate">
-                                  {it.keterangan || '-'}
-                                </td>
-
-                                {/* Aksi Item: Cancel Kirim Barang ini (Kembali ke Dispatched) */}
+                                {/* Aksi */}
                                 {selectedBatchDetail.status !== 'cancelled' && (
-                                  <td className="px-3.5 py-2 text-right">
+                                  <td className="px-3.5 py-2 align-top text-right whitespace-nowrap">
                                     <button
                                       type="button"
                                       onClick={() =>
                                         handleRemoveReportFromBatch(selectedBatchDetail.tripId, rep)
                                       }
-                                      className="px-2 py-1 rounded-lg text-[11px] font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 flex items-center gap-1 ml-auto cursor-pointer"
-                                      title="Keluarkan dari pengiriman ini & kembalikan ke antrean Dispatched"
+                                      className="px-2 py-1 rounded-lg text-[11px] font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 inline-flex items-center gap-1 cursor-pointer"
+                                      title="Keluarkan dari pengiriman ini & kembalikan ke Dispatched"
                                     >
                                       <Undo2 className="w-3 h-3" />
                                       <span>Balik Dispatched</span>
@@ -3834,30 +4209,68 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                 </div>
               </div>
 
-              {/* Dokumentasi Foto Pengiriman Keseluruhan (Galeri) */}
-              {selectedBatchDetail.allPhotos.length > 0 && (
+              {/* 1. Foto Dokumentasi Pengiriman Keseluruhan (Saat Kirim) */}
+              {selectedBatchDetail.tripPhotos.length > 0 && (
                 <div className="space-y-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
-                  <h4 className="font-black text-xs uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                    <Camera className="w-4 h-4 text-emerald-600" />
-                    <span>Dokumentasi Foto Pengiriman ({selectedBatchDetail.allPhotos.length} Foto)</span>
+                  <h4 className="font-extrabold text-xs uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <Truck className="w-4 h-4 text-emerald-600" />
+                    <span>
+                      Dokumentasi Pengiriman Keseluruhan — Saat Kirim ({selectedBatchDetail.tripPhotos.length} Foto)
+                    </span>
                   </h4>
                   <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2.5">
-                    {selectedBatchDetail.allPhotos.map((photo, pIdx) => (
+                    {selectedBatchDetail.tripPhotos.map((photo, pIdx) => (
                       <div
                         key={pIdx}
                         onClick={() => {
                           setPreviewPhotoUrl(photo);
                           setPreviewPhotoTitle(
-                            `Dokumentasi Pengiriman ${selectedBatchDetail.tripId} #${pIdx + 1}`
+                            `Dokumentasi Kirim ${selectedBatchDetail.tripId} #${pIdx + 1}`
                           );
                         }}
-                        className="group relative aspect-square rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 cursor-pointer shadow-xs"
+                        className="group relative aspect-square rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 cursor-pointer shadow-2xs"
                         title="Klik untuk memperbesar"
                       >
                         <img
                           src={photo}
-                          alt={`Dokumentasi #${pIdx + 1}`}
+                          alt={`Dokumentasi Kirim #${pIdx + 1}`}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white">
+                          <Eye className="w-4 h-4" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 2. Foto Dokumentasi Per Barang */}
+              {selectedBatchDetail.itemPhotos.length > 0 && (
+                <div className="space-y-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
+                  <h4 className="font-extrabold text-xs uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <Camera className="w-4 h-4 text-indigo-600" />
+                    <span>Dokumentasi Foto Per Barang ({selectedBatchDetail.itemPhotos.length} Foto)</span>
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2.5">
+                    {selectedBatchDetail.itemPhotos.map((photo, pIdx) => (
+                      <div
+                        key={pIdx}
+                        onClick={() => {
+                          setPreviewPhotoUrl(photo);
+                          setPreviewPhotoTitle(
+                            `Dokumentasi Barang ${selectedBatchDetail.tripId} #${pIdx + 1}`
+                          );
+                        }}
+                        className="group relative aspect-square rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 cursor-pointer shadow-2xs"
+                        title="Klik untuk memperbesar"
+                      >
+                        <img
+                          src={photo}
+                          alt={`Foto Barang #${pIdx + 1}`}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                          referrerPolicy="no-referrer"
                         />
                         <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white">
                           <Eye className="w-4 h-4" />
@@ -3870,14 +4283,14 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
             </div>
 
             {/* Footer Modal */}
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between">
-              <div className="text-xs text-slate-500">
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between shrink-0">
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">
                 1 Batch Kirim = 1 Nomor Surat Jalan Pengiriman
               </div>
               <button
                 type="button"
                 onClick={() => setSelectedBatchDetail(null)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 cursor-pointer"
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 cursor-pointer"
               >
                 Tutup
               </button>
@@ -3887,35 +4300,35 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
       )}
 
       {/* ==================================================================== */}
-      {/* MODAL: EDIT PENGIRIMAN BATCH (TANGGAL, DRIVER, BARANG)                */}
-      {/* Tersedia opsi edit tanggal, barang, driver/kurir.                    */}
-      {/* Barang yg diedit/cancel kirim, otomatis balik ke dispatched.        */}
+      {/* MODAL: EDIT PENGIRIMAN BATCH (TANGGAL, DRIVER, BARANG, FOTO)         */}
       {/* ==================================================================== */}
       {editingTripBatch && (
-        <div className="fixed inset-0 z-[90] bg-black/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-[#131d31] rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden my-4">
+        <div className="fixed inset-0 z-[90] bg-black/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-[#131d31] rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
             {/* Header */}
-            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                  <Edit className="w-5 h-5 text-amber-500" />
-                  Edit Pengiriman: <span className="font-mono text-blue-600">{editingTripBatch.tripId}</span>
+            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between shrink-0">
+              <div className="min-w-0">
+                <h3 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2 truncate">
+                  <Edit className="w-4 h-4 text-amber-500 shrink-0" />
+                  <span>
+                    Edit Pengiriman: <span className="font-mono text-indigo-600 dark:text-indigo-400">{editingTripBatch.tripId}</span>
+                  </span>
                 </h3>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
                   Tujuan: <strong>{editingTripBatch.storeTujuan}</strong>
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setEditingTripBatch(null)}
-                className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer shrink-0"
               >
-                ✕
+                <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Form Fields */}
-            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 text-xs">
+            <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 {/* Tanggal Kirim */}
                 <div className="space-y-1">
@@ -3944,29 +4357,31 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                   />
                 </div>
 
-                {/* Armada */}
-                <div className="space-y-1">
-                  <label className="font-bold text-slate-800 dark:text-slate-200">Armada / Kendaraan</label>
-                  <input
-                    type="text"
-                    value={editTripArmada}
-                    onChange={(e) => setEditTripArmada(e.target.value)}
-                    placeholder="Contoh: Mobil Box / Motor Kurir"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl outline-none"
-                  />
-                </div>
-
-                {/* No Polisi */}
-                <div className="space-y-1">
-                  <label className="font-bold text-slate-800 dark:text-slate-200">No. Polisi</label>
-                  <input
-                    type="text"
-                    value={editTripNoPolisi}
-                    onChange={(e) => setEditTripNoPolisi(e.target.value)}
-                    placeholder="Contoh: B 1234 XYZ"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl outline-none"
-                  />
-                </div>
+                {/* Armada & No Polisi hanya muncul jika data lama sudah memilikinya */}
+                {(editingTripBatch.armada || editingTripBatch.noPolisi) && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="font-bold text-slate-800 dark:text-slate-200">Armada / Kendaraan</label>
+                      <input
+                        type="text"
+                        value={editTripArmada}
+                        onChange={(e) => setEditTripArmada(e.target.value)}
+                        placeholder="Contoh: Mobil Box / Motor Kurir"
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-bold text-slate-800 dark:text-slate-200">No. Polisi</label>
+                      <input
+                        type="text"
+                        value={editTripNoPolisi}
+                        onChange={(e) => setEditTripNoPolisi(e.target.value)}
+                        placeholder="Contoh: B 1234 XYZ"
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl outline-none"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Catatan Kirim */}
@@ -3981,19 +4396,89 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                 />
               </div>
 
+              {/* Dokumentasi Pengiriman Keseluruhan */}
+              <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="font-extrabold text-slate-900 dark:text-white uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                    <Camera className="w-4 h-4 text-emerald-600" />
+                    <span>Foto Pengiriman Keseluruhan ({editTripPhotos.length}/8)</span>
+                  </label>
+                  <input
+                    ref={editTripPhotoInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    capture="environment"
+                    className="hidden"
+                    disabled={isCompressingEditTripPhotos}
+                    onChange={handleEditTripPhotoUpload}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => editTripPhotoInputRef.current?.click()}
+                    disabled={isCompressingEditTripPhotos || editTripPhotos.length >= 8}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  >
+                    {isCompressingEditTripPhotos ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Plus className="w-3.5 h-3.5 text-indigo-600" />
+                    )}
+                    <span>Tambah Foto</span>
+                  </button>
+                </div>
+
+                {editTripPhotos.length > 0 ? (
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                    {editTripPhotos.map((photo, pIdx) => (
+                      <div
+                        key={pIdx}
+                        className="relative aspect-square rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100"
+                      >
+                        <img
+                          src={photo}
+                          alt={`Foto Trip #${pIdx + 1}`}
+                          className="w-full h-full object-cover cursor-pointer"
+                          referrerPolicy="no-referrer"
+                          onClick={() => {
+                            setPreviewPhotoUrl(photo);
+                            setPreviewPhotoTitle(`Foto Kirim ${editingTripBatch.tripId} #${pIdx + 1}`);
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveEditTripPhoto(pIdx)}
+                          className="absolute top-1 right-1 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center shadow-xs cursor-pointer hover:bg-rose-700"
+                          title="Hapus Foto"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => editTripPhotoInputRef.current?.click()}
+                    className="p-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/30 text-center text-[11px] text-slate-500 cursor-pointer hover:bg-slate-100"
+                  >
+                    Klik untuk menambah foto bukti kirim / muatan keseluruhan
+                  </div>
+                )}
+              </div>
+
               {/* Checklist Barang dalam Pengiriman */}
               <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
-                <div className="flex items-center justify-between">
-                  <label className="font-black text-slate-900 dark:text-white uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center justify-between gap-1.5">
+                  <label className="font-extrabold text-slate-900 dark:text-white uppercase tracking-wider text-[11px] flex items-center gap-1.5">
                     <Box className="w-4 h-4 text-indigo-500" />
-                    Barang dalam Pengiriman ini:
+                    <span>Barang dalam Pengiriman ini:</span>
                   </label>
-                  <span className="text-[11px] text-amber-600 font-bold bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800/50">
-                    Barang yang tidak dicentang otomatis balik ke Dispatched
+                  <span className="text-[11px] text-amber-700 dark:text-amber-300 font-bold bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800/50">
+                    Tidak dicentang otomatis balik ke Dispatched
                   </span>
                 </div>
 
-                <div className="space-y-2 border border-slate-200 dark:border-slate-800 rounded-xl p-3 max-h-60 overflow-y-auto">
+                <div className="space-y-2 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 max-h-52 overflow-y-auto">
                   {editingTripBatch.reports.map((rep) => {
                     const isChecked = editTripSelectedReportIds.includes(rep.id);
 
@@ -4007,15 +4492,15 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                             setEditTripSelectedReportIds((prev) => [...prev, rep.id]);
                           }
                         }}
-                        className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-start gap-3 ${
+                        className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-start gap-2.5 ${
                           isChecked
-                            ? 'bg-blue-50/70 dark:bg-blue-950/30 border-blue-400'
+                            ? 'bg-indigo-50/50 dark:bg-indigo-950/30 border-indigo-400'
                             : 'bg-rose-50/40 dark:bg-rose-950/20 border-rose-300 text-slate-400'
                         }`}
                       >
                         <div className="mt-0.5">
                           {isChecked ? (
-                            <CheckSquare className="w-4 h-4 text-blue-600 shrink-0" />
+                            <CheckSquare className="w-4 h-4 text-indigo-600 shrink-0" />
                           ) : (
                             <Square className="w-4 h-4 text-slate-400 shrink-0" />
                           )}
@@ -4046,12 +4531,12 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
             </div>
 
             {/* Footer */}
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-end gap-2">
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-end gap-2 shrink-0">
               <button
                 type="button"
                 onClick={() => setEditingTripBatch(null)}
                 disabled={isSavingTripEdit}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer disabled:opacity-50"
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 cursor-pointer disabled:opacity-50"
               >
                 Batal
               </button>
@@ -4059,7 +4544,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                 type="button"
                 onClick={handleSaveEditTrip}
                 disabled={isSavingTripEdit}
-                className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-sm"
+                className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-xs"
               >
                 {isSavingTripEdit ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -4150,39 +4635,40 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
       {/* MODAL: INPUT MULTI-TOKO SEKALIGUS (MULTI-CHOICE BATCH GENERATOR)     */}
       {/* ==================================================================== */}
       {isMultiStoreModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-[#131d31] rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-xl flex flex-col overflow-hidden my-4">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-[#131d31] rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden">
             {/* Header */}
-            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                  <Sparkles className="w-5 h-5" />
+            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                  <Sparkles className="w-4 h-4" />
                 </div>
-                <div>
-                  <h3 className="text-base font-black text-slate-900 dark:text-white">
-                    Input Cepat Multi-Toko Sekaligus
+                <div className="min-w-0">
+                  <h3 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white truncate">
+                    Input Cepat Multi-Toko
                   </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Pilih beberapa toko sekaligus untuk otomatis membuat baris pengiriman
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    Buat baris pengiriman untuk beberapa store sekaligus
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setIsMultiStoreModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Form */}
-            <div className="p-4 sm:p-5 space-y-4 text-xs overflow-y-auto max-h-[70vh]">
+            <div className="p-4 sm:p-5 space-y-4 text-xs overflow-y-auto flex-1">
               {/* Multi-Store Dropdown */}
               <div className="space-y-1.5">
-                <label className="font-black text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <label className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                   <Store className="w-4 h-4 text-indigo-500" />
-                  Pilih Toko Tujuan (Bisa Pilih Banyak) <span className="text-rose-500">*</span>
+                  <span>Pilih Toko Tujuan (Bisa Pilih Banyak)</span>
+                  <span className="text-rose-500">*</span>
                 </label>
                 <SearchableSelect
                   multiple={true}
@@ -4195,26 +4681,26 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                   onChange={(val) => setMultiStoreSelected(val)}
                   placeholder="Pilih Toko-Toko Tujuan..."
                   searchPlaceholder="Ketik nama atau kode toko..."
-                  size="md"
+                  size="sm"
                 />
-                <div className="text-[11px] text-slate-400">
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">
                   {multiStoreSelected.length > 0
                     ? `${multiStoreSelected.length} toko terpilih. Akan dibuat ${multiStoreSelected.length} baris barang.`
                     : 'Gunakan tombol "Pilih Semua" atau centang beberapa toko sekaligus.'}
                 </div>
               </div>
 
-              {/* Deskripsi Barang */}
+              {/* Nama / Keterangan Barang */}
               <div className="space-y-1.5">
-                <label className="font-black text-slate-800 dark:text-slate-200">
-                  Deskripsi / Nama Barang <span className="text-rose-500">*</span>
+                <label className="font-bold text-slate-800 dark:text-slate-200">
+                  Nama / Keterangan Barang <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
                   value={multiStoreDeskripsi}
                   onChange={(e) => setMultiStoreDeskripsi(e.target.value)}
-                  placeholder="Contoh: Paket Brosur Marketing Q3 / Display Banner..."
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold outline-none"
+                  placeholder="Mis: Paket Brosur Marketing / Display Banner..."
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold outline-none focus:border-indigo-500"
                 />
               </div>
 
@@ -4256,22 +4742,10 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                   </select>
                 </div>
               </div>
-
-              {/* Keterangan */}
-              <div className="space-y-1">
-                <label className="font-bold text-slate-700 dark:text-slate-300">Keterangan Tambahan</label>
-                <input
-                  type="text"
-                  value={multiStoreKeterangan}
-                  onChange={(e) => setMultiStoreKeterangan(e.target.value)}
-                  placeholder="Catatan untuk serah terima / driver (opsional)..."
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-xs outline-none"
-                />
-              </div>
             </div>
 
             {/* Footer */}
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between">
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between shrink-0">
               <div className="text-xs text-slate-500 font-medium">
                 Total: <strong>{multiStoreSelected.length} baris</strong> akan dibuat
               </div>
@@ -4279,7 +4753,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsMultiStoreModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 cursor-pointer"
                 >
                   Batal
                 </button>
@@ -4287,7 +4761,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                   type="button"
                   onClick={handleGenerateMultiStoreRows}
                   disabled={multiStoreSelected.length === 0 || !multiStoreDeskripsi.trim()}
-                  className="px-5 py-2 rounded-xl text-xs font-black text-white bg-blue-600 hover:bg-blue-700 shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Tambahkan {multiStoreSelected.length} Baris</span>

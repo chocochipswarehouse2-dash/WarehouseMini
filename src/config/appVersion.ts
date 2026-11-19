@@ -15,21 +15,35 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.20.6",
-  "versionCode": 406,
+  "version": "v2.20.7",
+  "versionCode": 407,
   "buildDate": "19 November 2026",
-  "buildHash": "wms-261119-v406-2102",
-  "releaseTitle": "WMS v2.20.6 — Fix Progres Picking Offline Hilang Saat Kembali Online",
+  "buildHash": "wms-261119-v407-2222",
+  "releaseTitle": "WMS v2.20.7 — Rapikan Pengiriman Store (Input, Dispatched, Kirim & Histori)",
   "releaseNotes": [
-    "Tambah antrean sinkronisasi per-item offline (wms_picking_item_sync_queue_v1) agar scan/qty saat offline tidak hilang",
-    "Cegah data server usang menimpa progres SKU lokal yang belum tersinkron saat koneksi kembali online",
-    "Sinkronkan otomatis progres item offline ke Supabase lebih dulu sebelum refresh realtime & dukung multi-picker keroyokan",
-    "Serialisasi update per-SKU agar tap cepat +1/+1 atau sinyal putus-nyambung tidak bentrok"
+    "Sederhanakan Form Input Pengiriman Store (gabung Deskripsi & Keterangan menjadi 1 kolom efisien)",
+    "Pindahkan Dokumentasi Pengiriman Keseluruhan dari Form Input ke Tab Proses Kirim (tersimpan ke Supabase)",
+    "Rapikan tampilan 4 tahap (Input, Dispatched, Kirim, Histori Kirim) responsif Desktop & HP Seluler",
+    "Perbaiki bug banner filter toko kosong pada tab Dispatched & tambah ringkasan antrean per toko"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.20.6",
+    "versionCode": 406,
+    "buildDate": "19 November 2026",
+    "buildHash": "wms-261119-v406-2102",
+    "releaseTitle": "WMS v2.20.6 — Fix Progres Picking Offline Hilang Saat Kembali Online",
+    "releaseNotes": [
+      "Tambah antrean sinkronisasi per-item offline (wms_picking_item_sync_queue_v1) agar scan/qty saat offline tidak hilang",
+      "Cegah data server usang menimpa progres SKU lokal yang belum tersinkron saat koneksi kembali online",
+      "Sinkronkan otomatis progres item offline ke Supabase lebih dulu sebelum refresh realtime & dukung multi-picker keroyokan",
+      "Serialisasi update per-SKU agar tap cepat +1/+1 atau sinyal putus-nyambung tidak bentrok"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.20.5",
     "versionCode": 405,
@@ -124,19 +138,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Memastikan active_pickers di Tugas Picking hanya membaca baris item yang belum SELESAI",
       "Mencegah status Sedang Dikerjakan muncul kembali setelah Batal Ambil pada SJ dengan baris historis SELESAI"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.19.7",
-    "versionCode": 397,
-    "buildDate": "18 November 2026",
-    "buildHash": "wms-261118-v397-1950",
-    "releaseTitle": "WMS v2.19.7 — Perbaikan Batal Ambil & Input Lokasi Manual Picking",
-    "releaseNotes": [
-      "Menambahkan input lokasi rak manual langsung pada kartu SKU di Tugas Picking",
-      "Menambahkan notifikasi rekomendasi Stock Opname jika stok rak minus saat picking jujur",
-      "Memperbaiki sinkronisasi Batal Ambil dan hapus SJ agar status Sedang Dikerjakan tidak muncul kembali"
     ],
     "minSupportedVersion": "v2.0.0"
   }

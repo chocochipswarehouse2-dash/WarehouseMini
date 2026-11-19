@@ -1428,6 +1428,8 @@ export interface PengirimanStoreTrip {
   armada?: string;
   no_polisi?: string;
   catatan?: string;
+  foto_urls?: string[];
+  foto_bukti_surat_jalan?: string;
   status?: 'active' | 'cancelled';
   cancel_reason?: string;
   cancelled_at?: string;
