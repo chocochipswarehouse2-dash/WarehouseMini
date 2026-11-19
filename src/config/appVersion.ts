@@ -15,19 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.19.8",
-  "versionCode": 398,
-  "buildDate": "18 November 2026",
-  "buildHash": "wms-261118-v398-2005",
-  "releaseTitle": "WMS v2.19.8 — Perbaikan Status Sedang Dikerjakan dari Baris SELESAI di Picking",
+  "version": "v2.20.0",
+  "versionCode": 400,
+  "buildDate": "19 November 2026",
+  "buildHash": "wms-261119-v400-1413",
+  "releaseTitle": "WMS v2.20.0 — Modul Tugas Putaway (Transit X & Kolian R/V/Z)",
   "releaseNotes": [
-    "Memastikan active_pickers di Tugas Picking hanya membaca baris item yang belum SELESAI",
-    "Mencegah status Sedang Dikerjakan muncul kembali setelah Batal Ambil pada SJ dengan baris historis SELESAI"
+    "Menambahkan fitur Tugas Putaway interaktif di Dashboard Kapasitas untuk sumber Transit (X) dan Kolian (R/V/Z)",
+    "Algoritma rute putaway live mengikuti plafon aman dinamis Setup Kapasitas, prioritas konsolidasi SKU/size/kategori, auto-split Transit ke Kolian, dan reservasi slot anti-tabrakan",
+    "Dukungan keroyokan multi-operator realtime, scan hybrid (#LOK <-> SKU), override & split rak aktual, cetak A4/Thermal, kirim WA, serta proteksi offline outbox & floating dock",
+    "Memperbaiki sinkronisasi nilai Plafon Aman (safeOccupancyCapPercent) saat memuat ulang konfigurasi Kapasitas Rak"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.19.8",
+    "versionCode": 398,
+    "buildDate": "18 November 2026",
+    "buildHash": "wms-261118-v398-2005",
+    "releaseTitle": "WMS v2.19.8 — Perbaikan Status Sedang Dikerjakan dari Baris SELESAI di Picking",
+    "releaseNotes": [
+      "Memastikan active_pickers di Tugas Picking hanya membaca baris item yang belum SELESAI",
+      "Mencegah status Sedang Dikerjakan muncul kembali setelah Batal Ambil pada SJ dengan baris historis SELESAI"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.19.7",
     "versionCode": 397,
@@ -110,18 +124,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Setup Kapasitas lokasi SORTIR dibuat 1 lokasi statis (sama seperti Shopee/TikTok/Studio)",
       "Pemetaan lokasi SORTIR otomatis mengikuti Area Perbaikan"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.19.0",
-    "versionCode": 393,
-    "buildDate": "17 November 2026",
-    "buildHash": "wms-261117-v393-2002",
-    "releaseTitle": "WMS v2.19.0 — Area Sortir (ST) & Smart Picking Filter Pengecekan SJ",
-    "releaseNotes": [
-      "Tambah Area Sortir (ST001-STnnn) ke seluruh modul WMS",
-      "Filter Picking Pengecekan SJ hanya tampilkan lokasi Warehouse, Kolian, dan Transit"
     ],
     "minSupportedVersion": "v2.0.0"
   }

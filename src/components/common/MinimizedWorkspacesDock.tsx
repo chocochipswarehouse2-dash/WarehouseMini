@@ -26,7 +26,14 @@ import {
   setActivePickingSessionMinimized,
   clearActivePickingSession,
   removePickingSjDraft,
+  getPutawayOutboxBatches,
+  syncAllPutawayOutboxBatches,
+  getActivePutawayDraftSummary,
+  setActivePutawaySessionMinimized,
+  clearActivePutawaySession,
+  readActivePutawaySession,
 } from '../../services/scannerOutboxService';
+import { leavePutawayTask } from '../../services/putawayService';
 import { syncOfflinePenerimaanProduksi, leavePickingSJSupabase } from '../../services/supabase';
 import { getPendingOfflineProduksiCount } from '../../services/localDb';
 import { DraggableFloatingBubble, BubbleDragHandle } from './DraggableFloatingBubble';
@@ -58,6 +65,9 @@ interface MinimizedWorkspacesDockProps {
   // 4. Tugas Picking Active Session
   onMaximizePickingTask?: () => void;
 
+  // 5. Tugas Putaway Active Session
+  onMaximizePutawayTask?: () => void;
+
   onNotify?: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
@@ -80,6 +90,7 @@ export const MinimizedWorkspacesDock: React.FC<MinimizedWorkspacesDockProps> = (
   onCloseHitungUlang,
   recountQueueCount = 0,
   onMaximizePickingTask,
+  onMaximizePutawayTask,
   onNotify,
 }) => {
   const [isOnline, setIsOnline] = useState<boolean>(() =>
@@ -89,10 +100,12 @@ export const MinimizedWorkspacesDock: React.FC<MinimizedWorkspacesDockProps> = (
   const [produksiOutboxCount, setProduksiOutboxCount] = useState<number>(0);
   const [recountOutboxCount, setRecountOutboxCount] = useState<number>(0);
   const [pickingOutboxCount, setPickingOutboxCount] = useState<number>(0);
+  const [putawayOutboxCount, setPutawayOutboxCount] = useState<number>(0);
   const [produksiDraft, setProduksiDraft] = useState(() => getActiveProduksiInputDraftSummary());
   const [recountDraft, setRecountDraft] = useState(() => getActiveRecountDraftSummary());
   const [pickingDraft, setPickingDraft] = useState(() => getActivePickingDraftSummary());
-  const [syncingKey, setSyncingKey] = useState<'scanner' | 'produksi' | 'recount' | 'picking' | null>(null);
+  const [putawayDraft, setPutawayDraft] = useState(() => getActivePutawayDraftSummary());
+  const [syncingKey, setSyncingKey] = useState<'scanner' | 'produksi' | 'recount' | 'picking' | 'putaway' | null>(null);
   const [isMobileCollapsed, setIsMobileCollapsed] = useState<boolean>(false);
 
   const refreshDockState = useCallback(() => {
@@ -100,9 +113,11 @@ export const MinimizedWorkspacesDock: React.FC<MinimizedWorkspacesDockProps> = (
     setProduksiOutboxCount(getPendingOfflineProduksiCount());
     setRecountOutboxCount(getRecountOutboxBatches().length);
     setPickingOutboxCount(getPickingOutboxBatches().length);
+    setPutawayOutboxCount(getPutawayOutboxBatches().length);
     setProduksiDraft(getActiveProduksiInputDraftSummary());
     setRecountDraft(getActiveRecountDraftSummary());
     setPickingDraft(getActivePickingDraftSummary());
+    setPutawayDraft(getActivePutawayDraftSummary());
   }, []);
 
   useEffect(() => {
@@ -124,9 +139,11 @@ export const MinimizedWorkspacesDock: React.FC<MinimizedWorkspacesDockProps> = (
     window.addEventListener('wms_scanner_outbox_updated', handleAnyUpdate);
     window.addEventListener('wms_recount_outbox_updated', handleAnyUpdate);
     window.addEventListener('wms_picking_outbox_updated', handleAnyUpdate);
+    window.addEventListener('wms_putaway_outbox_updated', handleAnyUpdate);
     window.addEventListener('wms_produksi_draft_updated', handleAnyUpdate);
     window.addEventListener('wms_recount_draft_updated', handleAnyUpdate);
     window.addEventListener('wms_picking_session_updated', handleAnyUpdate);
+    window.addEventListener('wms_putaway_session_updated', handleAnyUpdate);
     window.addEventListener('storage', handleAnyUpdate);
 
     const timer = setInterval(refreshDockState, 3000);
@@ -137,9 +154,11 @@ export const MinimizedWorkspacesDock: React.FC<MinimizedWorkspacesDockProps> = (
       window.removeEventListener('wms_scanner_outbox_updated', handleAnyUpdate);
       window.removeEventListener('wms_recount_outbox_updated', handleAnyUpdate);
       window.removeEventListener('wms_picking_outbox_updated', handleAnyUpdate);
+      window.removeEventListener('wms_putaway_outbox_updated', handleAnyUpdate);
       window.removeEventListener('wms_produksi_draft_updated', handleAnyUpdate);
       window.removeEventListener('wms_recount_draft_updated', handleAnyUpdate);
       window.removeEventListener('wms_picking_session_updated', handleAnyUpdate);
+      window.removeEventListener('wms_putaway_session_updated', handleAnyUpdate);
       window.removeEventListener('storage', handleAnyUpdate);
     };
   }, [
@@ -158,12 +177,14 @@ export const MinimizedWorkspacesDock: React.FC<MinimizedWorkspacesDockProps> = (
     (!isProduksiInputOpen && produksiOutboxCount > 0);
   const showHitungUlangPill = isHitungUlangOpen && isHitungUlangMinimized;
   const showPickingPill = (pickingDraft.hasSession && pickingDraft.isMinimized) || pickingOutboxCount > 0;
+  const showPutawayPill = (putawayDraft.hasSession && putawayDraft.isMinimized) || putawayOutboxCount > 0;
 
   const activePillCount =
     (showScannerPill ? 1 : 0) +
     (showProduksiPill ? 1 : 0) +
     (showHitungUlangPill ? 1 : 0) +
-    (showPickingPill ? 1 : 0);
+    (showPickingPill ? 1 : 0) +
+    (showPutawayPill ? 1 : 0);
 
   if (activePillCount === 0) return null;
 
@@ -270,6 +291,54 @@ export const MinimizedWorkspacesDock: React.FC<MinimizedWorkspacesDockProps> = (
     if (currentNoSj) {
       onNotify?.(
         `Sesi Tugas Picking SJ ${currentNoSj} ditutup dari dock. Progres terpicking tersimpan & status Sedang Dikerjakan dilepas.`,
+        'info'
+      );
+    }
+  };
+
+  const handleSyncPutaway = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isOnline || syncingKey) return;
+    setSyncingKey('putaway');
+    try {
+      const res = await syncAllPutawayOutboxBatches();
+      refreshDockState();
+      if (res.syncedBatches > 0) {
+        onNotify?.(`✅ Berhasil menyinkronkan ${res.syncedBatches} Tugas Putaway ke Database!`, 'success');
+      }
+    } finally {
+      setSyncingKey(null);
+    }
+  };
+
+  const handleMaximizePutaway = () => {
+    setActivePutawaySessionMinimized(false);
+    refreshDockState();
+    onMaximizePutawayTask?.();
+  };
+
+  const handleClosePutawayPill = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const saved = readActivePutawaySession();
+    const invoice = putawayDraft.invoicePutaway;
+    let currentUserName = 'Operator';
+    try {
+      const rawUserSession = localStorage.getItem('wms_session');
+      if (rawUserSession) {
+        const parsedUser = JSON.parse(rawUserSession);
+        currentUserName = parsedUser?.name || parsedUser?.username || 'Operator';
+      }
+    } catch {}
+
+    clearActivePutawaySession();
+    refreshDockState();
+
+    if (saved?.task?.id && (typeof navigator === 'undefined' || navigator.onLine)) {
+      leavePutawayTask(saved.task.id, currentUserName, saved.task).catch(() => {});
+    }
+    if (invoice) {
+      onNotify?.(
+        `Sesi Tugas Putaway ${invoice} ditutup dari dock (tugas tetap aktif untuk dilanjutkan / dibantu rekan tim).`,
         'info'
       );
     }
@@ -637,6 +706,82 @@ export const MinimizedWorkspacesDock: React.FC<MinimizedWorkspacesDockProps> = (
                 type="button"
                 onClick={handleClosePickingPill}
                 title="Tutup dari Dock (Progres scan SJ tetap tersimpan aman di draft)"
+                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 5. PILL: TUGAS PUTAWAY AKTIF */}
+        {showPutawayPill && (
+          <div className="flex items-center gap-1.5 p-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 animate-in slide-in-from-bottom duration-200">
+            <BubbleDragHandle tone="light" className="-ml-0.5" />
+            <div
+              onClick={handleMaximizePutaway}
+              className="flex items-center gap-2 cursor-pointer hover:opacity-90 transition-opacity min-w-0"
+            >
+              <div
+                className={`w-8 h-8 rounded-xl flex items-center justify-center text-white shadow-xs shrink-0 ${
+                  !isOnline
+                    ? 'bg-amber-600'
+                    : syncingKey === 'putaway'
+                    ? 'bg-cyan-600 animate-pulse'
+                    : 'bg-cyan-600'
+                }`}
+              >
+                <ClipboardList className="w-4 h-4" />
+              </div>
+
+              <div className="flex flex-col pr-1 min-w-0">
+                <div className="flex items-center gap-1 flex-wrap">
+                  <span className="text-[11px] font-extrabold text-slate-900 dark:text-white truncate">
+                    Tugas Putaway
+                  </span>
+                  {putawayDraft.sourceLocations.length > 0 && (
+                    <span className="px-1 py-0.2 rounded bg-cyan-100 dark:bg-cyan-950/70 text-cyan-800 dark:text-cyan-300 text-[9px] font-mono font-bold">
+                      {putawayDraft.sourceLocations.slice(0, 2).join(',')}
+                      {putawayDraft.sourceLocations.length > 2 ? `+${putawayDraft.sourceLocations.length - 2}` : ''}
+                    </span>
+                  )}
+                </div>
+
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[165px] sm:max-w-[215px]">
+                  {putawayDraft.hasSession
+                    ? `${putawayDraft.totalPlaced}/${putawayDraft.totalTarget} pcs (${putawayDraft.progressPct}%) · ${putawayDraft.invoicePutaway}`
+                    : putawayOutboxCount > 0
+                    ? `${putawayOutboxCount} putaway selesai menunggu sync`
+                    : 'Draft aman · Klik lanjutkan'}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-0.5 pl-1.5 border-l border-slate-200 dark:border-slate-800 shrink-0">
+              {putawayOutboxCount > 0 && isOnline && (
+                <button
+                  type="button"
+                  onClick={handleSyncPutaway}
+                  disabled={syncingKey === 'putaway'}
+                  title="Kirim antrean offline Tugas Putaway ke Database"
+                  className="px-1.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-[9px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-2.5 h-2.5 ${syncingKey === 'putaway' ? 'animate-spin' : ''}`} />
+                  <span>{putawayOutboxCount}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleMaximizePutaway}
+                title="Buka & Lanjutkan Sesi Tugas Putaway"
+                className="p-1 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={handleClosePutawayPill}
+                title="Tutup dari Dock"
                 className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />

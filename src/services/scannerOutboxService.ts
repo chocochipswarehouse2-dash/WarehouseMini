@@ -4,11 +4,15 @@ import {
   ProductItem,
   PenerimaanProduksiItem,
   PenerimaanRecountLogItem,
-  PickingListItem
+  PickingListItem,
+  PutawayTask,
+  SystemDoc
 } from '../types';
 import {
   supabaseFetch,
   fetchStockForLocations,
+  fetchStockForSkus,
+  bumpCloudCacheEpoch,
   insertStockOpnameQueue,
   getAreaFromLokasi,
   generateUUID,
@@ -34,6 +38,10 @@ const RECOUNT_WORKSPACE_DRAFT_KEY = 'wms_recount_workspace_draft_v1';
 const PICKING_OUTBOX_STORAGE_KEY = 'wms_picking_offline_outbox_v1';
 const PICKING_SJ_DRAFTS_KEY = 'wms_picking_sj_drafts_v1';
 const ACTIVE_PICKING_SESSION_KEY = 'wms_active_picking_session';
+const PUTAWAY_OUTBOX_STORAGE_KEY = 'wms_putaway_offline_outbox_v1';
+const ACTIVE_PUTAWAY_SESSION_KEY = 'wms_active_putaway_session_v1';
+const PUTAWAY_DOCS_SECTION_OUTBOX = 'wms_putaway_tasks_v1';
+const PUTAWAY_LOCAL_CACHE_KEY_OUTBOX = 'wms_putaway_tasks_cache_v1';
 
 export interface ScannerOutboxBatch {
   batchId: string;
@@ -1367,6 +1375,422 @@ export function clearActivePickingSession(): void {
     localStorage.removeItem(ACTIVE_PICKING_SESSION_KEY);
     notifyPickingSessionUpdated();
     window.dispatchEvent(new CustomEvent('wms_close_picking_session'));
+  } catch {}
+}
+
+// ============================================================================
+// TUGAS PUTAWAY OFFLINE OUTBOX & ACTIVE SESSION HELPERS
+// ============================================================================
+
+export interface PutawayOutboxBatch {
+  batchId: string;
+  taskId: string;
+  invoicePutaway: string;
+  sourceLocations: string[];
+  completedBy: string;
+  catatan: string;
+  taskSnapshot: PutawayTask;
+  logs: LogProdukItem[];
+  movedSkus: string[];
+  logsSynced: boolean;
+  taskSynced: boolean;
+  attempts: number;
+  lastError?: string;
+  status: 'PENDING' | 'SYNCING' | 'FAILED';
+  createdAtIso: string;
+}
+
+export interface ActivePutawaySessionData {
+  taskId: string;
+  task: PutawayTask;
+  activeTargetLoc: string;
+  rekapCatatan: string;
+  isMinimized: boolean;
+  timestamp: number;
+}
+
+let isPutawayOutboxSyncing = false;
+
+function notifyPutawayOutboxUpdated() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('wms_putaway_outbox_updated'));
+    window.dispatchEvent(new CustomEvent('wms_scanner_outbox_updated'));
+  }
+}
+
+export function notifyPutawaySessionUpdated() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('wms_putaway_session_updated'));
+  }
+}
+
+export function getPutawayOutboxBatches(): PutawayOutboxBatch[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(PUTAWAY_OUTBOX_STORAGE_KEY);
+    const parsed: PutawayOutboxBatch[] = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function getPendingPutawayOutboxCount(): number {
+  return getPutawayOutboxBatches().length;
+}
+
+function savePutawayOutboxBatches(batches: PutawayOutboxBatch[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (batches.length === 0) {
+      localStorage.removeItem(PUTAWAY_OUTBOX_STORAGE_KEY);
+    } else {
+      localStorage.setItem(PUTAWAY_OUTBOX_STORAGE_KEY, JSON.stringify(batches));
+    }
+  } catch (err) {
+    console.warn('[PutawayOutbox] Failed saving putaway outbox:', err);
+  }
+  notifyPutawayOutboxUpdated();
+}
+
+export function enqueuePutawayOutboxBatch(params: {
+  taskId: string;
+  invoicePutaway: string;
+  sourceLocations: string[];
+  completedBy: string;
+  catatan: string;
+  taskSnapshot: PutawayTask;
+  logs: LogProdukItem[];
+  movedSkus: string[];
+  logsSynced?: boolean;
+  taskSynced?: boolean;
+}): PutawayOutboxBatch {
+  const cleanInvoice = String(params.invoicePutaway || '').trim().toUpperCase();
+  const newBatch: PutawayOutboxBatch = {
+    batchId: `PUTAWAY-${cleanInvoice}-${Date.now()}`,
+    taskId: params.taskId,
+    invoicePutaway: cleanInvoice,
+    sourceLocations: params.sourceLocations || [],
+    completedBy: params.completedBy || 'Operator',
+    catatan: params.catatan || '',
+    taskSnapshot: params.taskSnapshot,
+    logs: params.logs || [],
+    movedSkus: Array.from(new Set(params.movedSkus || [])),
+    logsSynced: Boolean(params.logsSynced || (params.logs || []).length === 0),
+    taskSynced: Boolean(params.taskSynced),
+    attempts: 0,
+    status: 'PENDING',
+    createdAtIso: new Date().toISOString(),
+  };
+
+  const current = getPutawayOutboxBatches().filter(
+    (b) => b.taskId !== params.taskId && b.invoicePutaway !== cleanInvoice
+  );
+  savePutawayOutboxBatches([...current, newBatch]);
+  return newBatch;
+}
+
+function isMissingPutawayTableError(err: any): boolean {
+  const msg = String(err?.message || err || '').toLowerCase();
+  return (
+    msg.includes('42p01') ||
+    msg.includes('pgrst205') ||
+    msg.includes('putaway_tasks') && (msg.includes('does not exist') || msg.includes('not found') || msg.includes('404'))
+  );
+}
+
+export async function syncAllPutawayOutboxBatches(): Promise<{
+  syncedBatches: number;
+  remainingBatches: number;
+  errors: string[];
+}> {
+  const current = getPutawayOutboxBatches();
+  if (current.length === 0) {
+    return { syncedBatches: 0, remainingBatches: 0, errors: [] };
+  }
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return {
+      syncedBatches: 0,
+      remainingBatches: current.length,
+      errors: ['Perangkat sedang offline'],
+    };
+  }
+  if (isPutawayOutboxSyncing) {
+    return { syncedBatches: 0, remainingBatches: current.length, errors: [] };
+  }
+
+  isPutawayOutboxSyncing = true;
+  let syncedBatches = 0;
+  const errors: string[] = [];
+  const workingList = [...current];
+  const allMovedSkus = new Set<string>();
+  const isComplete = (b: PutawayOutboxBatch) => b.logsSynced && b.taskSynced;
+
+  try {
+    for (let i = 0; i < workingList.length; i++) {
+      const batch = workingList[i];
+      batch.status = 'SYNCING';
+      savePutawayOutboxBatches(workingList.filter((b) => !isComplete(b)));
+
+      try {
+        // Step 1: Idempotent sync to log_produk (OUT + IN)
+        if (!batch.logsSynced && batch.logs.length > 0) {
+          const existingRows = await supabaseFetch<Array<{ type: string; sku: string; lokasi: string; qty: number }>>(
+            'log_produk',
+            'GET',
+            null,
+            `select=type,sku,lokasi,qty&invoice=eq.${encodeURIComponent(batch.invoicePutaway)}`
+          );
+
+          const existingCounts = new Map<string, number>();
+          (existingRows || []).forEach((row) => {
+            const k = `${String(row.type || '').toUpperCase()}|${String(row.sku || '').toUpperCase()}|${String(row.lokasi || '').toUpperCase()}|${Number(row.qty) || 0}`;
+            existingCounts.set(k, (existingCounts.get(k) || 0) + 1);
+          });
+
+          const remainingLogs: LogProdukItem[] = [];
+          for (const log of batch.logs) {
+            const k = `${String(log.type || '').toUpperCase()}|${String(log.sku || '').toUpperCase()}|${String(log.lokasi || '').toUpperCase()}|${Number(log.qty) || 0}`;
+            const count = existingCounts.get(k) || 0;
+            if (count > 0) {
+              existingCounts.set(k, count - 1);
+            } else {
+              remainingLogs.push(log);
+            }
+          }
+
+          if (remainingLogs.length > 0) {
+            const CHUNK_SIZE = 150;
+            for (let c = 0; c < remainingLogs.length; c += CHUNK_SIZE) {
+              await supabaseFetch('log_produk', 'POST', remainingLogs.slice(c, c + CHUNK_SIZE));
+            }
+          }
+
+          batch.logsSynced = true;
+          savePutawayOutboxBatches(workingList.filter((b) => !isComplete(b)));
+        } else {
+          batch.logsSynced = true;
+        }
+
+        // Step 2: Update PutawayTask status to SELESAI in putaway_tasks or wms_system_docs
+        if (!batch.taskSynced) {
+          const doneTask: PutawayTask = {
+            ...batch.taskSnapshot,
+            status: 'SELESAI',
+            completed_by: batch.completedBy,
+            completed_at: batch.taskSnapshot.completed_at || batch.createdAtIso,
+            updated_at: new Date().toISOString(),
+            catatan: batch.catatan || batch.taskSnapshot.catatan || '',
+          };
+
+          let updatedDedicated = false;
+          try {
+            const patchRes = await supabaseFetch<any[]>(
+              'putaway_tasks',
+              'PATCH',
+              {
+                status: 'SELESAI',
+                completed_by: doneTask.completed_by,
+                completed_at: doneTask.completed_at,
+                updated_at: doneTask.updated_at,
+                catatan: doneTask.catatan || '',
+                items: doneTask.items,
+                active_operators: doneTask.active_operators,
+              },
+              `id=eq.${encodeURIComponent(doneTask.id)}`,
+              true
+            );
+            if (!Array.isArray(patchRes) || patchRes.length === 0) {
+              await supabaseFetch('putaway_tasks', 'POST', [doneTask]);
+            }
+            updatedDedicated = true;
+          } catch (tblErr: any) {
+            if (!isMissingPutawayTableError(tblErr)) {
+              throw tblErr;
+            }
+          }
+
+          if (!updatedDedicated) {
+            const docs = await supabaseFetch<SystemDoc[]>(
+              'wms_system_docs',
+              'GET',
+              null,
+              `section_id=eq.${encodeURIComponent(PUTAWAY_DOCS_SECTION_OUTBOX)}&limit=1`
+            );
+            let existingList: PutawayTask[] = [];
+            if (Array.isArray(docs) && docs[0]?.content) {
+              try {
+                const parsed = JSON.parse(docs[0].content);
+                if (Array.isArray(parsed)) existingList = parsed;
+              } catch {}
+            }
+            const idx = existingList.findIndex((t) => t.id === doneTask.id);
+            if (idx >= 0) existingList[idx] = doneTask;
+            else existingList.unshift(doneTask);
+
+            const activeOnes = existingList.filter((t) => t.status === 'AKTIF');
+            const historyOnes = existingList
+              .filter((t) => t.status !== 'AKTIF')
+              .sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''))
+              .slice(0, 80);
+
+            await supabaseFetch(
+              'wms_system_docs',
+              'POST',
+              [
+                {
+                  section_id: PUTAWAY_DOCS_SECTION_OUTBOX,
+                  content: JSON.stringify([...activeOnes, ...historyOnes]),
+                  updated_by: batch.completedBy,
+                },
+              ],
+              'on_conflict=section_id',
+              true
+            );
+          }
+
+          try {
+            const cachedRaw = localStorage.getItem(PUTAWAY_LOCAL_CACHE_KEY_OUTBOX);
+            const cachedList: PutawayTask[] = cachedRaw ? JSON.parse(cachedRaw) : [];
+            const nextCached = Array.isArray(cachedList)
+              ? cachedList.map((t) => (t.id === doneTask.id ? doneTask : t))
+              : [doneTask];
+            if (!nextCached.some((t) => t.id === doneTask.id)) nextCached.unshift(doneTask);
+            localStorage.setItem(PUTAWAY_LOCAL_CACHE_KEY_OUTBOX, JSON.stringify(nextCached));
+          } catch {}
+
+          batch.taskSynced = true;
+          savePutawayOutboxBatches(workingList.filter((b) => !isComplete(b)));
+        }
+
+        batch.movedSkus.forEach((s) => allMovedSkus.add(s));
+        batch.status = 'PENDING';
+        batch.lastError = undefined;
+        syncedBatches++;
+      } catch (err: any) {
+        batch.attempts = (batch.attempts || 0) + 1;
+        batch.status = 'FAILED';
+        batch.lastError = err?.message || 'Gangguan jaringan saat sinkronisasi Tugas Putaway';
+        errors.push(batch.lastError!);
+      }
+
+      savePutawayOutboxBatches(workingList.filter((b) => !isComplete(b)));
+    }
+
+    if (syncedBatches > 0) {
+      invalidateStokFisikCache();
+      if (allMovedSkus.size > 0) {
+        await fetchStockForSkus(Array.from(allMovedSkus)).catch(() => {});
+      }
+      bumpCloudCacheEpoch('STOCK_RESET').catch(() => {});
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('wms_inventory_updated'));
+        window.dispatchEvent(new CustomEvent('wms_stock_updated'));
+        window.dispatchEvent(new CustomEvent('wms_mutasi_updated'));
+        window.dispatchEvent(new CustomEvent('wms_putaway_tasks_updated'));
+      }
+    }
+  } finally {
+    isPutawayOutboxSyncing = false;
+  }
+
+  const remaining = getPutawayOutboxBatches();
+  return {
+    syncedBatches,
+    remainingBatches: remaining.length,
+    errors,
+  };
+}
+
+export function saveActivePutawaySession(session: ActivePutawaySessionData): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(
+      ACTIVE_PUTAWAY_SESSION_KEY,
+      JSON.stringify({ ...session, timestamp: Date.now() })
+    );
+    notifyPutawaySessionUpdated();
+  } catch (err) {
+    console.warn('[PutawaySession] Failed saving session:', err);
+  }
+}
+
+export function readActivePutawaySession(): ActivePutawaySessionData | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(ACTIVE_PUTAWAY_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as ActivePutawaySessionData;
+    if (!parsed || !parsed.task || !parsed.task.id) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function getActivePutawayDraftSummary(): {
+  hasSession: boolean;
+  isMinimized: boolean;
+  taskId: string;
+  invoicePutaway: string;
+  sourceLocations: string[];
+  totalTarget: number;
+  totalPlaced: number;
+  progressPct: number;
+  activeTargetLoc: string;
+} {
+  const empty = {
+    hasSession: false,
+    isMinimized: false,
+    taskId: '',
+    invoicePutaway: '',
+    sourceLocations: [] as string[],
+    totalTarget: 0,
+    totalPlaced: 0,
+    progressPct: 0,
+    activeTargetLoc: '',
+  };
+  const session = readActivePutawaySession();
+  if (!session || session.task.status !== 'AKTIF') return empty;
+  const items = Array.isArray(session.task.items) ? session.task.items : [];
+  const totalTarget = items.reduce((s, it) => s + (Number(it.qty_target) || 0), 0);
+  const totalPlaced = items.reduce((s, it) => s + (Number(it.qty_placed) || 0), 0);
+  const progressPct = totalTarget > 0 ? Math.min(100, Math.round((totalPlaced / totalTarget) * 100)) : 0;
+
+  return {
+    hasSession: true,
+    isMinimized: Boolean(session.isMinimized),
+    taskId: session.task.id,
+    invoicePutaway: session.task.invoice_putaway,
+    sourceLocations: Array.isArray(session.task.source_locations) ? session.task.source_locations : [],
+    totalTarget,
+    totalPlaced,
+    progressPct,
+    activeTargetLoc: String(session.activeTargetLoc || '').trim(),
+  };
+}
+
+export function setActivePutawaySessionMinimized(minimized: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const session = readActivePutawaySession();
+    if (!session) return;
+    session.isMinimized = Boolean(minimized);
+    session.timestamp = Date.now();
+    localStorage.setItem(ACTIVE_PUTAWAY_SESSION_KEY, JSON.stringify(session));
+    notifyPutawaySessionUpdated();
+    window.dispatchEvent(
+      new CustomEvent(minimized ? 'wms_minimize_putaway_session' : 'wms_maximize_putaway_session')
+    );
+  } catch {}
+}
+
+export function clearActivePutawaySession(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(ACTIVE_PUTAWAY_SESSION_KEY);
+    notifyPutawaySessionUpdated();
+    window.dispatchEvent(new CustomEvent('wms_close_putaway_session'));
   } catch {}
 }
 

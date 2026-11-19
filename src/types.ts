@@ -128,6 +128,7 @@ export type UserPermissionKey =
   | 'menu_ops_inventory'
   | 'menu_ops_katalog_produk'
   | 'menu_ops_picking'
+  | 'menu_ops_putaway'
   | 'menu_ops_peminjaman'
   | 'menu_ops_roadmap'
   | 'menu_ops_cetak_barcode'
@@ -1561,4 +1562,65 @@ export interface TrelloUpItem {
   last_synced_at?: string;
   created_at?: string;
   updated_at?: string;
+}
+
+// =============================================================================
+// TUGAS PUTAWAY (TRANSIT X & KOLIAN R/V/Z -> RAK PENYIMPANAN)
+// =============================================================================
+
+export interface PutawayPlacement {
+  lokasi: string;
+  area: string;
+  qty: number;
+  placed_by: string;
+  placed_at: string;
+  is_overridden?: boolean;
+}
+
+export interface PutawaySourceBucket {
+  lokasiExact: string;
+  areaExact: string;
+  qty: number;
+}
+
+export interface PutawayTaskItem {
+  id: string;
+  source_lokasi: string;
+  source_area: string;
+  source_buckets: PutawaySourceBucket[];
+  sku: string;
+  nama_produk: string;
+  size: string;
+  kategori: string;
+  target_zone_label: string;
+  is_koli_overflow?: boolean;
+  qty_target: number;
+  recommended_lokasi: string;
+  recommended_reason: string;
+  alternative_lokasis: string[];
+  placements: PutawayPlacement[];
+  qty_placed: number;
+  status: 'PENDING' | 'PROSES' | 'SELESAI' | 'KENDALA';
+  note?: string;
+  last_actor?: string;
+  updated_at?: string;
+}
+
+export type PutawayTaskStatus = 'AKTIF' | 'SELESAI' | 'DIBATALKAN';
+
+export interface PutawayTask {
+  id: string;
+  invoice_putaway: string;
+  source_locations: string[];
+  source_area: string;
+  status: PutawayTaskStatus;
+  created_by: string;
+  active_operators: string[];
+  completed_by?: string;
+  safe_cap_percent: number;
+  items: PutawayTaskItem[];
+  catatan?: string;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string;
 }

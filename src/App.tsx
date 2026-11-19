@@ -69,10 +69,13 @@ import {
   getPendingScannerOutboxCount,
   getPendingRecountOutboxCount,
   getPendingPickingOutboxCount,
+  getPendingPutawayOutboxCount,
   getActiveProduksiInputDraftSummary,
   getActiveRecountDraftSummary,
   getActivePickingDraftSummary,
   setActivePickingSessionMinimized,
+  getActivePutawayDraftSummary,
+  setActivePutawaySessionMinimized,
 } from './services/scannerOutboxService';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { globalRealtimeStore } from './services/store';
@@ -857,6 +860,9 @@ export default function App() {
     if (rawPage !== 'picking_tasks' && rawPage !== 'loading_dock') {
       setActivePickingSessionMinimized(true);
     }
+    if (rawPage !== 'inventory') {
+      setActivePutawaySessionMinimized(true);
+    }
 
     if (rawPage === 'cetak_barcode') setCetakLabelInitialTab('barcode');
     if (rawPage === 'picking_tasks') {
@@ -900,9 +906,11 @@ export default function App() {
           getPendingScannerOutboxCount() > 0 ||
           getPendingRecountOutboxCount() > 0 ||
           getPendingPickingOutboxCount() > 0 ||
+          getPendingPutawayOutboxCount() > 0 ||
           getActiveProduksiInputDraftSummary().hasDraft ||
           getActiveRecountDraftSummary().hasActiveWorkspaceDraft ||
-          getActivePickingDraftSummary().hasSession;
+          getActivePickingDraftSummary().hasSession ||
+          getActivePutawayDraftSummary().hasSession;
       } catch {}
 
       if (!hasStagingScans) {
@@ -5777,8 +5785,24 @@ export default function App() {
           setIsScannerPopupMinimized(true);
           setIsProduksiInputPopupMinimized(true);
           setIsHitungUlangPopupMinimized(true);
+          setActivePutawaySessionMinimized(true);
           setActivePickingSessionMinimized(false);
           handleSelectPage('picking_tasks');
+        }}
+        onMaximizePutawayTask={() => {
+          setIsScannerPopupMinimized(true);
+          setIsProduksiInputPopupMinimized(true);
+          setIsHitungUlangPopupMinimized(true);
+          setActivePickingSessionMinimized(true);
+          setActivePutawaySessionMinimized(false);
+          setInventoryInitialTab('capacity');
+          handleSelectPage('inventory');
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('wms_open_inventory_tab', { detail: { tab: 'capacity' } }));
+            setTimeout(() => {
+              window.dispatchEvent(new CustomEvent('wms_maximize_putaway_session'));
+            }, 120);
+          }
         }}
         onNotify={showToast}
       />

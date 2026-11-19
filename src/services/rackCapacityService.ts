@@ -247,6 +247,19 @@ export const DEFAULT_RACK_ZONES: RackZoneRule[] = [
     color: 'cyan',
   },
   {
+    id: 'zone_aksesoris',
+    area: 'Aksesoris',
+    zoneName: 'Area Aksesoris',
+    prefix: 'BELT',
+    startNum: 0,
+    endNum: 0,
+    padLength: 0,
+    staticLocations: ['BELT', 'CARD', 'GIFT', 'BOX'],
+    category: 'Aksesoris',
+    defaultMaxCapacity: 80,
+    color: 'purple',
+  },
+  {
     id: 'zone_koli_r',
     area: 'Kolian',
     zoneName: 'Lokasi Koli R',
@@ -501,10 +514,11 @@ export function normalizeAndMigrateRackConfig(raw: RackCapacityConfig): RackCapa
     upgradedZones.push(z);
   }
 
-  // Ensure Koli R, V, Z, Transit X, separate Blok F (SHOPEE, TIKTOK, IGLIVE, STUDIO), and Perbaikan (CC, PMK, DF, SORTIR) exist
+  // Ensure Koli R, V, Z, Transit X, Aksesoris, separate Blok F (SHOPEE, TIKTOK, IGLIVE, STUDIO), and Perbaikan (CC, PMK, DF, SORTIR) exist
   const requiredZones = DEFAULT_RACK_ZONES.filter((dz) =>
     [
       'zone_transit',
+      'zone_aksesoris',
       'zone_koli_r',
       'zone_koli_v',
       'zone_koli_z',
@@ -523,6 +537,7 @@ export function normalizeAndMigrateRackConfig(raw: RackCapacityConfig): RackCapa
     const exists = upgradedZones.some(
       (z) =>
         z.id === req.id ||
+        (req.id === 'zone_aksesoris' && (z.area || '').trim().toUpperCase() === 'AKSESORIS') ||
         (req.staticLocations?.length === 1 &&
           z.staticLocations?.length === 1 &&
           z.staticLocations[0].toUpperCase() === req.staticLocations[0].toUpperCase()) ||
@@ -611,6 +626,9 @@ export async function fetchRackCapacityConfig(): Promise<RackCapacityConfig> {
           overrides: remote.overrides || {},
           evacuationRule: remote.evacuationRule,
           refillMaxPerSkuAbcd: remote.refillMaxPerSkuAbcd,
+          refillTriggerThreshold: remote.refillTriggerThreshold,
+          safeOccupancyCapPercent: remote.safeOccupancyCapPercent,
+          consolidationDistanceThreshold: remote.consolidationDistanceThreshold,
         });
         saveLocalRackCapacityConfig(merged);
         return merged;
@@ -1186,6 +1204,77 @@ export function inferTargetAbcdPrefixForProduct(
     return { prefix: 'A', categoryLabel: 'Dress' };
   }
   return { prefix: 'C', categoryLabel: 'Top' };
+}
+
+/**
+ * Checks whether a rack/location is an eligible source for Tugas Putaway:
+ * ONLY Transit (X, X001..X100, TRANSIT) and Kolian (R/V/Z).
+ */
+export function isPutawayEligibleSource(area: string, lokasi: string): boolean {
+  const a = (area || '').trim().toUpperCase();
+  const l = (lokasi || '').trim().toUpperCase();
+  if (!l || l === '-' || l === 'TANPA LOKASI') return false;
+  if (a === 'BLOK F' || a === 'PERBAIKAN' || a === 'ANOMALI' || a === 'WAREHOUSE' || a === 'AKSESORIS') {
+    return false;
+  }
+  if (a === 'TRANSIT' || l === 'X' || l === 'TRANSIT' || /^X-?\d+$/.test(l)) {
+    return true;
+  }
+  if (a === 'KOLIAN' || a === 'KOLI' || /^[RVZ]-?\d+$/.test(l)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Resolves target storage zone for Tugas Putaway (including Aksesoris vs Warehouse ABCD).
+ */
+export function inferTargetZoneForPutaway(
+  namaProduk: string,
+  kategori?: string
+): {
+  area: 'Warehouse' | 'Aksesoris';
+  prefix: 'A' | 'B' | 'C' | 'D' | 'AKSESORIS';
+  preferredAksPrefix?: 'BELT' | 'CARD' | 'GIFT' | 'BOX' | '';
+  categoryLabel: string;
+} {
+  const combined = `${kategori || ''} ${namaProduk || ''}`.toUpperCase();
+  if (
+    /\b(ACCESSOR|ACCESSORIES|AKSESORIS|BELT|IKAT PINGGANG|GESPER|CARD|KARTU|GIFT|KADO|BOX|KOTAK|BAG|TAS|SCARF|HIJAB|PASHMINA|BROOCH|BROS|EARRING|NECKLACE|BRACELET|PIN|POUCH|TOTEBAG|PAPERBAG)\b/.test(
+      combined
+    )
+  ) {
+    let preferredAksPrefix: 'BELT' | 'CARD' | 'GIFT' | 'BOX' | '' = '';
+    if (/\b(BELT|IKAT PINGGANG|GESPER)\b/.test(combined)) preferredAksPrefix = 'BELT';
+    else if (/\b(CARD|KARTU)\b/.test(combined)) preferredAksPrefix = 'CARD';
+    else if (/\b(GIFT|KADO)\b/.test(combined)) preferredAksPrefix = 'GIFT';
+    else if (/\b(BOX|KOTAK|PAPERBAG)\b/.test(combined)) preferredAksPrefix = 'BOX';
+    return {
+      area: 'Aksesoris',
+      prefix: 'AKSESORIS',
+      preferredAksPrefix,
+      categoryLabel: 'Aksesoris',
+    };
+  }
+  const abcd = inferTargetAbcdPrefixForProduct(namaProduk, kategori);
+  return {
+    area: 'Warehouse',
+    prefix: abcd.prefix,
+    categoryLabel: abcd.categoryLabel,
+  };
+}
+
+/**
+ * Normalizes product name by removing trailing size tokens so sibling sizes (e.g. Dress Cream S & Dress Cream M)
+ * group together in Putaway Tier 2 placement matching.
+ */
+export function normalizeBaseProductNameForGrouping(namaProduk: string): string {
+  const cleaned = cleanProductName(String(namaProduk || '')).trim();
+  if (!cleaned) return '';
+  return cleaned
+    .replace(/(?:\s*[-/|()]\s*|\s+)(?:ALL\s*SIZE|FREE\s*SIZE|ONE\s*SIZE|XS|S|M|L|XL|XXL|XXXL|2XL|3XL|4XL|S\/M|M\/L|L\/XL)\s*\)?$/i, '')
+    .trim()
+    .toLowerCase();
 }
 
 export interface KoliRefillCandidateSummary {

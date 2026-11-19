@@ -186,6 +186,7 @@ export const PERMISSION_GROUPS = [
     permissions: [
       { key: 'menu_ops_inventory', label: 'Menu Inventory', description: 'Akses daftar stok', isSuperadminOnly: false },
       { key: 'menu_ops_picking', label: 'Menu Tugas Picking', description: 'Akses picking list', isSuperadminOnly: false },
+      { key: 'menu_ops_putaway', label: 'Menu Tugas Putaway', description: 'Ambil & kerjakan tugas putaway dari Transit (X) & Kolian (R/V/Z) di Dashboard Kapasitas', isSuperadminOnly: false },
       { key: 'menu_ops_peminjaman', label: 'Menu Peminjaman', description: 'Akses form peminjaman', isSuperadminOnly: false },
       { key: 'menu_ops_roadmap', label: 'Menu Roadmap', description: 'Lihat daftar fitur baru', isSuperadminOnly: false },
       { key: 'menu_ops_cetak_barcode', label: 'Menu Cetak Barcode Produk', description: 'Akses cetak barcode thermal 50x20 mm', isSuperadminOnly: false },
@@ -275,6 +276,7 @@ export const INITIAL_ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<UserPermis
     action_upload_katalog: true,
     menu_ops_inventory: true,
     menu_ops_picking: true,
+    menu_ops_putaway: true,
     menu_ops_peminjaman: true,
     menu_ops_roadmap: true,
     menu_ops_cetak_barcode: true,
@@ -329,6 +331,7 @@ export const INITIAL_ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<UserPermis
     tab_ops_qc_defect: true,
     menu_ops_inventory: true,
     menu_ops_picking: true,
+    menu_ops_putaway: true,
     menu_ops_peminjaman: true,
     menu_ops_cetak_barcode: true,
     menu_ops_katalog_produk: true,
@@ -368,6 +371,7 @@ export const INITIAL_ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<UserPermis
   'Tugas Picking': {
     menu_ops_live_chat: true,
     menu_ops_picking: true,
+    menu_ops_putaway: true,
     menu_ops_inventory: true,
     action_cetak_label: true,
   },
@@ -385,6 +389,7 @@ export const INITIAL_ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<UserPermis
     tab_ops_pesanan_manual_shipment: true,
     tab_ops_pesanan_transfer_order: true,
     menu_ops_picking: true,
+    menu_ops_putaway: true,
     menu_ops_loading_dock: true,
     action_cetak_label: true,
     action_sync_dealpos: true,
@@ -431,6 +436,7 @@ export const INITIAL_ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<UserPermis
   Inventory: {
     menu_ops_live_chat: true,
     menu_ops_inventory: true,
+    menu_ops_putaway: true,
     action_sync_dealpos: true,
     action_export_data: true,
   },
@@ -650,7 +656,7 @@ export const canAccessPage = (session: UserSession | null, page: ActivePage): bo
     case 'agenda': return hasPermission(session, 'menu_ops_agenda') || hasPermission(session, 'tab_ops_agenda_kalendar') || hasPermission(session, 'tab_ops_agenda_task') || hasPermission(session, 'tab_ops_agenda_project') || canAccessAgendaTasks(session);
     case 'scanner': return hasPermission(session, 'tab_ops_mutasi_scanner');
     case 'penerimaan': return hasPermission(session, 'tab_ops_loading_produksi');
-    case 'inventory': return hasPermission(session, 'menu_ops_inventory') || hasPermission(session, 'menu_ops_mutasi') || hasPermission(session, 'tab_ops_mutasi_scanner') || hasPermission(session, 'tab_ops_mutasi_log') || hasPermission(session, 'tab_ops_mutasi_so');
+    case 'inventory': return hasPermission(session, 'menu_ops_inventory') || hasPermission(session, 'menu_ops_putaway') || (!isStoreAccountSession(session) && hasPermission(session, 'menu_ops_picking')) || hasPermission(session, 'menu_ops_mutasi') || hasPermission(session, 'tab_ops_mutasi_scanner') || hasPermission(session, 'tab_ops_mutasi_log') || hasPermission(session, 'tab_ops_mutasi_so');
     case 'stock_opname': return hasPermission(session, 'tab_ops_mutasi_so');
     case 'mutasi_log': return hasPermission(session, 'tab_ops_mutasi_log');
     case 'operasi_stok': return hasPermission(session, 'menu_ops_mutasi') || hasPermission(session, 'tab_ops_mutasi_scanner') || hasPermission(session, 'tab_ops_mutasi_log') || hasPermission(session, 'tab_ops_mutasi_so');
@@ -765,7 +771,7 @@ export const getDefaultPageForSession = (session: UserSession | null): ActivePag
   
   if (hasPermission(session, 'menu_ops_loading_dock') || hasPermission(session, 'tab_ops_loading_produksi') || hasPermission(session, 'tab_ops_loading_penerimaan') || hasPermission(session, 'tab_ops_loading_pengiriman') || hasPermission(session, 'tab_ops_loading_transfer_order') || hasPermission(session, 'tab_ops_pesanan_transfer_order') || hasPermission(session, 'menu_ops_picking')) return 'loading_dock';
   
-  if (hasPermission(session, 'menu_ops_inventory') || hasPermission(session, 'menu_ops_mutasi') || hasPermission(session, 'tab_ops_mutasi_scanner') || hasPermission(session, 'tab_ops_mutasi_log') || hasPermission(session, 'tab_ops_mutasi_so')) return 'inventory';
+  if (hasPermission(session, 'menu_ops_inventory') || hasPermission(session, 'menu_ops_putaway') || (!isStoreAccountSession(session) && hasPermission(session, 'menu_ops_picking')) || hasPermission(session, 'menu_ops_mutasi') || hasPermission(session, 'tab_ops_mutasi_scanner') || hasPermission(session, 'tab_ops_mutasi_log') || hasPermission(session, 'tab_ops_mutasi_so')) return 'inventory';
   
   if (hasPermission(session, 'menu_ops_peminjaman')) return 'peminjaman';
   

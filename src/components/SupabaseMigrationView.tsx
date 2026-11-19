@@ -71,6 +71,7 @@ const ALL_MIGRATION_TABLES: Omit<TableMigrationItem, 'sourceCount' | 'targetCoun
   { name: 'penerimaan_paket', label: '11C. Penerimaan Paket Ekspedisi (penerimaan_paket)' },
   { name: 'ekspedisi_config', label: '11D. Konfigurasi Ekspedisi (ekspedisi_config)' },
   { name: 'picking_list', label: '12. Fulfillment Picking SJ (picking_list)' },
+  { name: 'putaway_tasks', label: '12B. Tugas Putaway Gudang (putaway_tasks)' },
   { name: 'peminjaman', label: '13. Peminjaman Sementara SPS (peminjaman)' },
   { name: 'perbaikan_tickets', label: '14. Tiket Defect & Reparasi (perbaikan_tickets)' },
   { name: 'qc_reports', label: '15. Laporan Pemeriksaan QC (qc_reports)' },

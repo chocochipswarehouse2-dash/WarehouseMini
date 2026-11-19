@@ -35,7 +35,7 @@ import { DistribusiPickingModal } from './PesananSaya/DistribusiPickingModal';
 import type { PengecekanSJDraft } from '../types';
 import type { ProductItem, UserSession } from '../types';
 import type { ScannerLayoutMode } from './OperasiStokView';
-import { hasPermission, isSuperadmin } from '../services/permissions';
+import { hasPermission, isSuperadmin, isStoreAccountSession } from '../services/permissions';
 import { InventoryLokasiExportModal } from './InventoryLokasiExportModal';
 import {
   buildCatalogBases,
@@ -100,6 +100,12 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 }) => {
   const userIsAdmin = isSuperadmin(session ?? null);
   const canViewInventory = userIsAdmin || hasPermission(session ?? null, 'menu_ops_inventory');
+  const canUsePutaway =
+    !isStoreAccountSession(session ?? null) &&
+    (userIsAdmin ||
+      hasPermission(session ?? null, 'menu_ops_putaway') ||
+      hasPermission(session ?? null, 'menu_ops_picking'));
+  const canViewCapacity = canViewInventory || canUsePutaway;
   const canUseScanner =
     userIsAdmin ||
     hasPermission(session ?? null, 'tab_ops_mutasi_scanner') ||
@@ -114,6 +120,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   // 0. Top-level Inventory Sub-Tab (4 Tabs: Dashboard Interaktif Kapasitas | Data Inventory Produk | Scanner Barcode | Log Produk)
   const [activeTab, setActiveTab] = useState<InventoryPageTab>(() => {
     if (initialTab) return initialTab;
+    if (canViewCapacity) return 'capacity';
     if (!canViewInventory && canUseScanner) return 'scanner';
     if (!canViewInventory && canViewLogs) return 'logs';
     return 'capacity';
@@ -124,6 +131,17 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       setActiveTab(initialTab);
     }
   }, [initialTab]);
+
+  useEffect(() => {
+    const handleOpenInventoryTab = (e: Event) => {
+      const targetTab = (e as CustomEvent)?.detail?.tab as InventoryPageTab | undefined;
+      if (targetTab) {
+        setActiveTab(targetTab);
+      }
+    };
+    window.addEventListener('wms_open_inventory_tab', handleOpenInventoryTab);
+    return () => window.removeEventListener('wms_open_inventory_tab', handleOpenInventoryTab);
+  }, []);
 
   // Scanner Layout Mode ('split' | 'table' | 'compact')
   const [scannerLayoutMode, setScannerLayoutMode] = useState<ScannerLayoutMode>(() => {
@@ -483,7 +501,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           ======================================================== */}
       <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl p-2 flex flex-col lg:flex-row lg:items-center justify-between gap-2 shadow-xs">
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap py-1 px-1 -mx-1 sm:mx-0 w-full lg:w-auto">
-          {canViewInventory && (
+          {canViewCapacity && (
             <button
               type="button"
               onClick={() => setActiveTab('capacity')}
@@ -659,7 +677,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         )}
       </div>
 
-      {activeTab === 'capacity' && (
+      {activeTab === 'capacity' && canViewCapacity && (
         <RackCapacityDashboard
           stockRows={flatStockSnapshot}
           productCatalog={productCatalog}

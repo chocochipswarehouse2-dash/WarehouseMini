@@ -31,11 +31,35 @@ import {
   Square,
   ChevronDown,
   ChevronUp,
+  ClipboardList,
+  Users,
 } from 'lucide-react';
-import type { StockRealtimeItem, UserSession, LogProdukItem, ProductItem } from '../../types';
-import { supabaseFetch } from '../../services/supabase';
+import type { StockRealtimeItem, UserSession, LogProdukItem, ProductItem, PutawayTask } from '../../types';
+import { supabaseFetch, getSupabaseClient } from '../../services/supabase';
 import { hasPermission, isStoreAccountSession, isSuperadmin } from '../../services/permissions';
+import { formatOperatorWithPersonName } from '../../utils/userResolver';
 import { LocationRelocationModal } from './LocationRelocationModal';
+import { PutawayPreviewModal } from './PutawayPreviewModal';
+import { PutawayWorkspaceModal } from './PutawayWorkspaceModal';
+import {
+  fetchPutawayTasks,
+  cancelPutawayTask,
+  getActivePutawayTaskForSource,
+  computeReservedDestinationSpace,
+  computeReservedSourceQtyByLocSku,
+  PUTAWAY_REALTIME_CHANNEL,
+} from '../../services/putawayService';
+import {
+  readActivePutawaySession,
+  saveActivePutawaySession,
+  setActivePutawaySessionMinimized,
+  getPutawayOutboxBatches,
+  syncAllPutawayOutboxBatches,
+} from '../../services/scannerOutboxService';
+import {
+  printPutawayRouteA4,
+  printPutawayRouteThermal,
+} from '../../utils/putawayPrintUtils';
 import {
   cleanProductName,
   extractCleanSizeToken,
@@ -71,6 +95,7 @@ import {
   getAbcdToKoliEvacuationSummary,
   generateConsolidatedAbcdToKoliMoves,
   buildEnrichedCatalogMap,
+  isPutawayEligibleSource,
   type AbcdToKoliRuleConfig,
   DEFAULT_ABCD_TO_KOLI_RULE,
 } from '../../services/rackCapacityService';
@@ -267,6 +292,15 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   const [relocationInitialFromLoc, setRelocationInitialFromLoc] = useState('');
   const [relocationInitialFromLocations, setRelocationInitialFromLocations] = useState<string[]>([]);
   const userIsSuperadmin = isSuperadmin(session ?? null);
+  const canManageCapacityConfig =
+    userIsSuperadmin || hasPermission(session ?? null, 'action_edit_master');
+  const canUsePutaway =
+    !isStoreAccountSession(session ?? null) &&
+    (!session ||
+      userIsSuperadmin ||
+      hasPermission(session, 'menu_ops_putaway') ||
+      hasPermission(session, 'menu_ops_picking') ||
+      hasPermission(session, 'menu_ops_inventory'));
   const canRelocateRack =
     !isStoreAccountSession(session ?? null) &&
     (!session ||
@@ -274,7 +308,25 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       hasPermission(session, 'menu_ops_inventory') ||
       hasPermission(session, 'tab_ops_mutasi_scanner') ||
       hasPermission(session, 'menu_ops_mutasi'));
-  const canMultiSelectRacks = canRelocateRack || userIsSuperadmin;
+  const canMultiSelectRacks = canUsePutaway || canRelocateRack || userIsSuperadmin;
+
+  const currentOperatorName = session?.username || session?.name || 'Operator';
+
+  // Tugas Putaway States
+  const [putawayTasks, setPutawayTasks] = useState<PutawayTask[]>([]);
+  const [isPutawayPanelOpen, setIsPutawayPanelOpen] = useState(false);
+  const [putawayPanelTab, setPutawayPanelTab] = useState<'AKTIF' | 'RIWAYAT'>('AKTIF');
+  const [previewPutawaySources, setPreviewPutawaySources] = useState<string[] | null>(null);
+  const [activePutawayTask, setActivePutawayTask] = useState<PutawayTask | null>(() => {
+    const saved = readActivePutawaySession();
+    if (saved && !saved.isMinimized && saved.task?.status === 'AKTIF') {
+      return saved.task;
+    }
+    return null;
+  });
+  const [putawayOutboxCount, setPutawayOutboxCount] = useState<number>(
+    () => getPutawayOutboxBatches().length
+  );
 
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [selectedMultiLocs, setSelectedMultiLocs] = useState<Set<string>>(() => new Set());
@@ -299,6 +351,112 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     };
   }, []);
 
+  // Load Putaway Tasks + Realtime Collab & Floating Dock Listeners
+  const loadPutawayTasks = useCallback(async (force = false) => {
+    try {
+      const list = await fetchPutawayTasks(force);
+      setPutawayTasks(list);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    loadPutawayTasks(false);
+    const sb = getSupabaseClient();
+    let channel: any = null;
+
+    if (sb) {
+      channel = sb
+        .channel(PUTAWAY_REALTIME_CHANNEL)
+        .on('broadcast', { event: 'task_created' }, () => loadPutawayTasks(true))
+        .on('broadcast', { event: 'task_updated' }, () => loadPutawayTasks(true))
+        .on('broadcast', { event: 'operator_joined' }, () => loadPutawayTasks(true))
+        .on('broadcast', { event: 'operator_left' }, () => loadPutawayTasks(true))
+        .on('broadcast', { event: 'task_completed' }, () => loadPutawayTasks(true))
+        .on('broadcast', { event: 'task_cancelled' }, () => loadPutawayTasks(true))
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'putaway_tasks' },
+          () => loadPutawayTasks(true)
+        )
+        .subscribe();
+    }
+
+    const onTasksUpdated = () => loadPutawayTasks(false);
+    const onOutboxUpdated = () => setPutawayOutboxCount(getPutawayOutboxBatches().length);
+    const onMaximizeSession = () => {
+      const saved = readActivePutawaySession();
+      if (saved && saved.task && saved.task.status === 'AKTIF') {
+        setActivePutawayTask(saved.task);
+      } else {
+        setIsPutawayPanelOpen(true);
+      }
+    };
+    const onMinimizeSession = () => setActivePutawayTask(null);
+    const onCloseSession = () => setActivePutawayTask(null);
+    const onOnlineSyncOutbox = () => {
+      if (getPutawayOutboxBatches().length > 0) {
+        syncAllPutawayOutboxBatches()
+          .then((res) => {
+            setPutawayOutboxCount(res.remainingBatches);
+            if (res.syncedBatches > 0) {
+              onNotify?.(
+                `✅ ${res.syncedBatches} Tugas Putaway offline berhasil disinkronkan!`,
+                'success'
+              );
+              loadPutawayTasks(true);
+              if (onRelocationSuccess) onRelocationSuccess();
+              else onRefreshStock?.();
+            }
+          })
+          .catch(() => {});
+      }
+    };
+
+    window.addEventListener('wms_putaway_tasks_updated', onTasksUpdated);
+    window.addEventListener('wms_putaway_outbox_updated', onOutboxUpdated);
+    window.addEventListener('wms_maximize_putaway_session', onMaximizeSession);
+    window.addEventListener('wms_minimize_putaway_session', onMinimizeSession);
+    window.addEventListener('wms_close_putaway_session', onCloseSession);
+    window.addEventListener('online', onOnlineSyncOutbox);
+
+    return () => {
+      if (sb && channel) sb.removeChannel(channel).catch(() => {});
+      window.removeEventListener('wms_putaway_tasks_updated', onTasksUpdated);
+      window.removeEventListener('wms_putaway_outbox_updated', onOutboxUpdated);
+      window.removeEventListener('wms_maximize_putaway_session', onMaximizeSession);
+      window.removeEventListener('wms_minimize_putaway_session', onMinimizeSession);
+      window.removeEventListener('wms_close_putaway_session', onCloseSession);
+      window.removeEventListener('online', onOnlineSyncOutbox);
+    };
+  }, [loadPutawayTasks, onNotify, onRefreshStock, onRelocationSuccess]);
+
+  const activePutawayTasks = useMemo(
+    () => putawayTasks.filter((t) => t.status === 'AKTIF'),
+    [putawayTasks]
+  );
+  const historyPutawayTasks = useMemo(
+    () => putawayTasks.filter((t) => t.status !== 'AKTIF'),
+    [putawayTasks]
+  );
+  const activePutawayBySource = useMemo(() => {
+    const map = new Map<string, PutawayTask>();
+    for (const t of activePutawayTasks) {
+      for (const loc of t.source_locations || []) {
+        const key = String(loc || '').trim().toUpperCase();
+        if (key && !map.has(key)) map.set(key, t);
+      }
+    }
+    return map;
+  }, [activePutawayTasks]);
+  const reservedSourceQtyMap = useMemo(
+    () => computeReservedSourceQtyByLocSku(activePutawayTasks),
+    [activePutawayTasks]
+  );
+  const reservedDestQtyMap = useMemo(
+    () => computeReservedDestinationSpace(activePutawayTasks),
+    [activePutawayTasks]
+  );
+
   // Compute all rack slots in real-time (enriched with Master Produk names & sizes)
   const allSlots = useMemo(
     () => computeAllRackSlots(config, stockRows, simulationMoves, catalogMap),
@@ -315,6 +473,29 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     () => (selectedRackLokasi ? slotByLokasi.get(selectedRackLokasi) || null : null),
     [selectedRackLokasi, slotByLokasi]
   );
+
+  const selectedSlotPutawayInfo = useMemo(() => {
+    if (!selectedSlot) {
+      return {
+        isEligibleSource: false,
+        activeTask: undefined as PutawayTask | undefined,
+        unclaimedQty: 0,
+      };
+    }
+    const upperLoc = selectedSlot.lokasi.toUpperCase();
+    const isEligibleSource =
+      selectedSlot.currentQty > 0 &&
+      isPutawayEligibleSource(selectedSlot.area, selectedSlot.lokasi);
+    const activeTask = getActivePutawayTaskForSource(activePutawayTasks, upperLoc);
+    let unclaimedQty = 0;
+    if (isEligibleSource) {
+      for (const it of selectedSlot.items || []) {
+        const reserved = reservedSourceQtyMap.get(`${upperLoc}__${it.sku.toUpperCase()}`) || 0;
+        unclaimedQty += Math.max(0, (Number(it.qty) || 0) - reserved);
+      }
+    }
+    return { isEligibleSource, activeTask, unclaimedQty };
+  }, [selectedSlot, activePutawayTasks, reservedSourceQtyMap]);
 
   // Sync drawer quick-edit fields when a rack is selected
   useEffect(() => {
@@ -781,6 +962,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     let filledRackCount = 0;
     const allSelectedList: string[] = [];
     const filledSelectedList: string[] = [];
+    const putawayEligibleList: string[] = [];
 
     for (const loc of selectedMultiLocs) {
       allSelectedList.push(loc);
@@ -790,6 +972,9 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
         totalQty += slot.currentQty;
         totalSkuCount += slot.skuCount;
         filledSelectedList.push(loc);
+        if (isPutawayEligibleSource(slot.area, slot.lokasi)) {
+          putawayEligibleList.push(slot.lokasi);
+        }
       }
     }
 
@@ -800,6 +985,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       totalSkuCount,
       allSelectedList,
       filledSelectedList,
+      putawayEligibleList,
     };
   }, [selectedMultiLocs, slotByLokasi]);
 
@@ -1623,6 +1809,25 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               </button>
             )}
 
+            {canUsePutaway && (
+              <button
+                type="button"
+                onClick={() => setIsPutawayPanelOpen((prev) => !prev)}
+                className={`px-3 py-2 text-xs font-bold rounded-xl border transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  isPutawayPanelOpen || activePutawayTasks.length > 0 || putawayOutboxCount > 0
+                    ? 'bg-cyan-50 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300 border-cyan-300 dark:border-cyan-700'
+                    : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60'
+                }`}
+                title="Lihat & kelola antrean Tugas Putaway aktif maupun riwayat"
+              >
+                <ClipboardList className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0" />
+                <span>
+                  Tugas Putaway
+                  {activePutawayTasks.length > 0 ? ` (${activePutawayTasks.length})` : ''}
+                </span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setIsSimPanelOpen((prev) => !prev)}
@@ -1639,14 +1844,16 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               </span>
             </button>
 
-            <button
-              type="button"
-              onClick={handleOpenSetupModal}
-              className="px-3 py-2 text-xs font-bold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-            >
-              <Sliders className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-              <span>Setup Kapasitas</span>
-            </button>
+            {canManageCapacityConfig && (
+              <button
+                type="button"
+                onClick={handleOpenSetupModal}
+                className="px-3 py-2 text-xs font-bold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+              >
+                <Sliders className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                <span>Setup Kapasitas</span>
+              </button>
+            )}
 
             {onRefreshStock && (
               <button
@@ -2550,6 +2757,277 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       )}
 
       {/* ============================================================================
+          3B. TUGAS PUTAWAY ACTIVE STRIP & COLLAPSIBLE PANEL
+          ============================================================================ */}
+      {canUsePutaway && !isPutawayPanelOpen && activePutawayTasks.length > 0 && (
+        <div className="bg-white dark:bg-[#131d31] border border-cyan-200 dark:border-cyan-800/70 rounded-2xl p-3 flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 shadow-2xs">
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-50 text-cyan-800 border border-cyan-200 dark:bg-cyan-950/60 dark:text-cyan-300 dark:border-cyan-800 text-[11px] font-extrabold shrink-0">
+              <ClipboardList className="w-3.5 h-3.5" />
+              <span>{activePutawayTasks.length} Tugas Putaway Aktif</span>
+            </span>
+            <div className="flex flex-wrap items-center gap-2 min-w-0">
+              {activePutawayTasks.map((t) => {
+                const placed = (t.items || []).reduce((s, it) => s + (Number(it.qty_placed) || 0), 0);
+                const target = (t.items || []).reduce((s, it) => s + (Number(it.qty_target) || 0), 0);
+                const ops = (t.active_operators || [])
+                  .map((o) => formatOperatorWithPersonName(o))
+                  .join(', ');
+                return (
+                  <div
+                    key={t.id}
+                    className="inline-flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 text-xs"
+                  >
+                    <span className="font-mono font-bold text-slate-900 dark:text-white">
+                      {(t.source_locations || []).join(', ')}
+                    </span>
+                    <span className="font-mono text-[11px] text-indigo-600 dark:text-indigo-400 font-bold">
+                      {placed}/{target} pcs
+                    </span>
+                    {ops && (
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">
+                        ({ops})
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        saveActivePutawaySession({
+                          taskId: t.id,
+                          task: t,
+                          activeTargetLoc: '',
+                          rekapCatatan: t.catatan || '',
+                          isMinimized: false,
+                          timestamp: Date.now(),
+                        });
+                        setActivePutawayTask(t);
+                      }}
+                      className="px-2 py-0.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold cursor-pointer"
+                    >
+                      Buka / Bantu
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsPutawayPanelOpen(true)}
+            className="px-3 py-1.5 text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer shrink-0 self-start lg:self-auto"
+          >
+            Lihat Semua &amp; Riwayat
+          </button>
+        </div>
+      )}
+
+      {canUsePutaway && isPutawayPanelOpen && (
+        <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3 shadow-2xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <ClipboardList className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+              <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
+                Manajemen Tugas Putaway (Transit X &amp; Kolian R/V/Z)
+              </h3>
+              <div className="flex items-center gap-1 p-0.5 bg-slate-100 dark:bg-[#0E1420] rounded-lg border border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setPutawayPanelTab('AKTIF')}
+                  className={`px-2.5 py-1 text-[11px] font-bold rounded-md cursor-pointer ${
+                    putawayPanelTab === 'AKTIF'
+                      ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-2xs'
+                      : 'text-slate-500'
+                  }`}
+                >
+                  Sedang Berjalan ({activePutawayTasks.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPutawayPanelTab('RIWAYAT')}
+                  className={`px-2.5 py-1 text-[11px] font-bold rounded-md cursor-pointer ${
+                    putawayPanelTab === 'RIWAYAT'
+                      ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-2xs'
+                      : 'text-slate-500'
+                  }`}
+                >
+                  Riwayat ({historyPutawayTasks.length})
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {putawayOutboxCount > 0 && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const res = await syncAllPutawayOutboxBatches();
+                    setPutawayOutboxCount(res.remainingBatches);
+                    if (res.syncedBatches > 0) {
+                      onNotify?.(`✅ ${res.syncedBatches} Tugas Putaway offline disinkronkan!`, 'success');
+                      loadPutawayTasks(true);
+                      if (onRelocationSuccess) onRelocationSuccess();
+                      else onRefreshStock?.();
+                    }
+                  }}
+                  className="px-2.5 py-1.5 text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300 rounded-xl cursor-pointer"
+                >
+                  Sync Antrean Offline ({putawayOutboxCount})
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsPutawayPanelOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {(() => {
+            const list = putawayPanelTab === 'AKTIF' ? activePutawayTasks : historyPutawayTasks;
+            if (list.length === 0) {
+              return (
+                <div className="py-8 text-center text-xs text-slate-400">
+                  {putawayPanelTab === 'AKTIF'
+                    ? 'Belum ada Tugas Putaway yang sedang berjalan. Klik rak Transit (X) atau Kolian (R/V/Z) di bawah untuk mulai Putaway.'
+                    : 'Belum ada riwayat Tugas Putaway selesai atau dibatalkan.'}
+                </div>
+              );
+            }
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                {list.map((t) => {
+                  const placed = (t.items || []).reduce((s, it) => s + (Number(it.qty_placed) || 0), 0);
+                  const target = (t.items || []).reduce((s, it) => s + (Number(it.qty_target) || 0), 0);
+                  const pct = target > 0 ? Math.min(100, Math.round((placed / target) * 100)) : 0;
+                  return (
+                    <div
+                      key={t.id}
+                      className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-[#0E1420] flex flex-col justify-between gap-2.5"
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono font-black text-xs text-slate-900 dark:text-white truncate">
+                            {t.invoice_putaway}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                              t.status === 'AKTIF'
+                                ? 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-950/60 dark:text-cyan-300'
+                                : t.status === 'SELESAI'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300'
+                            }`}
+                          >
+                            {t.status}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-1">
+                          {(t.source_locations || []).map((loc) => (
+                            <span
+                              key={loc}
+                              className="px-1.5 py-0.2 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono font-bold text-[10px] text-slate-800 dark:text-slate-200"
+                            >
+                              {loc}
+                            </span>
+                          ))}
+                          <span className="text-[10px] font-mono text-slate-500 ml-1">
+                            Plafon {t.safe_cap_percent}%
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                            <div
+                              className="h-full origin-left bg-indigo-600 transition-transform"
+                              style={{ transform: `scaleX(${pct / 100})` }}
+                            />
+                          </div>
+                          <span className="text-[11px] font-mono font-bold text-slate-700 dark:text-slate-300">
+                            {placed}/{target} pcs
+                          </span>
+                        </div>
+
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1 truncate">
+                          <Users className="w-3 h-3 shrink-0" />
+                          <span>
+                            {t.status === 'SELESAI' && t.completed_by
+                              ? `Selesai oleh ${formatOperatorWithPersonName(t.completed_by)}`
+                              : (t.active_operators || []).length > 0
+                              ? t.active_operators.map((o) => formatOperatorWithPersonName(o)).join(', ')
+                              : formatOperatorWithPersonName(t.created_by)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-1.5 pt-2 border-t border-slate-200/70 dark:border-slate-800">
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => printPutawayRouteA4(t)}
+                            className="p-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 cursor-pointer"
+                            title="Cetak A4"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => printPutawayRouteThermal(t, '80mm')}
+                            className="px-2 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-300 cursor-pointer"
+                            title="Cetak Struk 80mm"
+                          >
+                            Struk
+                          </button>
+                        </div>
+
+                        {t.status === 'AKTIF' && (
+                          <div className="flex items-center gap-1.5">
+                            {userIsSuperadmin && (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await cancelPutawayTask(t.id, currentOperatorName, 'Force Cancel Admin');
+                                  loadPutawayTasks(true);
+                                  onNotify?.(`Tugas Putaway ${t.invoice_putaway} dibatalkan.`, 'info');
+                                }}
+                                className="px-2.5 py-1 text-[11px] font-bold bg-white dark:bg-slate-800 border border-rose-200 dark:border-rose-800 text-rose-600 rounded-lg cursor-pointer"
+                              >
+                                Batal
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                saveActivePutawaySession({
+                                  taskId: t.id,
+                                  task: t,
+                                  activeTargetLoc: '',
+                                  rekapCatatan: t.catatan || '',
+                                  isMinimized: false,
+                                  timestamp: Date.now(),
+                                });
+                                setActivePutawayTask(t);
+                              }}
+                              className="px-3 py-1 text-[11px] font-extrabold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg cursor-pointer"
+                            >
+                              Buka / Bantu
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* ============================================================================
           4. FILTER & VIEW MODE TOOLBAR (Search, Category Filter, Status Filter, Grid/Table Toggle)
           ============================================================================ */}
       <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl p-3 sm:p-3.5 space-y-3 min-w-0 max-w-full overflow-hidden">
@@ -2729,6 +3207,20 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               </button>
             )}
 
+            {canUsePutaway && selectedMultiStats.putawayEligibleList.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPreviewPutawaySources(selectedMultiStats.putawayEligibleList);
+                }}
+                className="px-3 py-1.5 text-xs font-extrabold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs"
+                title="Ambil Tugas Putaway untuk seluruh rak Transit (X) / Kolian (R/V/Z) terpilih"
+              >
+                <ClipboardList className="w-3.5 h-3.5 shrink-0" />
+                <span>Tugas Putaway ({selectedMultiStats.putawayEligibleList.length} rak)</span>
+              </button>
+            )}
+
             {canRelocateRack && (
               <button
                 type="button"
@@ -2847,6 +3339,22 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                         </button>
                       )}
                       <span className="truncate">{slot.lokasi}</span>
+                      {activePutawayBySource.has(upperLoc) && (
+                        <span
+                          className="text-[8.5px] font-black font-mono px-1 py-0.2 rounded bg-cyan-100 dark:bg-cyan-950/80 text-cyan-800 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-700 shrink-0"
+                          title={`Sedang Putaway (${activePutawayBySource.get(upperLoc)?.invoice_putaway})`}
+                        >
+                          PUTAWAY
+                        </span>
+                      )}
+                      {(reservedDestQtyMap.get(upperLoc) || 0) > 0 && (
+                        <span
+                          className="text-[8.5px] font-black font-mono px-1 py-0.2 rounded bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 shrink-0"
+                          title={`${reservedDestQtyMap.get(upperLoc)} pcs di-reserve tugas Putaway aktif`}
+                        >
+                          +{reservedDestQtyMap.get(upperLoc)} res
+                        </span>
+                      )}
                       {hasPendingTask && (
                         <span
                           className="text-[9px] font-black font-mono px-1 rounded bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300"
@@ -2985,6 +3493,22 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                           className="hover:underline cursor-pointer flex items-center gap-1.5"
                         >
                           <span>{slot.lokasi}</span>
+                          {activePutawayBySource.has(upperLoc) && (
+                            <span
+                              className="text-[9px] font-black px-1.5 py-0.2 rounded bg-cyan-100 dark:bg-cyan-950/80 text-cyan-800 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-700"
+                              title={`Sedang Putaway (${activePutawayBySource.get(upperLoc)?.invoice_putaway})`}
+                            >
+                              PUTAWAY
+                            </span>
+                          )}
+                          {(reservedDestQtyMap.get(upperLoc) || 0) > 0 && (
+                            <span
+                              className="text-[9px] font-black px-1 py-0.2 rounded bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300"
+                              title={`${reservedDestQtyMap.get(upperLoc)} pcs di-reserve tugas Putaway aktif`}
+                            >
+                              +{reservedDestQtyMap.get(upperLoc)} res
+                            </span>
+                          )}
                           {slot.isOverridden && (
                             <span
                               className="text-[10px] font-normal text-amber-600 dark:text-amber-400"
@@ -3105,17 +3629,19 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setInlineEditingLoc(slot.lokasi);
-                              setInlineEditCap(slot.maxCapacity);
-                            }}
-                            className="p-1.5 text-slate-500 hover:text-slate-900 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                            title="Ubah kapasitas maksimal rak ini"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
+                          {canManageCapacityConfig && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setInlineEditingLoc(slot.lokasi);
+                                setInlineEditCap(slot.maxCapacity);
+                              }}
+                              className="p-1.5 text-slate-500 hover:text-slate-900 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                              title="Ubah kapasitas maksimal rak ini"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => setSelectedRackLokasi(slot.lokasi)}
@@ -3182,16 +3708,79 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                {canUsePutaway && selectedSlotPutawayInfo.isEligibleSource && (
+                  <>
+                    {selectedSlotPutawayInfo.activeTask ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const t = selectedSlotPutawayInfo.activeTask!;
+                          setSelectedRackLokasi(null);
+                          saveActivePutawaySession({
+                            taskId: t.id,
+                            task: t,
+                            activeTargetLoc: '',
+                            rekapCatatan: t.catatan || '',
+                            isMinimized: false,
+                            timestamp: Date.now(),
+                          });
+                          setActivePutawayTask(t);
+                        }}
+                        className="px-3.5 py-2 rounded-xl text-xs font-extrabold bg-indigo-600 hover:bg-indigo-500 text-white shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                        title={`Ikut bantu mengerjakan Tugas Putaway ${selectedSlotPutawayInfo.activeTask.invoice_putaway}`}
+                      >
+                        <Users className="w-3.5 h-3.5" />
+                        <span>Bantu Kerjakan Putaway</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const loc = selectedSlot.lokasi;
+                          setSelectedRackLokasi(null);
+                          setPreviewPutawaySources([loc]);
+                        }}
+                        className="px-3.5 py-2 rounded-xl text-xs font-extrabold bg-indigo-600 hover:bg-indigo-500 text-white shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                        title={`Ambil Tugas Putaway untuk isi rak ${selectedSlot.lokasi}`}
+                      >
+                        <ClipboardList className="w-3.5 h-3.5" />
+                        <span>Ambil Tugas Putaway</span>
+                      </button>
+                    )}
+                    {selectedSlotPutawayInfo.activeTask &&
+                      selectedSlotPutawayInfo.unclaimedQty > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const loc = selectedSlot.lokasi;
+                            setSelectedRackLokasi(null);
+                            setPreviewPutawaySources([loc]);
+                          }}
+                          className="px-3.5 py-2 rounded-xl text-xs font-extrabold bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-50 transition-colors cursor-pointer flex items-center gap-1.5"
+                          title="Ada stok baru masuk yang belum termasuk tugas berjalan"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Putaway Sisa Baru (+{selectedSlotPutawayInfo.unclaimedQty} pcs)</span>
+                        </button>
+                      )}
+                  </>
+                )}
+
                 {userIsSuperadmin && selectedSlot.currentQty > 0 && (
                   <button
                     type="button"
+                    disabled={Boolean(selectedSlotPutawayInfo.activeTask)}
                     onClick={() => {
                       const loc = selectedSlot.lokasi.toUpperCase();
                       setSelectedRackLokasi(null);
                       handleOpenMultiPurge([loc]);
                     }}
-                    className="px-3.5 py-2 rounded-xl text-xs font-extrabold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/50 transition-colors cursor-pointer flex items-center gap-1.5"
-                    title="Kosongkan seluruh stok rak ini ke 0 (Reset Log Lokasi)"
+                    className="px-3.5 py-2 rounded-xl text-xs font-extrabold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/50 transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                    title={
+                      selectedSlotPutawayInfo.activeTask
+                        ? 'Sedang dalam Tugas Putaway aktif'
+                        : 'Kosongkan seluruh stok rak ini ke 0 (Reset Log Lokasi)'
+                    }
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Kosongkan (Reset 0)</span>
@@ -3200,6 +3789,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 {canRelocateRack && selectedSlot.currentQty > 0 && (
                   <button
                     type="button"
+                    disabled={Boolean(selectedSlotPutawayInfo.activeTask)}
                     onClick={() => {
                       const loc = selectedSlot.lokasi;
                       setSelectedRackLokasi(null);
@@ -3207,8 +3797,12 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                       setRelocationInitialFromLoc(loc);
                       setIsRelocationModalOpen(true);
                     }}
-                    className="px-3.5 py-2 rounded-xl text-xs font-extrabold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-colors cursor-pointer flex items-center gap-1.5"
-                    title="Pindahkan isi rak ini ke lokasi lain"
+                    className="px-3.5 py-2 rounded-xl text-xs font-extrabold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                    title={
+                      selectedSlotPutawayInfo.activeTask
+                        ? 'Sedang dalam Tugas Putaway aktif'
+                        : 'Pindahkan isi rak ini ke lokasi lain'
+                    }
                   >
                     <ArrowRightLeft className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                     <span>Relokasi Rak Ini</span>
@@ -3244,7 +3838,11 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               {/* Top Row: Capacity Meter + Quick Capacity Override */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
                 {/* Capacity Visual Meter */}
-                <div className="lg:col-span-5 p-4 rounded-2xl bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-3">
+                <div
+                  className={`${
+                    canManageCapacityConfig ? 'lg:col-span-5' : 'lg:col-span-12'
+                  } p-4 rounded-2xl bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-3`}
+                >
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
                       Keterisian Fisik Saat Ini
@@ -3282,56 +3880,58 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 </div>
 
                 {/* Quick Edit Capacity for this Specific Rack */}
-                <div className="lg:col-span-7 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-3">
-                  <div className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
-                    Pengaturan Kapasitas Spesifik Rak {selectedSlot.lokasi}
+                {canManageCapacityConfig && (
+                  <div className="lg:col-span-7 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-3">
+                    <div className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
+                      Pengaturan Kapasitas Spesifik Rak {selectedSlot.lokasi}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-500 mb-1">
+                          Kapasitas Max (Pcs)
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={editCapValue}
+                          onChange={(e) => setEditCapValue(Math.max(1, Number(e.target.value) || 1))}
+                          className="w-full px-3 py-2 text-xs font-mono font-bold tabular-nums bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-500 mb-1">
+                          Kategori Produk
+                        </label>
+                        <input
+                          type="text"
+                          value={editCatValue}
+                          onChange={(e) => setEditCatValue(e.target.value)}
+                          placeholder="Dress / Bottom / Top / Sale"
+                          className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
+                        />
+                      </div>
+                      <div>
+                        <button
+                          type="button"
+                          disabled={isSavingConfig}
+                          onClick={() =>
+                            handleSaveSingleRackOverride(
+                              selectedSlot.lokasi,
+                              editCapValue,
+                              editCatValue,
+                              selectedSlot.area,
+                              editNotesValue
+                            )
+                          }
+                          className="w-full px-4 py-2 text-xs font-extrabold bg-slate-900 dark:bg-amber-500 text-white dark:text-black rounded-xl hover:opacity-90 cursor-pointer flex items-center justify-center gap-1.5 h-[36px] whitespace-nowrap"
+                        >
+                          <Save className="w-3.5 h-3.5" />
+                          <span>Simpan Rak Ini</span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-500 mb-1">
-                        Kapasitas Max (Pcs)
-                      </label>
-                      <input
-                        type="number"
-                        min={1}
-                        value={editCapValue}
-                        onChange={(e) => setEditCapValue(Math.max(1, Number(e.target.value) || 1))}
-                        className="w-full px-3 py-2 text-xs font-mono font-bold tabular-nums bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-500 mb-1">
-                        Kategori Produk
-                      </label>
-                      <input
-                        type="text"
-                        value={editCatValue}
-                        onChange={(e) => setEditCatValue(e.target.value)}
-                        placeholder="Dress / Bottom / Top / Sale"
-                        className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <button
-                        type="button"
-                        disabled={isSavingConfig}
-                        onClick={() =>
-                          handleSaveSingleRackOverride(
-                            selectedSlot.lokasi,
-                            editCapValue,
-                            editCatValue,
-                            selectedSlot.area,
-                            editNotesValue
-                          )
-                        }
-                        className="w-full px-4 py-2 text-xs font-extrabold bg-slate-900 dark:bg-amber-500 text-white dark:text-black rounded-xl hover:opacity-90 cursor-pointer flex items-center justify-center gap-1.5 h-[36px] whitespace-nowrap"
-                      >
-                        <Save className="w-3.5 h-3.5" />
-                        <span>Simpan Rak Ini</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                )}
               </div>
 
               {/* Smart Recommendation: Nearest Empty / Low-Occupancy Racks in Same Category */}
@@ -4605,6 +5205,63 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               onRefreshStock?.();
             }
           }}
+        />
+      )}
+
+      {/* ============================================================================
+          10. MODAL PRATINJAU & WORKSPACE TUGAS PUTAWAY
+          ============================================================================ */}
+      {previewPutawaySources && previewPutawaySources.length > 0 && (
+        <PutawayPreviewModal
+          isOpen={true}
+          sourceLocations={previewPutawaySources}
+          allSlots={allSlots}
+          config={config}
+          activeTasks={activePutawayTasks}
+          catalogMap={catalogMap}
+          currentUser={currentOperatorName}
+          onClose={() => setPreviewPutawaySources(null)}
+          onTaskStarted={(created) => {
+            setPreviewPutawaySources(null);
+            setSelectedMultiLocs(new Set());
+            setLastMultiClickedLoc(null);
+            setIsMultiSelectMode(false);
+            loadPutawayTasks(true);
+            setActivePutawayTask(created);
+          }}
+          onNotify={onNotify}
+        />
+      )}
+
+      {activePutawayTask && (
+        <PutawayWorkspaceModal
+          task={activePutawayTask}
+          allSlots={allSlots}
+          currentUser={currentOperatorName}
+          isAdmin={userIsSuperadmin}
+          productCatalog={productCatalog}
+          onMinimize={() => {
+            setActivePutawaySessionMinimized(true);
+            setActivePutawayTask(null);
+          }}
+          onCloseWorkspace={() => {
+            setActivePutawayTask(null);
+            loadPutawayTasks(true);
+          }}
+          onTaskCompleted={() => {
+            setActivePutawayTask(null);
+            loadPutawayTasks(true);
+            if (onRelocationSuccess) {
+              onRelocationSuccess();
+            } else {
+              onRefreshStock?.();
+            }
+          }}
+          onTaskCancelled={() => {
+            setActivePutawayTask(null);
+            loadPutawayTasks(true);
+          }}
+          onNotify={onNotify}
         />
       )}
     </div>

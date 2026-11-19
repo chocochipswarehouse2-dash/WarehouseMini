@@ -1,12 +1,14 @@
 {
-  "version": "v2.19.8",
-  "versionCode": 398,
-  "buildDate": "18 November 2026",
-  "buildHash": "wms-261118-v398-2005",
-  "releaseTitle": "WMS v2.19.8 — Perbaikan Status Sedang Dikerjakan dari Baris SELESAI di Picking",
+  "version": "v2.20.0",
+  "versionCode": 400,
+  "buildDate": "19 November 2026",
+  "buildHash": "wms-261119-v400-1413",
+  "releaseTitle": "WMS v2.20.0 — Modul Tugas Putaway (Transit X & Kolian R/V/Z)",
   "releaseNotes": [
-    "Memastikan active_pickers di Tugas Picking hanya membaca baris item yang belum SELESAI",
-    "Mencegah status Sedang Dikerjakan muncul kembali setelah Batal Ambil pada SJ dengan baris historis SELESAI"
+    "Menambahkan fitur Tugas Putaway interaktif di Dashboard Kapasitas untuk sumber Transit (X) dan Kolian (R/V/Z)",
+    "Algoritma rute putaway live mengikuti plafon aman dinamis Setup Kapasitas, prioritas konsolidasi SKU/size/kategori, auto-split Transit ke Kolian, dan reservasi slot anti-tabrakan",
+    "Dukungan keroyokan multi-operator realtime, scan hybrid (#LOK <-> SKU), override & split rak aktual, cetak A4/Thermal, kirim WA, serta proteksi offline outbox & floating dock",
+    "Memperbaiki sinkronisasi nilai Plafon Aman (safeOccupancyCapPercent) saat memuat ulang konfigurasi Kapasitas Rak"
   ],
   "minSupportedVersion": "v2.0.0"
 }
