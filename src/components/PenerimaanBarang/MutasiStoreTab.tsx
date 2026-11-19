@@ -276,6 +276,14 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
     return () => window.removeEventListener('wms_outlets_updated', handleOutletsUpdated);
   }, []);
 
+  useEffect(() => {
+    const handleReset = () => {
+      loadRiwayat();
+    };
+    window.addEventListener('wms_loading_dock_data_reset', handleReset);
+    return () => window.removeEventListener('wms_loading_dock_data_reset', handleReset);
+  }, []);
+
   const loadKategori = () => {
     const list = fetchKategoriMutasiList();
     // Pastikan 'Lainnya (Manual)' selalu ada di list

@@ -178,3 +178,27 @@ export async function deleteHandoverPaket(id: string): Promise<{ success: boolea
     };
   }
 }
+
+/**
+ * Reset / Kosongkan riwayat handover paket pengiriman ekspedisi.
+ */
+export async function resetAllPengirimanPaket(): Promise<{ success: boolean; message: string }> {
+  try {
+    await supabaseFetch('pengiriman_paket_handover', 'DELETE', null, 'id=neq.');
+  } catch (err) {
+    console.warn('Supabase reset pengiriman_paket_handover warning:', err);
+  }
+
+  try {
+    localStorage.removeItem(LOCAL_STORAGE_HANDOVER_PAKET);
+  } catch {}
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('wms_loading_dock_data_reset', { detail: { type: 'pengiriman_paket' } }));
+  }
+
+  return {
+    success: true,
+    message: 'Data riwayat serah terima paket ekspedisi berhasil di-reset.',
+  };
+}

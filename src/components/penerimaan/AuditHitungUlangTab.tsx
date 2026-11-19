@@ -31,6 +31,10 @@ import {
   MessageSquare,
   ListPlus,
   CloudUpload,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  CalendarDays,
 } from 'lucide-react';
 import {
   UserSession,
@@ -76,6 +80,14 @@ export interface AuditHitungUlangTabProps {
   onOpenLightbox?: (data: { url: string; title: string; subtitle?: string }) => void;
 }
 
+export type RecountQueueSortOrder =
+  | 'date_asc'    // Terlama ➔ Terbaru (FIFO Kedatangan)
+  | 'date_desc'   // Terbaru ➔ Terlama (LIFO Kedatangan)
+  | 'priority'    // Prioritas Sistem (Ada Selisih ➔ Antrian Belum ➔ Klop)
+  | 'code_asc'    // Kode Produksi (A ➔ Z)
+  | 'code_desc'   // Kode Produksi (Z ➔ A)
+  | 'diff_desc';  // Selisih Terbanyak
+
 export interface CodeAuditGroup {
   kode_produksi: string;
   nama_produk: string;
@@ -98,6 +110,8 @@ export interface CodeAuditGroup {
   distinct_colors: string[];
   distinct_sizes: string[];
   distinct_dates: string[];
+  earliest_date: string;
+  latest_date: string;
   distinct_sjs?: string[];
   items: PenerimaanProduksiItem[];
 }
@@ -433,9 +447,28 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
   const [filterStatus, setFilterStatus] = useState<'all' | 'uncounted' | 'diff' | 'match'>('all');
   const [filterKategori, setFilterKategori] = useState<string>('Semua');
 
+  // Queue Sort Order State (Terlama ➔ Terbaru, Terbaru ➔ Terlama, Prioritas)
+  const [sortOrder, setSortOrder] = useState<RecountQueueSortOrder>(() => {
+    try {
+      const saved = localStorage.getItem('wms_recount_queue_sort_order') as RecountQueueSortOrder | null;
+      if (saved && ['date_asc', 'date_desc', 'priority', 'code_asc', 'code_desc', 'diff_desc'].includes(saved)) {
+        return saved;
+      }
+    } catch {}
+    return 'date_asc'; // Default: Terlama ➔ Terbaru (FIFO Kedatangan)
+  });
+
+  const handleSortChange = (newSort: RecountQueueSortOrder) => {
+    setSortOrder(newSort);
+    try {
+      localStorage.setItem('wms_recount_queue_sort_order', newSort);
+    } catch {}
+  };
+
   // Quick Code Picker Modal State (Multiple Choice + Notes)
   const [isPickerModalOpen, setIsPickerModalOpen] = useState<boolean>(false);
   const [pickerSearch, setPickerSearch] = useState<string>('');
+  const [pickerSortOrder, setPickerSortOrder] = useState<RecountQueueSortOrder>('date_desc');
   const [selectedPickerCodes, setSelectedPickerCodes] = useState<Set<string>>(new Set());
   const [pickerCodeNotes, setPickerCodeNotes] = useState<Record<string, string>>({});
 
@@ -629,6 +662,10 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         else statusAudit = 'LEBIH';
       }
 
+      const sortedDates = Array.from(grp.distinct_dates).filter(Boolean).sort();
+      const earliestDate = sortedDates[0] || (grp.items[0]?.tanggal_penerimaan ? String(grp.items[0].tanggal_penerimaan).slice(0, 10) : (grp.items[0]?.created_at ? String(grp.items[0].created_at).slice(0, 10) : ''));
+      const latestDate = sortedDates[sortedDates.length - 1] || earliestDate;
+
       results.push({
         kode_produksi: code,
         nama_produk: grp.nama_produk,
@@ -655,7 +692,9 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
           if (wa !== wb) return wa - wb;
           return a.localeCompare(b);
         }),
-        distinct_dates: Array.from(grp.distinct_dates),
+        distinct_dates: sortedDates,
+        earliest_date: earliestDate,
+        latest_date: latestDate,
         items: grp.items,
       });
     });
@@ -727,8 +766,52 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       );
     }
 
-    return list;
-  }, [codeGroups, filterStatus, filterKategori, searchQuery]);
+    // Apply sort order
+    const sorted = [...list].sort((a, b) => {
+      switch (sortOrder) {
+        case 'date_asc': {
+          // Terlama ➔ Terbaru (Barang kedatangan lama dihitung dulu / FIFO)
+          const dateA = a.earliest_date || '9999-99-99';
+          const dateB = b.earliest_date || '9999-99-99';
+          const cmp = dateA.localeCompare(dateB);
+          if (cmp !== 0) return cmp;
+          return a.kode_produksi.localeCompare(b.kode_produksi);
+        }
+        case 'date_desc': {
+          // Terbaru ➔ Terlama (Barang kedatangan terbaru di atas / LIFO)
+          const dateA = a.latest_date || '';
+          const dateB = b.latest_date || '';
+          const cmp = dateB.localeCompare(dateA);
+          if (cmp !== 0) return cmp;
+          return a.kode_produksi.localeCompare(b.kode_produksi);
+        }
+        case 'code_asc':
+          return a.kode_produksi.localeCompare(b.kode_produksi);
+        case 'code_desc':
+          return b.kode_produksi.localeCompare(a.kode_produksi);
+        case 'diff_desc': {
+          const diffA = Math.abs(a.total_selisih ?? 0);
+          const diffB = Math.abs(b.total_selisih ?? 0);
+          if (diffA !== diffB) return diffB - diffA;
+          return a.kode_produksi.localeCompare(b.kode_produksi);
+        }
+        case 'priority':
+        default: {
+          if (a.has_diff && !b.has_diff) return -1;
+          if (!a.has_diff && b.has_diff) return 1;
+          if (!a.is_counted && b.is_counted) return -1;
+          if (a.is_counted && !b.is_counted) return 1;
+          const dateA = a.latest_date || '';
+          const dateB = b.latest_date || '';
+          const cmp = dateB.localeCompare(dateA);
+          if (cmp !== 0) return cmp;
+          return a.kode_produksi.localeCompare(b.kode_produksi);
+        }
+      }
+    });
+
+    return sorted;
+  }, [codeGroups, filterStatus, filterKategori, searchQuery, sortOrder]);
 
   // Selected code group for workspace
   const activeGroup = useMemo(() => {
@@ -1650,16 +1733,37 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
     printWindow.document.close();
   };
 
-  // Filtered list in Picker Modal
+  // Filtered list in Picker Modal with sorting
   const pickerFilteredCodes = useMemo(() => {
-    return allCodeGroups.filter(
+    const list = allCodeGroups.filter(
       (g) =>
         !pickerSearch.trim() ||
         g.kode_produksi.toLowerCase().includes(pickerSearch.toLowerCase()) ||
         g.nama_produk.toLowerCase().includes(pickerSearch.toLowerCase()) ||
         (g.vendor_up && g.vendor_up.toLowerCase().includes(pickerSearch.toLowerCase()))
     );
-  }, [allCodeGroups, pickerSearch]);
+
+    return list.sort((a, b) => {
+      if (pickerSortOrder === 'date_asc') {
+        const dateA = a.earliest_date || '9999-99-99';
+        const dateB = b.earliest_date || '9999-99-99';
+        const cmp = dateA.localeCompare(dateB);
+        if (cmp !== 0) return cmp;
+        return a.kode_produksi.localeCompare(b.kode_produksi);
+      }
+      if (pickerSortOrder === 'date_desc') {
+        const dateA = a.latest_date || '';
+        const dateB = b.latest_date || '';
+        const cmp = dateB.localeCompare(dateA);
+        if (cmp !== 0) return cmp;
+        return a.kode_produksi.localeCompare(b.kode_produksi);
+      }
+      if (pickerSortOrder === 'code_desc') {
+        return b.kode_produksi.localeCompare(a.kode_produksi);
+      }
+      return a.kode_produksi.localeCompare(b.kode_produksi);
+    });
+  }, [allCodeGroups, pickerSearch, pickerSortOrder]);
 
   // Modal multiple selection handlers
   const handleTogglePickerCode = (code: string) => {
@@ -1982,6 +2086,75 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                 ))}
               </div>
             </div>
+
+            {/* Row 3: Sort Options (Terlama ➔ Terbaru, Terbaru ➔ Terlama, Prioritas Selisih) */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] font-bold text-slate-400 mr-1 flex items-center gap-1">
+                  <ArrowUpDown className="w-3.5 h-3.5 text-rose-500" />
+                  <span>Urutkan:</span>
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => handleSortChange('date_asc')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                    sortOrder === 'date_asc'
+                      ? 'bg-rose-600 text-white shadow-2xs ring-1 ring-rose-500'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-750'
+                  }`}
+                  title="Urutkan dari tanggal kedatangan terlama ke terbaru (FIFO / barang lama dihitung dulu)"
+                >
+                  <ArrowUp className={`w-3.5 h-3.5 ${sortOrder === 'date_asc' ? 'text-white' : 'text-amber-500'}`} />
+                  <span>Terlama ➔ Terbaru</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSortChange('date_desc')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                    sortOrder === 'date_desc'
+                      ? 'bg-rose-600 text-white shadow-2xs ring-1 ring-rose-500'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-750'
+                  }`}
+                  title="Urutkan dari tanggal kedatangan terbaru ke terlama"
+                >
+                  <ArrowDown className={`w-3.5 h-3.5 ${sortOrder === 'date_desc' ? 'text-white' : 'text-cyan-500'}`} />
+                  <span>Terbaru ➔ Terlama</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSortChange('priority')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                    sortOrder === 'priority'
+                      ? 'bg-rose-600 text-white shadow-2xs ring-1 ring-rose-500'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-750'
+                  }`}
+                  title="Prioritas: Ada Selisih ➔ Antrian Belum ➔ Klop"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 ${sortOrder === 'priority' ? 'text-white' : 'text-amber-500'}`} />
+                  <span>Prioritas Selisih</span>
+                </button>
+              </div>
+
+              {/* Right: Dropdown for Additional Sort Options */}
+              <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0">
+                <span className="text-[11px] text-slate-400 font-bold hidden sm:inline">Lainnya:</span>
+                <select
+                  value={sortOrder}
+                  onChange={(e) => handleSortChange(e.target.value as RecountQueueSortOrder)}
+                  className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold py-1 px-2.5 rounded-lg cursor-pointer focus:outline-none focus:ring-1 focus:ring-rose-500"
+                >
+                  <option value="date_asc">📅 Tgl Masuk: Terlama ➔ Terbaru</option>
+                  <option value="date_desc">📅 Tgl Masuk: Terbaru ➔ Terlama</option>
+                  <option value="priority">⚡ Prioritas: Selisih ➔ Belum</option>
+                  <option value="diff_desc">⚠️ Selisih Terbanyak (Absolute)</option>
+                  <option value="code_asc">🔤 Kode Produksi (A ➔ Z)</option>
+                  <option value="code_desc">🔤 Kode Produksi (Z ➔ A)</option>
+                </select>
+              </div>
+            </div>
           </div>
 
           {/* Antrian List / Cards */}
@@ -2060,9 +2233,20 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                             </div>
                           )}
                           <div>
-                            <span className="font-mono text-sm font-black text-slate-900 dark:text-white">
-                              {item.kode_produksi}
-                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-mono text-sm font-black text-slate-900 dark:text-white">
+                                {item.kode_produksi}
+                              </span>
+                              {(item.latest_date || item.earliest_date) && (
+                                <span
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
+                                  title={`Tanggal Kedatangan: ${formatDatesSummary(item.distinct_dates)}`}
+                                >
+                                  <CalendarDays className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                                  <span>{formatDatesSummary(item.distinct_dates)}</span>
+                                </span>
+                              )}
+                            </div>
                             <span className="block text-[10px] text-slate-500 font-bold">
                               {item.kategori} {item.vendor_up ? `• UP: ${item.vendor_up}` : ''}
                             </span>
@@ -2669,7 +2853,21 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Picker Sort Dropdown */}
+                  <div className="flex items-center gap-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-1 rounded-lg text-xs font-bold shadow-2xs">
+                    <ArrowUpDown className="w-3 h-3 text-rose-500" />
+                    <select
+                      value={pickerSortOrder}
+                      onChange={(e) => setPickerSortOrder(e.target.value as RecountQueueSortOrder)}
+                      className="bg-transparent text-slate-700 dark:text-slate-200 text-xs font-bold focus:outline-none cursor-pointer"
+                    >
+                      <option value="date_desc">📅 Kedatangan: Terbaru ➔ Terlama</option>
+                      <option value="date_asc">📅 Kedatangan: Terlama ➔ Terbaru</option>
+                      <option value="code_asc">🔤 Kode Produksi (A ➔ Z)</option>
+                    </select>
+                  </div>
+
                   <button
                     type="button"
                     onClick={handleSelectAllFilteredInPicker}
@@ -2741,13 +2939,22 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                           )}
 
                           <div>
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-mono text-sm font-black text-rose-600 dark:text-rose-400">
                                 {g.kode_produksi}
                               </span>
                               <span className="text-[10px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
                                 {g.kategori}
                               </span>
+                              {(g.latest_date || g.earliest_date) && (
+                                <span
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
+                                  title={`Tanggal Kedatangan: ${formatDatesSummary(g.distinct_dates)}`}
+                                >
+                                  <CalendarDays className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                                  <span>{formatDatesSummary(g.distinct_dates)}</span>
+                                </span>
+                              )}
                             </div>
                             <p className="text-xs font-bold text-slate-700 dark:text-slate-200 line-clamp-1">
                               {g.nama_produk || 'Produk Tanpa Nama'}

@@ -66,6 +66,18 @@ export const CACHE_MODULES: CacheModuleDef[] = [
     deltaSyncSheets: ['manual_shipment', 'Manual Shipment', 'tarikan_md', 'Tarikan MD'],
   },
   {
+    id: 'loading_dock',
+    label: 'Loading Dock (Penerimaan & Pengiriman)',
+    description: 'Cache penerimaan mutasi store, penerimaan paket, surat jalan pengiriman, dan trip.',
+    localStorageKeys: [
+      'wms_penerimaan_mutasi_store_cache',
+      'wms_penerimaan_paket_cache',
+      'wms_pengiriman_store_reports_cache',
+      'wms_pengiriman_store_trips_cache',
+      'wms_pengiriman_paket_handover_cache',
+    ],
+  },
+  {
     id: 'opname_sj',
     label: 'Stock Opname & Pengecekan SJ',
     description: 'Cache antrean stock opname, staging scan, dan delta sync pengecekan SJ.',

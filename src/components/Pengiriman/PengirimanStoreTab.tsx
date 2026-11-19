@@ -248,6 +248,14 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
     loadReportsList();
   }, []);
 
+  useEffect(() => {
+    const handleReset = () => {
+      loadReportsList();
+    };
+    window.addEventListener('wms_loading_dock_data_reset', handleReset);
+    return () => window.removeEventListener('wms_loading_dock_data_reset', handleReset);
+  }, []);
+
   const loadStores = async () => {
     setLoadingStores(true);
     try {

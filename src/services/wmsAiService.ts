@@ -55,6 +55,15 @@ export const SYSTEM_DOC_AI_CONFIG_ID = 'wms_ai_config';
 
 export type AiUserRole = 'superadmin' | 'hr' | 'warehouse_ops' | 'store';
 
+export type AiSpeedMode = 'fast' | 'deep';
+
+export interface SendChatOptions {
+  speedMode?: AiSpeedMode;
+  onTextDelta?: (accumulatedText: string, delta: string) => void;
+  onModelResolved?: (modelName: string) => void;
+  signal?: AbortSignal;
+}
+
 export interface TrelloCandidatePreview {
   requestedCode: string;
   matchedCode: string;
@@ -1206,10 +1215,15 @@ async function searchSingleProductDetail(rawQuery: string, masterProducts: Produ
     registerCandidate(masterProducts[i]);
   }
 
+  // Cek apakah katalog lokal sudah menemukan kecocokan Tier 1 (nama produk/SKU persis).
+  // Jika sudah ada Tier 1 lokal, lewati broad ilike scan (Step 2) karena Step 3 tetap
+  // menyegarkan `master_produk` (`dealpos_channels`) & `stok_real_fisik` LIVE per exact SKU!
+  const hasLocalTier1 = Array.from(candidateBySku.values()).some((c) => c.nameTier === 1);
+
   // 2. Query LANGSUNG ke Supabase `master_produk` & `stok_real_fisik` berdasarkan kata kunci utama
-  // agar selalu mendapatkan `dealpos_channels` paling baru & produk yang baru diinput!
+  // hanya jika katalog lokal belum menemukan kecocokan Tier 1 (misal produk baru / pencarian parsial)
   const primaryToken = nameTokens[0];
-  if (primaryToken && primaryToken.length >= 2) {
+  if (!hasLocalTier1 && primaryToken && primaryToken.length >= 2) {
     try {
       const [liveMasterRows, liveStokRows] = await Promise.all([
         supabaseFetch<any[]>(
@@ -2620,16 +2634,25 @@ async function executeCheckPickingAndChannelOrders(args: {
   const onlyIncomplete = Boolean(args.only_incomplete);
 
   const result: any = {};
+  const needPicking = src === 'all' || src === 'picking';
+  const needIgLive = src === 'all' || src === 'ig_live';
 
-  if (src === 'all' || src === 'picking') {
-    const rows = await supabaseFetch<PickingListItem[]>(
-      'picking_list',
-      'GET',
-      null,
-      'select=*&order=created_at.desc&limit=250'
-    ).catch(() => []);
+  const [pickingRows, igLiveOrders] = await Promise.all([
+    needPicking
+      ? supabaseFetch<PickingListItem[]>(
+          'picking_list',
+          'GET',
+          null,
+          'select=*&order=created_at.desc&limit=250'
+        ).catch(() => [])
+      : Promise.resolve(null),
+    needIgLive
+      ? fetchIgLiveOrdersFromSupabase().catch(() => [])
+      : Promise.resolve(null)
+  ]);
 
-    let filtered = rows || [];
+  if (needPicking) {
+    let filtered = pickingRows || [];
     if (kw) {
       filtered = filtered.filter((r) =>
         `${r.invoice_picking || ''} ${r.no_sj || ''} ${r.tujuan || ''} ${r.sku || ''} ${r.nama_produk || ''} ${r.picker_name || ''}`
@@ -2641,8 +2664,8 @@ async function executeCheckPickingAndChannelOrders(args: {
       filtered = filtered.filter((r) => r.status !== 'SELESAI' || Number(r.qty_picked) !== Number(r.qty_req));
     }
 
-    const totalReq = filtered.reduce<number>((s, r) => s + (Number(r.qty_req) || 0), 0);
-    const totalPicked = filtered.reduce<number>((s, r) => s + (Number(r.qty_picked) || 0), 0);
+    const totalReq = filtered.reduce((s: number, r) => s + (Number(r.qty_req) || 0), 0);
+    const totalPicked = filtered.reduce((s: number, r) => s + (Number(r.qty_picked) || 0), 0);
 
     result.picking = {
       total_baris: filtered.length,
@@ -2671,9 +2694,8 @@ async function executeCheckPickingAndChannelOrders(args: {
     };
   }
 
-  if (src === 'all' || src === 'ig_live') {
-    const orders = await fetchIgLiveOrdersFromSupabase().catch(() => []);
-    let filtered = orders || [];
+  if (needIgLive) {
+    let filtered = igLiveOrders || [];
     if (kw) {
       filtered = filtered.filter((o) =>
         `${o.no_pesanan} ${o.username_ig} ${o.nama_pembeli} ${o.no_resi} ${o.session_live || ''}`
@@ -2714,9 +2736,17 @@ async function executeCheckQcRepairAndLoans(args: {
   const kw = String(args.keyword || '').trim().toLowerCase();
   const onlyActive = Boolean(args.only_active);
   const out: any = {};
+  const needQc = scope === 'all' || scope === 'qc';
+  const needPerbaikan = scope === 'all' || scope === 'perbaikan';
+  const needPeminjaman = scope === 'all' || scope === 'peminjaman';
 
-  if (scope === 'all' || scope === 'qc') {
-    const qcList = await fetchQcReportsFromSupabase({ limit: 150 }).catch(() => []);
+  const [qcList, tickets, loans] = await Promise.all([
+    needQc ? fetchQcReportsFromSupabase({ limit: 150 }).catch(() => []) : Promise.resolve(null),
+    needPerbaikan ? fetchPerbaikanTicketsFromSupabase({ limit: 150 }).catch(() => []) : Promise.resolve(null),
+    needPeminjaman ? fetchPeminjamanFromSupabase(150).catch(() => []) : Promise.resolve(null)
+  ]);
+
+  if (needQc) {
     let filtered = qcList || [];
     if (kw) {
       filtered = filtered.filter((q) =>
@@ -2727,9 +2757,9 @@ async function executeCheckQcRepairAndLoans(args: {
     }
     out.qc = {
       total_laporan: filtered.length,
-      total_diperiksa_pcs: filtered.reduce<number>((s, q: any) => s + (Number(q.qty_diperiksa) || 0), 0),
-      total_oke_pcs: filtered.reduce<number>((s, q: any) => s + (Number(q.qty_oke) || 0), 0),
-      total_reject_pcs: filtered.reduce<number>((s, q: any) => s + (Number(q.qty_reject) || 0), 0),
+      total_diperiksa_pcs: filtered.reduce((s: number, q: any) => s + (Number(q.qty_diperiksa) || 0), 0),
+      total_oke_pcs: filtered.reduce((s: number, q: any) => s + (Number(q.qty_oke) || 0), 0),
+      total_reject_pcs: filtered.reduce((s: number, q: any) => s + (Number(q.qty_reject) || 0), 0),
       laporan_terbaru: filtered.slice(0, 20).map((q) => ({
         report_no: q.report_no,
         tanggal: q.tanggal,
@@ -2746,8 +2776,7 @@ async function executeCheckQcRepairAndLoans(args: {
     };
   }
 
-  if (scope === 'all' || scope === 'perbaikan') {
-    const tickets = await fetchPerbaikanTicketsFromSupabase({ limit: 150 }).catch(() => []);
+  if (needPerbaikan) {
     let filtered = tickets || [];
     if (kw) {
       filtered = filtered.filter((t) =>
@@ -2761,7 +2790,7 @@ async function executeCheckQcRepairAndLoans(args: {
     }
     out.perbaikan = {
       total_tiket_aktif: filtered.length,
-      total_pcs: filtered.reduce<number>((s, t: any) => s + (Number(t.qty) || 0), 0),
+      total_pcs: filtered.reduce((s: number, t: any) => s + (Number(t.qty) || 0), 0),
       daftar_tiket: filtered.slice(0, 25).map((t) => {
         const m = lookupProductBySku(t.sku);
         return {
@@ -2781,8 +2810,7 @@ async function executeCheckQcRepairAndLoans(args: {
     };
   }
 
-  if (scope === 'all' || scope === 'peminjaman') {
-    const loans = await fetchPeminjamanFromSupabase(150).catch(() => []);
+  if (needPeminjaman) {
     let filtered = loans || [];
     if (kw) {
       filtered = filtered.filter((l) =>
@@ -2826,9 +2854,21 @@ async function executeCheckReturAndJneRekap(args: {
   const kw = String(args.keyword || '').trim().toLowerCase();
   const statusFilter = String(args.status || '').trim().toLowerCase();
   const out: any = {};
+  const needRetur = scope === 'all' || scope === 'retur';
+  const needJne = scope === 'all' || scope === 'jne';
 
-  if (scope === 'all' || scope === 'retur') {
-    const returs = await fetchReturOrders().catch(() => []);
+  const [returs, gasRes] = await Promise.all([
+    needRetur ? fetchReturOrders().catch(() => []) : Promise.resolve(null),
+    needJne
+      ? fetchJneRecordsFromGas().catch(() => ({
+          success: false,
+          records: getLocalCachedJneRecords(),
+          total: 0
+        }))
+      : Promise.resolve(null)
+  ]);
+
+  if (needRetur) {
     let filtered = returs || [];
     if (kw) {
       filtered = filtered.filter((r) =>
@@ -2861,12 +2901,7 @@ async function executeCheckReturAndJneRekap(args: {
     };
   }
 
-  if (scope === 'all' || scope === 'jne') {
-    const gasRes = await fetchJneRecordsFromGas().catch(() => ({
-      success: false,
-      records: getLocalCachedJneRecords(),
-      total: 0
-    }));
+  if (needJne && gasRes) {
     let records = gasRes.records || [];
     if (kw) {
       records = records.filter((j) =>
@@ -2875,7 +2910,7 @@ async function executeCheckReturAndJneRekap(args: {
           .includes(kw)
       );
     }
-    const totalTagihan = records.reduce<number>((s, j: any) => s + (Number(j.nominal) || 0), 0);
+    const totalTagihan = records.reduce((s: number, j: any) => s + (Number(j.nominal) || 0), 0);
     out.jne_rekap = {
       sumber_live: gasRes.success,
       total_resi: records.length,
@@ -3511,7 +3546,7 @@ function buildFullSystemInstruction(session?: UserSession | null): string {
 }
 
 /**
- * Mengirim pesan ke server /api/ai (@google/genai) dengan multi-turn Tool Execution loop
+ * Mengirim pesan ke server /api/ai (@google/genai) dengan SSE Streaming & multi-turn Tool Execution loop
  * Mendukung Multimodal Vision (Foto & PDF) dan Ekstraksi Spreadsheet (Excel/CSV)
  */
 export async function sendChatMessageToGemini(
@@ -3519,7 +3554,8 @@ export async function sendChatMessageToGemini(
   userPrompt: string,
   onToolCallStart?: (toolName: string) => void,
   attachments?: AiAttachment[],
-  session?: UserSession | null
+  session?: UserSession | null,
+  options?: SendChatOptions
 ): Promise<{
   text: string;
   executedTools: string[];
@@ -3529,27 +3565,62 @@ export async function sendChatMessageToGemini(
 }> {
   const aiRole = resolveAiUserRole(session);
   const roleTools = getToolsForRole(aiRole, session);
+  const speedMode: AiSpeedMode = options?.speedMode || 'fast';
   const contents: any[] = [];
 
-  const recentHistory = conversationHistory.slice(-8);
-  recentHistory.forEach((msg) => {
+  // Hindari duplikasi pesan user saat caller mengirim `conversationHistory` yang sudah menyertakan pesan user terbaru
+  let priorHistory = conversationHistory;
+  if (priorHistory.length > 0) {
+    const lastMsg = priorHistory[priorHistory.length - 1];
+    if (lastMsg.role === 'user' && (lastMsg.text || '').trim() === (userPrompt || '').trim()) {
+      priorHistory = priorHistory.slice(0, -1);
+    }
+  }
+
+  // Ambil maksimal 6 pesan terakhir agar payload ringkas & respons cepat
+  const recentHistory = priorHistory.filter((m) => !m.isStreaming).slice(-6);
+  const hasCurrentBinaryAtts = Boolean(
+    attachments && attachments.some((a) => (a.type === 'image' || a.type === 'pdf') && a.base64Data)
+  );
+  // Hanya kirim ulang base64 binary dari maksimal 1 pesan lampiran terakhir jika pesan baru tidak melampirkan file baru
+  let lastHistoryBinaryIdx = -1;
+  if (!hasCurrentBinaryAtts) {
+    for (let i = recentHistory.length - 1; i >= 0; i--) {
+      const m = recentHistory[i];
+      if (
+        m.role === 'user' &&
+        m.attachments?.some((a) => (a.type === 'image' || a.type === 'pdf') && a.base64Data)
+      ) {
+        lastHistoryBinaryIdx = i;
+        break;
+      }
+    }
+  }
+
+  recentHistory.forEach((msg, idx) => {
     if (msg.role === 'user') {
       const histParts: any[] = [];
+      let textSuffix = '';
       if (msg.attachments && msg.attachments.length > 0) {
-        msg.attachments.forEach((att) => {
-          if ((att.type === 'image' || att.type === 'pdf') && att.base64Data) {
-            histParts.push({
-              inlineData: {
-                mimeType: att.mimeType || (att.type === 'pdf' ? 'application/pdf' : 'image/jpeg'),
-                data: att.base64Data
-              }
-            });
-          }
-        });
+        if (idx === lastHistoryBinaryIdx) {
+          msg.attachments.forEach((att) => {
+            if ((att.type === 'image' || att.type === 'pdf') && att.base64Data) {
+              histParts.push({
+                inlineData: {
+                  mimeType: att.mimeType || (att.type === 'pdf' ? 'application/pdf' : 'image/jpeg'),
+                  data: att.base64Data
+                }
+              });
+            }
+          });
+        } else {
+          const names = msg.attachments.map((a) => a.name).filter(Boolean).join(', ');
+          if (names) textSuffix = `\n[Lampiran sebelumnya: ${names}]`;
+        }
       }
-      histParts.push({ text: msg.text });
+      histParts.push({ text: `${msg.text || ''}${textSuffix}`.trim() || 'Halo' });
       contents.push({ role: 'user', parts: histParts });
-    } else if (msg.role === 'model') {
+    } else if (msg.role === 'model' && msg.text) {
       contents.push({ role: 'model', parts: [{ text: msg.text }] });
     }
   });
@@ -3594,7 +3665,7 @@ export async function sendChatMessageToGemini(
 
   const executedTools: string[] = [];
   let generatedReportTable: AiChatMessage['reportTable'] | undefined = undefined;
-  let modelUsed = 'gemini-4-hydrogen';
+  let modelUsed = speedMode === 'deep' ? 'gemini-4-hydrogen' : 'gemini-3.1-flash-lite';
   const collectedCandidatesMap = new Map<string, TrelloCandidatePreview>();
   const handleCollectTrelloPreviews = (previews: TrelloCandidatePreview[]) => {
     previews.forEach((p) => {
@@ -3606,58 +3677,204 @@ export async function sendChatMessageToGemini(
   };
   const activeSystemInstruction = buildFullSystemInstruction(session);
 
-  const postToServerAi = async (payload: any): Promise<any> => {
-    const attemptModels = [payload.requestedModel || 'gemini-4-hydrogen', 'gemini-2.5-flash'];
-    let lastErr: any = null;
-    for (let attempt = 0; attempt < attemptModels.length; attempt++) {
+  const postToServerAi = async (payload: any, enableStreaming: boolean): Promise<any> => {
+    const response = await fetch('/api/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: options?.signal,
+      body: JSON.stringify({
+        ...payload,
+        speedMode,
+        stream: enableStreaming
+      })
+    });
+
+    const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+
+    if (!response.ok) {
+      let errMsg = `HTTP ${response.status}`;
       try {
-        const response = await fetch('/api/ai', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...payload, requestedModel: attemptModels[attempt] })
-        });
-        const data = await response.json();
-        if (!response.ok) {
-          const errMsg = String(data?.error || `HTTP ${response.status}`);
-          if (
-            attempt < attemptModels.length - 1 &&
-            (response.status === 503 ||
-              response.status === 429 ||
-              response.status === 502 ||
-              response.status === 504 ||
-              errMsg.toLowerCase().includes('unavailable') ||
-              errMsg.toLowerCase().includes('high demand'))
-          ) {
-            await new Promise((r) => setTimeout(r, 400));
-            continue;
+        const errData = await response.json();
+        if (errData?.error) errMsg = String(errData.error);
+      } catch {
+        // ignore JSON parse error
+      }
+      throw new Error(errMsg);
+    }
+
+    // Parsing Server-Sent Events (SSE) secara real-time per token
+    if (contentType.includes('text/event-stream') && response.body) {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+      let turnVisibleText = '';
+      let donePayload: any = null;
+      let streamError: string | null = null;
+
+      const processEventBlock = (rawBlock: string) => {
+        const lines = rawBlock.split('\n');
+        let eventName = 'message';
+        const dataLines: string[] = [];
+        for (const line of lines) {
+          if (line.startsWith('event:')) {
+            eventName = line.slice(6).trim();
+          } else if (line.startsWith('data:')) {
+            dataLines.push(line.slice(5).trim());
           }
-          throw new Error(errMsg);
         }
-        if (data?.model) modelUsed = data.model;
-        return data;
-      } catch (err: any) {
-        lastErr = err;
-        if (attempt < attemptModels.length - 1) {
-          await new Promise((r) => setTimeout(r, 400));
-          continue;
+        if (dataLines.length === 0) return;
+        let parsed: any = null;
+        try {
+          parsed = JSON.parse(dataLines.join('\n'));
+        } catch {
+          return;
+        }
+
+        if (eventName === 'meta' && parsed?.model) {
+          modelUsed = parsed.model;
+          options?.onModelResolved?.(parsed.model);
+        } else if (eventName === 'delta' && typeof parsed?.text === 'string' && parsed.text.length > 0) {
+          turnVisibleText += parsed.text;
+          options?.onTextDelta?.(turnVisibleText, parsed.text);
+        } else if (eventName === 'done') {
+          if (parsed?.model) {
+            modelUsed = parsed.model;
+            options?.onModelResolved?.(parsed.model);
+          }
+          donePayload = parsed;
+        } else if (eventName === 'error') {
+          streamError = parsed?.error || 'Gagal memproses stream AI.';
+        }
+      };
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (value) {
+          buffer += decoder.decode(value, { stream: !done }).replace(/\r\n/g, '\n');
+          let sepIdx = buffer.indexOf('\n\n');
+          while (sepIdx !== -1) {
+            const block = buffer.slice(0, sepIdx).trim();
+            buffer = buffer.slice(sepIdx + 2);
+            if (block) processEventBlock(block);
+            sepIdx = buffer.indexOf('\n\n');
+          }
+        }
+        if (done) {
+          const tail = buffer.trim();
+          if (tail) processEventBlock(tail);
+          break;
         }
       }
+
+      if (streamError) {
+        throw new Error(streamError);
+      }
+
+      if (donePayload) {
+        return donePayload;
+      }
+
+      if (turnVisibleText) {
+        return {
+          model: modelUsed,
+          candidates: [{ content: { role: 'model', parts: [{ text: turnVisibleText }] } }],
+          text: turnVisibleText
+        };
+      }
+
+      throw new Error('Respon stream dari server AI terputus sebelum selesai.');
     }
-    throw lastErr || new Error('Gagal menghubungi server AI.');
+
+    // Fallback JSON non-streaming
+    const data = await response.json();
+    if (data?.model) {
+      modelUsed = data.model;
+      options?.onModelResolved?.(data.model);
+    }
+    return data;
+  };
+
+  const executeSingleTool = async (fnName: string, fnArgs: any): Promise<any> => {
+    try {
+      if (fnName === 'lookup_product_stock') {
+        return await executeLookupProductStock(fnArgs);
+      } else if (fnName === 'lookup_production_code') {
+        return await executeLookupProductionCode(fnArgs, handleCollectTrelloPreviews);
+      } else if (fnName === 'query_production_receipts') {
+        return await executeQueryProductionReceipts(fnArgs);
+      } else if (fnName === 'generate_production_recap') {
+        return await executeGenerateProductionRecap(fnArgs);
+      } else if (fnName === 'prepare_production_receipt_form') {
+        return await executePrepareProductionReceiptForm(fnArgs, handleCollectTrelloPreviews);
+      } else if (fnName === 'view_production_receipt_form_draft') {
+        return await executeViewProductionReceiptFormDraft();
+      } else if (fnName === 'search_manual_shipment') {
+        return await executeSearchManualShipment(fnArgs);
+      } else if (fnName === 'add_to_inventory_cart') {
+        return await executeAddToInventoryCart(fnArgs);
+      } else if (fnName === 'view_inventory_cart') {
+        return await executeViewInventoryCart();
+      } else if (fnName === 'audit_stock_and_mutations') {
+        return await executeAuditStockAndMutations(fnArgs);
+      } else if (fnName === 'check_picking_and_channel_orders') {
+        return await executeCheckPickingAndChannelOrders(fnArgs);
+      } else if (fnName === 'check_qc_repair_and_loans') {
+        return await executeCheckQcRepairAndLoans(fnArgs);
+      } else if (fnName === 'check_retur_and_jne_rekap') {
+        return await executeCheckReturAndJneRekap(fnArgs);
+      } else if (fnName === 'query_hr_operations') {
+        return await executeQueryHrOperations(fnArgs, session);
+      } else if (fnName === 'prepare_manual_shipment_draft') {
+        return await executePrepareManualShipmentDraft(fnArgs);
+      } else if (fnName === 'prepare_retur_barang_draft') {
+        return await executePrepareReturBarangDraft(fnArgs);
+      } else if (fnName === 'query_agenda_and_projects') {
+        return await executeQueryAgendaAndProjects(fnArgs);
+      } else if (fnName === 'prepare_agenda_or_project_draft') {
+        return await executePrepareAgendaOrProjectDraft(fnArgs);
+      } else if (fnName === 'generate_exportable_report') {
+        const rawHeaders = Array.isArray(fnArgs.headers) ? fnArgs.headers.map((h: any) => String(h ?? '')) : [];
+        const rawRows = Array.isArray(fnArgs.rows)
+          ? fnArgs.rows.map((r: any) => (Array.isArray(r) ? r.map((c: any) => String(c ?? '')) : []))
+          : [];
+        const prefFmt = String(fnArgs.preferred_format || 'both').toLowerCase();
+        generatedReportTable = {
+          title: String(fnArgs.title || 'Laporan Data WMS AI').trim(),
+          subtitle: fnArgs.subtitle ? String(fnArgs.subtitle).trim() : undefined,
+          filename: fnArgs.filename ? String(fnArgs.filename).trim() : undefined,
+          headers: rawHeaders,
+          rows: rawRows,
+          summary: fnArgs.summary ? String(fnArgs.summary).trim() : undefined,
+          preferredFormat: prefFmt === 'excel' ? 'excel' : prefFmt === 'pdf' ? 'pdf' : 'both'
+        };
+        return {
+          status: 'report_ready',
+          pesan: `Dokumen laporan "${generatedReportTable.title}" (${rawRows.length} baris data) telah berhasil disusun dan tombol Download Excel (.xlsx) serta Download PDF (.pdf) kini tampil di layar pengguna.`,
+          total_baris: rawRows.length,
+          kolom: rawHeaders
+        };
+      }
+      return { error: `Fungsi ${fnName} tidak dikenali.` };
+    } catch (toolExecErr: any) {
+      return { error: toolExecErr?.message || 'Gagal mengeksekusi data WMS' };
+    }
   };
 
   let loopCount = 0;
   const MAX_LOOPS = 8;
+  const shouldStream = Boolean(options?.onTextDelta);
 
   while (loopCount < MAX_LOOPS) {
     loopCount++;
 
-    const geminiResponse = await postToServerAi({
-      contents,
-      tools: roleTools,
-      systemInstruction: activeSystemInstruction,
-      requestedModel: 'gemini-4-hydrogen'
-    });
+    const geminiResponse = await postToServerAi(
+      {
+        contents,
+        tools: roleTools,
+        systemInstruction: activeSystemInstruction
+      },
+      shouldStream
+    );
 
     const candidate = geminiResponse.candidates?.[0];
     if (!candidate || !candidate.content) {
@@ -3669,7 +3886,10 @@ export async function sendChatMessageToGemini(
     const functionCallParts = parts.filter((p: any) => p.functionCall);
 
     if (functionCallParts.length === 0) {
-      const textParts = parts.filter((p: any) => p.text).map((p: any) => p.text).join('\n');
+      const textParts = parts
+        .filter((p: any) => p.text && !p.thought)
+        .map((p: any) => p.text)
+        .join('\n');
       const finalCandidates = Array.from(collectedCandidatesMap.values());
       return {
         text: textParts || geminiResponse.text || 'Selesai memproses.',
@@ -3680,87 +3900,23 @@ export async function sendChatMessageToGemini(
       };
     }
 
-    const functionResponseParts: any[] = [];
-
-    for (const fcPart of functionCallParts) {
-      const fnName = fcPart.functionCall.name;
-      const fnArgs = fcPart.functionCall.args || {};
-      executedTools.push(fnName);
-      onToolCallStart?.(fnName);
-
-      let toolResult: any = null;
-      try {
-        if (fnName === 'lookup_product_stock') {
-          toolResult = await executeLookupProductStock(fnArgs);
-        } else if (fnName === 'lookup_production_code') {
-          toolResult = await executeLookupProductionCode(fnArgs, handleCollectTrelloPreviews);
-        } else if (fnName === 'query_production_receipts') {
-          toolResult = await executeQueryProductionReceipts(fnArgs);
-        } else if (fnName === 'generate_production_recap') {
-          toolResult = await executeGenerateProductionRecap(fnArgs);
-        } else if (fnName === 'prepare_production_receipt_form') {
-          toolResult = await executePrepareProductionReceiptForm(fnArgs, handleCollectTrelloPreviews);
-        } else if (fnName === 'view_production_receipt_form_draft') {
-          toolResult = await executeViewProductionReceiptFormDraft();
-        } else if (fnName === 'search_manual_shipment') {
-          toolResult = await executeSearchManualShipment(fnArgs);
-        } else if (fnName === 'add_to_inventory_cart') {
-          toolResult = await executeAddToInventoryCart(fnArgs);
-        } else if (fnName === 'view_inventory_cart') {
-          toolResult = await executeViewInventoryCart();
-        } else if (fnName === 'audit_stock_and_mutations') {
-          toolResult = await executeAuditStockAndMutations(fnArgs);
-        } else if (fnName === 'check_picking_and_channel_orders') {
-          toolResult = await executeCheckPickingAndChannelOrders(fnArgs);
-        } else if (fnName === 'check_qc_repair_and_loans') {
-          toolResult = await executeCheckQcRepairAndLoans(fnArgs);
-        } else if (fnName === 'check_retur_and_jne_rekap') {
-          toolResult = await executeCheckReturAndJneRekap(fnArgs);
-        } else if (fnName === 'query_hr_operations') {
-          toolResult = await executeQueryHrOperations(fnArgs, session);
-        } else if (fnName === 'prepare_manual_shipment_draft') {
-          toolResult = await executePrepareManualShipmentDraft(fnArgs);
-        } else if (fnName === 'prepare_retur_barang_draft') {
-          toolResult = await executePrepareReturBarangDraft(fnArgs);
-        } else if (fnName === 'query_agenda_and_projects') {
-          toolResult = await executeQueryAgendaAndProjects(fnArgs);
-        } else if (fnName === 'prepare_agenda_or_project_draft') {
-          toolResult = await executePrepareAgendaOrProjectDraft(fnArgs);
-        } else if (fnName === 'generate_exportable_report') {
-          const rawHeaders = Array.isArray(fnArgs.headers) ? fnArgs.headers.map((h: any) => String(h ?? '')) : [];
-          const rawRows = Array.isArray(fnArgs.rows)
-            ? fnArgs.rows.map((r: any) => (Array.isArray(r) ? r.map((c: any) => String(c ?? '')) : []))
-            : [];
-          const prefFmt = String(fnArgs.preferred_format || 'both').toLowerCase();
-          generatedReportTable = {
-            title: String(fnArgs.title || 'Laporan Data WMS AI').trim(),
-            subtitle: fnArgs.subtitle ? String(fnArgs.subtitle).trim() : undefined,
-            filename: fnArgs.filename ? String(fnArgs.filename).trim() : undefined,
-            headers: rawHeaders,
-            rows: rawRows,
-            summary: fnArgs.summary ? String(fnArgs.summary).trim() : undefined,
-            preferredFormat: prefFmt === 'excel' ? 'excel' : prefFmt === 'pdf' ? 'pdf' : 'both'
-          };
-          toolResult = {
-            status: 'report_ready',
-            pesan: `Dokumen laporan "${generatedReportTable.title}" (${rawRows.length} baris data) telah berhasil disusun dan tombol Download Excel (.xlsx) serta Download PDF (.pdf) kini tampil di layar pengguna.`,
-            total_baris: rawRows.length,
-            kolom: rawHeaders
-          };
-        } else {
-          toolResult = { error: `Fungsi ${fnName} tidak dikenali.` };
-        }
-      } catch (toolExecErr: any) {
-        toolResult = { error: toolExecErr?.message || 'Gagal mengeksekusi data WMS' };
-      }
-
-      functionResponseParts.push({
-        functionResponse: {
-          name: fnName,
-          response: toolResult
-        }
-      });
-    }
+    // Eksekusi seluruh tool call dalam 1 giliran secara PARALEL (Promise.all)
+    const functionResponseParts = await Promise.all(
+      functionCallParts.map(async (fcPart: any) => {
+        const fnName = fcPart.functionCall.name;
+        const fnArgs = fcPart.functionCall.args || {};
+        executedTools.push(fnName);
+        onToolCallStart?.(fnName);
+        const toolResult = await executeSingleTool(fnName, fnArgs);
+        return {
+          functionResponse: {
+            ...(fcPart.functionCall.id ? { id: fcPart.functionCall.id } : {}),
+            name: fnName,
+            response: toolResult
+          }
+        };
+      })
+    );
 
     contents.push(modelContent);
     contents.push({ role: 'user', parts: functionResponseParts });
@@ -3776,13 +3932,18 @@ export async function sendChatMessageToGemini(
         }
       ]
     });
-    const finalRes = await postToServerAi({
-      contents,
-      systemInstruction: activeSystemInstruction,
-      requestedModel: 'gemini-4-hydrogen'
-    });
+    const finalRes = await postToServerAi(
+      {
+        contents,
+        systemInstruction: activeSystemInstruction
+      },
+      shouldStream
+    );
     const candidate = finalRes.candidates?.[0];
-    const textParts = candidate?.content?.parts?.filter((p: any) => p.text).map((p: any) => p.text).join('\n');
+    const textParts = candidate?.content?.parts
+      ?.filter((p: any) => p.text && !p.thought)
+      .map((p: any) => p.text)
+      .join('\n');
     if (textParts && textParts.trim()) {
       return {
         text: textParts.trim(),

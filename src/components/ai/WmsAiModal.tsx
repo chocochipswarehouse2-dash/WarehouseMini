@@ -39,7 +39,10 @@ import {
   CloudOff,
   RefreshCw,
   Truck,
-  RotateCcw as ReturIcon
+  RotateCcw as ReturIcon,
+  Zap,
+  Brain,
+  Square
 } from 'lucide-react';
 import { UserSession } from '../../types';
 import { isWarehouseAccountOnly } from '../../services/permissions';
@@ -54,6 +57,7 @@ import { TrelloImage } from '../Trello/TrelloImage';
 import {
   AiChatMessage,
   AiChatSession,
+  AiSpeedMode,
   AiUserRole,
   TrelloCandidatePreview,
   sendChatMessageToGemini,
@@ -475,7 +479,17 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
   });
   const [newUserWhitelisted, setNewUserWhitelisted] = useState<string>('');
   const [isSavingConfig, setIsSavingConfig] = useState<boolean>(false);
-  const [lastModelUsed, setLastModelUsed] = useState<string>('Gemini 4 Hydrogen');
+  const [speedMode, setSpeedMode] = useState<AiSpeedMode>(() => {
+    try {
+      const saved = localStorage.getItem('wms_ai_speed_mode');
+      return saved === 'deep' ? 'deep' : 'fast';
+    } catch {
+      return 'fast';
+    }
+  });
+  const [lastModelUsed, setLastModelUsed] = useState<string>(() =>
+    speedMode === 'deep' ? 'Gemini 4 Hydrogen' : 'Gemini 3.1 Flash Lite'
+  );
   const [serverAiHealth, setServerAiHealth] = useState<{
     checked: boolean;
     ok: boolean;
@@ -485,11 +499,28 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
     checked: false,
     ok: true,
     configured: true,
-    models: ['gemini-4-hydrogen', 'gemini-3.1-flash-lite']
+    models: ['gemini-3.1-flash-lite', 'gemini-4-hydrogen']
   });
   const [cloudSyncStatus, setCloudSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
   const cloudHydratedUserRef = useRef<string | null>(null);
   const cloudSaveTimerRef = useRef<number | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const messagesCountRef = useRef<number>(messages.length);
+  messagesCountRef.current = messages.length;
+
+  const formatPrettyModelName = (model: string) => {
+    if (model === 'gemini-3.1-flash-lite') return 'Gemini 3.1 Flash Lite';
+    if (model === 'gemini-4-hydrogen') return 'Gemini 4 Hydrogen';
+    return model;
+  };
+
+  const handleChangeSpeedMode = (nextMode: AiSpeedMode) => {
+    setSpeedMode(nextMode);
+    setLastModelUsed(nextMode === 'deep' ? 'Gemini 4 Hydrogen' : 'Gemini 3.1 Flash Lite');
+    try {
+      localStorage.setItem('wms_ai_speed_mode', nextMode);
+    } catch {}
+  };
 
   // Voice-to-Text (Web Speech API, Bahasa Indonesia)
   const speechSupported = useMemo(() => {
@@ -546,9 +577,10 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isOwnerWarehouse = isWarehouseAccountOnly(session);
 
-  // Auto-sync session ke sessions list dan localStorage
+  // Auto-sync session ke sessions list dan localStorage (skip saat token sedang streaming agar UI tetap 60fps)
   useEffect(() => {
     if (!currentSessionId) return;
+    if (messages.some((m) => m.isStreaming)) return;
     try {
       localStorage.setItem(activeSessionStorageKey, currentSessionId);
       localStorage.setItem('wms_ai_chat_history', JSON.stringify(messages.slice(-20)));
@@ -616,11 +648,12 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
   // Scroll otomatis ke pesan terbaru jika tidak diminimize
   useEffect(() => {
     if (isOpen && !isMinimized) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      const hasStreaming = messages.some((m) => m.isStreaming);
+      messagesEndRef.current?.scrollIntoView({ behavior: hasStreaming ? 'auto' : 'smooth' });
     }
   }, [messages, isOpen, isMinimized, isLoading]);
 
-  // Muat konfigurasi AI, status server /api/ai, dan sinkronisasi sesi cloud Supabase
+  // Muat konfigurasi AI, status server /api/ai, dan sinkronisasi sesi cloud Supabase (hanya saat modal dibuka / ganti user)
   useEffect(() => {
     if (!isOpen) return;
     fetchAiConfig().then((cfg) => {
@@ -653,7 +686,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                 localStorage.setItem(sessionsStorageKey, JSON.stringify(merged));
               } catch {}
               const curMerged = merged.find((m) => m.id === currentSessionId);
-              if (curMerged && curMerged.messages && curMerged.messages.length > messages.length) {
+              if (curMerged && curMerged.messages && curMerged.messages.length > messagesCountRef.current) {
                 setMessages(curMerged.messages);
               }
               return merged;
@@ -666,7 +699,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
           setCloudSyncStatus('error');
         });
     }
-  }, [isOpen, session?.username, sessionsStorageKey, currentSessionId, messages.length]);
+  }, [isOpen, session?.username, sessionsStorageKey, currentSessionId]);
 
   // Debounce push riwayat sesi ke cloud Supabase saat ada perubahan
   useEffect(() => {
@@ -753,6 +786,22 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
 
   if (!isOpen) return null;
 
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      try {
+        abortControllerRef.current.abort();
+      } catch {}
+      abortControllerRef.current = null;
+    }
+    setIsLoading(false);
+    setActiveToolName(null);
+    setMessages((prev) =>
+      prev
+        .map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m))
+        .filter((m) => m.role === 'user' || (m.text && m.text.trim().length > 0))
+    );
+  };
+
   const handleSendMessage = async (textToSend?: string) => {
     const prompt = (textToSend || inputPrompt).trim();
     if ((!prompt && pendingAttachments.length === 0) || isLoading) return;
@@ -769,14 +818,19 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
       timestamp: Date.now()
     };
 
-    const newHistory = [...messages, userMsg];
+    const priorMessages = [...messages];
+    const newHistory = [...priorMessages, userMsg];
     setMessages(newHistory);
     setIsLoading(true);
     setActiveToolName(null);
 
+    const streamingMsgId = `model_${Date.now() + 1}`;
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       const result = await sendChatMessageToGemini(
-        newHistory,
+        priorMessages,
         userMsg.text,
         (toolName) => {
           let toolLabel = 'Mengecek data WMS...';
@@ -800,33 +854,78 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
           else if (toolName === 'prepare_agenda_or_project_draft') toolLabel = 'Menyiapkan Draft Agenda / Project / Catatan...';
           else if (toolName === 'generate_exportable_report') toolLabel = 'Menyusun dokumen laporan PDF & Excel...';
           setActiveToolName(toolLabel);
+          // Bersihkan placeholder streaming sementara jika AI memutuskan memanggil tool
+          setMessages((prev) => prev.filter((m) => m.id !== streamingMsgId));
         },
         currentAtts,
-        session
+        session,
+        {
+          speedMode,
+          signal: controller.signal,
+          onModelResolved: (resolvedModel) => {
+            setLastModelUsed(formatPrettyModelName(resolvedModel));
+          },
+          onTextDelta: (accumulatedText) => {
+            setActiveToolName(null);
+            setMessages((prev) => {
+              const existsIdx = prev.findIndex((m) => m.id === streamingMsgId);
+              if (existsIdx >= 0) {
+                const updated = [...prev];
+                updated[existsIdx] = {
+                  ...updated[existsIdx],
+                  text: accumulatedText,
+                  isStreaming: true
+                };
+                return updated;
+              }
+              return [
+                ...prev,
+                {
+                  id: streamingMsgId,
+                  role: 'model',
+                  text: accumulatedText,
+                  timestamp: Date.now(),
+                  isStreaming: true
+                }
+              ];
+            });
+          }
+        }
       );
 
       if (result.modelUsed) {
-        const prettyModel =
-          result.modelUsed === 'gemini-3.1-flash-lite'
-            ? 'Gemini 3.1 Flash Lite'
-            : result.modelUsed === 'gemini-4-hydrogen'
-            ? 'Gemini 4 Hydrogen'
-            : result.modelUsed;
-        setLastModelUsed(prettyModel);
+        setLastModelUsed(formatPrettyModelName(result.modelUsed));
       }
 
       const botMsg: AiChatMessage = {
-        id: `model_${Date.now()}`,
+        id: streamingMsgId,
         role: 'model',
         text: result.text,
         timestamp: Date.now(),
+        isStreaming: false,
         toolCallsExecuted: result.executedTools,
         trelloCandidates: result.trelloCandidates,
         reportTable: result.reportTable
       };
 
-      setMessages((prev) => [...prev, botMsg]);
+      setMessages((prev) => {
+        const existsIdx = prev.findIndex((m) => m.id === streamingMsgId);
+        if (existsIdx >= 0) {
+          const updated = [...prev];
+          updated[existsIdx] = botMsg;
+          return updated;
+        }
+        return [...prev, botMsg];
+      });
     } catch (err: any) {
+      if (err?.name === 'AbortError' || controller.signal.aborted) {
+        setMessages((prev) =>
+          prev
+            .map((m) => (m.id === streamingMsgId ? { ...m, isStreaming: false } : m))
+            .filter((m) => m.role === 'user' || (m.text && m.text.trim().length > 0))
+        );
+        return;
+      }
       console.error('[WMS AI Error]:', err);
       const errorMsg: AiChatMessage = {
         id: `err_${Date.now()}`,
@@ -834,8 +933,11 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
         text: `⚠️ **Terjadi kendala saat memproses permintaan:**\n${err?.message || 'Gagal menghubungi server AI.'}\n\nSilakan coba lagi atau periksa koneksi & status layanan AI server.`,
         timestamp: Date.now()
       };
-      setMessages((prev) => [...prev, errorMsg]);
+      setMessages((prev) => [...prev.filter((m) => m.id !== streamingMsgId), errorMsg]);
     } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
       setIsLoading(false);
       setActiveToolName(null);
     }
@@ -1639,6 +1741,9 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                     {/* Content */}
                     <div className="prose dark:prose-invert max-w-none text-xs leading-relaxed">
                       {isUser ? <p className="whitespace-pre-wrap">{msg.text}</p> : renderFormattedContent(msg.text)}
+                      {!isUser && msg.isStreaming && (
+                        <span className="inline-block w-1.5 h-3.5 ml-1 align-middle bg-indigo-500 rounded-xs animate-pulse" />
+                      )}
                     </div>
 
                     {/* Lampiran Visual Kartu Foto Produk Trello UP (Exact maupun Konfirmasi Kode Mirip seperti 6612 -> 6612-1) */}
@@ -1923,8 +2028,8 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
             })
           )}
 
-          {/* Loading Indicator */}
-          {isLoading && (
+          {/* Loading Indicator (hanya tampil sebelum stream teks mulai mengalir) */}
+          {isLoading && !messages.some((m) => m.isStreaming) && (
             <div className="flex items-start gap-3">
               <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white flex items-center justify-center shrink-0 animate-pulse">
                 <Bot className="w-4 h-4" />
@@ -1936,7 +2041,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                   <div className="w-2 h-2 bg-primary-500 rounded-full animate-bounce" />
                 </div>
                 <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                  {activeToolName || 'Gemini sedang menganalisis data WMS...'}
+                  {activeToolName || 'Menyiapkan jawaban WMS...'}
                 </span>
               </div>
             </div>
@@ -2087,18 +2192,60 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={isLoading || (!inputPrompt.trim() && pendingAttachments.length === 0)}
-              className="p-2.5 sm:px-4 sm:py-2.5 bg-gradient-to-r from-primary-600 to-indigo-600 hover:from-primary-700 hover:to-indigo-700 text-white rounded-xl font-bold text-xs shadow-md shadow-primary-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
-            >
-              <Send className="w-4 h-4" />
-              <span className="hidden sm:inline">Kirim</span>
-            </button>
+            {isLoading ? (
+              <button
+                type="button"
+                onClick={handleStopGeneration}
+                title="Hentikan jawaban AI"
+                className="p-2.5 sm:px-4 sm:py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs shadow-sm transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+              >
+                <Square className="w-3.5 h-3.5 fill-current" />
+                <span className="hidden sm:inline">Stop</span>
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={!inputPrompt.trim() && pendingAttachments.length === 0}
+                className="p-2.5 sm:px-4 sm:py-2.5 bg-gradient-to-r from-primary-600 to-indigo-600 hover:from-primary-700 hover:to-indigo-700 text-white rounded-xl font-bold text-xs shadow-md shadow-primary-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+              >
+                <Send className="w-4 h-4" />
+                <span className="hidden sm:inline">Kirim</span>
+              </button>
+            )}
           </form>
-          <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-400 px-1">
-            <span>Shift + Enter untuk baris baru</span>
-            <span className="flex items-center gap-1">
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500 dark:text-slate-400 px-0.5">
+            <div className="inline-flex items-center rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 p-0.5">
+              <button
+                type="button"
+                disabled={isLoading}
+                onClick={() => handleChangeSpeedMode('fast')}
+                title="Mode Cepat (Gemini 3.1 Flash Lite + Streaming instan)"
+                className={`px-2 py-0.5 rounded-md font-bold flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50 ${
+                  speedMode === 'fast'
+                    ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs border border-slate-200/80 dark:border-slate-700'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                }`}
+              >
+                <Zap className="w-3 h-3" />
+                <span>Cepat</span>
+              </button>
+              <button
+                type="button"
+                disabled={isLoading}
+                onClick={() => handleChangeSpeedMode('deep')}
+                title="Mode Analisis Mendalam (Gemini 4 Hydrogen)"
+                className={`px-2 py-0.5 rounded-md font-bold flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50 ${
+                  speedMode === 'deep'
+                    ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs border border-slate-200/80 dark:border-slate-700'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                }`}
+              >
+                <Brain className="w-3 h-3" />
+                <span>Mendalam</span>
+              </button>
+            </div>
+            <span className="hidden sm:inline text-slate-400">Shift + Enter untuk baris baru</span>
+            <span className="flex items-center gap-1 text-slate-400">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               Grounded Realtime Database
             </span>

@@ -101,6 +101,14 @@ export const PengirimanPaketTab: React.FC<PengirimanPaketTabProps> = ({
     loadData();
   }, []);
 
+  useEffect(() => {
+    const handleReset = () => {
+      loadData();
+    };
+    window.addEventListener('wms_loading_dock_data_reset', handleReset);
+    return () => window.removeEventListener('wms_loading_dock_data_reset', handleReset);
+  }, []);
+
   const handleAddResi = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const cleanResi = resiInput.trim().toUpperCase();

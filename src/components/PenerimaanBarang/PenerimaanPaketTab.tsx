@@ -127,6 +127,14 @@ export const PenerimaanPaketTab: React.FC<PenerimaanPaketTabProps> = ({ session,
     loadRiwayat();
   }, []);
 
+  useEffect(() => {
+    const handleReset = () => {
+      loadRiwayat();
+    };
+    window.addEventListener('wms_loading_dock_data_reset', handleReset);
+    return () => window.removeEventListener('wms_loading_dock_data_reset', handleReset);
+  }, []);
+
   // Sync PIC from session
   useEffect(() => {
     if (session) {

@@ -718,3 +718,35 @@ export async function applyPhotoWatermark(
     img.src = imageSource;
   });
 }
+
+/**
+ * Reset / Kosongkan seluruh data transaksi Penerimaan (Mutasi Store & Penerimaan Paket).
+ * Hanya menghapus riwayat dokumen transaksi loading dock, tidak menghapus stok fisik / log_produk ataupun master config ekspedisi/outlet.
+ */
+export async function resetAllPenerimaanLoadingDock(): Promise<{ success: boolean; message: string }> {
+  try {
+    await supabaseFetch('penerimaan_mutasi_store', 'DELETE', null, 'id=neq.00000000-0000-0000-0000-000000000000');
+  } catch (err) {
+    console.warn('Supabase reset penerimaan_mutasi_store warning:', err);
+  }
+
+  try {
+    await supabaseFetch('penerimaan_paket', 'DELETE', null, 'id=neq.00000000-0000-0000-0000-000000000000');
+  } catch (err) {
+    console.warn('Supabase reset penerimaan_paket warning:', err);
+  }
+
+  try {
+    localStorage.removeItem(LOCAL_STORAGE_MUTASI_STORE);
+    localStorage.removeItem(LOCAL_STORAGE_PAKET);
+  } catch {}
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('wms_loading_dock_data_reset', { detail: { type: 'penerimaan' } }));
+  }
+
+  return {
+    success: true,
+    message: 'Data penerimaan (mutasi store & paket) berhasil di-reset / dikosongkan.',
+  };
+}

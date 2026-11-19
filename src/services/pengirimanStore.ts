@@ -1365,3 +1365,35 @@ KODE: ${markingCode}`;
 
   return labels;
 }
+
+/**
+ * Reset / Kosongkan seluruh data transaksi Pengiriman Store (Surat Jalan Barang & Trip Pengiriman).
+ * Hanya menghapus riwayat dokumen transaksi loading dock, tidak menghapus stok fisik / log_produk.
+ */
+export async function resetAllPengirimanStore(): Promise<{ success: boolean; message: string }> {
+  try {
+    await supabaseFetch('pengiriman_store_reports', 'DELETE', null, 'id=neq.');
+  } catch (err) {
+    console.warn('Supabase reset pengiriman_store_reports warning:', err);
+  }
+
+  try {
+    await supabaseFetch('pengiriman_store_trips', 'DELETE', null, 'id=neq.');
+  } catch (err) {
+    console.warn('Supabase reset pengiriman_store_trips warning:', err);
+  }
+
+  try {
+    localStorage.removeItem(LOCAL_STORAGE_REPORTS);
+    localStorage.removeItem(LOCAL_STORAGE_TRIPS);
+  } catch {}
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('wms_loading_dock_data_reset', { detail: { type: 'pengiriman_store' } }));
+  }
+
+  return {
+    success: true,
+    message: 'Data pengiriman store (surat jalan barang & trip kirim) berhasil di-reset.',
+  };
+}
