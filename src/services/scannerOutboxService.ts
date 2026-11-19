@@ -22,6 +22,7 @@ import {
   savePenerimaanRecountLog,
   invalidatePenerimaanProduksiCache,
   insertPickingListRowsToSupabase,
+  syncSinglePickingItemRealtimeSupabase,
   resolvePrimarySingleLocation
 } from './supabase';
 import {
@@ -36,6 +37,7 @@ const LEGACY_OFFLINE_LOGS_KEY = 'wms_offline_logs';
 const RECOUNT_OUTBOX_STORAGE_KEY = 'wms_recount_offline_outbox_v1';
 const RECOUNT_WORKSPACE_DRAFT_KEY = 'wms_recount_workspace_draft_v1';
 const PICKING_OUTBOX_STORAGE_KEY = 'wms_picking_offline_outbox_v1';
+const PICKING_ITEM_SYNC_QUEUE_KEY = 'wms_picking_item_sync_queue_v1';
 const PICKING_SJ_DRAFTS_KEY = 'wms_picking_sj_drafts_v1';
 const ACTIVE_PICKING_SESSION_KEY = 'wms_active_picking_session';
 const PUTAWAY_OUTBOX_STORAGE_KEY = 'wms_putaway_offline_outbox_v1';
@@ -1312,6 +1314,283 @@ export async function syncAllPickingOutboxBatches(): Promise<{
     remainingBatches: remaining.length,
     errors
   };
+}
+
+// ============================================================================
+// PER-ITEM OFFLINE SYNC QUEUE (PROTECT IN-PROGRESS PICKS ACROSS OFFLINE/ONLINE)
+// ============================================================================
+
+export interface PickingItemSyncMutation {
+  key: string; // `${cleanNoSj}__${cleanSku}`
+  id?: string | number;
+  no_sj: string;
+  sku: string;
+  mode: 'delta' | 'absolute';
+  delta?: number;
+  absoluteQty?: number;
+  markKosong?: boolean;
+  lokasi_picked: string;
+  username: string;
+  currentItem?: PickingListItem;
+  updatedAt: number;
+}
+
+export interface FlushedPickingItemResult {
+  key: string;
+  no_sj: string;
+  sku: string;
+  item: PickingListItem | null;
+  isOverPick: boolean;
+  previousPicker: string;
+  serverQtyBefore: number;
+  newQty: number;
+}
+
+let inFlightPickingItemFlushPromise: Promise<{
+  syncedItems: FlushedPickingItemResult[];
+  remainingCount: number;
+}> | null = null;
+
+function notifyPickingItemSyncQueueUpdated(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('wms_picking_item_sync_queue_updated'));
+  }
+}
+
+function makePickingItemSyncKey(noSj: string, sku: string): string {
+  return `${String(noSj || '').trim().toUpperCase()}__${String(sku || '').trim().toUpperCase()}`;
+}
+
+export function getPendingPickingItemSyncQueue(): PickingItemSyncMutation[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(PICKING_ITEM_SYNC_QUEUE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function savePendingPickingItemSyncQueue(queue: PickingItemSyncMutation[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (queue.length === 0) {
+      localStorage.removeItem(PICKING_ITEM_SYNC_QUEUE_KEY);
+    } else {
+      localStorage.setItem(PICKING_ITEM_SYNC_QUEUE_KEY, JSON.stringify(queue));
+    }
+  } catch (err) {
+    console.warn('[PickingItemQueue] Gagal menyimpan antrean item offline:', err);
+  }
+  notifyPickingItemSyncQueueUpdated();
+}
+
+export function getPendingPickingItemSyncCount(noSj?: string): number {
+  const queue = getPendingPickingItemSyncQueue();
+  if (!noSj) return queue.length;
+  const cleanSj = String(noSj || '').trim().toUpperCase();
+  return queue.filter((q) => String(q.no_sj || '').trim().toUpperCase() === cleanSj).length;
+}
+
+export function hasPendingPickingItemSyncForSku(noSj: string, sku: string): boolean {
+  const key = makePickingItemSyncKey(noSj, sku);
+  return getPendingPickingItemSyncQueue().some((q) => q.key === key);
+}
+
+export function clearPendingPickingItemSyncForSj(noSj: string): void {
+  if (typeof window === 'undefined') return;
+  const cleanSj = String(noSj || '').trim().toUpperCase();
+  if (!cleanSj) return;
+  const current = getPendingPickingItemSyncQueue();
+  const next = current.filter((q) => String(q.no_sj || '').trim().toUpperCase() !== cleanSj);
+  if (next.length !== current.length) {
+    savePendingPickingItemSyncQueue(next);
+  }
+}
+
+export function enqueuePickingItemSyncMutation(params: {
+  id?: string | number;
+  no_sj: string;
+  sku: string;
+  delta?: number;
+  absoluteQty?: number;
+  markKosong?: boolean;
+  lokasi_picked: string;
+  username: string;
+  currentItem?: PickingListItem;
+}): PickingItemSyncMutation[] {
+  const cleanNoSj = String(params.no_sj || '').trim().toUpperCase();
+  const cleanSku = String(params.sku || '').trim().toUpperCase();
+  if (!cleanNoSj || !cleanSku) return getPendingPickingItemSyncQueue();
+
+  const key = makePickingItemSyncKey(cleanNoSj, cleanSku);
+  const current = getPendingPickingItemSyncQueue();
+  const existingIdx = current.findIndex((q) => q.key === key);
+  const existing = existingIdx >= 0 ? current[existingIdx] : null;
+  const nowTs = Date.now();
+
+  let nextEntry: PickingItemSyncMutation | null = null;
+
+  if (typeof params.delta === 'number') {
+    if (existing?.mode === 'absolute') {
+      nextEntry = {
+        ...existing,
+        id: params.id ?? existing.id,
+        mode: 'absolute',
+        absoluteQty: Math.max(0, (Number(existing.absoluteQty) || 0) + params.delta),
+        markKosong: false,
+        lokasi_picked: params.lokasi_picked || existing.lokasi_picked,
+        username: params.username || existing.username,
+        currentItem: existing.currentItem || params.currentItem,
+        updatedAt: nowTs,
+      };
+    } else if (existing?.mode === 'delta') {
+      const combinedDelta = (Number(existing.delta) || 0) + params.delta;
+      if (combinedDelta === 0 && !existing.markKosong) {
+        nextEntry = null;
+      } else {
+        nextEntry = {
+          ...existing,
+          id: params.id ?? existing.id,
+          mode: 'delta',
+          delta: combinedDelta,
+          markKosong: false,
+          lokasi_picked: params.lokasi_picked || existing.lokasi_picked,
+          username: params.username || existing.username,
+          currentItem: existing.currentItem || params.currentItem,
+          updatedAt: nowTs,
+        };
+      }
+    } else if (params.delta !== 0 || params.markKosong) {
+      nextEntry = {
+        key,
+        id: params.id,
+        no_sj: cleanNoSj,
+        sku: cleanSku,
+        mode: 'delta',
+        delta: params.delta,
+        markKosong: Boolean(params.markKosong),
+        lokasi_picked: params.lokasi_picked || '',
+        username: params.username || 'Operator',
+        currentItem: params.currentItem,
+        updatedAt: nowTs,
+      };
+    }
+  } else {
+    nextEntry = {
+      key,
+      id: params.id ?? existing?.id,
+      no_sj: cleanNoSj,
+      sku: cleanSku,
+      mode: 'absolute',
+      absoluteQty: Math.max(0, Number(params.absoluteQty ?? 0) || 0),
+      markKosong: Boolean(params.markKosong),
+      lokasi_picked: params.lokasi_picked || existing?.lokasi_picked || '',
+      username: params.username || existing?.username || 'Operator',
+      currentItem: existing?.currentItem || params.currentItem,
+      updatedAt: nowTs,
+    };
+  }
+
+  const nextQueue = current.filter((q) => q.key !== key);
+  if (nextEntry) {
+    nextQueue.push(nextEntry);
+  }
+  savePendingPickingItemSyncQueue(nextQueue);
+  return nextQueue;
+}
+
+export async function flushPendingPickingItemSyncQueue(): Promise<{
+  syncedItems: FlushedPickingItemResult[];
+  remainingCount: number;
+}> {
+  if (typeof window === 'undefined') {
+    return { syncedItems: [], remainingCount: 0 };
+  }
+
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return { syncedItems: [], remainingCount: getPendingPickingItemSyncQueue().length };
+  }
+
+  if (inFlightPickingItemFlushPromise) {
+    return inFlightPickingItemFlushPromise;
+  }
+
+  inFlightPickingItemFlushPromise = (async () => {
+    const syncedByKey = new Map<string, FlushedPickingItemResult>();
+    const maxIterations = Math.max(40, getPendingPickingItemSyncQueue().length * 5);
+    let iterations = 0;
+
+    while (iterations < maxIterations) {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) break;
+      const queue = getPendingPickingItemSyncQueue();
+      if (queue.length === 0) break;
+
+      iterations++;
+      const snapshot = queue[0];
+      const res = await syncSinglePickingItemRealtimeSupabase({
+        id: snapshot.id,
+        no_sj: snapshot.no_sj,
+        sku: snapshot.sku,
+        delta: snapshot.mode === 'delta' ? snapshot.delta : undefined,
+        absoluteQty: snapshot.mode === 'absolute' ? snapshot.absoluteQty : undefined,
+        markKosong: snapshot.markKosong,
+        lokasi_picked: snapshot.lokasi_picked,
+        username: snapshot.username,
+        currentItem: snapshot.currentItem,
+      });
+
+      if (!res.remoteSaved) {
+        // Jaringan masih bermasalah / PATCH ditolak -> pertahankan antrean agar tidak hilang saat refresh
+        break;
+      }
+
+      syncedByKey.set(snapshot.key, {
+        key: snapshot.key,
+        no_sj: snapshot.no_sj,
+        sku: snapshot.sku,
+        item: res.item,
+        isOverPick: res.isOverPick,
+        previousPicker: res.previousPicker,
+        serverQtyBefore: res.serverQtyBefore,
+        newQty: res.newQty,
+      });
+
+      // Reconcile against any mid-flight mutations that landed for this same SKU during PATCH
+      const latestQueue = getPendingPickingItemSyncQueue();
+      const latestIdx = latestQueue.findIndex((q) => q.key === snapshot.key);
+      if (latestIdx >= 0) {
+        const latest = latestQueue[latestIdx];
+        if (latest.updatedAt === snapshot.updatedAt) {
+          latestQueue.splice(latestIdx, 1);
+        } else if (latest.mode === 'delta' && snapshot.mode === 'delta') {
+          const remainder = (Number(latest.delta) || 0) - (Number(snapshot.delta) || 0);
+          if (remainder === 0 && !latest.markKosong) {
+            latestQueue.splice(latestIdx, 1);
+          } else {
+            latestQueue[latestIdx] = {
+              ...latest,
+              delta: remainder,
+            };
+          }
+        }
+        savePendingPickingItemSyncQueue(latestQueue);
+      }
+    }
+
+    return {
+      syncedItems: Array.from(syncedByKey.values()),
+      remainingCount: getPendingPickingItemSyncQueue().length,
+    };
+  })();
+
+  try {
+    return await inFlightPickingItemFlushPromise;
+  } finally {
+    inFlightPickingItemFlushPromise = null;
+  }
 }
 
 // ============================================================================

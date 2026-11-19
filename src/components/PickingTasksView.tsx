@@ -91,7 +91,6 @@ import {
   claimOrJoinPickingSJSupabase,
   leavePickingSJSupabase,
   cancelOrResetPickingSJSupabase,
-  syncSinglePickingItemRealtimeSupabase,
   invalidatePickingListCache,
   isSameOperatorIdentity,
 } from '../services/supabase';
@@ -99,6 +98,11 @@ import {
   getPickingOutboxBatches,
   enqueuePickingOutboxBatch,
   syncAllPickingOutboxBatches,
+  enqueuePickingItemSyncMutation,
+  flushPendingPickingItemSyncQueue,
+  getPendingPickingItemSyncCount,
+  hasPendingPickingItemSyncForSku,
+  clearPendingPickingItemSyncForSj,
   getPickingSjDraftsMap,
   savePickingSjDraft,
   removePickingSjDraft,
@@ -360,6 +364,12 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   const collabChannelRef = useRef<any>(null);
   const pendingLocalSyncSkusRef = useRef<Map<string, number>>(new Map());
   const recentlyMutatedSjRef = useRef<Map<string, number>>(new Map());
+  const [pendingItemSyncCount, setPendingItemSyncCount] = useState<number>(() =>
+    getPendingPickingItemSyncCount()
+  );
+  const syncPendingPickingItemsRef = useRef<((showToastOnSync?: boolean) => Promise<void>) | null>(
+    null
+  );
   const markSjLocallyMutated = useCallback((noSj: string, ttlMs = 4500) => {
     const key = String(noSj || '').toUpperCase().trim();
     if (!key) return;
@@ -480,8 +490,10 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           const next = prev.map((localIt) => {
             const skuKey = localIt.sku.toUpperCase().trim();
             const pendingTs = pendingLocalSyncSkusRef.current.get(skuKey) || 0;
-            // Skip overwriting SKU that was just modified locally within last 2.2s
-            if (nowMs - pendingTs < 2200) return localIt;
+            // Skip overwriting SKU with unsynced local offline mutations OR modified within last 2.2s
+            if (hasPendingPickingItemSyncForSku(cleanNoSj, skuKey) || nowMs - pendingTs < 2200) {
+              return localIt;
+            }
 
             const rem = remoteBySku.get(skuKey);
             if (!rem) return localIt;
@@ -544,7 +556,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         const nextRaw = prevRaw.map((item) => {
           const itemSj = (item.no_sj || '').toUpperCase().trim();
           if (itemSj !== cleanNoSj) return item;
-          const rem = remoteMap.get(`${cleanNoSj}__${(item.sku || '').toUpperCase().trim()}`);
+          const skuKey = (item.sku || '').toUpperCase().trim();
+          if (hasPendingPickingItemSyncForSku(cleanNoSj, skuKey)) return item;
+          const rem = remoteMap.get(`${cleanNoSj}__${skuKey}`);
           if (!rem) return item;
           if (
             rem.qty_picked !== item.qty_picked ||
@@ -569,9 +583,140 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     [onNotify]
   );
 
-  // Load initial SJ data from Supabase on mount
+  // Flush queued per-item offline mutations BEFORE polling/refreshing remote SJ state
+  const syncPendingPickingItemsAndApply = useCallback(
+    async (showToastOnSync = false) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      const res = await flushPendingPickingItemSyncQueue();
+      setPendingItemSyncCount(res.remainingCount);
+      if (res.syncedItems.length === 0) return;
+
+      const syncedBySjSku = new Map(res.syncedItems.map((s) => [s.key, s]));
+      const activeNoSj = activeSJRef.current?.no_sj?.toUpperCase().trim() || '';
+
+      res.syncedItems.forEach((s) => {
+        pendingLocalSyncSkusRef.current.set(s.sku, Date.now());
+        broadcastPickingCollabEvent('item_updated', {
+          no_sj: s.no_sj,
+          sku: s.sku,
+          qty_picked: s.newQty,
+          status: s.item?.status,
+        });
+      });
+
+      if (activeNoSj) {
+        setActiveItems((prev) => {
+          let changed = false;
+          const next = prev.map((it) => {
+            const skuKey = (it.sku || '').toUpperCase().trim();
+            const synced = syncedBySjSku.get(`${activeNoSj}__${skuKey}`);
+            if (!synced || !synced.item || hasPendingPickingItemSyncForSku(activeNoSj, skuKey)) {
+              return it;
+            }
+            const reqQty = Math.max(1, Number(it.qty_req) || 1);
+            const authKosong = Boolean(synced.item.is_kosong || synced.item.status === 'KOSONG');
+            const authStatus: PickingListItem['status'] = authKosong
+              ? 'KOSONG'
+              : synced.newQty >= reqQty
+              ? 'SELESAI'
+              : synced.newQty > 0
+              ? 'SEDANG PICKING'
+              : 'PENDING';
+            changed = true;
+            return {
+              ...it,
+              id: synced.item.id || it.id,
+              qty_picked: synced.newQty,
+              lokasi_picked: it.lokasi_picked || synced.item.lokasi_picked,
+              status: authStatus,
+              is_kosong: authKosong,
+              picker_name: synced.item.picker_name || it.picker_name,
+              last_picked_by: synced.item.last_picked_by || currentUser,
+            };
+          });
+          return changed ? next : prev;
+        });
+      }
+
+      setRawItems((prev) => {
+        let changed = false;
+        const nextRaw = prev.map((it) => {
+          const sjKey = (it.no_sj || '').toUpperCase().trim();
+          const skuKey = (it.sku || '').toUpperCase().trim();
+          const synced = syncedBySjSku.get(`${sjKey}__${skuKey}`);
+          if (!synced || !synced.item || hasPendingPickingItemSyncForSku(sjKey, skuKey)) {
+            return it;
+          }
+          const authKosong = Boolean(synced.item.is_kosong || synced.item.status === 'KOSONG');
+          changed = true;
+          return {
+            ...it,
+            qty_picked: synced.newQty,
+            status: authKosong ? ('KOSONG' as const) : synced.newQty > 0 ? ('SEDANG PICKING' as const) : ('PENDING' as const),
+            is_kosong: authKosong,
+            picker_name: synced.item.picker_name || it.picker_name,
+            last_picked_by: synced.item.last_picked_by || currentUser,
+          };
+        });
+        return changed ? nextRaw : prev;
+      });
+
+      if (activeNoSj) {
+        res.syncedItems.forEach((synced) => {
+          if (synced.no_sj !== activeNoSj || !synced.item) return;
+          const reqQty = Math.max(1, Number(synced.item.qty_req) || 1);
+          if (synced.isOverPick && synced.newQty > reqQty) {
+            playErrorBeep();
+            vibrateDevice([250, 100, 250, 100, 250]);
+            const lookup = lookupProductBySku(
+              synced.item.sku,
+              catalogMap,
+              synced.item.nama_produk,
+              synced.item.size
+            );
+            setOverPickAlertModal((prevModal) => {
+              if (prevModal) return prevModal;
+              const matchIdx = activeItems.findIndex(
+                (x) => (x.sku || '').toUpperCase().trim() === synced.sku
+              );
+              return {
+                isOpen: true,
+                sku: synced.sku,
+                nama_produk: lookup.nama_produk || synced.item?.nama_produk || synced.sku,
+                size: synced.item?.size || lookup.size || '-',
+                lokasi: synced.item?.lokasi_picked || synced.item?.lokasi || '-',
+                qtyReq: reqQty,
+                newQty: synced.newQty,
+                excessQty: synced.newQty - reqQty,
+                previousPicker: synced.previousPicker || currentUser || 'Petugas Lain',
+                itemIndex: matchIdx >= 0 ? matchIdx : 0,
+              };
+            });
+          }
+        });
+      }
+
+      setDraftsRevision((r) => r + 1);
+      if (showToastOnSync) {
+        onNotify(
+          `✅ Koneksi kembali! ${res.syncedItems.length} item picking offline berhasil disinkronkan ke server.`,
+          'success'
+        );
+      }
+    },
+    [broadcastPickingCollabEvent, catalogMap, currentUser, onNotify, activeItems]
+  );
+
+  syncPendingPickingItemsRef.current = syncPendingPickingItemsAndApply;
+
+  // Flush any pending offline item scans before initial Supabase load so stale remote never overwrites them
   useEffect(() => {
-    loadPickingList();
+    (syncPendingPickingItemsRef.current
+      ? syncPendingPickingItemsRef.current(false).catch(() => {})
+      : Promise.resolve()
+    ).finally(() => {
+      loadPickingList();
+    });
   }, []);
 
   // Supabase Realtime Channel (Broadcast + Postgres Changes) & Coalesced Polling for Multi-Picker Sync
@@ -693,12 +838,15 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       collabChannelRef.current = channel;
     }
 
-    // Throttled polling fallback (skips hidden tabs & pauses View 1 polling when unnecessary)
+    // Throttled polling fallback (skips hidden tabs & flushes offline item queue BEFORE pulling remote)
     let tickCount = 0;
-    const pollInterval = setInterval(() => {
+    const pollInterval = setInterval(async () => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) return;
       if (typeof document !== 'undefined' && document.hidden) return;
       tickCount += 1;
+      if (getPendingPickingItemSyncCount() > 0 && syncPendingPickingItemsRef.current) {
+        await syncPendingPickingItemsRef.current(true).catch(() => {});
+      }
       const currentActive = activeSJRef.current;
       if (currentActive && currentActive.no_sj) {
         scheduleRealtimeSjRefresh(currentActive.no_sj, 50);
@@ -708,24 +856,41 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             if (Array.isArray(data) && data.length > 0) {
               const now = Date.now();
               setRawItems((prev) => {
+                const pendingBySjSku = new Map<string, PickingListItem>();
+                prev.forEach((it) => {
+                  const kSj = (it.no_sj || '').toUpperCase().trim();
+                  const kSku = (it.sku || '').toUpperCase().trim();
+                  if (kSj && kSku && hasPendingPickingItemSyncForSku(kSj, kSku)) {
+                    pendingBySjSku.set(`${kSj}__${kSku}`, it);
+                  }
+                });
+
                 const guardedSjs = new Set<string>();
                 recentlyMutatedSjRef.current.forEach((until, sjKey) => {
                   if (now < until) guardedSjs.add(sjKey);
                   else recentlyMutatedSjRef.current.delete(sjKey);
                 });
-                if (guardedSjs.size === 0) return data;
-                const prevBySj = new Map<string, PickingListItem[]>();
-                prev.forEach((it) => {
-                  const k = (it.no_sj || '').toUpperCase().trim();
-                  if (guardedSjs.has(k)) {
-                    const arr = prevBySj.get(k) || [];
-                    arr.push(it);
-                    prevBySj.set(k, arr);
-                  }
+
+                let nextData = data;
+                if (guardedSjs.size > 0) {
+                  const prevBySj = new Map<string, PickingListItem[]>();
+                  prev.forEach((it) => {
+                    const k = (it.no_sj || '').toUpperCase().trim();
+                    if (guardedSjs.has(k)) {
+                      const arr = prevBySj.get(k) || [];
+                      arr.push(it);
+                      prevBySj.set(k, arr);
+                    }
+                  });
+                  nextData = data.filter((it) => !guardedSjs.has((it.no_sj || '').toUpperCase().trim()));
+                  prevBySj.forEach((arr) => nextData.push(...arr));
+                }
+
+                if (pendingBySjSku.size === 0) return nextData;
+                return nextData.map((it) => {
+                  const key = `${(it.no_sj || '').toUpperCase().trim()}__${(it.sku || '').toUpperCase().trim()}`;
+                  return pendingBySjSku.get(key) || it;
                 });
-                const merged = data.filter((it) => !guardedSjs.has((it.no_sj || '').toUpperCase().trim()));
-                prevBySj.forEach((arr) => merged.push(...arr));
-                return merged;
               });
             }
           })
@@ -766,9 +931,18 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       }
     };
 
-    const handleOnline = () => {
+    const handleOnline = async () => {
       setIsOnline(true);
-      syncOutboxAndRefresh();
+      if (syncPendingPickingItemsRef.current) {
+        await syncPendingPickingItemsRef.current(true).catch(() => {});
+      }
+      await syncOutboxAndRefresh();
+      const openSj = activeSJRef.current?.no_sj;
+      if (openSj) {
+        fetchActiveSjRealtimeRowsSupabase(openSj)
+          .then((rows) => applyRemoteSjRowsToState(openSj, rows))
+          .catch(() => {});
+      }
     };
     const handleOffline = () => {
       setIsOnline(false);
@@ -793,6 +967,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       setPickingOutboxCount(getPickingOutboxBatches().length);
       setDraftsRevision((r) => r + 1);
     };
+    const handleItemSyncQueueChange = () => {
+      setPendingItemSyncCount(getPendingPickingItemSyncCount());
+    };
     const handleListUpdated = () => {
       setDraftsRevision((r) => r + 1);
     };
@@ -803,6 +980,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     window.addEventListener('wms_minimize_picking_session', handleMinimizePicking);
     window.addEventListener('wms_close_picking_session', handleClosePickingSession);
     window.addEventListener('wms_picking_outbox_updated', handleOutboxChange);
+    window.addEventListener('wms_picking_item_sync_queue_updated', handleItemSyncQueueChange);
     window.addEventListener('wms_picking_list_updated', handleListUpdated);
 
     return () => {
@@ -812,6 +990,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       window.removeEventListener('wms_minimize_picking_session', handleMinimizePicking);
       window.removeEventListener('wms_close_picking_session', handleClosePickingSession);
       window.removeEventListener('wms_picking_outbox_updated', handleOutboxChange);
+      window.removeEventListener('wms_picking_item_sync_queue_updated', handleItemSyncQueueChange);
       window.removeEventListener('wms_picking_list_updated', handleListUpdated);
     };
   }, []);
@@ -922,16 +1101,34 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   const loadPickingList = async () => {
     setLoading(true);
     try {
+      if (typeof navigator !== 'undefined' && navigator.onLine && getPendingPickingItemSyncCount() > 0 && syncPendingPickingItemsRef.current) {
+        await syncPendingPickingItemsRef.current(false).catch(() => {});
+      }
       const data = await fetchPickingListFromSupabase(true);
-      setRawItems(() => {
+      setRawItems((prev) => {
         const supabaseData = data || [];
+        const pendingByKey = new Map<string, PickingListItem>();
+        prev.forEach((it) => {
+          const sjKey = (it.no_sj || '').toUpperCase().trim();
+          const skuKey = (it.sku || '').toUpperCase().trim();
+          if (sjKey && skuKey && hasPendingPickingItemSyncForSku(sjKey, skuKey)) {
+            pendingByKey.set(`${sjKey}__${skuKey}`, it);
+          }
+        });
+        const protectedData =
+          pendingByKey.size > 0
+            ? supabaseData.map((rem) => {
+                const k = `${(rem.no_sj || '').toUpperCase().trim()}__${(rem.sku || '').toUpperCase().trim()}`;
+                return pendingByKey.get(k) || rem;
+              })
+            : supabaseData;
         try {
-          const offlineCacheData = supabaseData
+          const offlineCacheData = protectedData
             .filter((it) => it.status !== 'SELESAI')
             .slice(0, 100);
           safeLocalStorageSet('wms_raw_picking_list_cache', JSON.stringify(offlineCacheData));
         } catch {}
-        return supabaseData;
+        return protectedData;
       });
     } catch (e) {
       console.warn('Gagal memuat picking list, menggunakan cache offline:', e);
@@ -1072,7 +1269,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     );
   };
 
-  // Manual trigger to sync offline Picking outbox batches
+  // Manual trigger to sync offline Picking items & outbox batches
   const handleSyncPickingOutboxNow = async () => {
     if (!isOnline) {
       onNotify('Perangkat masih offline. Sinkronisasi akan berjalan otomatis saat internet aktif.', 'warning');
@@ -1081,6 +1278,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     if (isSyncingPickingOutbox) return;
     setIsSyncingPickingOutbox(true);
     try {
+      await syncPendingPickingItemsAndApply(true);
       const res = await syncAllPickingOutboxBatches();
       setPickingOutboxCount(res.remainingBatches);
       setDraftsRevision((r) => r + 1);
@@ -2006,12 +2204,15 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         const draftItem = savedDraft?.activeItems?.find(
           (d) => (d.id && d.id === it.id) || (d.sku || '').trim().toUpperCase() === cleanSku
         );
+        const hasPendingOfflineItem = hasPendingPickingItemSyncForSku(cleanNoSj, cleanSku);
         const remoteQty = Math.max(0, Number(it.qty_picked) || 0);
         const draftQty = draftItem ? Math.max(0, Number(draftItem.qty_picked) || 0) : 0;
-        const qtyPicked = Math.max(remoteQty, draftQty);
+        const qtyPicked = hasPendingOfflineItem && draftItem ? draftQty : Math.max(remoteQty, draftQty);
         const rawLokasiPicked = draftItem?.lokasi_picked || it.lokasi_picked || '';
         const cleanLokasiPicked = resolvePrimarySingleLocation(rawLokasiPicked) || '';
-        const isKosong = Boolean(it.is_kosong || it.status === 'KOSONG' || draftItem?.is_kosong || draftItem?.status === 'KOSONG');
+        const isKosong = hasPendingOfflineItem && draftItem
+          ? Boolean(draftItem.is_kosong || draftItem.status === 'KOSONG')
+          : Boolean(it.is_kosong || it.status === 'KOSONG' || draftItem?.is_kosong || draftItem?.status === 'KOSONG');
 
         return {
           ...it,
@@ -2069,19 +2270,23 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       })
     );
 
-    // Sync collaborative claim/join to Supabase & broadcast to co-pickers
+    // Sync pending offline item progress FIRST, then collaborative claim/join to Supabase & broadcast to co-pickers
     if (typeof navigator === 'undefined' || navigator.onLine) {
-      claimOrJoinPickingSJSupabase(cleanNoSj, currentUser || 'Operator')
-        .then((res) => {
-          broadcastPickingCollabEvent('picker_joined', {
-            no_sj: cleanNoSj,
-            active_pickers: res.activePickers,
-          });
-          if (res.items.length > 0) {
-            applyRemoteSjRowsToState(cleanNoSj, res.items, true);
-          }
-        })
-        .catch(() => {});
+      syncPendingPickingItemsAndApply(false)
+        .catch(() => {})
+        .finally(() => {
+          claimOrJoinPickingSJSupabase(cleanNoSj, currentUser || 'Operator')
+            .then((res) => {
+              broadcastPickingCollabEvent('picker_joined', {
+                no_sj: cleanNoSj,
+                active_pickers: res.activePickers,
+              });
+              if (res.items.length > 0) {
+                applyRemoteSjRowsToState(cleanNoSj, res.items, true);
+              }
+            })
+            .catch(() => {});
+        });
     }
 
     const totalInitialPicked = itemsClone.reduce((s, it) => s + (Number(it.qty_picked) || 0), 0);
@@ -2197,6 +2402,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       if (mode === 'RESET_TO_PENDING' || !isOnlineNow) {
         if (mode === 'RESET_TO_PENDING') {
           removePickingSjDraft(cleanNoSj);
+          clearPendingPickingItemSyncForSj(cleanNoSj);
+          setPendingItemSyncCount(getPendingPickingItemSyncCount());
         }
       }
       setDraftsRevision((r) => r + 1);
@@ -2256,8 +2463,10 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         } else {
           syncedOnline = await leavePickingSJSupabase(cleanNoSj, currentUser || 'Operator', itemsSnapshot);
           if (syncedOnline) {
-            // Cleanly flush to Supabase succeeded — remove local draft so Supabase is single truth across all users
+            // Cleanly flush to Supabase succeeded — remove local draft & pending item sync queue for this SJ
             removePickingSjDraft(cleanNoSj);
+            clearPendingPickingItemSyncForSj(cleanNoSj);
+            setPendingItemSyncCount(getPendingPickingItemSyncCount());
             setDraftsRevision((r) => r + 1);
             markSjLocallyMutated(cleanNoSj, 6000);
             broadcastPickingCollabEvent('picker_left', { no_sj: cleanNoSj });
@@ -2298,7 +2507,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     }
   };
 
-  // Helper: Sync single item change in real time to Supabase & detect multi-picker Over-Pick collision
+  // Helper: Sync single item change in real time to Supabase (persisted to durable offline queue first)
   const syncItemRealtimeAndCheckOverPick = useCallback(
     async (params: {
       itemIndex: number;
@@ -2312,16 +2521,10 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       const cleanNoSj = activeSJRef.current.no_sj.toUpperCase().trim();
       const cleanSku = params.targetItem.sku.toUpperCase().trim();
       pendingLocalSyncSkusRef.current.set(cleanSku, Date.now());
+      markSjLocallyMutated(cleanNoSj, 4500);
 
-      // Broadcast optimistic update immediately for 0ms peer responsiveness
-      broadcastPickingCollabEvent('item_updated', {
-        no_sj: cleanNoSj,
-        sku: cleanSku,
-      });
-
-      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-
-      const res = await syncSinglePickingItemRealtimeSupabase({
+      // Persist mutation in durable per-item offline queue BEFORE attempting network sync
+      enqueuePickingItemSyncMutation({
         id: params.targetItem.id,
         no_sj: cleanNoSj,
         sku: cleanSku,
@@ -2332,88 +2535,19 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         username: currentUser || 'Operator',
         currentItem: params.targetItem,
       });
+      setPendingItemSyncCount(getPendingPickingItemSyncCount());
 
-      pendingLocalSyncSkusRef.current.set(cleanSku, Date.now());
+      // Broadcast optimistic update immediately for 0ms peer responsiveness
+      broadcastPickingCollabEvent('item_updated', {
+        no_sj: cleanNoSj,
+        sku: cleanSku,
+      });
 
-      if (res.item) {
-        const reqQty = Math.max(1, Number(params.targetItem.qty_req) || 1);
-        const authoritativeQty = res.newQty;
-        const authoritativeKosong = Boolean(res.item.is_kosong || res.item.status === 'KOSONG');
-        const authoritativeStatus: PickingListItem['status'] = authoritativeKosong
-          ? 'KOSONG'
-          : authoritativeQty >= reqQty
-          ? 'SELESAI'
-          : 'SEDANG PICKING';
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
 
-        setActiveItems((prev) =>
-          prev.map((it) => {
-            if (it.sku.toUpperCase().trim() !== cleanSku) return it;
-            return {
-              ...it,
-              id: res.item?.id || it.id,
-              qty_picked: authoritativeQty,
-              lokasi_picked: params.usedLocation || it.lokasi_picked,
-              status: authoritativeStatus,
-              is_kosong: authoritativeKosong,
-              picker_name: res.item?.picker_name || it.picker_name,
-              last_picked_by: res.item?.last_picked_by || currentUser,
-            };
-          })
-        );
-
-        setRawItems((prev) =>
-          prev.map((it) => {
-            if (
-              (it.no_sj || '').toUpperCase().trim() !== cleanNoSj ||
-              (it.sku || '').toUpperCase().trim() !== cleanSku
-            ) {
-              return it;
-            }
-            return {
-              ...it,
-              qty_picked: authoritativeQty,
-              status: authoritativeKosong ? 'KOSONG' : 'SEDANG PICKING',
-              is_kosong: authoritativeKosong,
-              picker_name: res.item?.picker_name || it.picker_name,
-              last_picked_by: res.item?.last_picked_by || currentUser,
-            };
-          })
-        );
-
-        // Broadcast authoritative update
-        broadcastPickingCollabEvent('item_updated', {
-          no_sj: cleanNoSj,
-          sku: cleanSku,
-          qty_picked: authoritativeQty,
-          status: authoritativeStatus,
-        });
-
-        // Trigger explicit Over-Pick Alert on the LAST picker if authoritativeQty > reqQty
-        if (res.isOverPick && authoritativeQty > reqQty) {
-          playErrorBeep();
-          vibrateDevice([250, 100, 250, 100, 250]);
-          const lookup = lookupProductBySku(
-            params.targetItem.sku,
-            catalogMap,
-            params.targetItem.nama_produk,
-            params.targetItem.size
-          );
-          setOverPickAlertModal({
-            isOpen: true,
-            sku: cleanSku,
-            nama_produk: lookup.nama_produk || params.targetItem.nama_produk || cleanSku,
-            size: params.targetItem.size || lookup.size || '-',
-            lokasi: params.usedLocation || params.targetItem.lokasi || '-',
-            qtyReq: reqQty,
-            newQty: authoritativeQty,
-            excessQty: authoritativeQty - reqQty,
-            previousPicker: res.previousPicker || currentUser || 'Petugas Lain',
-            itemIndex: params.itemIndex,
-          });
-        }
-      }
+      await syncPendingPickingItemsAndApply(false);
     },
-    [broadcastPickingCollabEvent, currentUser, productCatalog]
+    [broadcastPickingCollabEvent, currentUser, markSjLocallyMutated, syncPendingPickingItemsAndApply]
   );
 
   // Action: Petugas Klik Langsung Pill Lokasi pada Kartu SKU (Selalu 1 rak bersih + update item.lokasi_picked)
@@ -3336,15 +3470,20 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     return { totalReq, totalPicked, regularPicked, unexpectedPicked, percentage, statusType, hasKurang, hasLebih, hasSalah, kosongCount };
   }, [activeSJ, activeItems, unexpectedItems]);
 
-  // Open Rekap Modal (sync latest remote collaborative state first so A or B always submits the freshest combined status)
+  // Open Rekap Modal (flush local offline items first, then sync latest remote state so freshest combined status is shown)
   const handleOpenRekapModal = () => {
     if (!activeSJ) return;
+    const sjNo = activeSJ.no_sj;
     if (typeof navigator === 'undefined' || navigator.onLine) {
-      fetchActiveSjRealtimeRowsSupabase(activeSJ.no_sj)
-        .then((rows) => {
-          if (rows.length > 0) applyRemoteSjRowsToState(activeSJ.no_sj, rows);
-        })
-        .catch(() => {});
+      syncPendingPickingItemsAndApply(false)
+        .catch(() => {})
+        .finally(() => {
+          fetchActiveSjRealtimeRowsSupabase(sjNo)
+            .then((rows) => {
+              if (rows.length > 0) applyRemoteSjRowsToState(sjNo, rows);
+            })
+            .catch(() => {});
+        });
     }
     setIsRekapModalOpen(true);
   };
@@ -3462,8 +3601,10 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         onNotify(`Surat Jalan ${completedNoSj} selesai dengan catatan rekap!`, 'warning');
       }
 
-      // Close workspace, modal & clear draft
+      // Close workspace, modal & clear draft + per-item pending sync queue for completed SJ
       removePickingSjDraft(cleanNoSj);
+      clearPendingPickingItemSyncForSj(cleanNoSj);
+      setPendingItemSyncCount(getPendingPickingItemSyncCount());
       setIsRekapModalOpen(false);
       setOverPickAlertModal(null);
       setIsMinimized(false);
@@ -3684,12 +3825,35 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         <div className="w-full max-w-full space-y-2.5 pb-8">
           {/* Top Header Bar */}
           <div className="bg-white dark:bg-[#131d31] p-2 sm:p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-            {!isOnline && (
-              <div className="mb-2 px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 flex items-center justify-between gap-2 text-[11px] font-bold text-amber-800 dark:text-amber-300">
+            {(!isOnline || pendingItemSyncCount > 0) && (
+              <div
+                className={`mb-2 px-3 py-1.5 rounded-xl border flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold ${
+                  !isOnline
+                    ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300'
+                    : 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200'
+                }`}
+              >
                 <span className="flex items-center gap-1.5">
-                  <WifiOff className="w-3.5 h-3.5 shrink-0" />
-                  Mode Offline Aktif — Semua scan & perubahan progres picking otomatis tersimpan aman di perangkat.
+                  {!isOnline ? (
+                    <WifiOff className="w-3.5 h-3.5 shrink-0" />
+                  ) : (
+                    <CloudUpload className="w-3.5 h-3.5 shrink-0" />
+                  )}
+                  {!isOnline
+                    ? `Mode Offline Aktif — Semua scan & perubahan progres picking tersimpan aman di antrean perangkat${
+                        pendingItemSyncCount > 0 ? ` (${pendingItemSyncCount} SKU menunggu online)` : ''
+                      }.`
+                    : `${pendingItemSyncCount} SKU hasil picking offline siap dikirim ke server.`}
                 </span>
+                {isOnline && pendingItemSyncCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => syncPendingPickingItemsAndApply(true)}
+                    className="px-2.5 py-0.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-extrabold cursor-pointer transition"
+                  >
+                    Sinkronkan Sekarang
+                  </button>
+                )}
               </div>
             )}
             <div className="flex flex-wrap justify-between items-start gap-3">
@@ -5192,7 +5356,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       )}
 
       {/* Offline Protection & Pending Outbox Banner */}
-      {(!isOnline || pickingOutboxCount > 0) && (
+      {(!isOnline || pickingOutboxCount > 0 || pendingItemSyncCount > 0) && (
         <div
           className={`rounded-2xl p-3 border flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs ${
             !isOnline
@@ -5209,12 +5373,24 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             <span>
               {!isOnline
                 ? `Mode Offline Aktif — Anda tetap dapat melakukan scan & menyelesaikan picking. ${
-                    pickingOutboxCount > 0 ? `(${pickingOutboxCount} SJ selesai siap disinkronkan saat online)` : 'Progres tersimpan lokal.'
+                    pickingOutboxCount > 0 || pendingItemSyncCount > 0
+                      ? `(${[
+                          pendingItemSyncCount > 0 ? `${pendingItemSyncCount} SKU in-progress` : '',
+                          pickingOutboxCount > 0 ? `${pickingOutboxCount} SJ selesai` : '',
+                        ]
+                          .filter(Boolean)
+                          .join(', ')} siap disinkronkan saat online)`
+                      : 'Progres tersimpan lokal.'
                   }`
-                : `${pickingOutboxCount} Tugas Picking selesai secara offline dan siap disinkronkan ke Database.`}
+                : `Ada ${[
+                    pendingItemSyncCount > 0 ? `${pendingItemSyncCount} SKU progres offline` : '',
+                    pickingOutboxCount > 0 ? `${pickingOutboxCount} Tugas Picking selesai` : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' & ')} yang siap disinkronkan ke Database.`}
             </span>
           </div>
-          {pickingOutboxCount > 0 && isOnline && (
+          {(pickingOutboxCount > 0 || pendingItemSyncCount > 0) && isOnline && (
             <button
               type="button"
               onClick={handleSyncPickingOutboxNow}
@@ -5222,7 +5398,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold flex items-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncingPickingOutbox ? 'animate-spin' : ''}`} />
-              <span>{isSyncingPickingOutbox ? 'Menyinkronkan...' : `Sinkronkan (${pickingOutboxCount} SJ)`}</span>
+              <span>
+                {isSyncingPickingOutbox
+                  ? 'Menyinkronkan...'
+                  : `Sinkronkan (${pickingOutboxCount > 0 ? `${pickingOutboxCount} SJ` : `${pendingItemSyncCount} SKU`})`}
+              </span>
             </button>
           )}
         </div>

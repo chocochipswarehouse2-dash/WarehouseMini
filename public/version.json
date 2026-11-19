@@ -1,14 +1,14 @@
 {
-  "version": "v2.20.5",
-  "versionCode": 405,
+  "version": "v2.20.6",
+  "versionCode": 406,
   "buildDate": "19 November 2026",
-  "buildHash": "wms-261119-v405-1856",
-  "releaseTitle": "WMS v2.20.5 — Hapus Fallback Palsu A-01 & Redesign Mobile-First Kartu Picking",
+  "buildHash": "wms-261119-v406-2102",
+  "releaseTitle": "WMS v2.20.6 — Fix Progres Picking Offline Hilang Saat Kembali Online",
   "releaseNotes": [
-    "Hapus semua fallback lokasi palsu A-01/A001 di Picking, Refill & Supabase serta bersihkan 5 baris aktif",
-    "Tampilkan badge STOK KOSONG (0) saat stok gudang 0 pcs agar tidak menyesatkan picker",
-    "Desain ulang kartu item Tugas Picking 3-zona Mobile-First (Header Rak & AMBIL PCS, Body Nama Produk Besar + Kotak SIZE, Footer tombol besar 1-tangan)",
-    "Tambahkan label jelas Kosong/Reset/Edit di tampilan HP Seluler agar mudah dipahami"
+    "Tambah antrean sinkronisasi per-item offline (wms_picking_item_sync_queue_v1) agar scan/qty saat offline tidak hilang",
+    "Cegah data server usang menimpa progres SKU lokal yang belum tersinkron saat koneksi kembali online",
+    "Sinkronkan otomatis progres item offline ke Supabase lebih dulu sebelum refresh realtime & dukung multi-picker keroyokan",
+    "Serialisasi update per-SKU agar tap cepat +1/+1 atau sinyal putus-nyambung tidak bentrok"
   ],
   "minSupportedVersion": "v2.0.0"
 }

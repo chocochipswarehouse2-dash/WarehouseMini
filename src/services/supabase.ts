@@ -6011,6 +6011,7 @@ export async function syncSinglePickingItemRealtimeSupabase(params: {
   previousPicker: string;
   serverQtyBefore: number;
   newQty: number;
+  remoteSaved: boolean;
 }> {
   const cleanNoSj = String(params.no_sj || '').trim().toUpperCase();
   const cleanSku = String(params.sku || '').trim().toUpperCase();
@@ -6022,6 +6023,7 @@ export async function syncSinglePickingItemRealtimeSupabase(params: {
       : `no_sj=ilike.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(cleanSku)}`;
 
   let serverRow: PickingListItem | null = null;
+  let remoteGetOk = false;
   try {
     const rows = await supabaseFetch<any[]>(
       'picking_list',
@@ -6029,6 +6031,7 @@ export async function syncSinglePickingItemRealtimeSupabase(params: {
       null,
       `${condition}&select=id,no_sj,tanggal,tujuan,sku,nama_produk,qty_req,qty_picked,lokasi,status,picker_name,created_at,invoice_picking`
     );
+    remoteGetOk = true;
     if (Array.isArray(rows) && rows.length > 0) {
       serverRow = extractPickingItemFromRow(rows[0]);
     }
@@ -6064,20 +6067,25 @@ export async function syncSinglePickingItemRealtimeSupabase(params: {
 
   const isOverPick = newQty > qtyReq && (typeof params.delta === 'number' ? params.delta > 0 : newQty > serverQtyBefore);
 
-  try {
-    await supabaseFetch(
-      'picking_list',
-      'PATCH',
-      {
-        qty_picked: newQty,
-        status: nextStatus,
-        picker_name: mergedPickerName,
-      },
-      condition
-    );
-    invalidatePickingListCache();
-  } catch (err) {
-    console.warn('Realtime single item patch failed (will sync on completion):', err);
+  let remoteSaved = false;
+  if (!(typeof params.delta === 'number' && !remoteGetOk)) {
+    try {
+      await supabaseFetch(
+        'picking_list',
+        'PATCH',
+        {
+          qty_picked: newQty,
+          status: nextStatus,
+          picker_name: mergedPickerName,
+        },
+        condition
+      );
+      invalidatePickingListCache();
+      remoteSaved = true;
+    } catch (err) {
+      console.warn('Realtime single item patch failed (queued for retry):', err);
+      remoteSaved = false;
+    }
   }
 
   const updatedItem: PickingListItem | null = baseItem
@@ -6093,7 +6101,7 @@ export async function syncSinglePickingItemRealtimeSupabase(params: {
     : null;
 
   // Also update local cache immediately
-  if (updatedItem) {
+  if (updatedItem && remoteSaved) {
     try {
       const cached: PickingListItem[] = JSON.parse(localStorage.getItem('wms_picking_cache') || '[]');
       const idx = cached.findIndex(
@@ -6114,6 +6122,7 @@ export async function syncSinglePickingItemRealtimeSupabase(params: {
     previousPicker: previousLastPicker || cleanUser,
     serverQtyBefore,
     newQty,
+    remoteSaved,
   };
 }
 
