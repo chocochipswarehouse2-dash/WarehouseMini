@@ -5503,7 +5503,7 @@ export function extractPickingItemFromRow(row: any): PickingListItem | null {
     }
   } else {
     // Fulfil Marketplace -> lokasi = ambil data lokasi rak gudang
-    if (!rawLokasi || rawLokasi === '-' || rawLokasi === '--' || rawLokasi === 'null' || rawLokasi === 'undefined' || rawLokasi === 'KOSONG') {
+    if (!rawLokasi || rawLokasi === '-' || rawLokasi === '--' || rawLokasi === 'null' || rawLokasi === 'undefined' || rawLokasi === 'KOSONG' || rawLokasi === 'A-01') {
       let cachedCat = memoryProductCache?.find(p => (p.k && p.k.trim().toUpperCase() === sku) || ((p as any).sku && String((p as any).sku).trim().toUpperCase() === sku));
       if (!cachedCat) {
         try {
@@ -5518,7 +5518,7 @@ export function extractPickingItemFromRow(row: any): PickingListItem | null {
       }
       const locItem = Array.isArray(cachedCat?.locList) ? cachedCat?.locList[0] : null;
       const locStr = typeof locItem === 'string' ? locItem : locItem?.lokasi;
-      rawLokasi = cachedCat?.lokasi || locStr || 'A-01';
+      rawLokasi = cachedCat?.lokasi || locStr || '';
     }
   }
 
@@ -6675,14 +6675,14 @@ export async function createPickingSuratJalanSupabase(
 
     const isStoreTujuan = /store|toko|outlet/i.test(cleanTujuan);
     let itemLokasi = (it.lokasi || '').trim();
-    if (!itemLokasi || itemLokasi === '-' || itemLokasi === '--' || itemLokasi === 'KOSONG') {
+    if (!itemLokasi || itemLokasi === '-' || itemLokasi === '--' || itemLokasi === 'KOSONG' || itemLokasi === 'A-01') {
       if (isStoreTujuan) {
         itemLokasi = cleanTujuan || 'STORE';
       } else {
         const cachedCat = memoryProductCache?.find(p => (p.k && p.k.trim().toUpperCase() === cleanSku) || ((p as any).sku && String((p as any).sku).trim().toUpperCase() === cleanSku));
         const locItem = Array.isArray(cachedCat?.locList) ? cachedCat?.locList[0] : null;
         const locStr = typeof locItem === 'string' ? locItem : locItem?.lokasi;
-        itemLokasi = cachedCat?.lokasi || locStr || 'A-01';
+        itemLokasi = cachedCat?.lokasi || locStr || '-';
       }
     }
 
@@ -6785,7 +6785,7 @@ export async function updatePickingSuratJalanDetailsSupabase(
       const patchData: Record<string, any> = {
         tujuan: tujuan.trim(),
         qty_req: Math.max(1, Number(item.qty_req) || 1),
-        lokasi: item.lokasi || 'A-01',
+        lokasi: item.lokasi && item.lokasi !== 'A-01' ? item.lokasi : '-',
         nama_produk: item.nama_produk,
         size: item.size || '-',
         sku: cleanSku,
@@ -6830,7 +6830,7 @@ export async function updatePickingSuratJalanDetailsSupabase(
         size: it.size || '-',
         qty_req: Math.max(1, Number(it.qty_req) || 1),
         qty_picked: 0,
-        lokasi: it.lokasi || 'A-01',
+        lokasi: it.lokasi && it.lokasi !== 'A-01' ? it.lokasi : '-',
         status: 'PENDING' as const,
         created_at: nowIso,
       }));
@@ -6877,7 +6877,7 @@ export async function updatePickingSuratJalanDetailsSupabase(
         size: it.size || '-',
         qty_req: Math.max(1, Number(it.qty_req) || 1),
         qty_picked: 0,
-        lokasi: it.lokasi || 'A-01',
+        lokasi: it.lokasi && it.lokasi !== 'A-01' ? it.lokasi : '-',
         status: 'PENDING' as const,
         created_at: nowIso,
       }));

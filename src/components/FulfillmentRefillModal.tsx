@@ -751,7 +751,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
           const locs = getProductLocations(cleanSku, it.lokasi);
           const allValidLocs = locs.length > 0 
             ? locs.map((l) => l.lokasi).join(', ')
-            : (it.lokasi && it.lokasi !== 'KOSONG' && it.lokasi !== '-' ? it.lokasi : 'A-01');
+            : (it.lokasi && it.lokasi !== 'KOSONG' && it.lokasi !== '-' && it.lokasi !== 'A-01' ? it.lokasi : '-');
           return {
             sku: it.sku,
             nama_produk: it.nama,

@@ -15,21 +15,35 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.20.4",
-  "versionCode": 404,
+  "version": "v2.20.5",
+  "versionCode": 405,
   "buildDate": "19 November 2026",
-  "buildHash": "wms-261119-v404-1833",
-  "releaseTitle": "WMS v2.20.4 — Rapikan Kartu Tugas Picking & Anti-Rancu Qty Stok Rak",
+  "buildHash": "wms-261119-v405-1856",
+  "releaseTitle": "WMS v2.20.5 — Hapus Fallback Palsu A-01 & Redesign Mobile-First Kartu Picking",
   "releaseNotes": [
-    "Ubah label stok rak di Tugas Picking menjadi (stok N) agar tidak rancu dengan qty ambil",
-    "Rapikan tata letak kartu item picking (Produk, SKU, Rak sejajar; Target Ambil menyatu dengan Counter)",
-    "Terapkan hierarki tombol Anti-Pelangi (1 tombol solid Maks + aksi sekunder outline seragam) & responsif HP/Desktop",
-    "Hapus duplikasi teks qty stok pada pilihan cepat rak di modal Edit Item Picking"
+    "Hapus semua fallback lokasi palsu A-01/A001 di Picking, Refill & Supabase serta bersihkan 5 baris aktif",
+    "Tampilkan badge STOK KOSONG (0) saat stok gudang 0 pcs agar tidak menyesatkan picker",
+    "Desain ulang kartu item Tugas Picking 3-zona Mobile-First (Header Rak & AMBIL PCS, Body Nama Produk Besar + Kotak SIZE, Footer tombol besar 1-tangan)",
+    "Tambahkan label jelas Kosong/Reset/Edit di tampilan HP Seluler agar mudah dipahami"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.20.4",
+    "versionCode": 404,
+    "buildDate": "19 November 2026",
+    "buildHash": "wms-261119-v404-1833",
+    "releaseTitle": "WMS v2.20.4 — Rapikan Kartu Tugas Picking & Anti-Rancu Qty Stok Rak",
+    "releaseNotes": [
+      "Ubah label stok rak di Tugas Picking menjadi (stok N) agar tidak rancu dengan qty ambil",
+      "Rapikan tata letak kartu item picking (Produk, SKU, Rak sejajar; Target Ambil menyatu dengan Counter)",
+      "Terapkan hierarki tombol Anti-Pelangi (1 tombol solid Maks + aksi sekunder outline seragam) & responsif HP/Desktop",
+      "Hapus duplikasi teks qty stok pada pilihan cepat rak di modal Edit Item Picking"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.20.3",
     "versionCode": 403,
@@ -122,18 +136,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Menambahkan input lokasi rak manual langsung pada kartu SKU di Tugas Picking",
       "Menghapus fallback lokasi palsu A-01/A001 agar pencatatan OUT jujur sesuai rak aktual",
       "Menambahkan notifikasi pemberitahuan rekomendasi Stock Opname jika stok rak menjadi minus"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.19.5",
-    "versionCode": 395,
-    "buildDate": "18 November 2026",
-    "buildHash": "wms-261118-v395-1901",
-    "releaseTitle": "WMS v2.19.5 — Hapus Auto-Fill Trello di Penerimaan Produksi",
-    "releaseNotes": [
-      "Menghapus fitur auto-lookup dan auto-fill otomatis dari Trello UP di Form Penerimaan Produksi, Spreadsheet, Push Sheets, dan Asisten AI",
-      "Mencegah anomali data nama produk, UP vendor, dan foto akibat pencocokan otomatis"
     ],
     "minSupportedVersion": "v2.0.0"
   }

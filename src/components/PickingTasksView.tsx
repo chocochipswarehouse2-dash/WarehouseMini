@@ -1993,13 +1993,13 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
         const isStoreSJ = /store|toko|outlet/i.test(sj.tujuan || '');
         let itemLokasi = (it.lokasi || '').trim();
-        if (!itemLokasi || itemLokasi === '-' || itemLokasi === '--' || itemLokasi === 'KOSONG') {
+        if (!itemLokasi || itemLokasi === '-' || itemLokasi === '--' || itemLokasi === 'KOSONG' || itemLokasi === 'A-01') {
           if (isStoreSJ) {
             itemLokasi = sj.tujuan || 'STORE';
           } else {
             const locItem = Array.isArray(catMatch?.locList) ? catMatch?.locList[0] : null;
             const locStr = typeof locItem === 'string' ? locItem : locItem?.lokasi;
-            itemLokasi = catMatch?.lokasi || locStr || 'A-01';
+            itemLokasi = catMatch?.lokasi || locStr || '-';
           }
         }
 
@@ -2965,8 +2965,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       size: it.size || '-',
       qty_req: it.qty_req || 0,
       qty_picked: it.qty_picked || 0,
-      lokasi: it.lokasi || 'A-01',
-      lokasi_picked: defaultSingleLoc || 'A001',
+      lokasi: it.lokasi && it.lokasi !== 'A-01' ? it.lokasi : '-',
+      lokasi_picked: defaultSingleLoc && defaultSingleLoc !== 'A-01' ? defaultSingleLoc : '',
       targetSJItemSku: '',
     });
     setIsEditItemModalOpen(true);
@@ -3102,7 +3102,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       sku: cleanSku,
       nama_produk: formattedNama,
       size: cleanSize || '-',
-      lokasi: newSjSkuLoc.trim() || catProd?.lokasi || 'A-01',
+      lokasi: newSjSkuLoc.trim() || catProd?.lokasi || '-',
       qty_req: Math.max(1, Number(newSjSkuQty) || 1),
       qty_picked: 0,
       status: 'PENDING',
@@ -3161,7 +3161,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             sku: cleanSku,
             nama_produk: effectiveName,
             size: effectiveSize || '-',
-            lokasi: r.lokasi || catMatch?.lokasi || 'A-01',
+            lokasi: (r.lokasi && r.lokasi !== 'A-01' ? r.lokasi : '') || catMatch?.lokasi || '-',
             qty_req: Math.max(1, Number(r.qty_req) || 1),
             qty_picked: Math.max(0, Number(r.qty_picked) || 0),
             status: r.status || 'PENDING',
@@ -3227,7 +3227,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   const handleSelectSearchProduct = (prod: ProductItem) => {
     setSearchSelectedProduct(prod);
     setSearchQuery(prod.k);
-    setSearchLocation(activeLocation || prod.lokasi || 'A-01');
+    setSearchLocation(activeLocation || (prod.lokasi && prod.lokasi !== 'A-01' ? prod.lokasi : '') || '');
     setIsSearchDropdownOpen(false);
   };
 
@@ -3633,7 +3633,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       if (found) {
         next[index].nama_produk = found.p;
         next[index].size = found.s || '-';
-        next[index].lokasi = found.lokasi || 'A-01';
+        next[index].lokasi = (found.lokasi && found.lokasi !== 'A-01' ? found.lokasi : '') || '';
       }
     }
     setNewSjRows(next);
@@ -3867,7 +3867,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             {/* METODE PEMINDAIAN SELECTOR */}
             <div
               id="pickingScanMethodContainer"
-              className="bg-white dark:bg-[#0F0F12] rounded-t-[inherit] px-2 py-2.5 border-b border-slate-200 dark:border-slate-800/80 transition-colors"
+              className="bg-white dark:bg-[#0F0F12] rounded-t-[inherit] px-2 py-2 sm:py-2.5 border-b border-slate-200 dark:border-slate-800/80 transition-colors"
             >
               <div className="max-w-lg mx-auto">
                 <div className="flex items-center justify-between gap-2 mb-1.5 px-0.5">
@@ -4032,7 +4032,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                                         type="button"
                                         onClick={() => {
                                           setSearchQuery(m.sku);
-                                          setSearchLocation(activeLocation || m.lokasi || 'A-01');
+                                          const safeLoc = m.lokasi && m.lokasi !== 'A-01' ? m.lokasi : '';
+                                          setSearchLocation(activeLocation || safeLoc);
                                           setIsSearchDropdownOpen(false);
                                         }}
                                         className="w-full text-left p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-xs flex justify-between items-center transition-colors cursor-pointer"
@@ -4042,7 +4043,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                                           <div className="text-[11px] text-slate-500">{m.nama_produk}</div>
                                         </div>
                                         <div className="text-right">
-                                          <span className="text-[10px] font-bold text-slate-400 block">Rak: {m.lokasi}</span>
+                                          <span className="text-[10px] font-bold text-slate-400 block">
+                                            Rak: {m.lokasi && m.lokasi !== 'A-01' ? m.lokasi : '-'}
+                                          </span>
                                           <span className="text-xs font-black text-emerald-600">{m.qty_picked}/{m.qty_req}</span>
                                         </div>
                                       </button>
@@ -4333,57 +4336,13 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             return (
               <div
                 key={item.id || index}
-                className={`p-3 sm:p-4 rounded-2xl bg-white dark:bg-[#131d31] border ${
+                className={`overflow-hidden rounded-2xl bg-white dark:bg-[#131d31] border ${
                   isCurrentShelf ? 'border-indigo-500 ring-2 ring-indigo-500/35' : cardBorder
-                } shadow-2xs flex flex-col lg:flex-row lg:items-center justify-between gap-3 lg:gap-4 transition-all`}
+                } shadow-2xs transition-all`}
               >
-                {/* LEFT ZONE: PRODUCT + SKU + RACK SELECTOR */}
-                <div className="flex-1 min-w-0 space-y-1.5">
-                  {/* ROW 1: NAMA PRODUK + SIZE + STATUS */}
-                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 min-w-0">
-                    <h4
-                      className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white leading-snug break-words"
-                      title={displayName}
-                    >
-                      {displayName}
-                    </h4>
-                    {displaySize && displaySize !== '-' && (
-                      <span className="px-2 py-0.5 rounded-md text-[11px] sm:text-xs font-extrabold uppercase bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700/70 shrink-0">
-                        Size {displaySize}
-                      </span>
-                    )}
-                    {statusBadge}
-                  </div>
-
-                  {/* ROW 2: SKU + OPERATOR METADATA */}
-                  <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className="font-mono font-bold text-slate-500 dark:text-slate-400">
-                      SKU: <span className="text-slate-700 dark:text-slate-200">{item.sku}</span>
-                    </span>
-
-                    {isKosong && (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/50 px-2 py-0.5 rounded-md border border-rose-200 dark:border-rose-800">
-                        <Ban className="w-3 h-3 shrink-0" />
-                        <span>Ditandai Kosong {lastPickedBy ? `(${formatOperatorWithPersonName(lastPickedBy)})` : ''}</span>
-                      </span>
-                    )}
-
-                    {!isKosong && pickedQty > 0 && lastPickedBy && (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-800">
-                        <Users className="w-3 h-3 text-indigo-500 shrink-0" />
-                        <span>
-                          Diambil: {itemPickers.length > 1 ? itemPickers.map((p) => formatOperatorWithPersonName(p)).join(', ') : formatOperatorWithPersonName(lastPickedBy)}
-                        </span>
-                      </span>
-                    )}
-                  </div>
-
-                  {/* ROW 3: RACK SELECTOR (CLEARLY SEPARATED FROM PICK TARGET QTY) */}
-                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                    <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide mr-0.5 shrink-0">
-                      Rak:
-                    </span>
-
+                {/* BAND 1 — HEADER STRIP: WHERE (RAK) ↔ HOW MANY (AMBIL N PCS) */}
+                <div className="px-3 sm:px-4 py-2.5 bg-slate-50/90 dark:bg-slate-900/60 border-b border-slate-100 dark:border-slate-800 flex items-start justify-between gap-2.5">
+                  <div className="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
                     {productLocs.length > 0 ? (
                       productLocs.map((locInfo, locIdx) => {
                         const loc = locInfo.lokasi;
@@ -4394,17 +4353,17 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                             key={locIdx}
                             type="button"
                             onClick={() => handleSelectItemLocation(index, loc)}
-                            className={`h-8 px-2.5 rounded-lg font-mono font-extrabold text-xs inline-flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 max-w-full ${
+                            className={`h-9 px-3 rounded-xl font-mono font-black text-sm sm:text-base inline-flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 max-w-full ${
                               isThisCurrentShelf
                                 ? 'bg-indigo-600 text-white border border-indigo-600 shadow-2xs'
-                                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
+                                : 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
                             }`}
                             title={`Klik untuk pilih rak ${loc} (Sisa stok sistem di rak: ${locInfo.qty ?? 0} pcs • Target ambil: ${reqQty} pcs)`}
                           >
-                            <MapPin className="w-3.5 h-3.5 text-inherit shrink-0" />
+                            <MapPin className="w-4 h-4 text-inherit shrink-0" />
                             <span className="truncate">{loc}</span>
                             {hasQty && (
-                              <span className="text-[10px] font-sans font-medium opacity-75">
+                              <span className="text-[11px] font-sans font-medium opacity-70">
                                 (stok {locInfo.qty})
                               </span>
                             )}
@@ -4413,85 +4372,110 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       })
                     ) : /store|toko|sps|outlet/i.test(activeSJ?.tujuan || '') ? (
                       /* FULFILL STORE: DISPLAY STORE LOCATION BADGE */
-                      <div className="h-8 px-2.5 rounded-lg font-mono font-extrabold text-xs inline-flex items-center gap-1.5 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                        <Building className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                        <span>{item.lokasi && item.lokasi !== '-' && item.lokasi !== 'KOSONG' ? item.lokasi : (activeSJ?.tujuan || 'STORE')}</span>
+                      <div className="h-9 px-3 rounded-xl font-mono font-black text-sm sm:text-base inline-flex items-center gap-1.5 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                        <Building className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                        <span>
+                          {item.lokasi && item.lokasi !== '-' && item.lokasi !== 'KOSONG' && item.lokasi !== 'A-01'
+                            ? item.lokasi
+                            : activeSJ?.tujuan || 'STORE'}
+                        </span>
                       </div>
-                    ) : item.lokasi && item.lokasi !== '-' && item.lokasi !== 'KOSONG' ? (
-                      /* FULFILL MARKETPLACE: SPLIT MULTIPLE LOCATIONS INTO DEDUPED CLICKABLE SINGLE RACK PILLS */
-                      Array.from(
-                        new Set(
-                          String(item.lokasi)
-                            .split(/[,/;\n|]+/)
-                            .map((s) =>
-                              s
-                                .replace(/\([^)]*pcs[^)]*\)/gi, '')
-                                .trim()
-                                .toUpperCase()
-                            )
-                            .filter((s) => s && s !== '-' && s !== '--' && s !== 'KOSONG' && s !== 'WAREHOUSE')
-                        )
-                      ).map((tok, tokIdx) => {
-                        const isThisCurrentShelf = activeLocation && tok === activeLocation.toUpperCase();
-                        return (
-                          <button
-                            key={tokIdx}
-                            type="button"
-                            onClick={() => handleSelectItemLocation(index, tok)}
-                            className={`h-8 px-2.5 rounded-lg font-mono font-extrabold text-xs inline-flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
-                              isThisCurrentShelf
-                                ? 'bg-indigo-600 text-white border border-indigo-600 shadow-2xs'
-                                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
-                            }`}
-                            title={`Klik untuk pilih rak ${tok}`}
-                          >
-                            <MapPin className="w-3.5 h-3.5 text-inherit shrink-0" />
-                            <span>{tok}</span>
-                          </button>
-                        );
-                      })
                     ) : isRealtimeLoaded ? (
-                      /* KETIKA STOK GUDANG 0 PCS (TIDAK MEREKOMENDASIKAN RAK KOSONG) */
+                      /* KETIKA STOK GUDANG 0 PCS — WAJIB TAMPIL STOK KOSONG (TIDAK BOLEH FALLBACK RAK PALSU) */
                       <div
-                        className="h-8 px-2.5 rounded-lg font-mono font-extrabold text-xs inline-flex items-center gap-1.5 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800"
-                        title={emptyRecordedRacks.length > 0 ? `Stok gudang 0 pcs. Rak tercatat: ${Array.from(new Set(emptyRecordedRacks)).join(', ')}` : 'Stok gudang kosong (0 pcs)'}
+                        className="h-9 px-3 rounded-xl font-mono font-black text-xs sm:text-sm inline-flex items-center gap-1.5 bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800"
+                        title={
+                          emptyRecordedRacks.length > 0
+                            ? `Stok gudang 0 pcs. Rak tercatat sebelumnya: ${Array.from(new Set(emptyRecordedRacks)).join(', ')}`
+                            : 'Stok gudang kosong (0 pcs)'
+                        }
                       >
-                        <AlertTriangle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
-                        <span>KOSONG</span>
+                        <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                        <span>STOK KOSONG (0)</span>
                       </div>
                     ) : (
-                      /* MEMUAT STOK / CEK LOKASI */
-                      <div className="h-8 px-2.5 rounded-lg font-mono font-bold text-xs inline-flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                        <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span>Cek Stok Rak...</span>
-                      </div>
+                      /* SEBELUM REALTIME STOCK SELESAI DIMUAT */
+                      (() => {
+                        const validTokens =
+                          item.lokasi && item.lokasi !== '-' && item.lokasi !== 'KOSONG'
+                            ? Array.from(
+                                new Set(
+                                  String(item.lokasi)
+                                    .split(/[,/;\n|]+/)
+                                    .map((s) =>
+                                      s
+                                        .replace(/\([^)]*pcs[^)]*\)/gi, '')
+                                        .trim()
+                                        .toUpperCase()
+                                    )
+                                    .filter(
+                                      (s) =>
+                                        s &&
+                                        s !== '-' &&
+                                        s !== '--' &&
+                                        s !== 'KOSONG' &&
+                                        s !== 'WAREHOUSE' &&
+                                        s !== 'A-01'
+                                    )
+                                )
+                              )
+                            : [];
+                        if (validTokens.length > 0) {
+                          return validTokens.map((tok, tokIdx) => {
+                            const isThisCurrentShelf = activeLocation && tok === activeLocation.toUpperCase();
+                            return (
+                              <button
+                                key={tokIdx}
+                                type="button"
+                                onClick={() => handleSelectItemLocation(index, tok)}
+                                className={`h-9 px-3 rounded-xl font-mono font-black text-sm sm:text-base inline-flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
+                                  isThisCurrentShelf
+                                    ? 'bg-indigo-600 text-white border border-indigo-600 shadow-2xs'
+                                    : 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
+                                }`}
+                                title={`Klik untuk pilih rak ${tok}`}
+                              >
+                                <MapPin className="w-4 h-4 text-inherit shrink-0" />
+                                <span>{tok}</span>
+                              </button>
+                            );
+                          });
+                        }
+                        return (
+                          <div className="h-9 px-3 rounded-xl font-mono font-bold text-xs inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                            <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span>Cek Stok Rak...</span>
+                          </div>
+                        );
+                      })()
                     )}
 
                     {/* Pill Lokasi Manual yang dipilih Picker (jika tidak ada di daftar rak otomatis) */}
                     {(() => {
                       const pickedManual = resolvePrimarySingleLocation(item.lokasi_picked || '');
-                      const alreadyListed = pickedManual && productLocs.some((l) => l.lokasi.toUpperCase() === pickedManual.toUpperCase());
-                      if (!pickedManual || pickedManual === '-' || alreadyListed) return null;
+                      const alreadyListed =
+                        pickedManual && productLocs.some((l) => l.lokasi.toUpperCase() === pickedManual.toUpperCase());
+                      if (!pickedManual || pickedManual === '-' || pickedManual === 'A-01' || alreadyListed) return null;
                       const isThisManualActive = activeLocation && pickedManual.toUpperCase() === activeLocation.toUpperCase();
                       return (
                         <button
                           type="button"
                           onClick={() => handleSelectItemLocation(index, pickedManual)}
-                          className={`h-8 px-2.5 rounded-lg font-mono font-extrabold text-xs inline-flex items-center gap-1.5 transition-all cursor-pointer ${
+                          className={`h-9 px-3 rounded-xl font-mono font-black text-sm sm:text-base inline-flex items-center gap-1.5 transition-all cursor-pointer ${
                             isThisManualActive
                               ? 'bg-indigo-600 text-white border border-indigo-600 shadow-2xs'
                               : 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100'
                           }`}
                           title={`Lokasi manual dipilih: ${pickedManual}`}
                         >
-                          <MapPin className="w-3.5 h-3.5 shrink-0" />
+                          <MapPin className="w-4 h-4 shrink-0" />
                           <span>{pickedManual}</span>
                           <span className="text-[10px] font-sans font-semibold opacity-80">(Manual)</span>
                         </button>
                       );
                     })()}
 
-                    {/* Input Lokasi Rak Manual untuk mengantisipasi barang tanpa data lokasi / rak berbeda */}
+                    {/* Input Lokasi Rak Manual */}
                     {manualLocIndex === index ? (
                       <form
                         onSubmit={(e) => {
@@ -4502,19 +4486,19 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                           setManualLocIndex(null);
                           setManualLocInput('');
                         }}
-                        className="h-8 flex items-center gap-1 bg-slate-50 dark:bg-slate-800/90 border border-indigo-300 dark:border-indigo-700 rounded-lg px-1.5"
+                        className="h-9 flex items-center gap-1 bg-white dark:bg-slate-800 border border-indigo-300 dark:border-indigo-700 rounded-xl px-1.5"
                       >
                         <input
                           type="text"
                           value={manualLocInput}
                           onChange={(e) => setManualLocInput(e.target.value.toUpperCase())}
-                          placeholder="Ketik Rak (A012)"
+                          placeholder="Rak (A012)"
                           autoFocus
-                          className="w-28 sm:w-32 px-1.5 py-0.5 text-xs font-mono font-bold uppercase bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          className="w-24 sm:w-28 px-1.5 py-0.5 text-xs font-mono font-bold uppercase bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         />
                         <button
                           type="submit"
-                          className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[11px] font-bold cursor-pointer transition"
+                          className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold cursor-pointer transition"
                         >
                           Pakai
                         </button>
@@ -4537,22 +4521,89 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                           setManualLocIndex(index);
                           setManualLocInput(resolvePrimarySingleLocation(item.lokasi_picked || '') || '');
                         }}
-                        className="h-8 px-2.5 rounded-lg text-xs font-bold inline-flex items-center gap-1 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition cursor-pointer shadow-2xs"
+                        className="h-9 px-2.5 rounded-xl text-xs font-bold inline-flex items-center gap-1 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/60 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition cursor-pointer shadow-2xs"
                         title="Input lokasi rak manual jika barang diambil dari rak lain atau data lokasi kosong"
                       >
-                        <Edit3 className="w-3 h-3 text-indigo-500 shrink-0" />
-                        <span>{productLocs.length === 0 ? 'Input Lokasi Manual' : '+ Rak Manual'}</span>
+                        <Edit3 className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                        <span>{productLocs.length === 0 ? '+ Lokasi' : '+ Rak'}</span>
                       </button>
                     )}
 
                     {isCurrentShelf && (
-                      <span className="h-8 px-2.5 rounded-lg text-[10px] font-extrabold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 inline-flex items-center uppercase tracking-wider">
+                      <span className="h-9 px-2.5 rounded-xl text-[10px] font-extrabold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 inline-flex items-center uppercase tracking-wider">
                         🎯 Rak Aktif
                       </span>
                     )}
                   </div>
 
-                  {/* ROW 4: CONDITIONAL WARNINGS */}
+                  {/* HERO TARGET QTY BOX (SATU-SATUNYA ANGKA BESAR PCS PERINTAH AMBIL) */}
+                  <div
+                    className={`px-3 py-1.5 rounded-xl text-center min-w-[76px] sm:min-w-[88px] shadow-2xs shrink-0 ${
+                      isKosong
+                        ? 'bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 line-through'
+                        : isOver
+                        ? 'bg-rose-600 text-white ring-2 ring-rose-300'
+                        : isCompleted
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-indigo-600 text-white'
+                    }`}
+                    title={`Target yang harus diambil dari rak: ${reqQty} pcs`}
+                  >
+                    <span className="block text-[9.5px] font-extrabold uppercase tracking-wider opacity-85 leading-none">
+                      AMBIL
+                    </span>
+                    <span className="block font-mono text-lg sm:text-xl font-black leading-tight tabular-nums mt-0.5">
+                      {reqQty} <span className="text-[11px] font-bold">PCS</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* BAND 2 — PRODUCT IDENTITY BODY: BIG PRODUCT NAME + BIG SIZE BOX */}
+                <div className="px-3 sm:px-4 py-3 space-y-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <h4
+                        className="text-lg sm:text-xl font-black text-slate-900 dark:text-white leading-snug tracking-tight break-words"
+                        title={displayName}
+                      >
+                        {displayName}
+                      </h4>
+
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="font-mono text-xs sm:text-sm font-bold text-slate-500 dark:text-slate-400">
+                          {item.sku}
+                        </span>
+                        {statusBadge}
+                        {isKosong && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/50 px-2 py-0.5 rounded-md border border-rose-200 dark:border-rose-800">
+                            <Ban className="w-3 h-3 shrink-0" />
+                            <span>Kosong {lastPickedBy ? `(${formatOperatorWithPersonName(lastPickedBy)})` : ''}</span>
+                          </span>
+                        )}
+                        {!isKosong && pickedQty > 0 && lastPickedBy && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-800">
+                            <Users className="w-3 h-3 text-indigo-500 shrink-0" />
+                            <span>
+                              Diambil: {itemPickers.length > 1 ? itemPickers.map((p) => formatOperatorWithPersonName(p)).join(', ') : formatOperatorWithPersonName(lastPickedBy)}
+                            </span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {displaySize && displaySize !== '-' && (
+                      <div className="min-w-[54px] sm:min-w-[60px] px-2.5 py-1.5 rounded-xl bg-amber-100 dark:bg-amber-950/75 border-2 border-amber-400 dark:border-amber-600 text-center shrink-0">
+                        <span className="block text-[9px] font-extrabold uppercase tracking-wider text-amber-700 dark:text-amber-400 leading-none">
+                          SIZE
+                        </span>
+                        <span className="block font-mono text-base sm:text-lg font-black text-amber-950 dark:text-amber-100 uppercase leading-tight mt-0.5">
+                          {displaySize}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* CONDITIONAL WARNINGS */}
                   {isOver && (
                     <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 flex flex-wrap items-center justify-between gap-2">
                       <div className="text-xs font-bold text-rose-800 dark:text-rose-200 flex items-center gap-1.5">
@@ -4571,50 +4622,35 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     </div>
                   )}
 
-                  {item.lokasi_picked && item.lokasi_picked !== item.lokasi && item.lokasi_picked !== 'KOSONG' && (
-                    <div className="text-xs text-amber-800 dark:text-amber-300 font-bold bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1.5 rounded-lg border border-amber-200 dark:border-amber-800">
-                      ⚠️ Diambil dari rak: <b>{item.lokasi_picked}</b> (Target SJ: {item.lokasi})
-                    </div>
-                  )}
+                  {item.lokasi &&
+                    item.lokasi !== '-' &&
+                    item.lokasi !== 'A-01' &&
+                    item.lokasi !== 'KOSONG' &&
+                    item.lokasi_picked &&
+                    item.lokasi_picked !== item.lokasi &&
+                    item.lokasi_picked !== 'KOSONG' && (
+                      <div className="text-xs text-amber-800 dark:text-amber-300 font-bold bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1.5 rounded-lg border border-amber-200 dark:border-amber-800">
+                        ⚠️ Diambil dari rak: <b>{item.lokasi_picked}</b> (Target SJ: {item.lokasi})
+                      </div>
+                    )}
                 </div>
 
-                {/* RIGHT ZONE: TARGET AMBIL + COUNTER + UNIFORM ACTION BUTTONS */}
-                <div className="shrink-0 pt-2.5 lg:pt-0 border-t lg:border-t-0 border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-2.5">
-                  <div className="flex items-center justify-between sm:justify-start gap-2">
-                    {/* TARGET AMBIL BOX — SATU-SATUNYA ANGKA BESAR PCS DI KARTU */}
-                    <div
-                      className={`h-11 px-3 rounded-xl border flex flex-col items-center justify-center min-w-[84px] shrink-0 ${
-                        isKosong
-                          ? 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-300 line-through'
-                          : isOver
-                          ? 'bg-rose-600 border-rose-600 text-white'
-                          : isCompleted
-                          ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
-                          : 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300'
-                      }`}
-                      title={`Target yang harus diambil dari rak: ${reqQty} pcs`}
-                    >
-                      <span className="text-[9px] font-extrabold uppercase tracking-wider opacity-80 leading-none">
-                        TARGET AMBIL
-                      </span>
-                      <span className="font-mono text-base sm:text-lg font-black leading-tight tabular-nums">
-                        {reqQty} PCS
-                      </span>
-                    </div>
-
-                    {/* COUNTER CONTROL */}
-                    <div className="h-11 flex items-center gap-1 bg-slate-100 dark:bg-[#0f172a] p-1 rounded-xl border border-slate-200 dark:border-slate-800 shrink-0">
+                {/* BAND 3 — THUMB-FRIENDLY ACTION FOOTER (HP & DESKTOP) */}
+                <div className="px-3 sm:px-4 py-2.5 bg-slate-50/60 dark:bg-slate-900/40 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  {/* Primary Control Row: Counter + Ambil Pas (fits cleanly on 1 row on 360px phones) */}
+                  <div className="flex items-center gap-2 flex-1 sm:flex-none">
+                    <div className="h-11 flex items-center gap-1 bg-white dark:bg-[#0f172a] p-1 rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs shrink-0">
                       <button
                         type="button"
                         onClick={() => handleAdjustQty(index, -1)}
-                        className="w-9 h-9 flex items-center justify-center rounded-lg bg-white dark:bg-[#1e293b] text-slate-700 dark:text-slate-200 hover:text-indigo-600 active:scale-95 shadow-2xs transition-all cursor-pointer"
+                        className="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-indigo-600 active:scale-95 transition-all cursor-pointer"
                         title="Kurangi 1"
                       >
                         <MinusCircle className="w-5 h-5" />
                       </button>
-                      <div className="px-2 min-w-[64px] text-center flex items-baseline justify-center">
+                      <div className="px-1.5 min-w-[56px] text-center flex items-baseline justify-center">
                         <span
-                          className={`text-lg sm:text-xl font-black font-mono tabular-nums leading-none ${
+                          className={`text-xl font-black font-mono tabular-nums leading-none ${
                             isKosong
                               ? 'text-rose-500 line-through'
                               : isOver
@@ -4633,34 +4669,43 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       <button
                         type="button"
                         onClick={() => handleAdjustQty(index, 1)}
-                        className="w-9 h-9 flex items-center justify-center rounded-lg bg-white dark:bg-[#1e293b] text-slate-700 dark:text-slate-200 hover:text-indigo-600 active:scale-95 shadow-2xs transition-all cursor-pointer"
+                        className="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-indigo-600 active:scale-95 transition-all cursor-pointer"
                         title="Tambah 1"
                       >
                         <PlusCircle className="w-5 h-5" />
                       </button>
                     </div>
-                  </div>
 
-                  {/* ACTION BUTTONS (ANTI-PELANGI: 1 TOMBOL SOLID MAKS + TOMBOL SEKUNDER OUTLINE SERAGAM) */}
-                  <div className="flex items-center gap-1.5">
                     <button
                       type="button"
                       onClick={() => handleSetItemMax(index)}
-                      className={`flex-1 sm:flex-none h-11 px-3 text-xs font-extrabold rounded-xl transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 ${
+                      className={`flex-1 sm:flex-none h-11 px-4 text-xs sm:text-sm font-extrabold rounded-xl transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 ${
                         isCompleted
                           ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
                           : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs'
                       }`}
                       title="Set langsung selesai (Pas sesuai Qty Target)"
                     >
-                      <Check className="w-4 h-4 shrink-0" />
-                      <span>Maks ({reqQty})</span>
+                      {isCompleted ? (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 shrink-0" />
+                          <span>Selesai ({reqQty})</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-4 h-4 shrink-0" />
+                          <span>Ambil Pas ({reqQty})</span>
+                        </>
+                      )}
                     </button>
+                  </div>
 
+                  {/* Secondary Utility Row: Full readable labels on Mobile HP, compact on Desktop */}
+                  <div className="grid grid-cols-3 sm:flex items-center gap-1.5">
                     <button
                       type="button"
                       onClick={() => handleToggleItemKosong(index)}
-                      className={`h-11 px-2.5 text-xs font-bold rounded-xl border transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 ${
+                      className={`h-9 sm:h-11 px-2.5 text-xs font-bold rounded-xl border transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 ${
                         isKosong
                           ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-600'
                           : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-rose-300 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40'
@@ -4678,19 +4723,21 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     <button
                       type="button"
                       onClick={() => handleResetItemQty(index)}
-                      className="h-11 w-10 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 rounded-xl transition-all active:scale-95 cursor-pointer"
+                      className="h-9 sm:h-11 px-2.5 sm:w-10 sm:px-0 text-xs font-bold flex items-center justify-center gap-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700/60 rounded-xl transition-all active:scale-95 cursor-pointer"
                       title="Reset ke 0"
                     >
-                      <RotateCcw className="w-4 h-4" />
+                      <RotateCcw className="w-4 h-4 shrink-0" />
+                      <span className="sm:hidden">Reset</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => handleOpenEditItem('REGULAR', index)}
-                      className="h-11 w-10 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-xl transition-all active:scale-95 cursor-pointer"
+                      className="h-9 sm:h-11 px-2.5 sm:w-10 sm:px-0 text-xs font-bold flex items-center justify-center gap-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-xl transition-all active:scale-95 cursor-pointer"
                       title="Edit Qty / Rak Tertentu"
                     >
-                      <Edit3 className="w-4 h-4" />
+                      <Edit3 className="w-4 h-4 shrink-0" />
+                      <span className="sm:hidden">Edit</span>
                     </button>
                   </div>
                 </div>
@@ -5784,7 +5831,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                         if (match) {
                           setNewSjSkuNama(match.p);
                           setNewSjSkuSize(match.s || '-');
-                          setNewSjSkuLoc(match.lokasi || 'A-01');
+                          setNewSjSkuLoc(match.lokasi && match.lokasi !== 'A-01' ? match.lokasi : '');
                         }
                       }}
                       className="w-full p-2 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-slate-800 dark:text-white"
