@@ -1,5 +1,6 @@
 import {
   supabaseFetch,
+  getSupabaseClient,
   getAreaFromLokasi,
   normalizeLokasi,
   generateUUID,
@@ -1587,3 +1588,149 @@ export function getPlacementSummaryLabel(placements: PutawayPlacement[]): string
 }
 
 export { parsePickerNamesList };
+
+// ============================================================================
+// SINGLETON REALTIME HUB (prevents Supabase JS v2 "cannot add postgres_changes
+// callbacks after subscribe()" crash when multiple UI components mount together)
+// ============================================================================
+
+export type PutawayRealtimeEvent =
+  | { kind: 'broadcast'; event: string; payload: any }
+  | { kind: 'postgres_changes'; payload: any };
+
+const PUTAWAY_BROADCAST_EVENTS = [
+  'task_created',
+  'task_updated',
+  'operator_joined',
+  'operator_left',
+  'task_completed',
+  'task_cancelled',
+] as const;
+
+const putawayRealtimeListeners = new Set<(evt: PutawayRealtimeEvent) => void>();
+let sharedPutawayChannel: any = null;
+let sharedPutawaySubscribed = false;
+const pendingPutawayBroadcasts: Array<{ event: string; payload: Record<string, any> }> = [];
+
+function flushPendingPutawayBroadcasts(): void {
+  if (!sharedPutawayChannel || !sharedPutawaySubscribed) return;
+  while (pendingPutawayBroadcasts.length > 0) {
+    const msg = pendingPutawayBroadcasts.shift()!;
+    try {
+      sharedPutawayChannel
+        .send({
+          type: 'broadcast',
+          event: msg.event,
+          payload: msg.payload,
+        })
+        ?.catch?.(() => {});
+    } catch {}
+  }
+}
+
+export function subscribePutawayRealtime(listener: (evt: PutawayRealtimeEvent) => void): () => void {
+  putawayRealtimeListeners.add(listener);
+
+  if (!sharedPutawayChannel) {
+    try {
+      const sb = getSupabaseClient();
+      if (sb) {
+        const expectedTopic = `realtime:${PUTAWAY_REALTIME_CHANNEL}`;
+        const existing = sb.getChannels?.().find((c: any) => c?.topic === expectedTopic);
+        if (existing) {
+          sb.removeChannel(existing).catch(() => {});
+        }
+
+        const ch = sb.channel(PUTAWAY_REALTIME_CHANNEL);
+        const state = String(ch?.state || '');
+        if (state !== 'joined' && state !== 'joining') {
+          for (const evtName of PUTAWAY_BROADCAST_EVENTS) {
+            ch.on('broadcast', { event: evtName }, (msg: any) => {
+              const eventObj: PutawayRealtimeEvent = {
+                kind: 'broadcast',
+                event: evtName,
+                payload: msg?.payload,
+              };
+              putawayRealtimeListeners.forEach((cb) => {
+                try {
+                  cb(eventObj);
+                } catch {}
+              });
+            });
+          }
+
+          ch.on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'putaway_tasks' },
+            (payload: any) => {
+              const eventObj: PutawayRealtimeEvent = { kind: 'postgres_changes', payload };
+              putawayRealtimeListeners.forEach((cb) => {
+                try {
+                  cb(eventObj);
+                } catch {}
+              });
+            }
+          );
+
+          ch.subscribe((status: string) => {
+            if (status === 'SUBSCRIBED') {
+              sharedPutawaySubscribed = true;
+              flushPendingPutawayBroadcasts();
+            } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+              sharedPutawaySubscribed = false;
+            }
+          });
+        } else {
+          sharedPutawaySubscribed = state === 'joined';
+        }
+        sharedPutawayChannel = ch;
+      }
+    } catch (err) {
+      console.warn('[PutawayRealtime] Gagal inisialisasi channel realtime:', err);
+    }
+  }
+
+  let active = true;
+  return () => {
+    if (!active) return;
+    active = false;
+    putawayRealtimeListeners.delete(listener);
+    if (putawayRealtimeListeners.size === 0 && sharedPutawayChannel) {
+      const chToRemove = sharedPutawayChannel;
+      sharedPutawayChannel = null;
+      sharedPutawaySubscribed = false;
+      try {
+        const sb = getSupabaseClient();
+        sb?.removeChannel(chToRemove).catch(() => {});
+      } catch {}
+    }
+  };
+}
+
+export function broadcastPutawayRealtime(
+  event: string,
+  payload: Record<string, any> = {}
+): void {
+  if (sharedPutawayChannel && sharedPutawaySubscribed) {
+    try {
+      sharedPutawayChannel
+        .send({
+          type: 'broadcast',
+          event,
+          payload,
+        })
+        ?.catch?.(() => {});
+      return;
+    } catch {}
+  }
+
+  if (pendingPutawayBroadcasts.length >= 20) {
+    pendingPutawayBroadcasts.shift();
+  }
+  pendingPutawayBroadcasts.push({ event, payload });
+
+  if (!sharedPutawayChannel) {
+    const unsub = subscribePutawayRealtime(() => {});
+    setTimeout(unsub, 4000);
+  }
+}

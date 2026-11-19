@@ -15,21 +15,36 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.20.0",
-  "versionCode": 400,
+  "version": "v2.20.1",
+  "versionCode": 401,
   "buildDate": "19 November 2026",
-  "buildHash": "wms-261119-v400-1413",
-  "releaseTitle": "WMS v2.20.0 — Modul Tugas Putaway (Transit X & Kolian R/V/Z)",
+  "buildHash": "wms-261119-v401-1450",
+  "releaseTitle": "WMS v2.20.1 — Fix Putaway Realtime, Master Kargo Push/Urutan, Excel Hitung Ulang & Bubble Draft",
   "releaseNotes": [
-    "Menambahkan fitur Tugas Putaway interaktif di Dashboard Kapasitas untuk sumber Transit (X) dan Kolian (R/V/Z)",
-    "Algoritma rute putaway live mengikuti plafon aman dinamis Setup Kapasitas, prioritas konsolidasi SKU/size/kategori, auto-split Transit ke Kolian, dan reservasi slot anti-tabrakan",
-    "Dukungan keroyokan multi-operator realtime, scan hybrid (#LOK <-> SKU), override & split rak aktual, cetak A4/Thermal, kirim WA, serta proteksi offline outbox & floating dock",
-    "Memperbaiki sinkronisasi nilai Plafon Aman (safeOccupancyCapPercent) saat memuat ulang konfigurasi Kapasitas Rak"
+    "Fix crash Putaway Realtime channel subscription (subscribePutawayRealtime singleton hub)",
+    "Fix Push Sheet Master Kargo Hitung Ulang tanggal 18 & auto-heal cloud recount_audit_results",
+    "Urutan tabel Master Kargo/CMT & slot tanggal Terbaru -> Terlama + muat seluruh histori (>1000 baris)",
+    "Export Excel Master Produksi lengkap dengan kolom Hitung Ulang & tab Rekap Hitung Ulang",
+    "Fix floating bubble minimize Hitung Ulang agar tidak muncul terus-menerus setelah ditutup/disimpan"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.20.0",
+    "versionCode": 400,
+    "buildDate": "19 November 2026",
+    "buildHash": "wms-261119-v400-1413",
+    "releaseTitle": "WMS v2.20.0 — Modul Tugas Putaway (Transit X & Kolian R/V/Z)",
+    "releaseNotes": [
+      "Menambahkan fitur Tugas Putaway interaktif di Dashboard Kapasitas untuk sumber Transit (X) dan Kolian (R/V/Z)",
+      "Algoritma rute putaway live mengikuti plafon aman dinamis Setup Kapasitas, prioritas konsolidasi SKU/size/kategori, auto-split Transit ke Kolian, dan reservasi slot anti-tabrakan",
+      "Dukungan keroyokan multi-operator realtime, scan hybrid (#LOK <-> SKU), override & split rak aktual, cetak A4/Thermal, kirim WA, serta proteksi offline outbox & floating dock",
+      "Memperbaiki sinkronisasi nilai Plafon Aman (safeOccupancyCapPercent) saat memuat ulang konfigurasi Kapasitas Rak"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.19.8",
     "versionCode": 398,
@@ -112,18 +127,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseTitle": "WMS v2.19.2 — Hotfix Format Picker Pengecekan Surat Jalan",
     "releaseNotes": [
       "Perbaikan error 'isWarehouseLocation is not defined' saat klik Format Picker di Pengecekan Surat Jalan"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.19.1",
-    "versionCode": 391,
-    "buildDate": "18 November 2026",
-    "buildHash": "wms-261118-v391-1336",
-    "releaseTitle": "WMS v2.19.1 — Setup Kapasitas Lokasi SORTIR (Area Perbaikan)",
-    "releaseNotes": [
-      "Setup Kapasitas lokasi SORTIR dibuat 1 lokasi statis (sama seperti Shopee/TikTok/Studio)",
-      "Pemetaan lokasi SORTIR otomatis mengikuti Area Perbaikan"
     ],
     "minSupportedVersion": "v2.0.0"
   }

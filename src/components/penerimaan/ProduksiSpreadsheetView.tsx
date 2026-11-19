@@ -37,6 +37,8 @@ import {
   PRODUKSI_SPREADSHEET_ID,
   syncQtyNotaAndAutoQueueRecount,
   pushQtyNotaDeltaToGoogleSheet,
+  sortMatrixBlocksNewestFirst,
+  formatRecountLogEntry,
 } from '../../services/gasProduksiSync';
 import { compressImage } from '../../utils/imageCompressor';
 import {
@@ -72,11 +74,14 @@ export interface MatrixSizeItem {
   totalSizeRetur?: number;
   // Audit & Hitung Ulang Fisik
   recountFisik?: number | null;
+  recountQty?: number | null;
   recountSelisih?: number | null;
+  recountStatus?: string;
   recountRound?: number;
   recountNotes?: string;
   recountAuditor?: string;
   recountUpdatedAt?: string;
+  recountLog?: string;
 }
 
 export interface MatrixColorGroup {
@@ -340,7 +345,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
             .map((i) => i.tanggal_penerimaan)
             .filter(Boolean) as string[]
         )
-      ).sort();
+      ).sort().reverse();
 
       // Extract distinct Surat Jalan and map per date (Exclude RETUR sj from arrival columns)
       const sjMap = new Map<string, { no_surat_jalan: string; qty: number; tanggal: string }>();
@@ -407,7 +412,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
             })
             .filter(Boolean) as string[]
         )
-      ).sort();
+      ).sort().reverse();
 
       const returDateSlots: string[] = Array.from(
         { length: FIXED_RETUR_COLUMNS_COUNT },
@@ -548,6 +553,25 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
             }
           }
 
+          const rStatus =
+            rSelisih === null || rSelisih === undefined
+              ? undefined
+              : rSelisih === 0
+                ? 'MATCH'
+                : rSelisih < 0
+                  ? 'KURANG'
+                  : 'LEBIH';
+          const rLog =
+            rFisik !== null
+              ? formatRecountLogEntry({
+                  round: rRound,
+                  updatedAt: rUpdatedAt,
+                  arrivalDates: distinctDatangDates,
+                  auditor: rAuditor,
+                  notes: rNotes,
+                })
+              : undefined;
+
           return {
             id: sItems[0]?.id,
             size: sz,
@@ -556,11 +580,14 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
             totalSizeQty,
             totalSizeRetur,
             recountFisik: rFisik,
+            recountQty: rFisik,
             recountSelisih: rSelisih,
+            recountStatus: rStatus,
             recountRound: rRound,
             recountNotes: rNotes,
             recountAuditor: rAuditor,
             recountUpdatedAt: rUpdatedAt,
+            recountLog: rLog,
           };
         });
 
@@ -674,7 +701,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       });
     });
 
-    setBlocks(parsedBlocks);
+    setBlocks(sortMatrixBlocksNewestFirst(parsedBlocks));
   }, [dataList, activeTab, catalogNameMap, qtyNotaMap, recountAuditNormMap]);
 
   // Sinkronisasi Otomatis Qty Nota dari Google Sheet & Backup ke Supabase saat halaman dibuka
@@ -1012,7 +1039,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
 
     try {
       setIsExportingExcel(true);
-      await exportProduksiToModernExcel(blocksToExport, activeTab, (msg) => {
+      await exportProduksiToModernExcel(sortMatrixBlocksNewestFirst(blocksToExport), activeTab, (msg) => {
         setExportProgressMsg(msg);
       });
       onShowToast(`File Excel ${activeTab} Modern (.xlsx) berhasil diunduh!`, 'success');
@@ -1362,7 +1389,12 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         ...it,
         id: (it as any).id || (Date.now() + idx),
       }));
-      list = [...finalItems, ...list];
+      list = [...finalItems, ...list].sort((a, b) => {
+        const da = a.tanggal_penerimaan || '';
+        const db = b.tanggal_penerimaan || '';
+        if (db !== da) return db.localeCompare(da);
+        return String(b.created_at || '').localeCompare(String(a.created_at || ''));
+      });
       localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(list));
     } catch { }
 
@@ -1644,7 +1676,12 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       ongkirPerPcs: 0,
     };
 
-    setBlocks((prev) => [...prev, newBlock]);
+    setBlocks((prev) =>
+      [newBlock, ...prev].map((b, idx) => ({
+        ...b,
+        rowNumber: idx + 1,
+      }))
+    );
     setEditingBlockId(cleanCode);
     onShowToast(`Tabel Kode ${cleanCode} dibuat. Silakan ketik datanya dan simpan.`, 'info');
   };
@@ -2063,7 +2100,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
             <div className="text-[11px] text-slate-500 bg-amber-50 dark:bg-amber-950/40 p-2.5 rounded-xl border border-amber-200 dark:border-amber-800 flex items-start gap-2">
               <Sparkles className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
               <span>
-                Catatan Multi-Tanggal: Jika 1 kode produk memiliki penerimaan di beberapa tanggal, seluruh histori tanggal untuk kode tersebut tetap dilampirkan lengkap dalam hasil export Excel!
+                Catatan Export: Hasil Excel berurutan <strong>Terbaru &rarr; Terlama</strong> dan kini lengkap dengan kolom <strong>Qty Nota, Hitung Ulang (Fisik, Selisih, Status Audit, Log)</strong> serta tab khusus <strong>&ldquo;Rekap Hitung Ulang&rdquo;</strong>. Seluruh histori tanggal per kode produk juga dilampirkan.
               </span>
             </div>
 

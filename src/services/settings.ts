@@ -405,6 +405,54 @@ export async function saveWmsSettings(settings: Partial<WmsSettings>): Promise<b
   }
 }
 
+function normalizeRecountCodeKey(code: string): string {
+  return String(code || '')
+    .replace(/[\u200B-\u200D\uFEFF\u00A0\r\n\t]/g, '')
+    .trim()
+    .toUpperCase();
+}
+
+function isIncomingRecountNewer(existing: any, incoming: any): boolean {
+  if (!incoming || typeof incoming !== 'object') return false;
+  if (!existing || typeof existing !== 'object') return true;
+  const exTime = String(existing.updated_at || existing.tanggal_audit || '');
+  const inTime = String(incoming.updated_at || incoming.tanggal_audit || '');
+  if (inTime && exTime && inTime !== exTime) {
+    return inTime > exTime;
+  }
+  if (inTime && !exTime) return true;
+  const exRound = Number(existing.round || 0);
+  const inRound = Number(incoming.round || 0);
+  if (inRound !== exRound) return inRound > exRound;
+  const exVars = Array.isArray(existing.variants) ? existing.variants.length : 0;
+  const inVars = Array.isArray(incoming.variants) ? incoming.variants.length : 0;
+  return inVars > exVars;
+}
+
+export function mergeRecountAuditMaps(
+  baseMap: Record<string, any> | null | undefined,
+  incomingMap: Record<string, any> | null | undefined
+): Record<string, any> {
+  const result: Record<string, any> = {};
+  const absorb = (src: Record<string, any> | null | undefined) => {
+    if (!src || typeof src !== 'object') return;
+    Object.keys(src).forEach((rawKey) => {
+      const rec = src[rawKey];
+      const normKey = normalizeRecountCodeKey(rawKey || rec?.kode_produksi || '');
+      if (!normKey || !rec || typeof rec !== 'object') return;
+      if (!result[normKey] || isIncomingRecountNewer(result[normKey], rec)) {
+        result[normKey] = {
+          ...rec,
+          kode_produksi: normKey,
+        };
+      }
+    });
+  };
+  absorb(baseMap);
+  absorb(incomingMap);
+  return result;
+}
+
 /**
  * Ambil map data hasil hitung ulang (audit re-count) per kode produksi
  */
@@ -424,7 +472,7 @@ export function getRecountAuditMap(): Record<string, any> {
  * Memastikan semua user & perangkat lain melihat kode mana saja yang sudah dihitung
  */
 export async function fetchRecountAuditMapFromCloud(): Promise<Record<string, any>> {
-  const localAuditMap: Record<string, any> = { ...getRecountAuditMap() };
+  let localAuditMap: Record<string, any> = mergeRecountAuditMaps(getRecountAuditMap(), {});
 
   // Ekstrak juga dari riwayat log hitung ulang lokal di browser ini
   try {
@@ -432,21 +480,22 @@ export async function fetchRecountAuditMapFromCloud(): Promise<Record<string, an
     if (rawLogs) {
       const logs = JSON.parse(rawLogs);
       if (Array.isArray(logs)) {
+        const logMap: Record<string, any> = {};
         logs.forEach((log: any) => {
-          const code = (log.kode_produksi || '').trim().toUpperCase();
-          if (code && !localAuditMap[code]) {
+          const code = normalizeRecountCodeKey(log.kode_produksi || '');
+          if (code) {
             const totalSelisih = Number(log.total_selisih) || 0;
-            localAuditMap[code] = {
+            const candidate = {
               kode_produksi: code,
               tanggal_audit: log.tanggal_audit,
               total_asli: Number(log.total_sebelumnya) || 0,
               total_fisik: Number(log.total_fisik) || 0,
               total_selisih: totalSelisih,
               status: totalSelisih === 0 ? 'MATCH' : totalSelisih < 0 ? 'KURANG' : 'LEBIH',
-              round: 1,
+              round: Number(log.round || 1),
               auditor: log.auditor || 'Auditor Fisik',
               catatan: log.general_notes || '',
-              updated_at: log.created_at || new Date().toISOString(),
+              updated_at: log.created_at || log.tanggal_audit || '',
               variants: (log.details || []).map((d: any) => ({
                 warna: d.warna,
                 size: d.size,
@@ -457,13 +506,18 @@ export async function fetchRecountAuditMapFromCloud(): Promise<Record<string, an
                 note: d.catatan || '',
               })),
             };
+            if (!logMap[code] || isIncomingRecountNewer(logMap[code], candidate)) {
+              logMap[code] = candidate;
+            }
           }
         });
+        localAuditMap = mergeRecountAuditMaps(localAuditMap, logMap);
       }
     }
   } catch (eLogs) {}
 
-  let cloudMap: Record<string, any> = {};
+  let docMap: Record<string, any> = {};
+  let settingsMap: Record<string, any> = {};
 
   // 1. Coba ambil dari wms_system_docs key 'recount_audit_results'
   try {
@@ -471,7 +525,7 @@ export async function fetchRecountAuditMapFromCloud(): Promise<Record<string, an
     if (doc && doc[0] && doc[0].content) {
       const parsed = JSON.parse(doc[0].content);
       if (typeof parsed === 'object' && parsed !== null) {
-        cloudMap = parsed;
+        docMap = mergeRecountAuditMaps(parsed, {});
       }
     }
   } catch (eDoc) {}
@@ -480,24 +534,40 @@ export async function fetchRecountAuditMapFromCloud(): Promise<Record<string, an
   try {
     const s = await fetchWmsSettings(true);
     if (s && s.recount_audit_map && Object.keys(s.recount_audit_map).length > 0) {
-      cloudMap = { ...s.recount_audit_map, ...cloudMap };
+      settingsMap = mergeRecountAuditMaps(s.recount_audit_map, {});
     }
   } catch (eSet) {}
 
-  // MERGE cloud and local (menjaga data yang sudah dihitung di browser lokal)
-  const mergedMap: Record<string, any> = { ...cloudMap, ...localAuditMap };
+  // MERGE cloud (doc + settings) and local berdasarkan timestamp updated_at / round terbaru (anti stale overwrite)
+  const cloudMap = mergeRecountAuditMaps(docMap, settingsMap);
+  const mergedMap = mergeRecountAuditMaps(cloudMap, localAuditMap);
 
-  // Jika ada data lokal yang belum ada di Cloud, otomatis kirim ke Cloud
-  const missingInCloud = Object.keys(mergedMap).filter((k) => !cloudMap[k]);
-  if (missingInCloud.length > 0) {
+  const needsDocHeal = Object.keys(mergedMap).some(
+    (k) => !docMap[k] || isIncomingRecountNewer(docMap[k], mergedMap[k])
+  );
+  const needsSettingsHeal = Object.keys(mergedMap).some(
+    (k) => !settingsMap[k] || isIncomingRecountNewer(settingsMap[k], mergedMap[k])
+  );
+
+  if (needsDocHeal && Object.keys(mergedMap).length > 0) {
     try {
-      await supabaseFetch('wms_system_docs', 'POST', [{
-        section_id: 'recount_audit_results',
-        content: JSON.stringify(mergedMap),
-        updated_by: 'Auto-Sync Merge',
-        updated_at: new Date().toISOString(),
-      }], 'resolution=merge-duplicates');
+      await supabaseFetch(
+        'wms_system_docs',
+        'POST',
+        [
+          {
+            section_id: 'recount_audit_results',
+            content: JSON.stringify(mergedMap),
+            updated_by: 'Auto-Sync Merge',
+            updated_at: new Date().toISOString(),
+          },
+        ],
+        'on_conflict=section_id',
+        true
+      );
     } catch {}
+  }
+  if (needsSettingsHeal && Object.keys(mergedMap).length > 0) {
     saveWmsSettings({ recount_audit_map: mergedMap }).catch(() => {});
   }
 
@@ -535,8 +605,9 @@ export async function saveRecountAuditRecord(record: {
     note?: string;
   }>;
 }): Promise<boolean> {
-  const currentMap = getRecountAuditMap();
-  const prevRec = currentMap[record.kode_produksi];
+  const normCode = normalizeRecountCodeKey(record.kode_produksi);
+  const currentMap = mergeRecountAuditMaps(getRecountAuditMap(), {});
+  const prevRec = currentMap[normCode];
   const prevHistory: any[] = Array.isArray(prevRec?.history) ? [...prevRec.history] : [];
   if (prevRec && prevRec.total_fisik !== undefined) {
     const prevSnapshot = {
@@ -561,8 +632,9 @@ export async function saveRecountAuditRecord(record: {
 
   const updatedMap = {
     ...currentMap,
-    [record.kode_produksi]: {
+    [normCode]: {
       ...record,
+      kode_produksi: normCode,
       updated_at: record.updated_at || new Date().toISOString(),
       history: prevHistory,
     },
@@ -576,12 +648,20 @@ export async function saveRecountAuditRecord(record: {
 
   // Sync ke Cloud A: wms_system_docs key 'recount_audit_results'
   try {
-    await supabaseFetch('wms_system_docs', 'POST', [{
-      section_id: 'recount_audit_results',
-      content: JSON.stringify(updatedMap),
-      updated_by: record.auditor || 'WMS Auditor',
-      updated_at: new Date().toISOString(),
-    }], 'resolution=merge-duplicates');
+    await supabaseFetch(
+      'wms_system_docs',
+      'POST',
+      [
+        {
+          section_id: 'recount_audit_results',
+          content: JSON.stringify(updatedMap),
+          updated_by: record.auditor || 'WMS Auditor',
+          updated_at: new Date().toISOString(),
+        },
+      ],
+      'on_conflict=section_id',
+      true
+    );
   } catch (errDoc) {
     console.warn('Gagal sync recount ke wms_system_docs:', errDoc);
   }

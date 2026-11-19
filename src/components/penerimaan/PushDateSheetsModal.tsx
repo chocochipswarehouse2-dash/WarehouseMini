@@ -23,6 +23,8 @@ import {
   pushPenerimaanProduksiToGoogleSheet,
   refreshProduksiSpreadsheetIndex,
   buildMatrixBlocksFromItems,
+  sortMatrixBlocksNewestFirst,
+  extractIsoDateFromSlot,
   PRODUKSI_SPREADSHEET_ID,
   formatDateTabName,
   formatDateIndo,
@@ -116,7 +118,8 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
     if (blocks && currentTab === initialActiveTab) {
       blocks.forEach((b) => {
         b.dateSlots.forEach((d) => {
-          if (d) datesSet.add(d.trim());
+          const cleanD = extractIsoDateFromSlot(d);
+          if (cleanD) datesSet.add(cleanD);
         });
       });
     }
@@ -258,17 +261,19 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
         ? baseBlocks
         : buildMatrixBlocksFromItems(categoryItems, currentTab === 'CMT');
 
-      // Pastikan productName dan upVendor ter-enrich dari Master Catalog
-      const enrichedBlocks = effectiveBlocks.map((b) => {
-        const lookup = lookupProductBySku(b.code, productCatalog, b.productName);
-        return {
-          ...b,
-          productName: b.productName || (lookup.found ? lookup.nama_produk : '') || '',
-          upVendor: (b.upVendor && b.upVendor !== 'KARGO' && b.upVendor !== 'CMT')
-            ? b.upVendor
-            : (b.upVendor || (currentTab === 'CMT' ? 'CMT' : 'KARGO')),
-        };
-      });
+      // Pastikan productName dan upVendor ter-enrich dari Master Catalog serta urut Terbaru -> Terlama
+      const enrichedBlocks = sortMatrixBlocksNewestFirst(
+        effectiveBlocks.map((b) => {
+          const lookup = lookupProductBySku(b.code, productCatalog, b.productName);
+          return {
+            ...b,
+            productName: b.productName || (lookup.found ? lookup.nama_produk : '') || '',
+            upVendor: (b.upVendor && b.upVendor !== 'KARGO' && b.upVendor !== 'CMT')
+              ? b.upVendor
+              : (b.upVendor || (currentTab === 'CMT' ? 'CMT' : 'KARGO')),
+          };
+        })
+      );
 
       if (mode === 'master') {
         setProgressMsg(`Menulis Master Matrix ${currentTab} ke Google Spreadsheet...`);

@@ -37,7 +37,8 @@ import {
   cancelPutawayTask,
   completePutawayTask,
   validateSourceStockBeforeSubmit,
-  PUTAWAY_REALTIME_CHANNEL,
+  subscribePutawayRealtime,
+  broadcastPutawayRealtime,
   type SourceStockShortageWarning,
 } from '../../services/putawayService';
 import {
@@ -47,7 +48,6 @@ import {
 import {
   getAreaFromLokasi,
   normalizeLokasi,
-  getSupabaseClient,
   isSameOperatorIdentity,
 } from '../../services/supabase';
 import {
@@ -143,7 +143,6 @@ export const PutawayWorkspaceModal: React.FC<PutawayWorkspaceModalProps> = ({
   const [isSendingWa, setIsSendingWa] = useState(false);
 
   // Realtime sync guards
-  const collabChannelRef = useRef<any>(null);
   const pendingLocalItemSyncRef = useRef<Map<string, number>>(new Map());
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -220,18 +219,12 @@ export const PutawayWorkspaceModal: React.FC<PutawayWorkspaceModalProps> = ({
 
   const broadcastEvent = useCallback(
     (eventType: string, payload: Record<string, any> = {}) => {
-      try {
-        collabChannelRef.current?.send({
-          type: 'broadcast',
-          event: eventType,
-          payload: {
-            taskId: taskStateRef.current.id,
-            actor: currentUser,
-            ts: Date.now(),
-            ...payload,
-          },
-        });
-      } catch {}
+      broadcastPutawayRealtime(eventType, {
+        taskId: taskStateRef.current.id,
+        actor: currentUser,
+        ts: Date.now(),
+        ...payload,
+      });
     },
     [currentUser]
   );
@@ -302,8 +295,6 @@ export const PutawayWorkspaceModal: React.FC<PutawayWorkspaceModalProps> = ({
 
   // Realtime collaboration channel + throttled polling fallback
   useEffect(() => {
-    const sb = getSupabaseClient();
-    let channel: any = null;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
     const triggerRefresh = (delayMs = 200, actor?: string) => {
@@ -318,59 +309,34 @@ export const PutawayWorkspaceModal: React.FC<PutawayWorkspaceModalProps> = ({
       }, delayMs);
     };
 
-    if (sb) {
-      channel = sb
-        .channel(PUTAWAY_REALTIME_CHANNEL)
-        .on('broadcast', { event: 'task_updated' }, (msg: any) => {
-          const p = msg?.payload;
-          if (!p || p.taskId !== taskStateRef.current.id || p.actor === currentUser) return;
-          triggerRefresh(150, p.actor);
-        })
-        .on('broadcast', { event: 'operator_joined' }, (msg: any) => {
-          const p = msg?.payload;
-          if (!p || p.taskId !== taskStateRef.current.id || p.actor === currentUser) return;
+    const unsubRealtime = subscribePutawayRealtime((evt) => {
+      if (evt.kind === 'broadcast') {
+        const p = evt.payload;
+        if (!p || p.taskId !== taskStateRef.current.id || p.actor === currentUser) return;
+        if (evt.event === 'operator_joined') {
           onNotify?.(
             `🤝 ${formatOperatorWithPersonName(p.actor)} ikut membantu Putaway ${taskStateRef.current.invoice_putaway}!`,
             'info'
           );
           triggerRefresh(150, p.actor);
-        })
-        .on('broadcast', { event: 'operator_left' }, (msg: any) => {
-          const p = msg?.payload;
-          if (!p || p.taskId !== taskStateRef.current.id || p.actor === currentUser) return;
+        } else if (evt.event === 'task_completed' || evt.event === 'task_cancelled') {
+          triggerRefresh(100, p.actor);
+        } else {
           triggerRefresh(150, p.actor);
-        })
-        .on('broadcast', { event: 'task_completed' }, (msg: any) => {
-          const p = msg?.payload;
-          if (!p || p.taskId !== taskStateRef.current.id || p.actor === currentUser) return;
-          triggerRefresh(100, p.actor);
-        })
-        .on('broadcast', { event: 'task_cancelled' }, (msg: any) => {
-          const p = msg?.payload;
-          if (!p || p.taskId !== taskStateRef.current.id || p.actor === currentUser) return;
-          triggerRefresh(100, p.actor);
-        })
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'putaway_tasks' },
-          (payload: any) => {
-            const changedId = payload?.new?.id || payload?.old?.id;
-            if (changedId === taskStateRef.current.id) {
-              triggerRefresh(200);
-            }
-          }
-        )
-        .subscribe((status: string) => {
-          if (status === 'SUBSCRIBED') {
-            channel.send({
-              type: 'broadcast',
-              event: 'operator_joined',
-              payload: { taskId: task.id, actor: currentUser, ts: Date.now() },
-            });
-          }
-        });
-      collabChannelRef.current = channel;
-    }
+        }
+      } else if (evt.kind === 'postgres_changes') {
+        const changedId = evt.payload?.new?.id || evt.payload?.old?.id;
+        if (changedId === taskStateRef.current.id) {
+          triggerRefresh(200);
+        }
+      }
+    });
+
+    broadcastPutawayRealtime('operator_joined', {
+      taskId: task.id,
+      actor: currentUser,
+      ts: Date.now(),
+    });
 
     const poll = setInterval(() => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) return;
@@ -382,10 +348,7 @@ export const PutawayWorkspaceModal: React.FC<PutawayWorkspaceModalProps> = ({
       clearInterval(poll);
       if (refreshTimer) clearTimeout(refreshTimer);
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
-      if (sb && channel) {
-        sb.removeChannel(channel).catch(() => {});
-      }
-      collabChannelRef.current = null;
+      unsubRealtime();
     };
   }, [task.id, currentUser, applyRemoteTaskState, onNotify]);
 

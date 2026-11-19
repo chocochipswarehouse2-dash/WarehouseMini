@@ -854,6 +854,78 @@ function formatDateIndo(dateStr) {
   }
 }
 
+function extractIsoDateGAS(slot) {
+  if (!slot) return '';
+  var raw = String(slot).split('||')[0].trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  return raw;
+}
+
+function sortDateSlotsDescGAS(slots) {
+  var arr = slots || [];
+  var nonEmpty = [];
+  for (var i = 0; i < arr.length; i++) {
+    if (arr[i] && String(arr[i]).trim() !== '') {
+      nonEmpty.push(String(arr[i]));
+    }
+  }
+  nonEmpty.sort(function(a, b) {
+    var da = extractIsoDateGAS(a);
+    var db = extractIsoDateGAS(b);
+    if (db !== da) return db.localeCompare(da);
+    return String(a).localeCompare(String(b));
+  });
+  var emptyPad = Math.max(0, arr.length - nonEmpty.length);
+  for (var j = 0; j < emptyPad; j++) {
+    nonEmpty.push('');
+  }
+  return nonEmpty;
+}
+
+function getBlockLatestDateGAS(block) {
+  var maxD = '';
+  var slots = block && block.dateSlots ? block.dateSlots : [];
+  for (var i = 0; i < slots.length; i++) {
+    var d = extractIsoDateGAS(slots[i]);
+    if (d && (!maxD || d > maxD)) maxD = d;
+  }
+  var sjs = block && block.distinctSjs ? block.distinctSjs : [];
+  for (var j = 0; j < sjs.length; j++) {
+    var sd = extractIsoDateGAS(sjs[j] && sjs[j].tanggal);
+    if (sd && (!maxD || sd > maxD)) maxD = sd;
+  }
+  return maxD;
+}
+
+function sortBlocksNewestFirstGAS(blocks) {
+  var copy = (blocks || []).slice();
+  for (var i = 0; i < copy.length; i++) {
+    if (copy[i] && copy[i].dateSlots) {
+      copy[i].dateSlots = sortDateSlotsDescGAS(copy[i].dateSlots);
+    }
+    if (copy[i] && copy[i].returDateSlots) {
+      copy[i].returDateSlots = sortDateSlotsDescGAS(copy[i].returDateSlots);
+    }
+  }
+  copy.sort(function(a, b) {
+    var da = getBlockLatestDateGAS(a);
+    var db = getBlockLatestDateGAS(b);
+    if (db !== da) {
+      if (!db) return -1;
+      if (!da) return 1;
+      return db.localeCompare(da);
+    }
+    var ca = String((a && (a.code || a.productCode)) || '');
+    var cb = String((b && (b.code || b.productCode)) || '');
+    return ca.localeCompare(cb, undefined, { numeric: true, sensitivity: 'base' });
+  });
+  for (var k = 0; k < copy.length; k++) {
+    copy[k].rowNumber = k + 1;
+    copy[k].no = k + 1;
+  }
+  return copy;
+}
+
 /**
  * Helper untuk membangun struktur Blok Matriks dari flat items di dalam GAS
  */
@@ -887,7 +959,7 @@ function buildBlocksFromItemsGAS(items, isCMT, specificDateStr) {
         qtyNota = Number(codeItems[d].qty_nota);
       }
     }
-    var dateSlots = specificDateStr ? [specificDateStr] : Object.keys(dateSet).sort();
+    var dateSlots = specificDateStr ? [specificDateStr] : Object.keys(dateSet).sort().reverse();
 
     var colorMap = {};
     for (var c = 0; c < codeItems.length; c++) {
@@ -953,7 +1025,7 @@ function buildBlocksFromItemsGAS(items, isCMT, specificDateStr) {
     });
   }
 
-  return blocks;
+  return sortBlocksNewestFirstGAS(blocks);
 }
 
 /**
@@ -1131,6 +1203,10 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
     throw new Error('Gagal membaca Qty Nota yang ada di sheet, push dibatalkan agar data Buyer aman: ' + existingScan.scanError);
   }
 
+  if (!isSpecificDate && blocks && blocks.length > 0) {
+    blocks = sortBlocksNewestFirstGAS(blocks);
+  }
+
   sheet.clearContents();
   sheet.clearFormats();
   try {
@@ -1182,6 +1258,7 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
   }
 
   var selisihRangesForCF = [];
+  var statusRangesForCF = [];
   var maxTotalColsUsed = 20;
 
   for (var b = 0; b < blocks.length; b++) {
@@ -1457,14 +1534,26 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
                           String(sz.size || sz.sizeName || '').trim().toUpperCase();
           var oldRecord = oldDataMap[lookupKey];
 
-          var rQty = (sz.recountQty !== undefined && sz.recountQty !== null && sz.recountQty !== '') 
-                      ? Number(sz.recountQty) 
-                      : (oldRecord && oldRecord.fisik !== '' ? Number(oldRecord.fisik) : '');
-                      
+          var hasPayloadRecount =
+            (sz.recountQty !== undefined && sz.recountQty !== null && sz.recountQty !== '') ||
+            (sz.recountFisik !== undefined && sz.recountFisik !== null && sz.recountFisik !== '');
+          var rawPayloadQty =
+            sz.recountQty !== undefined && sz.recountQty !== null && sz.recountQty !== ''
+              ? sz.recountQty
+              : sz.recountFisik;
+
+          var rQty = hasPayloadRecount
+            ? Number(rawPayloadQty)
+            : (oldRecord && oldRecord.fisik !== '' && oldRecord.fisik !== null && oldRecord.fisik !== undefined
+                ? Number(oldRecord.fisik)
+                : '');
+
           var rSelisih = rQty !== '' ? (rQty - rowNet) : '';
           var rStatus = rQty !== '' ? (rSelisih === 0 ? 'MATCH' : (rSelisih < 0 ? 'KURANG' : 'LEBIH')) : '';
-          var rLog = (sz.recountNotes || sz.recountAuditor || '') || (oldRecord ? oldRecord.log : '');
-          
+          var rLog = sz.recountLog || (hasPayloadRecount
+            ? ('Rev ' + (sz.recountRound || 1) + ' [' + formatDateIndo(sz.recountUpdatedAt || new Date().toISOString()) + '] (' + (sz.recountAuditor || 'Auditor') + ')' + (sz.recountNotes ? ': ' + sz.recountNotes : ''))
+            : (oldRecord ? oldRecord.log : ''));
+
           dataRowVals.push(rQty);
           dataRowVals.push(rSelisih);
           dataRowVals.push(rStatus);
@@ -1524,6 +1613,13 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
 
       sheet.getRange(startDataRowIndex, 1, numBlockRows, 7).setNumberFormat('@');
       sheet.getRange(startDataRowIndex, 8, numBlockRows, totalCols - 7).setNumberFormat('0');
+      if (!isSpecificDate && colStatus > 0 && colLog > 0) {
+        sheet.getRange(startDataRowIndex, colStatus, numBlockRows, 1).setNumberFormat('@').setFontWeight('bold');
+        sheet.getRange(startDataRowIndex, colLog, numBlockRows, 1).setNumberFormat('@').setHorizontalAlignment('left').setFontSize(8.5);
+        sheet.getRange(startDataRowIndex, colFisik, numBlockRows, 1).setFontWeight('bold').setFontColor('#1D4ED8').setBackground('#EFF6FF');
+        selisihRangesForCF.push(sheet.getRange(startDataRowIndex, colSelisihFisik, numBlockRows, 1));
+        statusRangesForCF.push(sheet.getRange(startDataRowIndex, colStatus, numBlockRows, 1));
+      }
 
       // 1. Pasang Formula TOTAL DATANG per Row
       var startDateLetter = colToLetter(8);
@@ -1623,30 +1719,68 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
   // - Selisih < 0 (Kurang): Merah (#FEE2E2 / #991B1B)
   // - Selisih > 0 (Lebih): Biru (#DBEAFE / #1E40AF)
   // - Selisih = 0 (Klop): Hijau (#DCFCE7 / #166534)
-  if (selisihRangesForCF.length > 0) {
+  if (selisihRangesForCF.length > 0 || statusRangesForCF.length > 0) {
     try {
-      var ruleLess = SpreadsheetApp.newConditionalFormatRule()
-        .whenNumberLessThan(0)
-        .setBackground('#FEE2E2')
-        .setFontColor('#991B1B')
-        .setBold(true)
-        .setRanges(selisihRangesForCF)
-        .build();
-      var ruleGreater = SpreadsheetApp.newConditionalFormatRule()
-        .whenNumberGreaterThan(0)
-        .setBackground('#DBEAFE')
-        .setFontColor('#1E40AF')
-        .setBold(true)
-        .setRanges(selisihRangesForCF)
-        .build();
-      var ruleEqual = SpreadsheetApp.newConditionalFormatRule()
-        .whenNumberEqualTo(0)
-        .setBackground('#DCFCE7')
-        .setFontColor('#166534')
-        .setBold(true)
-        .setRanges(selisihRangesForCF)
-        .build();
-      sheet.setConditionalFormatRules([ruleLess, ruleGreater, ruleEqual]);
+      var cfRules = [];
+      if (selisihRangesForCF.length > 0) {
+        cfRules.push(
+          SpreadsheetApp.newConditionalFormatRule()
+            .whenNumberLessThan(0)
+            .setBackground('#FEE2E2')
+            .setFontColor('#991B1B')
+            .setBold(true)
+            .setRanges(selisihRangesForCF)
+            .build()
+        );
+        cfRules.push(
+          SpreadsheetApp.newConditionalFormatRule()
+            .whenNumberGreaterThan(0)
+            .setBackground('#DBEAFE')
+            .setFontColor('#1E40AF')
+            .setBold(true)
+            .setRanges(selisihRangesForCF)
+            .build()
+        );
+        cfRules.push(
+          SpreadsheetApp.newConditionalFormatRule()
+            .whenNumberEqualTo(0)
+            .setBackground('#DCFCE7')
+            .setFontColor('#166534')
+            .setBold(true)
+            .setRanges(selisihRangesForCF)
+            .build()
+        );
+      }
+      if (statusRangesForCF.length > 0) {
+        cfRules.push(
+          SpreadsheetApp.newConditionalFormatRule()
+            .whenTextEqualTo('MATCH')
+            .setBackground('#DCFCE7')
+            .setFontColor('#166534')
+            .setBold(true)
+            .setRanges(statusRangesForCF)
+            .build()
+        );
+        cfRules.push(
+          SpreadsheetApp.newConditionalFormatRule()
+            .whenTextContains('KURANG')
+            .setBackground('#FEE2E2')
+            .setFontColor('#991B1B')
+            .setBold(true)
+            .setRanges(statusRangesForCF)
+            .build()
+        );
+        cfRules.push(
+          SpreadsheetApp.newConditionalFormatRule()
+            .whenTextContains('LEBIH')
+            .setBackground('#DBEAFE')
+            .setFontColor('#1E40AF')
+            .setBold(true)
+            .setRanges(statusRangesForCF)
+            .build()
+        );
+      }
+      sheet.setConditionalFormatRules(cfRules);
     } catch (eCf) {
       Logger.log('Conditional formatting error: ' + eCf);
     }
@@ -2252,20 +2386,43 @@ function updateMasterRecountDelta(ss, data) {
       sheet.setColumnWidth(colLog, 280);
     }
 
-    // 2. Petakan Baris dengan Penanganan Sel Ter-Merge (CODE & COLOR)
-    var rawRows = sheet.getRange(3, 1, lastRow - 2, 7).getValues();
+    // 2. Petakan Baris & Indeks Kolom Per-Blok (mendukung blok dengan jumlah kolom tanggal dinamis)
+    var rawAllRows = sheet.getRange(1, 1, lastRow, Math.max(7, sheet.getLastColumn())).getValues();
     var mappedRows = [];
     var curCode = '';
     var curColor = '';
+    var blockColFisik = colFisik;
+    var blockColSelisih = colSelisih;
+    var blockColStatus = colStatus;
+    var blockColLog = colLog;
 
-    for (var r = 0; r < rawRows.length; r++) {
-      var rowNum = r + 3;
-      var c1 = String(rawRows[r][0] || '').trim();
-      var cCode = String(rawRows[r][1] || '').replace(/^'+/, '').trim().toUpperCase();
-      var cColor = String(rawRows[r][5] || '').trim().toUpperCase();
-      var cSize = String(rawRows[r][6] || '').replace(/^'+/, '').trim().toUpperCase();
+    for (var r = 0; r < rawAllRows.length; r++) {
+      var rowNum = r + 1;
+      var rowArr = rawAllRows[r];
+      var c1 = String(rowArr[0] || '').trim().toUpperCase();
+      var cCode = String(rowArr[1] || '').replace(/^'+/, '').trim().toUpperCase();
+      var cColor = String(rowArr[5] || '').trim().toUpperCase();
+      var cSize = String(rowArr[6] || '').replace(/^'+/, '').trim().toUpperCase();
 
-      if (cCode === 'CODE' || cCode.indexOf('CATATAN') !== -1 || c1 === 'NO') {
+      if (c1 === 'NO' && cCode === 'CODE') {
+        var bF = -1, bS = -1, bSt = -1, bL = -1;
+        for (var hc = 0; hc < rowArr.length; hc++) {
+          var ht = String(rowArr[hc] || '').trim().toUpperCase();
+          if (ht.indexOf('SELISIH') !== -1 && (ht.indexOf('FISIK') !== -1 || ht.indexOf('HITUNG') !== -1 || bF !== -1) && bS === -1) bS = hc + 1;
+          else if ((ht.indexOf('FISIK') !== -1 || ht.indexOf('QTY HITUNG') !== -1) && bF === -1) bF = hc + 1;
+          else if (ht.indexOf('STATUS AUDIT') !== -1 || ht === 'STATUS') bSt = hc + 1;
+          else if (ht.indexOf('LOG') !== -1 || ht.indexOf('RIWAYAT') !== -1) bL = hc + 1;
+        }
+        if (bF !== -1) blockColFisik = bF;
+        if (bS !== -1) blockColSelisih = bS;
+        if (bSt !== -1) blockColStatus = bSt;
+        if (bL !== -1) blockColLog = bL;
+        curCode = '';
+        curColor = '';
+        continue;
+      }
+
+      if (cCode === 'CODE' || cCode.indexOf('CATATAN') !== -1 || c1 === 'NO' || c1.indexOf('CATATAN') === 0) {
         continue;
       }
       if (cCode && cCode !== '-') {
@@ -2274,12 +2431,16 @@ function updateMasterRecountDelta(ss, data) {
       if (cColor && cColor !== '-') {
         curColor = cColor;
       }
-      if (cSize && cSize !== '-' && cSize !== 'SIZE') {
+      if (curCode && cSize && cSize !== '-' && cSize !== 'SIZE') {
         mappedRows.push({
           rowNum: rowNum,
           code: curCode,
           color: curColor,
-          size: cSize
+          size: cSize,
+          colFisik: blockColFisik,
+          colSelisih: blockColSelisih,
+          colStatus: blockColStatus,
+          colLog: blockColLog
         });
       }
     }
@@ -2300,17 +2461,21 @@ function updateMasterRecountDelta(ss, data) {
 
         if (isMatch) {
           var targetRowNum = mRow.rowNum;
+          var rColFisik = mRow.colFisik || colFisik;
+          var rColSelisih = mRow.colSelisih || colSelisih;
+          var rColStatus = mRow.colStatus || colStatus;
+          var rColLog = mRow.colLog || colLog;
 
           // Set Nilai Fisik & Selisih
-          sheet.getRange(targetRowNum, colFisik).setValue(Number(it.qty_fisik) || 0).setNumberFormat('0');
-          
+          sheet.getRange(targetRowNum, rColFisik).setValue(Number(it.qty_fisik) || 0).setNumberFormat('0').setFontWeight('bold').setFontColor('#1D4ED8').setBackground('#EFF6FF');
+
           var selisihVal = Number(it.selisih) || 0;
-          var selisihRange = sheet.getRange(targetRowNum, colSelisih);
+          var selisihRange = sheet.getRange(targetRowNum, rColSelisih);
           selisihRange.setValue(selisihVal).setNumberFormat('0');
 
-          var statusRange = sheet.getRange(targetRowNum, colStatus);
+          var statusRange = sheet.getRange(targetRowNum, rColStatus);
           var statusText = it.status || (selisihVal === 0 ? 'MATCH' : selisihVal < 0 ? 'KURANG (' + selisihVal + ')' : 'LEBIH (+' + selisihVal + ')');
-          statusRange.setValue(statusText);
+          statusRange.setNumberFormat('@').setValue(statusText);
 
           // Format Pewarnaan Otomatis Selisih & Status
           if (selisihVal < 0) {
@@ -2332,8 +2497,8 @@ function updateMasterRecountDelta(ss, data) {
           }
           logText += ' (' + (it.auditor || 'Auditor') + ')';
           if (it.catatan) logText += ': ' + it.catatan;
-          
-          sheet.getRange(targetRowNum, colLog).setValue(logText).setFontSize(8.5);
+
+          sheet.getRange(targetRowNum, rColLog).setNumberFormat('@').setValue(logText).setFontSize(8.5).setHorizontalAlignment('left');
           updatedCount++;
         }
       }

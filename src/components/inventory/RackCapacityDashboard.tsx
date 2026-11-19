@@ -35,7 +35,7 @@ import {
   Users,
 } from 'lucide-react';
 import type { StockRealtimeItem, UserSession, LogProdukItem, ProductItem, PutawayTask } from '../../types';
-import { supabaseFetch, getSupabaseClient } from '../../services/supabase';
+import { supabaseFetch } from '../../services/supabase';
 import { hasPermission, isStoreAccountSession, isSuperadmin } from '../../services/permissions';
 import { formatOperatorWithPersonName } from '../../utils/userResolver';
 import { LocationRelocationModal } from './LocationRelocationModal';
@@ -47,7 +47,7 @@ import {
   getActivePutawayTaskForSource,
   computeReservedDestinationSpace,
   computeReservedSourceQtyByLocSku,
-  PUTAWAY_REALTIME_CHANNEL,
+  subscribePutawayRealtime,
 } from '../../services/putawayService';
 import {
   readActivePutawaySession,
@@ -361,25 +361,9 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
 
   useEffect(() => {
     loadPutawayTasks(false);
-    const sb = getSupabaseClient();
-    let channel: any = null;
-
-    if (sb) {
-      channel = sb
-        .channel(PUTAWAY_REALTIME_CHANNEL)
-        .on('broadcast', { event: 'task_created' }, () => loadPutawayTasks(true))
-        .on('broadcast', { event: 'task_updated' }, () => loadPutawayTasks(true))
-        .on('broadcast', { event: 'operator_joined' }, () => loadPutawayTasks(true))
-        .on('broadcast', { event: 'operator_left' }, () => loadPutawayTasks(true))
-        .on('broadcast', { event: 'task_completed' }, () => loadPutawayTasks(true))
-        .on('broadcast', { event: 'task_cancelled' }, () => loadPutawayTasks(true))
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'putaway_tasks' },
-          () => loadPutawayTasks(true)
-        )
-        .subscribe();
-    }
+    const unsubPutawayRealtime = subscribePutawayRealtime(() => {
+      loadPutawayTasks(true);
+    });
 
     const onTasksUpdated = () => loadPutawayTasks(false);
     const onOutboxUpdated = () => setPutawayOutboxCount(getPutawayOutboxBatches().length);
@@ -420,7 +404,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     window.addEventListener('online', onOnlineSyncOutbox);
 
     return () => {
-      if (sb && channel) sb.removeChannel(channel).catch(() => {});
+      unsubPutawayRealtime();
       window.removeEventListener('wms_putaway_tasks_updated', onTasksUpdated);
       window.removeEventListener('wms_putaway_outbox_updated', onOutboxUpdated);
       window.removeEventListener('wms_maximize_putaway_session', onMaximizeSession);

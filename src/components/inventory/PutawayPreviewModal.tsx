@@ -21,11 +21,10 @@ import {
   fetchLivePutawaySourceStock,
   generateLivePutawayRoute,
   createPutawayTask,
-  PUTAWAY_REALTIME_CHANNEL,
+  broadcastPutawayRealtime,
   type LivePutawaySourceItem,
 } from '../../services/putawayService';
 import { saveActivePutawaySession } from '../../services/scannerOutboxService';
-import { getSupabaseClient } from '../../services/supabase';
 import type { PutawayTask } from '../../types';
 
 interface PutawayPreviewModalProps {
@@ -184,23 +183,11 @@ export const PutawayPreviewModal: React.FC<PutawayPreviewModalProps> = ({
         timestamp: Date.now(),
       });
 
-      try {
-        const sb = getSupabaseClient();
-        if (sb) {
-          const ch = sb.channel(PUTAWAY_REALTIME_CHANNEL);
-          ch.subscribe((status: string) => {
-            if (status === 'SUBSCRIBED') {
-              ch.send({
-                type: 'broadcast',
-                event: 'task_created',
-                payload: { taskId: created.id, actor: currentUser, ts: Date.now() },
-              }).finally(() => {
-                sb.removeChannel(ch).catch(() => {});
-              });
-            }
-          });
-        }
-      } catch {}
+      broadcastPutawayRealtime('task_created', {
+        taskId: created.id,
+        actor: currentUser,
+        ts: Date.now(),
+      });
 
       onNotify?.(
         `✅ Tugas Putaway ${created.invoice_putaway} dimulai (${totalTargetPcs} pcs ke ${groupedPreview.length} titik rak).`,

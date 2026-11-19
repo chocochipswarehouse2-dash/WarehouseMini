@@ -155,6 +155,227 @@ export function formatDatesSummary(dates: (string | undefined)[]): string {
   return `${formatted.slice(0, -1).join(', ')} & ${formatted[formatted.length - 1]}`;
 }
 
+export function extractIsoDateFromSlot(slot?: string | null): string {
+  if (!slot) return '';
+  const raw = String(slot).split('||')[0].trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  return raw;
+}
+
+export function sortDateSlotsDesc(slots: string[] = []): string[] {
+  const nonEmpty = slots.filter((s) => Boolean(s && String(s).trim()));
+  const sorted = [...nonEmpty].sort((a, b) => {
+    const da = extractIsoDateFromSlot(a);
+    const db = extractIsoDateFromSlot(b);
+    if (db !== da) return db.localeCompare(da);
+    return String(a).localeCompare(String(b));
+  });
+  const emptyCount = Math.max(0, slots.length - sorted.length);
+  for (let i = 0; i < emptyCount; i++) {
+    sorted.push('');
+  }
+  return sorted;
+}
+
+export function getLatestDateForMatrixBlock(block: MatrixProductBlock): string {
+  let maxDate = '';
+  for (const slot of block.dateSlots || []) {
+    const d = extractIsoDateFromSlot(slot);
+    if (d && (!maxDate || d > maxDate)) maxDate = d;
+  }
+  for (const sj of block.distinctSjs || []) {
+    const d = extractIsoDateFromSlot(sj?.tanggal);
+    if (d && (!maxDate || d > maxDate)) maxDate = d;
+  }
+  return maxDate;
+}
+
+export function sortMatrixBlocksNewestFirst(blocks: MatrixProductBlock[]): MatrixProductBlock[] {
+  return [...(blocks || [])]
+    .map((b) => ({
+      ...b,
+      dateSlots: sortDateSlotsDesc(b.dateSlots || []),
+      returDateSlots: Array.isArray(b.returDateSlots) ? sortDateSlotsDesc(b.returDateSlots) : b.returDateSlots,
+    }))
+    .sort((a, b) => {
+      const da = getLatestDateForMatrixBlock(a);
+      const db = getLatestDateForMatrixBlock(b);
+      if (db !== da) {
+        if (!db) return -1;
+        if (!da) return 1;
+        return db.localeCompare(da);
+      }
+      return String(a.code || '').localeCompare(String(b.code || ''), undefined, {
+        numeric: true,
+        sensitivity: 'base',
+      });
+    })
+    .map((b, idx) => ({
+      ...b,
+      rowNumber: idx + 1,
+    }));
+}
+
+export function formatRecountLogEntry(opts: {
+  round?: number;
+  updatedAt?: string;
+  arrivalDates?: (string | undefined)[];
+  auditor?: string;
+  notes?: string;
+}): string {
+  const rev = opts.round || 1;
+  const dateStr = formatDateIndo(opts.updatedAt || new Date().toISOString());
+  const datesSummary = opts.arrivalDates ? formatDatesSummary(opts.arrivalDates) : '';
+  const auditor = opts.auditor || 'Auditor Fisik';
+  let text = `Rev ${rev} [${dateStr}]`;
+  if (datesSummary) text += ` (Kedatangan: ${datesSummary})`;
+  text += ` (${auditor})`;
+  if (opts.notes && String(opts.notes).trim()) {
+    text += `: ${String(opts.notes).trim()}`;
+  }
+  return text;
+}
+
+function normAuditKeyPart(val?: string | null, fallback = ''): string {
+  return String(val ?? fallback)
+    .replace(/[\u200B-\u200D\uFEFF\u00A0\r\n\t]/g, '')
+    .trim()
+    .toUpperCase();
+}
+
+export function enrichBlocksWithRecountAudit(
+  blocks: MatrixProductBlock[],
+  auditMap: Record<string, any> | null | undefined
+): MatrixProductBlock[] {
+  const normAuditMap = new Map<string, any>();
+  if (auditMap && typeof auditMap === 'object') {
+    Object.keys(auditMap).forEach((k) => {
+      const rec = auditMap[k];
+      const nk = normAuditKeyPart(k || rec?.kode_produksi || '');
+      if (nk && rec) normAuditMap.set(nk, rec);
+    });
+  }
+
+  return (blocks || []).map((b) => {
+    const normCode = normAuditKeyPart(b.code);
+    const auditRec = normAuditMap.get(normCode);
+    const variantLookup = new Map<string, any>();
+    if (auditRec && Array.isArray(auditRec.variants)) {
+      auditRec.variants.forEach((v: any) => {
+        const w = normAuditKeyPart(v.warna, 'DEFAULT');
+        const s = normAuditKeyPart(v.size, 'DEFAULT');
+        variantLookup.set(`${w}___${s}`, v);
+      });
+    }
+
+    const arrivalDates = Array.from(
+      new Set((b.dateSlots || []).map((d) => extractIsoDateFromSlot(d)).filter(Boolean))
+    );
+
+    let blockHasRecount = false;
+    let blockRecountFisik: number | null = null;
+    let blockRecountSelisih: number | null = null;
+    let blockHasDiff = false;
+
+    const updatedColorGroups = (b.colorGroups || []).map((cg: any) => {
+      const colorName = normAuditKeyPart(cg.color || cg.colorName, 'DEFAULT');
+      const updatedSizes = (cg.sizes || []).map((sz: any) => {
+        const sizeName = normAuditKeyPart(sz.size || sz.sizeName, 'DEFAULT');
+        const matchedVar =
+          variantLookup.get(`${colorName}___${sizeName}`) ||
+          (sizeName === 'ALL SIZE' ? variantLookup.get(`${colorName}___DEFAULT`) : undefined) ||
+          (sizeName === 'DEFAULT' ? variantLookup.get(`${colorName}___ALL SIZE`) : undefined);
+
+        const existingFisik =
+          sz.recountFisik !== undefined && sz.recountFisik !== null && sz.recountFisik !== ''
+            ? Number(sz.recountFisik)
+            : sz.recountQty !== undefined && sz.recountQty !== null && sz.recountQty !== ''
+              ? Number(sz.recountQty)
+              : null;
+
+        const auditFisik =
+          matchedVar && matchedVar.qty_fisik !== undefined && matchedVar.qty_fisik !== null && matchedVar.qty_fisik !== ''
+            ? Number(matchedVar.qty_fisik)
+            : null;
+
+        const finalFisik = existingFisik !== null && !isNaN(existingFisik)
+          ? existingFisik
+          : (auditFisik !== null && !isNaN(auditFisik) ? auditFisik : null);
+
+        const baseSizeQty = Number(sz.totalSizeQty) || 0;
+        const finalSelisih = finalFisik !== null ? finalFisik - baseSizeQty : null;
+        const finalStatus =
+          finalSelisih === null
+            ? ''
+            : finalSelisih === 0
+              ? 'MATCH'
+              : finalSelisih < 0
+                ? 'KURANG'
+                : 'LEBIH';
+
+        const finalRound = sz.recountRound ?? auditRec?.round ?? (finalFisik !== null ? 1 : undefined);
+        const finalNotes = sz.recountNotes || matchedVar?.note || matchedVar?.catatan || auditRec?.catatan || '';
+        const finalAuditor = sz.recountAuditor || auditRec?.auditor || '';
+        const finalUpdatedAt = sz.recountUpdatedAt || auditRec?.updated_at || auditRec?.tanggal_audit || '';
+        const finalLog =
+          finalFisik !== null
+            ? (sz.recountLog ||
+                formatRecountLogEntry({
+                  round: finalRound,
+                  updatedAt: finalUpdatedAt,
+                  arrivalDates,
+                  auditor: finalAuditor,
+                  notes: finalNotes,
+                }))
+            : (sz.recountLog || '');
+
+        if (finalFisik !== null) {
+          blockHasRecount = true;
+          blockRecountFisik = (blockRecountFisik || 0) + finalFisik;
+          if (finalSelisih !== null) {
+            blockRecountSelisih = (blockRecountSelisih || 0) + finalSelisih;
+            if (finalSelisih !== 0) blockHasDiff = true;
+          }
+        }
+
+        return {
+          ...sz,
+          recountFisik: finalFisik,
+          recountQty: finalFisik,
+          recountSelisih: finalSelisih,
+          recountStatus: finalStatus,
+          recountRound: finalRound,
+          recountNotes: finalNotes || undefined,
+          recountAuditor: finalAuditor || undefined,
+          recountUpdatedAt: finalUpdatedAt || undefined,
+          recountLog: finalLog || undefined,
+        };
+      });
+
+      return {
+        ...cg,
+        sizes: updatedSizes,
+      };
+    });
+
+    const hasNota = b.qtyNota !== undefined && b.qtyNota !== null && !isNaN(Number(b.qtyNota));
+    const effectiveTotal = blockHasRecount && blockRecountFisik !== null ? blockRecountFisik : b.totalNet;
+    const updatedSelisihNota = hasNota
+      ? effectiveTotal - Number(b.qtyNota)
+      : (blockHasRecount && blockRecountFisik !== null ? blockRecountFisik - b.totalNet : b.selisihNota ?? null);
+
+    return {
+      ...b,
+      colorGroups: updatedColorGroups,
+      hasRecount: blockHasRecount || b.hasRecount,
+      totalRecountFisik: blockHasRecount ? blockRecountFisik : b.totalRecountFisik ?? null,
+      totalRecountSelisih: blockHasRecount ? blockRecountSelisih : b.totalRecountSelisih ?? null,
+      hasDiff: blockHasRecount ? blockHasDiff : b.hasDiff,
+      selisihNota: updatedSelisihNota,
+    };
+  });
+}
+
 export interface PushProduksiDateOptions {
   items: PenerimaanProduksiItem[];
   blocks?: MatrixProductBlock[];
@@ -384,7 +605,7 @@ export function buildBlocksFromRawItems(
     });
   });
 
-  return resultBlocks;
+  return sortMatrixBlocksNewestFirst(enrichBlocksWithRecountAudit(resultBlocks, getRecountAuditMap()));
 }
 
 /**
@@ -432,12 +653,14 @@ export async function pushProduksiPerTanggalToGoogleSheet(
     // Ambil semua tanggal unik yang ada di items atau blocks
     const dateSet = new Set<string>();
     sourceItems.forEach((it) => {
-      if (it.tanggal_penerimaan) dateSet.add(it.tanggal_penerimaan.trim());
+      const cleanD = extractIsoDateFromSlot(it.tanggal_penerimaan);
+      if (cleanD) dateSet.add(cleanD);
     });
     if (blocks) {
       blocks.forEach((b) => {
         b.dateSlots.forEach((d) => {
-          if (d) dateSet.add(d.trim());
+          const cleanD = extractIsoDateFromSlot(d);
+          if (cleanD) dateSet.add(cleanD);
         });
       });
     }
@@ -450,24 +673,39 @@ export async function pushProduksiPerTanggalToGoogleSheet(
 
   // Buat dateSheets
   const dateSheets: DateSheetPayload[] = [];
+  const latestAuditMap = getRecountAuditMap();
 
   for (const dStr of datesToPush) {
     const tabName = formatDateTabName(dStr, activeTab);
-    const dateItems = sourceItems.filter((it) => it.tanggal_penerimaan === dStr);
+    const dateItems = sourceItems.filter((it) => extractIsoDateFromSlot(it.tanggal_penerimaan) === dStr);
 
     // Format blocks untuk tanggal ini (jika ada blocks)
     let dateBlocks: any[] | undefined = undefined;
     if (blocks && blocks.length > 0) {
       dateBlocks = blocks
-        .filter((b) => b.dateSlots.includes(dStr))
+        .filter((b) => b.dateSlots.some((s) => extractIsoDateFromSlot(s) === dStr))
         .map((b) => {
+          const matchingSlots = b.dateSlots.filter((s) => extractIsoDateFromSlot(s) === dStr);
           const colorGroups = b.colorGroups.map((cg) => ({
             ...cg,
-            sizes: cg.sizes.map((sz) => ({
-              ...sz,
-              qtyByDate: { [dStr]: sz.qtyByDate?.[dStr] || 0 },
-              totalSizeQty: sz.qtyByDate?.[dStr] || 0,
-            })),
+            sizes: cg.sizes.map((sz) => {
+              const filteredQtyByDate: Record<string, number> = {};
+              let sumForDate = 0;
+              Object.entries(sz.qtyByDate || {}).forEach(([k, val]) => {
+                if (extractIsoDateFromSlot(k) === dStr) {
+                  const n = Number(val) || 0;
+                  if (n > 0) {
+                    filteredQtyByDate[k] = (filteredQtyByDate[k] || 0) + n;
+                    sumForDate += n;
+                  }
+                }
+              });
+              return {
+                ...sz,
+                qtyByDate: filteredQtyByDate,
+                totalSizeQty: sumForDate,
+              };
+            }),
           }));
 
           let dateDatang = 0;
@@ -489,7 +727,7 @@ export async function pushProduksiPerTanggalToGoogleSheet(
           return {
             ...b,
             photoUrl: formatImageUrlForSheets(b.photoUrl),
-            dateSlots: [dStr],
+            dateSlots: matchingSlots.length > 0 ? matchingSlots : [dStr],
             colorGroups,
             totalDatang: dateDatang,
             totalNet: dateDatang,
@@ -498,6 +736,9 @@ export async function pushProduksiPerTanggalToGoogleSheet(
           };
         })
         .filter((b) => b.totalDatang > 0);
+      if (dateBlocks.length > 0) {
+        dateBlocks = sortMatrixBlocksNewestFirst(enrichBlocksWithRecountAudit(dateBlocks, latestAuditMap));
+      }
     }
 
     // Jika belum ada blocks, bangun otomatis dari items kedatangan
@@ -652,12 +893,14 @@ export interface PushMasterProduksiOptions {
  */
 export function buildMatrixBlocksFromItems(items: PenerimaanProduksiItem[], isCMT: boolean): MatrixProductBlock[] {
   const codeMap = new Map<string, PenerimaanProduksiItem[]>();
-  items.forEach((it) => {
-    const code = it.kode_produksi || 'TANPA_KODE';
+  (items || []).forEach((it) => {
+    const code = normAuditKeyPart(it.kode_produksi, 'TANPA_KODE') || 'TANPA_KODE';
     if (!codeMap.has(code)) codeMap.set(code, []);
     codeMap.get(code)!.push(it);
   });
 
+  const cachedNotaMap = getCachedProduksiQtyNotaMapSync();
+  const standardSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL', 'ALL SIZE', 'FREE SIZE'];
   const blocks: MatrixProductBlock[] = [];
   let no = 1;
 
@@ -673,69 +916,194 @@ export function buildMatrixBlocksFromItems(items: PenerimaanProduksiItem[], isCM
 
     const upVendor =
       (first?.keterangan && first.keterangan !== 'KARGO' && first.keterangan !== 'CMT' ? first.keterangan : '') ||
-      (isCMT ? 'CMT' : 'KARGO');
+      (isCMT ? 'BIS' : 'KARGO');
 
-    const photoUrl = first?.foto_url || '';
+    const photoUrl = codeItems.find((i) => i.foto_url && i.foto_url.trim().length > 0)?.foto_url || '';
 
-    const dateSet = new Set<string>();
+    const distinctDatangDates = Array.from(
+      new Set(
+        codeItems
+          .filter((it) => {
+            const isReturOnly =
+              (it.no_surat_jalan && it.no_surat_jalan.toUpperCase().startsWith('RETUR-')) ||
+              (it.keterangan && it.keterangan.includes('RETUR_CMT:')) ||
+              (Number(it.qty_retur) > 0 && (!it.qty || Number(it.qty) === 0));
+            return !isReturOnly && it.tanggal_penerimaan;
+          })
+          .map((i) => extractIsoDateFromSlot(i.tanggal_penerimaan))
+          .filter(Boolean)
+      )
+    ).sort().reverse();
+
+    const sjMap = new Map<string, { no_surat_jalan: string; qty: number; tanggal: string }>();
+    const dateToSjMap: Record<string, string[]> = {};
     codeItems.forEach((it) => {
-      if (it.tanggal_penerimaan) dateSet.add(it.tanggal_penerimaan);
+      const sj = (it.no_surat_jalan || '').trim().toUpperCase();
+      const isReturOnly = sj.startsWith('RETUR-') || (it.keterangan && it.keterangan.includes('RETUR_CMT:'));
+      if (sj && !isReturOnly) {
+        const dIso = extractIsoDateFromSlot(it.tanggal_penerimaan);
+        if (!sjMap.has(sj)) {
+          sjMap.set(sj, { no_surat_jalan: sj, qty: 0, tanggal: dIso });
+        }
+        sjMap.get(sj)!.qty += Number(it.qty) || 0;
+        if (dIso) {
+          if (!dateToSjMap[dIso]) dateToSjMap[dIso] = [];
+          if (!dateToSjMap[dIso].includes(sj)) dateToSjMap[dIso].push(sj);
+        }
+      }
     });
-    const dateSlots = Array.from(dateSet).sort();
+    const distinctSjs = Array.from(sjMap.values()).sort((a, b) => b.qty - a.qty);
+
+    const distinctDatangSlots: string[] = [];
+    distinctDatangDates.forEach((d) => {
+      const sjsForDate = dateToSjMap[d] || [];
+      if (sjsForDate.length >= 1) {
+        sjsForDate.forEach((sj) => distinctDatangSlots.push(`${d}||${sj}`));
+      } else {
+        distinctDatangSlots.push(d);
+      }
+    });
+
+    const dateSlots: string[] = Array.from(
+      { length: Math.max(10, distinctDatangSlots.length) },
+      (_, i) => distinctDatangSlots[i] || ''
+    );
+
+    const distinctReturDates = Array.from(
+      new Set(
+        codeItems
+          .map((i) => {
+            if (i.tanggal_retur) return extractIsoDateFromSlot(i.tanggal_retur);
+            if (i.keterangan && i.keterangan.includes('RETUR_CMT:')) {
+              const match = i.keterangan.match(/RETUR_CMT:\d+(?:@([\d-]+))?/);
+              if (match && match[1]) return match[1];
+            }
+            if (i.no_surat_jalan && i.no_surat_jalan.toUpperCase().startsWith('RETUR-') && i.tanggal_penerimaan) {
+              return extractIsoDateFromSlot(i.tanggal_penerimaan);
+            }
+            return null;
+          })
+          .filter(Boolean) as string[]
+      )
+    ).sort().reverse();
+    const returDateSlots: string[] = Array.from({ length: 5 }, (_, i) => distinctReturDates[i] || '');
 
     const colorMap = new Map<string, PenerimaanProduksiItem[]>();
     codeItems.forEach((it) => {
-      const col = it.warna || 'DEFAULT';
+      const col = normAuditKeyPart(it.warna, 'DEFAULT') || 'DEFAULT';
       if (!colorMap.has(col)) colorMap.set(col, []);
       colorMap.get(col)!.push(it);
     });
 
-    const colorGroups = [];
+    const colorGroups: any[] = [];
     let blockTotalDatang = 0;
+    let blockTotalRetur = 0;
 
     for (const [colName, colItems] of colorMap.entries()) {
       const sizeMap = new Map<string, PenerimaanProduksiItem[]>();
       colItems.forEach((it) => {
-        const sz = it.size || 'ALL SIZE';
+        const sz = normAuditKeyPart(it.size, 'Default') || 'DEFAULT';
         if (!sizeMap.has(sz)) sizeMap.set(sz, []);
         sizeMap.get(sz)!.push(it);
       });
 
-      const sizes = [];
+      const presentSizes = Array.from(sizeMap.keys());
+      const isFreeOrAllSizeOnly =
+        presentSizes.length === 1 &&
+        (presentSizes[0] === 'ALL SIZE' || presentSizes[0] === 'FREE SIZE' || presentSizes[0] === 'DEFAULT');
+
+      const sizesToInclude = isFreeOrAllSizeOnly
+        ? presentSizes
+        : Array.from(new Set([...presentSizes, 'S', 'M', 'L', 'XL']));
+
+      sizesToInclude.sort((a, b) => {
+        const idxA = standardSizes.indexOf(a);
+        const idxB = standardSizes.indexOf(b);
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+        if (idxA !== -1) return -1;
+        if (idxB !== -1) return 1;
+        return a.localeCompare(b);
+      });
+
+      const sizes: any[] = [];
       let cgTotal = 0;
+      let cgRetur = 0;
 
-      for (const [szName, szItems] of sizeMap.entries()) {
+      for (const szName of sizesToInclude) {
+        const szItems = sizeMap.get(szName) || [];
         const qtyByDate: Record<string, number> = {};
+        const qtyReturByDate: Record<string, number> = {};
         let szTotal = 0;
-        szItems.forEach((it) => {
-          const d = it.tanggal_penerimaan || '';
-          const q = Number(it.qty) || 0;
-          qtyByDate[d] = (qtyByDate[d] || 0) + q;
-          szTotal += q;
-        });
+        let szRetur = 0;
 
-        sizes.push({
-          sizeName: szName,
-          qtyByDate,
-          returQtyByDate: {},
-          totalSizeQty: szTotal,
-          totalReturSizeQty: 0,
-          totalNetSizeQty: szTotal,
+        szItems.forEach((it) => {
+          const isReturItem =
+            (it.no_surat_jalan && it.no_surat_jalan.toUpperCase().startsWith('RETUR-')) ||
+            (it.keterangan && it.keterangan.includes('RETUR_CMT:'));
+          const d = extractIsoDateFromSlot(it.tanggal_penerimaan);
+          const sj = (it.no_surat_jalan || '').trim().toUpperCase();
+          const q = Number(it.qty) || 0;
+          if (!isReturItem && d && q > 0) {
+            const slotKeyWithSj = sj ? `${d}||${sj}` : d;
+            qtyByDate[slotKeyWithSj] = (qtyByDate[slotKeyWithSj] || 0) + q;
+            szTotal += q;
+          }
+
+          let rDate = it.tanggal_retur;
+          let rQty = Number(it.qty_retur) || 0;
+          if (!rQty && it.keterangan && it.keterangan.includes('RETUR_CMT:')) {
+            const match = it.keterangan.match(/RETUR_CMT:(\d+)(?:@([\d-]+))?/);
+            if (match) {
+              rQty = parseInt(match[1], 10) || 0;
+              rDate = match[2] || it.tanggal_penerimaan;
+            }
+          } else if (!rQty && it.no_surat_jalan && it.no_surat_jalan.toUpperCase().startsWith('RETUR-')) {
+            rQty = Number(it.qty) || 0;
+            rDate = it.tanggal_retur || it.tanggal_penerimaan;
+          }
+          if (rDate && rQty > 0) {
+            const rIso = extractIsoDateFromSlot(rDate);
+            qtyReturByDate[rIso] = (qtyReturByDate[rIso] || 0) + rQty;
+            szRetur += rQty;
+          }
         });
 
         cgTotal += szTotal;
+        cgRetur += szRetur;
+
+        const recountSource = szItems.find((it) => it.recount_qty !== undefined && it.recount_qty !== null);
+        const rFisik = recountSource ? Number(recountSource.recount_qty) : null;
+        sizes.push({
+          id: szItems[0]?.id,
+          size: szName,
+          qtyByDate,
+          qtyReturByDate,
+          totalSizeQty: szTotal,
+          totalSizeRetur: szRetur,
+          recountFisik: rFisik,
+          recountQty: rFisik,
+          recountSelisih: rFisik !== null ? rFisik - szTotal : null,
+          recountRound: recountSource?.recount_round,
+          recountNotes: recountSource?.recount_notes,
+          recountAuditor: recountSource?.recount_auditor,
+          recountUpdatedAt: recountSource?.recount_updated_at,
+        });
       }
 
       colorGroups.push({
-        colorName: colName,
+        color: colName,
         sizes,
         totalColorQty: cgTotal,
-        totalReturColorQty: 0,
-        totalNetColorQty: cgTotal,
+        totalColorRetur: cgRetur,
       });
 
       blockTotalDatang += cgTotal;
+      blockTotalRetur += cgRetur;
     }
+
+    const totalNet = Math.max(0, blockTotalDatang - (isCMT ? blockTotalRetur : 0));
+    const notaRec = cachedNotaMap[code];
+    const resolvedQtyNota = notaRec?.qty_nota !== undefined && notaRec?.qty_nota !== null ? Number(notaRec.qty_nota) : null;
 
     blocks.push({
       id: code,
@@ -746,13 +1114,16 @@ export function buildMatrixBlocksFromItems(items: PenerimaanProduksiItem[], isCM
       kategori: isCMT ? 'Lokal CMT' : 'Kargo',
       photoUrl,
       catatan: '',
-      distinctSjs: [],
+      distinctSjs,
+      dateToSjMap,
       dateSlots,
-      returDateSlots: [],
-      colorGroups: colorGroups as any,
+      returDateSlots,
+      colorGroups,
       totalDatang: blockTotalDatang,
-      totalRetur: 0,
-      totalNet: blockTotalDatang,
+      totalRetur: blockTotalRetur,
+      totalNet,
+      qtyNota: resolvedQtyNota,
+      selisihNota: resolvedQtyNota !== null ? totalNet - resolvedQtyNota : null,
       kg: 0,
       ongkirPerKg: 0,
       totalOngkir: 0,
@@ -760,7 +1131,7 @@ export function buildMatrixBlocksFromItems(items: PenerimaanProduksiItem[], isCM
     });
   }
 
-  return blocks;
+  return sortMatrixBlocksNewestFirst(enrichBlocksWithRecountAudit(blocks, getRecountAuditMap()));
 }
 
 /**
@@ -796,9 +1167,15 @@ export async function pushPenerimaanProduksiToGoogleSheet(
   const gasUrl = getProduksiGasUrl();
 
   // Jika blocks belum ada tapi items ada, susun blocks secara otomatis
-  const effectiveBlocks = (blocks && blocks.length > 0)
+  const rawBlocks = (blocks && blocks.length > 0)
     ? blocks
     : buildMatrixBlocksFromItems(items, activeTab === 'CMT');
+
+  // Selalu tarik snapshot Audit Hitung Ulang terbaru dari Cloud lalu perkaya & urutkan Terbaru -> Terlama
+  const latestCloudAuditMap = await fetchRecountAuditMapFromCloud().catch(() => getRecountAuditMap());
+  const effectiveBlocks = sortMatrixBlocksNewestFirst(
+    enrichBlocksWithRecountAudit(rawBlocks, latestCloudAuditMap)
+  );
 
   // Format blocks jika ada dengan auto-lookup nama produk dan UP Trello jika kosong
   const cachedNotaMapMaster = getCachedProduksiQtyNotaMapSync();

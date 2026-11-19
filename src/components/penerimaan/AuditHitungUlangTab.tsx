@@ -237,7 +237,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
               content: JSON.stringify(mergedAuditMap),
               updated_by: 'Auto-Sync Local Audits',
               updated_at: new Date().toISOString(),
-            }], 'resolution=merge-duplicates');
+            }], 'on_conflict=section_id', true);
           } catch (e) {
             console.warn('Gagal upload audit results ke wms_system_docs:', e);
           }
@@ -274,8 +274,8 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
           }
 
           setQueueMap(merged);
-          if (cloudAuditMap && typeof cloudAuditMap === 'object') {
-            setRecountAuditMap(cloudAuditMap);
+          if (mergedAuditMap && typeof mergedAuditMap === 'object') {
+            setRecountAuditMap(mergedAuditMap);
           }
         }
       } catch (err) {
@@ -782,16 +782,19 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
   }, [activeGroup]);
 
   const lastLoadedCodeRef = useRef<string | null>(null);
+  const isWorkspaceDirtyRef = useRef<boolean>(false);
 
   // Initialize variantInputs when switching selectedCode, restoring any unsaved draft first
   useEffect(() => {
     if (!selectedCode || !activeGroup) {
       lastLoadedCodeRef.current = null;
+      isWorkspaceDirtyRef.current = false;
       return;
     }
 
     if (lastLoadedCodeRef.current !== selectedCode) {
       lastLoadedCodeRef.current = selectedCode;
+      isWorkspaceDirtyRef.current = false;
 
       const savedDraft = loadRecountWorkspaceDraft().draftsByCode?.[selectedCode];
       const initialMap: Record<string, { recountQty: number | null; note: string }> = {};
@@ -843,11 +846,15 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
     }
   }, [selectedCode, activeGroup, activeVariants]);
 
-  // Persist activeMode, selectedCode, and in-progress variantInputs so Minimize / Close never loses work
+  // Persist activeMode, selectedCode, and in-progress variantInputs only when user actually edited workspace
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (!selectedCode) {
-        saveRecountWorkspaceDraft({ activeMode, selectedCode: '' });
+      if (activeMode !== 'workspace' || !selectedCode) {
+        saveRecountWorkspaceDraft({ activeMode: 'queue', selectedCode: '' });
+        return;
+      }
+      if (!isWorkspaceDirtyRef.current) {
+        saveRecountWorkspaceDraft({ activeMode, selectedCode });
         return;
       }
       saveRecountWorkspaceDraft({
@@ -920,6 +927,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         note: variantInputs[key]?.note || '',
       };
     });
+    isWorkspaceDirtyRef.current = true;
     setVariantInputs(updated);
     onShowToast('Seluruh kuantitas fisik telah diisi sesuai dengan hitungan awal.', 'info');
   };
@@ -934,6 +942,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         note: '',
       };
     });
+    isWorkspaceDirtyRef.current = true;
     setVariantInputs(updated);
     onShowToast('Kolom input fisik telah dikosongkan.', 'info');
   };
@@ -1158,10 +1167,12 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
           sheetSynced: false,
         });
 
+        isWorkspaceDirtyRef.current = false;
         clearRecountCodeDraft(activeGroup.kode_produksi);
         handleAddMultipleToQueue([{ kode_produksi: activeGroup.kode_produksi }]);
         await onRefreshData();
         setFilterStatus('all');
+        setSelectedCode('');
         setActiveMode('queue');
         onShowToast(
           `📦 Hasil hitung ulang Kode ${activeGroup.kode_produksi} tersimpan aman di Antrean Offline! Otomatis dikirim ke Supabase & Google Sheet saat jaringan kembali stabil.`,
@@ -1194,6 +1205,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       }
 
       // Bersihkan draft kode ini karena sudah tersimpan penuh
+      isWorkspaceDirtyRef.current = false;
       clearRecountCodeDraft(activeGroup.kode_produksi);
 
       // Pastikan kode tersimpan dalam antrian terpilih
@@ -1202,6 +1214,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       // 6. Muat ulang data induk dan kembali ke daftar antrian
       await onRefreshData();
       setFilterStatus('all');
+      setSelectedCode('');
       setActiveMode('queue');
     } catch (err: any) {
       console.error('Error saving audit:', err);
@@ -2232,7 +2245,11 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => setActiveMode('queue')}
+                onClick={() => {
+                  isWorkspaceDirtyRef.current = false;
+                  setSelectedCode('');
+                  setActiveMode('queue');
+                }}
                 className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
@@ -2313,7 +2330,10 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                   <input
                     type="date"
                     value={auditDate}
-                    onChange={(e) => setAuditDate(e.target.value)}
+                    onChange={(e) => {
+                      isWorkspaceDirtyRef.current = true;
+                      setAuditDate(e.target.value);
+                    }}
                     className="px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200"
                   />
                 </div>
@@ -2322,7 +2342,10 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                   <input
                     type="text"
                     value={auditorName}
-                    onChange={(e) => setAuditorName(e.target.value)}
+                    onChange={(e) => {
+                      isWorkspaceDirtyRef.current = true;
+                      setAuditorName(e.target.value);
+                    }}
                     placeholder="Nama Auditor..."
                     className="px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200"
                   />
@@ -2420,6 +2443,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                             value={inp.recountQty !== null ? inp.recountQty : ''}
                             onChange={(e) => {
                               const val = e.target.value === '' ? null : parseInt(e.target.value, 10);
+                              isWorkspaceDirtyRef.current = true;
                               setVariantInputs((prev) => ({
                                 ...prev,
                                 [key]: {
@@ -2481,6 +2505,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                             value={inp.note || ''}
                             onChange={(e) => {
                               const noteVal = e.target.value;
+                              isWorkspaceDirtyRef.current = true;
                               setVariantInputs((prev) => ({
                                 ...prev,
                                 [key]: {
@@ -2546,7 +2571,10 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
               <textarea
                 rows={2}
                 value={generalNotes}
-                onChange={(e) => setGeneralNotes(e.target.value)}
+                onChange={(e) => {
+                  isWorkspaceDirtyRef.current = true;
+                  setGeneralNotes(e.target.value);
+                }}
                 placeholder="Tuliskan keterangan bila ada riwayat reject, selisih kirim, atau instruksi dari supervisor..."
                 className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500"
               />

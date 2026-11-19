@@ -633,20 +633,35 @@ export async function syncAllRecountOutboxBatches(): Promise<{
               recount_auditor: item.recount_auditor,
               recount_updated_at: item.recount_updated_at
             };
-            if (item.id && typeof item.id === 'number' && item.id < 1000000000) {
-              await supabaseFetch(
-                'penerimaan_produksi',
-                'PATCH',
-                patchPayload,
-                `id=eq.${encodeURIComponent(String(item.id))}`
-              );
-            } else if (item.kode_produksi && item.warna && item.size && item.tanggal_penerimaan) {
-              const q = `kode_produksi=eq.${encodeURIComponent(item.kode_produksi)}&warna=eq.${encodeURIComponent(
-                item.warna
-              )}&size=eq.${encodeURIComponent(item.size)}&tanggal_penerimaan=eq.${encodeURIComponent(
-                item.tanggal_penerimaan
-              )}`;
-              await supabaseFetch('penerimaan_produksi', 'PATCH', patchPayload, q);
+            try {
+              if (item.id && typeof item.id === 'number' && item.id < 1000000000) {
+                await supabaseFetch(
+                  'penerimaan_produksi',
+                  'PATCH',
+                  patchPayload,
+                  `id=eq.${encodeURIComponent(String(item.id))}`
+                );
+              } else if (item.kode_produksi && item.warna && item.size && item.tanggal_penerimaan) {
+                const q = `kode_produksi=eq.${encodeURIComponent(item.kode_produksi)}&warna=eq.${encodeURIComponent(
+                  item.warna
+                )}&size=eq.${encodeURIComponent(item.size)}&tanggal_penerimaan=eq.${encodeURIComponent(
+                  item.tanggal_penerimaan
+                )}`;
+                await supabaseFetch('penerimaan_produksi', 'PATCH', patchPayload, q);
+              }
+            } catch (patchErr: any) {
+              const msg = String(patchErr?.message || patchErr || '').toLowerCase();
+              const isMissingCol =
+                (msg.includes('42703') ||
+                  msg.includes('pgrst204') ||
+                  msg.includes('does not exist') ||
+                  msg.includes('could not find the')) &&
+                (msg.includes('recount_') || msg.includes('qty_retur'));
+              if (isMissingCol) {
+                // Kolom recount_* tidak ada di tabel penerimaan_produksi; data disimpan via recount_audit_map di Step 2
+                break;
+              }
+              throw patchErr;
             }
           }
           batch.itemsSynced = true;
@@ -774,6 +789,37 @@ export function clearRecountCodeDraft(code: string): void {
   } catch {}
 }
 
+const RECOUNT_DOCK_DISMISSED_KEY = 'wms_recount_dock_dismissed';
+
+export function isRecountDockDismissed(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem(RECOUNT_DOCK_DISMISSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setRecountDockDismissed(dismissed: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (dismissed) {
+      localStorage.setItem(RECOUNT_DOCK_DISMISSED_KEY, '1');
+    } else {
+      localStorage.removeItem(RECOUNT_DOCK_DISMISSED_KEY);
+    }
+    window.dispatchEvent(new CustomEvent('wms_recount_draft_updated'));
+  } catch {}
+}
+
+export function clearAllRecountWorkspaceDrafts(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(RECOUNT_WORKSPACE_DRAFT_KEY);
+    window.dispatchEvent(new CustomEvent('wms_recount_draft_updated'));
+  } catch {}
+}
+
 export function getActiveRecountDraftSummary(): {
   hasActiveWorkspaceDraft: boolean;
   selectedCode: string;
@@ -792,14 +838,68 @@ export function getActiveRecountDraftSummary(): {
   }
   try {
     const draft = loadRecountWorkspaceDraft();
+    const rawAudit = localStorage.getItem('wms_recount_audit_map');
+    const auditMap = rawAudit ? JSON.parse(rawAudit) : {};
+
+    let activeCode =
+      draft.activeMode === 'workspace' && draft.selectedCode
+        ? String(draft.selectedCode).trim().toUpperCase()
+        : '';
     let filledVariantsCount = 0;
-    const activeCode = draft.selectedCode || Object.keys(draft.draftsByCode)[0] || '';
+
     if (activeCode && draft.draftsByCode[activeCode]?.variantInputs) {
-      Object.values(draft.draftsByCode[activeCode].variantInputs).forEach((v) => {
-        if (v && v.recountQty !== null && v.recountQty !== undefined && !isNaN(Number(v.recountQty))) {
-          filledVariantsCount++;
+      const draftEntry = draft.draftsByCode[activeCode];
+      const auditRec =
+        auditMap?.[activeCode] ||
+        Object.values(auditMap || {}).find(
+          (v: any) => String(v?.kode_produksi || '').trim().toUpperCase() === activeCode
+        );
+
+      let isAlreadySavedResidue = false;
+      if (auditRec) {
+        const auditUpdatedMs = auditRec.updated_at ? new Date(auditRec.updated_at).getTime() : 0;
+        const draftUpdatedMs = Number(draftEntry.updatedAt || 0);
+        if (auditUpdatedMs && draftUpdatedMs && draftUpdatedMs <= auditUpdatedMs) {
+          isAlreadySavedResidue = true;
+        } else if (Array.isArray(auditRec.variants)) {
+          const savedByVar = new Map<string, number>();
+          auditRec.variants.forEach((v: any) => {
+            savedByVar.set(`${v.warna || '-'}_${v.size || '-'}`, Number(v.qty_fisik));
+          });
+          const filledEntries = Object.entries(draftEntry.variantInputs).filter(
+            ([, v]) => v && v.recountQty !== null && v.recountQty !== undefined && !isNaN(Number(v.recountQty))
+          );
+          if (
+            filledEntries.length > 0 &&
+            filledEntries.every(([k, v]) => savedByVar.get(k) === Number(v.recountQty))
+          ) {
+            isAlreadySavedResidue = true;
+          }
         }
-      });
+      }
+
+      if (isAlreadySavedResidue) {
+        const nextDrafts = { ...draft.draftsByCode };
+        delete nextDrafts[activeCode];
+        try {
+          localStorage.setItem(
+            RECOUNT_WORKSPACE_DRAFT_KEY,
+            JSON.stringify({
+              activeMode: 'queue',
+              selectedCode: '',
+              draftsByCode: nextDrafts
+            })
+          );
+        } catch {}
+        activeCode = '';
+        filledVariantsCount = 0;
+      } else {
+        Object.values(draftEntry.variantInputs).forEach((v) => {
+          if (v && v.recountQty !== null && v.recountQty !== undefined && !isNaN(Number(v.recountQty))) {
+            filledVariantsCount++;
+          }
+        });
+      }
     }
 
     const rawQueue = localStorage.getItem('wms_recount_selected_queue');
@@ -808,9 +908,6 @@ export function getActiveRecountDraftSummary(): {
       queueMap && typeof queueMap === 'object' && !Array.isArray(queueMap)
         ? Object.keys(queueMap)
         : [];
-
-    const rawAudit = localStorage.getItem('wms_recount_audit_map');
-    const auditMap = rawAudit ? JSON.parse(rawAudit) : {};
 
     let uncountedCodesCount = 0;
     queueKeys.forEach((k) => {
@@ -821,7 +918,7 @@ export function getActiveRecountDraftSummary(): {
     });
 
     return {
-      hasActiveWorkspaceDraft: Boolean(activeCode && filledVariantsCount > 0),
+      hasActiveWorkspaceDraft: Boolean(draft.activeMode === 'workspace' && activeCode && filledVariantsCount > 0),
       selectedCode: activeCode,
       filledVariantsCount,
       queuedCodesCount: queueKeys.length,

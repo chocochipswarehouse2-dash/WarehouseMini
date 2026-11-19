@@ -10382,9 +10382,9 @@ function comparePenerimaanProduksiItems(a: PenerimaanProduksiItem, b: Penerimaan
 
 function saveLightweightPenerimaanToLocalStorage(list: PenerimaanProduksiItem[]): void {
   if (typeof window === 'undefined' || !window.localStorage) return;
-  try {
-    // Strip bloated base64 data URIs from already-synced rows when saving to localStorage so JSON.parse/stringify stays fast
-    const light = list.slice(0, 1000).map((d) => {
+  const sorted = [...list].sort(comparePenerimaanProduksiItems);
+  const stripBase64 = (arr: PenerimaanProduksiItem[]) =>
+    arr.map((d) => {
       const sid = String(d.id || '');
       const isOffline = (typeof d.id === 'number' && d.id > 1000000000) || sid.startsWith('local_');
       if (!isOffline && d.foto_url && d.foto_url.startsWith('data:') && d.foto_url.length > 4096) {
@@ -10392,8 +10392,14 @@ function saveLightweightPenerimaanToLocalStorage(list: PenerimaanProduksiItem[])
       }
       return d;
     });
-    localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(light));
-  } catch {}
+  try {
+    // Strip bloated base64 data URIs from already-synced rows when saving to localStorage so JSON.parse/stringify stays fast
+    localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(stripBase64(sorted.slice(0, 3000))));
+  } catch {
+    try {
+      localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(stripBase64(sorted.slice(0, 1000))));
+    } catch {}
+  }
 }
 
 /**
@@ -10408,11 +10414,12 @@ export function getCachedPenerimaanProduksiSync(): PenerimaanProduksiItem[] {
     if (cached) {
       const parsed = JSON.parse(cached);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        memoryPenerimaanProduksiCache = parsed;
+        const sorted = [...parsed].sort(comparePenerimaanProduksiItems);
+        memoryPenerimaanProduksiCache = sorted;
         if (cached.length > 500_000) {
-          saveLightweightPenerimaanToLocalStorage(parsed);
+          saveLightweightPenerimaanToLocalStorage(sorted);
         }
-        return parsed;
+        return sorted;
       }
     }
   } catch {}
@@ -10441,9 +10448,7 @@ export async function fetchPenerimaanProduksiFromSupabase(filters?: {
   }
 
   try {
-    const queryParts: string[] = ['order=created_at.desc'];
-    const limit = filters?.limit || 1000;
-    queryParts.push(`limit=${limit}`);
+    const queryParts: string[] = ['order=tanggal_penerimaan.desc,created_at.desc,id.desc'];
 
     if (filters?.kategori && filters.kategori !== 'Semua') {
       queryParts.push(`kategori=eq.${encodeURIComponent(filters.kategori)}`);
@@ -10455,8 +10460,13 @@ export async function fetchPenerimaanProduksiFromSupabase(filters?: {
       queryParts.push(`tanggal_penerimaan=lte.${encodeURIComponent(filters.endDate)}`);
     }
 
-    const query = queryParts.join('&');
-    const remoteData = await supabaseFetch<PenerimaanProduksiItem[]>('penerimaan_produksi', 'GET', undefined, query);
+    let remoteData: PenerimaanProduksiItem[];
+    if (filters?.limit) {
+      queryParts.push(`limit=${filters.limit}`);
+      remoteData = await supabaseFetch<PenerimaanProduksiItem[]>('penerimaan_produksi', 'GET', undefined, queryParts.join('&'));
+    } else {
+      remoteData = await supabaseFetchAllPages<PenerimaanProduksiItem>('penerimaan_produksi', queryParts.join('&'), 10000, 1000, 4);
+    }
 
     if (remoteData && Array.isArray(remoteData)) {
       // Supabase is authoritative.
@@ -11440,6 +11450,18 @@ export async function deletePenerimaanRecountLog(id: string): Promise<boolean> {
 
   return true;
 }
+let penerimaanTableHasRecountCols: boolean | null = null;
+
+function isRecountColumnSchemaError(err: any): boolean {
+  const msg = String(err?.message || err || '').toLowerCase();
+  return (
+    msg.includes('42703') ||
+    msg.includes('pgrst204') ||
+    msg.includes('does not exist') ||
+    msg.includes('could not find the')
+  ) && (msg.includes('recount_') || msg.includes('qty_retur') || msg.includes('tanggal_retur') || msg.includes('catatan'));
+}
+
 export async function updatePenerimaanProduksiItemsInSupabase(
   updatedItems: PenerimaanProduksiItem[]
 ): Promise<{ success: boolean; updatedCount: number; failedCount: number }> {
@@ -11484,34 +11506,55 @@ export async function updatePenerimaanProduksiItemsInSupabase(
       qty: Number(item.qty) || 0,
     };
     if (item.keterangan !== undefined) patchPayload.keterangan = item.keterangan;
-    if ((item as any).catatan !== undefined) patchPayload.catatan = (item as any).catatan;
-    if (item.qty_retur !== undefined) patchPayload.qty_retur = Number(item.qty_retur) || 0;
-    if (item.tanggal_retur !== undefined) patchPayload.tanggal_retur = item.tanggal_retur;
-    if (item.recount_qty !== undefined) patchPayload.recount_qty = item.recount_qty;
-    if (item.recount_selisih !== undefined) patchPayload.recount_selisih = item.recount_selisih;
-    if (item.recount_status !== undefined) patchPayload.recount_status = item.recount_status;
-    if (item.recount_round !== undefined) patchPayload.recount_round = item.recount_round;
-    if (item.recount_notes !== undefined) patchPayload.recount_notes = item.recount_notes;
-    if (item.recount_auditor !== undefined) patchPayload.recount_auditor = item.recount_auditor;
-    if (item.recount_updated_at !== undefined) patchPayload.recount_updated_at = item.recount_updated_at;
 
-    try {
+    if (penerimaanTableHasRecountCols !== false) {
+      if ((item as any).catatan !== undefined) patchPayload.catatan = (item as any).catatan;
+      if (item.qty_retur !== undefined) patchPayload.qty_retur = Number(item.qty_retur) || 0;
+      if (item.tanggal_retur !== undefined) patchPayload.tanggal_retur = item.tanggal_retur;
+      if (item.recount_qty !== undefined) patchPayload.recount_qty = item.recount_qty;
+      if (item.recount_selisih !== undefined) patchPayload.recount_selisih = item.recount_selisih;
+      if (item.recount_status !== undefined) patchPayload.recount_status = item.recount_status;
+      if (item.recount_round !== undefined) patchPayload.recount_round = item.recount_round;
+      if (item.recount_notes !== undefined) patchPayload.recount_notes = item.recount_notes;
+      if (item.recount_auditor !== undefined) patchPayload.recount_auditor = item.recount_auditor;
+      if (item.recount_updated_at !== undefined) patchPayload.recount_updated_at = item.recount_updated_at;
+    }
+
+    const doPatch = async (body: Record<string, any>) => {
       if (item.id && typeof item.id === 'number' && item.id < 1000000000) {
         await supabaseFetch(
           'penerimaan_produksi',
           'PATCH',
-          patchPayload,
+          body,
           `id=eq.${encodeURIComponent(String(item.id))}`
         );
-        updatedCount++;
+        return true;
       } else if (item.kode_produksi && item.warna && item.size && item.tanggal_penerimaan) {
         const q = `kode_produksi=eq.${encodeURIComponent(item.kode_produksi)}&warna=eq.${encodeURIComponent(item.warna)}&size=eq.${encodeURIComponent(item.size)}&tanggal_penerimaan=eq.${encodeURIComponent(item.tanggal_penerimaan)}`;
-        await supabaseFetch('penerimaan_produksi', 'PATCH', patchPayload, q);
+        await supabaseFetch('penerimaan_produksi', 'PATCH', body, q);
+        return true;
+      }
+      return false;
+    };
+
+    try {
+      // Jika schema database tidak punya kolom recount_* dan payload ini hanya berisi audit hitung ulang, lewati PATCH mentah (audit disimpan via recount_audit_map cloud)
+      if (penerimaanTableHasRecountCols === false && Object.keys(patchPayload).length <= 2) {
+        updatedCount++;
+        continue;
+      }
+      if (await doPatch(patchPayload)) {
         updatedCount++;
       }
     } catch (err) {
-      failedCount++;
-      console.warn(`Gagal patch row penerimaan_produksi (id: ${item.id}):`, err);
+      if (isRecountColumnSchemaError(err)) {
+        penerimaanTableHasRecountCols = false;
+        // Audit recount disimpan terpusat di wms_settings & wms_system_docs; anggap item ter-handle agar auto-push Sheet tetap berjalan
+        updatedCount++;
+      } else {
+        failedCount++;
+        console.warn(`Gagal patch row penerimaan_produksi (id: ${item.id}):`, err);
+      }
     }
   }
 

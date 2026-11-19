@@ -72,6 +72,9 @@ import {
   getPendingPutawayOutboxCount,
   getActiveProduksiInputDraftSummary,
   getActiveRecountDraftSummary,
+  clearAllRecountWorkspaceDrafts,
+  isRecountDockDismissed,
+  setRecountDockDismissed,
   getActivePickingDraftSummary,
   setActivePickingSessionMinimized,
   getActivePutawayDraftSummary,
@@ -845,6 +848,7 @@ export default function App() {
       }
       setIsScannerPopupMinimized(true);
       setIsProduksiInputPopupMinimized(true);
+      setRecountDockDismissed(false);
       setIsHitungUlangPopupOpen(true);
       setIsHitungUlangPopupMinimized(false);
       return;
@@ -1154,10 +1158,12 @@ export default function App() {
 
   // Popup Antrean & Audit Hitung Ulang (Minimizable & Offline Safe)
   const [isHitungUlangPopupOpen, setIsHitungUlangPopupOpen] = useState<boolean>(() => {
-    return getActiveRecountDraftSummary().hasActiveWorkspaceDraft || getPendingRecountOutboxCount() > 0;
+    if (getPendingRecountOutboxCount() > 0) return true;
+    return getActiveRecountDraftSummary().hasActiveWorkspaceDraft && !isRecountDockDismissed();
   });
   const [isHitungUlangPopupMinimized, setIsHitungUlangPopupMinimized] = useState<boolean>(() => {
-    return getActiveRecountDraftSummary().hasActiveWorkspaceDraft || getPendingRecountOutboxCount() > 0;
+    if (getPendingRecountOutboxCount() > 0) return true;
+    return getActiveRecountDraftSummary().hasActiveWorkspaceDraft && !isRecountDockDismissed();
   });
   const [hitungUlangPopupTargetCode, setHitungUlangPopupTargetCode] = useState<string | undefined>(undefined);
 
@@ -5689,7 +5695,9 @@ export default function App() {
         isOpen={isHitungUlangPopupOpen}
         isMinimized={isHitungUlangPopupMinimized}
         onMinimizeChange={(min) => {
-          if (!min) {
+          if (min) {
+            setRecountDockDismissed(false);
+          } else {
             setIsScannerPopupMinimized(true);
             setIsProduksiInputPopupMinimized(true);
           }
@@ -5698,6 +5706,7 @@ export default function App() {
         onClose={() => {
           setIsHitungUlangPopupOpen(false);
           setIsHitungUlangPopupMinimized(false);
+          setRecountDockDismissed(true);
           if (getActiveRecountDraftSummary().hasActiveWorkspaceDraft) {
             showToast(
               'Popup Hitung Ulang ditutup. Angka hitung fisik Anda tetap tersimpan aman di draft & dapat dilanjutkan kapan saja.',
@@ -5772,14 +5781,11 @@ export default function App() {
           setIsHitungUlangPopupMinimized(false);
         }}
         onCloseHitungUlang={() => {
+          clearAllRecountWorkspaceDrafts();
+          setRecountDockDismissed(true);
           setIsHitungUlangPopupOpen(false);
           setIsHitungUlangPopupMinimized(false);
-          if (getActiveRecountDraftSummary().hasActiveWorkspaceDraft) {
-            showToast(
-              'Popup Hitung Ulang ditutup. Draft angka hitung tetap tersimpan aman.',
-              'info'
-            );
-          }
+          showToast('Popup Hitung Ulang ditutup & draft dibersihkan.', 'info');
         }}
         onMaximizePickingTask={() => {
           setIsScannerPopupMinimized(true);

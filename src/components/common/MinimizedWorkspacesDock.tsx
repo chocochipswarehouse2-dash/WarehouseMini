@@ -625,7 +625,7 @@ export const MinimizedWorkspacesDock: React.FC<MinimizedWorkspacesDockProps> = (
               <button
                 type="button"
                 onClick={onCloseHitungUlang}
-                title="Tutup Popup Hitung Ulang (Draft angka hitung tetap tersimpan aman)"
+                title="Tutup & bersihkan draft Hitung Ulang"
                 className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
