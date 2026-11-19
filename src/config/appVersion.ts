@@ -15,21 +15,35 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.20.2",
-  "versionCode": 402,
+  "version": "v2.20.3",
+  "versionCode": 403,
   "buildDate": "19 November 2026",
-  "buildHash": "wms-261119-v402-1552",
-  "releaseTitle": "WMS v2.20.2 — Fix Foto Trello Anti-CORS & Auto-Backup Google Drive",
+  "buildHash": "wms-261119-v403-1741",
+  "releaseTitle": "WMS v2.20.3 — Fix Cache Foto Trello & Anti-429 Throttling",
   "releaseNotes": [
-    "Tambah proxy serverless Vercel /api/trello-image untuk foto Trello bebas CORS",
-    "Upgrade auto-backup foto Trello via server GAS (trelloImageUrl) & fallback proxy",
-    "Sinkronisasi 18 foto tertunda (termasuk UP 340) ke Google Drive & paginasi penuh Supabase",
-    "Reset otomatis backup GDrive saat cover kartu Trello diganti & tombol backup cepat"
+    "Fix cache lokal menimpa gdrive_image_url terbaru dari Supabase saat sinkronisasi Trello",
+    "Tambah IntersectionObserver + antrean maks 10 foto serentak untuk mencegah rate-limit 429 Google Drive",
+    "Tambah auto-retry bertahap (GDrive -> Thumbnail -> Proxy Trello) sebelum menampilkan No Photo",
+    "Sinkronkan pembaruan foto cloud otomatis ke tampilan Trello tanpa perlu reload manual"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.20.2",
+    "versionCode": 402,
+    "buildDate": "19 November 2026",
+    "buildHash": "wms-261119-v402-1552",
+    "releaseTitle": "WMS v2.20.2 — Fix Foto Trello Anti-CORS & Auto-Backup Google Drive",
+    "releaseNotes": [
+      "Tambah proxy serverless Vercel /api/trello-image untuk foto Trello bebas CORS",
+      "Upgrade auto-backup foto Trello via server GAS (trelloImageUrl) & fallback proxy",
+      "Sinkronisasi 18 foto tertunda (termasuk UP 340) ke Google Drive & paginasi penuh Supabase",
+      "Reset otomatis backup GDrive saat cover kartu Trello diganti & tombol backup cepat"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.20.1",
     "versionCode": 401,
@@ -118,18 +132,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Modal Push Sheet Penerimaan Produksi (Per Tanggal, Semua Tanggal, Master Produksi, dan Surat Jalan) kini bisa di-minimize ke bubble mengambang",
       "Proses pengiriman sheet ke Google Spreadsheet tetap berjalan di latar belakang lengkap dengan indikator progres live"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.19.3",
-    "versionCode": 393,
-    "buildDate": "18 November 2026",
-    "buildHash": "wms-261118-v393-1603",
-    "releaseTitle": "WMS v2.19.3 — Minimize & Perlindungan Offline Form Input Kargo + Auto-Fallback Server AI",
-    "releaseNotes": [
-      "Form Input Penerimaan Kargo & CMT kini memiliki tombol Minimize ke Dock Bawah, Mode Popup, dan Perlindungan Offline terpisah per kategori",
-      "Multi-model auto-fallback pada endpoint /api/ai untuk mencegah error 503 High Demand"
     ],
     "minSupportedVersion": "v2.0.0"
   }

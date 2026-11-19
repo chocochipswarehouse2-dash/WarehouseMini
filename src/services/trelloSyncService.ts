@@ -35,7 +35,7 @@ export function resetTrelloSyncSignature(): void {
 function computeTrelloSignature(lists: any[], items: TrelloUpItem[]): string {
   const listPart = (lists || []).map((l: any) => `${l.id}:${l.name}:${l.pos}`).join('|');
   const itemPart = items
-    .map((i) => `${i.id}:${i.list_id}:${i.pos}:${i.card_name}:${i.qty_note || ''}:${i.trello_attachment_id || ''}:${i.trello_image_url || ''}:${(i.description || '').length}`)
+    .map((i) => `${i.id}:${i.list_id}:${i.pos}:${i.card_name}:${i.qty_note || ''}:${i.trello_attachment_id || ''}:${i.trello_image_url || ''}:${i.gdrive_image_url || ''}:${(i.description || '').length}`)
     .sort()
     .join('|');
   let h = 5381;
@@ -260,7 +260,21 @@ export function enrichTrelloItemsWithPhotos(
   };
 
   for (const ref of referenceItems) {
-    if (ref?.id) refById.set(ref.id, ref);
+    if (!ref?.id) continue;
+    const existingRef = refById.get(ref.id);
+    if (!existingRef) {
+      refById.set(ref.id, ref);
+    } else {
+      refById.set(ref.id, {
+        ...existingRef,
+        ...ref,
+        gdrive_image_url: ref.gdrive_image_url || existingRef.gdrive_image_url,
+        gdrive_file_id: ref.gdrive_file_id || existingRef.gdrive_file_id,
+        gdrive_folder_name: ref.gdrive_folder_name || existingRef.gdrive_folder_name,
+        trello_image_url: ref.trello_image_url || existingRef.trello_image_url,
+        trello_attachment_id: ref.trello_attachment_id || existingRef.trello_attachment_id,
+      });
+    }
     registerDonor(ref);
   }
   for (const item of items) {
@@ -631,13 +645,18 @@ export async function syncTrelloUpCatalog(
     const rawTransformed = transformTrelloData(lists, cards);
 
     // Ambil referensi item yang sudah ada (dari cache lokal & Supabase) agar gdrive_image_url tidak pernah hilang!
+    // Supabase (cloud) berada di urutan terakhir agar nilai terbarunya selalu memprioritaskan cloud dibanding cache lokal usang.
     const cachedItems = getLocalCachedTrelloItems().items;
     const sbExistingItems = await fetchTrelloUpFromSupabase();
-    const combinedRefs = [...sbExistingItems, ...cachedItems];
+    const combinedRefs = [...cachedItems, ...sbExistingItems];
 
     // Tandai kartu yang attachment cover-nya baru diganti di Trello agar GDrive lama di-clear & di-backup ulang
+    // Gunakan Supabase (sbExistingItems) sebagai sumber kebenaran utama, fallback ke cache lokal bila belum ada di Supabase
     const prevById = new Map<string, TrelloUpItem>();
-    for (const ref of combinedRefs) {
+    for (const ref of sbExistingItems) {
+      if (ref?.id && !prevById.has(ref.id)) prevById.set(ref.id, ref);
+    }
+    for (const ref of cachedItems) {
       if (ref?.id && !prevById.has(ref.id)) prevById.set(ref.id, ref);
     }
     const changedCoverIds = new Set<string>();

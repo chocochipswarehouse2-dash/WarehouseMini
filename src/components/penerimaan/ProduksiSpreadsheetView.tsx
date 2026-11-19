@@ -41,6 +41,7 @@ import {
   formatRecountLogEntry,
 } from '../../services/gasProduksiSync';
 import { compressImage } from '../../utils/imageCompressor';
+import { getProxiedTrelloImageUrl } from '../Trello/TrelloImage';
 import {
   supabaseFetch,
   simpanBatchPenerimaanProduksiToSupabase,
@@ -1149,7 +1150,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
 
         const newName = candidate.item_name || candidate.card_name || '';
         const newUp = candidate.up_code || candidate.list_name || b.upVendor;
-        const newPhoto = candidate.gdrive_image_url || candidate.trello_image_url || b.photoUrl;
+        const newPhoto = candidate.gdrive_image_url || getProxiedTrelloImageUrl(candidate.trello_image_url) || b.photoUrl;
 
         return {
           ...b,

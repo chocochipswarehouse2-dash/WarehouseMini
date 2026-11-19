@@ -155,8 +155,20 @@ export const TrelloView: React.FC<TrelloViewProps> = ({
           setItems(next);
           setLocalCachedTrelloItems(next);
           triggerBackgroundGdrivePhotoSync(next);
-        } else if (result.items.some((i) => !i.gdrive_image_url && !!i.trello_image_url && i.trello_image_url.includes('trello.com'))) {
-          triggerBackgroundGdrivePhotoSync(result.items);
+        } else {
+          // Meski struktur list/card tidak berubah, tetap perbarui tampilan bila Supabase punya foto GDrive baru
+          const next = applyCatalogFallback(result.items);
+          setLocalCachedTrelloItems(next);
+          setItems((prev) => {
+            const prevPhotoById = new Map(prev.map((p) => [p.id, p.gdrive_image_url || '']));
+            const hasUpgradedPhoto = next.some(
+              (n) => (n.gdrive_image_url || '') !== (prevPhotoById.get(n.id) || '')
+            );
+            return (hasUpgradedPhoto || prev.length !== next.length) ? next : prev;
+          });
+          if (next.some((i) => !i.gdrive_image_url && !!i.trello_image_url && i.trello_image_url.includes('trello.com'))) {
+            triggerBackgroundGdrivePhotoSync(next);
+          }
         }
         setLastSynced(new Date().toISOString());
         if (!silent) {
