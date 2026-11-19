@@ -4287,7 +4287,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
             let cardBorder = 'border-slate-200 dark:border-slate-800';
             let statusBadge = (
-              <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shrink-0">
                 Belum
               </span>
             );
@@ -4295,28 +4295,28 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             if (isKosong) {
               cardBorder = 'border-rose-300 dark:border-rose-800/70 bg-rose-50/30 dark:bg-rose-950/20';
               statusBadge = (
-                <span className="px-2.5 py-0.5 rounded-lg text-[11px] font-black bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300 border border-rose-300 dark:border-rose-700/60 flex items-center gap-1">
-                  <Ban className="w-3.5 h-3.5" /> Kosong di Rak
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800 inline-flex items-center gap-1 shrink-0">
+                  <Ban className="w-3 h-3 shrink-0" /> Kosong di Rak
                 </span>
               );
             } else if (isOver) {
               cardBorder = 'border-rose-400 dark:border-rose-700 bg-rose-50/30 dark:bg-rose-950/25 ring-2 ring-rose-500/30';
               statusBadge = (
-                <span className="px-2.5 py-0.5 rounded-lg text-[11px] font-black bg-rose-600 text-white flex items-center gap-1 animate-pulse">
-                  <AlertOctagon className="w-3.5 h-3.5" /> LEBIH +{pickedQty - reqQty} PCS
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-600 text-white border border-rose-600 inline-flex items-center gap-1 animate-pulse shrink-0">
+                  <AlertOctagon className="w-3 h-3 shrink-0" /> LEBIH +{pickedQty - reqQty} PCS
                 </span>
               );
             } else if (isCompleted) {
               cardBorder = 'border-emerald-300 dark:border-emerald-800/60 bg-emerald-50/20 dark:bg-emerald-950/10';
               statusBadge = (
-                <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700/50 flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" /> Pas Selesai
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 inline-flex items-center gap-1 shrink-0">
+                  <CheckCircle2 className="w-3 h-3 shrink-0" /> Pas Selesai
                 </span>
               );
             } else if (pickedQty > 0) {
-              cardBorder = 'border-blue-200 dark:border-blue-800/50 bg-blue-50/10 dark:bg-blue-950/10';
+              cardBorder = 'border-amber-200 dark:border-amber-800/50 bg-amber-50/10 dark:bg-amber-950/10';
               statusBadge = (
-                <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-700 shrink-0">
                   Kurang {reqQty - pickedQty}
                 </span>
               );
@@ -4333,14 +4333,57 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             return (
               <div
                 key={item.id || index}
-                className={`p-3 sm:p-3.5 rounded-2xl bg-white dark:bg-[#131d31] border-2 ${cardBorder} shadow-md flex flex-col lg:flex-row lg:items-center justify-between gap-3 transition-all ${
-                  isCurrentShelf ? 'ring-4 ring-primary-500/30 border-primary-500' : ''
-                }`}
+                className={`p-3 sm:p-4 rounded-2xl bg-white dark:bg-[#131d31] border ${
+                  isCurrentShelf ? 'border-indigo-500 ring-2 ring-indigo-500/35' : cardBorder
+                } shadow-2xs flex flex-col lg:flex-row lg:items-center justify-between gap-3 lg:gap-4 transition-all`}
               >
-                <div className="flex-1 space-y-2">
-                  {/* TOP ROW: LOKASI WAREHOUSE (BIG) + STATUS + HUGE TARGET QTY BADGE */}
-                  <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
-                    {/* BIG LOKASI RAK BADGES (HANYA RAK DENGAN STOK > 0) */}
+                {/* LEFT ZONE: PRODUCT + SKU + RACK SELECTOR */}
+                <div className="flex-1 min-w-0 space-y-1.5">
+                  {/* ROW 1: NAMA PRODUK + SIZE + STATUS */}
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 min-w-0">
+                    <h4
+                      className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white leading-snug break-words"
+                      title={displayName}
+                    >
+                      {displayName}
+                    </h4>
+                    {displaySize && displaySize !== '-' && (
+                      <span className="px-2 py-0.5 rounded-md text-[11px] sm:text-xs font-extrabold uppercase bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700/70 shrink-0">
+                        Size {displaySize}
+                      </span>
+                    )}
+                    {statusBadge}
+                  </div>
+
+                  {/* ROW 2: SKU + OPERATOR METADATA */}
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="font-mono font-bold text-slate-500 dark:text-slate-400">
+                      SKU: <span className="text-slate-700 dark:text-slate-200">{item.sku}</span>
+                    </span>
+
+                    {isKosong && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/50 px-2 py-0.5 rounded-md border border-rose-200 dark:border-rose-800">
+                        <Ban className="w-3 h-3 shrink-0" />
+                        <span>Ditandai Kosong {lastPickedBy ? `(${formatOperatorWithPersonName(lastPickedBy)})` : ''}</span>
+                      </span>
+                    )}
+
+                    {!isKosong && pickedQty > 0 && lastPickedBy && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-800">
+                        <Users className="w-3 h-3 text-indigo-500 shrink-0" />
+                        <span>
+                          Diambil: {itemPickers.length > 1 ? itemPickers.map((p) => formatOperatorWithPersonName(p)).join(', ') : formatOperatorWithPersonName(lastPickedBy)}
+                        </span>
+                      </span>
+                    )}
+                  </div>
+
+                  {/* ROW 3: RACK SELECTOR (CLEARLY SEPARATED FROM PICK TARGET QTY) */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                    <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide mr-0.5 shrink-0">
+                      Rak:
+                    </span>
+
                     {productLocs.length > 0 ? (
                       productLocs.map((locInfo, locIdx) => {
                         const loc = locInfo.lokasi;
@@ -4351,22 +4394,18 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                             key={locIdx}
                             type="button"
                             onClick={() => handleSelectItemLocation(index, loc)}
-                            className={`px-3.5 py-1.5 rounded-xl font-mono font-black text-sm sm:text-base flex items-center gap-2 transition-all shadow-xs cursor-pointer active:scale-95 max-w-[85%] sm:max-w-none ${
+                            className={`h-8 px-2.5 rounded-lg font-mono font-extrabold text-xs inline-flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 max-w-full ${
                               isThisCurrentShelf
-                                ? 'bg-primary-500 text-white shadow-md ring-2 ring-primary-500/50'
-                                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-2 border-emerald-500/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
+                                ? 'bg-indigo-600 text-white border border-indigo-600 shadow-2xs'
+                                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
                             }`}
-                            title={`Klik untuk pilih rak ${loc} untuk SKU ini (Sisa stok: ${locInfo.qty ?? 0} pcs)`}
+                            title={`Klik untuk pilih rak ${loc} (Sisa stok sistem di rak: ${locInfo.qty ?? 0} pcs • Target ambil: ${reqQty} pcs)`}
                           >
-                            <MapPin className="w-4 h-4 text-inherit shrink-0" />
+                            <MapPin className="w-3.5 h-3.5 text-inherit shrink-0" />
                             <span className="truncate">{loc}</span>
                             {hasQty && (
-                              <span className={`text-xs font-black px-1.5 py-0.5 rounded ${
-                                isThisCurrentShelf
-                                  ? 'bg-black/20 text-white'
-                                  : 'bg-emerald-600/20 text-emerald-900 dark:text-emerald-200'
-                              }`}>
-                                {locInfo.qty} pcs
+                              <span className="text-[10px] font-sans font-medium opacity-75">
+                                (stok {locInfo.qty})
                               </span>
                             )}
                           </button>
@@ -4374,8 +4413,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       })
                     ) : /store|toko|sps|outlet/i.test(activeSJ?.tujuan || '') ? (
                       /* FULFILL STORE: DISPLAY STORE LOCATION BADGE */
-                      <div className="px-3.5 py-1.5 rounded-xl font-mono font-black text-sm sm:text-base flex items-center gap-2 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 border-2 border-blue-500/30 shadow-xs">
-                        <Building className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                      <div className="h-8 px-2.5 rounded-lg font-mono font-extrabold text-xs inline-flex items-center gap-1.5 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                        <Building className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
                         <span>{item.lokasi && item.lokasi !== '-' && item.lokasi !== 'KOSONG' ? item.lokasi : (activeSJ?.tujuan || 'STORE')}</span>
                       </div>
                     ) : item.lokasi && item.lokasi !== '-' && item.lokasi !== 'KOSONG' ? (
@@ -4399,14 +4438,14 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                             key={tokIdx}
                             type="button"
                             onClick={() => handleSelectItemLocation(index, tok)}
-                            className={`px-3.5 py-1.5 rounded-xl font-mono font-black text-sm sm:text-base flex items-center gap-2 transition-all shadow-xs cursor-pointer active:scale-95 ${
+                            className={`h-8 px-2.5 rounded-lg font-mono font-extrabold text-xs inline-flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
                               isThisCurrentShelf
-                                ? 'bg-primary-500 text-white shadow-md ring-2 ring-primary-500/50'
-                                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-2 border-emerald-500/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
+                                ? 'bg-indigo-600 text-white border border-indigo-600 shadow-2xs'
+                                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
                             }`}
                             title={`Klik untuk pilih rak ${tok}`}
                           >
-                            <MapPin className="w-4 h-4 text-inherit shrink-0" />
+                            <MapPin className="w-3.5 h-3.5 text-inherit shrink-0" />
                             <span>{tok}</span>
                           </button>
                         );
@@ -4414,7 +4453,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     ) : isRealtimeLoaded ? (
                       /* KETIKA STOK GUDANG 0 PCS (TIDAK MEREKOMENDASIKAN RAK KOSONG) */
                       <div
-                        className="px-2.5 py-1 rounded-xl font-mono font-black text-xs sm:text-sm flex items-center gap-1.5 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-500/30 shadow-xs"
+                        className="h-8 px-2.5 rounded-lg font-mono font-extrabold text-xs inline-flex items-center gap-1.5 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800"
                         title={emptyRecordedRacks.length > 0 ? `Stok gudang 0 pcs. Rak tercatat: ${Array.from(new Set(emptyRecordedRacks)).join(', ')}` : 'Stok gudang kosong (0 pcs)'}
                       >
                         <AlertTriangle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
@@ -4422,8 +4461,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       </div>
                     ) : (
                       /* MEMUAT STOK / CEK LOKASI */
-                      <div className="px-3 py-1.5 rounded-xl font-mono font-bold text-xs sm:text-sm flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-slate-700">
-                        <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
+                      <div className="h-8 px-2.5 rounded-lg font-mono font-bold text-xs inline-flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                        <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         <span>Cek Stok Rak...</span>
                       </div>
                     )}
@@ -4438,16 +4477,16 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                         <button
                           type="button"
                           onClick={() => handleSelectItemLocation(index, pickedManual)}
-                          className={`px-3 py-1.5 rounded-xl font-mono font-black text-xs sm:text-sm flex items-center gap-1.5 transition-all shadow-xs cursor-pointer ${
+                          className={`h-8 px-2.5 rounded-lg font-mono font-extrabold text-xs inline-flex items-center gap-1.5 transition-all cursor-pointer ${
                             isThisManualActive
-                              ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-500/40'
-                              : 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-700 hover:bg-indigo-100'
+                              ? 'bg-indigo-600 text-white border border-indigo-600 shadow-2xs'
+                              : 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100'
                           }`}
                           title={`Lokasi manual dipilih: ${pickedManual}`}
                         >
                           <MapPin className="w-3.5 h-3.5 shrink-0" />
                           <span>{pickedManual}</span>
-                          <span className="text-[10px] font-sans font-bold opacity-80">(Manual)</span>
+                          <span className="text-[10px] font-sans font-semibold opacity-80">(Manual)</span>
                         </button>
                       );
                     })()}
@@ -4463,19 +4502,19 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                           setManualLocIndex(null);
                           setManualLocInput('');
                         }}
-                        className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/90 border border-indigo-300 dark:border-indigo-700 rounded-xl px-2 py-1 shadow-xs"
+                        className="h-8 flex items-center gap-1 bg-slate-50 dark:bg-slate-800/90 border border-indigo-300 dark:border-indigo-700 rounded-lg px-1.5"
                       >
                         <input
                           type="text"
                           value={manualLocInput}
                           onChange={(e) => setManualLocInput(e.target.value.toUpperCase())}
-                          placeholder="Ketik Rak (mis. A012)"
+                          placeholder="Ketik Rak (A012)"
                           autoFocus
-                          className="w-32 sm:w-36 px-2 py-1 text-xs font-mono font-bold uppercase bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          className="w-28 sm:w-32 px-1.5 py-0.5 text-xs font-mono font-bold uppercase bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         />
                         <button
                           type="submit"
-                          className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold cursor-pointer transition"
+                          className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[11px] font-bold cursor-pointer transition"
                         >
                           Pakai
                         </button>
@@ -4485,7 +4524,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                             setManualLocIndex(null);
                             setManualLocInput('');
                           }}
-                          className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                          className="p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
                           title="Batal"
                         >
                           <X className="w-3.5 h-3.5" />
@@ -4498,76 +4537,24 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                           setManualLocIndex(index);
                           setManualLocInput(resolvePrimarySingleLocation(item.lokasi_picked || '') || '');
                         }}
-                        className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition cursor-pointer shadow-2xs"
+                        className="h-8 px-2.5 rounded-lg text-xs font-bold inline-flex items-center gap-1 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition cursor-pointer shadow-2xs"
                         title="Input lokasi rak manual jika barang diambil dari rak lain atau data lokasi kosong"
                       >
-                        <Edit3 className="w-3 h-3 text-indigo-500" />
+                        <Edit3 className="w-3 h-3 text-indigo-500 shrink-0" />
                         <span>{productLocs.length === 0 ? 'Input Lokasi Manual' : '+ Rak Manual'}</span>
                       </button>
                     )}
 
                     {isCurrentShelf && (
-                      <span className="text-[11px] font-black text-primary-500 bg-primary-500/15 border border-primary-500/30 px-2.5 py-1 rounded-xl uppercase tracking-wider">
-                        🎯 RAK AKTIF
-                      </span>
-                    )}
-
-                    {statusBadge}
-
-                    {/* HUGE TARGET QTY BADGE FOR EASY MOBILE READING */}
-                    <div
-                      className={`ml-auto px-3 py-1.5 rounded-xl font-mono font-black text-sm sm:text-base flex items-center gap-1.5 shadow-xs ${
-                        isKosong
-                          ? 'bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 line-through'
-                          : isOver
-                          ? 'bg-rose-600 text-white ring-2 ring-rose-400'
-                          : isCompleted
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-indigo-600 text-white'
-                      }`}
-                    >
-                      <span>AMBIL: {reqQty} PCS</span>
-                    </div>
-                  </div>
-
-                  {/* KAPSUL GABUNGAN 1 UNIT: NAMA PRODUK & SIZE */}
-                  <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                    <div className="inline-flex items-center gap-2.5 px-3 py-1.5 bg-slate-100 dark:bg-[#1a2333] border border-slate-200 dark:border-slate-700/80 rounded-xl shadow-xs">
-                      <span className="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-tight">
-                        {displayName}
-                      </span>
-                      {displaySize && displaySize !== '-' && (
-                        <span className="px-2 py-0.5 bg-amber-500/20 text-amber-900 dark:text-amber-300 border border-amber-500/40 text-xs sm:text-sm font-black rounded-lg uppercase tracking-wide">
-                          Size: {displaySize}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <span className="text-xs sm:text-sm font-mono font-bold text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
-                      SKU: <span className="text-slate-700 dark:text-slate-300">{item.sku}</span>
-                    </span>
-
-                    {isKosong && (
-                      <span className="inline-flex items-center gap-1 text-xs font-extrabold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/50 px-2.5 py-0.5 rounded-lg border border-rose-200 dark:border-rose-800">
-                        <Ban className="w-3.5 h-3.5" />
-                        DITANDAI KOSONG DI RAK {lastPickedBy ? `(oleh ${formatOperatorWithPersonName(lastPickedBy)})` : ''}
-                      </span>
-                    )}
-
-                    {!isKosong && pickedQty > 0 && lastPickedBy && (
-                      <span className="inline-flex items-center gap-1 text-xs font-extrabold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 px-2.5 py-0.5 rounded-lg border border-indigo-200 dark:border-indigo-800">
-                        <Users className="w-3.5 h-3.5 text-indigo-500" />
-                        <span>
-                          Diambil: {itemPickers.length > 1 ? itemPickers.map((p) => formatOperatorWithPersonName(p)).join(', ') : formatOperatorWithPersonName(lastPickedBy)}
-                        </span>
+                      <span className="h-8 px-2.5 rounded-lg text-[10px] font-extrabold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 inline-flex items-center uppercase tracking-wider">
+                        🎯 Rak Aktif
                       </span>
                     )}
                   </div>
 
+                  {/* ROW 4: CONDITIONAL WARNINGS */}
                   {isOver && (
-                    <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-300 dark:border-rose-800 flex flex-wrap items-center justify-between gap-2">
+                    <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 flex flex-wrap items-center justify-between gap-2">
                       <div className="text-xs font-bold text-rose-800 dark:text-rose-200 flex items-center gap-1.5">
                         <AlertOctagon className="w-4 h-4 text-rose-600 shrink-0" />
                         <span>
@@ -4585,101 +4572,127 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                   )}
 
                   {item.lokasi_picked && item.lokasi_picked !== item.lokasi && item.lokasi_picked !== 'KOSONG' && (
-                    <div className="text-xs text-amber-700 dark:text-amber-300 font-bold mt-1 bg-amber-50 dark:bg-amber-950/40 p-2 rounded-lg border border-amber-300 dark:border-amber-800">
+                    <div className="text-xs text-amber-800 dark:text-amber-300 font-bold bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1.5 rounded-lg border border-amber-200 dark:border-amber-800">
                       ⚠️ Diambil dari rak: <b>{item.lokasi_picked}</b> (Target SJ: {item.lokasi})
                     </div>
                   )}
                 </div>
 
-                {/* COUNTER & ACTION BUTTONS (EXTRA LARGE TOUCH TARGETS & BIG NUMBERS FOR MOBILE HP) */}
-                <div className="flex items-center gap-2 flex-wrap shrink-0 pt-2.5 lg:pt-0 border-t lg:border-t-0 border-slate-100 dark:border-slate-800">
-                  {/* Counter Control */}
-                  <div className="flex items-center gap-2 bg-slate-100 dark:bg-[#0f172a] p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-inner">
-                    <button
-                      type="button"
-                      onClick={() => handleAdjustQty(index, -1)}
-                      className="w-11 h-11 sm:w-12 sm:h-12 flex items-center justify-center rounded-xl bg-white dark:bg-[#1e293b] text-slate-700 dark:text-slate-200 hover:text-primary-600 active:scale-95 shadow-sm transition-all cursor-pointer"
-                      title="Kurangi 1"
+                {/* RIGHT ZONE: TARGET AMBIL + COUNTER + UNIFORM ACTION BUTTONS */}
+                <div className="shrink-0 pt-2.5 lg:pt-0 border-t lg:border-t-0 border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-2.5">
+                  <div className="flex items-center justify-between sm:justify-start gap-2">
+                    {/* TARGET AMBIL BOX — SATU-SATUNYA ANGKA BESAR PCS DI KARTU */}
+                    <div
+                      className={`h-11 px-3 rounded-xl border flex flex-col items-center justify-center min-w-[84px] shrink-0 ${
+                        isKosong
+                          ? 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-300 line-through'
+                          : isOver
+                          ? 'bg-rose-600 border-rose-600 text-white'
+                          : isCompleted
+                          ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                          : 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300'
+                      }`}
+                      title={`Target yang harus diambil dari rak: ${reqQty} pcs`}
                     >
-                      <MinusCircle className="w-6 h-6" />
-                    </button>
-                    <div className="px-3.5 min-w-[96px] text-center">
-                      <span
-                        className={`text-2xl sm:text-3xl font-black font-mono tabular-nums leading-none block ${
-                          isKosong
-                            ? 'text-rose-500 line-through'
-                            : isOver
-                            ? 'text-rose-600 dark:text-rose-400'
-                            : isCompleted
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : 'text-slate-900 dark:text-white'
-                        }`}
-                      >
-                        {item.qty_picked}
+                      <span className="text-[9px] font-extrabold uppercase tracking-wider opacity-80 leading-none">
+                        TARGET AMBIL
                       </span>
-                      <span className="text-sm sm:text-base font-extrabold font-mono text-slate-500 dark:text-slate-400 mt-0.5 block">
-                        / {item.qty_req} PCS
+                      <span className="font-mono text-base sm:text-lg font-black leading-tight tabular-nums">
+                        {reqQty} PCS
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleAdjustQty(index, 1)}
-                      className="w-11 h-11 sm:w-12 sm:h-12 flex items-center justify-center rounded-xl bg-white dark:bg-[#1e293b] text-slate-700 dark:text-slate-200 hover:text-primary-500 active:scale-95 shadow-sm transition-all cursor-pointer"
-                      title="Tambah 1"
-                    >
-                      <PlusCircle className="w-6 h-6" />
-                    </button>
+
+                    {/* COUNTER CONTROL */}
+                    <div className="h-11 flex items-center gap-1 bg-slate-100 dark:bg-[#0f172a] p-1 rounded-xl border border-slate-200 dark:border-slate-800 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleAdjustQty(index, -1)}
+                        className="w-9 h-9 flex items-center justify-center rounded-lg bg-white dark:bg-[#1e293b] text-slate-700 dark:text-slate-200 hover:text-indigo-600 active:scale-95 shadow-2xs transition-all cursor-pointer"
+                        title="Kurangi 1"
+                      >
+                        <MinusCircle className="w-5 h-5" />
+                      </button>
+                      <div className="px-2 min-w-[64px] text-center flex items-baseline justify-center">
+                        <span
+                          className={`text-lg sm:text-xl font-black font-mono tabular-nums leading-none ${
+                            isKosong
+                              ? 'text-rose-500 line-through'
+                              : isOver
+                              ? 'text-rose-600 dark:text-rose-400'
+                              : isCompleted
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-slate-900 dark:text-white'
+                          }`}
+                        >
+                          {item.qty_picked}
+                        </span>
+                        <span className="text-xs font-bold font-mono text-slate-400 ml-0.5">
+                          /{reqQty}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleAdjustQty(index, 1)}
+                        className="w-9 h-9 flex items-center justify-center rounded-lg bg-white dark:bg-[#1e293b] text-slate-700 dark:text-slate-200 hover:text-indigo-600 active:scale-95 shadow-2xs transition-all cursor-pointer"
+                        title="Tambah 1"
+                      >
+                        <PlusCircle className="w-5 h-5" />
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Quick Set Max Button */}
-                  <button
-                    type="button"
-                    onClick={() => handleSetItemMax(index)}
-                    className="h-11 px-3.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs sm:text-sm font-black rounded-xl transition-all shadow-md active:scale-95 cursor-pointer flex items-center gap-1.5"
-                    title="Set langsung selesai (Pas sesuai Qty Target)"
-                  >
-                    <Check className="w-4 h-4" />
-                    <span>Maks ({reqQty})</span>
-                  </button>
+                  {/* ACTION BUTTONS (ANTI-PELANGI: 1 TOMBOL SOLID MAKS + TOMBOL SEKUNDER OUTLINE SERAGAM) */}
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleSetItemMax(index)}
+                      className={`flex-1 sm:flex-none h-11 px-3 text-xs font-extrabold rounded-xl transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 ${
+                        isCompleted
+                          ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                          : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs'
+                      }`}
+                      title="Set langsung selesai (Pas sesuai Qty Target)"
+                    >
+                      <Check className="w-4 h-4 shrink-0" />
+                      <span>Maks ({reqQty})</span>
+                    </button>
 
-                  {/* Tandai Kosong di Rak Button */}
-                  <button
-                    type="button"
-                    onClick={() => handleToggleItemKosong(index)}
-                    className={`h-11 px-3 text-xs font-extrabold rounded-xl border transition-all shadow-sm active:scale-95 cursor-pointer flex items-center gap-1.5 ${
-                      isKosong
-                        ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-600'
-                        : 'bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/70'
-                    }`}
-                    title={
-                      isKosong
-                        ? 'Batalkan status Kosong di Rak'
-                        : 'Tandai produk ini Kosong / Tidak Tersedia di Rak Stok'
-                    }
-                  >
-                    <Ban className="w-4 h-4" />
-                    <span>{isKosong ? 'Batal Kosong' : 'Kosong'}</span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleItemKosong(index)}
+                      className={`h-11 px-2.5 text-xs font-bold rounded-xl border transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 ${
+                        isKosong
+                          ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-600'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-rose-300 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40'
+                      }`}
+                      title={
+                        isKosong
+                          ? 'Batalkan status Kosong di Rak'
+                          : 'Tandai produk ini Kosong / Tidak Tersedia di Rak Stok'
+                      }
+                    >
+                      <Ban className="w-3.5 h-3.5 shrink-0" />
+                      <span>{isKosong ? 'Batal Kosong' : 'Kosong'}</span>
+                    </button>
 
-                  {/* Quick Reset Button */}
-                  <button
-                    type="button"
-                    onClick={() => handleResetItemQty(index)}
-                    className="h-11 w-11 flex items-center justify-center text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-xl transition-all shadow-sm active:scale-95 cursor-pointer"
-                    title="Reset ke 0"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => handleResetItemQty(index)}
+                      className="h-11 w-10 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 rounded-xl transition-all active:scale-95 cursor-pointer"
+                      title="Reset ke 0"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </button>
 
-                  {/* Detail Edit Modal Button */}
-                  <button
-                    type="button"
-                    onClick={() => handleOpenEditItem('REGULAR', index)}
-                    className="h-11 w-11 flex items-center justify-center text-primary-500 hover:bg-primary-500/15 bg-primary-500/10 border border-primary-500/30 rounded-xl transition-all shadow-sm active:scale-95 cursor-pointer"
-                    title="Edit Qty / Rak Tertentu"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEditItem('REGULAR', index)}
+                      className="h-11 w-10 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-xl transition-all active:scale-95 cursor-pointer"
+                      title="Edit Qty / Rak Tertentu"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             );
@@ -6125,8 +6138,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                           >
                             <span>📍 {locInfo.lokasi}</span>
                             {locInfo.qty !== undefined && (
-                              <span className="text-[10px] px-1 bg-black/10 dark:bg-white/10 rounded font-sans font-bold">
-                                {locInfo.qty} pcs
+                              <span className="text-[10px] opacity-80 font-sans font-semibold">
+                                (stok {locInfo.qty})
                               </span>
                             )}
                             {locInfo.isPrimary && (
@@ -6138,9 +6151,6 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                               <span className="text-[9px] px-1 bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded font-sans uppercase font-extrabold">
                                 Lain
                               </span>
-                            )}
-                            {locInfo.qty !== undefined && (
-                              <span className="text-[10px] opacity-80 font-sans">({locInfo.qty} pcs)</span>
                             )}
                           </button>
                         );

@@ -15,21 +15,35 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.20.3",
-  "versionCode": 403,
+  "version": "v2.20.4",
+  "versionCode": 404,
   "buildDate": "19 November 2026",
-  "buildHash": "wms-261119-v403-1741",
-  "releaseTitle": "WMS v2.20.3 — Fix Cache Foto Trello & Anti-429 Throttling",
+  "buildHash": "wms-261119-v404-1833",
+  "releaseTitle": "WMS v2.20.4 — Rapikan Kartu Tugas Picking & Anti-Rancu Qty Stok Rak",
   "releaseNotes": [
-    "Fix cache lokal menimpa gdrive_image_url terbaru dari Supabase saat sinkronisasi Trello",
-    "Tambah IntersectionObserver + antrean maks 10 foto serentak untuk mencegah rate-limit 429 Google Drive",
-    "Tambah auto-retry bertahap (GDrive -> Thumbnail -> Proxy Trello) sebelum menampilkan No Photo",
-    "Sinkronkan pembaruan foto cloud otomatis ke tampilan Trello tanpa perlu reload manual"
+    "Ubah label stok rak di Tugas Picking menjadi (stok N) agar tidak rancu dengan qty ambil",
+    "Rapikan tata letak kartu item picking (Produk, SKU, Rak sejajar; Target Ambil menyatu dengan Counter)",
+    "Terapkan hierarki tombol Anti-Pelangi (1 tombol solid Maks + aksi sekunder outline seragam) & responsif HP/Desktop",
+    "Hapus duplikasi teks qty stok pada pilihan cepat rak di modal Edit Item Picking"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.20.3",
+    "versionCode": 403,
+    "buildDate": "19 November 2026",
+    "buildHash": "wms-261119-v403-1741",
+    "releaseTitle": "WMS v2.20.3 — Fix Cache Foto Trello & Anti-429 Throttling",
+    "releaseNotes": [
+      "Fix cache lokal menimpa gdrive_image_url terbaru dari Supabase saat sinkronisasi Trello",
+      "Tambah IntersectionObserver + antrean maks 10 foto serentak untuk mencegah rate-limit 429 Google Drive",
+      "Tambah auto-retry bertahap (GDrive -> Thumbnail -> Proxy Trello) sebelum menampilkan No Photo",
+      "Sinkronkan pembaruan foto cloud otomatis ke tampilan Trello tanpa perlu reload manual"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.20.2",
     "versionCode": 402,
@@ -120,18 +134,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Menghapus fitur auto-lookup dan auto-fill otomatis dari Trello UP di Form Penerimaan Produksi, Spreadsheet, Push Sheets, dan Asisten AI",
       "Mencegah anomali data nama produk, UP vendor, dan foto akibat pencocokan otomatis"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.19.4",
-    "versionCode": 394,
-    "buildDate": "18 November 2026",
-    "buildHash": "wms-261118-v394-1640",
-    "releaseTitle": "WMS v2.19.4 — Minimize Push Update Sheet Produksi (Tanggal, Master & SJ)",
-    "releaseNotes": [
-      "Modal Push Sheet Penerimaan Produksi (Per Tanggal, Semua Tanggal, Master Produksi, dan Surat Jalan) kini bisa di-minimize ke bubble mengambang",
-      "Proses pengiriman sheet ke Google Spreadsheet tetap berjalan di latar belakang lengkap dengan indikator progres live"
     ],
     "minSupportedVersion": "v2.0.0"
   }
