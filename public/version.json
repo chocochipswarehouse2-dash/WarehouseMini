@@ -1,11 +1,12 @@
 {
-  "version": "v2.22.2",
-  "versionCode": 422,
+  "version": "v2.22.3",
+  "versionCode": 423,
   "buildDate": "20 November 2026",
-  "buildHash": "wms-261120-v422-1430",
-  "releaseTitle": "WMS v2.22.2 — Buka Form Panggil Putaway dari Dashboard Utama",
+  "buildHash": "wms-261120-v423-1516",
+  "releaseTitle": "WMS v2.22.3 — Perbaiki Filter Zona Aksesoris/Belt & Loop Notifikasi Update",
   "releaseNotes": [
-    "Klik shortcut Tugas Putaway di Dashboard Utama langsung membuka PutawayCreateModal beserta panel Manajemen Tugas Putaway"
+    "Perbaiki filter zona di RackCapacityDashboard agar klik kartu Area Aksesoris/Belt/Transit/Blok F/Perbaikan menampilkan rak dengan benar",
+    "Tambahkan cooldown guard 30s di appUpdateService agar banner Mempersiapkan pembaruan tidak berulang saat CDN/SW sinkronisasi"
   ],
   "minSupportedVersion": "v2.0.0"
 }

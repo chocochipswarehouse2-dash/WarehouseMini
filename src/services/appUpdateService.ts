@@ -86,6 +86,19 @@ class AppUpdateManager {
   }
 
   public hasPendingUpdate(): boolean {
+    try {
+      const rawAttempt = sessionStorage.getItem('wms_last_apply_attempt_v1');
+      if (rawAttempt) {
+        const parsed = JSON.parse(rawAttempt);
+        if (
+          parsed?.version === this.state.latestVersion &&
+          Date.now() - Number(parsed?.ts || 0) < 30_000
+        ) {
+          return false;
+        }
+      }
+    } catch {}
+
     return (
       this.state.status === 'available' ||
       this.state.status === 'ready' ||
@@ -371,6 +384,13 @@ class AppUpdateManager {
   public applyUpdate(options?: { hardReload?: boolean }): void {
     if (this.isApplyingUpdate) return;
     this.isApplyingUpdate = true;
+
+    try {
+      sessionStorage.setItem(
+        'wms_last_apply_attempt_v1',
+        JSON.stringify({ version: this.state.latestVersion, ts: Date.now() })
+      );
+    } catch {}
 
     this.state.status = 'downloading';
     this.state.progress = 100;

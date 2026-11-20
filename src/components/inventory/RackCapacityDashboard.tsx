@@ -938,8 +938,8 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       } else if (selAreaUp === 'BLOK_F' || selAreaUp === 'BLOK F') {
         if (!isBlokF) return false;
       } else if (selAreaUp === 'ALL') {
-        // Warehouse Total: Rak ABCD + Koli
-        if (!isRak && !isKoli) return false;
+        // Warehouse Total: Rak ABCD + Koli (kecuali saat user memilih zona spesifik seperti Aksesoris/Transit/Blok F/Perbaikan)
+        if (selectedZoneId === 'ALL' && !isRak && !isKoli) return false;
       } else if (selectedArea) {
         if (s.area.toUpperCase() !== selAreaUp) return false;
       }
@@ -2165,9 +2165,13 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 <button
                   key={z.zoneId}
                   type="button"
-                  onClick={() =>
-                    setSelectedZoneId((prev) => (prev === z.zoneId ? 'ALL' : z.zoneId))
-                  }
+                  onClick={() => {
+                    const nextZone = selectedZoneId === z.zoneId ? 'ALL' : z.zoneId;
+                    setSelectedZoneId(nextZone);
+                    if (nextZone !== 'ALL') {
+                      setSelectedArea('ALL');
+                    }
+                  }}
                   className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                     isSelected
                       ? 'ring-1 ring-indigo-500 border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/30'
@@ -3111,7 +3115,10 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
         selectedArea={selectedArea}
         onSelectArea={setSelectedArea}
         selectedZoneId={selectedZoneId}
-        onSelectZoneId={setSelectedZoneId}
+        onSelectZoneId={(zoneId) => {
+          setSelectedZoneId(zoneId);
+          if (zoneId !== 'ALL') setSelectedArea('ALL');
+        }}
         selectedCategory={selectedCategory}
         onSelectCategory={setSelectedCategory}
         availableCategories={availableCategories}
