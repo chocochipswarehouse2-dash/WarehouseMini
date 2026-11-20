@@ -15,18 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.22.8",
-  "versionCode": 428,
+  "version": "v2.22.9",
+  "versionCode": 429,
   "buildDate": "20 November 2026",
-  "buildHash": "wms-261120-v428-1736",
-  "releaseTitle": "WMS v2.22.8 — Dukung Copy-Paste Gambar Screenshot di Fitur AI",
+  "buildHash": "wms-261120-v429-1909",
+  "releaseTitle": "WMS v2.22.9 — Perbaiki Pendaftaran Web Push (Notifikasi saat PWA Ditutup)",
   "releaseNotes": [
-    "Tambahkan handler onPaste pada input chat WmsAiModal agar gambar hasil screenshot (Ctrl+V / Paste) langsung terlampir ke AI"
+    "Deteksi & perbaiki langganan push dengan kunci VAPID lama/rusak lalu daftar ulang otomatis",
+    "Segarkan pendaftaran push setiap aplikasi dibuka kembali dari background",
+    "Tampilkan alasan jika notifikasi saat aplikasi ditutup gagal diaktifkan"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.22.8",
+    "versionCode": 428,
+    "buildDate": "20 November 2026",
+    "buildHash": "wms-261120-v428-1736",
+    "releaseTitle": "WMS v2.22.8 — Dukung Copy-Paste Gambar Screenshot di Fitur AI",
+    "releaseNotes": [
+      "Tambahkan handler onPaste pada input chat WmsAiModal agar gambar hasil screenshot (Ctrl+V / Paste) langsung terlampir ke AI"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.22.7",
     "versionCode": 427,
@@ -104,19 +117,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Tambah modal PutawayCreateModal untuk memilih/mencari rak Transit (X) & Kolian (R/V/Z) atau SKU secara langsung",
       "Integrasikan tombol + Buat Tugas Putaway di panel Manajemen Tugas Putaway"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.22.0",
-    "versionCode": 420,
-    "buildDate": "20 November 2026",
-    "buildHash": "wms-261120-v420-1301",
-    "releaseTitle": "WMS v2.22.0 — Rekomendasi Stock Take Ulang & Reset Scan Data (Anomali, Minus & Lokasi Terkait)",
-    "releaseNotes": [
-      "Menambahkan mesin analisis & modal Rekomendasi Stock Take Ulang untuk mendeteksi lokasi stok minus, lokasi anomali, SKU rusak/mismatch, serta selisih DealPOS vs Fisik",
-      "Secara otomatis melacak lokasi lain yang berkaitan (ripple-effect): rak lain yang menyimpan SKU bermasalah dan rak standar yang mirip dengan lokasi salah ketik/typo",
-      "Terintegrasi 1-klik dengan Reset Scan Data (Kosongkan Rak Superadmin), Cetak Lembar Audit Stock Take A4, Salin Daftar WA, serta akses dari Inventori, Dashboard Kapasitas, dan Audit Anomali"
     ],
     "minSupportedVersion": "v2.0.0"
   }

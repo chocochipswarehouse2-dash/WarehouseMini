@@ -201,7 +201,7 @@ import {
   syncNotifiedOrdersToServiceWorker,
   triggerServiceWorkerCheckNow,
 } from './services/pushNotification';
-import { subscribeToWebPush, unsubscribeFromWebPush } from './services/webPush';
+import { subscribeToWebPush, unsubscribeFromWebPush, getLastWebPushError } from './services/webPush';
 import { releaseScreenWakeLock, requestScreenWakeLock } from './services/wakeLock';
 import { isRunningInIframe } from './services/orientationLock';
 import { getStoredGasEndpoint, fetchWmsSettings } from './services/settings';
@@ -2960,12 +2960,25 @@ export default function App() {
       void unsubscribeFromWebPush();
       return;
     }
-    void subscribeToWebPush({
+    const identity = {
       username: session.username,
       isAdmin: Boolean(canReceiveAdminOrderNotif(session)),
       isPicker: Boolean(canReceivePickingAndSpsNotif(session)),
       storeName: session.store_name || session.store_code || '',
-    });
+    };
+    void subscribeToWebPush(identity);
+
+    // Segarkan pendaftaran push setiap aplikasi dibuka kembali dari background / minimize
+    // (subscription di HP bisa kedaluwarsa atau terhapus sistem tanpa sepengetahuan aplikasi)
+    let lastResync = Date.now();
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastResync < 60_000) return;
+      lastResync = Date.now();
+      void subscribeToWebPush(identity);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
   }, [session, notificationPermission, deviceNotificationEnabled]);
 
   // Service Worker background watcher toggle sync
@@ -3911,6 +3924,16 @@ export default function App() {
           isAdmin: Boolean(canReceiveAdminOrderNotif(session)),
           isPicker: Boolean(canReceivePickingAndSpsNotif(session)),
           storeName: session.store_name || session.store_code || '',
+        }).then((ok) => {
+          if (!ok) {
+            const reason = getLastWebPushError();
+            if (reason) {
+              showToast(
+                `Notifikasi saat aplikasi ditutup belum aktif: ${reason}`,
+                'warning'
+              );
+            }
+          }
         });
       }
       showToast('Notifikasi perangkat aktif (ON)!', 'success');

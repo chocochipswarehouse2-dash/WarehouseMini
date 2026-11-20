@@ -57,36 +57,87 @@ export interface WebPushIdentity {
  * Daftarkan perangkat ini ke Web Push (idempoten). Aman dipanggil berulang kali.
  * Mengembalikan true bila perangkat terdaftar di server.
  */
+let lastWebPushError = '';
+
+/** Alasan kegagalan pendaftaran Web Push terakhir (untuk ditampilkan ke pengguna). */
+export function getLastWebPushError(): string {
+  return lastWebPushError;
+}
+
+function sameApplicationServerKey(sub: PushSubscription, publicKey: string): boolean {
+  try {
+    const current = sub.options?.applicationServerKey;
+    if (!current) return true; // tidak bisa diverifikasi → anggap cocok
+    const a = new Uint8Array(current as ArrayBuffer);
+    const b = urlBase64ToUint8Array(publicKey);
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  } catch {
+    return true;
+  }
+}
+
+async function waitForServiceWorkerRegistration(): Promise<ServiceWorkerRegistration | null> {
+  const ready = await Promise.race([
+    navigator.serviceWorker.ready,
+    new Promise<null>((r) => setTimeout(() => r(null), 15000)),
+  ]);
+  if (ready) return ready;
+  return (await navigator.serviceWorker.getRegistration().catch(() => null)) || null;
+}
+
 export async function subscribeToWebPush(identity: WebPushIdentity): Promise<boolean> {
-  if (
-    !isWebPushSupported() ||
-    !isDeviceNotificationEnabled() ||
-    Notification.permission !== 'granted' ||
-    !identity.username
-  ) {
+  lastWebPushError = '';
+  if (!isWebPushSupported()) {
+    lastWebPushError = 'Browser ini tidak mendukung Web Push.';
+    return false;
+  }
+  if (!isDeviceNotificationEnabled() || Notification.permission !== 'granted' || !identity.username) {
     return false;
   }
   try {
-    const reg = await Promise.race([
-      navigator.serviceWorker.ready,
-      new Promise<null>((r) => setTimeout(() => r(null), 5000)),
-    ]);
-    if (!reg) return false;
+    const reg = await waitForServiceWorkerRegistration();
+    if (!reg) {
+      lastWebPushError = 'Service Worker belum aktif. Tutup lalu buka ulang aplikasi.';
+      return false;
+    }
 
     const publicKey = await fetchVapidPublicKey();
-    if (!publicKey) return false; // server push belum dikonfigurasi
+    if (!publicKey) {
+      lastWebPushError = 'Server push belum dikonfigurasi (VAPID key tidak ditemukan).';
+      return false;
+    }
 
-    let sub = await reg.pushManager.getSubscription();
-    if (!sub) {
-      sub = await reg.pushManager.subscribe({
+    const subscribeFresh = () =>
+      reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey) as unknown as BufferSource,
       });
+
+    let sub = await reg.pushManager.getSubscription();
+    // Subscription lama dengan kunci VAPID berbeda tidak akan pernah menerima push → buang & buat ulang
+    if (sub && !sameApplicationServerKey(sub, publicKey)) {
+      await sub.unsubscribe().catch(() => {});
+      sub = null;
+    }
+    if (!sub) {
+      try {
+        sub = await subscribeFresh();
+      } catch {
+        // Subscription rusak/kedaluwarsa di browser → bersihkan lalu coba sekali lagi
+        const stale = await reg.pushManager.getSubscription().catch(() => null);
+        if (stale) await stale.unsubscribe().catch(() => {});
+        sub = await subscribeFresh();
+      }
     }
     const json = sub.toJSON();
     const p256dh = json.keys?.p256dh || toB64Url(sub.getKey('p256dh'));
     const auth = json.keys?.auth || toB64Url(sub.getKey('auth'));
-    if (!sub.endpoint || !p256dh || !auth) return false;
+    if (!sub.endpoint || !p256dh || !auth) {
+      lastWebPushError = 'Data langganan push tidak lengkap dari browser.';
+      return false;
+    }
 
     await supabaseFetch(
       'push_subscriptions',
@@ -108,8 +159,9 @@ export async function subscribeToWebPush(identity: WebPushIdentity): Promise<boo
       localStorage.setItem(SUBSCRIBED_ENDPOINT_KEY, sub.endpoint);
     } catch {}
     return true;
-  } catch (e) {
+  } catch (e: any) {
     console.warn('Web Push subscribe gagal:', e);
+    lastWebPushError = String(e?.message || e || 'Pendaftaran push gagal').slice(0, 160);
     return false;
   }
 }

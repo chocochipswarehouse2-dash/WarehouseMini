@@ -1,11 +1,13 @@
 {
-  "version": "v2.22.8",
-  "versionCode": 428,
+  "version": "v2.22.9",
+  "versionCode": 429,
   "buildDate": "20 November 2026",
-  "buildHash": "wms-261120-v428-1736",
-  "releaseTitle": "WMS v2.22.8 — Dukung Copy-Paste Gambar Screenshot di Fitur AI",
+  "buildHash": "wms-261120-v429-1909",
+  "releaseTitle": "WMS v2.22.9 — Perbaiki Pendaftaran Web Push (Notifikasi saat PWA Ditutup)",
   "releaseNotes": [
-    "Tambahkan handler onPaste pada input chat WmsAiModal agar gambar hasil screenshot (Ctrl+V / Paste) langsung terlampir ke AI"
+    "Deteksi & perbaiki langganan push dengan kunci VAPID lama/rusak lalu daftar ulang otomatis",
+    "Segarkan pendaftaran push setiap aplikasi dibuka kembali dari background",
+    "Tampilkan alasan jika notifikasi saat aplikasi ditutup gagal diaktifkan"
   ],
   "minSupportedVersion": "v2.0.0"
 }
