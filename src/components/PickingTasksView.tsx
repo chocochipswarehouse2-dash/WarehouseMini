@@ -4497,6 +4497,116 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             const itemPickers = parsePickerNamesList(item.picker_name);
             const lastPickedBy = item.last_picked_by || (itemPickers.length > 0 ? itemPickers[itemPickers.length - 1] : '');
 
+            const isScanOnlyMode = inputMode === 'fisik' || inputMode === 'kamera';
+
+            if (isScanOnlyMode) {
+              return (
+                <div
+                  key={item.id || index}
+                  className={`rounded-xl bg-white dark:bg-[#131d31] border ${
+                    isCurrentShelf ? 'border-indigo-500 ring-2 ring-indigo-500/35' : cardBorder
+                  } px-3 py-2.5 shadow-2xs transition-all`}
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    {/* Left: Nama Produk, Size, SKU */}
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span
+                          className="text-sm font-extrabold text-slate-900 dark:text-white leading-snug"
+                          title={displayName}
+                        >
+                          {displayName}
+                        </span>
+                        {displaySize && displaySize !== '-' && (
+                          <span className="px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/75 border border-amber-300 dark:border-amber-700 font-mono text-xs font-black text-amber-950 dark:text-amber-100 uppercase shrink-0">
+                            {displaySize}
+                          </span>
+                        )}
+                        {statusBadge}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                        <span className="font-mono font-bold text-slate-600 dark:text-slate-300">
+                          {item.sku}
+                        </span>
+                        <span className="text-slate-300 dark:text-slate-700">•</span>
+                        {productLocs.length > 0 ? (
+                          productLocs.map((locInfo, locIdx) => {
+                            const loc = locInfo.lokasi;
+                            const isThisCurrentShelf =
+                              activeLocation && loc.toUpperCase() === activeLocation.toUpperCase();
+                            return (
+                              <button
+                                key={locIdx}
+                                type="button"
+                                onClick={() => handleSelectItemLocation(index, loc)}
+                                className={`px-2 py-0.5 rounded-lg font-mono font-black text-xs inline-flex items-center gap-1 transition-all cursor-pointer ${
+                                  isThisCurrentShelf
+                                    ? 'bg-indigo-600 text-white border border-indigo-600'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 border border-emerald-300/70 dark:border-emerald-700'
+                                }`}
+                                title={`Klik untuk pilih rak ${loc}`}
+                              >
+                                <MapPin className="w-3 h-3 shrink-0" />
+                                <span>{loc}</span>
+                                {locInfo.qty !== undefined && locInfo.qty !== null && (
+                                  <span className="text-[10px] font-sans font-semibold opacity-75">
+                                    ({locInfo.qty})
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })
+                        ) : /store|toko|sps|outlet/i.test(activeSJ?.tujuan || '') ? (
+                          <span className="px-2 py-0.5 rounded-lg font-mono font-bold text-xs bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                            {item.lokasi && item.lokasi !== '-' && item.lokasi !== 'KOSONG' && item.lokasi !== 'A-01'
+                              ? item.lokasi
+                              : activeSJ?.tujuan || 'STORE'}
+                          </span>
+                        ) : isRealtimeLoaded ? (
+                          <span className="px-2 py-0.5 rounded-lg font-mono font-bold text-[11px] bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                            STOK KOSONG (0)
+                          </span>
+                        ) : (
+                          <span className="font-mono text-xs text-slate-500">
+                            {item.lokasi && item.lokasi !== '-' ? item.lokasi : 'Cek Rak...'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Right: Qty (picked / target) */}
+                    <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
+                      {isOver && (
+                        <button
+                          type="button"
+                          onClick={() => handleSetItemMax(index)}
+                          className="px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-extrabold cursor-pointer"
+                        >
+                          Set {reqQty}/{reqQty}
+                        </button>
+                      )}
+                      <div
+                        className={`px-3 py-1 rounded-xl font-mono font-black text-sm tabular-nums ${
+                          isKosong
+                            ? 'bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 line-through'
+                            : isOver
+                            ? 'bg-rose-600 text-white'
+                            : isCompleted
+                            ? 'bg-emerald-600 text-white'
+                            : pickedQty > 0
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white'
+                        }`}
+                      >
+                        {pickedQty}/{reqQty} <span className="text-[10px] font-bold opacity-80">PCS</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
             return (
               <div
                 key={item.id || index}

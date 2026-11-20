@@ -1,11 +1,11 @@
 {
-  "version": "v2.22.5",
-  "versionCode": 425,
+  "version": "v2.22.6",
+  "versionCode": 426,
   "buildDate": "20 November 2026",
-  "buildHash": "wms-261120-v425-1559",
-  "releaseTitle": "WMS v2.22.5 — Dukung Range & Multi Rak pada Edit Spesifik Rak",
+  "buildHash": "wms-261120-v426-1652",
+  "releaseTitle": "WMS v2.22.6 — Mode Ringkas Tugas Picking saat Scanner/Kamera",
   "releaseNotes": [
-    "Tambahkan parser range (A001-A010) dan multi rak (A001, B005) dengan live preview target pada tab Edit Spesifik Rak di Setup Kapasitas"
+    "Sembunyikan input qty manual saat mode input Scanner Fisik atau Kamera di Tugas Picking, tampilkan list ringkas Nama, Size, SKU, Lokasi, dan Qty"
   ],
   "minSupportedVersion": "v2.0.0"
 }

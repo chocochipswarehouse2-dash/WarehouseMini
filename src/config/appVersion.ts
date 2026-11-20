@@ -15,18 +15,29 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.22.5",
-  "versionCode": 425,
+  "version": "v2.22.6",
+  "versionCode": 426,
   "buildDate": "20 November 2026",
-  "buildHash": "wms-261120-v425-1559",
-  "releaseTitle": "WMS v2.22.5 — Dukung Range & Multi Rak pada Edit Spesifik Rak",
+  "buildHash": "wms-261120-v426-1652",
+  "releaseTitle": "WMS v2.22.6 — Mode Ringkas Tugas Picking saat Scanner/Kamera",
   "releaseNotes": [
-    "Tambahkan parser range (A001-A010) dan multi rak (A001, B005) dengan live preview target pada tab Edit Spesifik Rak di Setup Kapasitas"
+    "Sembunyikan input qty manual saat mode input Scanner Fisik atau Kamera di Tugas Picking, tampilkan list ringkas Nama, Size, SKU, Lokasi, dan Qty"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.22.5",
+    "versionCode": 425,
+    "buildDate": "20 November 2026",
+    "buildHash": "wms-261120-v425-1559",
+    "releaseTitle": "WMS v2.22.5 — Dukung Range & Multi Rak pada Edit Spesifik Rak",
+    "releaseNotes": [
+      "Tambahkan parser range (A001-A010) dan multi rak (A001, B005) dengan live preview target pada tab Edit Spesifik Rak di Setup Kapasitas"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.22.4",
     "versionCode": 424,
@@ -107,19 +118,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Notifikasi pop-up dan suara pada Live Chat Store Ops [MS & Alter] kini secara cerdas disesuaikan: pesan yang dikirim dari pihak Warehouse/Admin WH ke Store tidak lagi memunculkan notifikasi pop-up/chime pada perangkat Warehouse/Admin WH sendiri",
       "Warehouse/Admin WH hanya akan menerima notifikasi suara/pop-up jika ada pesan masuk atau form pesanan baru yang dikirim oleh Store",
       "Pembaruan kompatibilitas Service Worker pwa-extras.js dan liveChatService.ts untuk notifikasi pesan Store Ops"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.21.0",
-    "versionCode": 410,
-    "buildDate": "20 November 2026",
-    "buildHash": "wms-261120-v410-0141",
-    "releaseTitle": "WMS v2.21.0 — Shortcut Alat Bantu Kerja Dashboard & Tampilan Seluler Native Kapasitas Rak",
-    "releaseNotes": [
-      "Menambahkan bagian Shortcut Alat Bantu Kerja (26 pintasan operasional 1 klik) di halaman Dashboard lengkap dengan filter kategori, pencarian, badge live, dan kontrol izin",
-      "Merombak tampilan seluler Dashboard Kapasitas menjadi gaya aplikasi seluler native (Circular Ring KPI, swipe area rail, Daftar vs Peta 3 kolom, Filter & Detail Rak Bottom Sheet, serta Bottom Action Dock di zona ibu jari)",
-      "Menambahkan deep-link langsung ke modal/panel Relokasi Rak, Tugas Putaway, Rekomendasi Pindah, Kosongkan Rak, Impor Excel, Ekspor Isi Lokasi, dan Stock Opname"
     ],
     "minSupportedVersion": "v2.0.0"
   }
