@@ -16,7 +16,9 @@ import {
   Loader2,
   ArrowRightLeft,
   Check,
+  Sparkles,
 } from 'lucide-react';
+import { StockTakeRecommendationModal } from './inventory/StockTakeRecommendationModal';
 import { ProductItem, StockRealtimeItem, UserSession } from '../types';
 import {
   AnomalyItem,
@@ -63,6 +65,7 @@ export const InventoryAnomalyModal: React.FC<InventoryAnomalyModalProps> = ({
   // Edit Name Modal State
   const [editingItem, setEditingItem] = useState<AnomalyItem | null>(null);
   const [newNameInput, setNewNameInput] = useState('');
+  const [isStockTakeRecOpen, setIsStockTakeRecOpen] = useState(false);
 
   // Scan anomalies from catalog & physical stock (only when modal is open)
   const allAnomalies = useMemo(() => {
@@ -425,13 +428,25 @@ export const InventoryAnomalyModal: React.FC<InventoryAnomalyModalProps> = ({
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsStockTakeRecOpen(true)}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              title="Buka rekomendasi Stock Take ulang & Reset Scan Data untuk lokasi bermasalah beserta lokasi terkait"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Rekomendasi Stock Take</span>
+              <span className="sm:hidden">Stock Take</span>
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* TOAST MESSAGE */}
@@ -1056,6 +1071,15 @@ export const InventoryAnomalyModal: React.FC<InventoryAnomalyModalProps> = ({
           </button>
         </div>
       </div>
+
+      <StockTakeRecommendationModal
+        isOpen={isStockTakeRecOpen}
+        onClose={() => setIsStockTakeRecOpen(false)}
+        productCatalog={productCatalog}
+        stockRows={stockList}
+        session={userSession}
+        onNotify={(msg, type) => showToast(msg, type === 'warning' ? 'info' : type)}
+      />
     </div>
   );
 };

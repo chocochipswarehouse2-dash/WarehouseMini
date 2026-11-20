@@ -1874,6 +1874,16 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               </span>
             </button>
 
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent('wms_open_stock_take_recommendations'))}
+              className="px-3 py-2 text-xs font-bold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+              title="Rekomendasi Stock Take Ulang & Reset Scan Data untuk lokasi anomali, minus, dan lokasi terkait"
+            >
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              <span>Rekomendasi Stock Take</span>
+            </button>
+
             {canManageCapacityConfig && (
               <button
                 type="button"

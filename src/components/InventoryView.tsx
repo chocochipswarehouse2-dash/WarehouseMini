@@ -25,6 +25,7 @@ import {
   ShoppingCart,
   ArrowRight,
   Maximize2,
+  Sparkles,
 } from 'lucide-react';
 import {
   InventoryPickingCartDrawer,
@@ -58,6 +59,7 @@ import {
 import { InventoryList } from './inventory/InventoryList';
 import { InventoryDetailDrawer } from './inventory/InventoryDetailDrawer';
 import { RackCapacityDashboard } from './inventory/RackCapacityDashboard';
+import { StockTakeRecommendationModal } from './inventory/StockTakeRecommendationModal';
 import { Warehouse3DVisualTab } from './inventory/Warehouse3DVisualTab';
 import { MutasiLogView } from './MutasiLogView';
 
@@ -172,9 +174,16 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   // 3. Selected SKU for Detail Drawer
   const [selectedSku, setSelectedSku] = useState<string | null>(null);
 
-  // 4. Modal Lokasi Export & Print PDF
+  // 4. Modal Lokasi Export & Print PDF + Stock Take Recommendation
   const [isLokasiExportModalOpen, setIsLokasiExportModalOpen] = useState(false);
   const [selectedExportLocation, setSelectedExportLocation] = useState('CC001');
+  const [isStockTakeRecOpen, setIsStockTakeRecOpen] = useState(false);
+
+  useEffect(() => {
+    const handleOpenStockTakeRec = () => setIsStockTakeRecOpen(true);
+    window.addEventListener('wms_open_stock_take_recommendations', handleOpenStockTakeRec);
+    return () => window.removeEventListener('wms_open_stock_take_recommendations', handleOpenStockTakeRec);
+  }, []);
 
   const handleOpenLokasiExport = useCallback((locName?: string) => {
     if (locName) setSelectedExportLocation(locName);
@@ -875,6 +884,17 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
               <span className="hidden sm:inline">LOKASI &amp; PRINT</span>
             </button>
 
+            {/* REKOMENDASI STOCK TAKE & RESET SCAN DATA */}
+            <button
+              type="button"
+              onClick={() => setIsStockTakeRecOpen(true)}
+              className="px-3 py-2 text-xs font-extrabold bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              title="Rekomendasi Stock Take Ulang & Reset Scan Data untuk lokasi anomali, minus, dan lokasi terkait"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span className="hidden sm:inline">REKOMENDASI SO</span>
+            </button>
+
             {/* KERANJANG PICKING BUTTON */}
             <button
               type="button"
@@ -1121,6 +1141,19 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           onSuccessSentToApp={handlePickingSuccessSentToApp}
         />
       )}
+
+      {/* ========================================================
+          10. REKOMENDASI STOCK TAKE ULANG & RESET SCAN DATA MODAL
+          ======================================================== */}
+      <StockTakeRecommendationModal
+        isOpen={isStockTakeRecOpen}
+        onClose={() => setIsStockTakeRecOpen(false)}
+        productCatalog={productCatalog}
+        stockRows={flatStockSnapshot}
+        session={session}
+        onNotify={onNotify}
+        onOpenScanner={() => setActiveTab('scanner')}
+      />
     </div>
   );
 });
