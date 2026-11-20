@@ -1,12 +1,11 @@
 {
-  "version": "v2.22.1",
-  "versionCode": 421,
+  "version": "v2.22.2",
+  "versionCode": 422,
   "buildDate": "20 November 2026",
-  "buildHash": "wms-261120-v421-1408",
-  "releaseTitle": "WMS v2.22.1 — Tambah Form Panggil Tugas Putaway",
+  "buildHash": "wms-261120-v422-1430",
+  "releaseTitle": "WMS v2.22.2 — Buka Form Panggil Putaway dari Dashboard Utama",
   "releaseNotes": [
-    "Tambah modal PutawayCreateModal untuk memilih/mencari rak Transit (X) & Kolian (R/V/Z) atau SKU secara langsung",
-    "Integrasikan tombol + Buat Tugas Putaway di panel Manajemen Tugas Putaway"
+    "Klik shortcut Tugas Putaway di Dashboard Utama langsung membuka PutawayCreateModal beserta panel Manajemen Tugas Putaway"
   ],
   "minSupportedVersion": "v2.0.0"
 }

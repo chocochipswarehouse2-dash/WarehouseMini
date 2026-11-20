@@ -433,6 +433,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
         setIsRelocationModalOpen(true);
       } else if (tool === 'putaway' && canUsePutaway) {
         setIsPutawayPanelOpen(true);
+        setIsPutawayCreateOpen(true);
       } else if (tool === 'recommendation') {
         setIsSimPanelOpen(true);
       } else if (tool === 'setup' && canManageCapacityConfig) {

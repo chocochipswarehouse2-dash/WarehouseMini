@@ -15,19 +15,30 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.22.1",
-  "versionCode": 421,
+  "version": "v2.22.2",
+  "versionCode": 422,
   "buildDate": "20 November 2026",
-  "buildHash": "wms-261120-v421-1408",
-  "releaseTitle": "WMS v2.22.1 — Tambah Form Panggil Tugas Putaway",
+  "buildHash": "wms-261120-v422-1430",
+  "releaseTitle": "WMS v2.22.2 — Buka Form Panggil Putaway dari Dashboard Utama",
   "releaseNotes": [
-    "Tambah modal PutawayCreateModal untuk memilih/mencari rak Transit (X) & Kolian (R/V/Z) atau SKU secara langsung",
-    "Integrasikan tombol + Buat Tugas Putaway di panel Manajemen Tugas Putaway"
+    "Klik shortcut Tugas Putaway di Dashboard Utama langsung membuka PutawayCreateModal beserta panel Manajemen Tugas Putaway"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.22.1",
+    "versionCode": 421,
+    "buildDate": "20 November 2026",
+    "buildHash": "wms-261120-v421-1408",
+    "releaseTitle": "WMS v2.22.1 — Tambah Form Panggil Tugas Putaway",
+    "releaseNotes": [
+      "Tambah modal PutawayCreateModal untuk memilih/mencari rak Transit (X) & Kolian (R/V/Z) atau SKU secara langsung",
+      "Integrasikan tombol + Buat Tugas Putaway di panel Manajemen Tugas Putaway"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.22.0",
     "versionCode": 420,
@@ -117,20 +128,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Tampilkan badge STOK KOSONG (0) saat stok gudang 0 pcs agar tidak menyesatkan picker",
       "Desain ulang kartu item Tugas Picking 3-zona Mobile-First (Header Rak & AMBIL PCS, Body Nama Produk Besar + Kotak SIZE, Footer tombol besar 1-tangan)",
       "Tambahkan label jelas Kosong/Reset/Edit di tampilan HP Seluler agar mudah dipahami"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.20.4",
-    "versionCode": 404,
-    "buildDate": "19 November 2026",
-    "buildHash": "wms-261119-v404-1833",
-    "releaseTitle": "WMS v2.20.4 — Rapikan Kartu Tugas Picking & Anti-Rancu Qty Stok Rak",
-    "releaseNotes": [
-      "Ubah label stok rak di Tugas Picking menjadi (stok N) agar tidak rancu dengan qty ambil",
-      "Rapikan tata letak kartu item picking (Produk, SKU, Rak sejajar; Target Ambil menyatu dengan Counter)",
-      "Terapkan hierarki tombol Anti-Pelangi (1 tombol solid Maks + aksi sekunder outline seragam) & responsif HP/Desktop",
-      "Hapus duplikasi teks qty stok pada pilihan cepat rak di modal Edit Item Picking"
     ],
     "minSupportedVersion": "v2.0.0"
   }
