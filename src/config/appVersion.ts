@@ -15,18 +15,30 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.22.6",
-  "versionCode": 426,
+  "version": "v2.22.7",
+  "versionCode": 427,
   "buildDate": "20 November 2026",
-  "buildHash": "wms-261120-v426-1652",
-  "releaseTitle": "WMS v2.22.6 — Mode Ringkas Tugas Picking saat Scanner/Kamera",
+  "buildHash": "wms-261120-v427-1717",
+  "releaseTitle": "WMS v2.22.7 — Perbaiki Sinkronisasi Katalog PWA HP & Validasi Scan Kamera",
   "releaseNotes": [
-    "Sembunyikan input qty manual saat mode input Scanner Fisik atau Kamera di Tugas Picking, tampilkan list ringkas Nama, Size, SKU, Lokasi, dan Qty"
+    "Deteksi otomatis katalog IndexedDB tidak lengkap via count=exact di syncSmartLowEgressCache agar jumlah anomali & master SKU di PWA HP sama persis dengan Laptop",
+    "Tambahkan fallback verifikasi SKU live ke Supabase dan sanitasi karakter tak terlihat pada scan kamera HP"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.22.6",
+    "versionCode": 426,
+    "buildDate": "20 November 2026",
+    "buildHash": "wms-261120-v426-1652",
+    "releaseTitle": "WMS v2.22.6 — Mode Ringkas Tugas Picking saat Scanner/Kamera",
+    "releaseNotes": [
+      "Sembunyikan input qty manual saat mode input Scanner Fisik atau Kamera di Tugas Picking, tampilkan list ringkas Nama, Size, SKU, Lokasi, dan Qty"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.22.5",
     "versionCode": 425,
@@ -105,19 +117,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseTitle": "WMS v2.21.2 — Penegasan Garis Tabel Inventori",
     "releaseNotes": [
       "Mempertegas garis pembatas horizontal dan vertikal pada tabel Daftar Inventori (Desktop) agar lebih jelas dan mudah dibaca di Mode Terang maupun Gelap"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.21.1",
-    "versionCode": 411,
-    "buildDate": "20 November 2026",
-    "buildHash": "wms-261120-v411-1216",
-    "releaseTitle": "WMS v2.21.1 — Optimasi Notifikasi Live Chat Store Ops (Warehouse/Admin WH)",
-    "releaseNotes": [
-      "Notifikasi pop-up dan suara pada Live Chat Store Ops [MS & Alter] kini secara cerdas disesuaikan: pesan yang dikirim dari pihak Warehouse/Admin WH ke Store tidak lagi memunculkan notifikasi pop-up/chime pada perangkat Warehouse/Admin WH sendiri",
-      "Warehouse/Admin WH hanya akan menerima notifikasi suara/pop-up jika ada pesan masuk atau form pesanan baru yang dikirim oleh Store",
-      "Pembaruan kompatibilitas Service Worker pwa-extras.js dan liveChatService.ts untuk notifikasi pesan Store Ops"
     ],
     "minSupportedVersion": "v2.0.0"
   }

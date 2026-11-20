@@ -4464,9 +4464,10 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
 
   const fetchMasterTable = async () => {
     let offset = 0;
+    const isMobileViewport = typeof window !== 'undefined' && window.innerWidth < 768;
+    const batchSize = isMobileViewport ? 3 : 6;
     while (offset < maxRowsPerTable) {
       const batchPromises = [];
-      const batchSize = 6;
       for (let i = 0; i < batchSize && offset < maxRowsPerTable; i++) {
         const off = offset;
         batchPromises.push(
@@ -7390,8 +7391,9 @@ export async function syncSmartLowEgressCache(): Promise<{
   isSmartDeltaSyncRunning = true;
 
   try {
-    // 1. Tiny ~250-byte watermark check (1 row from log_produk + 1 row from wms_system_docs)
-    const [latestLogRes, epochDocRes] = await Promise.allSettled([
+    // 1. Tiny ~250-byte watermark check (1 row from log_produk + 1 row from wms_system_docs + exact count of master_produk)
+    const { url: supaUrl, key: supaKey } = getStoredSupabaseConfig();
+    const [latestLogRes, epochDocRes, masterCountRes, localProducts] = await Promise.allSettled([
       supabaseFetch<Array<{ id: number; created_at: string }>>(
         'log_produk',
         'GET',
@@ -7404,11 +7406,34 @@ export async function syncSmartLowEgressCache(): Promise<{
         null,
         'section_id=eq.wms_cache_epoch&select=content,updated_at'
       ),
+      fetch(`${supaUrl}/rest/v1/master_produk?select=sku&limit=1`, {
+        method: 'GET',
+        headers: {
+          apikey: supaKey,
+          Authorization: 'Bearer ' + supaKey,
+          Prefer: 'count=exact',
+        },
+      }),
+      getAllProductsFromLocalDb(),
     ]);
 
     const latestLogId =
       latestLogRes.status === 'fulfilled' && Array.isArray(latestLogRes.value) && latestLogRes.value[0]?.id
         ? Number(latestLogRes.value[0].id)
+        : 0;
+
+    let cloudMasterCount = 0;
+    if (masterCountRes.status === 'fulfilled' && masterCountRes.value.ok) {
+      const contentRange = masterCountRes.value.headers.get('content-range') || '';
+      const totalPart = contentRange.split('/')[1];
+      const parsedTotal = Number(totalPart);
+      if (Number.isFinite(parsedTotal) && parsedTotal > 0) {
+        cloudMasterCount = parsedTotal;
+      }
+    }
+    const localMasterCount =
+      localProducts.status === 'fulfilled' && Array.isArray(localProducts.value)
+        ? localProducts.value.length
         : 0;
 
     let cloudStockResetEpoch = 0;
@@ -7426,11 +7451,15 @@ export async function syncSmartLowEgressCache(): Promise<{
     const localMasterImportEpoch = Number(localStorage.getItem('wms_last_master_import_epoch') || '0');
     const hasInitialLocationSync = localStorage.getItem('wms_loc_sync_v6_done') === 'true';
 
-    // CASE 1: Superadmin imported a new Master Produk CSV -> Full catalog refresh needed
-    if (cloudMasterImportEpoch > 0 && cloudMasterImportEpoch > localMasterImportEpoch) {
+    // CASE 1: Superadmin imported a new Master Produk CSV OR local IndexedDB is incomplete/stale compared to cloud count
+    const isLocalCatalogIncomplete = cloudMasterCount > 0 && cloudMasterCount - localMasterCount > 5;
+    if ((cloudMasterImportEpoch > 0 && cloudMasterImportEpoch > localMasterImportEpoch) || isLocalCatalogIncomplete) {
       const freshCatalog = await fetchMasterProductsFromSupabase(50000, true);
+      if (freshCatalog.length > 0) {
+        await saveProductsToLocalDb(freshCatalog, 'replace').catch(() => {});
+      }
       try {
-        localStorage.setItem('wms_last_master_import_epoch', String(cloudMasterImportEpoch));
+        if (cloudMasterImportEpoch > 0) localStorage.setItem('wms_last_master_import_epoch', String(cloudMasterImportEpoch));
         localStorage.removeItem('wms_master_updated_watermark');
         if (cloudStockResetEpoch > 0) localStorage.setItem('wms_last_stock_reset_epoch', String(cloudStockResetEpoch));
         if (latestLogId > 0) localStorage.setItem('wms_last_seen_log_id', String(latestLogId));

@@ -3979,7 +3979,10 @@ export default function App() {
 
   // Handle Scanned Item
   const handleScannedItem = (rawText: string) => {
-    const text = rawText.trim().toUpperCase();
+    const text = rawText
+      .replace(/[\u0000-\u001F\u007F\u200B-\u200D\uFEFF]/g, '')
+      .trim()
+      .toUpperCase();
     if (!text) return;
 
     // 1. Detect Category tag (#IN, #OUT, #SO) -> Just light up category indicator, do NOT add to scan list
@@ -4075,6 +4078,52 @@ export default function App() {
         playErrorBeep();
         vibrateDevice([100, 100, 100]);
         showToast(`Peringatan: SKU "${text}" tidak terdaftar!`, 'warning');
+
+        // Live fallback check against Supabase master_produk in case local IndexedDB cache on HP is missing this SKU
+        supabaseFetch<any[]>(
+          'master_produk',
+          'GET',
+          null,
+          `sku=ilike.${encodeURIComponent(text)}&select=sku,nama_produk,kategori,size,price,dealpos_channels&limit=1`
+        )
+          .then((rows) => {
+            if (!Array.isArray(rows) || rows.length === 0) return;
+            const row = rows[0];
+            const resolvedSku = String(row.sku || text).trim().toUpperCase();
+            const resolvedName = String(row.nama_produk || '').trim();
+            const resolvedSize = String(row.size || '').trim();
+            const resolvedItem: ProductItem = {
+              k: resolvedSku,
+              sku: resolvedSku,
+              p: resolvedName || resolvedSku,
+              nama_produk: resolvedName || resolvedSku,
+              s: resolvedSize,
+              size: resolvedSize,
+              c: String(row.kategori || '').trim(),
+              kategori: String(row.kategori || '').trim(),
+              price: Number(row.price) || 0,
+              dealpos_channels: row.dealpos_channels || undefined,
+            };
+            setScannedData((prev) =>
+              prev.map((it) =>
+                it.text === text && it.isInvalidSku
+                  ? {
+                      ...it,
+                      text: resolvedSku,
+                      isInvalidSku: false,
+                      productName: resolvedItem.p,
+                      size: resolvedSize,
+                    }
+                  : it
+              )
+            );
+            setProductDatabase((prev) => {
+              if (prev.some((p) => p.k.toUpperCase() === resolvedSku)) return prev;
+              return [...prev, resolvedItem];
+            });
+            saveProductsToLocalDb([resolvedItem], 'merge').catch(() => {});
+          })
+          .catch(() => {});
       } else {
         playSuccessBeep();
         vibrateDevice(40);
