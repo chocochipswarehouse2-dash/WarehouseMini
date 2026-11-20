@@ -1,12 +1,11 @@
 {
-  "version": "v2.22.3",
-  "versionCode": 423,
+  "version": "v2.22.4",
+  "versionCode": 424,
   "buildDate": "20 November 2026",
-  "buildHash": "wms-261120-v423-1516",
-  "releaseTitle": "WMS v2.22.3 — Perbaiki Filter Zona Aksesoris/Belt & Loop Notifikasi Update",
+  "buildHash": "wms-261120-v424-1552",
+  "releaseTitle": "WMS v2.22.4 — Rapikan Tabel 1-Baris di Workspace Tugas Putaway",
   "releaseNotes": [
-    "Perbaiki filter zona di RackCapacityDashboard agar klik kartu Area Aksesoris/Belt/Transit/Blok F/Perbaikan menampilkan rak dengan benar",
-    "Tambahkan cooldown guard 30s di appUpdateService agar banner Mempersiapkan pembaruan tidak berulang saat CDN/SW sinkronisasi"
+    "Tampilkan Nama Produk, Size, SKU & Asal, Qty, serta tombol aksi dalam 1 baris tabel rapi pada tampilan desktop di PutawayWorkspaceModal"
   ],
   "minSupportedVersion": "v2.0.0"
 }

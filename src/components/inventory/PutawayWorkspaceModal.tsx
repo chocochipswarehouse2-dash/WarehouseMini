@@ -1361,8 +1361,166 @@ export const PutawayWorkspaceModal: React.FC<PutawayWorkspaceModalProps> = ({
                       )}
                     </div>
 
-                    {/* Items inside this destination group */}
-                    <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                    {/* Items inside this destination group — Desktop 1-Row Table */}
+                    <div className="hidden lg:block overflow-x-auto">
+                      <table className="w-full table-fixed border-collapse text-left">
+                        <thead>
+                          <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-[#0E1420]/70 text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            <th className="py-2 pl-4 pr-2 w-[33%]">Nama Produk</th>
+                            <th className="py-2 px-2 w-[9%]">Size</th>
+                            <th className="py-2 px-2 w-[23%]">SKU &amp; Asal</th>
+                            <th className="py-2 px-2 w-[11%] text-center">Qty</th>
+                            <th className="py-2 pl-2 pr-4 w-[24%] text-right">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                          {groupItems.map((item) => {
+                            const isDone = item.qty_placed >= item.qty_target;
+                            const rem = Math.max(0, item.qty_target - item.qty_placed);
+                            const activeActionLoc =
+                              activeTargetLoc || item.recommended_lokasi || '';
+
+                            return (
+                              <tr
+                                key={item.id}
+                                className={`transition-colors hover:bg-slate-50/70 dark:hover:bg-slate-800/30 ${
+                                  isDone ? 'bg-emerald-50/30 dark:bg-emerald-950/10' : ''
+                                }`}
+                              >
+                                <td className="py-2.5 pl-4 pr-2 align-middle">
+                                  <div className="text-xs font-bold text-slate-900 dark:text-white truncate" title={item.nama_produk}>
+                                    {item.nama_produk}
+                                  </div>
+                                  {(item.recommended_reason || item.note || (item.placements || []).length > 0) && (
+                                    <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                      {item.recommended_reason && (
+                                        <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-[260px]" title={item.recommended_reason}>
+                                          {item.recommended_reason}
+                                        </span>
+                                      )}
+                                      {item.note && (
+                                        <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-400">
+                                          <MessageSquare className="w-3 h-3 shrink-0" />
+                                          <span>{item.note}</span>
+                                        </span>
+                                      )}
+                                      {(item.placements || []).map((p) => (
+                                        <span
+                                          key={p.lokasi}
+                                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-mono font-bold ${
+                                            p.is_overridden
+                                              ? 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-700'
+                                              : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
+                                          }`}
+                                        >
+                                          <span>
+                                            {p.lokasi}: {p.qty}{p.is_overridden ? '*' : ''}
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={() => placeQtyOnItem(item.id, p.lokasi, -1)}
+                                            className="hover:text-rose-600 cursor-pointer"
+                                            title={`Kurangi 1 pcs dari ${p.lokasi}`}
+                                          >
+                                            <Minus className="w-2.5 h-2.5" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => placeQtyOnItem(item.id, p.lokasi, -p.qty)}
+                                            className="hover:text-rose-600 cursor-pointer"
+                                            title={`Hapus penempatan di ${p.lokasi}`}
+                                          >
+                                            <Trash2 className="w-2.5 h-2.5" />
+                                          </button>
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </td>
+
+                                <td className="py-2.5 px-2 align-middle">
+                                  <span className="inline-flex px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 font-mono font-bold text-[11px] text-slate-700 dark:text-slate-200">
+                                    {item.size || '-'}
+                                  </span>
+                                </td>
+
+                                <td className="py-2.5 px-2 align-middle">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="font-mono font-bold text-xs text-slate-900 dark:text-white">
+                                      {item.sku}
+                                    </span>
+                                    <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono font-bold text-[10px] text-slate-600 dark:text-slate-300">
+                                      Dari {item.source_lokasi}
+                                    </span>
+                                    {item.status === 'KENDALA' && (
+                                      <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 text-[10px] font-bold">
+                                        Kendala
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+
+                                <td className="py-2.5 px-2 align-middle text-center">
+                                  <span
+                                    className={`inline-flex px-2.5 py-1 rounded-lg font-mono font-black text-xs tabular-nums whitespace-nowrap ${
+                                      isDone
+                                        ? 'bg-emerald-600 text-white'
+                                        : item.qty_placed > 0
+                                        ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-300'
+                                        : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                    }`}
+                                  >
+                                    {item.qty_placed}/{item.qty_target} pcs
+                                  </span>
+                                </td>
+
+                                <td className="py-2.5 pl-2 pr-4 align-middle">
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    {!isDone && activeActionLoc && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => placeQtyOnItem(item.id, activeActionLoc, 1)}
+                                          className="px-2.5 py-1.5 text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 hover:bg-slate-50 rounded-xl flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                                          title={`Taruh +1 pcs ke ${activeActionLoc}`}
+                                        >
+                                          <Plus className="w-3.5 h-3.5 text-emerald-600" />
+                                          <span>1</span>
+                                        </button>
+                                        {rem > 1 && (
+                                          <button
+                                            type="button"
+                                            onClick={() => placeQtyOnItem(item.id, activeActionLoc, rem)}
+                                            className="px-2.5 py-1.5 text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 hover:bg-slate-50 rounded-xl flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                                            title={`Taruh semua sisa (${rem} pcs) ke ${activeActionLoc}`}
+                                          >
+                                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                            <span>Semua ({rem})</span>
+                                          </button>
+                                        )}
+                                      </>
+                                    )}
+
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditItemRack(item)}
+                                      className="px-2.5 py-1.5 text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 rounded-xl flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                                      title="Ubah rak tujuan, split ke rak lain, atau catat kendala"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                                      <span>Ubah Rak</span>
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Items inside this destination group — Mobile Compact View */}
+                    <div className="lg:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
                       {groupItems.map((item) => {
                         const isDone = item.qty_placed >= item.qty_target;
                         const rem = Math.max(0, item.qty_target - item.qty_placed);
@@ -1372,13 +1530,13 @@ export const PutawayWorkspaceModal: React.FC<PutawayWorkspaceModalProps> = ({
                         return (
                           <div
                             key={item.id}
-                            className={`p-3 sm:px-4 flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 ${
+                            className={`p-3 flex flex-col justify-between gap-2.5 ${
                               isDone ? 'bg-emerald-50/30 dark:bg-emerald-950/10' : ''
                             }`}
                           >
                             <div className="min-w-0 space-y-1">
                               <div className="flex flex-wrap items-center gap-1.5">
-                                <span className="font-mono font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
+                                <span className="font-mono font-bold text-xs text-slate-900 dark:text-white">
                                   {item.sku}
                                 </span>
                                 <span className="px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 font-mono font-bold text-[10px] text-slate-700 dark:text-slate-300">

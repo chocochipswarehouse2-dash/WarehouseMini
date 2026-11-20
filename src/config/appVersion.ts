@@ -15,19 +15,30 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.22.3",
-  "versionCode": 423,
+  "version": "v2.22.4",
+  "versionCode": 424,
   "buildDate": "20 November 2026",
-  "buildHash": "wms-261120-v423-1516",
-  "releaseTitle": "WMS v2.22.3 — Perbaiki Filter Zona Aksesoris/Belt & Loop Notifikasi Update",
+  "buildHash": "wms-261120-v424-1552",
+  "releaseTitle": "WMS v2.22.4 — Rapikan Tabel 1-Baris di Workspace Tugas Putaway",
   "releaseNotes": [
-    "Perbaiki filter zona di RackCapacityDashboard agar klik kartu Area Aksesoris/Belt/Transit/Blok F/Perbaikan menampilkan rak dengan benar",
-    "Tambahkan cooldown guard 30s di appUpdateService agar banner Mempersiapkan pembaruan tidak berulang saat CDN/SW sinkronisasi"
+    "Tampilkan Nama Produk, Size, SKU & Asal, Qty, serta tombol aksi dalam 1 baris tabel rapi pada tampilan desktop di PutawayWorkspaceModal"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.22.3",
+    "versionCode": 423,
+    "buildDate": "20 November 2026",
+    "buildHash": "wms-261120-v423-1516",
+    "releaseTitle": "WMS v2.22.3 — Perbaiki Filter Zona Aksesoris/Belt & Loop Notifikasi Update",
+    "releaseNotes": [
+      "Perbaiki filter zona di RackCapacityDashboard agar klik kartu Area Aksesoris/Belt/Transit/Blok F/Perbaikan menampilkan rak dengan benar",
+      "Tambahkan cooldown guard 30s di appUpdateService agar banner Mempersiapkan pembaruan tidak berulang saat CDN/SW sinkronisasi"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.22.2",
     "versionCode": 422,
@@ -112,20 +123,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Pindahkan Dokumentasi Pengiriman Keseluruhan dari Form Input ke Tab Proses Kirim (tersimpan ke Supabase)",
       "Rapikan tampilan 4 tahap (Input, Dispatched, Kirim, Histori Kirim) responsif Desktop & HP Seluler",
       "Perbaiki bug banner filter toko kosong pada tab Dispatched & tambah ringkasan antrean per toko"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.20.6",
-    "versionCode": 406,
-    "buildDate": "19 November 2026",
-    "buildHash": "wms-261119-v406-2102",
-    "releaseTitle": "WMS v2.20.6 — Fix Progres Picking Offline Hilang Saat Kembali Online",
-    "releaseNotes": [
-      "Tambah antrean sinkronisasi per-item offline (wms_picking_item_sync_queue_v1) agar scan/qty saat offline tidak hilang",
-      "Cegah data server usang menimpa progres SKU lokal yang belum tersinkron saat koneksi kembali online",
-      "Sinkronkan otomatis progres item offline ke Supabase lebih dulu sebelum refresh realtime & dukung multi-picker keroyokan",
-      "Serialisasi update per-SKU agar tap cepat +1/+1 atau sinyal putus-nyambung tidak bentrok"
     ],
     "minSupportedVersion": "v2.0.0"
   }
