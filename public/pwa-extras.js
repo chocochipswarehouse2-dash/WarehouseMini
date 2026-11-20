@@ -668,6 +668,24 @@ async function checkNewOrdersInBackground() {
                 continue;
               }
 
+              // Filter khusus grup Store Ops ([MS & Alter] / group_ops_*):
+              // Jika pesan dikirim oleh Warehouse/Admin WH (sender = warehouse/chocoadm/admwh) dan penerima adalah Warehouse/Admin WH,
+              // jangan tampilkan notifikasi push (Warehouse/Admin WH tidak perlu notifikasi atas pesan keluar mereka ke Store).
+              const isOpsRoom =
+                room.system_group_kind === 'store_ops' ||
+                String(room.id || '').toLowerCase().startsWith('group_ops_') ||
+                String(room.name || '').toLowerCase().startsWith('[ms & alter]');
+
+              if (isOpsRoom) {
+                const whAccounts = ['warehouse', 'chocoadm', 'admwh'];
+                const isSenderWh = whAccounts.includes(lastSender);
+                const isRecipientWh = whAccounts.includes(me);
+                if (isSenderWh && isRecipientWh) {
+                  notifiedSet.add(lastMsgId);
+                  continue;
+                }
+              }
+
               notifiedSet.add(lastMsgId);
               newlyNotifiedIds.push(lastMsgId);
               updated = true;

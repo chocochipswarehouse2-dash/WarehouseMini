@@ -13,7 +13,7 @@
 import { UserSession, WmsUser } from '../types';
 import { getSupabaseClient, supabaseFetch, fetchWmsUsersFromSupabase } from './supabase';
 import { uploadImageToGdrive } from './gdriveUpload';
-import { isSuperadmin } from './permissions';
+import { isSuperadmin, isStoreAccountSession } from './permissions';
 import { getUserPersonName } from '../utils/userResolver';
 import { getFullStoreName } from './gasManualShipment';
 import { getStoreCode } from '../utils/transactionGenerator';
@@ -182,6 +182,49 @@ export function isProtectedStoreOpsGroup(room: ChatRoom | null | undefined): boo
   const id = String(room.id || '').trim().toLowerCase();
   const name = String(room.name || '').trim().toLowerCase();
   return id.startsWith('group_ops_') || name.startsWith('[ms & alter]');
+}
+
+/**
+ * Filter notifikasi Live Chat Store Ops (Manual Shipment & Alteration).
+ * Aturan bisnis:
+ * 1. Pesan yang dikirim oleh sisi Warehouse/Admin WH (sender = @warehouse / @chocoadm) ditujukan ke Store.
+ *    Akun Warehouse/Admin WH TIDAK PERLU mendapatkan notifikasi pop-up/suara/push atas pesanan/pesan keluar tersebut.
+ * 2. Sebaliknya, ketika Store mengirim pesan / form order baru masuk dari Store ke Warehouse/Admin,
+ *    Warehouse/Admin WAJIB mendapatkan notifikasi pesan masuk.
+ * 3. Store penerima (bukan sender) tetap wajib mendapatkan notifikasi pesan masuk dari Warehouse/Admin.
+ */
+export function shouldNotifyUserForStoreOpsMessage(
+  room: ChatRoom,
+  senderUsername: string,
+  recipientUsername: string,
+  recipientSession?: UserSession | null
+): boolean {
+  if (!isProtectedStoreOpsGroup(room)) {
+    return true;
+  }
+  const senderLower = String(senderUsername || '').trim().toLowerCase();
+  const recipientLower = String(recipientUsername || '').trim().toLowerCase();
+
+  const isSenderWarehouse =
+    WAREHOUSE_OPS_CORE_ACCOUNTS.includes(senderLower as any) ||
+    senderLower === 'warehouse' ||
+    senderLower === 'chocoadm' ||
+    senderLower === 'admwh';
+
+  const isRecipientWarehouse =
+    WAREHOUSE_OPS_CORE_ACCOUNTS.includes(recipientLower as any) ||
+    recipientLower === 'warehouse' ||
+    recipientLower === 'chocoadm' ||
+    recipientLower === 'admwh' ||
+    (recipientSession ? !isStoreAccountSession(recipientSession) : false);
+
+  // Jika pengirim berasal dari sisi Warehouse/Admin WH dan penerimanya juga akun Warehouse/Admin WH,
+  // skip notifikasi (Warehouse/Admin WH tidak perlu notif sendiri / sesama admin untuk pesan keluar ke Store)
+  if (isSenderWarehouse && isRecipientWarehouse) {
+    return false;
+  }
+
+  return true;
 }
 
 export function isRoomDeletedByTombstone(
@@ -1489,10 +1532,17 @@ class LiveChatManager {
           savePersistedNotifiedOrderIds(this.notifiedMessageIds);
           void syncNotifiedOrdersToServiceWorker(Array.from(this.notifiedMessageIds));
 
+          const allowNotify = shouldNotifyUserForStoreOpsMessage(
+            r,
+            lastSender,
+            me,
+            this.currentSession
+          );
+
           const isViewingThisRoom =
             this.state.activeRoomId === r.id && (this.state.isFloatingOpen || isOnLiveChatPage);
 
-          if (!isViewingThisRoom) {
+          if (!isViewingThisRoom && allowNotify) {
             const senderLabel = String(
               r.last_message_sender_name || r.last_message_sender || 'Rekan Tim'
             ).trim();
@@ -3535,11 +3585,20 @@ class LiveChatManager {
     // Always notify UI listeners so active chat room re-renders with new message (text/photo) instantly
     this.notify();
 
-    // Trigger audio, toast & system notification if sent by someone else and not actively viewing
+    // Trigger audio, toast & system notification if sent by someone else, not actively viewing,
+    // and passes the Store Ops role-aware notification check (Warehouse/Admin WH don't receive notif for messages sent by Warehouse/Admin WH to Store)
+    const allowOpsNotify = shouldNotifyUserForStoreOpsMessage(
+      finalRoom,
+      message.sender_username,
+      me,
+      this.currentSession
+    );
+
     if (
       !alreadyExists &&
       message.sender_username.toLowerCase() !== me &&
       !isCurrentlyViewingRoom &&
+      allowOpsNotify &&
       !this.notifiedMessageIds.has(message.id)
     ) {
       this.notifiedMessageIds.add(message.id);
