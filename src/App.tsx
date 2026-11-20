@@ -1227,8 +1227,20 @@ export default function App() {
       setLocationPurgeInitialLocations(locs);
       setIsLocationPurgeOpen(true);
     };
+    const handleOpenImportStok = () => {
+      setIsImportModalOpen(true);
+    };
+    const handleOpenAiModal = () => {
+      setIsAiModalOpen(true);
+    };
     window.addEventListener('wms_open_location_purge', handleOpenPurge);
-    return () => window.removeEventListener('wms_open_location_purge', handleOpenPurge);
+    window.addEventListener('wms_open_import_stok_modal', handleOpenImportStok);
+    window.addEventListener('wms_open_ai_modal', handleOpenAiModal);
+    return () => {
+      window.removeEventListener('wms_open_location_purge', handleOpenPurge);
+      window.removeEventListener('wms_open_import_stok_modal', handleOpenImportStok);
+      window.removeEventListener('wms_open_ai_modal', handleOpenAiModal);
+    };
   }, []);
   const [isApkModalOpen, setIsApkModalOpen] = useState<boolean>(false);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState<boolean>(false);
@@ -4853,8 +4865,18 @@ export default function App() {
                             session={session}
                             onNavigate={(page, subTab) => {
                               if (page === 'agenda' && subTab) setAgendaInitialTab(subTab as any);
-                              if (page === 'loading_dock' && subTab) setLoadingDockInitialTab(subTab as any);
-                              if (page === 'inventory' && subTab) setInventoryInitialTab(subTab as any);
+                              if (page === 'loading_dock' && subTab) {
+                                setLoadingDockInitialTab(subTab as any);
+                                window.dispatchEvent(new CustomEvent('wms_open_loading_dock_tab', { detail: { tab: subTab } }));
+                              }
+                              if (page === 'inventory' && subTab) {
+                                setInventoryInitialTab(subTab as any);
+                                window.dispatchEvent(new CustomEvent('wms_open_inventory_tab', { detail: { tab: subTab } }));
+                              }
+                              if ((page === 'cetak_label' || page === 'cetak_barcode') && subTab) {
+                                setCetakLabelInitialTab(subTab as any);
+                                window.dispatchEvent(new CustomEvent('wms_open_cetak_label_tab', { detail: { tab: subTab } }));
+                              }
                               handleSelectPage(page as any, subTab);
                             }}
                             productCatalog={productDatabase}
@@ -5176,8 +5198,18 @@ export default function App() {
                       session={session}
                       onNavigate={(page, subTab) => {
                         if (page === 'agenda' && subTab) setAgendaInitialTab(subTab as any);
-                        if (page === 'loading_dock' && subTab) setLoadingDockInitialTab(subTab as any);
-                        if (page === 'inventory' && subTab) setInventoryInitialTab(subTab as any);
+                        if (page === 'loading_dock' && subTab) {
+                          setLoadingDockInitialTab(subTab as any);
+                          window.dispatchEvent(new CustomEvent('wms_open_loading_dock_tab', { detail: { tab: subTab } }));
+                        }
+                        if (page === 'inventory' && subTab) {
+                          setInventoryInitialTab(subTab as any);
+                          window.dispatchEvent(new CustomEvent('wms_open_inventory_tab', { detail: { tab: subTab } }));
+                        }
+                        if ((page === 'cetak_label' || page === 'cetak_barcode') && subTab) {
+                          setCetakLabelInitialTab(subTab as any);
+                          window.dispatchEvent(new CustomEvent('wms_open_cetak_label_tab', { detail: { tab: subTab } }));
+                        }
                         handleSelectPage(page as any, subTab);
                       }}
                       productCatalog={productDatabase}

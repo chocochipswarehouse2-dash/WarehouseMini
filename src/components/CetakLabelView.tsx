@@ -49,6 +49,17 @@ export const CetakLabelView: React.FC<CetakLabelViewProps> = ({
     } catch {}
   };
 
+  useEffect(() => {
+    const handleOpenTab = (e: Event) => {
+      const tab = (e as CustomEvent<{ tab?: CetakLabelTabType }>)?.detail?.tab;
+      if (tab === 'qr_prefix' || tab === 'paket' || tab === 'barcode') {
+        handleSelectTab(tab);
+      }
+    };
+    window.addEventListener('wms_open_cetak_label_tab', handleOpenTab);
+    return () => window.removeEventListener('wms_open_cetak_label_tab', handleOpenTab);
+  }, []);
+
   return (
     <div className="p-2 sm:p-4 space-y-4 w-full max-w-full pb-24">
       {/* 

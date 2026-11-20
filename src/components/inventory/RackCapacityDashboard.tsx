@@ -41,6 +41,7 @@ import { formatOperatorWithPersonName } from '../../utils/userResolver';
 import { LocationRelocationModal } from './LocationRelocationModal';
 import { PutawayPreviewModal } from './PutawayPreviewModal';
 import { PutawayWorkspaceModal } from './PutawayWorkspaceModal';
+import { RackCapacityMobileView } from './RackCapacityMobileView';
 import {
   fetchPutawayTasks,
   cancelPutawayTask,
@@ -241,10 +242,17 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isZonesExpanded, setIsZonesExpanded] = useState<boolean>(true);
 
-  // Selected Rack for Detail Drawer
+  // Selected Rack for Detail Drawer / Mobile Bottom Sheet
   const [selectedRackLokasi, setSelectedRackLokasi] = useState<string | null>(null);
+  const [mobileDetailTab, setMobileDetailTab] = useState<'produk' | 'saran' | 'riwayat' | 'atur'>('produk');
   const [rackLogs, setRackLogs] = useState<LogProdukItem[]>([]);
   const [loadingRackLogs, setLoadingRackLogs] = useState(false);
+
+  useEffect(() => {
+    if (selectedRackLokasi) {
+      setMobileDetailTab('produk');
+    }
+  }, [selectedRackLokasi]);
 
   // Quick Edit in Drawer or Table
   const [editCapValue, setEditCapValue] = useState<number>(25);
@@ -413,6 +421,43 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       window.removeEventListener('online', onOnlineSyncOutbox);
     };
   }, [loadPutawayTasks, onNotify, onRefreshStock, onRelocationSuccess]);
+
+  // Listen for Dashboard Work-Tool deep-links (Relokasi, Putaway, Rekomendasi Pindah, Setup)
+  useEffect(() => {
+    const activateTool = (tool: string) => {
+      if (tool === 'relocation' && canRelocateRack) {
+        setRelocationInitialFromLocations([]);
+        setRelocationInitialFromLoc('');
+        setIsRelocationModalOpen(true);
+      } else if (tool === 'putaway' && canUsePutaway) {
+        setIsPutawayPanelOpen(true);
+      } else if (tool === 'recommendation') {
+        setIsSimPanelOpen(true);
+      } else if (tool === 'setup' && canManageCapacityConfig) {
+        const normalized = normalizeAndMigrateRackConfig(config);
+        setDraftZones(normalized.zones.map((z) => ({ ...z })));
+        setIsSetupModalOpen(true);
+      } else if (tool === 'multiselect' && canMultiSelectRacks) {
+        setIsMultiSelectMode(true);
+      }
+    };
+
+    const pending = (window as any).__wms_pending_rack_tool;
+    if (pending) {
+      delete (window as any).__wms_pending_rack_tool;
+      activateTool(String(pending));
+    }
+
+    const handleToolEvent = (e: Event) => {
+      const tool = (e as CustomEvent<{ tool?: string }>)?.detail?.tool;
+      if (tool) {
+        delete (window as any).__wms_pending_rack_tool;
+        activateTool(tool);
+      }
+    };
+    window.addEventListener('wms_rack_capacity_tool', handleToolEvent);
+    return () => window.removeEventListener('wms_rack_capacity_tool', handleToolEvent);
+  }, [canRelocateRack, canUsePutaway, canManageCapacityConfig, canMultiSelectRacks, config]);
 
   const activePutawayTasks = useMemo(
     () => putawayTasks.filter((t) => t.status === 'AKTIF'),
@@ -1746,10 +1791,11 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   };
 
   return (
-    <div className="space-y-4 w-full max-w-full min-w-0 overflow-x-hidden pb-20 sm:pb-6">
+    <div className="space-y-3 md:space-y-4 w-full max-w-full min-w-0 overflow-x-hidden pb-6">
       {/* ============================================================================
-          1. UNIFIED EXECUTIVE CAPACITY SUMMARY & AREA SEGMENT STRIP
+          1 & 2 (DESKTOP >= md): EXECUTIVE CAPACITY SUMMARY & ZONE BREAKDOWN
           ============================================================================ */}
+      <div className="hidden md:block space-y-4">
       <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 sm:p-4 space-y-3.5 shadow-2xs min-w-0">
         {/* Top Header: Active Scope Summary + Primary/Secondary Actions */}
         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 min-w-0">
@@ -2166,6 +2212,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
           </div>
         )}
       </div>
+      </div>
 
       {/* ============================================================================
           3. REKOMENDASI PINDAH & REFILL RAK (Koli -> ABCD & Relokasi Overload)
@@ -2244,6 +2291,15 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                   </button>
                 </>
               )}
+              <button
+                type="button"
+                onClick={() => setIsSimPanelOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-xl hover:bg-purple-100/70 dark:hover:bg-purple-900/40 cursor-pointer"
+                title="Tutup panel rekomendasi"
+                aria-label="Tutup panel rekomendasi"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           </div>
 
@@ -3012,8 +3068,90 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       )}
 
       {/* ============================================================================
-          4. FILTER & VIEW MODE TOOLBAR (Search, Category Filter, Status Filter, Grid/Table Toggle)
+          MOBILE-NATIVE APP VIEW (< md / Seluler)
           ============================================================================ */}
+      <RackCapacityMobileView
+        summaryStats={summaryStats}
+        filteredSlots={filteredSlots}
+        totalAllSlots={allSlots.length}
+        selectedArea={selectedArea}
+        onSelectArea={setSelectedArea}
+        selectedZoneId={selectedZoneId}
+        onSelectZoneId={setSelectedZoneId}
+        selectedCategory={selectedCategory}
+        onSelectCategory={setSelectedCategory}
+        availableCategories={availableCategories}
+        statusFilter={statusFilter}
+        onSelectStatusFilter={setStatusFilter}
+        searchQuery={searchQuery}
+        onChangeSearchQuery={setSearchQuery}
+        onResetAllFilters={() => {
+          setSelectedArea('ALL');
+          setSelectedZoneId('ALL');
+          setSelectedCategory('ALL');
+          setStatusFilter('ALL');
+          setSearchQuery('');
+        }}
+        onSelectRack={(loc) => setSelectedRackLokasi(loc)}
+        canRelocateRack={canRelocateRack}
+        canUsePutaway={canUsePutaway}
+        canManageCapacityConfig={canManageCapacityConfig}
+        canMultiSelectRacks={canMultiSelectRacks}
+        userIsSuperadmin={userIsSuperadmin}
+        activePutawayCount={activePutawayTasks.length}
+        putawayOutboxCount={putawayOutboxCount}
+        simulationMovesCount={simulationMoves.length}
+        isPutawayPanelOpen={isPutawayPanelOpen}
+        isSimPanelOpen={isSimPanelOpen}
+        onOpenRelocation={() => {
+          setRelocationInitialFromLocations([]);
+          setRelocationInitialFromLoc('');
+          setIsRelocationModalOpen(true);
+        }}
+        onTogglePutawayPanel={() => {
+          setIsPutawayPanelOpen((prev) => {
+            const next = !prev;
+            if (next) window.scrollTo({ top: 0, behavior: 'smooth' });
+            return next;
+          });
+        }}
+        onToggleSimPanel={() => {
+          setIsSimPanelOpen((prev) => {
+            const next = !prev;
+            if (next) window.scrollTo({ top: 0, behavior: 'smooth' });
+            return next;
+          });
+        }}
+        onOpenSetupModal={handleOpenSetupModal}
+        onRefreshStock={onRefreshStock}
+        isRefreshingStock={isRefreshingStock}
+        isMultiSelectMode={isMultiSelectMode}
+        selectedMultiLocs={selectedMultiLocs}
+        selectedMultiStats={selectedMultiStats}
+        filteredFilledCount={filteredFilledSlots.length}
+        onToggleMultiSelectMode={() => {
+          if (isMultiSelectMode) handleExitMultiSelectMode();
+          else setIsMultiSelectMode(true);
+        }}
+        onToggleMultiRack={(loc) => handleToggleMultiRack(loc, false)}
+        onSelectFilledFiltered={handleSelectFilledFiltered}
+        onClearMultiSelection={handleClearMultiSelection}
+        onExitMultiSelectMode={handleExitMultiSelectMode}
+        onStartMultiPutaway={() => {
+          if (selectedMultiStats.putawayEligibleList.length > 0) {
+            setPreviewPutawaySources(selectedMultiStats.putawayEligibleList);
+          }
+        }}
+        onOpenMultiRelocation={handleOpenMultiRelocation}
+        onOpenMultiPurge={() => handleOpenMultiPurge()}
+        activePutawayBySource={activePutawayBySource}
+        reservedDestQtyMap={reservedDestQtyMap}
+      />
+
+      {/* ============================================================================
+          4 & 5 (DESKTOP >= md): FILTER TOOLBAR, MULTI-SELECT & GRID/TABLE VISUALIZATION
+          ============================================================================ */}
+      <div className="hidden md:block space-y-4">
       <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl p-3 sm:p-3.5 space-y-3 min-w-0 max-w-full overflow-hidden">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 sm:gap-3 min-w-0">
           {/* Search Input */}
@@ -3652,46 +3790,63 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
         </span>
         <span>Terhubung langsung ke stok fisik nyata (stok_real_fisik &amp; log_produk)</span>
       </div>
+      </div>
 
       {/* ============================================================================
-          6. RACK DETAIL & SMART RECOMMENDATION CENTERED POPUP MODAL
+          6. RACK DETAIL: NATIVE SLIDE-UP BOTTOM SHEET (MOBILE) / CENTERED MODAL (DESKTOP)
           ============================================================================ */}
       {selectedSlot && (
         <div
           onClick={() => setSelectedRackLokasi(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-slate-900/60 backdrop-blur-xs p-0 md:p-4 animate-in fade-in duration-150"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-5xl max-h-[90vh] bg-white dark:bg-[#131d31] rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden"
+            className="relative w-full md:max-w-5xl max-h-[92dvh] md:max-h-[90vh] bg-white dark:bg-[#131d31] rounded-t-3xl md:rounded-2xl shadow-2xl border-t md:border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden animate-in slide-in-from-bottom md:zoom-in-95 duration-200"
           >
+            {/* Mobile Sheet Drag Handle */}
+            <div className="md:hidden pt-2.5 pb-1 flex justify-center bg-slate-50/70 dark:bg-[#0E1420] shrink-0">
+              <div className="w-10 h-1.5 rounded-full bg-slate-300 dark:bg-slate-700" />
+            </div>
+
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 bg-slate-50/70 dark:bg-[#0E1420]">
-              <div>
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <span className="text-2xl font-black font-mono text-slate-900 dark:text-white">
+            <div className="px-4 py-3 md:px-6 md:py-4 border-b border-slate-200 dark:border-slate-800 flex items-start md:items-center justify-between gap-3 bg-slate-50/70 dark:bg-[#0E1420] shrink-0">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xl md:text-2xl font-black font-mono text-slate-900 dark:text-white">
                     Rak {selectedSlot.lokasi}
                   </span>
                   <span
-                    className={`text-sm font-extrabold ${
+                    className={`text-xs md:text-sm font-extrabold ${
                       getStatusVisual(selectedSlot.status).textColor
                     }`}
                   >
                     · {getStatusVisual(selectedSlot.status).label} ({selectedSlot.fillPercent}%)
                   </span>
                 </div>
-                <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  <span>Area: {selectedSlot.area}</span>
+                <div className="text-[11px] md:text-xs text-slate-500 dark:text-slate-400 mt-0.5 md:mt-1 truncate">
+                  <span>{selectedSlot.area}</span>
                   <span aria-hidden="true"> · </span>
-                  <span>Kategori: {selectedSlot.category}</span>
+                  <span>{selectedSlot.category}</span>
                   <span aria-hidden="true"> · </span>
                   <span className="font-mono tabular-nums font-bold text-slate-700 dark:text-slate-300">
-                    {selectedSlot.skuCount} SKU aktif ({selectedSlot.currentQty} pcs)
+                    {selectedSlot.skuCount} SKU ({selectedSlot.currentQty}/{selectedSlot.maxCapacity} pcs)
                   </span>
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              {/* Mobile Close Button Only (Mobile actions live in thumb-zone footer!) */}
+              <button
+                type="button"
+                onClick={() => setSelectedRackLokasi(null)}
+                className="md:hidden w-9 h-9 rounded-xl text-slate-500 hover:bg-slate-200/70 dark:hover:bg-slate-800 flex items-center justify-center shrink-0 cursor-pointer"
+                aria-label="Tutup"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              {/* Desktop Action Header Buttons */}
+              <div className="hidden md:flex flex-wrap items-center gap-2">
                 {canUsePutaway && selectedSlotPutawayInfo.isEligibleSource && (
                   <>
                     {selectedSlotPutawayInfo.activeTask ? (
@@ -3817,15 +3972,42 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               </div>
             </div>
 
+            {/* Mobile Segmented Tab Switcher inside Rack Bottom Sheet */}
+            <div className="md:hidden px-4 py-2 bg-white dark:bg-[#131d31] border-b border-slate-100 dark:border-slate-800 shrink-0">
+              <div className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-slate-100 dark:bg-[#0E1420]">
+                {(
+                  [
+                    { id: 'produk' as const, label: `Produk (${selectedSlot.items.length})` },
+                    { id: 'saran' as const, label: `Saran (${recommendedRacks.length})` },
+                    { id: 'riwayat' as const, label: 'Riwayat' },
+                    ...(canManageCapacityConfig ? [{ id: 'atur' as const, label: 'Atur' }] : []),
+                  ]
+                ).map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setMobileDetailTab(t.id)}
+                    className={`py-2 px-1.5 rounded-lg text-[11px] font-extrabold text-center transition-all cursor-pointer truncate ${
+                      mobileDetailTab === t.id
+                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-2xs'
+                        : 'text-slate-500 dark:text-slate-400'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Modal Scrollable Body */}
-            <div className="p-6 overflow-y-auto space-y-5 flex-1">
+            <div className="p-4 md:p-6 overflow-y-auto space-y-4 md:space-y-5 flex-1">
               {/* Top Row: Capacity Meter + Quick Capacity Override */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+              <div className={`grid grid-cols-1 lg:grid-cols-12 gap-4 ${mobileDetailTab === 'produk' || mobileDetailTab === 'atur' ? '' : 'hidden md:grid'}`}>
                 {/* Capacity Visual Meter */}
                 <div
                   className={`${
                     canManageCapacityConfig ? 'lg:col-span-5' : 'lg:col-span-12'
-                  } p-4 rounded-2xl bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-3`}
+                  } ${mobileDetailTab === 'atur' ? 'hidden md:flex' : 'flex'} p-3.5 md:p-4 rounded-2xl bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 flex-col justify-between space-y-2.5 md:space-y-3`}
                 >
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
@@ -3865,7 +4047,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
 
                 {/* Quick Edit Capacity for this Specific Rack */}
                 {canManageCapacityConfig && (
-                  <div className="lg:col-span-7 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-3">
+                  <div className={`lg:col-span-7 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex-col justify-between space-y-3 ${mobileDetailTab === 'atur' ? 'flex' : 'hidden md:flex'}`}>
                     <div className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
                       Pengaturan Kapasitas Spesifik Rak {selectedSlot.lokasi}
                     </div>
@@ -3920,7 +4102,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
 
               {/* Smart Recommendation: Nearest Empty / Low-Occupancy Racks in Same Category */}
               {recommendedRacks.length > 0 && (
-                <div className="p-4 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/60 space-y-3">
+                <div className={`p-3.5 md:p-4 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/60 space-y-3 ${mobileDetailTab === 'saran' ? 'block' : 'hidden md:block'}`}>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="text-xs font-extrabold text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5">
                       <Sparkles className="w-4 h-4 text-emerald-600" />
@@ -3985,10 +4167,17 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 </div>
               )}
 
+              {/* Mobile empty state when Saran tab selected but no recommended racks */}
+              {recommendedRacks.length === 0 && mobileDetailTab === 'saran' && (
+                <div className="md:hidden p-8 text-center rounded-2xl border border-slate-200 dark:border-slate-800 text-xs text-slate-400">
+                  Belum ada rekomendasi rak kosong terdekat untuk kategori ini.
+                </div>
+              )}
+
               {/* Bottom Two-Column Layout: Physical Products in Rack (Left) + Recent Scan Logs (Right) */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+              <div className={`grid grid-cols-1 lg:grid-cols-12 gap-5 ${mobileDetailTab === 'produk' || mobileDetailTab === 'riwayat' ? '' : 'hidden md:grid'}`}>
                 {/* SKU Items in This Rack */}
-                <div className="lg:col-span-7 space-y-2.5">
+                <div className={`lg:col-span-7 space-y-2.5 ${mobileDetailTab === 'produk' ? 'block' : 'hidden md:block'}`}>
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
                       Daftar Produk Fisik di Rak {selectedSlot.lokasi} ({selectedSlot.items.length}{' '}
@@ -4052,7 +4241,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 </div>
 
                 {/* Recent Scan History in This Rack */}
-                <div className="lg:col-span-5 space-y-2.5">
+                <div className={`lg:col-span-5 space-y-2.5 ${mobileDetailTab === 'riwayat' ? 'block' : 'hidden md:block'}`}>
                   <div className="flex items-center gap-1.5 text-xs font-extrabold text-slate-800 dark:text-slate-200">
                     <History className="w-3.5 h-3.5 text-amber-500" />
                     <span>Riwayat Scan Operator Terakhir di Rak {selectedSlot.lokasi}</span>
@@ -4108,8 +4297,89 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               </div>
             </div>
 
-            {/* Modal Footer */}
-            <div className="px-6 py-3.5 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end bg-slate-50/70 dark:bg-[#0E1420]">
+            {/* Mobile Sticky Thumb-Zone Action Bar */}
+            <div className="md:hidden px-3 py-2.5 pb-[calc(0.65rem+env(safe-area-inset-bottom))] border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0E1420] flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0">
+              {canUsePutaway && selectedSlotPutawayInfo.isEligibleSource && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedSlotPutawayInfo.activeTask) {
+                      const t = selectedSlotPutawayInfo.activeTask;
+                      setSelectedRackLokasi(null);
+                      saveActivePutawaySession({
+                        taskId: t.id,
+                        task: t,
+                        activeTargetLoc: '',
+                        rekapCatatan: t.catatan || '',
+                        isMinimized: false,
+                        timestamp: Date.now(),
+                      });
+                      setActivePutawayTask(t);
+                    } else {
+                      const loc = selectedSlot.lokasi;
+                      setSelectedRackLokasi(null);
+                      setPreviewPutawaySources([loc]);
+                    }
+                  }}
+                  className="flex-1 min-h-[44px] px-3 rounded-xl text-xs font-extrabold bg-indigo-600 text-white flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <ClipboardList className="w-4 h-4 shrink-0" />
+                  <span>{selectedSlotPutawayInfo.activeTask ? 'Bantu Putaway' : 'Ambil Putaway'}</span>
+                </button>
+              )}
+
+              {canRelocateRack && selectedSlot.currentQty > 0 && (
+                <button
+                  type="button"
+                  disabled={Boolean(selectedSlotPutawayInfo.activeTask)}
+                  onClick={() => {
+                    const loc = selectedSlot.lokasi;
+                    setSelectedRackLokasi(null);
+                    setRelocationInitialFromLocations([]);
+                    setRelocationInitialFromLoc(loc);
+                    setIsRelocationModalOpen(true);
+                  }}
+                  className="flex-1 min-h-[44px] px-3 rounded-xl text-xs font-extrabold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 disabled:opacity-40 cursor-pointer"
+                >
+                  <ArrowRightLeft className="w-4 h-4 shrink-0" />
+                  <span>Relokasi</span>
+                </button>
+              )}
+
+              {onOpenPrintModal && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const loc = selectedSlot.lokasi;
+                    setSelectedRackLokasi(null);
+                    onOpenPrintModal(loc);
+                  }}
+                  className="min-h-[44px] px-3 rounded-xl text-xs font-extrabold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <Printer className="w-4 h-4 shrink-0" />
+                  <span>Cetak</span>
+                </button>
+              )}
+
+              {userIsSuperadmin && selectedSlot.currentQty > 0 && (
+                <button
+                  type="button"
+                  disabled={Boolean(selectedSlotPutawayInfo.activeTask)}
+                  onClick={() => {
+                    const loc = selectedSlot.lokasi.toUpperCase();
+                    setSelectedRackLokasi(null);
+                    handleOpenMultiPurge([loc]);
+                  }}
+                  className="min-h-[44px] px-3 rounded-xl text-xs font-extrabold bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 disabled:opacity-40 cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4 shrink-0" />
+                  <span>Kosongkan</span>
+                </button>
+              )}
+            </div>
+
+            {/* Desktop Modal Footer */}
+            <div className="hidden md:flex px-6 py-3.5 border-t border-slate-200 dark:border-slate-800 items-center justify-end bg-slate-50/70 dark:bg-[#0E1420] shrink-0">
               <button
                 type="button"
                 onClick={() => setSelectedRackLokasi(null)}

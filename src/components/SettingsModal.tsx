@@ -208,11 +208,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   // Default tab: Superadmin/Admin/Manager defaults to 'database' or 'users', User Lain defaults to 'theme'!
   const [activeTab, setActiveTab] = useState<SettingsTab>(() => {
+    if (typeof window !== 'undefined' && (window as any).__wms_pending_settings_tab) {
+      const pending = (window as any).__wms_pending_settings_tab as SettingsTab;
+      delete (window as any).__wms_pending_settings_tab;
+      return pending;
+    }
     if (initialTab) return initialTab;
     if (userIsSuperadmin || canManageSettings) return 'database';
     if (canManageUsers) return 'users';
     return 'theme';
   });
+
+  useEffect(() => {
+    const handleOpenSettingsTab = (e: Event) => {
+      const targetTab = (e as CustomEvent<{ tab?: SettingsTab }>)?.detail?.tab;
+      if (targetTab) {
+        setActiveTab(targetTab);
+      }
+    };
+    window.addEventListener('wms_open_settings_tab', handleOpenSettingsTab);
+    return () => window.removeEventListener('wms_open_settings_tab', handleOpenSettingsTab);
+  }, []);
 
   // Guard: non-authorized users are kept on allowed tabs
   useEffect(() => {

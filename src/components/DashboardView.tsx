@@ -73,6 +73,7 @@ import {
   getPendingRecountOutboxCount,
 } from '../services/scannerOutboxService';
 import { InventoryAnomalyModal } from './InventoryAnomalyModal';
+import { DashboardWorkToolsGrid } from './DashboardWorkToolsGrid';
 
 export interface DashboardRecountQueueEntry {
   kode_produksi: string;
@@ -1024,6 +1025,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* 1B. Alat Bantu Kerja (Shortcut Operasional 1 Klik) */}
+      <DashboardWorkToolsGrid
+        session={session}
+        onNavigate={handleAction}
+        onOpenAnomalyModal={() => setIsAnomalyModalOpen(true)}
+        activePickingCount={pickingSummary.activeTasks.length}
+        recountPendingCount={belumRecountEntries.length}
+        anomalyTotalCount={anomalySummary.total}
+        hasProduksiDraft={produksiDraft.hasDraft}
+      />
 
       {/* 2. Top 4 Master KPI Cards (Mobile: 2x2 Grid, Desktop: 4 Columns) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">

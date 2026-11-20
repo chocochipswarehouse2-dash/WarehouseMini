@@ -15,21 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.20.7",
-  "versionCode": 407,
-  "buildDate": "19 November 2026",
-  "buildHash": "wms-261119-v407-2222",
-  "releaseTitle": "WMS v2.20.7 — Rapikan Pengiriman Store (Input, Dispatched, Kirim & Histori)",
+  "version": "v2.21.0",
+  "versionCode": 410,
+  "buildDate": "20 November 2026",
+  "buildHash": "wms-261120-v410-0141",
+  "releaseTitle": "WMS v2.21.0 — Shortcut Alat Bantu Kerja Dashboard & Tampilan Seluler Native Kapasitas Rak",
   "releaseNotes": [
-    "Sederhanakan Form Input Pengiriman Store (gabung Deskripsi & Keterangan menjadi 1 kolom efisien)",
-    "Pindahkan Dokumentasi Pengiriman Keseluruhan dari Form Input ke Tab Proses Kirim (tersimpan ke Supabase)",
-    "Rapikan tampilan 4 tahap (Input, Dispatched, Kirim, Histori Kirim) responsif Desktop & HP Seluler",
-    "Perbaiki bug banner filter toko kosong pada tab Dispatched & tambah ringkasan antrean per toko"
+    "Menambahkan bagian Shortcut Alat Bantu Kerja (26 pintasan operasional 1 klik) di halaman Dashboard lengkap dengan filter kategori, pencarian, badge live, dan kontrol izin",
+    "Merombak tampilan seluler Dashboard Kapasitas menjadi gaya aplikasi seluler native (Circular Ring KPI, swipe area rail, Daftar vs Peta 3 kolom, Filter & Detail Rak Bottom Sheet, serta Bottom Action Dock di zona ibu jari)",
+    "Menambahkan deep-link langsung ke modal/panel Relokasi Rak, Tugas Putaway, Rekomendasi Pindah, Kosongkan Rak, Impor Excel, Ekspor Isi Lokasi, dan Stock Opname"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.20.7",
+    "versionCode": 407,
+    "buildDate": "19 November 2026",
+    "buildHash": "wms-261119-v407-2222",
+    "releaseTitle": "WMS v2.20.7 — Rapikan Pengiriman Store (Input, Dispatched, Kirim & Histori)",
+    "releaseNotes": [
+      "Sederhanakan Form Input Pengiriman Store (gabung Deskripsi & Keterangan menjadi 1 kolom efisien)",
+      "Pindahkan Dokumentasi Pengiriman Keseluruhan dari Form Input ke Tab Proses Kirim (tersimpan ke Supabase)",
+      "Rapikan tampilan 4 tahap (Input, Dispatched, Kirim, Histori Kirim) responsif Desktop & HP Seluler",
+      "Perbaiki bug banner filter toko kosong pada tab Dispatched & tambah ringkasan antrean per toko"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.20.6",
     "versionCode": 406,
@@ -126,18 +139,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Algoritma rute putaway live mengikuti plafon aman dinamis Setup Kapasitas, prioritas konsolidasi SKU/size/kategori, auto-split Transit ke Kolian, dan reservasi slot anti-tabrakan",
       "Dukungan keroyokan multi-operator realtime, scan hybrid (#LOK <-> SKU), override & split rak aktual, cetak A4/Thermal, kirim WA, serta proteksi offline outbox & floating dock",
       "Memperbaiki sinkronisasi nilai Plafon Aman (safeOccupancyCapPercent) saat memuat ulang konfigurasi Kapasitas Rak"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.19.8",
-    "versionCode": 398,
-    "buildDate": "18 November 2026",
-    "buildHash": "wms-261118-v398-2005",
-    "releaseTitle": "WMS v2.19.8 — Perbaikan Status Sedang Dikerjakan dari Baris SELESAI di Picking",
-    "releaseNotes": [
-      "Memastikan active_pickers di Tugas Picking hanya membaca baris item yang belum SELESAI",
-      "Mencegah status Sedang Dikerjakan muncul kembali setelah Batal Ambil pada SJ dengan baris historis SELESAI"
     ],
     "minSupportedVersion": "v2.0.0"
   }

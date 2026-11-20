@@ -181,6 +181,23 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     setIsLokasiExportModalOpen(true);
   }, []);
 
+  useEffect(() => {
+    const consumePending = () => {
+      const pending = (window as any).__wms_pending_lokasi_export;
+      if (pending) {
+        delete (window as any).__wms_pending_lokasi_export;
+        handleOpenLokasiExport(typeof pending === 'string' ? pending : undefined);
+      }
+    };
+    consumePending();
+    const handleEvent = (e: Event) => {
+      const loc = (e as CustomEvent<{ lokasi?: string }>)?.detail?.lokasi;
+      handleOpenLokasiExport(loc);
+    };
+    window.addEventListener('wms_open_lokasi_export_modal', handleEvent);
+    return () => window.removeEventListener('wms_open_lokasi_export_modal', handleEvent);
+  }, [handleOpenLokasiExport]);
+
   // Auto-heal: verify if productCatalog has dealpos_channels, if not, trigger fresh sync from Supabase
   useEffect(() => {
     if (productCatalog && productCatalog.length > 0 && onRefreshCatalog) {
@@ -499,20 +516,21 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           3. Scanner Barcode
           4. Log Produk
           ======================================================== */}
-      <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl p-2 flex flex-col lg:flex-row lg:items-center justify-between gap-2 shadow-xs">
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap py-1 px-1 -mx-1 sm:mx-0 w-full lg:w-auto">
+      <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl p-1.5 sm:p-2 flex flex-col lg:flex-row lg:items-center justify-between gap-2 shadow-xs">
+        <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap py-0.5 px-0.5 w-full lg:w-auto">
           {canViewCapacity && (
             <button
               type="button"
               onClick={() => setActiveTab('capacity')}
-              className={`px-3.5 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
+              className={`px-3 sm:px-3.5 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-1.5 sm:gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
                 activeTab === 'capacity'
                   ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
               <LayoutGrid className="w-4 h-4 shrink-0" />
-              <span>Dashboard Interaktif Kapasitas</span>
+              <span className="sm:hidden">Kapasitas</span>
+              <span className="hidden sm:inline">Dashboard Interaktif Kapasitas</span>
             </button>
           )}
 
@@ -521,14 +539,15 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
               type="button"
               id="tab-inventory-3d-visual"
               onClick={() => setActiveTab('visual_3d')}
-              className={`px-3.5 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
+              className={`px-3 sm:px-3.5 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-1.5 sm:gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
                 activeTab === 'visual_3d'
                   ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
               <Box className="w-4 h-4 shrink-0" />
-              <span>3D Visual Kapasitas</span>
+              <span className="sm:hidden">Denah 3D</span>
+              <span className="hidden sm:inline">3D Visual Kapasitas</span>
             </button>
           )}
 
@@ -536,14 +555,15 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
             <button
               type="button"
               onClick={() => setActiveTab('inventory')}
-              className={`px-3.5 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
+              className={`px-3 sm:px-3.5 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-1.5 sm:gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
                 activeTab === 'inventory'
                   ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
               <Boxes className="w-4 h-4 shrink-0" />
-              <span>Data Inventory Produk</span>
+              <span className="sm:hidden">Stok Produk</span>
+              <span className="hidden sm:inline">Data Inventory Produk</span>
             </button>
           )}
 
@@ -552,14 +572,15 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
               type="button"
               id="tab-inventory-scanner"
               onClick={() => setActiveTab('scanner')}
-              className={`px-3.5 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
+              className={`px-3 sm:px-3.5 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-1.5 sm:gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
                 activeTab === 'scanner'
                   ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
               <ScanBarcode className="w-4 h-4 shrink-0" />
-              <span>Scanner Barcode</span>
+              <span className="sm:hidden">Scanner</span>
+              <span className="hidden sm:inline">Scanner Barcode</span>
               {scannedCount > 0 && (
                 <span
                   className={`px-1.5 py-0.2 rounded-full text-[10px] font-black font-mono ${
@@ -579,14 +600,15 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
               type="button"
               id="tab-inventory-logs"
               onClick={() => setActiveTab('logs')}
-              className={`px-3.5 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
+              className={`px-3 sm:px-3.5 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center gap-1.5 sm:gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
                 activeTab === 'logs'
                   ? 'bg-slate-900 text-white dark:bg-amber-500 dark:text-black shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
               <ClipboardList className="w-4 h-4 shrink-0" />
-              <span>Log Produk</span>
+              <span className="sm:hidden">Log</span>
+              <span className="hidden sm:inline">Log Produk</span>
             </button>
           )}
         </div>
