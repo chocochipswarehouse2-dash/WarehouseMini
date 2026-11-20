@@ -1,12 +1,11 @@
 {
-  "version": "v2.22.7",
-  "versionCode": 427,
+  "version": "v2.22.8",
+  "versionCode": 428,
   "buildDate": "20 November 2026",
-  "buildHash": "wms-261120-v427-1717",
-  "releaseTitle": "WMS v2.22.7 — Perbaiki Sinkronisasi Katalog PWA HP & Validasi Scan Kamera",
+  "buildHash": "wms-261120-v428-1736",
+  "releaseTitle": "WMS v2.22.8 — Dukung Copy-Paste Gambar Screenshot di Fitur AI",
   "releaseNotes": [
-    "Deteksi otomatis katalog IndexedDB tidak lengkap via count=exact di syncSmartLowEgressCache agar jumlah anomali & master SKU di PWA HP sama persis dengan Laptop",
-    "Tambahkan fallback verifikasi SKU live ke Supabase dan sanitasi karakter tak terlihat pada scan kamera HP"
+    "Tambahkan handler onPaste pada input chat WmsAiModal agar gambar hasil screenshot (Ctrl+V / Paste) langsung terlampir ke AI"
   ],
   "minSupportedVersion": "v2.0.0"
 }

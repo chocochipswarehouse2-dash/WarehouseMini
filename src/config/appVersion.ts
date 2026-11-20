@@ -15,19 +15,30 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.22.7",
-  "versionCode": 427,
+  "version": "v2.22.8",
+  "versionCode": 428,
   "buildDate": "20 November 2026",
-  "buildHash": "wms-261120-v427-1717",
-  "releaseTitle": "WMS v2.22.7 — Perbaiki Sinkronisasi Katalog PWA HP & Validasi Scan Kamera",
+  "buildHash": "wms-261120-v428-1736",
+  "releaseTitle": "WMS v2.22.8 — Dukung Copy-Paste Gambar Screenshot di Fitur AI",
   "releaseNotes": [
-    "Deteksi otomatis katalog IndexedDB tidak lengkap via count=exact di syncSmartLowEgressCache agar jumlah anomali & master SKU di PWA HP sama persis dengan Laptop",
-    "Tambahkan fallback verifikasi SKU live ke Supabase dan sanitasi karakter tak terlihat pada scan kamera HP"
+    "Tambahkan handler onPaste pada input chat WmsAiModal agar gambar hasil screenshot (Ctrl+V / Paste) langsung terlampir ke AI"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.22.7",
+    "versionCode": 427,
+    "buildDate": "20 November 2026",
+    "buildHash": "wms-261120-v427-1717",
+    "releaseTitle": "WMS v2.22.7 — Perbaiki Sinkronisasi Katalog PWA HP & Validasi Scan Kamera",
+    "releaseNotes": [
+      "Deteksi otomatis katalog IndexedDB tidak lengkap via count=exact di syncSmartLowEgressCache agar jumlah anomali & master SKU di PWA HP sama persis dengan Laptop",
+      "Tambahkan fallback verifikasi SKU live ke Supabase dan sanitasi karakter tak terlihat pada scan kamera HP"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.22.6",
     "versionCode": 426,
@@ -106,17 +117,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Menambahkan mesin analisis & modal Rekomendasi Stock Take Ulang untuk mendeteksi lokasi stok minus, lokasi anomali, SKU rusak/mismatch, serta selisih DealPOS vs Fisik",
       "Secara otomatis melacak lokasi lain yang berkaitan (ripple-effect): rak lain yang menyimpan SKU bermasalah dan rak standar yang mirip dengan lokasi salah ketik/typo",
       "Terintegrasi 1-klik dengan Reset Scan Data (Kosongkan Rak Superadmin), Cetak Lembar Audit Stock Take A4, Salin Daftar WA, serta akses dari Inventori, Dashboard Kapasitas, dan Audit Anomali"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.21.2",
-    "versionCode": 412,
-    "buildDate": "20 November 2026",
-    "buildHash": "wms-261120-v412-1244",
-    "releaseTitle": "WMS v2.21.2 — Penegasan Garis Tabel Inventori",
-    "releaseNotes": [
-      "Mempertegas garis pembatas horizontal dan vertikal pada tabel Daftar Inventori (Desktop) agar lebih jelas dan mudah dibaca di Mode Terang maupun Gelap"
     ],
     "minSupportedVersion": "v2.0.0"
   }

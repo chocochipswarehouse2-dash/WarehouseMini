@@ -266,9 +266,8 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+  const processAttachmentFiles = async (files: File[]) => {
+    if (files.length === 0) return;
 
     setIsParsingAttachment(true);
     try {
@@ -290,7 +289,48 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
       }
     } finally {
       setIsParsingAttachment(false);
-      if (e.target) e.target.value = '';
+    }
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    await processAttachmentFiles(Array.from(files));
+    if (e.target) e.target.value = '';
+  };
+
+  const handlePasteAttachment = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const clipboardData = e.clipboardData;
+    if (!clipboardData) return;
+
+    const pastedFiles: File[] = [];
+    if (clipboardData.items && clipboardData.items.length > 0) {
+      for (let i = 0; i < clipboardData.items.length; i++) {
+        const item = clipboardData.items[i];
+        if (item.kind === 'file') {
+          const file = item.getAsFile();
+          if (file && file.type.startsWith('image/')) {
+            const ext = file.type.split('/')[1]?.replace(/[^a-z0-9]/gi, '') || 'png';
+            const namedFile =
+              file.name && file.name !== 'image.png'
+                ? file
+                : new File([file], `screenshot-${Date.now()}.${ext}`, { type: file.type });
+            pastedFiles.push(namedFile);
+          }
+        }
+      }
+    } else if (clipboardData.files && clipboardData.files.length > 0) {
+      for (let i = 0; i < clipboardData.files.length; i++) {
+        const file = clipboardData.files[i];
+        if (file.type.startsWith('image/')) {
+          pastedFiles.push(file);
+        }
+      }
+    }
+
+    if (pastedFiles.length > 0) {
+      e.preventDefault();
+      await processAttachmentFiles(pastedFiles);
     }
   };
 
@@ -2173,6 +2213,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                 ref={textareaRef}
                 value={inputPrompt}
                 onChange={(e) => setInputPrompt(e.target.value)}
+                onPaste={handlePasteAttachment}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
