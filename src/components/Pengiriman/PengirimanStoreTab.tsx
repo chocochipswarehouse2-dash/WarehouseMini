@@ -5,6 +5,7 @@ import {
   Layers,
   FileText,
   Plus,
+  Minus,
   Trash2,
   Printer,
   Send,
@@ -65,6 +66,11 @@ import {
   parseTripPhotoUrls,
   getTodayDateString,
   getCurrentTimeString,
+  estimateKoliFromPcs,
+  updateDispatchedReportKoli,
+  ESTIMATED_PCS_PER_KOLI,
+  findDuplicateNoSjConflicts,
+  DuplicateNoSjConflict,
 } from '../../services/pengirimanStore';
 import { fetchOutlets, DEFAULT_OUTLETS, getFullStoreName } from '../../services/gasManualShipment';
 import { uploadMultipleImagesToGdrive } from '../../services/gdriveUpload';
@@ -183,6 +189,11 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
   const [editItems, setEditItems] = useState<PengirimanStoreItem[]>([]);
   const [editItemCompressingIdx, setEditItemCompressingIdx] = useState<number | null>(null);
   const [isSavingEditDispatched, setIsSavingEditDispatched] = useState<boolean>(false);
+  const [confirmingKoliReportId, setConfirmingKoliReportId] = useState<string | null>(null);
+  const [duplicateSjConfirm, setDuplicateSjConfirm] = useState<{
+    conflicts: DuplicateNoSjConflict[];
+    autoPrint: boolean;
+  } | null>(null);
 
   // Multi-Store Fast Batch Generator State (Form Input)
   const [isMultiStoreModalOpen, setIsMultiStoreModalOpen] = useState<boolean>(false);
@@ -251,7 +262,11 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
       loadReportsList();
     };
     window.addEventListener('wms_loading_dock_data_reset', handleReset);
-    return () => window.removeEventListener('wms_loading_dock_data_reset', handleReset);
+    window.addEventListener('wms_pengiriman_store_updated', handleReset);
+    return () => {
+      window.removeEventListener('wms_loading_dock_data_reset', handleReset);
+      window.removeEventListener('wms_pengiriman_store_updated', handleReset);
+    };
   }, []);
 
   const loadStores = async () => {
@@ -604,7 +619,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
     ).size;
   }, [itemRows]);
 
-  const handleSubmitReport = async (autoPrint: boolean = false) => {
+  const handleSubmitReport = async (autoPrint: boolean = false, skipConflictCheck: boolean = false) => {
     for (let i = 0; i < itemRows.length; i++) {
       const row = itemRows[i];
       const targetStore = row.isCustomStore ? row.customStoreInput?.trim() : row.storeTujuan;
@@ -614,6 +629,17 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
       }
       if (!row.deskripsi.trim()) {
         onShowToast(`Baris #${i + 1}: Nama / keterangan barang tidak boleh kosong`, 'warning');
+        return;
+      }
+    }
+
+    if (!skipConflictCheck) {
+      const conflicts = findDuplicateNoSjConflicts(
+        itemRows.map((r) => ({ no_surat_jalan: r.noSuratJalan.trim() })),
+        reports
+      );
+      if (conflicts.length > 0) {
+        setDuplicateSjConfirm({ conflicts, autoPrint });
         return;
       }
     }
@@ -850,9 +876,24 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
     setEditItems((prev) => {
       const copy = [...prev];
       const target = { ...copy[idx], [field]: value };
-      if (field === 'qty' || field === 'satuan') {
+      if (field === 'hitung_koli') {
+        target.hitung_koli = Math.max(1, Math.round(Number(value) || 1));
+        target.is_estimated_koli = false;
+      } else if (field === 'satuan') {
         const rawQty = Math.max(1, Number(target.qty) || 1);
-        target.hitung_koli = target.satuan === 'Pcs' ? 1 : Math.max(1, Math.round(rawQty));
+        if (target.satuan === 'Koli') {
+          target.hitung_koli = Math.max(1, Math.round(rawQty));
+          target.is_estimated_koli = false;
+        } else {
+          target.hitung_koli = Math.max(1, Math.round(Number(target.hitung_koli) || 1));
+        }
+      } else if (field === 'qty') {
+        const rawQty = Math.max(1, Number(target.qty) || 1);
+        if (target.satuan === 'Koli') {
+          target.hitung_koli = Math.max(1, Math.round(rawQty));
+        } else if (target.is_estimated_koli) {
+          target.hitung_koli = estimateKoliFromPcs(rawQty, ESTIMATED_PCS_PER_KOLI);
+        }
       }
       copy[idx] = target;
       return copy;
@@ -978,6 +1019,34 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
       onShowToast(e.message || 'Gagal menyimpan perubahan', 'error');
     } finally {
       setIsSavingEditDispatched(false);
+    }
+  };
+
+  const handleQuickUpdateDispatchedKoli = async (
+    rep: PengirimanStoreReport,
+    nextKoli: number
+  ) => {
+    const safeKoli = Math.max(1, Math.round(Number(nextKoli) || 1));
+    setConfirmingKoliReportId(rep.id);
+    try {
+      const res = await updateDispatchedReportKoli(rep.id, safeKoli, {
+        name: session?.name || 'Petugas Gudang',
+        username: session?.username || 'operator',
+      });
+      if (res.success && res.data) {
+        const updated = res.data;
+        setReports((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+        onShowToast(
+          `Jumlah koli aktual ${rep.store_tujuan} disimpan: ${updated.total_koli} Koli`,
+          'success'
+        );
+      } else {
+        onShowToast(res.message || 'Gagal memperbarui jumlah koli', 'error');
+      }
+    } catch (e: any) {
+      onShowToast(e?.message || 'Gagal memperbarui jumlah koli', 'error');
+    } finally {
+      setConfirmingKoliReportId(null);
     }
   };
 
@@ -2288,9 +2357,18 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                         </div>
 
                         <div className="flex flex-col items-end gap-1 shrink-0">
-                          <span className="px-2 py-0.5 rounded-lg text-xs font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                            {rep.total_koli} Koli
-                          </span>
+                          {(rep.items || []).some((it) => it.is_estimated_koli) ? (
+                            <span
+                              className="px-2 py-0.5 rounded-lg text-xs font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700"
+                              title={`Estimasi 1 koli = ${ESTIMATED_PCS_PER_KOLI} pcs. Sesuaikan & konfirmasi jumlah koli aktual di lapangan.`}
+                            >
+                              ~{rep.total_koli} Koli (Est.)
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-lg text-xs font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                              {rep.total_koli} Koli
+                            </span>
+                          )}
                           {rep.is_label_printed ? (
                             <span
                               className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700"
@@ -2351,8 +2429,16 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                               <div className="shrink-0 text-right font-bold text-slate-800 dark:text-slate-100">
                                 <span>{it.qty} {it.satuan}</span>
                                 {it.satuan === 'Pcs' && (
-                                  <span className="block text-[10px] font-medium text-slate-400">
-                                    ({it.hitung_koli} Koli)
+                                  <span
+                                    className={`block text-[10px] font-medium ${
+                                      it.is_estimated_koli
+                                        ? 'text-amber-600 dark:text-amber-400'
+                                        : 'text-slate-400'
+                                    }`}
+                                  >
+                                    {it.is_estimated_koli
+                                      ? `(~${it.hitung_koli} Koli Est.)`
+                                      : `(${it.hitung_koli} Koli)`}
                                   </span>
                                 )}
                               </div>
@@ -2360,6 +2446,62 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                           ))}
                         </div>
                       </div>
+
+                      {/* Penyesuaian Cepat Koli Aktual (khusus item dengan estimasi koli 1 koli = 40 pcs) */}
+                      {(rep.items || []).some((it) => it.is_estimated_koli) && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-2 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/70">
+                          <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300">
+                            Est. 1 koli = {ESTIMATED_PCS_PER_KOLI} pcs
+                          </span>
+                          {rep.items.length === 1 ? (
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                disabled={confirmingKoliReportId === rep.id || rep.total_koli <= 1}
+                                onClick={() => handleQuickUpdateDispatchedKoli(rep, Math.max(1, rep.total_koli - 1))}
+                                className="w-6 h-6 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 disabled:opacity-40 flex items-center justify-center cursor-pointer"
+                                title="Kurangi koli aktual"
+                              >
+                                <Minus className="w-3 h-3" />
+                              </button>
+                              <span className="text-[11px] font-extrabold text-amber-900 dark:text-amber-200 min-w-[46px] text-center">
+                                {rep.total_koli} Koli
+                              </span>
+                              <button
+                                type="button"
+                                disabled={confirmingKoliReportId === rep.id}
+                                onClick={() => handleQuickUpdateDispatchedKoli(rep, rep.total_koli + 1)}
+                                className="w-6 h-6 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 disabled:opacity-40 flex items-center justify-center cursor-pointer"
+                                title="Tambah koli aktual"
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={confirmingKoliReportId === rep.id}
+                                onClick={() => handleQuickUpdateDispatchedKoli(rep, rep.total_koli)}
+                                className="px-2 py-1 rounded-md text-[10px] font-bold bg-white dark:bg-slate-800 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                title="Konfirmasi jumlah koli aktual di lapangan"
+                              >
+                                {confirmingKoliReportId === rep.id ? (
+                                  <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                                ) : (
+                                  <Check className="w-2.5 h-2.5" />
+                                )}
+                                <span>Konfirmasi</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditDispatched(rep)}
+                              className="px-2 py-1 rounded-md text-[10px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 cursor-pointer"
+                            >
+                              Sesuaikan Koli
+                            </button>
+                          )}
+                        </div>
+                      )}
 
                       {/* Foto Tambahan Laporan (hanya tampil jika ada foto non-item legacy) */}
                       {extraPhotos.length > 0 && (
@@ -3757,7 +3899,9 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                 <div className="space-y-2.5">
                   {editItems.map((item, idx) => {
                     const rowKoli =
-                      item.satuan === 'Pcs' ? 1 : Math.max(1, Math.round(Number(item.qty) || 1));
+                      item.satuan === 'Pcs'
+                        ? Math.max(1, Math.round(Number(item.hitung_koli) || 1))
+                        : Math.max(1, Math.round(Number(item.qty) || 1));
                     const isLegacyNotePresent = Boolean(item.keterangan && item.keterangan.trim());
 
                     return (
@@ -3773,8 +3917,14 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                             <span className="font-bold text-slate-700 dark:text-slate-300 text-xs">
                               Barang #{idx + 1}
                             </span>
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                              {rowKoli} Koli
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                                item.is_estimated_koli
+                                  ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-700'
+                                  : 'bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
+                              }`}
+                            >
+                              {item.is_estimated_koli ? `~${rowKoli} Koli (Est.)` : `${rowKoli} Koli`}
                             </span>
                           </div>
 
@@ -3911,6 +4061,45 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                           </div>
                         </div>
 
+                        {item.satuan === 'Pcs' && (
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-slate-200/70 dark:border-slate-700/60">
+                            <div className="flex items-center gap-2">
+                              <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                                Jumlah Koli Aktual:
+                              </label>
+                              <input
+                                type="number"
+                                min={1}
+                                value={rowKoli}
+                                onChange={(e) =>
+                                  handleUpdateEditItem(
+                                    idx,
+                                    'hitung_koli',
+                                    Math.max(1, parseInt(e.target.value) || 1)
+                                  )
+                                }
+                                className="w-20 px-2 py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-center outline-none"
+                              />
+                              <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                                Koli (Est. 40 pcs/koli: ~{estimateKoliFromPcs(Number(item.qty) || 1, ESTIMATED_PCS_PER_KOLI)})
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleUpdateEditItem(
+                                  idx,
+                                  'hitung_koli',
+                                  estimateKoliFromPcs(Number(item.qty) || 1, ESTIMATED_PCS_PER_KOLI)
+                                )
+                              }
+                              className="px-2 py-1 rounded-md text-[10px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 cursor-pointer"
+                            >
+                              Gunakan Est. (~{estimateKoliFromPcs(Number(item.qty) || 1, ESTIMATED_PCS_PER_KOLI)})
+                            </button>
+                          </div>
+                        )}
+
                         {isLegacyNotePresent && (
                           <div className="space-y-1">
                             <label className="text-[10px] font-bold text-slate-500">
@@ -3941,7 +4130,10 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                   {editItems.length} Barang ·{' '}
                   {editItems.reduce(
                     (acc, curr) =>
-                      acc + (curr.satuan === 'Pcs' ? 1 : Math.max(1, Math.round(Number(curr.qty) || 1))),
+                      acc +
+                      (curr.satuan === 'Pcs'
+                        ? Math.max(1, Math.round(Number(curr.hitung_koli) || 1))
+                        : Math.max(1, Math.round(Number(curr.qty) || 1))),
                     0
                   )}{' '}
                   Koli
@@ -3972,6 +4164,104 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                   <Check className="w-3.5 h-3.5" />
                 )}
                 <span>Simpan Perubahan</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* MODAL: KONFIRMASI GABUNG / KONFLIK NO SURAT JALAN (ANTI-DUPLIKAT)    */}
+      {/* ==================================================================== */}
+      {duplicateSjConfirm && (
+        <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="p-2 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-sm font-black text-slate-900 dark:text-white">
+                    No Surat Jalan Sudah Terdaftar
+                  </h4>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Sistem mencegah duplikasi data pengiriman untuk No SJ yang sama.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDuplicateSjConfirm(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-3 text-xs">
+              {duplicateSjConfirm.conflicts.map((c) => (
+                <div
+                  key={`${c.existingStatus}-${c.no_sj}`}
+                  className={`p-3 rounded-xl border ${
+                    c.existingStatus === 'dispatched'
+                      ? 'bg-indigo-50/70 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800'
+                      : 'bg-rose-50/70 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="font-mono font-black text-slate-900 dark:text-white">
+                      {c.no_sj}
+                    </span>
+                    <span
+                      className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md uppercase ${
+                        c.existingStatus === 'dispatched'
+                          ? 'bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300'
+                          : 'bg-rose-100 dark:bg-rose-900 text-rose-700 dark:text-rose-300'
+                      }`}
+                    >
+                      {c.existingStatus === 'dispatched' ? 'Ada di Dispatched' : 'Sudah Terkirim'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                    {c.existingStatus === 'dispatched' ? (
+                      <>
+                        Sudah ada di antrean <strong>Dispatched</strong> untuk{' '}
+                        <strong>{c.existingReport.store_tujuan}</strong> ({c.existingReport.total_koli} Koli).
+                        Jika dilanjutkan, data akan <strong>digabungkan &amp; diperbarui</strong> (koli aktual, deskripsi, foto) tanpa membuat kartu duplikat.
+                      </>
+                    ) : (
+                      <>
+                        Sudah pernah dikirim ke <strong>{c.existingReport.store_tujuan}</strong>
+                        {c.existingReport.tanggal_kirim ? ` pada ${c.existingReport.tanggal_kirim}` : ''}.
+                        Pastikan ini memang pengiriman susulan sebelum melanjutkan.
+                      </>
+                    )}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="px-5 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-end gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setDuplicateSjConfirm(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const nextAutoPrint = duplicateSjConfirm.autoPrint;
+                  setDuplicateSjConfirm(null);
+                  void handleSubmitReport(nextAutoPrint, true);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs cursor-pointer"
+              >
+                {duplicateSjConfirm.conflicts.some((c) => c.existingStatus === 'dispatched')
+                  ? 'Gabung & Simpan'
+                  : 'Tetap Simpan'}
               </button>
             </div>
           </div>

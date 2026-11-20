@@ -14,6 +14,7 @@ import {
   PengecekanSJItem,
   PengecekanSJDraft,
   PengecekanSJRecord,
+  PengirimanStoreReport,
 } from '../../types';
 import { isSuperadmin, hasPermission } from '../../services/permissions';
 import { PhysicalScanInput } from '../PhysicalScanInput';
@@ -50,6 +51,20 @@ import {
   extractProductInfoFromSJItem,
   saveSingleQcJob,
 } from '../../services/qcPengerjaanService';
+import {
+  syncPengecekanSjToPengirimanDispatched,
+  removePengecekanSjFromPengirimanDispatched,
+  fetchPengirimanStoreReports,
+  getCachedSjShippingOverrides,
+  fetchSjShippingOverrides,
+  setSjShippingOverridesBatch,
+  buildNoSjReportIndex,
+  resolvePengecekanSjShippingStatus,
+  estimateKoliFromPcs,
+  ESTIMATED_PCS_PER_KOLI,
+  PengecekanSjShippingStatus,
+  PengecekanSjShippingOverride,
+} from '../../services/pengirimanStore';
 
 interface TarikanMDViewProps {
   session: UserSession | null;
@@ -351,8 +366,19 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   const [submitting, setSubmitting] = useState(false);
   const [isSavingImport, setIsSavingImport] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<'pending' | 'selesai'>('pending');
+  const [sendToDispatchedOnSubmit, setSendToDispatchedOnSubmit] = useState<boolean>(false);
   const [detailFilter, setDetailFilter] = useState<'ALL' | 'COCOK' | 'SELISIH'>('ALL');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setSendToDispatchedOnSubmit(false);
+  }, [activeDraftId]);
+
+  useEffect(() => {
+    if (submitStatus !== 'selesai') {
+      setSendToDispatchedOnSubmit(false);
+    }
+  }, [submitStatus]);
 
   // ---- RIWAYAT PENGECEKAN STATE ----
   const [records, setRecords] = useState<PengecekanSJRecord[]>(() => {
@@ -388,6 +414,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   const [bulkSubmitModal, setBulkSubmitModal] = useState<{
     drafts: PengecekanSJDraft[];
     targetStatus: 'pending' | 'selesai';
+    sendToDispatched: boolean;
   } | null>(null);
   const [bulkSubmittingProgress, setBulkSubmittingProgress] = useState<{
     current: number;
@@ -407,8 +434,18 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   // Inline Edit Mode untuk Admin
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState<PengecekanSJRecord | null>(null);
+  const [editWasDispatched, setEditWasDispatched] = useState<boolean>(false);
+  const [editRequeueDispatched, setEditRequeueDispatched] = useState<boolean>(false);
   const [showCameraScanner, setShowCameraScanner] = useState<boolean>(false);
   const [savingEdit, setSavingEdit] = useState(false);
+
+  // Status Pengiriman Live untuk Sub-Tab SELESAI (Belum Jadwal / Dispatched / Terkirim / Batal Kirim)
+  const [shippingSubTab, setShippingSubTab] = useState<'ALL' | PengecekanSjShippingStatus>('ALL');
+  const [pengirimanReports, setPengirimanReports] = useState<PengirimanStoreReport[]>([]);
+  const [shippingOverrides, setShippingOverrides] = useState<Record<string, PengecekanSjShippingOverride>>(
+    () => getCachedSjShippingOverrides()
+  );
+  const [isBulkShippingAction, setIsBulkShippingAction] = useState<boolean>(false);
 
   // Offline & Sync Detection
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
@@ -485,11 +522,38 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
     };
   }, []);
 
+  const loadShippingStates = useCallback(async () => {
+    try {
+      const [repList, ovMap] = await Promise.all([
+        fetchPengirimanStoreReports(),
+        fetchSjShippingOverrides(),
+      ]);
+      setPengirimanReports(repList || []);
+      setShippingOverrides(ovMap || {});
+    } catch {
+      // Abaikan kegagalan sementara; tetap gunakan cache
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadShippingStates();
+    const handleSync = () => {
+      void loadShippingStates();
+    };
+    window.addEventListener('wms_pengiriman_store_updated', handleSync);
+    window.addEventListener('wms_loading_dock_data_reset', handleSync);
+    return () => {
+      window.removeEventListener('wms_pengiriman_store_updated', handleSync);
+      window.removeEventListener('wms_loading_dock_data_reset', handleSync);
+    };
+  }, [loadShippingStates]);
+
   useEffect(() => {
     if (activeTab === 'riwayat') {
       loadRecords(records.length === 0);
+      void loadShippingStates();
     }
-  }, [activeTab]);
+  }, [activeTab, loadShippingStates]);
 
   // ---- COMPUTED STATS ACTIVE DRAFT ----
   const comparisonData = useMemo<TarikanMDScanResult[]>(() => {
@@ -525,6 +589,11 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
       };
     });
   }, [activeDraft, productCatalog]);
+
+  const overScannedItems = useMemo(
+    () => comparisonData.filter((i) => i.qty_scan > i.qty_sj),
+    [comparisonData]
+  );
 
   const summary = useMemo(() => {
     if (!activeDraft) {
@@ -797,18 +866,35 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
 
     if (foundInSj) {
       // Ada di Surat Jalan -> Tambah Qty Scan
+      const currentQty = activeDraft.scanQty[foundInSj.sku] ?? 0;
+      const nextQty = currentQty + 1;
+
       setDrafts(prev => prev.map(d => {
         if (d.id === activeDraft.id) {
-          const currentQty = d.scanQty[foundInSj.sku] ?? 0;
+          const prevVal = d.scanQty[foundInSj.sku] ?? 0;
           return {
             ...d,
-            scanQty: { ...d.scanQty, [foundInSj.sku]: currentQty + 1 },
+            scanQty: { ...d.scanQty, [foundInSj.sku]: prevVal + 1 },
             updated_at: new Date().toISOString(),
           };
         }
         return d;
       }));
-      playSuccessBeep();
+
+      if (nextQty > foundInSj.qty_sj) {
+        const masterProduct = productCatalog.find(
+          p => (p.k && p.k.toUpperCase() === cleanSku) ||
+            (p.sku && String(p.sku).toUpperCase() === cleanSku)
+        );
+        const displayName = resolveProductName(cleanSku, foundInSj.nama_produk, masterProduct);
+        playErrorBeep();
+        onShowToast(
+          `⚠️ SKU "${foundInSj.sku}" (${displayName}) melebihi Qty SJ (SJ: ${foundInSj.qty_sj}, Scan: ${nextQty}, Lebih +${nextQty - foundInSj.qty_sj})`,
+          'warning'
+        );
+      } else {
+        playSuccessBeep();
+      }
     } else {
       // TIDAK ADA DI SURAT JALAN -> Cari nama produk di master catalog
       const masterProduct = productCatalog.find(
@@ -858,16 +944,28 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
 
   const handleManualQty = (sku: string, value: number) => {
     if (!activeDraft) return;
+    const nextVal = Math.max(0, value);
+    const prevVal = activeDraft.scanQty[sku] ?? 0;
+    const foundItem = activeDraft.items.find((i) => i.sku === sku);
+
     setDrafts(prev => prev.map(d => {
       if (d.id === activeDraft.id) {
         return {
           ...d,
-          scanQty: { ...d.scanQty, [sku]: Math.max(0, value) },
+          scanQty: { ...d.scanQty, [sku]: nextVal },
           updated_at: new Date().toISOString(),
         };
       }
       return d;
     }));
+
+    if (foundItem && nextVal > prevVal && nextVal > foundItem.qty_sj) {
+      playErrorBeep();
+      onShowToast(
+        `⚠️ SKU "${foundItem.sku}" melebihi Qty SJ (SJ: ${foundItem.qty_sj}, Scan: ${nextVal}, Lebih +${nextVal - foundItem.qty_sj})`,
+        'warning'
+      );
+    }
   };
 
   const handleManualUnexpectedQty = (sku: string, value: number) => {
@@ -997,6 +1095,21 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         // Jika ini adalah Penerimaan / Mutasi Masuk, inisialisasi / perbarui QC Mutasi Job
         registerQcMutasiJobsForRecord(record, submittedBy);
 
+        // Hanya masukkan ke Pengiriman Store > Dispatched jika user mencentang opsi eksplisit (default OFF)
+        if (record.status === 'selesai' && sendToDispatchedOnSubmit) {
+          const dispatchRes = await syncPengecekanSjToPengirimanDispatched(record, {
+            name: submittedBy,
+            username: session?.username || 'operator',
+          });
+          if (dispatchRes.action === 'created' || dispatchRes.action === 'updated') {
+            onShowToast(dispatchRes.message, 'info');
+          } else if (dispatchRes.action === 'already_sent') {
+            onShowToast(dispatchRes.message, 'warning');
+          }
+          void loadShippingStates();
+        }
+        setSendToDispatchedOnSubmit(false);
+
         // Optimistic UI: langsung tampilkan record baru di riwayat
         setRecords(prev => {
           const filtered = prev.filter(r => r.no_sj !== record.no_sj && r.id !== record.id);
@@ -1088,12 +1201,14 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
     setBulkSubmitModal({
       drafts: targetDrafts,
       targetStatus: allMatched ? 'selesai' : 'pending',
+      sendToDispatched: false,
     });
   };
 
   const handleExecuteBulkSubmit = async (
     targetDrafts: PengecekanSJDraft[],
-    targetStatus: 'pending' | 'selesai'
+    targetStatus: 'pending' | 'selesai',
+    sendToDispatched: boolean = false
   ) => {
     if (!targetDrafts || targetDrafts.length === 0) return;
 
@@ -1131,6 +1246,18 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         }
       }
 
+      let dispatchedSyncedCount = 0;
+      if (succeededRecords.length > 0 && targetStatus === 'selesai' && sendToDispatched) {
+        const actorUser = { name: submittedBy, username: session?.username || 'operator' };
+        for (const rec of succeededRecords) {
+          const syncRes = await syncPengecekanSjToPengirimanDispatched(rec, actorUser);
+          if (syncRes.action === 'created' || syncRes.action === 'updated') {
+            dispatchedSyncedCount++;
+          }
+        }
+        void loadShippingStates();
+      }
+
       if (succeededRecords.length > 0) {
         const syncedNos = new Set(succeededRecords.map(r => r.no_sj.trim().toUpperCase()));
         setRecords(prev => {
@@ -1155,19 +1282,24 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         void loadRecords(false);
       }
 
+      const dispatchSuffix =
+        dispatchedSyncedCount > 0
+          ? ` (${dispatchedSyncedCount} SJ Pengiriman otomatis masuk antrean Dispatched)`
+          : '';
+
       if (failCount === 0 && offlineCount === 0) {
         onShowToast(
-          `${succeededRecords.length} Surat Jalan berhasil disubmit sekaligus (${targetStatus.toUpperCase()}) ke Supabase!`,
+          `${succeededRecords.length} Surat Jalan berhasil disubmit sekaligus (${targetStatus.toUpperCase()}) ke Supabase!${dispatchSuffix}`,
           'success'
         );
       } else if (succeededRecords.length > 0 && offlineCount > 0 && failCount === 0) {
         onShowToast(
-          `${succeededRecords.length} Surat Jalan disimpan (${offlineCount} antre offline untuk sinkron saat internet pulih).`,
+          `${succeededRecords.length} Surat Jalan disimpan (${offlineCount} antre offline untuk sinkron saat internet pulih).${dispatchSuffix}`,
           'info'
         );
       } else if (succeededRecords.length > 0) {
         onShowToast(
-          `${succeededRecords.length} SJ berhasil disubmit, ${failCount} SJ gagal (tetap aman di antrean).`,
+          `${succeededRecords.length} SJ berhasil disubmit, ${failCount} SJ gagal (tetap aman di antrean).${dispatchSuffix}`,
           'warning'
         );
       } else {
@@ -1242,6 +1374,16 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         try {
           await deleteTarikanMD(rec.id, rec.no_sj);
           setRecords(prev => prev.filter(r => r.id !== rec.id && r.no_sj !== rec.no_sj));
+          if (rec.status === 'selesai') {
+            const removeRes = await removePengecekanSjFromPengirimanDispatched(rec.no_sj, {
+              name: session?.name || session?.username || 'Operator',
+              username: session?.username || 'operator',
+            });
+            if (removeRes.removedCount > 0) {
+              onShowToast(`Riwayat SJ "${rec.no_sj}" dihapus & ditarik dari antrean Dispatched.`, 'success');
+              return;
+            }
+          }
           onShowToast(`Riwayat SJ "${rec.no_sj}" berhasil dihapus!`, 'success');
         } catch {
           onShowToast('Gagal menghapus riwayat.', 'error');
@@ -1310,10 +1452,71 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
     onShowToast(`Surat Jalan "${rec.no_sj}" berhasil dikembalikan ke tab Pengecekan untuk scan ulang.`, 'success');
   };
 
-  // EDIT OLEH ADMIN
+  // Helper deteksi apakah record adalah tipe Pengiriman (bukan Penerimaan ke Warehouse/Gudang Pusat)
+  const isPengirimanTypeRecord = useCallback((rec: { tipe_import?: string; destination?: string }): boolean => {
+    const isPenerimaan =
+      rec.tipe_import === 'Penerimaan' ||
+      (!rec.tipe_import &&
+        ((rec.destination || '').toLowerCase().includes('warehouse') ||
+          (rec.destination || '').toLowerCase().includes('gudang') ||
+          (rec.destination || '').toLowerCase().includes('pusat')));
+    return !isPenerimaan;
+  }, []);
+
+  const noSjReportMap = useMemo(
+    () => buildNoSjReportIndex(pengirimanReports),
+    [pengirimanReports]
+  );
+
+  const getRecordShippingStatus = useCallback(
+    (rec: PengecekanSJRecord): PengecekanSjShippingStatus =>
+      resolvePengecekanSjShippingStatus(rec.no_sj, noSjReportMap, shippingOverrides),
+    [noSjReportMap, shippingOverrides]
+  );
+
+  // EDIT OLEH ADMIN (dengan proteksi auto-off Dispatched sementara jika SJ sedang di antrean Dispatched)
   const handleStartEdit = (rec: PengecekanSJRecord) => {
+    const shipStatus = getRecordShippingStatus(rec);
+    const isPengiriman = isPengirimanTypeRecord(rec);
+
+    if (rec.status === 'selesai' && isPengiriman && shipStatus === 'dispatched') {
+      setConfirmModal({
+        title: 'Nonaktifkan Sementara Status Dispatched?',
+        message: `SJ "${rec.no_sj}" saat ini berada di antrean Pengiriman Store > Dispatched.\n\nSelama proses edit berlangsung, status Dispatched akan dinonaktifkan (ditarik sementara) agar tidak terbawa pengiriman sebelum revisi selesai. Saat klik Simpan nanti, Anda akan diberi pilihan untuk memasukkannya kembali ke Dispatched.`,
+        confirmLabel: 'Nonaktifkan Dispatched & Edit',
+        isDanger: false,
+        onConfirm: async () => {
+          const actorUser = {
+            name: session?.name || session?.username || 'Operator',
+            username: session?.username || 'operator',
+          };
+          const rmRes = await removePengecekanSjFromPengirimanDispatched(rec.no_sj, actorUser);
+          if (rmRes.removedCount > 0) {
+            onShowToast(
+              `Status Dispatched SJ "${rec.no_sj}" dinonaktifkan sementara selama edit.`,
+              'warning'
+            );
+            await loadShippingStates();
+          }
+          setEditWasDispatched(true);
+          setEditRequeueDispatched(false);
+          setEditingRecordId(rec.id);
+          setEditFormData(JSON.parse(JSON.stringify(rec)));
+        },
+      });
+      return;
+    }
+
+    if (rec.status === 'selesai' && isPengiriman && shipStatus === 'terkirim') {
+      onShowToast(
+        `Info: SJ "${rec.no_sj}" sudah berstatus Terkirim. Edit hanya memperbarui riwayat pengecekan.`,
+        'info'
+      );
+    }
+
+    setEditWasDispatched(false);
+    setEditRequeueDispatched(false);
     setEditingRecordId(rec.id);
-    // Deep clone record untuk editing
     setEditFormData(JSON.parse(JSON.stringify(rec)));
   };
 
@@ -1335,11 +1538,38 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         items_json: JSON.stringify(editFormData.items),
       };
 
+      const prevRecord = records.find(r => r.id === updatedRecord.id);
+
       await editPengecekanSJ(updatedRecord);
       setRecords(prev => prev.map(r => (r.id === updatedRecord.id ? updatedRecord : r)));
+
+      const actorUser = {
+        name: session?.name || session?.username || 'Operator',
+        username: session?.username || 'operator',
+      };
+      if (updatedRecord.status === 'selesai' && editRequeueDispatched) {
+        const dispatchRes = await syncPengecekanSjToPengirimanDispatched(updatedRecord, actorUser);
+        if (dispatchRes.action === 'created' || dispatchRes.action === 'updated') {
+          onShowToast(dispatchRes.message, 'info');
+        } else if (dispatchRes.action === 'already_sent') {
+          onShowToast(dispatchRes.message, 'warning');
+        }
+        await loadShippingStates();
+      } else if (prevRecord?.status === 'selesai' && updatedRecord.status === 'pending') {
+        const removeRes = await removePengecekanSjFromPengirimanDispatched(updatedRecord.no_sj, actorUser);
+        if (removeRes.removedCount > 0) {
+          onShowToast(removeRes.message, 'info');
+        } else if (removeRes.skippedSentCount > 0) {
+          onShowToast(removeRes.message, 'warning');
+        }
+        await loadShippingStates();
+      }
+
       onShowToast(`Perubahan riwayat SJ "${updatedRecord.no_sj}" berhasil disimpan!`, 'success');
       setEditingRecordId(null);
       setEditFormData(null);
+      setEditWasDispatched(false);
+      setEditRequeueDispatched(false);
     } catch {
       onShowToast('Gagal menyimpan perubahan.', 'error');
     } finally {
@@ -1350,6 +1580,150 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   const [selectedRecords, setSelectedRecords] = useState<Set<string>>(new Set());
   const [bulkStatusAction, setBulkStatusAction] = useState<'pending' | 'selesai' | null>(null);
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
+
+  // AKSI EKSPLISIT PENGIRIMAN (MULTI-SELECT & SATUAN) DI TAB SELESAI
+  const handleSendRecordsToDispatched = async (targetRecords: PengecekanSJRecord[]) => {
+    const eligible = targetRecords.filter(
+      (r) => r.status === 'selesai' && isPengirimanTypeRecord(r)
+    );
+    if (eligible.length === 0) {
+      onShowToast('Pilih minimal 1 SJ Pengiriman berstatus SELESAI untuk dikirim ke Dispatched.', 'warning');
+      return;
+    }
+
+    setIsBulkShippingAction(true);
+    try {
+      const actorUser = {
+        name: session?.name || session?.username || 'Operator',
+        username: session?.username || 'operator',
+      };
+      let createdCount = 0;
+      let mergedCount = 0;
+      let skippedSent = 0;
+      let skippedZero = 0;
+
+      for (const rec of eligible) {
+        const res = await syncPengecekanSjToPengirimanDispatched(rec, actorUser);
+        if (res.action === 'created') createdCount++;
+        else if (res.action === 'updated') mergedCount++;
+        else if (res.action === 'already_sent') skippedSent++;
+        else if (res.action === 'skipped_zero_qty') skippedZero++;
+      }
+
+      await loadShippingStates();
+      setSelectedRecords(new Set());
+
+      const parts: string[] = [];
+      if (createdCount > 0) parts.push(`${createdCount} SJ masuk antrean Dispatched`);
+      if (mergedCount > 0) parts.push(`${mergedCount} SJ digabungkan/diperbarui (0 duplikat)`);
+      if (skippedSent > 0) parts.push(`${skippedSent} SJ dilewati (sudah Terkirim)`);
+      if (skippedZero > 0) parts.push(`${skippedZero} SJ dilewati (qty fisik 0)`);
+
+      onShowToast(
+        parts.length > 0 ? parts.join(' · ') : 'Tidak ada SJ yang diperbarui ke Dispatched.',
+        createdCount + mergedCount > 0 ? 'success' : 'warning'
+      );
+    } catch (err: any) {
+      onShowToast(err?.message || 'Gagal mengirim SJ ke Dispatched.', 'error');
+    } finally {
+      setIsBulkShippingAction(false);
+    }
+  };
+
+  const handleBulkSetShippingOverride = async (
+    targetRecords: PengecekanSJRecord[],
+    nextStatus: 'terkirim' | 'batal_kirim' | null
+  ) => {
+    const eligible = targetRecords.filter(
+      (r) => r.status === 'selesai' && isPengirimanTypeRecord(r)
+    );
+    if (eligible.length === 0) {
+      onShowToast('Pilih minimal 1 SJ Pengiriman berstatus SELESAI terlebih dahulu.', 'warning');
+      return;
+    }
+
+    const labelMap = {
+      terkirim: 'Terkirim (Arsip Pengecekan SJ)',
+      batal_kirim: 'Batal Kirim',
+      reset: 'Belum Jadwal Kirim',
+    };
+    const actionLabel = nextStatus ? labelMap[nextStatus] : labelMap.reset;
+
+    setConfirmModal({
+      title: `Pindahkan ${eligible.length} SJ ke ${actionLabel}`,
+      message:
+        nextStatus === 'terkirim'
+          ? `Tandai ${eligible.length} SJ Pengiriman terpilih sebagai TERKIRIM di Pengecekan SJ?\n\nCatatan: Aksi ini hanya memindahkan status arsip di Pengecekan SJ dan TIDAK membuat data trip baru di Pengiriman Store.`
+          : nextStatus === 'batal_kirim'
+          ? `Tandai ${eligible.length} SJ Pengiriman terpilih sebagai BATAL KIRIM? Jika masih ada di antrean Dispatched, otomatis akan ditarik keluar (data yang sudah Terkirim tidak dihapus).`
+          : `Kembalikan ${eligible.length} SJ Pengiriman terpilih ke status BELUM JADWAL KIRIM? Jika masih ada di antrean Dispatched, akan ditarik keluar.`,
+      confirmLabel: `Ya, Pindahkan (${eligible.length} SJ)`,
+      isDanger: nextStatus === 'batal_kirim',
+      onConfirm: async () => {
+        setIsBulkShippingAction(true);
+        try {
+          const actorUser = {
+            name: session?.name || session?.username || 'Operator',
+            username: session?.username || 'operator',
+          };
+
+          const noSjToUpdate: string[] = [];
+          let skippedActiveDispatched = 0;
+          let skippedAlreadySent = 0;
+
+          for (const rec of eligible) {
+            const liveRep = noSjReportMap.get(rec.no_sj.trim().toUpperCase());
+            if (nextStatus === 'terkirim') {
+              if (liveRep?.status === 'dispatched') {
+                // Lindungi antrean Dispatched aktif agar tidak ditandai terkirim tanpa melalui Pengiriman Store
+                skippedActiveDispatched++;
+                continue;
+              }
+              noSjToUpdate.push(rec.no_sj);
+            } else {
+              // batal_kirim atau reset ke belum_jadwal
+              if (liveRep?.status === 'sent') {
+                skippedAlreadySent++;
+                continue;
+              }
+              if (liveRep?.status === 'dispatched') {
+                await removePengecekanSjFromPengirimanDispatched(rec.no_sj, actorUser);
+              }
+              noSjToUpdate.push(rec.no_sj);
+            }
+          }
+
+          if (noSjToUpdate.length > 0) {
+            const nextMap = await setSjShippingOverridesBatch(noSjToUpdate, nextStatus, actorUser);
+            setShippingOverrides(nextMap);
+          }
+
+          await loadShippingStates();
+          setSelectedRecords(new Set());
+
+          const notes: string[] = [];
+          if (noSjToUpdate.length > 0) {
+            notes.push(`${noSjToUpdate.length} SJ dipindahkan ke ${actionLabel}`);
+          }
+          if (skippedActiveDispatched > 0) {
+            notes.push(`${skippedActiveDispatched} SJ dilewati karena masih aktif di antrean Dispatched`);
+          }
+          if (skippedAlreadySent > 0) {
+            notes.push(`${skippedAlreadySent} SJ dilewati karena sudah tercatat Terkirim di Pengiriman Store`);
+          }
+
+          onShowToast(
+            notes.join(' · ') || 'Tidak ada perubahan status pengiriman.',
+            noSjToUpdate.length > 0 ? 'success' : 'warning'
+          );
+        } catch (err: any) {
+          onShowToast(err?.message || 'Gagal memperbarui status pengiriman.', 'error');
+        } finally {
+          setIsBulkShippingAction(false);
+        }
+      },
+    });
+  };
 
   const handleBulkUpdateStatus = async (newStatus: 'pending' | 'selesai') => {
     if (selectedRecords.size === 0) {
@@ -1366,7 +1740,10 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
 
     setConfirmModal({
       title: 'Ubah Status Massal',
-      message: `Yakin ingin mengubah status ${recordsToUpdate.length} Surat Jalan yang dipilih menjadi ${newStatus.toUpperCase()}?`,
+      message:
+        newStatus === 'selesai'
+          ? `Yakin ingin mengubah status ${recordsToUpdate.length} Surat Jalan menjadi SELESAI? (Tidak otomatis masuk Dispatched — Anda dapat memilih & mengirimnya secara terpisah di tab SELESAI).`
+          : `Yakin ingin mengubah status ${recordsToUpdate.length} Surat Jalan menjadi PENDING? (Jika ada di antrean Dispatched, otomatis ditarik keluar).`,
       confirmLabel: `Ubah ke ${newStatus.toUpperCase()}`,
       isDanger: false,
       onConfirm: async () => {
@@ -1393,6 +1770,23 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
           }
 
           if (successCount > 0) {
+            const actorUser = {
+              name: session?.name || session?.username || 'Operator',
+              username: session?.username || 'operator',
+            };
+            let dispatchedRemovedCount = 0;
+
+            if (newStatus === 'pending') {
+              for (const updated of updatedRecordsList) {
+                const prevRec = recordsToUpdate.find((r) => r.id === updated.id);
+                if (prevRec?.status === 'selesai') {
+                  const rmRes = await removePengecekanSjFromPengirimanDispatched(updated.no_sj, actorUser);
+                  if (rmRes.removedCount > 0) dispatchedRemovedCount++;
+                }
+              }
+              await loadShippingStates();
+            }
+
             setRecords(prev => {
               const newRecords = [...prev];
               updatedRecordsList.forEach(updated => {
@@ -1401,7 +1795,12 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
               });
               return newRecords;
             });
-            onShowToast(`Berhasil memperbarui ${successCount} data menjadi ${newStatus.toUpperCase()}`, 'success');
+
+            const extraNote =
+              dispatchedRemovedCount > 0
+                ? ` · ${dispatchedRemovedCount} SJ ditarik dari Dispatched`
+                : '';
+            onShowToast(`Berhasil memperbarui ${successCount} data menjadi ${newStatus.toUpperCase()}${extraNote}`, 'success');
           } else {
             onShowToast('Gagal memperbarui status. Silakan coba lagi.', 'error');
           }
@@ -1470,21 +1869,38 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   const hasActiveRiwayatFilters = Boolean(
     searchFilter ||
     statusFilter !== 'ALL' ||
+    shippingSubTab !== 'ALL' ||
     sourceFilter.length > 0 ||
     destinationFilter.length > 0 ||
     dateFromFilter ||
     dateToFilter
   );
 
+  const selesaiShippingCounts = useMemo(() => {
+    let all = 0;
+    let belum_jadwal = 0;
+    let dispatched = 0;
+    let terkirim = 0;
+    let batal_kirim = 0;
+
+    records.forEach((r) => {
+      if (r.status !== 'selesai') return;
+      if (!isPengirimanTypeRecord(r)) return;
+      all++;
+      const st = getRecordShippingStatus(r);
+      if (st === 'belum_jadwal') belum_jadwal++;
+      else if (st === 'dispatched') dispatched++;
+      else if (st === 'terkirim') terkirim++;
+      else if (st === 'batal_kirim') batal_kirim++;
+    });
+
+    return { all, belum_jadwal, dispatched, terkirim, batal_kirim };
+  }, [records, isPengirimanTypeRecord, getRecordShippingStatus]);
+
   // FILTERED & SORTED RIWAYAT RECORDS
   const filteredRecords = useMemo(() => {
     const filtered = records.filter((r) => {
-      const isPenerimaan =
-        r.tipe_import === 'Penerimaan' ||
-        (!r.tipe_import &&
-          ((r.destination || '').toLowerCase().includes('warehouse') ||
-            (r.destination || '').toLowerCase().includes('gudang') ||
-            (r.destination || '').toLowerCase().includes('pusat')));
+      const isPenerimaan = !isPengirimanTypeRecord(r);
 
       const matchType =
         riwayatTypeFilter === 'ALL' ||
@@ -1506,6 +1922,16 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         (statusFilter === 'COCOK' && r.status_komparasi === 'COCOK') ||
         (statusFilter === 'SELISIH' && r.status_komparasi === 'SELISIH');
 
+      // Filter Sub-Tab Status Pengiriman khusus saat tab SELESAI aktif (non-Penerimaan)
+      let matchShippingSubTab = true;
+      if (statusFilter === 'SELESAI' && riwayatTypeFilter !== 'PENERIMAAN' && shippingSubTab !== 'ALL') {
+        if (isPenerimaan) {
+          matchShippingSubTab = false;
+        } else {
+          matchShippingSubTab = getRecordShippingStatus(r) === shippingSubTab;
+        }
+      }
+
       const matchSource =
         sourceFilter.length === 0 ||
         sourceFilter.some((src) => src.toLowerCase() === (r.source || '').trim().toLowerCase());
@@ -1525,7 +1951,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         }
       }
 
-      return matchType && matchSearch && matchStatus && matchSource && matchDestination && matchDate;
+      return matchType && matchSearch && matchStatus && matchShippingSubTab && matchSource && matchDestination && matchDate;
     });
 
     const compareDateDesc = (a: PengecekanSJRecord, b: PengecekanSJRecord) => {
@@ -1566,6 +1992,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
     records,
     searchFilter,
     statusFilter,
+    shippingSubTab,
     riwayatTypeFilter,
     sourceFilter,
     destinationFilter,
@@ -1573,6 +2000,8 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
     dateToFilter,
     riwayatSortBy,
     getRecordIsoDate,
+    isPengirimanTypeRecord,
+    getRecordShippingStatus,
   ]);
 
   // ==========================================
@@ -2277,29 +2706,33 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                     </div>
                   </div>
 
-                  {/* UNEXPECTED ITEMS: BARANG LEBIH DI LUAR SURAT JALAN (DITARUH DI ATAS AGAR LANGSUNG TERLIHAT TANPA PERLU SCROLL) */}
-                  {(detailFilter === 'ALL' || detailFilter === 'SELISIH') && Object.keys(activeDraft.unexpected || {}).length > 0 && (
-                    <div className="border-b border-amber-200 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/30 px-4 py-3 space-y-2">
-                      <div className="flex items-center justify-between">
+                  {/* ANOMALI SCAN: BARANG DI LUAR SJ & BARANG MELEBIHI QTY SJ (DITARUH DI ATAS AGAR LANGSUNG TERLIHAT TANPA PERLU SCROLL) */}
+                  {(detailFilter === 'ALL' || detailFilter === 'SELISIH') &&
+                    (Object.keys(activeDraft.unexpected || {}).length > 0 || overScannedItems.length > 0) && (
+                    <div className="border-b border-amber-200 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/30 px-4 py-3 space-y-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 text-[11px] font-extrabold text-amber-800 dark:text-amber-300 uppercase tracking-wider">
                           <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
-                          <span>Lebihan Barang / Anomali Yang Tidak Ada di Surat Jalan ({Object.keys(activeDraft.unexpected).length} SKU)</span>
+                          <span>
+                            Perhatian: Barang Di Luar SJ &amp; Lebih Qty ({Object.keys(activeDraft.unexpected || {}).length + overScannedItems.length} SKU)
+                          </span>
                         </div>
                         <span className="text-[10px] font-black px-2 py-0.5 bg-amber-200/80 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200 rounded-lg">
                           Perlu Perhatian
                         </span>
                       </div>
                       <p className="text-[10px] text-amber-700 dark:text-amber-400">
-                        Saat disubmit, barang lebihan ini otomatis dicatat ke Database dengan No SJ yang sama ({activeDraft.no_sj}) dan status pending.
+                        Item yang tidak ada di SJ maupun yang jumlah scan-nya melebihi Qty SJ ({activeDraft.no_sj}) ditandai otomatis di sini. Kurangi ke Qty SJ bila terjadi double-scan.
                       </p>
 
                       <div className="space-y-1.5">
-                        {Object.entries(activeDraft.unexpected).map(([sku, val]) => (
-                          <div key={sku} className="flex items-center justify-between bg-white dark:bg-[#131d31] border border-amber-300 dark:border-amber-700/80 rounded-xl px-3 py-2 shadow-2xs">
-                            <div className="min-w-0 flex-1 mr-2">
-                              <div className="flex items-center gap-2">
+                        {/* 1. Item Di Luar Surat Jalan */}
+                        {Object.entries(activeDraft.unexpected || {}).map(([sku, val]) => (
+                          <div key={`unexp-${sku}`} className="flex items-center justify-between bg-white dark:bg-[#131d31] border border-amber-300 dark:border-amber-700/80 rounded-xl px-3 py-2 shadow-2xs gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-1.5">
                                 <span className="font-mono text-xs font-black text-amber-900 dark:text-amber-300">{sku}</span>
-                                <span className="text-[9px] font-extrabold px-1.5 py-0.2 bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-400 rounded border border-amber-300 dark:border-amber-800">
+                                <span className="text-[10px] font-extrabold px-1.5 py-0.5 bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-400 rounded border border-amber-300 dark:border-amber-800">
                                   Di Luar SJ
                                 </span>
                               </div>
@@ -2313,7 +2746,8 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => handleManualUnexpectedQty(sku, val.qty - 1)}
-                                  className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-rose-100 dark:hover:bg-rose-900 flex items-center justify-center transition-colors cursor-pointer"
+                                  className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-rose-100 dark:hover:bg-rose-900 flex items-center justify-center transition-colors cursor-pointer"
+                                  aria-label="Kurangi qty luar SJ"
                                 >
                                   <Minus className="w-2.5 h-2.5" />
                                 </button>
@@ -2323,7 +2757,8 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => handleManualUnexpectedQty(sku, val.qty + 1)}
-                                  className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-emerald-100 dark:hover:bg-emerald-900 flex items-center justify-center transition-colors cursor-pointer"
+                                  className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-emerald-100 dark:hover:bg-emerald-900 flex items-center justify-center transition-colors cursor-pointer"
+                                  aria-label="Tambah qty luar SJ"
                                 >
                                   <Plus className="w-2.5 h-2.5" />
                                 </button>
@@ -2336,6 +2771,64 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                 title="Hapus dari daftar lebihan"
                               >
                                 <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+
+                        {/* 2. Item Ada di SJ namun Qty Scan > Qty SJ */}
+                        {overScannedItems.map((item) => (
+                          <div key={`over-${item.sku}`} className="flex items-center justify-between bg-white dark:bg-[#131d31] border border-rose-300 dark:border-rose-800/80 rounded-xl px-3 py-2 shadow-2xs gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="font-mono text-xs font-black text-rose-800 dark:text-rose-300">{item.sku}</span>
+                                <span className="text-[10px] font-extrabold px-1.5 py-0.5 bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 rounded border border-rose-300 dark:border-rose-800">
+                                  Lebih dari SJ (+{item.selisih})
+                                </span>
+                                {item.size && item.size !== '-' && (
+                                  <span className="text-[10px] font-bold px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded">
+                                    {item.size}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-slate-600 dark:text-slate-300 truncate mt-0.5 font-medium">
+                                {item.nama_produk}
+                                <span className="ml-1.5 text-[10px] font-bold text-rose-600 dark:text-rose-400">
+                                  (SJ: {item.qty_sj} · Scan: {item.qty_scan})
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleManualQty(item.sku, item.qty_scan - 1)}
+                                  className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-rose-100 dark:hover:bg-rose-900 flex items-center justify-center transition-colors cursor-pointer"
+                                  title="Kurangi qty scan"
+                                >
+                                  <Minus className="w-2.5 h-2.5" />
+                                </button>
+                                <span className="font-bold text-xs text-rose-700 dark:text-rose-300 w-8 text-center">
+                                  {item.qty_scan}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleManualQty(item.sku, item.qty_scan + 1)}
+                                  className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-emerald-100 dark:hover:bg-emerald-900 flex items-center justify-center transition-colors cursor-pointer"
+                                  title="Tambah qty scan"
+                                >
+                                  <Plus className="w-2.5 h-2.5" />
+                                </button>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleManualQty(item.sku, item.qty_sj)}
+                                className="px-2 py-1 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 transition-colors cursor-pointer whitespace-nowrap"
+                                title={`Kembalikan ke Qty SJ (${item.qty_sj})`}
+                              >
+                                = {item.qty_sj}
                               </button>
                             </div>
                           </div>
@@ -2570,7 +3063,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between mb-4 mt-2 p-3 bg-slate-50 dark:bg-[#0f172a] rounded-xl border border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center justify-between mb-3 mt-2 p-3 bg-slate-50 dark:bg-[#0f172a] rounded-xl border border-slate-200 dark:border-slate-700">
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Tentukan Status Surat Jalan:</label>
                     <div className="flex items-center gap-4">
                       <label className="flex items-center gap-1.5 cursor-pointer">
@@ -2597,6 +3090,26 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                       </label>
                     </div>
                   </div>
+
+                  {/* Opsi Eksplisit (Default OFF): Masuk ke Pengiriman Store > Dispatched */}
+                  {submitStatus === 'selesai' && isPengirimanTypeRecord(activeDraft) && (
+                    <label className="flex items-start gap-2.5 mb-4 p-3 rounded-xl border border-indigo-200 dark:border-indigo-800/70 bg-indigo-50/60 dark:bg-indigo-950/25 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={sendToDispatchedOnSubmit}
+                        onChange={(e) => setSendToDispatchedOnSubmit(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-indigo-900 dark:text-indigo-200">
+                          Sekaligus masukkan ke antrean Pengiriman Store &gt; Dispatched
+                        </div>
+                        <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                          Opsional (default nonaktif). Jika dicentang, fisik scan ({summary.total_scan + summary.total_unexpected_qty} pcs · Est. ~{estimateKoliFromPcs(summary.total_scan + summary.total_unexpected_qty, ESTIMATED_PCS_PER_KOLI)} Koli) langsung masuk antrean Dispatched. Jika tidak dicentang, Anda dapat mengirimnya kapan saja dari tab Riwayat &gt; SELESAI.
+                        </div>
+                      </div>
+                    </label>
+                  )}
 
                   <button
                     type="button"
@@ -2824,6 +3337,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                       onClick={() => {
                         setSearchFilter('');
                         setStatusFilter('ALL');
+                        setShippingSubTab('ALL');
                         setSourceFilter([]);
                         setDestinationFilter([]);
                         setDateFromFilter('');
@@ -2840,92 +3354,239 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
               </div>
             </div>
 
-            {/* BULK ACTIONS (ADMIN ONLY) */}
-            {userIsAdmin && filteredRecords.length > 0 && (
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 px-3 py-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800">
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <input
-                    type="checkbox"
-                    checked={selectedRecords.size > 0 && selectedRecords.size === filteredRecords.length}
-                    ref={input => {
-                      if (input) {
-                        input.indeterminate = selectedRecords.size > 0 && selectedRecords.size < filteredRecords.length;
-                      }
-                    }}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedRecords(new Set(filteredRecords.map(r => r.id)));
-                      } else {
-                        setSelectedRecords(new Set());
-                      }
-                    }}
-                    className="w-4 h-4 rounded border-slate-300 text-primary-500 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-700 cursor-pointer"
-                  />
-                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
-                    {selectedRecords.size > 0 ? `${selectedRecords.size} Dipilih` : 'Pilih Semua'}
+            {/* SUB-TAB STATUS PENGIRIMAN KHUSUS TAB SELESAI (BELUM JADWAL | DISPATCHED | TERKIRIM | BATAL KIRIM) */}
+            {statusFilter === 'SELESAI' && riwayatTypeFilter !== 'PENERIMAAN' && (
+              <div className="bg-white dark:bg-[#131d31] px-3 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <Truck className="w-3.5 h-3.5 text-indigo-500" />
+                    Status Pengiriman SJ Selesai
                   </span>
-                </label>
-                <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full sm:w-auto justify-end">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const targetRecords = selectedRecords.size > 0
-                        ? filteredRecords.filter(r => selectedRecords.has(r.id) && r.items && r.items.length > 0)
-                        : filteredRecords.filter(r => r.items && r.items.length > 0);
-                      if (targetRecords.length === 0) {
-                        onShowToast('Pilih minimal 1 Surat Jalan yang memiliki item untuk Format Picking Massal.', 'warning');
-                        return;
-                      }
-                      const mappedDrafts: PengecekanSJDraft[] = targetRecords.map(rec => ({
-                        id: rec.id || `${rec.no_sj}___${rec.source}___${rec.destination}`,
-                        no_sj: rec.no_sj,
-                        source: rec.source,
-                        destination: rec.destination,
-                        tanggal_sj: rec.tanggal_sj,
-                        tipe_import: rec.tipe_import || (rec.destination?.toLowerCase().includes('warehouse') ? 'Penerimaan' : 'Pengiriman') || 'Pengiriman',
-                        file_name: `SJ-${rec.no_sj}`,
-                        items: rec.items.map(i => ({
-                          sku: i.sku,
-                          nama_produk: i.nama_produk,
-                          category: i.category,
-                          qty_sj: i.qty_sj || i.qty_scan || 1,
-                        })),
-                        scanQty: {},
-                        unexpected: {},
-                        status: 'draft',
-                        created_at: rec.created_at,
-                        updated_at: rec.updated_at || new Date().toISOString(),
-                      }));
-                      setPickingModalInitialTab('app');
-                      setPickingModalDraft(null);
-                      setPickingModalDrafts(mappedDrafts);
-                    }}
-                    className="flex-1 sm:flex-none justify-center px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-extrabold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
-                    title="Kirim Tugas Picking Massal untuk SJ terpilih (atau semua SJ yang tampil)"
-                  >
-                    <Send className="w-3 h-3" />
-                    Kirim Picking Massal ({selectedRecords.size > 0 ? selectedRecords.size : filteredRecords.length})
-                  </button>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase hidden sm:inline-block mr-1">Ubah Status:</span>
-                  <button
-                    type="button"
-                    onClick={() => handleBulkUpdateStatus('pending')}
-                    disabled={isBulkUpdating || selectedRecords.size === 0}
-                    className="flex-1 sm:flex-none justify-center px-3 py-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-800/40 text-blue-600 dark:text-blue-400 rounded-lg text-[10px] font-extrabold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-blue-200 dark:border-blue-800/50"
-                  >
-                    {isBulkUpdating && bulkStatusAction === 'pending' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Edit3 className="w-3 h-3" />}
-                    PENDING
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleBulkUpdateStatus('selesai')}
-                    disabled={isBulkUpdating || selectedRecords.size === 0}
-                    className="flex-1 sm:flex-none justify-center px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:hover:bg-emerald-800/40 text-emerald-600 dark:text-emerald-400 rounded-lg text-[10px] font-extrabold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-emerald-200 dark:border-emerald-800/50"
-                  >
-                    {isBulkUpdating && bulkStatusAction === 'selesai' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
-                    SELESAI
-                  </button>
+                  <span className="text-[10px] text-slate-400 hidden sm:inline">
+                    Pilih SJ untuk kirim ke Dispatched atau pindahkan arsip SJ lama ke Terkirim
+                  </span>
                 </div>
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap pb-0.5">
+                  {([
+                    { id: 'ALL', label: 'Semua Selesai', count: selesaiShippingCounts.all },
+                    { id: 'belum_jadwal', label: 'Belum Jadwal Kirim', count: selesaiShippingCounts.belum_jadwal },
+                    { id: 'dispatched', label: 'Dispatched', count: selesaiShippingCounts.dispatched },
+                    { id: 'terkirim', label: 'Terkirim', count: selesaiShippingCounts.terkirim },
+                    { id: 'batal_kirim', label: 'Batal Kirim', count: selesaiShippingCounts.batal_kirim },
+                  ] as const).map((tab) => {
+                    const active = shippingSubTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => {
+                          setShippingSubTab(tab.id);
+                          setSelectedRecords(new Set());
+                        }}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 border ${
+                          active
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <span>{tab.label}</span>
+                        <span
+                          className={`px-1.5 py-0.2 rounded-md font-mono text-[10px] font-bold ${
+                            active
+                              ? 'bg-white/20 text-white'
+                              : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                          }`}
+                        >
+                          {tab.count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* BULK ACTIONS (MULTI-SELECT, SELECT ALL / UNSELECT, KIRIM DISPATCHED & STATUS) */}
+            {(userIsAdmin || canAction) && filteredRecords.length > 0 && (
+              <div className="flex flex-col gap-2.5 px-3 py-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <label className="flex items-center gap-2 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={selectedRecords.size > 0 && selectedRecords.size === filteredRecords.length}
+                        ref={input => {
+                          if (input) {
+                            input.indeterminate = selectedRecords.size > 0 && selectedRecords.size < filteredRecords.length;
+                          }
+                        }}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedRecords(new Set(filteredRecords.map(r => r.id)));
+                          } else {
+                            setSelectedRecords(new Set());
+                          }
+                        }}
+                        className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-700 cursor-pointer"
+                      />
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                        {selectedRecords.size > 0 ? `${selectedRecords.size} / ${filteredRecords.length} Dipilih` : `Pilih Semua (${filteredRecords.length})`}
+                      </span>
+                    </label>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRecords(new Set(filteredRecords.map(r => r.id)))}
+                        disabled={selectedRecords.size === filteredRecords.length}
+                        className="px-2 py-1 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 disabled:opacity-40 cursor-pointer"
+                      >
+                        Select All
+                      </button>
+                      {selectedRecords.size > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedRecords(new Set())}
+                          className="px-2 py-1 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 cursor-pointer"
+                        >
+                          Unselect
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 flex-wrap w-full sm:w-auto justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetRecords = selectedRecords.size > 0
+                          ? filteredRecords.filter(r => selectedRecords.has(r.id) && r.items && r.items.length > 0)
+                          : filteredRecords.filter(r => r.items && r.items.length > 0);
+                        if (targetRecords.length === 0) {
+                          onShowToast('Pilih minimal 1 Surat Jalan yang memiliki item untuk Format Picking Massal.', 'warning');
+                          return;
+                        }
+                        const mappedDrafts: PengecekanSJDraft[] = targetRecords.map(rec => ({
+                          id: rec.id || `${rec.no_sj}___${rec.source}___${rec.destination}`,
+                          no_sj: rec.no_sj,
+                          source: rec.source,
+                          destination: rec.destination,
+                          tanggal_sj: rec.tanggal_sj,
+                          tipe_import: rec.tipe_import || (rec.destination?.toLowerCase().includes('warehouse') ? 'Penerimaan' : 'Pengiriman') || 'Pengiriman',
+                          file_name: `SJ-${rec.no_sj}`,
+                          items: rec.items.map(i => ({
+                            sku: i.sku,
+                            nama_produk: i.nama_produk,
+                            category: i.category,
+                            qty_sj: i.qty_sj || i.qty_scan || 1,
+                          })),
+                          scanQty: {},
+                          unexpected: {},
+                          status: 'draft',
+                          created_at: rec.created_at,
+                          updated_at: rec.updated_at || new Date().toISOString(),
+                        }));
+                        setPickingModalInitialTab('app');
+                        setPickingModalDraft(null);
+                        setPickingModalDrafts(mappedDrafts);
+                      }}
+                      className="px-2.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                      title="Kirim Tugas Picking Massal untuk SJ terpilih (atau semua SJ yang tampil)"
+                    >
+                      <Send className="w-3 h-3 text-emerald-600" />
+                      Picking ({selectedRecords.size > 0 ? selectedRecords.size : filteredRecords.length})
+                    </button>
+
+                    {userIsAdmin && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleBulkUpdateStatus('pending')}
+                          disabled={isBulkUpdating || selectedRecords.size === 0}
+                          className="px-2.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer disabled:opacity-40"
+                        >
+                          {isBulkUpdating && bulkStatusAction === 'pending' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Edit3 className="w-3 h-3 text-blue-600" />}
+                          Set PENDING
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleBulkUpdateStatus('selesai')}
+                          disabled={isBulkUpdating || selectedRecords.size === 0}
+                          className="px-2.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer disabled:opacity-40"
+                        >
+                          {isBulkUpdating && bulkStatusAction === 'selesai' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                          Set SELESAI
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* BARIS AKSI PENGIRIMAN EKSPLISIT (UNTUK TAB SELESAI / SJ PENGIRIMAN TERPILIH) */}
+                {(statusFilter === 'SELESAI' || selectedRecords.size > 0) && riwayatTypeFilter !== 'PENERIMAAN' && (() => {
+                  const selectedList = filteredRecords.filter((r) => selectedRecords.has(r.id));
+                  const selectedSelesaiPengiriman = selectedList.filter(
+                    (r) => r.status === 'selesai' && isPengirimanTypeRecord(r)
+                  );
+                  return (
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/80 dark:border-slate-700/70">
+                      <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                        <Truck className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                        <span>
+                          Aksi Pengiriman Store ({selectedSelesaiPengiriman.length} SJ Pengiriman Selesai dipilih)
+                        </span>
+                      </span>
+
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button
+                          type="button"
+                          disabled={isBulkShippingAction || selectedSelesaiPengiriman.length === 0}
+                          onClick={() => void handleSendRecordsToDispatched(selectedSelesaiPengiriman)}
+                          className="px-3 py-1.5 rounded-lg text-[11px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-40 transition-all"
+                          title="Kirim SJ Pengiriman Selesai terpilih ke Pengiriman Store > Dispatched (gabung otomatis jika No SJ sama)"
+                        >
+                          {isBulkShippingAction ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Truck className="w-3 h-3" />}
+                          <span>Kirim ke Dispatched ({selectedSelesaiPengiriman.length})</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isBulkShippingAction || selectedSelesaiPengiriman.length === 0}
+                          onClick={() => void handleBulkSetShippingOverride(selectedSelesaiPengiriman, 'terkirim')}
+                          className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1 cursor-pointer disabled:opacity-40 transition-all"
+                          title="Tandai SJ lama sebagai Terkirim di Pengecekan SJ (tanpa membuat trip di Pengiriman Store)"
+                        >
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          <span>Pindah ke Terkirim</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isBulkShippingAction || selectedSelesaiPengiriman.length === 0}
+                          onClick={() => void handleBulkSetShippingOverride(selectedSelesaiPengiriman, 'batal_kirim')}
+                          className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1 cursor-pointer disabled:opacity-40 transition-all"
+                          title="Tandai SJ sebagai Batal Kirim (menarik keluar dari Dispatched jika ada)"
+                        >
+                          <X className="w-3 h-3 text-rose-500" />
+                          <span>Batal Kirim</span>
+                        </button>
+
+                        {shippingSubTab !== 'belum_jadwal' && (
+                          <button
+                            type="button"
+                            disabled={isBulkShippingAction || selectedSelesaiPengiriman.length === 0}
+                            onClick={() => void handleBulkSetShippingOverride(selectedSelesaiPengiriman, null)}
+                            className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center gap-1 cursor-pointer disabled:opacity-40 transition-all"
+                            title="Kembalikan ke Belum Jadwal Kirim"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Belum Jadwal</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -2958,6 +3619,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                       onClick={() => {
                         setRiwayatTypeFilter('ALL');
                         setStatusFilter('ALL');
+                        setShippingSubTab('ALL');
                         setSearchFilter('');
                         setSourceFilter([]);
                         setDestinationFilter([]);
@@ -2981,6 +3643,9 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                 {filteredRecords.map((rec) => {
                   const isExpanded = expandedRow === rec.id;
                   const isEditing = editingRecordId === rec.id;
+                  const isPengirimanRec = isPengirimanTypeRecord(rec);
+                  const shipStatus = rec.status === 'selesai' && isPengirimanRec ? getRecordShippingStatus(rec) : null;
+                  const liveDispatchRep = shipStatus === 'dispatched' ? noSjReportMap.get(rec.no_sj.trim().toUpperCase()) : undefined;
 
                   return (
                     <div
@@ -2991,7 +3656,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                       <div
                         className="flex items-start gap-3 px-4 py-3.5 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
                       >
-                        {userIsAdmin && (
+                        {(userIsAdmin || canAction) && (
                           <div className="shrink-0 flex items-start pt-1 pr-1" onClick={(e) => e.stopPropagation()}>
                             <input
                               type="checkbox"
@@ -3002,7 +3667,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                 else newSet.delete(rec.id);
                                 setSelectedRecords(newSet);
                               }}
-                              className="w-4 h-4 rounded border-slate-300 text-primary-500 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-700 cursor-pointer"
+                              className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-700 cursor-pointer"
                             />
                           </div>
                         )}
@@ -3039,6 +3704,26 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                               {rec.status === 'pending' && (
                                 <span className="inline-flex items-center justify-center text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
                                   PENDING
+                                </span>
+                              )}
+                              {shipStatus === 'belum_jadwal' && (
+                                <span className="inline-flex items-center justify-center text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                  Belum Jadwal Kirim
+                                </span>
+                              )}
+                              {shipStatus === 'dispatched' && (
+                                <span className="inline-flex items-center justify-center text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                  Dispatched{liveDispatchRep ? ` · ${liveDispatchRep.total_koli} Koli` : ''}
+                                </span>
+                              )}
+                              {shipStatus === 'terkirim' && (
+                                <span className="inline-flex items-center justify-center text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                  Terkirim
+                                </span>
+                              )}
+                              {shipStatus === 'batal_kirim' && (
+                                <span className="inline-flex items-center justify-center text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                                  Batal Kirim
                                 </span>
                               )}
                               {rec.sync_status === 'pending_sync' && (
@@ -3081,9 +3766,26 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                       {/* EXPANDED DETAIL & ACTIONS */}
                       {isExpanded && (
                         <div className="border-t border-slate-100 dark:border-slate-800">
-                          {/* TOOLBAR AKSI: KEMBALIKAN KE PENGECEKAN, EDIT, EXPORT, HAPUS */}
+                          {/* TOOLBAR AKSI: KIRIM DISPATCHED, KEMBALIKAN KE PENGECEKAN, EDIT, EXPORT, HAPUS */}
                           <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800 flex-wrap">
                             <div className="flex items-center gap-2 flex-wrap">
+                              {/* KIRIM KE DISPATCHED SATUAN (UNTUK SJ PENGIRIMAN SELESAI YANG BELUM DI DISPATCHED / TERKIRIM) */}
+                              {(userIsAdmin || canAction) &&
+                                rec.status === 'selesai' &&
+                                isPengirimanRec &&
+                                (shipStatus === 'belum_jadwal' || shipStatus === 'batal_kirim') && (
+                                  <button
+                                    type="button"
+                                    disabled={isBulkShippingAction}
+                                    onClick={() => void handleSendRecordsToDispatched([rec])}
+                                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                                    title="Masukkan SJ ini ke antrean Pengiriman Store > Dispatched"
+                                  >
+                                    <Truck className="w-3.5 h-3.5" />
+                                    Kirim ke Dispatched
+                                  </button>
+                                )}
+
                               {/* KEMBALIKAN KE TAB PENGECEKAN */}
                               <button
                                 type="button"
@@ -3214,6 +3916,8 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                       onClick={() => {
                                         setEditingRecordId(null);
                                         setEditFormData(null);
+                                        setEditWasDispatched(false);
+                                        setEditRequeueDispatched(false);
                                       }}
                                       className="px-2.5 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
                                     >
@@ -3237,64 +3941,96 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
 
                           {/* EDIT METADATA FORM (JIKA SEDANG EDIT) */}
                           {isEditing && editFormData && (
-                            <div className="p-3 bg-blue-50/50 dark:bg-blue-950/20 border-b border-blue-200 dark:border-blue-900 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                              <div>
-                                <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Status SJ</label>
-                                <div className="flex items-center gap-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1 h-[26px]">
-                                  <label className="flex items-center gap-1 cursor-pointer">
-                                    <input
-                                      type="radio"
-                                      name={`status-${editFormData.id}`}
-                                      value="pending"
-                                      checked={editFormData.status === 'pending'}
-                                      onChange={() => setEditFormData({ ...editFormData, status: 'pending' })}
-                                      className="w-3 h-3 text-blue-600 border-slate-300 focus:ring-blue-500"
-                                    />
-                                    <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">PENDING</span>
-                                  </label>
-                                  <label className="flex items-center gap-1 cursor-pointer">
-                                    <input
-                                      type="radio"
-                                      name={`status-${editFormData.id}`}
-                                      value="selesai"
-                                      checked={editFormData.status === 'selesai'}
-                                      onChange={() => setEditFormData({ ...editFormData, status: 'selesai' })}
-                                      className="w-3 h-3 text-emerald-600 border-slate-300 focus:ring-emerald-500"
-                                    />
-                                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">SELESAI</span>
-                                  </label>
+                            <div className="p-3 bg-blue-50/50 dark:bg-blue-950/20 border-b border-blue-200 dark:border-blue-900 space-y-2.5">
+                              {editWasDispatched && (
+                                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-[11px] font-bold text-amber-800 dark:text-amber-300">
+                                  <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                                  <span>
+                                    Status Dispatched SJ ini sedang dinonaktifkan sementara selama edit. Centang opsi di bawah jika ingin memasukkannya kembali ke Dispatched saat Simpan.
+                                  </span>
+                                </div>
+                              )}
+
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                <div>
+                                  <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Status SJ</label>
+                                  <div className="flex items-center gap-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1 h-[26px]">
+                                    <label className="flex items-center gap-1 cursor-pointer">
+                                      <input
+                                        type="radio"
+                                        name={`status-${editFormData.id}`}
+                                        value="pending"
+                                        checked={editFormData.status === 'pending'}
+                                        onChange={() => {
+                                          setEditFormData({ ...editFormData, status: 'pending' });
+                                          setEditRequeueDispatched(false);
+                                        }}
+                                        className="w-3 h-3 text-blue-600 border-slate-300 focus:ring-blue-500"
+                                      />
+                                      <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">PENDING</span>
+                                    </label>
+                                    <label className="flex items-center gap-1 cursor-pointer">
+                                      <input
+                                        type="radio"
+                                        name={`status-${editFormData.id}`}
+                                        value="selesai"
+                                        checked={editFormData.status === 'selesai'}
+                                        onChange={() => setEditFormData({ ...editFormData, status: 'selesai' })}
+                                        className="w-3 h-3 text-emerald-600 border-slate-300 focus:ring-emerald-500"
+                                      />
+                                      <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">SELESAI</span>
+                                    </label>
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="text-[9px] font-bold text-slate-400 uppercase">Asal (Source)</label>
+                                  <input
+                                    type="text"
+                                    value={editFormData.source}
+                                    onChange={e => setEditFormData({ ...editFormData, source: e.target.value })}
+                                    className="w-full text-xs px-2 py-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="text-[9px] font-bold text-slate-400 uppercase">Tujuan (Destination)</label>
+                                  <input
+                                    type="text"
+                                    value={editFormData.destination}
+                                    onChange={e => setEditFormData({ ...editFormData, destination: e.target.value })}
+                                    className="w-full text-xs px-2 py-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="text-[9px] font-bold text-slate-400 uppercase">Catatan</label>
+                                  <input
+                                    type="text"
+                                    value={editFormData.catatan || ''}
+                                    onChange={e => setEditFormData({ ...editFormData, catatan: e.target.value })}
+                                    className="w-full text-xs px-2 py-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg"
+                                  />
                                 </div>
                               </div>
 
-                              <div>
-                                <label className="text-[9px] font-bold text-slate-400 uppercase">Asal (Source)</label>
-                                <input
-                                  type="text"
-                                  value={editFormData.source}
-                                  onChange={e => setEditFormData({ ...editFormData, source: e.target.value })}
-                                  className="w-full text-xs px-2 py-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="text-[9px] font-bold text-slate-400 uppercase">Tujuan (Destination)</label>
-                                <input
-                                  type="text"
-                                  value={editFormData.destination}
-                                  onChange={e => setEditFormData({ ...editFormData, destination: e.target.value })}
-                                  className="w-full text-xs px-2 py-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="text-[9px] font-bold text-slate-400 uppercase">Catatan</label>
-                                <input
-                                  type="text"
-                                  value={editFormData.catatan || ''}
-                                  onChange={e => setEditFormData({ ...editFormData, catatan: e.target.value })}
-                                  className="w-full text-xs px-2 py-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg"
-                                />
-                              </div>
+                              {editFormData.status === 'selesai' &&
+                                isPengirimanTypeRecord(editFormData) &&
+                                noSjReportMap.get(editFormData.no_sj.trim().toUpperCase())?.status !== 'sent' && (
+                                  <label className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 cursor-pointer select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={editRequeueDispatched}
+                                      onChange={(e) => setEditRequeueDispatched(e.target.checked)}
+                                      className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0"
+                                    />
+                                    <span className="text-xs font-bold text-indigo-800 dark:text-indigo-200">
+                                      {editWasDispatched
+                                        ? 'Masukkan kembali ke antrean Pengiriman Store > Dispatched saat Simpan'
+                                        : 'Masukkan ke antrean Pengiriman Store > Dispatched saat Simpan (opsional)'}
+                                    </span>
+                                  </label>
+                                )}
                             </div>
                           )}
 
@@ -3531,7 +4267,9 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                         value="pending"
                         checked={bulkSubmitModal.targetStatus === 'pending'}
                         onChange={() =>
-                          setBulkSubmitModal((prev) => (prev ? { ...prev, targetStatus: 'pending' } : null))
+                          setBulkSubmitModal((prev) =>
+                            prev ? { ...prev, targetStatus: 'pending', sendToDispatched: false } : null
+                          )
                         }
                         className="w-4 h-4 text-indigo-600 border-slate-300 focus:ring-indigo-500"
                       />
@@ -3556,6 +4294,30 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                     </label>
                   </div>
                 </div>
+
+                {bulkSubmitModal.targetStatus === 'selesai' &&
+                  bulkSubmitModal.drafts.some((d) => isPengirimanTypeRecord(d)) && (
+                    <label className="flex items-start gap-2.5 p-3 rounded-xl border border-indigo-200 dark:border-indigo-800/70 bg-indigo-50/60 dark:bg-indigo-950/25 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={bulkSubmitModal.sendToDispatched}
+                        onChange={(e) =>
+                          setBulkSubmitModal((prev) =>
+                            prev ? { ...prev, sendToDispatched: e.target.checked } : null
+                          )
+                        }
+                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-indigo-900 dark:text-indigo-200">
+                          Sekaligus masukkan SJ Pengiriman ke antrean Pengiriman Store &gt; Dispatched
+                        </div>
+                        <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                          Default nonaktif. Jika tidak dicentang, seluruh SJ masuk ke Riwayat &gt; SELESAI &gt; Belum Jadwal Kirim.
+                        </div>
+                      </div>
+                    </label>
+                  )}
               </div>
 
               <div className="px-5 py-3.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-end gap-2 bg-slate-50/50 dark:bg-slate-900/40 shrink-0">
@@ -3569,7 +4331,11 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                 <button
                   type="button"
                   onClick={() =>
-                    void handleExecuteBulkSubmit(bulkSubmitModal.drafts, bulkSubmitModal.targetStatus)
+                    void handleExecuteBulkSubmit(
+                      bulkSubmitModal.drafts,
+                      bulkSubmitModal.targetStatus,
+                      bulkSubmitModal.sendToDispatched
+                    )
                   }
                   className="px-4 py-2 text-xs font-extrabold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/20 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
                 >

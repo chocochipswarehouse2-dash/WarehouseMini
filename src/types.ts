@@ -1362,7 +1362,9 @@ export interface PengirimanStoreItem {
   deskripsi: string;
   qty: number;
   satuan: SatuanPengirimanStore;
-  hitung_koli: number; // jika satuan 'Pcs' -> 1 koli; jika 'Koli' -> qty koli
+  hitung_koli: number; // jumlah koli aktual atau estimasi (jika satuan 'Pcs', default 1 kecuali ada estimasi/override)
+  is_estimated_koli?: boolean; // true jika hitung_koli berasal dari estimasi otomatis (1 koli = 40 pcs) dan belum dikonfirmasi aktual
+  source_type?: 'manual' | 'pengecekan_sj'; // penanda asal data internal (tidak ditampilkan sebagai catatan ke store)
   keterangan?: string;
   foto_barang?: string; // URL / GDrive Link foto dokumentasi per baris barang (Opsi A)
 }

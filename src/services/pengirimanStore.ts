@@ -4,11 +4,46 @@ import {
   PengirimanStoreTrip,
   KoliMarkingLabel,
   PengirimanAuditLog,
+  PengecekanSJRecord,
 } from '../types';
 import { supabaseFetch } from './supabase';
+import { getFullStoreName } from './gasManualShipment';
 
 const LOCAL_STORAGE_REPORTS = 'wms_pengiriman_store_reports_cache';
 const LOCAL_STORAGE_TRIPS = 'wms_pengiriman_store_trips_cache';
+
+export const ESTIMATED_PCS_PER_KOLI = 40;
+
+/**
+ * Estimasi jumlah koli dari total qty fisik (pcs): 1 koli = 40 pcs (pembulatan ke atas, minimal 1 koli).
+ * Contoh: 1–40 pcs = 1 koli, 41–80 pcs = 2 koli, 81–120 pcs = 3 koli.
+ */
+export function estimateKoliFromPcs(totalPcs: number, pcsPerKoli = ESTIMATED_PCS_PER_KOLI): number {
+  const safePcs = Math.max(1, Math.round(Number(totalPcs) || 0));
+  const safeDiv = Math.max(1, Math.round(Number(pcsPerKoli) || ESTIMATED_PCS_PER_KOLI));
+  return Math.max(1, Math.ceil(safePcs / safeDiv));
+}
+
+function normalizeNoSjKey(noSj?: string): string {
+  return String(noSj || '').trim().toUpperCase();
+}
+
+function isPenerimaanRecord(record: Pick<PengecekanSJRecord, 'tipe_import' | 'destination'>): boolean {
+  if (record.tipe_import === 'Penerimaan') return true;
+  if (record.tipe_import === 'Pengiriman') return false;
+  const destLower = String(record.destination || '').trim().toLowerCase();
+  return (
+    destLower.includes('warehouse') ||
+    destLower.includes('gudang') ||
+    destLower.includes('pusat')
+  );
+}
+
+export function notifyPengirimanStoreUpdated(detail?: Record<string, any>): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('wms_pengiriman_store_updated', { detail: detail || {} }));
+  }
+}
 
 // Helper to format date string to YYYY-MM-DD
 export function getTodayDateString(): string {
@@ -234,20 +269,30 @@ export async function savePengirimanStoreReport(
     const nowIso = new Date().toISOString();
 
     // Pastikan hitung_koli valid:
-    // Jika satuan pcs -> 1 koli. Jika satuan koli -> qty koli
+    // Jika satuan Pcs -> gunakan hitung_koli jika sudah ditentukan (>= 1), default 1.
+    // Jika satuan Koli -> qty koli.
     const sanitizedItems: PengirimanStoreItem[] = reportData.items.map((item, idx) => {
       const rawQty = Math.max(1, Number(item.qty) || 1);
       const isPcs = item.satuan === 'Pcs';
-      const hitungKoli = isPcs ? 1 : Math.max(1, Math.round(rawQty));
+      const customKoli = Number(item.hitung_koli);
+      const hitungKoli = isPcs
+        ? Number.isFinite(customKoli) && customKoli >= 1
+          ? Math.round(customKoli)
+          : 1
+        : Math.max(1, Math.round(rawQty));
 
       return {
         id: item.id || `item-${Date.now()}-${idx}`,
+        store_tujuan: item.store_tujuan,
         no_surat_jalan: item.no_surat_jalan?.trim() || 'Tidak ada no surat jalan',
         deskripsi: item.deskripsi?.trim() || `Barang #${idx + 1}`,
         qty: rawQty,
         satuan: item.satuan || 'Pcs',
         hitung_koli: hitungKoli,
+        is_estimated_koli: isPcs ? Boolean(item.is_estimated_koli) : false,
+        source_type: item.source_type,
         keterangan: item.keterangan || '',
+        foto_barang: item.foto_barang,
       };
     });
 
@@ -334,12 +379,101 @@ export async function savePengirimanStoreBatch(payload: {
 
     const timestampLaporan = getSubmitTimestamp();
     const nowIso = new Date().toISOString();
+    const actorUser = {
+      name: payload.pic_nama || 'Petugas Gudang',
+      username: payload.pic_username || 'operator',
+    };
 
-    // Kelompokkan items per store_tujuan
+    // Muat laporan terbaru untuk proteksi gabung otomatis (anti-duplikat No SJ pada Dispatched)
+    const existingReports = await fetchPengirimanStoreReports();
+    const dispatchedBySj = new Map<string, PengirimanStoreReport>();
+    existingReports.forEach((rep) => {
+      if (rep.status !== 'dispatched') return;
+      (rep.items || []).forEach((it) => {
+        const key = normalizeNoSjKey(it.no_surat_jalan);
+        if (key && !dispatchedBySj.has(key)) {
+          dispatchedBySj.set(key, rep);
+        }
+      });
+    });
+
+    const mergedReportsMap = new Map<string, PengirimanStoreReport>();
+    const remainingItems: typeof payload.items = [];
+
+    for (let idx = 0; idx < payload.items.length; idx++) {
+      const item = payload.items[idx];
+      const sjKey = normalizeNoSjKey(item.no_surat_jalan);
+      const existingDispatched = sjKey ? dispatchedBySj.get(sjKey) : undefined;
+
+      if (existingDispatched && sjKey) {
+        const currentReport = mergedReportsMap.get(existingDispatched.id) || existingDispatched;
+        const rawQty = Math.max(1, Number(item.qty) || 1);
+        const isPcs = item.satuan === 'Pcs';
+        const manualKoli = isPcs ? 1 : Math.max(1, Math.round(rawQty));
+        const normalizedStore =
+          getFullStoreName(item.store_tujuan?.trim() || '') ||
+          item.store_tujuan?.trim() ||
+          currentReport.store_tujuan;
+        const incomingPhoto = item.foto_barang || (item.foto_urls && item.foto_urls[0]) || '';
+
+        const updatedItems: PengirimanStoreItem[] = (currentReport.items || []).map((exItem) => {
+          if (normalizeNoSjKey(exItem.no_surat_jalan) !== sjKey) return exItem;
+          const cleanManualDesc = item.deskripsi?.trim();
+          const finalKoli = isPcs
+            ? Math.max(1, Math.round(Number(exItem.hitung_koli) || 1))
+            : manualKoli;
+          return {
+            ...exItem,
+            store_tujuan: normalizedStore,
+            no_surat_jalan: item.no_surat_jalan?.trim() || exItem.no_surat_jalan,
+            deskripsi: cleanManualDesc || exItem.deskripsi,
+            qty: rawQty,
+            satuan: item.satuan || exItem.satuan,
+            hitung_koli: finalKoli,
+            is_estimated_koli: false,
+            foto_barang: incomingPhoto || exItem.foto_barang || '',
+            keterangan: item.keterangan !== undefined ? item.keterangan : exItem.keterangan || '',
+          };
+        });
+
+        const nextPhotos = Array.from(
+          new Set([
+            ...(currentReport.foto_urls || []),
+            ...(item.foto_urls || []),
+            ...(incomingPhoto ? [incomingPhoto] : []),
+            ...(payload.foto_urls || []),
+          ])
+        ).filter(Boolean);
+
+        const editRes = await editPengirimanStoreReportFull(
+          currentReport.id,
+          {
+            store_tujuan: normalizedStore,
+            items: updatedItems,
+            foto_urls: nextPhotos,
+          },
+          actorUser
+        );
+
+        if (editRes.success && editRes.data) {
+          mergedReportsMap.set(currentReport.id, editRes.data);
+          dispatchedBySj.set(sjKey, editRes.data);
+        }
+      } else {
+        remainingItems.push(item);
+      }
+    }
+
+    const mergedReports = Array.from(mergedReportsMap.values());
+
+    // Kelompokkan items baru (yang belum ada di Dispatched) per store_tujuan
     const storeGroups: Record<string, (PengirimanStoreItem & { _item_photos?: string[] })[]> = {};
 
-    payload.items.forEach((item, idx) => {
-      const storeName = item.store_tujuan?.trim() || 'Store Belum Ditentukan';
+    remainingItems.forEach((item, idx) => {
+      const storeName =
+        getFullStoreName(item.store_tujuan?.trim() || '') ||
+        item.store_tujuan?.trim() ||
+        'Store Belum Ditentukan';
       if (!storeGroups[storeName]) {
         storeGroups[storeName] = [];
       }
@@ -356,6 +490,8 @@ export async function savePengirimanStoreBatch(payload: {
         qty: rawQty,
         satuan: item.satuan || 'Pcs',
         hitung_koli: hitungKoli,
+        is_estimated_koli: false,
+        source_type: 'manual',
         keterangan: item.keterangan || '',
         foto_barang: item.foto_barang || '',
         _item_photos: item.foto_urls || (item.foto_barang ? [item.foto_barang] : []),
@@ -399,41 +535,59 @@ export async function savePengirimanStoreBatch(payload: {
       newReports.push(rep);
     }
 
-    // Simpan ke local storage
-    const cached = getCachedReports();
-    const updatedAll = [...newReports, ...cached];
-    saveReportsToCache(updatedAll);
+    if (newReports.length > 0) {
+      // Simpan ke local storage
+      const cached = getCachedReports();
+      const updatedAll = [...newReports, ...cached];
+      saveReportsToCache(updatedAll);
 
-    // Sync ke Supabase di latar belakang
-    try {
-      const dbPayloads = newReports.map((r) => ({
-        id: r.id,
-        store_tujuan_id: r.store_tujuan_id || null,
-        store_tujuan: r.store_tujuan,
-        tanggal_laporan: r.tanggal_laporan,
-        items: JSON.stringify(r.items),
-        total_item_count: r.total_item_count,
-        total_koli: r.total_koli,
-        pic_nama: r.pic_nama,
-        pic_username: r.pic_username,
-        status: 'dispatched',
-        foto_urls: JSON.stringify(r.foto_urls || []),
-        created_at: r.created_at,
-        updated_at: r.updated_at,
-      }));
+      // Sync ke Supabase di latar belakang
+      try {
+        const dbPayloads = newReports.map((r) => ({
+          id: r.id,
+          store_tujuan_id: r.store_tujuan_id || null,
+          store_tujuan: r.store_tujuan,
+          tanggal_laporan: r.tanggal_laporan,
+          items: JSON.stringify(r.items),
+          total_item_count: r.total_item_count,
+          total_koli: r.total_koli,
+          pic_nama: r.pic_nama,
+          pic_username: r.pic_username,
+          status: 'dispatched',
+          foto_urls: JSON.stringify(r.foto_urls || []),
+          created_at: r.created_at,
+          updated_at: r.updated_at,
+        }));
 
-      await supabaseFetch('pengiriman_store_reports', 'POST', dbPayloads);
-    } catch (err) {
-      console.warn('Simpan batch ke Supabase tertunda (tersimpan lokal):', err);
+        await supabaseFetch('pengiriman_store_reports', 'POST', dbPayloads);
+      } catch (err) {
+        console.warn('Simpan batch ke Supabase tertunda (tersimpan lokal):', err);
+      }
     }
 
-    const totalKoliAll = newReports.reduce((acc, r) => acc + r.total_koli, 0);
-    const storeSummary = stores.join(', ');
+    const allAffectedReports = [...mergedReports, ...newReports];
+    const totalKoliAll = allAffectedReports.reduce((acc, r) => acc + r.total_koli, 0);
+
+    notifyPengirimanStoreUpdated({
+      action: 'batch_saved',
+      created: newReports.length,
+      merged: mergedReports.length,
+    });
+
+    let message = '';
+    if (mergedReports.length > 0 && newReports.length > 0) {
+      message = `${mergedReports.length} SJ digabungkan & diperbarui ke antrean Dispatched, plus ${newReports.length} laporan baru dibuat (${totalKoliAll} Koli total).`;
+    } else if (mergedReports.length > 0) {
+      message = `${mergedReports.length} No SJ yang sama berhasil digabungkan & diperbarui di antrean Dispatched (${totalKoliAll} Koli aktual, 0 duplikat).`;
+    } else {
+      const storeSummary = stores.join(', ');
+      message = `Berhasil membuat ${newReports.length} laporan (${totalKoliAll} Koli) untuk ${storeSummary}. Masuk ke antrean Dispatched!`;
+    }
 
     return {
       success: true,
-      reports: newReports,
-      message: `Berhasil membuat ${newReports.length} laporan (${totalKoliAll} Koli) untuk ${storeSummary}. Masuk ke antrean Dispatched!`,
+      reports: allAffectedReports,
+      message,
     };
   } catch (error: any) {
     return {
@@ -710,15 +864,23 @@ export async function editPengirimanStoreReportFull(
     const sanitizedItems: PengirimanStoreItem[] = newItems.map((item, idx) => {
       const rawQty = Math.max(1, Number(item.qty) || 1);
       const isPcs = item.satuan === 'Pcs';
-      const hitungKoli = isPcs ? 1 : Math.max(1, Math.round(rawQty));
+      const customKoli = Number(item.hitung_koli);
+      const hitungKoli = isPcs
+        ? Number.isFinite(customKoli) && customKoli >= 1
+          ? Math.round(customKoli)
+          : 1
+        : Math.max(1, Math.round(rawQty));
 
       return {
         id: item.id || `item-${Date.now()}-${idx}`,
+        store_tujuan: item.store_tujuan,
         no_surat_jalan: item.no_surat_jalan?.trim() || 'Tidak ada no surat jalan',
         deskripsi: item.deskripsi?.trim() || `Barang #${idx + 1}`,
         qty: rawQty,
         satuan: item.satuan || 'Pcs',
         hitung_koli: hitungKoli,
+        is_estimated_koli: isPcs ? Boolean(item.is_estimated_koli) : false,
+        source_type: item.source_type,
         keterangan: item.keterangan || '',
         foto_barang: item.foto_barang,
       };
@@ -1461,3 +1623,553 @@ export async function resetAllPengirimanStore(): Promise<{ success: boolean; mes
     message: 'Data pengiriman store (surat jalan barang & trip kirim) berhasil di-reset.',
   };
 }
+
+/**
+ * Sinkronisasi otomatis & idempoten dari Pengecekan Surat Jalan (status SELESAI, tipe Pengiriman)
+ * ke antrean Pengiriman Store > Dispatched dengan estimasi 1 koli = 40 pcs (pembulatan ke atas).
+ * Catatan internal selisih pengecekan DILARANG dicantumkan agar store hanya melihat hasil akhirnya saja.
+ */
+export async function syncPengecekanSjToPengirimanDispatched(
+  record: PengecekanSJRecord,
+  user: { name: string; username: string }
+): Promise<{
+  success: boolean;
+  action: 'created' | 'updated' | 'already_sent' | 'skipped_penerimaan' | 'skipped_zero_qty' | 'error';
+  report?: PengirimanStoreReport;
+  estimatedKoli?: number;
+  message: string;
+}> {
+  try {
+    const cleanNoSj = String(record.no_sj || '').trim();
+    const targetSjKey = normalizeNoSjKey(cleanNoSj);
+    if (!targetSjKey) {
+      return { success: false, action: 'error', message: 'Nomor Surat Jalan kosong' };
+    }
+
+    // Hanya SJ Pengiriman (Gudang -> Store), BUKAN Penerimaan (masuk ke gudang)
+    if (isPenerimaanRecord(record)) {
+      return {
+        success: true,
+        action: 'skipped_penerimaan',
+        message: 'SJ bertipe Penerimaan dilewati (tidak masuk Pengiriman Store).',
+      };
+    }
+
+    // Total qty dikirim berdasarkan hasil fisik scan aktual
+    const computedFromItems = Array.isArray(record.items)
+      ? record.items.reduce((sum, it) => sum + Math.max(0, Number(it.qty_scan) || 0), 0)
+      : 0;
+    const totalQtyScan =
+      typeof record.total_qty_terima === 'number' && record.total_qty_terima > 0
+        ? Math.round(record.total_qty_terima)
+        : Math.round(computedFromItems);
+
+    if (totalQtyScan <= 0) {
+      return {
+        success: true,
+        action: 'skipped_zero_qty',
+        message: `SJ ${cleanNoSj} memiliki qty fisik 0 pcs sehingga tidak dimasukkan ke antrean Dispatched.`,
+      };
+    }
+
+    const rawDest = String(record.destination || '').trim();
+    const normalizedStore = getFullStoreName(rawDest) || rawDest || 'Store Tujuan';
+    const estimatedKoli = estimateKoliFromPcs(totalQtyScan, ESTIMATED_PCS_PER_KOLI);
+
+    const activeSkuCount = Array.isArray(record.items)
+      ? record.items.filter((it) => (Number(it.qty_scan) || 0) > 0).length
+      : Number(record.total_sku) || 0;
+    const cleanDeskripsi =
+      activeSkuCount > 0
+        ? `Barang Pengiriman Store (${activeSkuCount} SKU)`
+        : 'Barang Pengiriman Store';
+
+    // Muat data terbaru agar proteksi anti-duplikat akurat lintas perangkat
+    const existingReports = await fetchPengirimanStoreReports();
+    const matchingReports = existingReports.filter(
+      (rep) =>
+        rep.status !== 'cancelled' &&
+        Array.isArray(rep.items) &&
+        rep.items.some((it) => normalizeNoSjKey(it.no_surat_jalan) === targetSjKey)
+    );
+
+    // 1. Jika SJ sudah terkirim (status 'sent'), JANGAN buat duplikat baru
+    const alreadySent = matchingReports.find((r) => r.status === 'sent');
+    if (alreadySent) {
+      return {
+        success: true,
+        action: 'already_sent',
+        report: alreadySent,
+        estimatedKoli: alreadySent.total_koli,
+        message: `SJ ${cleanNoSj} sudah pernah dikirim (${alreadySent.trip_id || alreadySent.id}), tidak dibuat duplikat.`,
+      };
+    }
+
+    // 2. Jika SJ sudah ada di antrean Dispatched -> GABUNG / LENGKAPI / PERBARUI (tanpa duplikat & tanpa menimpa input manual)
+    const existingDispatched = matchingReports.find((r) => r.status === 'dispatched');
+    if (existingDispatched) {
+      let mergedWithManual = false;
+      const updatedItems: PengirimanStoreItem[] = existingDispatched.items.map((it) => {
+        if (normalizeNoSjKey(it.no_surat_jalan) !== targetSjKey) return it;
+        const isManualEntry =
+          it.source_type !== 'pengecekan_sj' ||
+          it.satuan === 'Koli' ||
+          it.is_estimated_koli === false;
+
+        if (isManualEntry) {
+          mergedWithManual = true;
+          // Pertahankan koli aktual, satuan, deskripsi manual & foto barang; hanya lengkapi yang kosong
+          const manualHasDesc = Boolean(it.deskripsi && it.deskripsi.trim() && !it.deskripsi.startsWith('Barang Pengiriman Store'));
+          return {
+            ...it,
+            store_tujuan: it.store_tujuan?.trim() || normalizedStore,
+            no_surat_jalan: cleanNoSj,
+            deskripsi: manualHasDesc ? it.deskripsi : cleanDeskripsi,
+            qty: it.satuan === 'Pcs' ? totalQtyScan : it.qty,
+            hitung_koli: Math.max(1, Math.round(Number(it.hitung_koli) || 1)),
+            is_estimated_koli: false,
+            keterangan: it.keterangan || '',
+          };
+        }
+
+        // Masih berupa entri estimasi dari Pengecekan SJ -> perbarui qty & estimasi
+        return {
+          ...it,
+          store_tujuan: normalizedStore,
+          no_surat_jalan: cleanNoSj,
+          deskripsi: cleanDeskripsi,
+          qty: totalQtyScan,
+          satuan: 'Pcs',
+          hitung_koli: estimatedKoli,
+          is_estimated_koli: true,
+          source_type: 'pengecekan_sj',
+          keterangan: '',
+        };
+      });
+
+      const editRes = await editPengirimanStoreReportFull(
+        existingDispatched.id,
+        {
+          store_tujuan: existingDispatched.store_tujuan?.trim() || normalizedStore,
+          items: updatedItems,
+        },
+        user
+      );
+
+      // Pastikan override arsip (jika sempat ditandai batal_kirim/terkirim) dibersihkan saat kembali masuk Dispatched
+      await setSjShippingOverridesBatch([cleanNoSj], null, user);
+
+      notifyPengirimanStoreUpdated({ action: 'updated', no_sj: cleanNoSj, reportId: existingDispatched.id });
+      return {
+        success: editRes.success,
+        action: editRes.success ? 'updated' : 'error',
+        report: editRes.data,
+        estimatedKoli: editRes.data?.total_koli ?? estimatedKoli,
+        message: editRes.success
+          ? mergedWithManual
+            ? `SJ ${cleanNoSj} digabungkan/dilengkapi dengan antrean Dispatched manual yang sudah ada (${editRes.data?.total_koli ?? existingDispatched.total_koli} Koli aktual dipertahankan).`
+            : `Antrean Dispatched SJ ${cleanNoSj} (${normalizedStore}) diperbarui: ${totalQtyScan} pcs (~${editRes.data?.total_koli ?? estimatedKoli} Koli).`
+          : editRes.message,
+      };
+    }
+
+    // Bersihkan override arsip manual jika sebelumnya sempat ditandai batal_kirim/terkirim
+    await setSjShippingOverridesBatch([cleanNoSj], null, user);
+
+    // 3. Belum ada di Dispatched -> buat antrean baru
+    const newItem: PengirimanStoreItem = {
+      id: `item-sj-${Date.now()}-0`,
+      store_tujuan: normalizedStore,
+      no_surat_jalan: cleanNoSj,
+      deskripsi: cleanDeskripsi,
+      qty: totalQtyScan,
+      satuan: 'Pcs',
+      hitung_koli: estimatedKoli,
+      is_estimated_koli: true,
+      source_type: 'pengecekan_sj',
+      keterangan: '',
+    };
+
+    const saveRes = await savePengirimanStoreReport({
+      store_tujuan: normalizedStore,
+      tanggal_laporan: getSubmitTimestamp(),
+      items: [newItem],
+      total_item_count: 1,
+      total_koli: estimatedKoli,
+      pic_nama: user.name || 'Petugas Gudang',
+      pic_username: user.username || 'operator',
+      foto_urls: [],
+    });
+
+    notifyPengirimanStoreUpdated({ action: 'created', no_sj: cleanNoSj, reportId: saveRes.data?.id });
+    return {
+      success: saveRes.success,
+      action: saveRes.success ? 'created' : 'error',
+      report: saveRes.data,
+      estimatedKoli,
+      message: saveRes.success
+        ? `SJ ${cleanNoSj} (${totalQtyScan} pcs · Est. ~${estimatedKoli} Koli) masuk antrean Pengiriman Store > Dispatched (${normalizedStore}).`
+        : saveRes.message,
+    };
+  } catch (err: any) {
+    console.warn('syncPengecekanSjToPengirimanDispatched error:', err);
+    return {
+      success: false,
+      action: 'error',
+      message: err?.message || 'Gagal menyinkronkan SJ ke Pengiriman Store Dispatched',
+    };
+  }
+}
+
+/**
+ * Hapus otomatis dari antrean Pengiriman Store > Dispatched ketika status SJ diturunkan
+ * dari SELESAI -> PENDING (atau saat riwayat SJ dihapus), HANYA jika belum dikirim (status === 'dispatched').
+ */
+export async function removePengecekanSjFromPengirimanDispatched(
+  noSj: string,
+  user: { name: string; username: string } = { name: 'System', username: 'system' }
+): Promise<{
+  success: boolean;
+  removedCount: number;
+  skippedSentCount: number;
+  message: string;
+}> {
+  try {
+    const targetSjKey = normalizeNoSjKey(noSj);
+    if (!targetSjKey) {
+      return { success: true, removedCount: 0, skippedSentCount: 0, message: '' };
+    }
+
+    const existingReports = await fetchPengirimanStoreReports();
+    const matchingReports = existingReports.filter(
+      (rep) =>
+        rep.status !== 'cancelled' &&
+        Array.isArray(rep.items) &&
+        rep.items.some((it) => normalizeNoSjKey(it.no_surat_jalan) === targetSjKey)
+    );
+
+    let removedCount = 0;
+    let skippedSentCount = 0;
+
+    for (const rep of matchingReports) {
+      if (rep.status === 'sent') {
+        skippedSentCount++;
+        continue;
+      }
+      if (rep.status !== 'dispatched') continue;
+
+      const remainingItems = (rep.items || []).filter(
+        (it) => normalizeNoSjKey(it.no_surat_jalan) !== targetSjKey
+      );
+
+      if (remainingItems.length === 0) {
+        const delRes = await deletePengirimanStoreReport(rep.id);
+        if (delRes.success) removedCount++;
+      } else {
+        const updRes = await editPengirimanStoreReportFull(
+          rep.id,
+          { items: remainingItems },
+          user
+        );
+        if (updRes.success) removedCount++;
+      }
+    }
+
+    if (removedCount > 0) {
+      notifyPengirimanStoreUpdated({ action: 'removed', no_sj: noSj });
+    }
+
+    return {
+      success: true,
+      removedCount,
+      skippedSentCount,
+      message:
+        removedCount > 0
+          ? `SJ ${noSj} otomatis ditarik dari antrean Pengiriman Store > Dispatched.`
+          : skippedSentCount > 0
+          ? `SJ ${noSj} sudah berstatus Terkirim (Sent) sehingga tidak dihapus dari riwayat pengiriman.`
+          : '',
+    };
+  } catch (err: any) {
+    console.warn('removePengecekanSjFromPengirimanDispatched error:', err);
+    return {
+      success: false,
+      removedCount: 0,
+      skippedSentCount: 0,
+      message: err?.message || 'Gagal menghapus SJ dari antrean Dispatched',
+    };
+  }
+}
+
+/**
+ * Penyesuaian / konfirmasi cepat jumlah koli aktual pada laporan Dispatched
+ * (mengubah status estimasi menjadi koli aktual yang terkonfirmasi).
+ */
+export async function updateDispatchedReportKoli(
+  reportId: string,
+  newKoli: number,
+  user: { name: string; username: string }
+): Promise<{ success: boolean; data?: PengirimanStoreReport; message: string }> {
+  const cached = getCachedReports();
+  const target = cached.find((r) => r.id === reportId);
+  if (!target) {
+    return { success: false, message: 'Laporan Dispatched tidak ditemukan' };
+  }
+  const safeKoli = Math.max(1, Math.round(Number(newKoli) || 1));
+  const items = target.items || [];
+  if (items.length === 0) {
+    return { success: false, message: 'Laporan tidak memiliki item' };
+  }
+
+  // Update item pertama (atau seluruh item jika single-item SJ) menjadi koli aktual terkonfirmasi
+  const updatedItems: PengirimanStoreItem[] = items.map((it, idx) => {
+    if (items.length === 1 || idx === 0) {
+      return {
+        ...it,
+        hitung_koli: safeKoli,
+        is_estimated_koli: false,
+      };
+    }
+    return {
+      ...it,
+      is_estimated_koli: false,
+    };
+  });
+
+  const res = await editPengirimanStoreReportFull(
+    reportId,
+    { items: updatedItems },
+    user
+  );
+  if (res.success) {
+    notifyPengirimanStoreUpdated({ action: 'koli_confirmed', reportId, total_koli: safeKoli });
+  }
+  return res;
+}
+
+// ============================================================================
+// DETEKSI KONFLIK NO SJ (INPUT MANUAL PENGIRIMAN STORE)
+// ============================================================================
+
+export interface DuplicateNoSjConflict {
+  no_sj: string;
+  existingStatus: 'dispatched' | 'sent';
+  existingReport: PengirimanStoreReport;
+}
+
+/**
+ * Periksa apakah No Surat Jalan yang akan diinput manual sudah ada di antrean Dispatched
+ * atau di Histori Terkirim (Sent), untuk menawarkan penggabungan otomatis / peringatan.
+ */
+export function findDuplicateNoSjConflicts(
+  items: Array<{ no_surat_jalan?: string }>,
+  existingReports: PengirimanStoreReport[]
+): DuplicateNoSjConflict[] {
+  const conflicts: DuplicateNoSjConflict[] = [];
+  const seenKeys = new Set<string>();
+
+  for (const item of items) {
+    const key = normalizeNoSjKey(item.no_surat_jalan);
+    if (!key || seenKeys.has(key)) continue;
+
+    const matching = existingReports.filter(
+      (rep) =>
+        rep.status !== 'cancelled' &&
+        Array.isArray(rep.items) &&
+        rep.items.some((it) => normalizeNoSjKey(it.no_surat_jalan) === key)
+    );
+    if (matching.length === 0) continue;
+
+    const dispatchedRep = matching.find((r) => r.status === 'dispatched');
+    const sentRep = matching.find((r) => r.status === 'sent');
+    if (dispatchedRep) {
+      seenKeys.add(key);
+      conflicts.push({
+        no_sj: String(item.no_surat_jalan || '').trim(),
+        existingStatus: 'dispatched',
+        existingReport: dispatchedRep,
+      });
+    } else if (sentRep) {
+      seenKeys.add(key);
+      conflicts.push({
+        no_sj: String(item.no_surat_jalan || '').trim(),
+        existingStatus: 'sent',
+        existingReport: sentRep,
+      });
+    }
+  }
+
+  return conflicts;
+}
+
+// ============================================================================
+// STATUS PENGIRIMAN SJ SELESAI (BELUM JADWAL / DISPATCHED / TERKIRIM / BATAL KIRIM)
+// Disimpan ke Supabase wms_system_docs (section_id = 'pengecekan_sj_shipping_overrides')
+// ============================================================================
+
+export type PengecekanSjShippingStatus =
+  | 'belum_jadwal'
+  | 'dispatched'
+  | 'terkirim'
+  | 'batal_kirim';
+
+export interface PengecekanSjShippingOverride {
+  status: 'terkirim' | 'batal_kirim';
+  updated_at: string;
+  updated_by: string;
+}
+
+const SJ_SHIPPING_OVERRIDES_STORAGE_KEY = 'wms_pengecekan_sj_shipping_overrides_v1';
+const SJ_SHIPPING_OVERRIDES_DOC_ID = 'pengecekan_sj_shipping_overrides';
+
+export function getCachedSjShippingOverrides(): Record<string, PengecekanSjShippingOverride> {
+  try {
+    const raw = localStorage.getItem(SJ_SHIPPING_OVERRIDES_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveCachedSjShippingOverrides(map: Record<string, PengecekanSjShippingOverride>): void {
+  try {
+    localStorage.setItem(SJ_SHIPPING_OVERRIDES_STORAGE_KEY, JSON.stringify(map));
+  } catch {}
+}
+
+export async function fetchSjShippingOverrides(): Promise<
+  Record<string, PengecekanSjShippingOverride>
+> {
+  const localMap = getCachedSjShippingOverrides();
+  try {
+    const docs = await supabaseFetch<any[]>(
+      'wms_system_docs',
+      'GET',
+      undefined,
+      `section_id=eq.${SJ_SHIPPING_OVERRIDES_DOC_ID}`
+    );
+    if (Array.isArray(docs) && docs[0] && docs[0].content) {
+      const cloudParsed = JSON.parse(docs[0].content);
+      if (cloudParsed && typeof cloudParsed === 'object') {
+        saveCachedSjShippingOverrides(cloudParsed);
+        return cloudParsed;
+      }
+    }
+  } catch (err) {
+    console.warn('Gagal fetch pengecekan_sj_shipping_overrides dari Supabase:', err);
+  }
+  return localMap;
+}
+
+/**
+ * Perbarui status arsip pengiriman (Terkirim / Batal Kirim / reset ke Belum Jadwal Kirim)
+ * untuk 1 atau banyak No SJ sekaligus (1 request Supabase via wms_system_docs).
+ * Tidak membuat trip palsu di Pengiriman Store.
+ */
+export async function setSjShippingOverridesBatch(
+  noSjList: string[],
+  nextStatus: 'terkirim' | 'batal_kirim' | null,
+  user: { name: string; username?: string } = { name: 'Admin', username: 'admin' }
+): Promise<Record<string, PengecekanSjShippingOverride>> {
+  const current = await fetchSjShippingOverrides();
+  const nextMap: Record<string, PengecekanSjShippingOverride> = { ...current };
+  const nowIso = new Date().toISOString();
+  let changed = false;
+
+  for (const rawNoSj of noSjList) {
+    const key = normalizeNoSjKey(rawNoSj);
+    if (!key) continue;
+    if (nextStatus === null) {
+      if (nextMap[key]) {
+        delete nextMap[key];
+        changed = true;
+      }
+    } else {
+      nextMap[key] = {
+        status: nextStatus,
+        updated_at: nowIso,
+        updated_by: user.name || user.username || 'Admin',
+      };
+      changed = true;
+    }
+  }
+
+  if (!changed) return nextMap;
+
+  saveCachedSjShippingOverrides(nextMap);
+  try {
+    await supabaseFetch(
+      'wms_system_docs',
+      'POST',
+      [
+        {
+          section_id: SJ_SHIPPING_OVERRIDES_DOC_ID,
+          content: JSON.stringify(nextMap),
+          updated_by: user.name || user.username || 'Admin',
+          updated_at: nowIso,
+        },
+      ],
+      'on_conflict=section_id',
+      true
+    );
+  } catch (err) {
+    console.warn('Gagal simpan pengecekan_sj_shipping_overrides ke Supabase:', err);
+  }
+
+  notifyPengirimanStoreUpdated({ action: 'shipping_override_updated', status: nextStatus });
+  return nextMap;
+}
+
+/**
+ * Bangun indeks O(1) No SJ -> PengirimanStoreReport terbaik (prioritas: sent > dispatched > cancelled).
+ */
+export function buildNoSjReportIndex(
+  reports: PengirimanStoreReport[]
+): Map<string, PengirimanStoreReport> {
+  const rank = (status?: string) => {
+    if (status === 'sent') return 3;
+    if (status === 'dispatched') return 2;
+    if (status === 'cancelled') return 1;
+    return 0;
+  };
+  const map = new Map<string, PengirimanStoreReport>();
+  (reports || []).forEach((rep) => {
+    (rep.items || []).forEach((it) => {
+      const key = normalizeNoSjKey(it.no_surat_jalan);
+      if (!key) return;
+      const existing = map.get(key);
+      if (!existing || rank(rep.status) > rank(existing.status)) {
+        map.set(key, rep);
+      }
+    });
+  });
+  return map;
+}
+
+/**
+ * Tentukan status pengiriman live untuk sebuah No SJ di Tab Selesai Pengecekan SJ.
+ */
+export function resolvePengecekanSjShippingStatus(
+  noSj: string,
+  reportMap: Map<string, PengirimanStoreReport>,
+  overrides: Record<string, PengecekanSjShippingOverride>
+): PengecekanSjShippingStatus {
+  const key = normalizeNoSjKey(noSj);
+  if (!key) return 'belum_jadwal';
+
+  const rep = reportMap.get(key);
+  if (rep?.status === 'sent') return 'terkirim';
+  if (rep?.status === 'dispatched') return 'dispatched';
+
+  const ov = overrides[key];
+  if (ov?.status === 'terkirim') return 'terkirim';
+  if (ov?.status === 'batal_kirim') return 'batal_kirim';
+
+  if (rep?.status === 'cancelled') return 'batal_kirim';
+
+  return 'belum_jadwal';
+}
+
+

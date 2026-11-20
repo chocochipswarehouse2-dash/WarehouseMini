@@ -15,19 +15,36 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.22.11",
+  "version": "v2.23.1",
   "versionCode": 431,
   "buildDate": "20 November 2026",
-  "buildHash": "wms-261120-v431-2116",
-  "releaseTitle": "WMS v2.22.11 — Optimasi Supabase PostgREST & Realtime Egress",
+  "buildHash": "wms-261120-v431-1622",
+  "releaseTitle": "WMS v2.23.1 — Kontrol Eksplisit Dispatched, Sub-Tab SELESAI & Anti-Duplikat 2 Arah",
   "releaseNotes": [
-    "Kurangi frekuensi polling PickingTasksView (3.5s->15s), LiveChat (8s->60s), Putaway (3.5s->30s), Trello (60s->180s), Agenda (45s->120s), dan App Delta (45s->120s)",
-    "Tambah SWR cache 30s, dedup, & limit 1500 pada fetchManualShipments serta role-gating Realtime postgres_changes untuk Store/CS"
+    "Opsi masuk Dispatched saat Submit/Bulk Submit/Edit ke SELESAI kini eksplisit dengan default OFF (tanpa automasi diam-diam)",
+    "Pause-on-Edit: alert & nonaktifkan sementara status Dispatched saat SJ SELESAI diedit, lalu tawarkan masuk kembali saat Simpan",
+    "Sub-tab status pengiriman di Riwayat SELESAI (Belum Jadwal Kirim, Dispatched, Terkirim, Batal Kirim) + Select All/Unselect & aksi massal",
+    "Arsip SJ lama ke Terkirim tersimpan di Supabase wms_system_docs tanpa membuat data trip palsu di Pengiriman Store",
+    "Anti-duplikat No SJ 2 arah: tabrakan No SJ di Pengiriman Store maupun Pengecekan SJ otomatis menggabungkan & melengkapi data tanpa kartu kembar"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.23.0",
+    "versionCode": 430,
+    "buildDate": "20 November 2026",
+    "buildHash": "wms-261120-v430-1407",
+    "releaseTitle": "WMS v2.23.0 — Over-Scan Alert Pengecekan SJ & Auto-Sync Pengiriman Store Dispatched",
+    "releaseNotes": [
+      "Suara & panel peringatan otomatis di Pengecekan SJ saat qty scan melebihi Qty SJ (berdampingan dengan item Di Luar SJ)",
+      "Auto-sync SJ Pengiriman status SELESAI ke Pengiriman Store Dispatched dengan estimasi 1 koli = 40 pcs & penyesuaian cepat koli aktual",
+      "Auto-tarik dari antrean Dispatched saat status Riwayat SJ diturunkan ke PENDING atau dihapus (aman untuk data sudah terkirim)",
+      "Tambahan guardrail skill & rule GEMINI.md §17 untuk konsistensi pembaruan jangka panjang"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.22.10",
     "versionCode": 430,
@@ -105,18 +122,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseTitle": "WMS v2.22.4 — Rapikan Tabel 1-Baris di Workspace Tugas Putaway",
     "releaseNotes": [
       "Tampilkan Nama Produk, Size, SKU & Asal, Qty, serta tombol aksi dalam 1 baris tabel rapi pada tampilan desktop di PutawayWorkspaceModal"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.22.3",
-    "versionCode": 423,
-    "buildDate": "20 November 2026",
-    "buildHash": "wms-261120-v423-1516",
-    "releaseTitle": "WMS v2.22.3 — Perbaiki Filter Zona Aksesoris/Belt & Loop Notifikasi Update",
-    "releaseNotes": [
-      "Perbaiki filter zona di RackCapacityDashboard agar klik kartu Area Aksesoris/Belt/Transit/Blok F/Perbaikan menampilkan rak dengan benar",
-      "Tambahkan cooldown guard 30s di appUpdateService agar banner Mempersiapkan pembaruan tidak berulang saat CDN/SW sinkronisasi"
     ],
     "minSupportedVersion": "v2.0.0"
   }

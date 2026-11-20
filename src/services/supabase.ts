@@ -6156,98 +6156,58 @@ export async function fetchPickingListFromSupabase(forceRefresh = false): Promis
     }
   } catch {}
 
-  // Fetch from picking_list and peminjaman concurrently to avoid sequential bottlenecks
-  // Bypass fetchWithDeltaSync temporarily to ensure all fresh rows are fetched properly
-  const [pickingRes, peminjamanRes] = await Promise.allSettled([
-    supabaseFetch<any[]>('picking_list', 'GET', null, 'select=id,no_sj,tanggal,tujuan,sku,nama_produk,qty_req,qty_picked,lokasi,status,picker_name,created_at,invoice_picking&order=created_at.desc&limit=800'),
-    supabaseFetch<any[]>('peminjaman', 'GET', null, 'select=*&order=created_at.desc&limit=100')
+  const PICKING_SELECT = 'select=id,no_sj,tanggal,tujuan,sku,nama_produk,qty_req,qty_picked,lokasi,status,picker_name,created_at,invoice_picking';
+
+  // Fetch recent picking_list rows + active (non-SELESAI) rows concurrently.
+  // HARD GUARD: NEVER auto-insert rows from the `peminjaman` table during a read/fetch!
+  // PeminjamanView.tsx explicitly inserts into `picking_list` on SPS creation.
+  // Auto-syncing from `peminjaman` here caused old completed SPS/PJM records (that fell
+  // outside the limit=800 window) to be re-inserted as PENDING duplicates infinitely.
+  const [recentRes, activeRes] = await Promise.allSettled([
+    supabaseFetch<any[]>('picking_list', 'GET', null, `${PICKING_SELECT}&order=created_at.desc&limit=800`),
+    supabaseFetch<any[]>('picking_list', 'GET', null, `${PICKING_SELECT}&status=neq.SELESAI&order=created_at.desc&limit=500`)
   ]);
 
-  if (pickingRes.status === 'fulfilled' && pickingRes.value && Array.isArray(pickingRes.value)) {
-    for (const r of pickingRes.value) {
-      const item = extractPickingItemFromRow(r);
-      if (item) {
-        if (storedCompletedSJs.has((item.no_sj || '').toUpperCase().trim())) {
-          item.status = 'SELESAI';
-        }
-        itemsMap.set(`${item.no_sj}__${item.sku}`, item);
-      }
-    }
-  } else if (pickingRes.status === 'rejected') {
-    throw pickingRes.reason;
+  const combinedRows: any[] = [];
+  if (recentRes.status === 'fulfilled' && Array.isArray(recentRes.value)) {
+    combinedRows.push(...recentRes.value);
+  } else if (recentRes.status === 'rejected') {
+    throw recentRes.reason;
+  }
+  if (activeRes.status === 'fulfilled' && Array.isArray(activeRes.value)) {
+    combinedRows.push(...activeRes.value);
   }
 
-  // Auto-sync from Peminjaman (for legacy Google Sheets UI submissions)
-  if (peminjamanRes.status === 'fulfilled' && peminjamanRes.value && Array.isArray(peminjamanRes.value)) {
-    const toInsert: any[] = [];
-    const invoiceMap = new Map<string, string>();
-    const nowIso = new Date().toISOString();
-    const dateStr = nowIso.slice(2, 10).replace(/-/g, '');
+  const getStatusRank = (st?: string): number => {
+    const s = String(st || '').toUpperCase().trim();
+    if (s === 'SELESAI') return 3;
+    if (s === 'SEDANG PICKING' || s === 'KOSONG') return 2;
+    return 1;
+  };
 
-    for (const p of peminjamanRes.value) {
-      const no_sj = String(p.no_peminjaman || '').trim().toUpperCase();
-      const sku = String(p.sku || '').toUpperCase().trim();
-      const pStatus = String(p.status || '').toUpperCase().trim();
-      
-      // Skip items that are already returned to avoid re-adding them to picking list
-      if (pStatus === 'DIKEMBALIKAN' || pStatus === 'SELESAI') continue;
-      
-      // If this SJ has been marked completed by the user, ensure it stays completed
-      if (storedCompletedSJs.has(no_sj)) {
-        const existing = itemsMap.get(`${no_sj}__${sku}`);
-        if (existing) {
-          existing.status = 'SELESAI';
-        }
-        continue;
-      }
-
-      // Additional safety check: If it already exists in the map as SELESAI, don't overwrite it with a PENDING status from Peminjaman
-      const existing = itemsMap.get(`${no_sj}__${sku}`);
-      if (existing && existing.status === 'SELESAI') continue;
-
-      if (no_sj && sku && !itemsMap.has(`${no_sj}__${sku}`)) {
-        let pSize = String(p.size || '').trim();
-        let pNama = String(p.nama_produk || sku).trim();
-        const cachedCat = memoryProductCache?.find(prod => (prod.k && prod.k.trim().toUpperCase() === sku) || ((prod as any).sku && String((prod as any).sku).trim().toUpperCase() === sku));
-        if (cachedCat) {
-          pSize = String(cachedCat.s || (cachedCat as any).size || (cachedCat as any).variant || '').trim();
-          if (!pNama || pNama === sku || pNama.toUpperCase() === sku) {
-            const catName = cachedCat.p || (cachedCat as any).nama_produk || cachedCat.n;
-            if (catName) pNama = catName;
-          }
-        }
-        if (!pSize) pSize = '-';
-
-        if (!invoiceMap.has(no_sj)) {
-           const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
-           invoiceMap.set(no_sj, `WA${dateStr}SPS${randomStr}`);
-        }
-
-        const newItem = {
-          invoice_picking: invoiceMap.get(no_sj),
-          no_sj: no_sj,
-          tanggal: p.tanggal_pinjam || '',
-          tujuan: `SPS: ${p.pic || ''} - ${p.keperluan || ''}`,
-          sku: sku,
-          nama_produk: pNama,
-          size: pSize || '-',
-          qty_req: Number(p.qty) || 1,
-          qty_picked: 0,
-          lokasi: p.lokasi || 'BLOK F',
-          status: 'PENDING',
-          picker_name: '',
-          created_at: p.created_at || new Date().toISOString()
-        };
-        toInsert.push(newItem);
-        const extracted = extractPickingItemFromRow(newItem);
-        if (extracted) {
-           itemsMap.set(`${no_sj}__${sku}`, extracted);
-        }
-      }
+  for (const r of combinedRows) {
+    const item = extractPickingItemFromRow(r);
+    if (!item) continue;
+    const sjKey = (item.no_sj || '').toUpperCase().trim();
+    if (storedCompletedSJs.has(sjKey)) {
+      item.status = 'SELESAI';
     }
-    if (toInsert.length > 0) {
-      // Background insert to sync Supabase picking_list
-      insertPickingListRowsToSupabase(toInsert).catch(console.warn);
+    const mapKey = `${sjKey}__${(item.sku || '').toUpperCase().trim()}`;
+    const existing = itemsMap.get(mapKey);
+    if (!existing) {
+      itemsMap.set(mapKey, item);
+    } else {
+      const newRank = getStatusRank(item.status);
+      const oldRank = getStatusRank(existing.status);
+      const newPicked = Number(item.qty_picked) || 0;
+      const oldPicked = Number(existing.qty_picked) || 0;
+      const shouldReplace =
+        newRank > oldRank ||
+        (newRank === oldRank && newPicked > oldPicked) ||
+        (newRank === oldRank && newPicked === oldPicked && Boolean(item.invoice_picking) && !existing.invoice_picking);
+      if (shouldReplace) {
+        itemsMap.set(mapKey, item);
+      }
     }
   }
 
@@ -6595,18 +6555,20 @@ export async function insertPickingListRowsToSupabase(
   } catch (err: any) {
     console.warn('insertPickingListRowsToSupabase: Attempt 1 failed, trying fallback with fresh unique IDs:', err?.message);
 
-    // Attempt 2: Regenerate fresh unique timestamp IDs with offset, minimal fields
+    // Attempt 2: Regenerate fresh unique timestamp IDs with offset while preserving invoice_picking & created_at
     const minimalRows = schemaCompliantRows.map((r, idx) => ({
       id: (Date.now() + 2000) * 1000 + (idx % 1000) + Math.floor(Math.random() * 500 + 100),
+      invoice_picking: r.invoice_picking || '',
       no_sj: r.no_sj,
       tanggal: r.tanggal,
       tujuan: r.tujuan,
       sku: r.sku,
       nama_produk: r.nama_produk,
       qty_req: r.qty_req,
-      qty_picked: 0,
+      qty_picked: r.qty_picked || 0,
       lokasi: r.lokasi,
-      status: 'PENDING',
+      status: r.status || 'PENDING',
+      created_at: r.created_at || nowIso,
     }));
 
     try {
