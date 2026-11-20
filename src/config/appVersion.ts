@@ -15,20 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.22.0",
-  "versionCode": 420,
+  "version": "v2.22.1",
+  "versionCode": 421,
   "buildDate": "20 November 2026",
-  "buildHash": "wms-261120-v420-1301",
-  "releaseTitle": "WMS v2.22.0 — Rekomendasi Stock Take Ulang & Reset Scan Data (Anomali, Minus & Lokasi Terkait)",
+  "buildHash": "wms-261120-v421-1408",
+  "releaseTitle": "WMS v2.22.1 — Tambah Form Panggil Tugas Putaway",
   "releaseNotes": [
-    "Menambahkan mesin analisis & modal Rekomendasi Stock Take Ulang untuk mendeteksi lokasi stok minus, lokasi anomali, SKU rusak/mismatch, serta selisih DealPOS vs Fisik",
-    "Secara otomatis melacak lokasi lain yang berkaitan (ripple-effect): rak lain yang menyimpan SKU bermasalah dan rak standar yang mirip dengan lokasi salah ketik/typo",
-    "Terintegrasi 1-klik dengan Reset Scan Data (Kosongkan Rak Superadmin), Cetak Lembar Audit Stock Take A4, Salin Daftar WA, serta akses dari Inventori, Dashboard Kapasitas, dan Audit Anomali"
+    "Tambah modal PutawayCreateModal untuk memilih/mencari rak Transit (X) & Kolian (R/V/Z) atau SKU secara langsung",
+    "Integrasikan tombol + Buat Tugas Putaway di panel Manajemen Tugas Putaway"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.22.0",
+    "versionCode": 420,
+    "buildDate": "20 November 2026",
+    "buildHash": "wms-261120-v420-1301",
+    "releaseTitle": "WMS v2.22.0 — Rekomendasi Stock Take Ulang & Reset Scan Data (Anomali, Minus & Lokasi Terkait)",
+    "releaseNotes": [
+      "Menambahkan mesin analisis & modal Rekomendasi Stock Take Ulang untuk mendeteksi lokasi stok minus, lokasi anomali, SKU rusak/mismatch, serta selisih DealPOS vs Fisik",
+      "Secara otomatis melacak lokasi lain yang berkaitan (ripple-effect): rak lain yang menyimpan SKU bermasalah dan rak standar yang mirip dengan lokasi salah ketik/typo",
+      "Terintegrasi 1-klik dengan Reset Scan Data (Kosongkan Rak Superadmin), Cetak Lembar Audit Stock Take A4, Salin Daftar WA, serta akses dari Inventori, Dashboard Kapasitas, dan Audit Anomali"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.21.2",
     "versionCode": 412,
@@ -119,20 +131,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Rapikan tata letak kartu item picking (Produk, SKU, Rak sejajar; Target Ambil menyatu dengan Counter)",
       "Terapkan hierarki tombol Anti-Pelangi (1 tombol solid Maks + aksi sekunder outline seragam) & responsif HP/Desktop",
       "Hapus duplikasi teks qty stok pada pilihan cepat rak di modal Edit Item Picking"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.20.3",
-    "versionCode": 403,
-    "buildDate": "19 November 2026",
-    "buildHash": "wms-261119-v403-1741",
-    "releaseTitle": "WMS v2.20.3 — Fix Cache Foto Trello & Anti-429 Throttling",
-    "releaseNotes": [
-      "Fix cache lokal menimpa gdrive_image_url terbaru dari Supabase saat sinkronisasi Trello",
-      "Tambah IntersectionObserver + antrean maks 10 foto serentak untuk mencegah rate-limit 429 Google Drive",
-      "Tambah auto-retry bertahap (GDrive -> Thumbnail -> Proxy Trello) sebelum menampilkan No Photo",
-      "Sinkronkan pembaruan foto cloud otomatis ke tampilan Trello tanpa perlu reload manual"
     ],
     "minSupportedVersion": "v2.0.0"
   }

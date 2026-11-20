@@ -39,6 +39,7 @@ import { supabaseFetch } from '../../services/supabase';
 import { hasPermission, isStoreAccountSession, isSuperadmin } from '../../services/permissions';
 import { formatOperatorWithPersonName } from '../../utils/userResolver';
 import { LocationRelocationModal } from './LocationRelocationModal';
+import { PutawayCreateModal } from './PutawayCreateModal';
 import { PutawayPreviewModal } from './PutawayPreviewModal';
 import { PutawayWorkspaceModal } from './PutawayWorkspaceModal';
 import { RackCapacityMobileView } from './RackCapacityMobileView';
@@ -323,6 +324,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   // Tugas Putaway States
   const [putawayTasks, setPutawayTasks] = useState<PutawayTask[]>([]);
   const [isPutawayPanelOpen, setIsPutawayPanelOpen] = useState(false);
+  const [isPutawayCreateOpen, setIsPutawayCreateOpen] = useState(false);
   const [putawayPanelTab, setPutawayPanelTab] = useState<'AKTIF' | 'RIWAYAT'>('AKTIF');
   const [previewPutawaySources, setPreviewPutawaySources] = useState<string[] | null>(null);
   const [activePutawayTask, setActivePutawayTask] = useState<PutawayTask | null>(() => {
@@ -2907,6 +2909,15 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsPutawayCreateOpen(true)}
+                className="px-3 py-1.5 text-xs font-extrabold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap"
+                title="Buka form panggil untuk memilih rak Transit (X) atau Kolian (R/V/Z)"
+              >
+                <Plus className="w-3.5 h-3.5 shrink-0" />
+                <span>Buat Tugas Putaway</span>
+              </button>
               {putawayOutboxCount > 0 && (
                 <button
                   type="button"
@@ -2939,10 +2950,22 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             const list = putawayPanelTab === 'AKTIF' ? activePutawayTasks : historyPutawayTasks;
             if (list.length === 0) {
               return (
-                <div className="py-8 text-center text-xs text-slate-400">
-                  {putawayPanelTab === 'AKTIF'
-                    ? 'Belum ada Tugas Putaway yang sedang berjalan. Klik rak Transit (X) atau Kolian (R/V/Z) di bawah untuk mulai Putaway.'
-                    : 'Belum ada riwayat Tugas Putaway selesai atau dibatalkan.'}
+                <div className="py-8 text-center space-y-2.5">
+                  <div className="text-xs text-slate-400">
+                    {putawayPanelTab === 'AKTIF'
+                      ? 'Belum ada Tugas Putaway yang sedang berjalan. Klik tombol di bawah atau pilih rak Transit (X) / Kolian (R/V/Z) di denah.'
+                      : 'Belum ada riwayat Tugas Putaway selesai atau dibatalkan.'}
+                  </div>
+                  {putawayPanelTab === 'AKTIF' && (
+                    <button
+                      type="button"
+                      onClick={() => setIsPutawayCreateOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-extrabold bg-indigo-600 hover:bg-indigo-500 text-white shadow-xs cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Panggil / Buat Tugas Putaway</span>
+                    </button>
+                  )}
                 </div>
               );
             }
@@ -5473,8 +5496,20 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       )}
 
       {/* ============================================================================
-          10. MODAL PRATINJAU & WORKSPACE TUGAS PUTAWAY
+          10. MODAL FORM PANGGIL, PRATINJAU & WORKSPACE TUGAS PUTAWAY
           ============================================================================ */}
+      {isPutawayCreateOpen && (
+        <PutawayCreateModal
+          isOpen={true}
+          allSlots={allSlots}
+          activeTasks={activePutawayTasks}
+          onClose={() => setIsPutawayCreateOpen(false)}
+          onProceedToPreview={(sourceLocations) => {
+            setPreviewPutawaySources(sourceLocations);
+          }}
+        />
+      )}
+
       {previewPutawaySources && previewPutawaySources.length > 0 && (
         <PutawayPreviewModal
           isOpen={true}
