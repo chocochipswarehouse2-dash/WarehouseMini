@@ -221,6 +221,48 @@ function getStatusVisual(status: RackStatusLevel) {
   }
 }
 
+function parseRackLocationsExpression(raw: string): string[] {
+  const tokens = raw
+    .toUpperCase()
+    .split(/[\s,;]+/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+
+  const result: string[] = [];
+  const seen = new Set<string>();
+
+  for (const token of tokens) {
+    const rangeMatch = token.match(/^([A-Z]+)(\d+)(?:-|\.\.)([A-Z]*)(\d+)$/);
+    if (rangeMatch) {
+      const [, prefix1, startStr, prefix2, endStr] = rangeMatch;
+      if (!prefix2 || prefix2 === prefix1) {
+        const startNum = parseInt(startStr, 10);
+        const endNum = parseInt(endStr, 10);
+        const padLen = Math.max(startStr.length, endStr.length);
+        const lo = Math.min(startNum, endNum);
+        const hi = Math.max(startNum, endNum);
+        const count = hi - lo + 1;
+        if (count > 0 && count <= 500) {
+          for (let n = lo; n <= hi; n++) {
+            const code = `${prefix1}${String(n).padStart(padLen, '0')}`;
+            if (!seen.has(code)) {
+              seen.add(code);
+              result.push(code);
+            }
+          }
+          continue;
+        }
+      }
+    }
+    if (!seen.has(token)) {
+      seen.add(token);
+      result.push(token);
+    }
+  }
+
+  return result;
+}
+
 export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   stockRows,
   productCatalog = [],
@@ -1144,7 +1186,61 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     return getRecommendedNearbyRacks(selectedSlot, allSlots, 6);
   }, [selectedSlot, allSlots]);
 
+  const parsedSingleOverrideLocs = useMemo(
+    () => parseRackLocationsExpression(singleOverrideLoc),
+    [singleOverrideLoc]
+  );
+
   // Handlers for saving capacity changes
+  const handleSaveBatchRackOverrides = async (
+    locations: string[],
+    maxCapacity: number,
+    category?: string,
+    area?: string,
+    notes?: string
+  ) => {
+    const cleanLocs = Array.from(
+      new Set(locations.map((l) => l.trim().toUpperCase()).filter(Boolean))
+    );
+    if (cleanLocs.length === 0 || maxCapacity <= 0) {
+      onNotify?.('Minimal 1 kode rak dan kapasitas maksimal (> 0) wajib diisi.', 'warning');
+      return;
+    }
+    setIsSavingConfig(true);
+    try {
+      const nextOverrides = { ...config.overrides };
+      for (const cleanLoc of cleanLocs) {
+        nextOverrides[cleanLoc] = {
+          lokasi: cleanLoc,
+          maxCapacity: Math.round(maxCapacity),
+          category: category?.trim() || undefined,
+          area: area?.trim() || undefined,
+          notes: notes?.trim() || undefined,
+        };
+      }
+      const nextConfig: RackCapacityConfig = {
+        ...config,
+        overrides: nextOverrides,
+      };
+      const saved = await persistRackCapacityConfig(
+        nextConfig,
+        session?.name || session?.username || 'Admin'
+      );
+      setConfig(saved);
+      setInlineEditingLoc(null);
+      onNotify?.(
+        cleanLocs.length === 1
+          ? `Kapasitas rak ${cleanLocs[0]} disimpan (${maxCapacity} pcs).`
+          : `Kapasitas ${cleanLocs.length} rak (${cleanLocs[0]}..${cleanLocs[cleanLocs.length - 1]}) disimpan (${maxCapacity} pcs).`,
+        'success'
+      );
+    } catch {
+      onNotify?.('Tersimpan secara lokal, namun gagal sinkron ke server.', 'warning');
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
+
   const handleSaveSingleRackOverride = async (
     lokasi: string,
     maxCapacity: number,
@@ -4714,18 +4810,18 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 <div className="space-y-4">
                   <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 space-y-3">
                     <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                      Tambah / Ubah Kapasitas Spesifik Per Rak (Contoh: A001 = 25 pcs, B001 = 40 pcs)
+                      Tambah / Ubah Kapasitas Spesifik Rak — mendukung 1 rak, Range (<span className="font-mono">A001-A010</span>), dan Multi (<span className="font-mono">A001, B005, C010</span>)
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5 items-end">
-                      <div>
+                      <div className="sm:col-span-1">
                         <label className="block text-[11px] font-bold text-slate-500 mb-1">
-                          Kode Rak / Lokasi
+                          Kode / Range / Multi Rak
                         </label>
                         <input
                           type="text"
                           value={singleOverrideLoc}
                           onChange={(e) => setSingleOverrideLoc(e.target.value.toUpperCase())}
-                          placeholder="Misal: A001"
+                          placeholder="A001-A010, B005"
                           className="w-full px-3 py-1.5 text-xs font-mono bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
                         />
                       </div>
@@ -4769,20 +4865,45 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                       </div>
                       <button
                         type="button"
-                        onClick={() => {
-                          handleSaveSingleRackOverride(
-                            singleOverrideLoc,
+                        disabled={isSavingConfig || parsedSingleOverrideLocs.length === 0}
+                        onClick={async () => {
+                          await handleSaveBatchRackOverrides(
+                            parsedSingleOverrideLocs,
                             singleOverrideCap,
                             singleOverrideCat,
                             singleOverrideArea
                           );
                           setSingleOverrideLoc('');
                         }}
-                        className="px-4 py-1.5 text-xs font-extrabold bg-amber-500 hover:bg-amber-600 text-black rounded-lg cursor-pointer h-[32px] whitespace-nowrap"
+                        className="px-4 py-1.5 text-xs font-extrabold bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded-lg cursor-pointer h-[32px] whitespace-nowrap"
                       >
-                        Simpan Rak
+                        {parsedSingleOverrideLocs.length > 1
+                          ? `Simpan ${parsedSingleOverrideLocs.length} Rak`
+                          : 'Simpan Rak'}
                       </button>
                     </div>
+
+                    {parsedSingleOverrideLocs.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px] text-slate-600 dark:text-slate-300">
+                        <span className="font-bold">
+                          Target ({parsedSingleOverrideLocs.length} rak):
+                        </span>
+                        {parsedSingleOverrideLocs.slice(0, 12).map((loc) => (
+                          <span
+                            key={loc}
+                            className="px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono font-bold text-[10px]"
+                          >
+                            {loc}
+                          </span>
+                        ))}
+                        {parsedSingleOverrideLocs.length > 12 && (
+                          <span className="text-[10px] font-mono text-slate-400">
+                            +{parsedSingleOverrideLocs.length - 12} rak lainnya (s/d{' '}
+                            {parsedSingleOverrideLocs[parsedSingleOverrideLocs.length - 1]})
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* List of existing overrides */}

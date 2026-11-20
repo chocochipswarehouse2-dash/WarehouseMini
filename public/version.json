@@ -1,11 +1,11 @@
 {
-  "version": "v2.22.4",
-  "versionCode": 424,
+  "version": "v2.22.5",
+  "versionCode": 425,
   "buildDate": "20 November 2026",
-  "buildHash": "wms-261120-v424-1552",
-  "releaseTitle": "WMS v2.22.4 — Rapikan Tabel 1-Baris di Workspace Tugas Putaway",
+  "buildHash": "wms-261120-v425-1559",
+  "releaseTitle": "WMS v2.22.5 — Dukung Range & Multi Rak pada Edit Spesifik Rak",
   "releaseNotes": [
-    "Tampilkan Nama Produk, Size, SKU & Asal, Qty, serta tombol aksi dalam 1 baris tabel rapi pada tampilan desktop di PutawayWorkspaceModal"
+    "Tambahkan parser range (A001-A010) dan multi rak (A001, B005) dengan live preview target pada tab Edit Spesifik Rak di Setup Kapasitas"
   ],
   "minSupportedVersion": "v2.0.0"
 }
