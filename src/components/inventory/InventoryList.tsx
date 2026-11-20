@@ -184,7 +184,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({
     <div
       ref={containerRef}
       onScroll={handleScroll}
-      className="h-[70vh] min-h-[400px] overflow-auto border border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-[#0E1420] relative shadow-xs"
+      className="h-[70vh] min-h-[400px] overflow-auto border border-slate-300 dark:border-slate-700 rounded-2xl bg-white dark:bg-[#0E1420] relative shadow-xs"
     >
       {/* ========================================================
           1. DESKTOP VIEW: SIDE-BY-SIDE TABLE DENGAN CELL MERGED
@@ -194,24 +194,24 @@ export const InventoryList: React.FC<InventoryListProps> = ({
       <div className="hidden md:block min-w-[880px]">
         <table className="w-full border-collapse text-left lg:table-fixed">
           {/* STICKY TABLE HEADER */}
-          <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-[#121824] text-slate-600 dark:text-slate-300 text-[10.5px] border-b border-slate-200 dark:border-slate-800 shadow-xs backdrop-blur-xs">
+          <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-[#121824] text-slate-600 dark:text-slate-300 text-[10.5px] border-b-2 border-slate-300 dark:border-slate-600 shadow-xs backdrop-blur-xs">
             <tr>
-              <th className="py-2.5 px-3 w-[24%] min-w-[180px]">
+              <th className="py-2.5 px-3 w-[24%] min-w-[180px] border-r border-slate-300/80 dark:border-slate-700">
                 <SortHead label="Product" asc="NAME_ASC" desc="NAME_DESC" sort={sort} onSort={onSort} />
               </th>
-              <th className="py-2.5 px-2 text-center w-[6%] min-w-[60px]">
+              <th className="py-2.5 px-2 text-center w-[6%] min-w-[60px] border-r border-slate-300/80 dark:border-slate-700">
                 <SortHead label="Variant" asc="SIZE_ASC" desc="SIZE_DESC" sort={sort} onSort={onSort} className="justify-center" />
               </th>
-              <th className="py-2.5 px-3 w-[16%] min-w-[130px]">
+              <th className="py-2.5 px-3 w-[16%] min-w-[130px] border-r border-slate-300/80 dark:border-slate-700">
                 <SortHead label="Code" asc="SKU_ASC" desc="SKU_DESC" sort={sort} onSort={onSort} />
               </th>
-              <th className="py-2.5 px-2.5 w-[12%] min-w-[110px]">
+              <th className="py-2.5 px-2.5 w-[12%] min-w-[110px] border-r border-slate-300/80 dark:border-slate-700">
                 <SortHead label="Area" asc="AREA_ASC" desc="AREA_DESC" sort={sort} onSort={onSort} />
               </th>
-              <th className="py-2.5 px-3 text-center w-[8%] min-w-[70px] bg-blue-50/50 dark:bg-blue-950/20 border-x border-slate-200 dark:border-slate-800">
+              <th className="py-2.5 px-3 text-center w-[8%] min-w-[70px] bg-blue-50/50 dark:bg-blue-950/20 border-x border-slate-300 dark:border-slate-700">
                 <SortHead label="DP" asc="DP_ASC" desc="DP_DESC" sort={sort} onSort={onSort} className="justify-center text-blue-700 dark:text-blue-300" />
               </th>
-              <th className="py-2.5 px-3 text-center w-[8%] min-w-[70px]">
+              <th className="py-2.5 px-3 text-center w-[8%] min-w-[70px] border-r border-slate-300/80 dark:border-slate-700">
                 <SortHead label="Fisik" asc="FISIK_ASC" desc="FISIK_DESC" sort={sort} onSort={onSort} className="justify-center" />
               </th>
               <th className="py-2.5 px-3 w-[26%] min-w-[180px]">
@@ -233,17 +233,17 @@ export const InventoryList: React.FC<InventoryListProps> = ({
             return (
               <tbody
                 key={group.sku}
-                className="border-b-2 border-slate-200/80 dark:border-slate-800/80 hover:bg-slate-50/60 dark:hover:bg-[#131b2a]/60 transition-colors"
+                className="border-b-2 border-slate-300 dark:border-slate-600 hover:bg-slate-50/70 dark:hover:bg-[#131b2a]/70 transition-colors"
               >
                 {/* 1. COMMERCIAL ROWS (Warehouse, Koli, Blok F, Transit, Aksesoris) */}
                 {group.commercialAreas.map((row, idx) => (
-                  <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                  <tr key={row.id} className="border-b border-slate-200 dark:border-slate-700/70">
                     {/* Kolom Product, Variant, Code SPAN across seluruh baris SKU */}
                     {idx === 0 && (
                       <>
                         <td
                           rowSpan={totalSkuRows}
-                          className="py-2.5 px-3 align-top border-r border-slate-100 dark:border-slate-800/40 bg-white/40 dark:bg-transparent"
+                          className="py-2.5 px-3 align-top border-r border-slate-200 dark:border-slate-700/70 bg-white/40 dark:bg-transparent"
                         >
                           <div
                             className="font-bold text-xs text-slate-900 dark:text-slate-100 leading-snug line-clamp-2"
@@ -258,7 +258,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({
 
                         <td
                           rowSpan={totalSkuRows}
-                          className="py-2.5 px-2 align-top text-center border-r border-slate-100 dark:border-slate-800/40 bg-white/40 dark:bg-transparent"
+                          className="py-2.5 px-2 align-top text-center border-r border-slate-200 dark:border-slate-700/70 bg-white/40 dark:bg-transparent"
                         >
                           <span className="inline-block px-1.5 py-0.5 rounded font-mono text-[10.5px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                             {group.size ? group.size : '-'}
@@ -267,7 +267,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({
 
                         <td
                           rowSpan={totalSkuRows}
-                          className="py-2.5 px-3 align-top border-r border-slate-100 dark:border-slate-800/40 bg-white/40 dark:bg-transparent"
+                          className="py-2.5 px-3 align-top border-r border-slate-200 dark:border-slate-700/70 bg-white/40 dark:bg-transparent"
                         >
                           <div className="flex items-center justify-between gap-1">
                             <span
@@ -318,7 +318,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({
                     )}
 
                     {/* Area Badge */}
-                    <td className="py-2 px-2.5 align-middle">
+                    <td className="py-2 px-2.5 align-middle border-r border-slate-200 dark:border-slate-700/70">
                       <AreaBadge area={row.area} />
                     </td>
 
@@ -326,7 +326,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({
                     {idx === 0 && (
                       <td
                         rowSpan={group.commercialAreas.length}
-                        className="py-2 px-3 align-middle text-center font-mono text-sm font-black text-blue-600 dark:text-blue-400 bg-blue-50/40 dark:bg-blue-950/20 border-x border-slate-200/80 dark:border-slate-800/80"
+                        className="py-2 px-3 align-middle text-center font-mono text-sm font-black text-blue-600 dark:text-blue-400 bg-blue-50/40 dark:bg-blue-950/20 border-x border-slate-300/80 dark:border-slate-700"
                         title={`Stok DealPOS Siap Jual (Marketplace / Gudang Utama): ${group.commercialDp} pcs`}
                       >
                         {group.commercialDp.toLocaleString('id-ID')}
@@ -334,7 +334,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({
                     )}
 
                     {/* Fisik Cell */}
-                    <td className="py-2 px-3 align-middle text-center">
+                    <td className="py-2 px-3 align-middle text-center border-r border-slate-200 dark:border-slate-700/70">
                       <QtyCell v={row.qty} isBold />
                     </td>
 
@@ -368,14 +368,14 @@ export const InventoryList: React.FC<InventoryListProps> = ({
                 {group.perbaikanAreas.map((row, idx) => (
                   <tr
                     key={row.id}
-                    className="border-b border-slate-100 dark:border-slate-800/40 bg-rose-50/25 dark:bg-rose-950/15"
+                    className="border-b border-slate-200 dark:border-slate-700/70 bg-rose-50/25 dark:bg-rose-950/15"
                   >
                     {/* Bila tidak ada commercial rows sama sekali, span Product/Variant/Code di baris perbaikan pertama */}
                     {group.commercialAreas.length === 0 && idx === 0 && (
                       <>
                         <td
                           rowSpan={group.perbaikanAreas.length}
-                          className="py-2.5 px-3 align-top border-r border-slate-100 dark:border-slate-800/40"
+                          className="py-2.5 px-3 align-top border-r border-slate-200 dark:border-slate-700/70"
                         >
                           <div className="font-bold text-xs text-slate-900 dark:text-slate-100 leading-snug">
                             {group.produk}
@@ -387,7 +387,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({
 
                         <td
                           rowSpan={group.perbaikanAreas.length}
-                          className="py-2.5 px-2 align-top text-center border-r border-slate-100 dark:border-slate-800/40"
+                          className="py-2.5 px-2 align-top text-center border-r border-slate-200 dark:border-slate-700/70"
                         >
                           <span className="inline-block px-1.5 py-0.5 rounded font-mono text-[10.5px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                             {group.size ? group.size : '-'}
@@ -396,7 +396,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({
 
                         <td
                           rowSpan={group.perbaikanAreas.length}
-                          className="py-2.5 px-3 align-top border-r border-slate-100 dark:border-slate-800/40"
+                          className="py-2.5 px-3 align-top border-r border-slate-200 dark:border-slate-700/70"
                         >
                           <div className="flex items-center justify-between gap-1">
                             <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300">
@@ -444,7 +444,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({
                     )}
 
                     {/* Area Badge */}
-                    <td className="py-2 px-2.5 align-middle">
+                    <td className="py-2 px-2.5 align-middle border-r border-slate-200 dark:border-slate-700/70">
                       <AreaBadge area={row.area} />
                     </td>
 
@@ -452,7 +452,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({
                     {idx === 0 && (
                       <td
                         rowSpan={group.perbaikanAreas.length}
-                        className="py-2 px-3 align-middle text-center font-mono text-sm font-black text-rose-600 dark:text-rose-400 bg-rose-50/50 dark:bg-rose-950/30 border-x border-slate-200/80 dark:border-slate-800/80"
+                        className="py-2 px-3 align-middle text-center font-mono text-sm font-black text-rose-600 dark:text-rose-400 bg-rose-50/50 dark:bg-rose-950/30 border-x border-slate-300/80 dark:border-slate-700"
                         title={`Stok DealPOS QC / Permak / Defect: ${group.perbaikanDp} pcs`}
                       >
                         {group.perbaikanDp.toLocaleString('id-ID')}
@@ -460,7 +460,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({
                     )}
 
                     {/* Fisik Cell */}
-                    <td className="py-2 px-3 align-middle text-center">
+                    <td className="py-2 px-3 align-middle text-center border-r border-slate-200 dark:border-slate-700/70">
                       <QtyCell v={row.qty} isBold />
                     </td>
 

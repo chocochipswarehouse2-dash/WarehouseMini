@@ -15,20 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.21.1",
-  "versionCode": 411,
+  "version": "v2.21.2",
+  "versionCode": 412,
   "buildDate": "20 November 2026",
-  "buildHash": "wms-261120-v411-1216",
-  "releaseTitle": "WMS v2.21.1 — Optimasi Notifikasi Live Chat Store Ops (Warehouse/Admin WH)",
+  "buildHash": "wms-261120-v412-1244",
+  "releaseTitle": "WMS v2.21.2 — Penegasan Garis Tabel Inventori",
   "releaseNotes": [
-    "Notifikasi pop-up dan suara pada Live Chat Store Ops [MS & Alter] kini secara cerdas disesuaikan: pesan yang dikirim dari pihak Warehouse/Admin WH ke Store tidak lagi memunculkan notifikasi pop-up/chime pada perangkat Warehouse/Admin WH sendiri",
-    "Warehouse/Admin WH hanya akan menerima notifikasi suara/pop-up jika ada pesan masuk atau form pesanan baru yang dikirim oleh Store",
-    "Pembaruan kompatibilitas Service Worker pwa-extras.js dan liveChatService.ts untuk notifikasi pesan Store Ops"
+    "Mempertegas garis pembatas horizontal dan vertikal pada tabel Daftar Inventori (Desktop) agar lebih jelas dan mudah dibaca di Mode Terang maupun Gelap"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.21.1",
+    "versionCode": 411,
+    "buildDate": "20 November 2026",
+    "buildHash": "wms-261120-v411-1216",
+    "releaseTitle": "WMS v2.21.1 — Optimasi Notifikasi Live Chat Store Ops (Warehouse/Admin WH)",
+    "releaseNotes": [
+      "Notifikasi pop-up dan suara pada Live Chat Store Ops [MS & Alter] kini secara cerdas disesuaikan: pesan yang dikirim dari pihak Warehouse/Admin WH ke Store tidak lagi memunculkan notifikasi pop-up/chime pada perangkat Warehouse/Admin WH sendiri",
+      "Warehouse/Admin WH hanya akan menerima notifikasi suara/pop-up jika ada pesan masuk atau form pesanan baru yang dikirim oleh Store",
+      "Pembaruan kompatibilitas Service Worker pwa-extras.js dan liveChatService.ts untuk notifikasi pesan Store Ops"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.21.0",
     "versionCode": 410,
@@ -123,21 +134,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Upgrade auto-backup foto Trello via server GAS (trelloImageUrl) & fallback proxy",
       "Sinkronisasi 18 foto tertunda (termasuk UP 340) ke Google Drive & paginasi penuh Supabase",
       "Reset otomatis backup GDrive saat cover kartu Trello diganti & tombol backup cepat"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.20.1",
-    "versionCode": 401,
-    "buildDate": "19 November 2026",
-    "buildHash": "wms-261119-v401-1450",
-    "releaseTitle": "WMS v2.20.1 — Fix Putaway Realtime, Master Kargo Push/Urutan, Excel Hitung Ulang & Bubble Draft",
-    "releaseNotes": [
-      "Fix crash Putaway Realtime channel subscription (subscribePutawayRealtime singleton hub)",
-      "Fix Push Sheet Master Kargo Hitung Ulang tanggal 18 & auto-heal cloud recount_audit_results",
-      "Urutan tabel Master Kargo/CMT & slot tanggal Terbaru -> Terlama + muat seluruh histori (>1000 baris)",
-      "Export Excel Master Produksi lengkap dengan kolom Hitung Ulang & tab Rekap Hitung Ulang",
-      "Fix floating bubble minimize Hitung Ulang agar tidak muncul terus-menerus setelah ditutup/disimpan"
     ],
     "minSupportedVersion": "v2.0.0"
   }
