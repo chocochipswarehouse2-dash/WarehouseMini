@@ -939,10 +939,32 @@ export async function submitManualShipment(payload: ManualShipmentOrder): Promis
   }
 }
 
-export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
-  try {
-    const data = await supabaseFetch<any[]>('manual_shipment', 'GET', null, 'select=*&order=created_at.desc');
-    if (!data) return [];
+let memoryManualShipmentsCache: ManualShipmentOrder[] | null = null;
+let memoryManualShipmentsLastFetch = 0;
+let inflightManualShipmentsPromise: Promise<ManualShipmentOrder[]> | null = null;
+const MANUAL_SHIPMENTS_SWR_TTL_MS = 30 * 1000;
+
+export function invalidateManualShipmentsCache(): void {
+  memoryManualShipmentsCache = null;
+  memoryManualShipmentsLastFetch = 0;
+}
+
+export async function fetchManualShipments(forceRefresh = false): Promise<ManualShipmentOrder[]> {
+  if (
+    !forceRefresh &&
+    memoryManualShipmentsCache &&
+    Date.now() - memoryManualShipmentsLastFetch < MANUAL_SHIPMENTS_SWR_TTL_MS
+  ) {
+    return memoryManualShipmentsCache;
+  }
+  if (!forceRefresh && inflightManualShipmentsPromise) {
+    return inflightManualShipmentsPromise;
+  }
+
+  const runFetch = async (): Promise<ManualShipmentOrder[]> => {
+    try {
+      const data = await supabaseFetch<any[]>('manual_shipment', 'GET', null, 'select=*&order=created_at.desc&limit=1500');
+      if (!data) return memoryManualShipmentsCache || [];
     
     const nonReturData = data.filter(item => {
       const noPesanan = String(item.no_pesanan || '').toUpperCase().trim();
@@ -953,7 +975,7 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
       return true;
     });
 
-    return nonReturData.map(item => {
+      const mapped = nonReturData.map(item => {
       let history_logs: ManualShipmentHistoryLog[] = [];
       let alteration_repair_data: any = undefined;
       let store_metadata: any = undefined;
@@ -1190,11 +1212,20 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
         tgl_cetak_picking: store_metadata?.tgl_cetak_picking || (item as any).tgl_cetak_picking || '',
         tgl_cetak_label: store_metadata?.tgl_cetak_label || (item as any).tgl_cetak_label || '',
       } as ManualShipmentOrder;
-    });
-  } catch (err) {
-    console.warn('Error fetching manual shipments', err);
-    return [];
-  }
+      });
+      memoryManualShipmentsCache = mapped;
+      memoryManualShipmentsLastFetch = Date.now();
+      return mapped;
+    } catch (err) {
+      console.warn('Error fetching manual shipments', err);
+      return memoryManualShipmentsCache || [];
+    }
+  };
+
+  inflightManualShipmentsPromise = runFetch().finally(() => {
+    inflightManualShipmentsPromise = null;
+  });
+  return inflightManualShipmentsPromise;
 }
 
 export async function updateShipmentStatus(idOrNoPesanan: string, status: string): Promise<boolean> {

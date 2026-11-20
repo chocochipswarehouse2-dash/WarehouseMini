@@ -24,7 +24,7 @@ const LOCAL_STORAGE_LISTS_KEY = 'wms_trello_board_lists_map';
 const LOCAL_STORAGE_SIGNATURE_KEY = 'wms_trello_board_signature';
 
 /** Interval auto-sync berkala dari Trello asli (ms). */
-export const TRELLO_AUTO_SYNC_INTERVAL_MS = 60_000;
+export const TRELLO_AUTO_SYNC_INTERVAL_MS = 180_000;
 
 /** Paksa sync berikutnya menulis ulang ke Supabase (dipakai tombol Sync manual). */
 export function resetTrelloSyncSignature(): void {

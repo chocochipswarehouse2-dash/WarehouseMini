@@ -153,6 +153,7 @@ import {
   isWarehouseLocation,
   isBulkMasterImportActive,
 } from './services/supabase';
+import { invalidateManualShipmentsCache } from './services/gasManualShipment';
 import { WmsUser } from './types';
 import {
   getDefaultPageForSession,
@@ -1858,6 +1859,7 @@ export default function App() {
 
     try {
       const supabase = getSupabaseClient();
+      const isStoreOrCsOnly = isStoreAccountSession(session) || isCustomerServiceSession(session);
       const channel = supabase
         .channel('wms-realtime-activity')
         .on(
@@ -1939,15 +1941,9 @@ export default function App() {
               }
             }
           }
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'stock_opname_queue' },
-          (payload) => {
-            invalidateStokFisikCache();
-            globalRealtimeStore.notify('stock_opname_queue', payload);
-          }
-        )
+        );
+
+      channel
         .on(
           'broadcast',
           { event: 'new_sps_request' },
@@ -1969,50 +1965,61 @@ export default function App() {
               handleIncomingSpsRef.current(payload.new);
             }
           }
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'penerimaan_produksi' },
-          (payload) => {
-            invalidatePenerimaanProduksiCache();
-            globalRealtimeStore.notify('penerimaan_produksi', payload);
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'perbaikan_tickets' },
-          (payload) => {
-            invalidatePerbaikanTicketsCache();
-            globalRealtimeStore.notify('perbaikan_tickets', payload);
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'qc_reports' },
-          (payload) => {
-            invalidateQcReportsCache();
-            globalRealtimeStore.notify('qc_reports', payload);
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'picking_list' },
-          (payload) => {
-            invalidatePickingListCache();
-            globalRealtimeStore.notify('picking_list', payload);
+        );
 
-            // Notifikasi Realtime Tugas Picking HANYA untuk Admin, Warehouse, Picker & Operator Gudang
-            if (payload.eventType === 'INSERT' && payload.new) {
-              if (!canReceivePickingAndSpsNotif(session)) return;
+      if (!isStoreOrCsOnly) {
+        channel
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'stock_opname_queue' },
+            (payload) => {
+              invalidateStokFisikCache();
+              globalRealtimeStore.notify('stock_opname_queue', payload);
+            }
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'penerimaan_produksi' },
+            (payload) => {
+              invalidatePenerimaanProduksiCache();
+              globalRealtimeStore.notify('penerimaan_produksi', payload);
+            }
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'perbaikan_tickets' },
+            (payload) => {
+              invalidatePerbaikanTicketsCache();
+              globalRealtimeStore.notify('perbaikan_tickets', payload);
+            }
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'qc_reports' },
+            (payload) => {
+              invalidateQcReportsCache();
+              globalRealtimeStore.notify('qc_reports', payload);
+            }
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'picking_list' },
+            (payload) => {
+              invalidatePickingListCache();
+              globalRealtimeStore.notify('picking_list', payload);
 
-              const row = payload.new as any;
-              const sj = String(row.no_sj || 'Tugas Baru').trim();
-              if (
-                globalRealtimeStore.isOrderSubmittedLocally(sj) ||
-                globalRealtimeStore.isOrderSubmittedLocally(row.invoice_picking)
-              ) {
-                return;
-              }
+              // Notifikasi Realtime Tugas Picking HANYA untuk Admin, Warehouse, Picker & Operator Gudang
+              if (payload.eventType === 'INSERT' && payload.new) {
+                if (!canReceivePickingAndSpsNotif(session)) return;
+
+                const row = payload.new as any;
+                const sj = String(row.no_sj || 'Tugas Baru').trim();
+                if (
+                  globalRealtimeStore.isOrderSubmittedLocally(sj) ||
+                  globalRealtimeStore.isOrderSubmittedLocally(row.invoice_picking)
+                ) {
+                  return;
+                }
               const tujuan = row.tujuan || 'Gudang';
               incomingPickingRows.push({
                 no_sj: sj,
@@ -2163,7 +2170,10 @@ export default function App() {
               });
             }, 350);
           }
-        )
+        );
+      }
+
+      channel
         .on(
           'broadcast',
           { event: 'catalog_updated' },
@@ -2182,6 +2192,7 @@ export default function App() {
           'broadcast',
           { event: 'new_manual_shipment' },
           ({ payload }) => {
+            invalidateManualShipmentsCache();
             if (payload) {
               globalRealtimeStore.notify('manual_shipment', { eventType: 'INSERT', new: payload });
               handleIncomingManualShipmentRef.current(payload);
@@ -2192,6 +2203,7 @@ export default function App() {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'manual_shipment' },
           (payload) => {
+            invalidateManualShipmentsCache();
             globalRealtimeStore.notify('manual_shipment', payload);
 
             if (payload.eventType === 'INSERT' && payload.new) {
@@ -3298,8 +3310,8 @@ export default function App() {
         if (userIsWarehouseOnly) {
           try {
             const lmbQuery = deltaSinceIso
-              ? `select=*&created_at=gt.${encodeURIComponent(deltaSinceIso)}&order=created_at.desc&limit=10`
-              : 'select=*&order=created_at.desc&limit=8';
+              ? `select=id,nik,nama,tanggal,status,created_at&created_at=gt.${encodeURIComponent(deltaSinceIso)}&order=created_at.desc&limit=10`
+              : 'select=id,nik,nama,tanggal,status,created_at&order=created_at.desc&limit=8';
             const latestLembur = await supabaseFetch<any[]>('lembur', 'GET', null, lmbQuery);
             if (isMounted && Array.isArray(latestLembur)) {
               for (const r of [...latestLembur].reverse()) {
@@ -3318,8 +3330,8 @@ export default function App() {
 
           try {
             const cutiQuery = deltaSinceIso
-              ? `select=*&created_at=gt.${encodeURIComponent(deltaSinceIso)}&order=created_at.desc&limit=10`
-              : 'select=*&order=created_at.desc&limit=8';
+              ? `select=id,nik,nama,jenis,tgl_mulai,tanggal_mulai,status,created_at&created_at=gt.${encodeURIComponent(deltaSinceIso)}&order=created_at.desc&limit=10`
+              : 'select=id,nik,nama,jenis,tgl_mulai,tanggal_mulai,status,created_at&order=created_at.desc&limit=8';
             const latestCuti = await supabaseFetch<any[]>('perijinan_cuti', 'GET', null, cutiQuery);
             if (isMounted && Array.isArray(latestCuti)) {
               for (const r of [...latestCuti].reverse()) {
@@ -3338,8 +3350,8 @@ export default function App() {
 
           try {
             const ipcQuery = deltaSinceIso
-              ? `select=*&created_at=gt.${encodeURIComponent(deltaSinceIso)}&order=created_at.desc&limit=8`
-              : 'select=*&order=created_at.desc&limit=6';
+              ? `select=id,nik,nama,tanggal,status,created_at&created_at=gt.${encodeURIComponent(deltaSinceIso)}&order=created_at.desc&limit=8`
+              : 'select=id,nik,nama,tanggal,status,created_at&order=created_at.desc&limit=6';
             const latestIpc = await supabaseFetch<any[]>('izin_pulang_cepat', 'GET', null, ipcQuery);
             if (isMounted && Array.isArray(latestIpc)) {
               for (const r of [...latestIpc].reverse()) {
@@ -3737,12 +3749,12 @@ export default function App() {
 
     seedExistingOrders();
 
-    // Polling responsif setiap 45 detik (pause otomatis saat tab hidden untuk hemat egress)
+    // Polling fallback setiap 2 menit (Realtime postgres_changes & broadcast menangani update instan)
     const intervalId = setInterval(() => {
       if (document.visibilityState === 'visible') {
         void checkNewStoreOrdersDelta();
       }
-    }, 45000);
+    }, 120000);
     const handleVisibilityOrOnline = () => {
       if (document.visibilityState === 'visible') {
         setNotificationPermission(getNotificationPermissionStatus());

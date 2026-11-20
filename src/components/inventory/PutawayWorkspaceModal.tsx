@@ -342,7 +342,7 @@ export const PutawayWorkspaceModal: React.FC<PutawayWorkspaceModalProps> = ({
       if (typeof navigator !== 'undefined' && !navigator.onLine) return;
       if (typeof document !== 'undefined' && document.hidden) return;
       triggerRefresh(50);
-    }, 3500);
+    }, 30000);
 
     return () => {
       clearInterval(poll);

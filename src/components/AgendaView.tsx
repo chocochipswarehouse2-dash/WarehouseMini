@@ -714,12 +714,12 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
     // Jalankan segera saat masuk halaman
     runAutoSync(true);
 
-    // Polling periodik tiap 45 detik selama tab aktif
+    // Polling periodik tiap 2 menit selama tab aktif (Realtime postgres_changes menangani update instan)
     const intervalId = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         runAutoSync(false);
       }
-    }, 45000);
+    }, 120000);
 
     // Deteksi saat pengguna kembali membuka tab browser (misal sehabis edit di Google Calendar)
     const handleVisibilityChange = () => {

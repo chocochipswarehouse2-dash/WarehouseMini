@@ -841,7 +841,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       collabChannelRef.current = channel;
     }
 
-    // Throttled polling fallback (skips hidden tabs & flushes offline item queue BEFORE pulling remote)
+    // Throttled fallback polling (Realtime broadcast + postgres_changes handle instant updates;
+    // keep local outbox flush responsive without hammering PostgREST every 3.5s)
     let tickCount = 0;
     const pollInterval = setInterval(async () => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) return;
@@ -853,7 +854,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       const currentActive = activeSJRef.current;
       if (currentActive && currentActive.no_sj) {
         scheduleRealtimeSjRefresh(currentActive.no_sj, 50);
-      } else if (tickCount % 3 === 0) {
+      } else if (tickCount % 4 === 0) {
         fetchPickingListFromSupabase(true)
           .then((data) => {
             if (Array.isArray(data) && data.length > 0) {
@@ -899,7 +900,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           })
           .catch(() => {});
       }
-    }, 3500);
+    }, 15000);
 
     return () => {
       clearInterval(pollInterval);

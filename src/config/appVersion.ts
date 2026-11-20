@@ -15,18 +15,30 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.22.10",
-  "versionCode": 430,
+  "version": "v2.22.11",
+  "versionCode": 431,
   "buildDate": "20 November 2026",
-  "buildHash": "wms-261120-v430-2023",
-  "releaseTitle": "WMS v2.22.10 — Tambah Filter Kategori Tugas Picking",
+  "buildHash": "wms-261120-v431-2116",
+  "releaseTitle": "WMS v2.22.11 — Optimasi Supabase PostgREST & Realtime Egress",
   "releaseNotes": [
-    "Tambahkan filter kategori Semua, Pengiriman Store, Order, SPS, Manual shipment/alter, Retur, dan Keranjang Order di PickingTasksView"
+    "Kurangi frekuensi polling PickingTasksView (3.5s->15s), LiveChat (8s->60s), Putaway (3.5s->30s), Trello (60s->180s), Agenda (45s->120s), dan App Delta (45s->120s)",
+    "Tambah SWR cache 30s, dedup, & limit 1500 pada fetchManualShipments serta role-gating Realtime postgres_changes untuk Store/CS"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.22.10",
+    "versionCode": 430,
+    "buildDate": "20 November 2026",
+    "buildHash": "wms-261120-v430-2023",
+    "releaseTitle": "WMS v2.22.10 — Tambah Filter Kategori Tugas Picking",
+    "releaseNotes": [
+      "Tambahkan filter kategori Semua, Pengiriman Store, Order, SPS, Manual shipment/alter, Retur, dan Keranjang Order di PickingTasksView"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.22.9",
     "versionCode": 429,
@@ -105,17 +117,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Perbaiki filter zona di RackCapacityDashboard agar klik kartu Area Aksesoris/Belt/Transit/Blok F/Perbaikan menampilkan rak dengan benar",
       "Tambahkan cooldown guard 30s di appUpdateService agar banner Mempersiapkan pembaruan tidak berulang saat CDN/SW sinkronisasi"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.22.2",
-    "versionCode": 422,
-    "buildDate": "20 November 2026",
-    "buildHash": "wms-261120-v422-1430",
-    "releaseTitle": "WMS v2.22.2 — Buka Form Panggil Putaway dari Dashboard Utama",
-    "releaseNotes": [
-      "Klik shortcut Tugas Putaway di Dashboard Utama langsung membuka PutawayCreateModal beserta panel Manajemen Tugas Putaway"
     ],
     "minSupportedVersion": "v2.0.0"
   }

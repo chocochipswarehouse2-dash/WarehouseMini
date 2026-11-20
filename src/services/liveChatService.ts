@@ -1050,13 +1050,13 @@ class LiveChatManager {
       clearInterval(this.syncTimer);
       this.syncTimer = null;
     }
-    // Periodic background sync + Presence Heartbeat (menjaga status & hapus chat tetap sinkron di HP & Laptop)
+    // Low-egress fallback sync + Presence Heartbeat (Realtime broadcast & postgres_changes handle instant delivery)
     this.syncTimer = setInterval(() => {
       if (this.currentSession?.username && typeof document !== 'undefined' && document.visibilityState === 'visible') {
         void this.syncRoomsFromServer(true);
         this.trackPresence();
       }
-    }, 8000);
+    }, 60000);
 
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window && !this.crossTabChannel) {
       try {
