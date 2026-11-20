@@ -15,20 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.22.9",
-  "versionCode": 429,
+  "version": "v2.22.10",
+  "versionCode": 430,
   "buildDate": "20 November 2026",
-  "buildHash": "wms-261120-v429-1909",
-  "releaseTitle": "WMS v2.22.9 — Perbaiki Pendaftaran Web Push (Notifikasi saat PWA Ditutup)",
+  "buildHash": "wms-261120-v430-2023",
+  "releaseTitle": "WMS v2.22.10 — Tambah Filter Kategori Tugas Picking",
   "releaseNotes": [
-    "Deteksi & perbaiki langganan push dengan kunci VAPID lama/rusak lalu daftar ulang otomatis",
-    "Segarkan pendaftaran push setiap aplikasi dibuka kembali dari background",
-    "Tampilkan alasan jika notifikasi saat aplikasi ditutup gagal diaktifkan"
+    "Tambahkan filter kategori Semua, Pengiriman Store, Order, SPS, Manual shipment/alter, Retur, dan Keranjang Order di PickingTasksView"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.22.9",
+    "versionCode": 429,
+    "buildDate": "20 November 2026",
+    "buildHash": "wms-261120-v429-1909",
+    "releaseTitle": "WMS v2.22.9 — Perbaiki Pendaftaran Web Push (Notifikasi saat PWA Ditutup)",
+    "releaseNotes": [
+      "Deteksi & perbaiki langganan push dengan kunci VAPID lama/rusak lalu daftar ulang otomatis",
+      "Segarkan pendaftaran push setiap aplikasi dibuka kembali dari background",
+      "Tampilkan alasan jika notifikasi saat aplikasi ditutup gagal diaktifkan"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.22.8",
     "versionCode": 428,
@@ -105,18 +116,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseTitle": "WMS v2.22.2 — Buka Form Panggil Putaway dari Dashboard Utama",
     "releaseNotes": [
       "Klik shortcut Tugas Putaway di Dashboard Utama langsung membuka PutawayCreateModal beserta panel Manajemen Tugas Putaway"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.22.1",
-    "versionCode": 421,
-    "buildDate": "20 November 2026",
-    "buildHash": "wms-261120-v421-1408",
-    "releaseTitle": "WMS v2.22.1 — Tambah Form Panggil Tugas Putaway",
-    "releaseNotes": [
-      "Tambah modal PutawayCreateModal untuk memilih/mencari rak Transit (X) & Kolian (R/V/Z) atau SKU secara langsung",
-      "Integrasikan tombol + Buat Tugas Putaway di panel Manajemen Tugas Putaway"
     ],
     "minSupportedVersion": "v2.0.0"
   }

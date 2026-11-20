@@ -1,13 +1,11 @@
 {
-  "version": "v2.22.9",
-  "versionCode": 429,
+  "version": "v2.22.10",
+  "versionCode": 430,
   "buildDate": "20 November 2026",
-  "buildHash": "wms-261120-v429-1909",
-  "releaseTitle": "WMS v2.22.9 — Perbaiki Pendaftaran Web Push (Notifikasi saat PWA Ditutup)",
+  "buildHash": "wms-261120-v430-2023",
+  "releaseTitle": "WMS v2.22.10 — Tambah Filter Kategori Tugas Picking",
   "releaseNotes": [
-    "Deteksi & perbaiki langganan push dengan kunci VAPID lama/rusak lalu daftar ulang otomatis",
-    "Segarkan pendaftaran push setiap aplikasi dibuka kembali dari background",
-    "Tampilkan alasan jika notifikasi saat aplikasi ditutup gagal diaktifkan"
+    "Tambahkan filter kategori Semua, Pengiriman Store, Order, SPS, Manual shipment/alter, Retur, dan Keranjang Order di PickingTasksView"
   ],
   "minSupportedVersion": "v2.0.0"
 }

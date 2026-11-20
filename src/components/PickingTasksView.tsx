@@ -182,6 +182,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'SELESAI'>('ACTIVE');
+  const [categoryFilter, setCategoryFilter] = useState<
+    'ALL' | 'PENGIRIMAN_STORE' | 'ORDER' | 'SPS' | 'MANUAL_ALTER' | 'RETUR' | 'KERANJANG_ORDER'
+  >('ALL');
 
   // Realtime Stock cache per SKU across all warehouse locations
   const [realtimeSkuStocks, setRealtimeSkuStocks] = useState<Record<string, StockRealtimeItem[]>>({});
@@ -1590,29 +1593,105 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     return result;
   }, [rawItems, draftsRevision, fastFindCatalogProduct]);
 
+  const getPickingCategory = useCallback(
+    (g: PickingSuratJalanGroup): 'PENGIRIMAN_STORE' | 'ORDER' | 'SPS' | 'MANUAL_ALTER' | 'RETUR' | 'KERANJANG_ORDER' => {
+      const noSj = String(g.no_sj || '').toUpperCase();
+      const tujuan = String(g.tujuan || '').toUpperCase();
+      const catatan = String(g.catatan || '').toUpperCase();
+
+      if (
+        noSj.startsWith('RTR-') ||
+        tujuan.includes('RETUR') ||
+        tujuan.includes('RETURN') ||
+        tujuan.includes('PUSAT RESOLUSI')
+      ) {
+        return 'RETUR';
+      }
+      if (noSj.startsWith('SPS') || tujuan.includes('SPS') || tujuan.includes('PEMINJAMAN')) {
+        return 'SPS';
+      }
+      if (
+        noSj.startsWith('MS-') ||
+        noSj.startsWith('ALT-') ||
+        noSj.startsWith('MNL-') ||
+        tujuan.includes('MANUAL SHIPMENT') ||
+        tujuan.includes('ALTER') ||
+        tujuan.includes('PERMAK') ||
+        tujuan.includes('FULFILL STORE') ||
+        catatan.includes('MANUAL') ||
+        catatan.includes('ALTER')
+      ) {
+        return 'MANUAL_ALTER';
+      }
+      if (
+        noSj.startsWith('KRJ-') ||
+        noSj.startsWith('CART-') ||
+        tujuan.includes('KERANJANG') ||
+        catatan.includes('KERANJANG')
+      ) {
+        return 'KERANJANG_ORDER';
+      }
+      if (
+        tujuan.includes('SHOPEE') ||
+        tujuan.includes('TIKTOK') ||
+        tujuan.includes('WEBSITE') ||
+        tujuan.includes('WOOCO') ||
+        tujuan.includes('TOKOPEDIA') ||
+        tujuan.includes('LAZADA') ||
+        tujuan.includes('BLIBLI') ||
+        tujuan.includes('ZALORA') ||
+        catatan.includes('[ORDER_SHEET]')
+      ) {
+        return 'ORDER';
+      }
+      return 'PENGIRIMAN_STORE';
+    },
+    []
+  );
+
+  const categoryCounts = React.useMemo(() => {
+    const counts = {
+      ALL: 0,
+      PENGIRIMAN_STORE: 0,
+      ORDER: 0,
+      SPS: 0,
+      MANUAL_ALTER: 0,
+      RETUR: 0,
+      KERANJANG_ORDER: 0,
+    };
+    for (const g of sjGroups) {
+      if (statusFilter === 'ACTIVE' && g.status === 'SELESAI') continue;
+      if (statusFilter === 'SELESAI' && g.status !== 'SELESAI') continue;
+      counts.ALL += 1;
+      counts[getPickingCategory(g)] += 1;
+    }
+    return counts;
+  }, [sjGroups, statusFilter, getPickingCategory]);
+
   // Filtered SJ list for display
   const filteredSJs = React.useMemo(() => {
     return sjGroups.filter((g) => {
-    let matchSearch = true;
-    if (deferredSearch.trim()) {
-      matchSearch =
-        partialSearchMatch(deferredSearch, g.no_sj, g.tujuan, g.status, g.picker_name, g.catatan) ||
-        g.items.some((it) =>
-          partialSearchMatch(deferredSearch, it.sku, it.nama_produk, it.size, it.lokasi, it.catatan)
-        );
-    }
+      let matchSearch = true;
+      if (deferredSearch.trim()) {
+        matchSearch =
+          partialSearchMatch(deferredSearch, g.no_sj, g.tujuan, g.status, g.picker_name, g.catatan) ||
+          g.items.some((it) =>
+            partialSearchMatch(deferredSearch, it.sku, it.nama_produk, it.size, it.lokasi, it.catatan)
+          );
+      }
 
-    if (!matchSearch) return false;
+      if (!matchSearch) return false;
 
-    if (statusFilter === 'ACTIVE') {
-      return g.status !== 'SELESAI';
-    }
-    if (statusFilter === 'SELESAI') {
-      return g.status === 'SELESAI';
-    }
-    return true;
+      if (statusFilter === 'ACTIVE' && g.status === 'SELESAI') return false;
+      if (statusFilter === 'SELESAI' && g.status !== 'SELESAI') return false;
+
+      if (categoryFilter !== 'ALL' && getPickingCategory(g) !== categoryFilter) {
+        return false;
+      }
+
+      return true;
     });
-  }, [sjGroups, deferredSearch, statusFilter]);
+  }, [sjGroups, deferredSearch, statusFilter, categoryFilter, getPickingCategory]);
 
   // Action: Petugas GET 1 SJ (Mulai Picking)
 
@@ -5520,6 +5599,41 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
       {/* Filter Tabs & Search Bar */}
       <div className="bg-white dark:bg-[#131d31] p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+        {/* Category Filter Pills (Horizontal Swipe on Mobile) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+          {(
+            [
+              { id: 'ALL', label: 'Semua' },
+              { id: 'PENGIRIMAN_STORE', label: 'Pengiriman Store' },
+              { id: 'ORDER', label: 'Order' },
+              { id: 'SPS', label: 'SPS' },
+              { id: 'MANUAL_ALTER', label: 'Manual shipment/alter' },
+              { id: 'RETUR', label: 'Retur' },
+              { id: 'KERANJANG_ORDER', label: 'Keranjang Order' },
+            ] as const
+          ).map((cat) => {
+            const count = categoryCounts[cat.id];
+            const isActive = categoryFilter === cat.id;
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setCategoryFilter(cat.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition-all cursor-pointer border ${
+                  isActive
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60'
+                }`}
+              >
+                {cat.label}{' '}
+                <span className={`font-mono text-[11px] ${isActive ? 'text-indigo-100' : 'text-slate-400'}`}>
+                  ({count})
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           {/* Status Segmented Tabs */}
           <div className="flex bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl gap-1 w-full sm:w-auto">
