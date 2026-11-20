@@ -259,3 +259,11 @@ Untuk mencegah error operasional `Failed to fetch dynamically imported module` s
 3. **Self-Healing Preload Guard (`src/main.tsx` & `src/components/ErrorBoundary.tsx`)**:
    - Jangan pernah menghapus listener `vite:preloadError` di `src/main.tsx` maupun pembersihan Service Worker cache otomatis di `ErrorBoundary.tsx`.
 
+## 17. Supabase Egress Guardrails & Low-Bandwidth Standard (MANDATORY FOR ALL AGENTS)
+Karena seluruh gambar/foto sudah disimpan di Google Drive, lalu lintas Supabase 100% hanya berupa data teks JSON dan **TIDAK BOLEH** membengkak hingga ratusan MB/hari. Setiap agent yang membuat modul baru, polling, query, atau listener Realtime WAJIB membaca dan mematuhi [SUPABASE_EGRESS_GUARDRAILS.md](SUPABASE_EGRESS_GUARDRAILS.md):
+1. **Dilarang Fast Polling (`< 30s`)** pada modul yang sudah memakai Realtime (`broadcast` / `postgres_changes`); fallback interval minimal `60s` dan wajib cek `document.visibilityState === 'visible'`.
+2. **Dilarang `select=*` tanpa `limit`** pada tabel transaksi atau tabel berkolom JSON besar (`notes_paket`, `raw_json`, `items`, `content`).
+3. **Wajib SWR Cache & In-Flight Deduplication** untuk fungsi fetch tabel utama agar mount bersamaan / multi-tab Keep-Alive tidak menggandakan request.
+4. **Wajib Role-Gating Realtime `postgres_changes`** agar akun Store/CS tidak menerima payload tabel internal gudang.
+5. **Dilarang Menyimpan Data Append-Only sebagai 1 JSON Blob Raksasa** di `wms_system_docs` untuk fitur baru.
+
