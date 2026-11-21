@@ -107,9 +107,52 @@ export const VERSION_HISTORY: VersionInfo[] = [
   }
 ];
 
+export const CURRENT_APP_VERSION = CURRENT_APP_VERSION_INFO.version;
 export const APP_VERSION = CURRENT_APP_VERSION_INFO.version;
 export const APP_VERSION_CODE = CURRENT_APP_VERSION_INFO.versionCode;
 export const APP_BUILD_DATE = CURRENT_APP_VERSION_INFO.buildDate;
 export const APP_BUILD_HASH = CURRENT_APP_VERSION_INFO.buildHash;
 export const APP_RELEASE_TITLE = CURRENT_APP_VERSION_INFO.releaseTitle;
 export const APP_RELEASE_NOTES = CURRENT_APP_VERSION_INFO.releaseNotes;
+
+/**
+ * Compare two semver-like strings (e.g. 'v2.5.1' vs 'v2.5.2')
+ * Returns:
+ *   1 if v1 > v2
+ *  -1 if v1 < v2
+ *   0 if v1 === v2
+ */
+export function compareVersions(v1: string, v2: string): number {
+  const clean = (v: string) =>
+    v
+      .replace(/^v/i, '')
+      .split('-')[0]
+      .split('.')
+      .map((n) => parseInt(n, 10) || 0);
+  const p1 = clean(v1);
+  const p2 = clean(v2);
+
+  const len = Math.max(p1.length, p2.length);
+  for (let i = 0; i < len; i++) {
+    const num1 = p1[i] || 0;
+    const num2 = p2[i] || 0;
+    if (num1 > num2) return 1;
+    if (num1 < num2) return -1;
+  }
+  return 0;
+}
+
+export function isNewerVersion(
+  serverVersion: string,
+  clientVersion: string = CURRENT_APP_VERSION,
+  serverBuildHash?: string,
+  clientBuildHash: string = CURRENT_APP_VERSION_INFO.buildHash
+): boolean {
+  if (!serverVersion) return false;
+  const cmp = compareVersions(serverVersion, clientVersion);
+  if (cmp > 0) return true;
+  if (cmp === 0 && serverBuildHash && clientBuildHash && serverBuildHash !== clientBuildHash) {
+    return true;
+  }
+  return false;
+}

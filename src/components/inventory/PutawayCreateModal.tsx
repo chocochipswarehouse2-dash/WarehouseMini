@@ -43,7 +43,7 @@ export const PutawayCreateModal: React.FC<PutawayCreateModalProps> = ({
       if (task.status !== 'AKTIF') continue;
       for (const item of task.items || []) {
         for (const bucket of item.source_buckets || []) {
-          const locUp = (bucket.lokasi || '').trim().toUpperCase();
+          const locUp = (bucket.lokasiExact || (bucket as any).lokasi || '').trim().toUpperCase();
           if (!locUp) continue;
           const prev = map.get(locUp) || { invoices: [], claimedQty: 0 };
           if (!prev.invoices.includes(task.invoice_putaway)) {
