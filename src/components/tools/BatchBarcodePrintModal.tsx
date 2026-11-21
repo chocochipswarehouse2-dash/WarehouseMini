@@ -129,7 +129,7 @@ const StickerPreviewCard: React.FC<{
             </div>
           )}
         </div>
-        <div className="flex-1 min-w-0 flex flex-col justify-between h-full py-0.5 text-left overflow-hidden">
+        <div className="flex-1 min-w-0 flex flex-col justify-center gap-0.5 h-full py-0.5 text-left overflow-hidden">
           {config.showProductName && (
             <div
               style={{
@@ -161,7 +161,7 @@ const StickerPreviewCard: React.FC<{
           {priceLine ? (
             <div
               style={{ fontSize: `${Number(config.priceSize) || 9.0}pt` }}
-              className="font-extrabold text-slate-950 truncate leading-tight tracking-tight"
+              className="font-extrabold text-slate-950 truncate leading-tight tracking-tight mt-0.5"
             >
               {priceLine}
             </div>
@@ -347,6 +347,8 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
       const isPortrait = config.printOrientation === 'portrait';
       const pageWidthMm = isPortrait ? rawHeightMm : rawWidthMm;
       const pageHeightMm = isPortrait ? rawWidthMm : rawHeightMm;
+      const cellWidthMm = isPortrait ? rawHeightMm : (config.labelWidthMm || 50);
+      const cellHeightMm = isPortrait ? rawWidthMm : (config.labelHeightMm || 20);
 
       const effectiveRot = Number(config.printRotation) || 0;
       const offsetX = Number(config.offsetX) || 0;
@@ -368,7 +370,7 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
           const oTotalSkus = oItems.length;
 
           return `
-            <div class="sticker-cell sticker-divider" style="width: 50mm !important; height: 20mm !important; box-sizing: border-box !important; padding: 1.2mm 2mm !important; display: flex !important; flex-direction: column !important; justify-content: center !important; align-items: center !important; text-align: center !important; background: #000000 !important; color: #ffffff !important; overflow: hidden !important; font-family: system-ui, -apple-system, sans-serif !important; ${
+            <div class="sticker-cell sticker-divider" style="width: ${cellWidthMm}mm !important; height: ${cellHeightMm}mm !important; box-sizing: border-box !important; padding: 1.2mm 2mm !important; display: flex !important; flex-direction: column !important; justify-content: center !important; align-items: center !important; text-align: center !important; background: #000000 !important; color: #ffffff !important; overflow: hidden !important; font-family: system-ui, -apple-system, sans-serif !important; ${
               effectiveTransform
                 ? `transform: ${effectiveTransform} !important; transform-origin: center center !important;`
                 : ''
@@ -402,7 +404,7 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
         if (config.codeType === 'qrcode') {
           const qrPx = Number(config.qrSize) || 42;
           return `
-            <div class="sticker-cell is-qr" style="width: 50mm !important; height: 20mm !important; box-sizing: border-box !important; padding: ${
+            <div class="sticker-cell is-qr" style="width: ${cellWidthMm}mm !important; height: ${cellHeightMm}mm !important; box-sizing: border-box !important; padding: ${
               config.printPaddingMm || 1.0
             }mm 1.2mm 0.8mm 1.2mm !important; display: flex !important; flex-direction: row !important; align-items: center !important; overflow: hidden !important; background: #ffffff !important; color: #000000 !important; ${
             effectiveTransform
@@ -412,7 +414,7 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
               <div style="width: ${qrPx}px; height: ${qrPx}px; flex-shrink: 0; margin-right: 2.2mm; display: flex; align-items: center; justify-content: center;">
                 <img src="${codeAsset}" style="width: ${qrPx}px; height: ${qrPx}px; display: block;" />
               </div>
-              <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; height: 100%; overflow: hidden; padding: 0.4mm 0; line-height: 1.15; text-align: left;">
+              <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 0.5mm; height: 100%; overflow: hidden; padding: 0.2mm 0; line-height: 1.2; text-align: left;">
                 ${
                   config.showProductName
                     ? `<div style="font-size: ${Number(config.productNameSize) || 7.5}pt; font-weight: ${
@@ -446,7 +448,7 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
                   priceLine
                     ? `<div style="font-size: ${Number(config.priceSize) || 9.0}pt; font-weight: ${
                         config.priceBold ? '800' : '400'
-                      }; color: #000000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.2px;">${priceLine}</div>`
+                      }; color: #000000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.2px; margin-top: 0.4mm;">${priceLine}</div>`
                     : ''
                 }
               </div>
@@ -458,7 +460,7 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
         const autoFontSize = getAutoProductNameFontSize(barcodeFullName, config.productNameSize);
 
         return `
-          <div class="sticker-cell is-barcode" style="width: 50mm !important; height: 20mm !important; box-sizing: border-box !important; padding: ${
+          <div class="sticker-cell is-barcode" style="width: ${cellWidthMm}mm !important; height: ${cellHeightMm}mm !important; box-sizing: border-box !important; padding: ${
             config.printPaddingMm || 1.0
           }mm 1.5mm !important; display: flex !important; flex-direction: column !important; justify-content: center !important; align-items: center !important; text-align: center !important; overflow: hidden !important; background: #ffffff !important; color: #000000 !important; ${
           effectiveTransform
@@ -559,8 +561,8 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
       overflow: hidden !important;
     }
     .sticker-cell {
-      width: 50mm !important;
-      height: 20mm !important;
+      width: ${cellWidthMm}mm !important;
+      height: ${cellHeightMm}mm !important;
       overflow: hidden !important;
       background: #ffffff !important;
       box-sizing: border-box !important;
@@ -918,6 +920,69 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
                   Sisipkan Stiker Pembatas Nama Toko
                 </span>
               </label>
+            </div>
+          </div>
+
+          {/* Quick Orientation & Rotation Bar */}
+          <div className="p-3 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/40 dark:bg-amber-950/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Compass className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <div>
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Orientasi &amp; Rotasi Thermal Roll:
+                </span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 ml-1.5 hidden md:inline">
+                  (Jika hasil fisik Xprinter XP-420B miring 90&deg;, sesuaikan tombol di samping)
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              <div className="flex rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-0.5 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setConfig((p) => ({ ...p, printOrientation: 'landscape' }))}
+                  className={`px-2.5 py-1 rounded-md font-bold text-[11px] transition-all ${
+                    (config.printOrientation || 'landscape') === 'landscape'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                  }`}
+                >
+                  Lanskap (50x20)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfig((p) => ({ ...p, printOrientation: 'portrait' }))}
+                  className={`px-2.5 py-1 rounded-md font-bold text-[11px] transition-all ${
+                    config.printOrientation === 'portrait'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                  }`}
+                >
+                  Potret (20x50)
+                </button>
+              </div>
+              <div className="flex items-center gap-1">
+                {[
+                  { deg: 0, label: '0°' },
+                  { deg: 90, label: '90°' },
+                  { deg: 180, label: '180°' },
+                  { deg: 270, label: '270°' },
+                ].map((r) => (
+                  <button
+                    key={r.deg}
+                    type="button"
+                    onClick={() => setConfig((p) => ({ ...p, printRotation: r.deg }))}
+                    className={`px-2 py-1 rounded-lg text-[11px] font-extrabold border transition-all ${
+                      (Number(config.printRotation) || 0) === r.deg
+                        ? 'bg-amber-400 text-slate-950 border-amber-500 shadow-xs'
+                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                    }`}
+                    title={`Putar ${r.label}`}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 

@@ -23,6 +23,7 @@ import {
   DealPosSkuRow,
   downloadZipBlob,
   parseDealPOSInventoryCsv,
+  NON_STORE_CHANNELS_REGEX,
 } from '../../utils/csvToolsUtils';
 import { BatchBarcodePrintModal } from './BatchBarcodePrintModal';
 import { ChecklistPrintModal } from './ChecklistPrintModal';
@@ -52,11 +53,12 @@ function buildInventoryFromWmsProducts(
     const stocks: Record<string, number> = {};
 
     if (mode === 'dealpos') {
-      // 1. Ekstrak dari dealpos_channels (CPJ, LMP, GI, MKG, BTS, CWS, dll.)
+      // 1. Ekstrak dari dealpos_channels HANYA untuk Store Fisik (CPJ, LMP, MKG, BTS, CWS, DPM, GST, PMS, dll.)
+      // Non-store entities (BOOKED, PERMAK/CUCI, BARANG CACAT, DEFECT, BUYING_STAFF, GA, LOG, QC, WH, MAP) difilter bersih.
       if (p.dealpos_channels && typeof p.dealpos_channels === 'object') {
         for (const [chName, val] of Object.entries(p.dealpos_channels)) {
           const cleanCh = String(chName).trim().toUpperCase();
-          if (!cleanCh || /^(total|subtotal|grand\s*total|sum|tp$|total_stok|total\s*stok|total_qty|total\s*qty)/i.test(cleanCh)) continue;
+          if (!cleanCh || NON_STORE_CHANNELS_REGEX.test(cleanCh)) continue;
           let qty = 0;
           if (typeof val === 'number') qty = val;
           else if (typeof val === 'string') qty = Number(val) || 0;
@@ -68,15 +70,6 @@ function buildInventoryFromWmsProducts(
             outletSet.add(cleanCh);
           }
         }
-      }
-      // 2. Tambahkan default stock WH / BOOKED jika ada
-      if (p.d !== undefined && Number(p.d) !== 0 && !stocks['WH']) {
-        stocks['WH'] = Number(p.d) || 0;
-        outletSet.add('WH');
-      }
-      if (p.b !== undefined && Number(p.b) !== 0 && !stocks['BOOKED']) {
-        stocks['BOOKED'] = Number(p.b) || 0;
-        outletSet.add('BOOKED');
       }
     } else {
       // Mode Rak Fisik Gudang (stok_real_fisik WMS)
@@ -450,7 +443,7 @@ export const CsvBarcodeView: React.FC<CsvBarcodeViewProps> = ({ products, onNoti
                 setImportedDealPosData(null);
                 setDataMode('dealpos');
                 setSelectedOutlets(new Set());
-                onNotify('Mode aktif: Outlet Toko (DealPOS Terintegrasi).', 'info');
+                onNotify('Mode aktif: Store Fisik (Stok DealPOS Terintegrasi).', 'info');
               }}
               className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
                 !importedDealPosData && dataMode === 'dealpos'
@@ -458,7 +451,7 @@ export const CsvBarcodeView: React.FC<CsvBarcodeViewProps> = ({ products, onNoti
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              Outlet Toko (DealPOS)
+              Store Fisik (DealPOS)
             </button>
             <button
               type="button"

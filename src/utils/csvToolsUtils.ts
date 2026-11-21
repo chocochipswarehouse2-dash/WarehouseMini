@@ -74,6 +74,9 @@ export interface BatchBarcodePrintItem {
   outlet: string;
 }
 
+export const NON_STORE_CHANNELS_REGEX =
+  /^(total|subtotal|grand\s*total|sum|tp$|total_stok|total\s*stok|total_qty|total\s*qty|booked|b$|d$|cabang|barang\s*cacat|barang_cacat|defect|diskon\s*defect|permak|permak\s*\/?\s*cuci|gudang\s*permak|buying\s*staff|buying_staff|endorsement|ga$|gudang\s*awal|log$|gudang\s*logistik|qc$|gudang\s*qc|gudang_retur|gudang\s*retur|loss_damage|loss\/damage|sample\s*studio|sample_studio|studio$|sample\s*live|sample_live|live$|barang\s*live|wh$|warehouse|gudang\s*utama|gudang_utama|map$)/i;
+
 export interface BarcodePrinterConfig {
   lineMode: '1' | '2'; // '1' = 50x20mm Single, '2' = 104x20mm Twin
   labelWidthMm: number;
@@ -603,6 +606,20 @@ export function parseDealPOSInventoryCsv(text: string, sourceLabel = 'CSV DealPO
     'SUBTOTAL',
     'GRAND TOTAL',
     'SUM',
+    'BOOKED',
+    'PERMAK',
+    'PERMAK / CUCI',
+    'PERMAK/CUCI',
+    'BARANG CACAT',
+    'DEFECT',
+    'BUYING_STAFF',
+    'ENDORSEMENT',
+    'GA',
+    'LOG',
+    'QC',
+    'GUDANG UTAMA',
+    'WH',
+    'MAP',
   ]);
 
   const outletCols: DealPosOutletCol[] = [];
@@ -611,7 +628,7 @@ export function parseDealPOSInventoryCsv(text: string, sourceLabel = 'CSV DealPO
     const cleanUp = clean.toUpperCase();
     const isIgnored =
       ignoredHeaders.has(cleanUp) ||
-      /^(total|subtotal|grand\s*total|sum|tp$|total_stok|total\s*stok|total_qty|total\s*qty)/i.test(cleanUp);
+      NON_STORE_CHANNELS_REGEX.test(cleanUp);
     if (!metaCols.has(idx) && clean && !isIgnored) {
       outletCols.push({ idx, name: clean });
     }

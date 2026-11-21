@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.24.4",
-  "versionCode": 444,
+  "version": "v2.24.5",
+  "versionCode": 445,
   "buildDate": "21 November 2026",
-  "buildHash": "wms-261121-v444-1439",
-  "releaseTitle": "WMS v2.24.4 — Perbaikan Cetak Multi-Halaman & Kontrol Orientasi Rotasi Barcode 50x20mm",
+  "buildHash": "wms-261121-v445-1530",
+  "releaseTitle": "WMS v2.24.5 — Penyempurnaan Spasi Baris Label & Filtrasi Murni Store Fisik DealPOS",
   "releaseNotes": [
-    "Perbaiki bug cetak hanya 1 lembar pembatas pada printer thermal roll",
-    "Tambah opsi orientasi Lanskap Potret & rotasi 0 90 180 270 derajat",
-    "Filter otomatis kolom summary TOTAL_STOK & TP dari daftar outlet"
+    "Filter ketat saluran non-store (BOOKED, PERMAK/CUCI, BARANG CACAT, dll) agar murni Store Fisik DealPOS",
+    "Perbaiki spasi baris label QR code yang renggang dan presisikan jarak baris teks",
+    "Tambahkan kontrol cepat orientasi Lanskap Potret & rotasi 90/270 derajat Xprinter XP-420B"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.24.4",
+    "versionCode": 444,
+    "buildDate": "21 November 2026",
+    "buildHash": "wms-261121-v444-1439",
+    "releaseTitle": "WMS v2.24.4 — Perbaikan Cetak Multi-Halaman & Kontrol Orientasi Rotasi Barcode 50x20mm",
+    "releaseNotes": [
+      "Perbaiki bug cetak hanya 1 lembar pembatas pada printer thermal roll",
+      "Tambah opsi orientasi Lanskap Potret & rotasi 0 90 180 270 derajat",
+      "Filter otomatis kolom summary TOTAL_STOK & TP dari daftar outlet"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.24.3",
     "versionCode": 443,
