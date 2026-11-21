@@ -15,19 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.23.2",
-  "versionCode": 432,
-  "buildDate": "20 November 2026",
-  "buildHash": "wms-261120-v432-2358",
-  "releaseTitle": "WMS v2.23.2 — Renovasi Tampilan Seluler & Ergonomi App-Shell Pengecekan SJ & Riwayat",
+  "version": "v2.23.3",
+  "versionCode": 433,
+  "buildDate": "21 November 2026",
+  "buildHash": "wms-261121-v433-0013",
+  "releaseTitle": "WMS v2.23.3 — Rangkuman 1 Baris & Nama Produk + Size Sejajar di Pengecekan SJ",
   "releaseNotes": [
-    "Renovasi menyeluruh Tab Pengecekan SJ & Tab Riwayat agar tampil seperti aplikasi seluler native (Segmented Controls, Draft Carousel, Kartu Item Mobile bebas scroll horizontal, Filter lipat)",
-    "Sticky Bottom Selection Dock & 2 Native Bottom Action Sheets untuk aksi massal dan menu kartu SJ dengan tombol netral Anti-Pelangi"
+    "Padatkan Rangkuman Pengecekan SJ menjadi 1 baris 3 kolom (Total SJ",
+    "Total Scan",
+    "Total Selisih) untuk Seluler & Desktop serta filter cepat di header Komparasi",
+    "Gabungkan Nama Produk dan Size menjadi 1 baris sejajar pada Kartu Item Mobile, Tabel Desktop, dan Riwayat SJ"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.23.2",
+    "versionCode": 432,
+    "buildDate": "20 November 2026",
+    "buildHash": "wms-261120-v432-2358",
+    "releaseTitle": "WMS v2.23.2 — Renovasi Tampilan Seluler & Ergonomi App-Shell Pengecekan SJ & Riwayat",
+    "releaseNotes": [
+      "Renovasi menyeluruh Tab Pengecekan SJ & Tab Riwayat agar tampil seperti aplikasi seluler native (Segmented Controls, Draft Carousel, Kartu Item Mobile bebas scroll horizontal, Filter lipat)",
+      "Sticky Bottom Selection Dock & 2 Native Bottom Action Sheets untuk aksi massal dan menu kartu SJ dengan tombol netral Anti-Pelangi"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.23.1",
     "versionCode": 431,
@@ -112,17 +126,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseTitle": "WMS v2.22.6 — Mode Ringkas Tugas Picking saat Scanner/Kamera",
     "releaseNotes": [
       "Sembunyikan input qty manual saat mode input Scanner Fisik atau Kamera di Tugas Picking, tampilkan list ringkas Nama, Size, SKU, Lokasi, dan Qty"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.22.5",
-    "versionCode": 425,
-    "buildDate": "20 November 2026",
-    "buildHash": "wms-261120-v425-1559",
-    "releaseTitle": "WMS v2.22.5 — Dukung Range & Multi Rak pada Edit Spesifik Rak",
-    "releaseNotes": [
-      "Tambahkan parser range (A001-A010) dan multi rak (A001, B005) dengan live preview target pada tab Edit Spesifik Rak di Setup Kapasitas"
     ],
     "minSupportedVersion": "v2.0.0"
   }

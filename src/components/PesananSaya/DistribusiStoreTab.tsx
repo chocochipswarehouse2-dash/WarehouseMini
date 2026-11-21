@@ -2677,59 +2677,118 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                   </p>
                 </div>
 
-                {/* SUMMARY STATS */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
-                  {[
-                    { id: 'qty', label: 'Total Qty SJ', value: summary.total_sj, color: 'text-slate-900 dark:text-white', bg: 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800', clickable: false },
-                    { id: 'scan', label: 'Total Discan', value: summary.total_scan + summary.total_unexpected_qty, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50/70 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900', clickable: false },
-                    { id: 'cocok', label: 'SKU Cocok', value: summary.cocok, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900', clickable: true },
-                    { id: 'selisih', label: 'SKU Selisih', value: summary.kurang + summary.lebih + summary.unexpectedCount, color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50/70 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900', clickable: true },
-                  ].map(({ id, label, value, color, bg, clickable }) => {
-                    const isFilterActive = (id === 'cocok' && detailFilter === 'COCOK') || (id === 'selisih' && detailFilter === 'SELISIH');
-                    const ringStyle = isFilterActive ? 'ring-2 ring-indigo-500 ring-offset-1 dark:ring-offset-slate-900' : '';
+                {/* SUMMARY STATS (1 BARIS: TOTAL SJ | TOTAL SCAN | TOTAL SELISIH UNTUK SELULER & DESKTOP) */}
+                {(() => {
+                  const totalScanAll = summary.total_scan + summary.total_unexpected_qty;
+                  const totalSelisihQty = totalScanAll - summary.total_sj;
+                  const selisihSkuCount = summary.kurang + summary.lebih + summary.unexpectedCount;
+                  const isSelisihFilter = detailFilter === 'SELISIH';
+                  const isCleanMatch = totalSelisihQty === 0 && selisihSkuCount === 0;
+                  const selisihDisplay = isCleanMatch
+                    ? '0'
+                    : totalSelisihQty === 0
+                    ? `±${selisihSkuCount}`
+                    : totalSelisihQty > 0
+                    ? `+${totalSelisihQty}`
+                    : `${totalSelisihQty}`;
 
-                    return (
-                      <div
-                        key={label}
-                        onClick={() => {
-                          if (!clickable) return;
-                          if (id === 'cocok') setDetailFilter(prev => prev === 'COCOK' ? 'ALL' : 'COCOK');
-                          if (id === 'selisih') setDetailFilter(prev => prev === 'SELISIH' ? 'ALL' : 'SELISIH');
-                        }}
-                        className={`${bg} rounded-2xl p-3 border shadow-2xs ${clickable ? 'cursor-pointer active:scale-[0.98] transition-all' : ''} ${ringStyle}`}
+                  return (
+                    <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                      {/* 1. TOTAL SJ */}
+                      <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl px-2.5 py-2 sm:px-4 sm:py-2.5 shadow-2xs flex flex-col justify-between min-w-0">
+                        <div className="text-[10px] sm:text-[11px] font-bold text-slate-500 dark:text-slate-400 truncate">
+                          Total SJ
+                        </div>
+                        <div className="flex items-baseline gap-1 mt-0.5">
+                          <span className="text-lg sm:text-2xl font-black tabular-nums leading-none text-slate-900 dark:text-white">
+                            {summary.total_sj}
+                          </span>
+                          <span className="text-[10px] font-semibold text-slate-400">pcs</span>
+                        </div>
+                      </div>
+
+                      {/* 2. TOTAL SCAN */}
+                      <div className="bg-blue-50/70 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-2xl px-2.5 py-2 sm:px-4 sm:py-2.5 shadow-2xs flex flex-col justify-between min-w-0">
+                        <div className="text-[10px] sm:text-[11px] font-bold text-blue-700/80 dark:text-blue-300/80 truncate">
+                          Total Scan
+                        </div>
+                        <div className="flex items-baseline gap-1 mt-0.5">
+                          <span className="text-lg sm:text-2xl font-black tabular-nums leading-none text-blue-600 dark:text-blue-400">
+                            {totalScanAll}
+                          </span>
+                          <span className="text-[10px] font-semibold text-blue-500/70">pcs</span>
+                        </div>
+                      </div>
+
+                      {/* 3. TOTAL SELISIH (KLIK UNTUK FILTER SELISIH) */}
+                      <button
+                        type="button"
+                        onClick={() => setDetailFilter(prev => prev === 'SELISIH' ? 'ALL' : 'SELISIH')}
+                        title="Klik untuk filter SKU yang berselisih"
+                        className={`text-left rounded-2xl px-2.5 py-2 sm:px-4 sm:py-2.5 border shadow-2xs flex flex-col justify-between min-w-0 cursor-pointer active:scale-[0.98] transition-all ${
+                          isCleanMatch
+                            ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900'
+                            : 'bg-rose-50/70 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900'
+                        } ${isSelisihFilter ? 'ring-2 ring-indigo-500 ring-offset-1 dark:ring-offset-slate-900' : ''}`}
                       >
-                        <div className="flex justify-between items-center gap-1 mb-1">
-                          <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400">{label}</div>
-                          {clickable && (
-                            <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
-                              {isFilterActive ? 'Aktif ✓' : 'Filter'}
+                        <div className="flex items-center justify-between gap-1">
+                          <span className={`text-[10px] sm:text-[11px] font-bold truncate ${
+                            isCleanMatch ? 'text-emerald-700/80 dark:text-emerald-300/80' : 'text-rose-700/80 dark:text-rose-300/80'
+                          }`}>
+                            Total Selisih
+                          </span>
+                          {selisihSkuCount > 0 && (
+                            <span className="hidden sm:inline text-[10px] font-bold text-indigo-600 dark:text-indigo-400 shrink-0">
+                              {isSelisihFilter ? 'Aktif ✓' : 'Filter'}
                             </span>
                           )}
                         </div>
-                        <div className={`text-2xl font-black tabular-nums leading-none ${color}`}>{value}</div>
-                      </div>
-                    );
-                  })}
-                </div>
+                        <div className="flex items-baseline justify-between gap-1 mt-0.5">
+                          <span className={`text-lg sm:text-2xl font-black tabular-nums leading-none ${
+                            isCleanMatch ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                          }`}>
+                            {selisihDisplay}
+                          </span>
+                          <span className={`text-[10px] font-bold tabular-nums shrink-0 ${
+                            isCleanMatch ? 'text-emerald-600/80 dark:text-emerald-400/80' : 'text-rose-600/80 dark:text-rose-400/80'
+                          }`}>
+                            {isCleanMatch ? 'Cocok' : `${selisihSkuCount} SKU`}
+                          </span>
+                        </div>
+                      </button>
+                    </div>
+                  );
+                })()}
 
                 {/* KOMPARASI BARANG (KARTU APP DI HP, TABEL LENGKAP DI DESKTOP) */}
                 <div className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-2xs">
-                  <div className="px-3.5 sm:px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                  <div className="px-3.5 sm:px-4 py-2.5 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
                       <ArrowUpDown className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
                       <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200 truncate">
-                        Komparasi Barang ({comparisonData.length} SKU)
+                        Komparasi ({comparisonData.length} SKU)
                       </span>
                     </div>
-                    {detailFilter !== 'ALL' && (
-                      <button
-                        type="button"
-                        onClick={() => setDetailFilter('ALL')}
-                        className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 cursor-pointer shrink-0"
-                      >
-                        Reset Filter ({detailFilter})
-                      </button>
-                    )}
+                    <div className="flex items-center gap-1">
+                      {([
+                        { id: 'ALL', label: 'Semua' },
+                        { id: 'COCOK', label: `Cocok (${summary.cocok})` },
+                        { id: 'SELISIH', label: `Selisih (${summary.kurang + summary.lebih + summary.unexpectedCount})` },
+                      ] as const).map((f) => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => setDetailFilter(f.id)}
+                          className={`px-2 py-1 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer tabular-nums ${
+                            detailFilter === f.id
+                              ? 'bg-indigo-600 text-white shadow-2xs'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                          }`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   {/* ANOMALI SCAN: BARANG DI LUAR SJ & BARANG MELEBIHI QTY SJ */}
@@ -2807,20 +2866,22 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                           <div key={`over-${item.sku}`} className="flex flex-col sm:flex-row sm:items-center justify-between bg-white dark:bg-[#131d31] border border-rose-300 dark:border-rose-800/80 rounded-xl p-3 shadow-2xs gap-2.5">
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-1.5">
-                                <span className="font-mono text-xs font-black text-rose-800 dark:text-rose-300">{item.sku}</span>
-                                <span className="text-[10px] font-extrabold px-1.5 py-0.5 bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 rounded border border-rose-300 dark:border-rose-800">
-                                  Lebih (+{item.selisih})
+                                <span className="text-xs text-slate-800 dark:text-slate-100 font-bold">
+                                  {item.nama_produk}
                                 </span>
                                 {item.size && item.size !== '-' && (
-                                  <span className="text-[10px] font-bold px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded">
+                                  <span className="font-mono text-[10px] font-extrabold px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded border border-slate-200 dark:border-slate-700">
                                     {item.size}
                                   </span>
                                 )}
+                                <span className="text-[10px] font-extrabold px-1.5 py-0.5 bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 rounded border border-rose-300 dark:border-rose-800">
+                                  Lebih (+{item.selisih})
+                                </span>
                               </div>
-                              <div className="text-xs text-slate-700 dark:text-slate-200 line-clamp-2 mt-0.5 font-semibold">
-                                {item.nama_produk}
-                                <span className="ml-1.5 text-[11px] font-bold text-rose-600 dark:text-rose-400 tabular-nums">
-                                  (SJ: {item.qty_sj} · Scan: {item.qty_scan})
+                              <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                                <span className="font-mono text-[11px] font-black text-rose-800 dark:text-rose-300">{item.sku}</span>
+                                <span className="text-[11px] font-bold text-rose-600 dark:text-rose-400 tabular-nums">
+                                  SJ: {item.qty_sj} · Scan: {item.qty_scan}
                                 </span>
                               </div>
                             </div>
@@ -2885,18 +2946,20 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
-                              <div className="text-[13px] font-bold text-slate-900 dark:text-white leading-snug">
-                                {item.nama_produk}
-                              </div>
-                              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                                <span className="font-mono text-[11px] font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
-                                  {item.sku}
+                              <div className="flex items-center gap-1.5 flex-wrap leading-snug">
+                                <span className="text-[13px] font-bold text-slate-900 dark:text-white">
+                                  {item.nama_produk}
                                 </span>
                                 {displaySize !== '-' && (
-                                  <span className="font-mono text-[11px] font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                                  <span className="font-mono text-[11px] font-extrabold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 shrink-0">
                                     {displaySize}
                                   </span>
                                 )}
+                              </div>
+                              <div className="mt-1">
+                                <span className="font-mono text-[11px] font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                                  {item.sku}
+                                </span>
                               </div>
                             </div>
                             <div className="shrink-0">
@@ -2960,8 +3023,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 uppercase tracking-wider text-[10px]">
-                          <th className="text-left px-3.5 py-3 font-extrabold min-w-[200px]">Nama Produk</th>
-                          <th className="text-center px-2 py-3 font-extrabold w-16">Size</th>
+                          <th className="text-left px-3.5 py-3 font-extrabold min-w-[220px]">Nama Produk &amp; Size</th>
                           <th className="text-left px-3 py-3 font-extrabold min-w-[140px]">SKU</th>
                           <th className="text-center px-3 py-3 font-extrabold w-20">Qty SJ</th>
                           <th className="text-center px-3 py-3 font-extrabold w-32">Qty Scan</th>
@@ -2975,7 +3037,12 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                           if (detailFilter === 'COCOK') return item.status === 'COCOK';
                           if (detailFilter === 'SELISIH') return item.status === 'KURANG' || item.status === 'LEBIH';
                           return true;
-                        }).map(item => (
+                        }).map(item => {
+                          const lk = lookupProductBySku(item.sku, productCatalog, item.nama_produk, item.size);
+                          const displaySize = lk.found
+                            ? (lk.size || '-')
+                            : (isRealSize(item.size) && !isCorruptedColorCodeSize(item.sku, item.size) && item.size !== 'Default' ? item.size : '-');
+                          return (
                           <tr
                             key={item.sku}
                             className={`transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/40 ${item.status === 'COCOK' ? 'bg-emerald-50/40 dark:bg-emerald-950/10' :
@@ -2983,23 +3050,18 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                   item.status === 'LEBIH' ? 'bg-amber-50/40 dark:bg-amber-950/10' : ''
                               }`}
                           >
-                            {/* 1. Nama Produk */}
-                            <td className="px-3.5 py-3 min-w-[200px] align-middle">
-                              <div className="font-bold text-slate-900 dark:text-slate-100 text-xs leading-snug break-words">
-                                {item.nama_produk}
+                            {/* 1. Nama Produk + Size (1 Baris) */}
+                            <td className="px-3.5 py-3 min-w-[220px] align-middle">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-bold text-slate-900 dark:text-slate-100 text-xs leading-snug">
+                                  {item.nama_produk}
+                                </span>
+                                {displaySize !== '-' && (
+                                  <span className="inline-block px-1.5 py-0.5 rounded-md font-mono text-[11px] font-extrabold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 shrink-0">
+                                    {displaySize}
+                                  </span>
+                                )}
                               </div>
-                            </td>
-
-                            {/* 2. Size */}
-                            <td className="px-2 py-3 text-center align-middle w-16">
-                              <span className="inline-block px-2 py-0.5 rounded-md font-mono text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                                {(() => {
-                                  const lk = lookupProductBySku(item.sku, productCatalog, item.nama_produk, item.size);
-                                  return lk.found
-                                    ? (lk.size || '-')
-                                    : (isRealSize(item.size) && !isCorruptedColorCodeSize(item.sku, item.size) && item.size !== 'Default' ? item.size : '-');
-                                })()}
-                              </span>
                             </td>
 
                             {/* 3. SKU */}
@@ -3054,12 +3116,13 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                               </span>
                             </td>
 
-                            {/* 7. Status */}
+                            {/* 6. Status */}
                             <td className="px-3 py-3 text-center align-middle">
                               <StatusBadge status={item.status} />
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -4420,16 +4483,20 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                     }`}
                                   >
                                     <div className="flex items-start justify-between gap-2">
-                                      <div className="min-w-0">
-                                        <div className="text-[13px] font-bold text-slate-900 dark:text-slate-100 leading-snug break-words">
-                                          {resolveProductName(item.sku, item.nama_produk)}
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-1.5 flex-wrap leading-snug">
+                                          <span className="text-[13px] font-bold text-slate-900 dark:text-slate-100">
+                                            {resolveProductName(item.sku, item.nama_produk)}
+                                          </span>
+                                          {displaySize !== '-' && (
+                                            <span className="font-mono text-[11px] font-extrabold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 shrink-0">
+                                              {displaySize}
+                                            </span>
+                                          )}
                                         </div>
                                         <div className="flex items-center gap-1.5 flex-wrap mt-1">
                                           <span className="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700">
                                             {item.sku}
-                                          </span>
-                                          <span className="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600">
-                                            {displaySize}
                                           </span>
                                           {item.is_unexpected && (
                                             <span className="text-[9.5px] font-extrabold text-amber-600 dark:text-amber-400">
@@ -4497,8 +4564,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                             <table className="w-full text-xs">
                               <thead>
                                 <tr className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 uppercase tracking-wider text-[10px]">
-                                  <th className="text-left px-3 py-2 font-extrabold min-w-[200px]">Nama Produk</th>
-                                  <th className="text-center px-2 py-2 font-extrabold w-16">Size</th>
+                                  <th className="text-left px-3 py-2 font-extrabold min-w-[220px]">Nama Produk &amp; Size</th>
                                   <th className="text-left px-3 py-2 font-extrabold min-w-[130px]">SKU</th>
                                   <th className="text-center px-3 py-2 font-extrabold w-16">SJ</th>
                                   <th className="text-center px-3 py-2 font-extrabold w-24">Terima</th>
@@ -4509,13 +4575,17 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                 {itemsList.length === 0 ? (
                                   <tr>
-                                    <td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-xs">
+                                    <td colSpan={6} className="px-4 py-8 text-center text-slate-400 text-xs">
                                       Belum ada rincian item SKU pada surat jalan ini.
                                     </td>
                                   </tr>
                                 ) : (
                                   itemsList.map((item, i) => {
                                     const selisih = item.qty_scan - item.qty_sj;
+                                    const lk = lookupProductBySku(item.sku, productCatalog, item.nama_produk, item.size);
+                                    const displaySize = lk.found
+                                      ? (lk.size || '-')
+                                      : (isRealSize(item.size) && !isCorruptedColorCodeSize(item.sku, item.size) && item.size !== 'Default' ? item.size : '-');
                                     return (
                                       <tr
                                         key={`${item.sku}-${i}`}
@@ -4525,22 +4595,20 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                               item.status_item === 'LEBIH' ? 'bg-amber-50/30 dark:bg-amber-950/10' : ''
                                         }
                                       >
-                                        <td className="px-3 py-2 text-slate-900 dark:text-slate-100 min-w-[200px] align-middle">
-                                          <div className="font-bold text-xs leading-snug break-words">
-                                            {resolveProductName(item.sku, item.nama_produk)}
+                                        <td className="px-3 py-2 text-slate-900 dark:text-slate-100 min-w-[220px] align-middle">
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className="font-bold text-xs leading-snug">
+                                              {resolveProductName(item.sku, item.nama_produk)}
+                                            </span>
+                                            {displaySize !== '-' && (
+                                              <span className="inline-block px-1.5 py-0.5 rounded font-mono text-[11px] font-extrabold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 shrink-0">
+                                                {displaySize}
+                                              </span>
+                                            )}
                                           </div>
                                           {item.category && (
                                             <div className="text-[9.5px] text-slate-400 font-normal truncate mt-0.5">{item.category}</div>
                                           )}
-                                        </td>
-                                        <td className="px-2 py-2 text-center align-middle w-16">
-                                          <span className="inline-block px-1.5 py-0.5 rounded font-mono text-[11px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
-                                            {(() => {
-                                              const lk = lookupProductBySku(item.sku, productCatalog, item.nama_produk, item.size);
-                                              return lk.found ? (lk.size || '-')
-                                                : (isRealSize(item.size) && !isCorruptedColorCodeSize(item.sku, item.size) && item.size !== 'Default' ? item.size : '-');
-                                            })()}
-                                          </span>
                                         </td>
                                         <td className="px-3 py-2 font-mono text-xs text-slate-700 dark:text-slate-300 font-bold min-w-[130px] align-middle">
                                           <span className="bg-slate-100/70 dark:bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-200/80 dark:border-slate-700/80 inline-block">
