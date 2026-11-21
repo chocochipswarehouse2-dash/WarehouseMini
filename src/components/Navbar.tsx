@@ -133,6 +133,10 @@ export const Navbar: React.FC<NavbarProps> = ({
         return { title: 'Cetak Label', subtitle: 'Label Paket & Label Custom (QR Code Rak)', icon: Printer };
       case 'cetak_barcode':
         return { title: 'Cetak Barcode Produk', subtitle: 'Stiker Thermal 50×20 mm & Import Massal', icon: QrCode };
+      case 'csv_barcode':
+        return { title: 'CSV Barcode (DealPOS)', subtitle: 'Export CSV per Outlet/Lokasi & Cetak Stiker Thermal Batch', icon: QrCode };
+      case 'csv_distribusi':
+        return { title: 'CSV Distribusi', subtitle: 'Pecah Excel Pembagian Stock ke CSV DealPOS per Store + ZIP', icon: Printer };
       case 'pusat_resolusi':
         return { title: 'Pusat Resolusi', subtitle: 'Layanan Retur, Refund, Komplain & Rating', icon: ShieldAlert };
       case 'live_chat':

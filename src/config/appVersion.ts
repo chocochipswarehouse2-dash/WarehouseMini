@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.23.5",
-  "versionCode": 435,
+  "version": "v2.24.0",
+  "versionCode": 440,
   "buildDate": "21 November 2026",
-  "buildHash": "wms-261121-v435-0112",
-  "releaseTitle": "WMS v2.23.5 — Native Mobile App Shell (Bottom Tab Bar & App Launcher Sheet)",
+  "buildHash": "wms-261121-v440-1215",
+  "releaseTitle": "WMS v2.24.0 — Modul CSV Barcode & CSV Distribusi",
   "releaseNotes": [
-    "Ubah navigasi seluler (< 1024px) dari hamburger drawer ala web menjadi Fixed Bottom Tab Bar (4 pintasan peran/kustom + tab Menu) dan Native App Launcher Bottom Sheet dengan grid ikon 4 kolom, kustomisasi tab bawah, & grouped settings",
-    "Sederhanakan Mobile Top App Bar menjadi Avatar + Judul Halaman + Bell/AI, serta amankan offset Dock & Kapasitas Rak di atas Bottom Tab Bar (Desktop tetap utuh)"
+    "Tambah modul CSV Barcode (export CSV DealPOS per outlet/lokasi + ZIP + cetak stiker 50x20/104x20mm & ceklis A4)",
+    "Tambah modul CSV Distribusi (import multi-file Excel Reguler & Back In Stock, kartu store 2-baris, Gudang Awal balance check, & ZIP per batch)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.23.5",
+    "versionCode": 435,
+    "buildDate": "21 November 2026",
+    "buildHash": "wms-261121-v435-0112",
+    "releaseTitle": "WMS v2.23.5 — Native Mobile App Shell (Bottom Tab Bar & App Launcher Sheet)",
+    "releaseNotes": [
+      "Ubah navigasi seluler (< 1024px) dari hamburger drawer ala web menjadi Fixed Bottom Tab Bar (4 pintasan peran/kustom + tab Menu) dan Native App Launcher Bottom Sheet dengan grid ikon 4 kolom, kustomisasi tab bawah, & grouped settings",
+      "Sederhanakan Mobile Top App Bar menjadi Avatar + Judul Halaman + Bell/AI, serta amankan offset Dock & Kapasitas Rak di atas Bottom Tab Bar (Desktop tetap utuh)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.23.4",
     "versionCode": 434,
@@ -116,17 +128,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Deteksi & perbaiki langganan push dengan kunci VAPID lama/rusak lalu daftar ulang otomatis",
       "Segarkan pendaftaran push setiap aplikasi dibuka kembali dari background",
       "Tampilkan alasan jika notifikasi saat aplikasi ditutup gagal diaktifkan"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.22.8",
-    "versionCode": 428,
-    "buildDate": "20 November 2026",
-    "buildHash": "wms-261120-v428-1736",
-    "releaseTitle": "WMS v2.22.8 — Dukung Copy-Paste Gambar Screenshot di Fitur AI",
-    "releaseNotes": [
-      "Tambahkan handler onPaste pada input chat WmsAiModal agar gambar hasil screenshot (Ctrl+V / Paste) langsung terlampir ke AI"
     ],
     "minSupportedVersion": "v2.0.0"
   }

@@ -27,6 +27,8 @@ export type ActivePage =
   | 'hr_rekap'
   | 'cetak_label'
   | 'cetak_barcode'
+  | 'csv_barcode'
+  | 'csv_distribusi'
   | 'pesanan_saya'
   | 'manual_shipment'
   | 'roadmap'
@@ -132,6 +134,8 @@ export type UserPermissionKey =
   | 'menu_ops_peminjaman'
   | 'menu_ops_roadmap'
   | 'menu_ops_cetak_barcode'
+  | 'menu_ops_csv_barcode'
+  | 'menu_ops_csv_distribusi'
   | 'menu_ops_bbk'
   | 'menu_rekap_tagihan_jne'
   // KARYAWAN & PRESENSI

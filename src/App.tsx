@@ -57,6 +57,8 @@ import { ThemePickerModal } from './components/ThemePickerModal';
 import { UpdateDatabaseModal } from './components/UpdateDatabaseModal';
 import { LocationPurgeModal } from './components/inventory/LocationPurgeModal';
 import { WmsAiModal } from './components/ai/WmsAiModal';
+import { CsvBarcodeView } from './components/tools/CsvBarcodeView';
+import { CsvDistribusiView } from './components/tools/CsvDistribusiView';
 import { fetchAiConfig } from './services/wmsAiService';
 import { OfflineProtectionBar } from './components/OfflineProtectionBar';
 import { ScannerPopupModal, ScannerPopupLayoutMode } from './components/ScannerPopupModal';
@@ -225,6 +227,8 @@ const PAGE_TO_PATH: Record<ActivePage, string> = {
   peminjaman: 'peminjaman',
   cetak_label: 'cetak-label',
   cetak_barcode: 'cetak-barcode',
+  csv_barcode: 'csv-barcode',
+  csv_distribusi: 'csv-distribusi',
   supabase_migration: 'migrasi-supabase',
   karyawan: 'karyawan',
   presensi: 'presensi',
@@ -291,6 +295,8 @@ const PATH_TO_PAGE: Record<string, ActivePage> = {
   'cetak-barcode': 'cetak_barcode',
   'barcode': 'cetak_barcode',
   'barcode-produk': 'cetak_barcode',
+  'csv-barcode': 'csv_barcode',
+  'csv-distribusi': 'csv_distribusi',
   'migrasi-supabase': 'supabase_migration',
   'supabase-migration': 'supabase_migration',
   'supabase': 'supabase_migration',
@@ -5120,6 +5126,18 @@ export default function App() {
                             initialTab={cetakLabelInitialTab}
                           />
                         )}
+                        {pageKey === 'csv_barcode' && (
+                          <CsvBarcodeView
+                            products={productDatabase}
+                            onNotify={showToast}
+                          />
+                        )}
+                        {pageKey === 'csv_distribusi' && (
+                          <CsvDistribusiView
+                            products={productDatabase}
+                            onNotify={showToast}
+                          />
+                        )}
                         {pageKey === 'perbaikan' && (
                           <QualityControlView
                             session={session}
@@ -5325,6 +5343,18 @@ export default function App() {
                       productCatalog={productDatabase}
                       onShowToast={showToast}
                       initialTab={cetakLabelInitialTab}
+                    />
+                  )}
+                  {companionPage === 'csv_barcode' && (
+                    <CsvBarcodeView
+                      products={productDatabase}
+                      onNotify={showToast}
+                    />
+                  )}
+                  {companionPage === 'csv_distribusi' && (
+                    <CsvDistribusiView
+                      products={productDatabase}
+                      onNotify={showToast}
                     />
                   )}
                   {companionPage === 'perbaikan' && (

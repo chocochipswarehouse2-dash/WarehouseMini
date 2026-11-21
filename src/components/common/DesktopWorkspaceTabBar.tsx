@@ -66,6 +66,8 @@ export const WORKSPACE_PAGE_META: Record<string, WorkspacePageMeta> = {
   peminjaman: { id: 'peminjaman', label: 'Peminjaman (SPS)', shortLabel: 'Peminjaman', icon: FileText },
   cetak_label: { id: 'cetak_label', label: 'Cetak Label & Barcode', shortLabel: 'Cetak Label', icon: Printer },
   cetak_barcode: { id: 'cetak_barcode', label: 'Cetak Barcode Produk', shortLabel: 'Cetak Barcode', icon: Printer, pickerHidden: true },
+  csv_barcode: { id: 'csv_barcode', label: 'CSV Barcode (DealPOS)', shortLabel: 'CSV Barcode', icon: FileText },
+  csv_distribusi: { id: 'csv_distribusi', label: 'CSV Distribusi (Excel)', shortLabel: 'CSV Distribusi', icon: FileText },
   karyawan: { id: 'karyawan', label: 'Data Karyawan', shortLabel: 'Karyawan', icon: Users },
   presensi: { id: 'presensi', label: 'Presensi & Shift', shortLabel: 'Presensi', icon: Clock },
   roster_shift: { id: 'roster_shift', label: 'Jadwal Roster Tim', shortLabel: 'Roster Shift', icon: Calendar },

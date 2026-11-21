@@ -190,6 +190,8 @@ export const PERMISSION_GROUPS = [
       { key: 'menu_ops_peminjaman', label: 'Menu Peminjaman', description: 'Akses form peminjaman', isSuperadminOnly: false },
       { key: 'menu_ops_roadmap', label: 'Menu Roadmap', description: 'Lihat daftar fitur baru', isSuperadminOnly: false },
       { key: 'menu_ops_cetak_barcode', label: 'Menu Cetak Barcode Produk', description: 'Akses cetak barcode thermal 50x20 mm', isSuperadminOnly: false },
+      { key: 'menu_ops_csv_barcode', label: 'Menu CSV Barcode', description: 'Export CSV DealPOS per outlet/lokasi & cetak barcode batch', isSuperadminOnly: false },
+      { key: 'menu_ops_csv_distribusi', label: 'Menu CSV Distribusi', description: 'Pecah Excel pembagian stock menjadi CSV DealPOS per store + ZIP', isSuperadminOnly: false },
       { key: 'menu_ops_bbk', label: 'Menu Form BBK', description: 'Akses formulir Bukti Bank Keluar', isSuperadminOnly: false },
       { key: 'menu_ops_trello', label: 'Menu Koleksi UP (Trello)', description: 'Akses susunan upload koleksi UP dan cetak A4', isSuperadminOnly: false },
     ]
@@ -672,6 +674,10 @@ export const canAccessPage = (session: UserSession | null, page: ActivePage): bo
     case 'cetak_label':
     case 'cetak_barcode':
       return hasPermission(session, 'action_cetak_label') || hasPermission(session, 'menu_ops_cetak_barcode') || hasPermission(session, 'action_cetak_barcode') || hasPermission(session, 'menu_ops_inventory');
+    case 'csv_barcode':
+      return isSuperadmin(session) || hasPermission(session, 'menu_ops_csv_barcode') || hasPermission(session, 'menu_ops_cetak_barcode') || hasPermission(session, 'menu_ops_inventory');
+    case 'csv_distribusi':
+      return isSuperadmin(session) || hasPermission(session, 'menu_ops_csv_distribusi') || hasPermission(session, 'menu_ops_inventory') || hasPermission(session, 'menu_ops_picking');
     case 'pesanan_saya': return hasPermission(session, 'menu_ops_pesanan_saya') || hasPermission(session, 'tab_ops_pesanan_dashboard') || hasPermission(session, 'tab_ops_pesanan_manual_shipment') || hasPermission(session, 'tab_ops_pesanan_transfer_order') || hasPermission(session, 'tab_ops_pesanan_shopee') || hasPermission(session, 'tab_ops_pesanan_tiktok') || hasPermission(session, 'tab_ops_pesanan_website') || hasPermission(session, 'tab_ops_pesanan_woocommerce') || hasPermission(session, 'tab_ops_pesanan_lazada');
     case 'manual_shipment': return hasPermission(session, 'tab_ops_pesanan_manual_shipment');
     case 'katalog_produk': return hasPermission(session, 'menu_ops_katalog_produk');

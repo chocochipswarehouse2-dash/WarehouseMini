@@ -259,6 +259,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const canPeminjaman = userIsAdmin || hasPermission(session, 'menu_ops_peminjaman');
   const canCetakLabel = userIsAdmin || hasPermission(session, 'action_cetak_label');
   const canCetakBarcode = userIsAdmin || hasPermission(session, 'menu_ops_cetak_barcode') || hasPermission(session, 'action_cetak_barcode') || canCetakLabel || canInventory;
+  const canCsvBarcode = userIsAdmin || hasPermission(session, 'menu_ops_csv_barcode') || canCetakBarcode;
+  const canCsvDistribusi = userIsAdmin || hasPermission(session, 'menu_ops_csv_distribusi') || canInventory || canPicking;
   const canJneRekap = canAccessJneRekap(session);
   // HR
   const canViewKaryawan = userIsAdmin || hasPermission(session, 'menu_hr_karyawan');
@@ -381,6 +383,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Printer,
       description: 'QR Prefix, Label Paket & Barcode',
       access: canCetakLabel || canCetakBarcode,
+    },
+    {
+      id: 'csv_barcode' as ActivePage,
+      label: 'CSV Barcode (DealPOS)',
+      shortLabel: 'CSV Barcode',
+      icon: FileText,
+      description: 'Export CSV Outlet & Cetak Batch',
+      access: canCsvBarcode,
+    },
+    {
+      id: 'csv_distribusi' as ActivePage,
+      label: 'CSV Distribusi (Excel)',
+      shortLabel: 'CSV Dist',
+      icon: FileText,
+      description: 'Pecah Excel Alokasi Store ke ZIP',
+      access: canCsvDistribusi,
     },
   ].filter((item) => item.access);
 
