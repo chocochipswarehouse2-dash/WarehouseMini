@@ -26,6 +26,7 @@ import {
   NON_STORE_CHANNELS_REGEX,
   normalizeOutletName,
   getOutletDisplayName,
+  MASTER_DEALPOS_CHANNELS,
 } from '../../utils/csvToolsUtils';
 import { BatchBarcodePrintModal } from './BatchBarcodePrintModal';
 import { ChecklistPrintModal } from './ChecklistPrintModal';
@@ -39,7 +40,8 @@ function buildInventoryFromWmsProducts(
   products: ProductItem[],
   mode: 'dealpos' | 'warehouse' = 'dealpos'
 ): DealPosInventoryData {
-  const outletSet = new Set<string>();
+  // Inisialisasi outletSet dengan seluruh MASTER_DEALPOS_CHANNELS resmi agar B-LWS, B-PNK, QC, WH, MAP dsb selalu muncul
+  const outletSet = new Set<string>(mode === 'dealpos' ? MASTER_DEALPOS_CHANNELS : []);
   const skuMap = new Map<string, DealPosSkuRow>();
   const productMap = new Map<string, DealPosProductGroup>();
 
@@ -55,8 +57,7 @@ function buildInventoryFromWmsProducts(
     const stocks: Record<string, number> = {};
 
     if (mode === 'dealpos') {
-      // 1. Ekstrak dari dealpos_channels HANYA untuk Store Fisik (CPJ, LMP, MKG, BTS, CWS, DPM, GST, PMS, dll.)
-      // Non-store entities (BOOKED, PERMAK/CUCI, BARANG CACAT, DEFECT, BUYING_STAFF, GA, LOG, QC, WH, MAP) difilter bersih.
+      // 1. Ekstrak dari dealpos_channels (Store Fisik, Bazaar B-, Gudang Internal QC/WH/MAP, Online)
       // Standarisasi Bazaar dengan prefix B- (contoh: B-EMP, B-LWS, B-PNK)
       if (p.dealpos_channels && typeof p.dealpos_channels === 'object') {
         for (const [chName, val] of Object.entries(p.dealpos_channels)) {
@@ -69,10 +70,8 @@ function buildInventoryFromWmsProducts(
           else if (val && typeof val === 'object') {
             qty = Number((val as any).qty ?? (val as any).quantity ?? (val as any).stock ?? 0) || 0;
           }
-          if (qty !== 0) {
-            stocks[normCh] = (stocks[normCh] || 0) + qty;
-            outletSet.add(normCh);
-          }
+          stocks[normCh] = (stocks[normCh] || 0) + qty;
+          outletSet.add(normCh);
         }
       }
     } else {
@@ -81,12 +80,12 @@ function buildInventoryFromWmsProducts(
         for (const loc of p.locations) {
           const locName = String(loc.lokasi || 'Warehouse').trim().toUpperCase();
           const qty = Number(loc.qty) || 0;
-          if (locName && qty !== 0) {
+          if (locName) {
             stocks[locName] = (stocks[locName] || 0) + qty;
             outletSet.add(locName);
           }
         }
-      } else if (p.l && (Number(p.q) || 0) !== 0) {
+      } else if (p.l) {
         const locName = String(p.l).trim().toUpperCase();
         stocks[locName] = Number(p.q) || 0;
         outletSet.add(locName);
@@ -105,8 +104,16 @@ function buildInventoryFromWmsProducts(
     grp.variants.push(row);
   }
 
+  const orderMap = new Map<string, number>();
+  MASTER_DEALPOS_CHANNELS.forEach((ch, idx) => orderMap.set(ch, idx));
+
   const outletCols: DealPosOutletCol[] = Array.from(outletSet)
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+    .sort((a, b) => {
+      const idxA = orderMap.has(a) ? orderMap.get(a)! : 999;
+      const idxB = orderMap.has(b) ? orderMap.get(b)! : 999;
+      if (idxA !== idxB) return idxA - idxB;
+      return a.localeCompare(b, undefined, { numeric: true });
+    })
     .map((name, idx) => ({ idx, name }));
 
   return {
@@ -199,7 +206,10 @@ export const CsvBarcodeView: React.FC<CsvBarcodeViewProps> = ({ products, onNoti
   const filteredOutlets = useMemo(() => {
     const q = outletSearch.trim().toLowerCase();
     return inventoryData.outletCols.filter((o) => {
-      if (q && !o.name.toLowerCase().includes(q)) return false;
+      if (q) {
+        const title = getOutletDisplayName(o.name).title.toLowerCase();
+        if (!o.name.toLowerCase().includes(q) && !title.includes(q)) return false;
+      }
       if (hideZeroOutlets && (outletUnitsMap.get(o.name) || 0) <= 0) return false;
       return true;
     });
@@ -299,7 +309,9 @@ export const CsvBarcodeView: React.FC<CsvBarcodeViewProps> = ({ products, onNoti
     onNotify(`Berhasil menambahkan ${matched} SKU yang cocok dari ${tokens.length} input.`, matched > 0 ? 'success' : 'warning');
   };
 
-  const handlePresetOutlets = (type: 'all' | 'none' | 'has_stock' | 'uncheck_zero' | 'physical' | 'online') => {
+  const handlePresetOutlets = (
+    type: 'all' | 'none' | 'has_stock' | 'uncheck_zero' | 'physical' | 'bazaar' | 'gudang' | 'online'
+  ) => {
     const all = inventoryData.outletCols.map((o) => o.name);
     if (type === 'all') {
       setSelectedOutlets(new Set(all));
@@ -320,14 +332,31 @@ export const CsvBarcodeView: React.FC<CsvBarcodeViewProps> = ({ products, onNoti
       onNotify('Semua outlet/lokasi dengan Qty 0 berhasil di-uncheck.', 'info');
     } else if (type === 'physical') {
       const physical = all.filter(
-        (o) => !o.match(/Shopee|Tokopedia|TikTok|Lazada|Website|Marketplace|Woocommerce|KYTE|ChicShopee|Warehouse|Gudang|Sample|Staff|Defect|Loss|Endorsement|TIKTOK|SHOPEE|STUDIO|IGLIVE/i)
+        (o) =>
+          !o.startsWith('B-') &&
+          !['MAP', 'WH', 'QC', 'GA', 'LOG', 'GUDANG_RETUR', 'SHP', 'TTK', 'WEB', 'TPD', 'LZD', 'WOO', 'LIVE', 'STUDIO', 'PERMAK', 'DEFECT', 'BUYING_STAFF', 'ENDORSEMENT'].includes(o)
       );
       setSelectedOutlets(new Set(physical));
+      onNotify(`Dipilih ${physical.length} Toko Cabang Fisik.`, 'info');
+    } else if (type === 'bazaar') {
+      const bazaar = all.filter((o) => o.startsWith('B-') || getOutletDisplayName(o).isBazaar);
+      setSelectedOutlets(new Set(bazaar));
+      onNotify(`Dipilih ${bazaar.length} outlet Bazaar (B-).`, 'info');
+    } else if (type === 'gudang') {
+      const gudang = all.filter((o) =>
+        ['MAP', 'WH', 'QC', 'GA', 'LOG', 'GUDANG_RETUR'].includes(o) ||
+        getOutletDisplayName(o).category === 'gudang'
+      );
+      setSelectedOutlets(new Set(gudang));
+      onNotify(`Dipilih ${gudang.length} entitas Gudang & QC WMS.`, 'info');
     } else if (type === 'online') {
-      const online = all.filter((o) =>
-        o.match(/Shopee|Tokopedia|TikTok|Lazada|Website|Marketplace|Woocommerce|KYTE|ChicShopee|TIKTOK|SHOPEE|STUDIO|IGLIVE/i)
+      const online = all.filter(
+        (o) =>
+          ['SHP', 'TTK', 'WEB', 'TPD', 'LZD', 'WOO', 'LIVE'].includes(o) ||
+          o.match(/Shopee|Tokopedia|TikTok|Lazada|Website|Marketplace|Woocommerce|KYTE|ChicShopee|TIKTOK|SHOPEE|STUDIO|IGLIVE/i)
       );
       setSelectedOutlets(new Set(online));
+      onNotify(`Dipilih ${online.length} Saluran Online.`, 'info');
     }
   };
 
@@ -761,6 +790,20 @@ export const CsvBarcodeView: React.FC<CsvBarcodeViewProps> = ({ products, onNoti
                 </button>
                 <button
                   type="button"
+                  onClick={() => handlePresetOutlets('bazaar')}
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-100/70 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200"
+                >
+                  Bazaar (B-)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePresetOutlets('gudang')}
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-sky-50 dark:bg-sky-950/40 border border-sky-300 dark:border-sky-700 text-sky-800 dark:text-sky-300"
+                >
+                  Gudang/QC
+                </button>
+                <button
+                  type="button"
                   onClick={() => handlePresetOutlets('online')}
                   className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200"
                 >
@@ -833,6 +876,16 @@ export const CsvBarcodeView: React.FC<CsvBarcodeViewProps> = ({ products, onNoti
                       {o.name.startsWith('B-') && (
                         <span className="text-[9px] font-extrabold px-1 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 shrink-0">
                           BAZAR
+                        </span>
+                      )}
+                      {['MAP', 'WH', 'QC', 'GA', 'LOG', 'GUDANG_RETUR'].includes(o.name) && (
+                        <span className="text-[9px] font-extrabold px-1 py-0.2 rounded bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 shrink-0">
+                          GUDANG
+                        </span>
+                      )}
+                      {['SHP', 'TTK', 'WEB', 'TPD', 'LZD', 'WOO', 'LIVE'].includes(o.name) && (
+                        <span className="text-[9px] font-extrabold px-1 py-0.2 rounded bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 shrink-0">
+                          ONLINE
                         </span>
                       )}
                     </button>

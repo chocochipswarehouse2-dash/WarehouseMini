@@ -1063,6 +1063,11 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
                           BAZAR
                         </span>
                       )}
+                      {['MAP', 'WH', 'QC', 'GA', 'LOG', 'GUDANG_RETUR'].includes(o) && (
+                        <span className="text-[8px] font-extrabold px-1 py-0.2 rounded bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 shrink-0">
+                          GUDANG
+                        </span>
+                      )}
                     </span>
                     <span className="font-mono text-[10px] font-bold shrink-0">
                       {pcs.toLocaleString('id-ID')}

@@ -74,28 +74,50 @@ export interface BatchBarcodePrintItem {
   outlet: string;
 }
 
-export const NON_STORE_CHANNELS_REGEX =
-  /^(total|subtotal|grand\s*total|sum|tp$|total_stok|total\s*stok|total_qty|total\s*qty|booked|b$|d$|cabang|barang\s*cacat|barang_cacat|defect|diskon\s*defect|permak|permak\s*\/?\s*cuci|gudang\s*permak|buying\s*staff|buying_staff|endorsement|ga$|gudang\s*awal|log$|gudang\s*logistik|qc$|gudang\s*qc|gudang_retur|gudang\s*retur|loss_damage|loss\/damage|sample\s*studio|sample_studio|studio$|sample\s*live|sample_live|live$|barang\s*live|wh$|warehouse|gudang\s*utama|gudang_utama|map$)/i;
+export const NON_ENTITY_KEYS_REGEX =
+  /^(total|subtotal|grand\s*total|sum|tp$|total_stok|total\s*stok|total_qty|total\s*qty|booked|b$|d$|cabang)$/i;
+
+export const NON_STORE_CHANNELS_REGEX = NON_ENTITY_KEYS_REGEX;
 
 /**
- * Standarisasi Penamaan Outlet & Bazaar WMS
- * - Bazaar diformat dengan awalan B- (contoh: B-EMP untuk Emporium, B-LWS untuk Living World)
+ * Master Saluran / Outlet / Lokasi Resmi WMS & DealPOS
+ */
+export const MASTER_DEALPOS_CHANNELS = [
+  // 1. Toko Fisik Cabang
+  'BTS', 'CPJ', 'CWS', 'DPM', 'GAIA', 'GST', 'LMP', 'LVL', 'LWS', 'MKG', 'NSJ', 'PHB', 'PIM', 'PMS', 'SPM',
+  // 2. Entitas Bazaar Resmi (Awalan B-)
+  'B-EMP', 'B-LWS', 'B-PNK', 'B-SMS', 'B-CPJ', 'B-LMP', 'B-PMS',
+  // 3. Gudang & Divisi Internal WMS (QC, WH, MAP, GA, LOG, dll)
+  'MAP', 'WH', 'QC', 'GA', 'LOG', 'GUDANG_RETUR',
+  // 4. Saluran Online
+  'SHP', 'TTK', 'WEB', 'TPD', 'LZD', 'WOO', 'LIVE',
+  // 5. Divisi / Operasional
+  'STUDIO', 'PERMAK', 'DEFECT', 'BUYING_STAFF', 'ENDORSEMENT',
+];
+
+/**
+ * Standarisasi Penamaan Outlet, Bazaar & Entitas WMS
+ * - Bazaar diformat dengan awalan B- (contoh: B-EMP, B-LWS, B-PNK, B-SMS)
+ * - Gudang & internal dinormalisasi: Gudang Utama -> MAP, Warehouse -> WH, Gudang QC -> QC
  */
 export function normalizeOutletName(rawName: string): string {
   const clean = String(rawName || '').trim();
   const upper = clean.toUpperCase().replace(/\s+/g, '_');
 
-  // Specific Bazaar Mappings
+  // 1. Specific Bazaar Mappings
   if (/^(bazaar_emporium|bazar_emporium|emporium_pluit|b_?emp)/i.test(upper) || upper.includes('EMPORIUM')) {
     return 'B-EMP';
   }
   if (
-    /^(bazaar_living_world|bazar_living_world|bazaar_lwt|bazaar_lws|b_?lwt|b_?lws)/i.test(upper) ||
-    (upper.includes('BAZAAR') && (upper.includes('LIVING') || upper.includes('LWT') || upper.includes('LWS')))
+    /^(bazaar_living_world|bazar_living_world|bazaar_lwt|bazaar_lws|b_?lwt|b_?lws|living_world)/i.test(upper) ||
+    (upper.includes('LIVING') && (upper.includes('WORLD') || upper.includes('BAZAAR') || upper.includes('BAZAR')))
   ) {
     return 'B-LWS';
   }
-  if (/^(bazaar_panakkukang|bazar_panakkukang|panakkukang|b_?pnk|b_?mks)/i.test(upper) || upper.includes('PANAKKUKANG')) {
+  if (
+    /^(bazaar_panakkukang|bazar_panakkukang|panakkukang|b_?pnk|b_?mks|panakkukang_mall_makassar)/i.test(upper) ||
+    upper.includes('PANAKKUKANG')
+  ) {
     return 'B-PNK';
   }
   if (/^(bazaar_central_park|bazar_central_park|b_?cp|b_?cpj)/i.test(upper) || (upper.includes('BAZAAR') && upper.includes('CENTRAL'))) {
@@ -115,28 +137,87 @@ export function normalizeOutletName(rawName: string): string {
   if (/^(bazaar_|bazar_)/i.test(upper)) {
     const suffix = upper
       .replace(/^(bazaar_|bazar_)/i, '')
-      .replace(/_MALL|_TANGERANG|_SURABAYA|_JAKARTA|_MEDAN/g, '')
+      .replace(/_MALL|_TANGERANG|_SURABAYA|_JAKARTA|_MEDAN|_MAKASSAR/g, '')
       .slice(0, 4);
     return `B-${suffix}`;
   }
 
-  return clean;
+  // 2. Normalisasi Alias Entitas Gudang & Operasional
+  if (/^(gudang_utama|map$)/i.test(upper)) return 'MAP';
+  if (/^(warehouse|wh$)/i.test(upper)) return 'WH';
+  if (/^(gudang_qc|qc$)/i.test(upper)) return 'QC';
+  if (/^(gudang_awal|ga$)/i.test(upper)) return 'GA';
+  if (/^(gudang_logistik|log$)/i.test(upper)) return 'LOG';
+  if (/^(gudang_retur)/i.test(upper)) return 'GUDANG_RETUR';
+  if (/^(barang_live|live$)/i.test(upper)) return 'LIVE';
+  if (/^(sample_studio|studio$)/i.test(upper)) return 'STUDIO';
+  if (/^(permak\s*\/?\s*cuci|permak$)/i.test(upper)) return 'PERMAK';
+  if (/^(barang_cacat|defect$)/i.test(upper)) return 'DEFECT';
+  if (/^(buying_staff)/i.test(upper)) return 'BUYING_STAFF';
+
+  return clean.toUpperCase();
 }
 
-export function getOutletDisplayName(code: string): { code: string; title: string; isBazaar: boolean } {
+export function getOutletDisplayName(code: string): {
+  code: string;
+  title: string;
+  isBazaar: boolean;
+  category: 'store' | 'bazaar' | 'gudang' | 'online' | 'ops';
+} {
   const norm = normalizeOutletName(code);
   const isBazaar = norm.startsWith('B-');
   let title = norm;
+  let category: 'store' | 'bazaar' | 'gudang' | 'online' | 'ops' = 'store';
 
-  if (norm === 'B-EMP') title = 'B-EMP (Bazaar Emporium)';
-  else if (norm === 'B-LWS') title = 'B-LWS (Bazaar Living World)';
-  else if (norm === 'B-PNK') title = 'B-PNK (Bazaar Panakkukang)';
-  else if (norm === 'B-CPJ') title = 'B-CPJ (Bazaar Central Park)';
-  else if (norm === 'B-LMP') title = 'B-LMP (Bazaar Lippo Mall)';
-  else if (norm === 'B-SMS') title = 'B-SMS (Bazaar Summarecon)';
-  else if (norm === 'B-PMS') title = 'B-PMS (Bazaar Pakuwon)';
+  if (norm === 'B-EMP') {
+    title = 'B-EMP (Bazaar Emporium Pluit)';
+    category = 'bazaar';
+  } else if (norm === 'B-LWS') {
+    title = 'B-LWS (Bazaar Living World)';
+    category = 'bazaar';
+  } else if (norm === 'B-PNK') {
+    title = 'B-PNK (Bazaar Panakkukang Makassar)';
+    category = 'bazaar';
+  } else if (norm === 'B-CPJ') {
+    title = 'B-CPJ (Bazaar Central Park)';
+    category = 'bazaar';
+  } else if (norm === 'B-LMP') {
+    title = 'B-LMP (Bazaar Lippo Mall Puri)';
+    category = 'bazaar';
+  } else if (norm === 'B-SMS') {
+    title = 'B-SMS (Bazaar Summarecon Mall Serpong)';
+    category = 'bazaar';
+  } else if (norm === 'B-PMS') {
+    title = 'B-PMS (Bazaar Pakuwon Mall Surabaya)';
+    category = 'bazaar';
+  } else if (isBazaar) {
+    title = `${norm} (Bazaar)`;
+    category = 'bazaar';
+  } else if (['MAP', 'WH', 'QC', 'GA', 'LOG', 'GUDANG_RETUR'].includes(norm)) {
+    if (norm === 'MAP') title = 'MAP (Gudang Utama)';
+    else if (norm === 'WH') title = 'WH (Warehouse)';
+    else if (norm === 'QC') title = 'QC (Gudang QC)';
+    else if (norm === 'GA') title = 'GA (Gudang Awal)';
+    else if (norm === 'LOG') title = 'LOG (Gudang Logistik)';
+    else if (norm === 'GUDANG_RETUR') title = 'Gudang Retur';
+    category = 'gudang';
+  } else if (['SHP', 'TTK', 'WEB', 'TPD', 'LZD', 'WOO', 'LIVE'].includes(norm)) {
+    if (norm === 'SHP') title = 'Shopee (Online)';
+    else if (norm === 'TTK') title = 'TikTok Shop (Online)';
+    else if (norm === 'WEB') title = 'Website (Online)';
+    else if (norm === 'TPD') title = 'Tokopedia (Online)';
+    else if (norm === 'LIVE') title = 'Barang Live';
+    category = 'online';
+  } else if (['STUDIO', 'PERMAK', 'DEFECT', 'BUYING_STAFF', 'ENDORSEMENT', 'LOSS_DAMAGE'].includes(norm)) {
+    if (norm === 'STUDIO') title = 'Sample Studio';
+    else if (norm === 'PERMAK') title = 'Permak / Cuci';
+    else if (norm === 'DEFECT') title = 'Barang Cacat / Defect';
+    else if (norm === 'BUYING_STAFF') title = 'Buying Staff';
+    else if (norm === 'ENDORSEMENT') title = 'Endorsement';
+    category = 'ops';
+  }
 
-  return { code: norm, title, isBazaar };
+  return { code: norm, title, isBazaar, category };
 }
 
 export interface BarcodePrinterConfig {
@@ -669,19 +750,9 @@ export function parseDealPOSInventoryCsv(text: string, sourceLabel = 'CSV DealPO
     'GRAND TOTAL',
     'SUM',
     'BOOKED',
-    'PERMAK',
-    'PERMAK / CUCI',
-    'PERMAK/CUCI',
-    'BARANG CACAT',
-    'DEFECT',
-    'BUYING_STAFF',
-    'ENDORSEMENT',
-    'GA',
-    'LOG',
-    'QC',
-    'GUDANG UTAMA',
-    'WH',
-    'MAP',
+    'B',
+    'D',
+    'CABANG',
   ]);
 
   const outletCols: DealPosOutletCol[] = [];

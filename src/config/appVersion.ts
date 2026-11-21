@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.24.6",
-  "versionCode": 446,
+  "version": "v2.24.7",
+  "versionCode": 447,
   "buildDate": "21 November 2026",
-  "buildHash": "wms-261121-v446-1547",
-  "releaseTitle": "WMS v2.24.6 — Standardisasi Penamaan Entitas Bazaar Prefix B- & Integrasi Engine Cetak Teruji WMS",
+  "buildHash": "wms-261121-v447-1609",
+  "releaseTitle": "WMS v2.24.7 — Integrasi Lengkap Entitas WMS & B-LWS B-PNK QC WH MAP",
   "releaseNotes": [
-    "Standarisasi penamaan entitas bazaar prefix B- (B-EMP, B-LWS, B-PNK, B-SMS)",
-    "Adopsi styling & CSS cetak Quicksand + JetBrains Mono dari modul teruji WMS",
-    "Penyempurnaan @page dan layout thermal roll 50x20mm pada CSV Barcode & CSV Distribusi"
+    "Pastikan B-LWS, B-PNK Panakkukang, QC, WH, MAP selalu tampil lengkap di CSV Barcode",
+    "Tingkatkan pencarian outlet agar mengenali nama panjang Panakkukang & Living World",
+    "Tambah filter cepat kategori Bazaar (B-) dan Gudang/QC WMS"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.24.6",
+    "versionCode": 446,
+    "buildDate": "21 November 2026",
+    "buildHash": "wms-261121-v446-1547",
+    "releaseTitle": "WMS v2.24.6 — Standardisasi Penamaan Entitas Bazaar Prefix B- & Integrasi Engine Cetak Teruji WMS",
+    "releaseNotes": [
+      "Standarisasi penamaan entitas bazaar prefix B- (B-EMP, B-LWS, B-PNK, B-SMS)",
+      "Adopsi styling & CSS cetak Quicksand + JetBrains Mono dari modul teruji WMS",
+      "Penyempurnaan @page dan layout thermal roll 50x20mm pada CSV Barcode & CSV Distribusi"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.24.5",
     "versionCode": 445,
@@ -116,18 +129,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Ubah navigasi seluler (< 1024px) dari hamburger drawer ala web menjadi Fixed Bottom Tab Bar (4 pintasan peran/kustom + tab Menu) dan Native App Launcher Bottom Sheet dengan grid ikon 4 kolom, kustomisasi tab bawah, & grouped settings",
       "Sederhanakan Mobile Top App Bar menjadi Avatar + Judul Halaman + Bell/AI, serta amankan offset Dock & Kapasitas Rak di atas Bottom Tab Bar (Desktop tetap utuh)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.23.4",
-    "versionCode": 434,
-    "buildDate": "21 November 2026",
-    "buildHash": "wms-261121-v434-0038",
-    "releaseTitle": "WMS v2.23.4 — Modern Native Mobile Drawer (Opsi C)",
-    "releaseNotes": [
-      "Ubah Mobile Drawer menjadi gaya aplikasi seluler native: Kartu Profil di atas, 4 Control Center Tiles (Notif/Tema/Update/Sistem), Cari Menu Cepat, Pin Favorit lokal, grup lipat Operasional/HR, & gesture swipe kiri",
-      "Pertahankan Sidebar Desktop Auto-Hide/Pin tetap konsisten dan tambahkan safe-area bottom footer untuk tombol App & Keluar Akun"
     ],
     "minSupportedVersion": "v2.0.0"
   }

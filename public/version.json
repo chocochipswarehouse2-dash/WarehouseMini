@@ -1,13 +1,13 @@
 {
-  "version": "v2.24.6",
-  "versionCode": 446,
+  "version": "v2.24.7",
+  "versionCode": 447,
   "buildDate": "21 November 2026",
-  "buildHash": "wms-261121-v446-1547",
-  "releaseTitle": "WMS v2.24.6 — Standardisasi Penamaan Entitas Bazaar Prefix B- & Integrasi Engine Cetak Teruji WMS",
+  "buildHash": "wms-261121-v447-1609",
+  "releaseTitle": "WMS v2.24.7 — Integrasi Lengkap Entitas WMS & B-LWS B-PNK QC WH MAP",
   "releaseNotes": [
-    "Standarisasi penamaan entitas bazaar prefix B- (B-EMP, B-LWS, B-PNK, B-SMS)",
-    "Adopsi styling & CSS cetak Quicksand + JetBrains Mono dari modul teruji WMS",
-    "Penyempurnaan @page dan layout thermal roll 50x20mm pada CSV Barcode & CSV Distribusi"
+    "Pastikan B-LWS, B-PNK Panakkukang, QC, WH, MAP selalu tampil lengkap di CSV Barcode",
+    "Tingkatkan pencarian outlet agar mengenali nama panjang Panakkukang & Living World",
+    "Tambah filter cepat kategori Bazaar (B-) dan Gudang/QC WMS"
   ],
   "minSupportedVersion": "v2.0.0"
 }
