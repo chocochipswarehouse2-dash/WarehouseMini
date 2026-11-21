@@ -1,14 +1,13 @@
 {
-  "version": "v2.24.3",
-  "versionCode": 443,
+  "version": "v2.24.4",
+  "versionCode": 444,
   "buildDate": "21 November 2026",
-  "buildHash": "wms-261121-v443-1328",
-  "releaseTitle": "WMS v2.24.3 — Integrasi Database Live WMS DealPOS & Standardisasi Label Barcode 50x20mm",
+  "buildHash": "wms-261121-v444-1439",
+  "releaseTitle": "WMS v2.24.4 — Perbaikan Cetak Multi-Halaman & Kontrol Orientasi Rotasi Barcode 50x20mm",
   "releaseNotes": [
-    "Integrasi database langsung WMS & DealPOS tanpa wajib upload CSV",
-    "Pilihan mode Outlet Toko (DealPOS) vs Rak Fisik Gudang",
-    "Penyempurnaan layout stiker thermal 50x20mm Code128 & QR Code sesuai standard",
-    "Pratinjau label WYSIWYG realistis"
+    "Perbaiki bug cetak hanya 1 lembar pembatas pada printer thermal roll",
+    "Tambah opsi orientasi Lanskap Potret & rotasi 0 90 180 270 derajat",
+    "Filter otomatis kolom summary TOTAL_STOK & TP dari daftar outlet"
   ],
   "minSupportedVersion": "v2.0.0"
 }

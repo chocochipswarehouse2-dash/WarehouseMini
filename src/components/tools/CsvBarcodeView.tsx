@@ -56,7 +56,7 @@ function buildInventoryFromWmsProducts(
       if (p.dealpos_channels && typeof p.dealpos_channels === 'object') {
         for (const [chName, val] of Object.entries(p.dealpos_channels)) {
           const cleanCh = String(chName).trim().toUpperCase();
-          if (!cleanCh) continue;
+          if (!cleanCh || /^(total|subtotal|grand\s*total|sum|tp$|total_stok|total\s*stok|total_qty|total\s*qty)/i.test(cleanCh)) continue;
           let qty = 0;
           if (typeof val === 'number') qty = val;
           else if (typeof val === 'string') qty = Number(val) || 0;

@@ -10,6 +10,7 @@ import {
   CheckSquare,
   Square,
   RotateCcw,
+  Compass,
 } from 'lucide-react';
 import {
   BarcodePrinterConfig,
@@ -30,7 +31,7 @@ interface BatchBarcodePrintModalProps {
   onNotify?: (msg: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
-const STORAGE_KEY = 'CHO_BARCODE_CONFIG_50x20_V2';
+const STORAGE_KEY = 'CHO_BARCODE_CONFIG_50x20_V3';
 
 function escapeHtml(str: string): string {
   return String(str || '')
@@ -41,7 +42,7 @@ function escapeHtml(str: string): string {
 }
 
 /**
- * Realistic Preview Component for 1 Sticker (50x20mm scale)
+ * Realistic Preview Component for 1 Sticker (50x20mm scale) with Live Rotation
  */
 const StickerPreviewCard: React.FC<{
   item: BatchBarcodePrintItem;
@@ -88,7 +89,7 @@ const StickerPreviewCard: React.FC<{
       }
     } else if (config.codeType === 'qrcode') {
       QRCode.toDataURL(String(item.sku || '123456789'), {
-        width: Number(config.qrSize) * 2 || 84,
+        width: (Number(config.qrSize) || 42) * 2,
         margin: 0,
         errorCorrectionLevel: 'M',
         color: { dark: '#000000', light: '#ffffff' },
@@ -104,10 +105,19 @@ const StickerPreviewCard: React.FC<{
     item.sku,
   ]);
 
+  const rotation = Number(config.printRotation) || 0;
+  const isPortrait = config.printOrientation === 'portrait';
+
   if (config.codeType === 'qrcode') {
     return (
       <div
-        className="w-[190px] h-[76px] bg-white border border-slate-300 rounded shadow-xs p-1 flex items-center gap-1.5 overflow-hidden select-none text-slate-900"
+        className={`w-[190px] h-[76px] bg-white border border-slate-300 rounded shadow-xs p-1 flex items-center gap-1.5 overflow-hidden select-none text-slate-900 transition-transform duration-200 ${
+          rotation ? `rotate-[${rotation}deg]` : ''
+        }`}
+        style={{
+          transform: rotation ? `rotate(${rotation}deg)` : undefined,
+          transformOrigin: 'center center',
+        }}
         title={`${item.sku} - ${item.name}`}
       >
         <div className="shrink-0 flex items-center justify-center w-[44px] h-[44px]">
@@ -166,7 +176,11 @@ const StickerPreviewCard: React.FC<{
 
   return (
     <div
-      className="w-[190px] h-[76px] bg-white border border-slate-300 rounded shadow-xs p-1 flex flex-col justify-center items-center text-center overflow-hidden select-none text-slate-900"
+      className="w-[190px] h-[76px] bg-white border border-slate-300 rounded shadow-xs p-1 flex flex-col justify-center items-center text-center overflow-hidden select-none text-slate-900 transition-transform duration-200"
+      style={{
+        transform: rotation ? `rotate(${rotation}deg)` : undefined,
+        transformOrigin: 'center center',
+      }}
       title={`${item.sku} - ${item.name}`}
     >
       <div className="w-full flex justify-center items-center overflow-hidden mb-0.5">
@@ -301,7 +315,7 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
     }
     setIsPrinting(true);
     try {
-      // Cache generated barcode SVG / QR dataURL per unique SKU for blazing speed
+      // 1. Cache generated barcode SVG / QR dataURL per unique SKU for blazing speed
       const codeCache = new Map<string, string>();
       const flatLabels: Array<{ type: 'divider' | 'label'; outlet: string; item?: BatchBarcodePrintItem }> = [];
 
@@ -323,16 +337,50 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
         }
       }
 
+      // 2. Compute Page Dimensions & Rotation Transform
+      const isTwoLine = config.lineMode === '2';
+      const rawWidthMm = isTwoLine
+        ? (config.labelWidthMm || 50) * 2 + (Number(config.twoLineGapMm) || 4)
+        : (config.labelWidthMm || 50);
+      const rawHeightMm = config.labelHeightMm || 20;
+
+      const isPortrait = config.printOrientation === 'portrait';
+      const pageWidthMm = isPortrait ? rawHeightMm : rawWidthMm;
+      const pageHeightMm = isPortrait ? rawWidthMm : rawHeightMm;
+
+      const effectiveRot = Number(config.printRotation) || 0;
+      const offsetX = Number(config.offsetX) || 0;
+      const offsetY = Number(config.offsetY) || 0;
+      const transformParts: string[] = [];
+      if (effectiveRot) transformParts.push(`rotate(${effectiveRot}deg)`);
+      if (offsetX || offsetY) transformParts.push(`translate(${offsetX}mm, ${offsetY}mm)`);
+      const effectiveTransform = transformParts.join(' ');
+
       const renderSingleLabelHtml = (entry: {
         type: 'divider' | 'label';
         outlet: string;
         item?: BatchBarcodePrintItem;
       }) => {
         if (entry.type === 'divider') {
+          const oName = entry.outlet;
+          const oItems = itemsByOutlet.get(oName) || [];
+          const oTotalPcs = oItems.reduce((sum, it) => sum + (it.qty || 0), 0);
+          const oTotalSkus = oItems.length;
+
           return `
-            <div class="sticker-cell divider-cell">
-              <div class="divider-tag">PEMBATAS TOKO</div>
-              <div class="divider-name">${escapeHtml(entry.outlet)}</div>
+            <div class="sticker-cell sticker-divider" style="width: 50mm !important; height: 20mm !important; box-sizing: border-box !important; padding: 1.2mm 2mm !important; display: flex !important; flex-direction: column !important; justify-content: center !important; align-items: center !important; text-align: center !important; background: #000000 !important; color: #ffffff !important; overflow: hidden !important; font-family: system-ui, -apple-system, sans-serif !important; ${
+              effectiveTransform
+                ? `transform: ${effectiveTransform} !important; transform-origin: center center !important;`
+                : ''
+            }">
+              <div style="font-size: 5.5pt; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; color: #ffffff; border-bottom: 1px dashed #ffffff; width: 100%; padding-bottom: 0.5mm; margin-bottom: 0.8mm;">★ PEMBATAS OUTLET ★</div>
+              <div style="font-size: 8.5pt; font-weight: 900; line-height: 1.15; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">${escapeHtml(
+                oName
+              )}</div>
+              <div style="font-size: 6.5pt; font-weight: 700; color: #e2e8f0; margin-top: 0.8mm; display: flex; gap: 2.5mm; justify-content: center; align-items: center;">
+                <span>TOTAL: <b>${oTotalPcs} PCS</b></span>
+                <span>(${oTotalSkus} SKU)</span>
+              </div>
             </div>
           `;
         }
@@ -352,28 +400,55 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
         }
 
         if (config.codeType === 'qrcode') {
+          const qrPx = Number(config.qrSize) || 42;
           return `
-            <div class="sticker-cell is-qr">
-              <div class="qr-code-wrap">
-                <img src="${codeAsset}" class="qr-img" />
+            <div class="sticker-cell is-qr" style="width: 50mm !important; height: 20mm !important; box-sizing: border-box !important; padding: ${
+              config.printPaddingMm || 1.0
+            }mm 1.2mm 0.8mm 1.2mm !important; display: flex !important; flex-direction: row !important; align-items: center !important; overflow: hidden !important; background: #ffffff !important; color: #000000 !important; ${
+            effectiveTransform
+              ? `transform: ${effectiveTransform} !important; transform-origin: center center !important;`
+              : ''
+          }">
+              <div style="width: ${qrPx}px; height: ${qrPx}px; flex-shrink: 0; margin-right: 2.2mm; display: flex; align-items: center; justify-content: center;">
+                <img src="${codeAsset}" style="width: ${qrPx}px; height: ${qrPx}px; display: block;" />
               </div>
-              <div class="qr-text-block">
+              <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; height: 100%; overflow: hidden; padding: 0.4mm 0; line-height: 1.15; text-align: left;">
                 ${
                   config.showProductName
-                    ? `<div class="lbl-qr-row1 ${config.productNameCase === 'uppercase' ? 'uppercase' : ''}">${escapeHtml(qrRow1)}</div>`
+                    ? `<div style="font-size: ${Number(config.productNameSize) || 7.5}pt; font-weight: ${
+                        config.productNameBold ? '700' : '400'
+                      }; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #000000; text-transform: ${
+                        config.productNameCase === 'uppercase' ? 'uppercase' : 'none'
+                      };">${escapeHtml(qrRow1)}</div>`
                     : ''
                 }
                 ${
                   config.showVariantSize && qrRow2
-                    ? `<div class="lbl-qr-row2">${escapeHtml(qrRow2)}</div>`
+                    ? `<div style="font-size: ${Number(config.variantSize) || 7.0}pt; font-weight: ${
+                        config.variantBold ? '700' : '400'
+                      }; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(
+                        qrRow2
+                      )}</div>`
                     : ''
                 }
                 ${
                   config.showSku
-                    ? `<div class="lbl-sku font-mono">${escapeHtml(config.skuPrefix)}${escapeHtml(it.sku)}</div>`
+                    ? `<div style="font-family: monospace; font-size: ${
+                        Number(config.skuSize) || 6.5
+                      }pt; font-weight: ${
+                        config.skuBold ? '700' : '400'
+                      }; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(
+                        config.skuPrefix
+                      )}${escapeHtml(it.sku)}</div>`
                     : ''
                 }
-                ${priceLine ? `<div class="lbl-price">${priceLine}</div>` : ''}
+                ${
+                  priceLine
+                    ? `<div style="font-size: ${Number(config.priceSize) || 9.0}pt; font-weight: ${
+                        config.priceBold ? '800' : '400'
+                      }; color: #000000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.2px;">${priceLine}</div>`
+                    : ''
+                }
               </div>
             </div>
           `;
@@ -383,20 +458,42 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
         const autoFontSize = getAutoProductNameFontSize(barcodeFullName, config.productNameSize);
 
         return `
-          <div class="sticker-cell is-barcode">
-            <div class="barcode-svg-wrap">
+          <div class="sticker-cell is-barcode" style="width: 50mm !important; height: 20mm !important; box-sizing: border-box !important; padding: ${
+            config.printPaddingMm || 1.0
+          }mm 1.5mm !important; display: flex !important; flex-direction: column !important; justify-content: center !important; align-items: center !important; text-align: center !important; overflow: hidden !important; background: #ffffff !important; color: #000000 !important; ${
+          effectiveTransform
+            ? `transform: ${effectiveTransform} !important; transform-origin: center center !important;`
+            : ''
+        }">
+            <div style="width: 100%; display: flex; justify-content: center; align-items: center; overflow: hidden; margin-bottom: 0.5mm;">
               ${codeAsset}
             </div>
-            <div class="barcode-text-block">
+            <div style="width: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; overflow: hidden; line-height: 1.15;">
               ${
                 config.showSku
-                  ? `<div class="lbl-sku font-mono">${escapeHtml(config.skuPrefix)}${escapeHtml(it.sku)}</div>`
+                  ? `<div style="font-family: monospace; font-size: ${
+                      Number(config.skuSize) || 7.5
+                    }pt; font-weight: ${
+                      config.skuBold ? '700' : '400'
+                    }; color: #0f172a; letter-spacing: -0.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%;">${escapeHtml(
+                      config.skuPrefix
+                    )}${escapeHtml(it.sku)}</div>`
                   : ''
               }
-              ${priceLine ? `<div class="lbl-price">${priceLine}</div>` : ''}
+              ${
+                priceLine
+                  ? `<div style="font-size: ${Number(config.priceSize) || 9.5}pt; font-weight: ${
+                      config.priceBold ? '800' : '400'
+                    }; color: #000000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; letter-spacing: -0.2px; margin: 0.5px 0;">${priceLine}</div>`
+                  : ''
+              }
               ${
                 config.showProductName
-                  ? `<div class="lbl-product-name ${config.productNameCase === 'uppercase' ? 'uppercase' : ''}" style="font-size: ${autoFontSize}pt;">${escapeHtml(barcodeFullName)}</div>`
+                  ? `<div style="font-size: ${autoFontSize}pt; font-weight: ${
+                      config.productNameBold ? '700' : '400'
+                    }; color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; text-transform: ${
+                      config.productNameCase === 'uppercase' ? 'uppercase' : 'none'
+                    };" title="${escapeHtml(barcodeFullName)}">${escapeHtml(barcodeFullName)}</div>`
                   : ''
               }
             </div>
@@ -404,22 +501,22 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
         `;
       };
 
+      // Build each print row/page (Crucial: NO height constraint on html/body so ALL pages print!)
       let pagesHtml = '';
       if (config.lineMode === '1') {
         pagesHtml = flatLabels
-          .map((lbl) => `<div class="print-page single">${renderSingleLabelHtml(lbl)}</div>`)
+          .map((lbl) => `<div class="print-row-page">${renderSingleLabelHtml(lbl)}</div>`)
           .join('');
       } else {
         for (let i = 0; i < flatLabels.length; i += 2) {
           const left = renderSingleLabelHtml(flatLabels[i]);
           const right = flatLabels[i + 1]
             ? renderSingleLabelHtml(flatLabels[i + 1])
-            : '<div class="sticker-cell empty"></div>';
-          pagesHtml += `<div class="print-page twin">${left}${right}</div>`;
+            : '<div class="sticker-cell empty" style="width: 50mm; height: 20mm; visibility: hidden;"></div>';
+          pagesHtml += `<div class="print-row-page">${left}${right}</div>`;
         }
       }
 
-      const pageWidthMm = config.lineMode === '2' ? 104 : 50;
       const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -427,202 +524,49 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
   <title>${escapeHtml(title)}</title>
   <style>
     @page {
-      size: ${pageWidthMm}mm 20mm;
+      size: ${pageWidthMm}mm ${pageHeightMm}mm;
       margin: 0;
     }
-    @media print {
-      html, body {
-        width: ${pageWidthMm}mm !important;
-        height: 20mm !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        overflow: hidden !important;
-      }
-      .print-page {
-        page-break-after: always;
-        break-after: page;
-      }
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: Arial, Helvetica, sans-serif;
-      background: #ffffff;
-      color: #000000;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-    }
-    .print-page {
-      width: ${pageWidthMm}mm;
-      height: 20mm;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
+    * {
+      box-sizing: border-box;
       margin: 0;
       padding: 0;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
     }
-    .print-page.twin {
-      justify-content: space-between;
-      gap: ${config.twoLineGapMm || 4}mm;
+    html, body {
+      width: ${pageWidthMm}mm !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      background: #ffffff !important;
+      color: #000000 !important;
+      font-family: Arial, Helvetica, sans-serif !important;
+    }
+    .print-row-page {
+      width: ${pageWidthMm}mm !important;
+      height: ${pageHeightMm}mm !important;
+      page-break-after: always !important;
+      break-after: page !important;
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      display: flex !important;
+      flex-direction: row !important;
+      align-items: center !important;
+      justify-content: ${isTwoLine ? 'space-between' : 'center'} !important;
+      gap: ${isTwoLine ? `${config.twoLineGapMm || 4}mm` : '0'} !important;
+      overflow: hidden !important;
     }
     .sticker-cell {
-      width: 50mm;
-      height: 20mm;
-      padding: ${config.printPaddingMm || 1.0}mm;
-      box-sizing: border-box;
-      overflow: hidden;
-      background: #ffffff;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
+      width: 50mm !important;
+      height: 20mm !important;
+      overflow: hidden !important;
+      background: #ffffff !important;
+      box-sizing: border-box !important;
     }
-    .sticker-cell.empty {
-      visibility: hidden;
-    }
-    .sticker-cell.divider-cell {
-      border: 1.5px dashed #000000;
-      border-radius: 1.5mm;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-    }
-    .divider-tag {
-      font-size: 6pt;
-      font-weight: 800;
-      letter-spacing: 0.5px;
-      color: #000000;
-    }
-    .divider-name {
-      font-size: 11pt;
-      font-weight: 900;
-      margin-top: 1mm;
-      word-break: break-word;
-      color: #000000;
-      line-height: 1.1;
-    }
-
-    /* 1D Barcode Layout */
-    .sticker-cell.is-barcode {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-    }
-    .barcode-svg-wrap {
-      width: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      margin-bottom: 0.3mm;
-    }
-    .barcode-svg-wrap svg {
-      max-width: 47mm;
-      height: ${Number(config.barcodeHeight) || 22}px;
-      display: block;
-    }
-    .barcode-text-block {
-      width: 100%;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      line-height: 1.15;
-      overflow: hidden;
-    }
-    .lbl-sku {
-      font-size: ${Number(config.skuSize) || 7.5}pt;
-      font-weight: 700;
-      letter-spacing: -0.2px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      width: 100%;
-      color: #000000;
-    }
-    .lbl-price {
-      font-size: ${Number(config.priceSize) || 9.5}pt;
-      font-weight: 800;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      width: 100%;
-      color: #000000;
-      letter-spacing: -0.2px;
-    }
-    .lbl-product-name {
-      font-weight: 700;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      width: 100%;
-      color: #1e293b;
-      letter-spacing: -0.25px;
-    }
-
-    /* 2D QR Code Layout */
-    .sticker-cell.is-qr {
-      display: flex;
-      flex-direction: row;
-      align-items: center;
-      justify-content: flex-start;
-      text-align: left;
-    }
-    .qr-code-wrap {
-      width: ${Number(config.qrSize) || 42}px;
-      height: ${Number(config.qrSize) || 42}px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-right: 1.5mm;
-      flex-shrink: 0;
-    }
-    .qr-img {
-      width: 100%;
-      height: 100%;
-      display: block;
-    }
-    .qr-text-block {
-      flex: 1;
-      min-width: 0;
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      overflow: hidden;
-      padding: 0.2mm 0;
-      text-align: left;
-    }
-    .lbl-qr-row1 {
-      font-size: ${Number(config.productNameSize) || 7.5}pt;
-      font-weight: 700;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      color: #000000;
-      line-height: 1.15;
-    }
-    .lbl-qr-row2 {
-      font-size: ${Number(config.variantSize) || 7.0}pt;
-      font-weight: 600;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      color: #475569;
-      line-height: 1.15;
-    }
-    .font-mono {
-      font-family: 'Courier New', Courier, monospace;
-    }
-    .uppercase {
-      text-transform: uppercase;
-    }
+    svg { display: block; max-width: 100%; height: auto; }
+    img { display: block; }
   </style>
 </head>
 <body>${pagesHtml}</body>
@@ -630,7 +574,9 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
 
       printHtmlInHiddenIframe(html);
       onNotify?.(
-        `Menyiapkan cetak ${expandedSummary.totalStickers} stiker (${config.lineMode === '2' ? '104x20mm Twin' : '50x20mm'})...`,
+        `Menyiapkan cetak ${expandedSummary.totalStickers} stiker (${
+          config.lineMode === '2' ? '104x20mm Twin' : '50x20mm'
+        })...`,
         'success'
       );
     } catch (err: any) {
@@ -680,7 +626,7 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
           {/* Detailed Setup Drawer */}
           {showSetup && (
-            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
                   Pengaturan Elemen &amp; Tipografi Label
@@ -695,6 +641,7 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
                 </button>
               </div>
 
+              {/* Checkboxes */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -750,6 +697,7 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
                 </label>
               </div>
 
+              {/* Harga & Teks Kustom */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-200 dark:border-slate-700 text-xs">
                 <div>
                   <label className="block text-[11px] text-slate-500 mb-1">
@@ -805,10 +753,93 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
                   </select>
                 </div>
               </div>
+
+              {/* Orientasi & Rotasi Cetak Thermal */}
+              <div className="pt-3 border-t border-slate-200 dark:border-slate-700 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <Compass className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Orientasi &amp; Rotasi Cetak Thermal</span>
+                  </label>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400">
+                    {config.printOrientation === 'portrait' ? 'Potret (Tegak)' : 'Lanskap (Melebar)'} • {config.printRotation || 0}&deg;
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  {/* Arah Halaman */}
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+                      Arah Halaman:
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setConfig((p) => ({ ...p, printOrientation: 'landscape' }))
+                        }
+                        className={`p-2 rounded-xl border text-center font-bold transition-all ${
+                          (config.printOrientation || 'landscape') === 'landscape'
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="text-xs">Lanskap (Melebar)</div>
+                        <div className="text-[10px] font-normal opacity-80 mt-0.5">50 &times; 20 mm</div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setConfig((p) => ({ ...p, printOrientation: 'portrait' }))
+                        }
+                        className={`p-2 rounded-xl border text-center font-bold transition-all ${
+                          config.printOrientation === 'portrait'
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="text-xs">Potret (Tegak)</div>
+                        <div className="text-[10px] font-normal opacity-80 mt-0.5">20 &times; 50 mm</div>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Rotasi Konten */}
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+                      Rotasi Stiker (Jika Hasil Cetak Terbalik):
+                    </span>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {[
+                        { deg: 0, label: '0° Normal' },
+                        { deg: 90, label: '90° Kanan' },
+                        { deg: 180, label: '180° Balik' },
+                        { deg: 270, label: '270° Kiri' },
+                      ].map((r) => (
+                        <button
+                          key={r.deg}
+                          type="button"
+                          onClick={() =>
+                            setConfig((p) => ({ ...p, printRotation: r.deg }))
+                          }
+                          className={`py-2 px-1 rounded-xl border text-center font-bold transition-all ${
+                            (Number(config.printRotation) || 0) === r.deg
+                              ? 'bg-amber-400 text-slate-950 border-amber-500 font-extrabold shadow-xs'
+                              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="text-[11px] font-extrabold">{r.deg}&deg;</div>
+                          <div className="text-[9px] font-normal opacity-80">{r.label.split(' ')[1]}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
-          {/* Print Options */}
+          {/* Quick Print Options */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
               <div className="text-[11px] font-bold text-slate-500 uppercase">
@@ -978,7 +1009,7 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
                     className="w-[190px] h-[76px] p-2 rounded border-2 border-dashed border-amber-400 bg-amber-50 dark:bg-amber-950/30 text-center flex flex-col justify-center items-center shadow-xs"
                   >
                     <span className="text-[9px] font-extrabold text-amber-700 dark:text-amber-300 tracking-wider">
-                      PEMBATAS TOKO
+                      ★ PEMBATAS OUTLET ★
                     </span>
                     <span className="text-xs font-black text-slate-900 dark:text-white truncate max-w-full px-1">
                       {entry.outlet}

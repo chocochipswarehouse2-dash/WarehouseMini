@@ -15,21 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.24.3",
-  "versionCode": 443,
+  "version": "v2.24.4",
+  "versionCode": 444,
   "buildDate": "21 November 2026",
-  "buildHash": "wms-261121-v443-1328",
-  "releaseTitle": "WMS v2.24.3 — Integrasi Database Live WMS DealPOS & Standardisasi Label Barcode 50x20mm",
+  "buildHash": "wms-261121-v444-1439",
+  "releaseTitle": "WMS v2.24.4 — Perbaikan Cetak Multi-Halaman & Kontrol Orientasi Rotasi Barcode 50x20mm",
   "releaseNotes": [
-    "Integrasi database langsung WMS & DealPOS tanpa wajib upload CSV",
-    "Pilihan mode Outlet Toko (DealPOS) vs Rak Fisik Gudang",
-    "Penyempurnaan layout stiker thermal 50x20mm Code128 & QR Code sesuai standard",
-    "Pratinjau label WYSIWYG realistis"
+    "Perbaiki bug cetak hanya 1 lembar pembatas pada printer thermal roll",
+    "Tambah opsi orientasi Lanskap Potret & rotasi 0 90 180 270 derajat",
+    "Filter otomatis kolom summary TOTAL_STOK & TP dari daftar outlet"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.24.3",
+    "versionCode": 443,
+    "buildDate": "21 November 2026",
+    "buildHash": "wms-261121-v443-1328",
+    "releaseTitle": "WMS v2.24.3 — Integrasi Database Live WMS DealPOS & Standardisasi Label Barcode 50x20mm",
+    "releaseNotes": [
+      "Integrasi database langsung WMS & DealPOS tanpa wajib upload CSV",
+      "Pilihan mode Outlet Toko (DealPOS) vs Rak Fisik Gudang",
+      "Penyempurnaan layout stiker thermal 50x20mm Code128 & QR Code sesuai standard",
+      "Pratinjau label WYSIWYG realistis"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.24.2",
     "versionCode": 442,
@@ -108,12 +121,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
 ];
 
 export const CURRENT_APP_VERSION = CURRENT_APP_VERSION_INFO.version;
-export const APP_VERSION = CURRENT_APP_VERSION_INFO.version;
-export const APP_VERSION_CODE = CURRENT_APP_VERSION_INFO.versionCode;
-export const APP_BUILD_DATE = CURRENT_APP_VERSION_INFO.buildDate;
-export const APP_BUILD_HASH = CURRENT_APP_VERSION_INFO.buildHash;
-export const APP_RELEASE_TITLE = CURRENT_APP_VERSION_INFO.releaseTitle;
-export const APP_RELEASE_NOTES = CURRENT_APP_VERSION_INFO.releaseNotes;
 
 /**
  * Compare two semver-like strings (e.g. 'v2.5.1' vs 'v2.5.2')
@@ -123,12 +130,7 @@ export const APP_RELEASE_NOTES = CURRENT_APP_VERSION_INFO.releaseNotes;
  *   0 if v1 === v2
  */
 export function compareVersions(v1: string, v2: string): number {
-  const clean = (v: string) =>
-    v
-      .replace(/^v/i, '')
-      .split('-')[0]
-      .split('.')
-      .map((n) => parseInt(n, 10) || 0);
+  const clean = (v: string) => v.replace(/^v/i, '').split('-')[0].split('.').map(n => parseInt(n, 10) || 0);
   const p1 = clean(v1);
   const p2 = clean(v2);
 

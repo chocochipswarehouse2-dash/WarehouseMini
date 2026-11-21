@@ -110,6 +110,12 @@ export interface BarcodePrinterConfig {
   priceCustomSuffix: string;
   priceThousandSeparator: '.' | ',' | 'none';
   customText: string;
+
+  // Orientasi, Rotasi & Offset Cetak Thermal
+  printOrientation: 'landscape' | 'portrait'; // 'landscape' (50x20mm) | 'portrait' (20x50mm)
+  printRotation: number; // 0 | 90 | 180 | 270
+  offsetX: number; // Geser X (mm)
+  offsetY: number; // Geser Y (mm)
 }
 
 export type BarcodeLabelConfig = BarcodePrinterConfig;
@@ -150,6 +156,11 @@ export const DEFAULT_BARCODE_LABEL_CONFIG: BarcodePrinterConfig = {
   priceCustomSuffix: '',
   priceThousandSeparator: '.',
   customText: '',
+
+  printOrientation: 'landscape',
+  printRotation: 0,
+  offsetX: 0,
+  offsetY: 0,
 };
 
 export function formatLabelPriceDisplay(
@@ -573,12 +584,35 @@ export function parseDealPOSInventoryCsv(text: string, sourceLabel = 'CSV DealPO
   }
 
   const metaCols = new Set([skuIdx, nameIdx, varIdx, catIdx, priceIdx].filter((i) => i !== -1));
-  const ignoredHeaders = new Set(['COST', 'UNITCOST', 'BARCODE', 'TAG', 'BRAND', 'DESCRIPTION', 'SUPPLIER', 'TOTAL']);
+  const ignoredHeaders = new Set([
+    'COST',
+    'UNITCOST',
+    'BARCODE',
+    'TAG',
+    'BRAND',
+    'DESCRIPTION',
+    'SUPPLIER',
+    'TOTAL',
+    'TOTAL_STOK',
+    'TOTAL STOK',
+    'TOTAL_QTY',
+    'TOTAL QTY',
+    'TOTALSTOCK',
+    'TOTALQTY',
+    'TP',
+    'SUBTOTAL',
+    'GRAND TOTAL',
+    'SUM',
+  ]);
 
   const outletCols: DealPosOutletCol[] = [];
   headerRow.forEach((h, idx) => {
     const clean = h.trim();
-    if (!metaCols.has(idx) && clean && !ignoredHeaders.has(clean.toUpperCase())) {
+    const cleanUp = clean.toUpperCase();
+    const isIgnored =
+      ignoredHeaders.has(cleanUp) ||
+      /^(total|subtotal|grand\s*total|sum|tp$|total_stok|total\s*stok|total_qty|total\s*qty)/i.test(cleanUp);
+    if (!metaCols.has(idx) && clean && !isIgnored) {
       outletCols.push({ idx, name: clean });
     }
   });
