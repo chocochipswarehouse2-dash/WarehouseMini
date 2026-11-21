@@ -1,14 +1,12 @@
 {
-  "version": "v2.23.3",
-  "versionCode": 433,
+  "version": "v2.23.5",
+  "versionCode": 435,
   "buildDate": "21 November 2026",
-  "buildHash": "wms-261121-v433-0013",
-  "releaseTitle": "WMS v2.23.3 — Rangkuman 1 Baris & Nama Produk + Size Sejajar di Pengecekan SJ",
+  "buildHash": "wms-261121-v435-0112",
+  "releaseTitle": "WMS v2.23.5 — Native Mobile App Shell (Bottom Tab Bar & App Launcher Sheet)",
   "releaseNotes": [
-    "Padatkan Rangkuman Pengecekan SJ menjadi 1 baris 3 kolom (Total SJ",
-    "Total Scan",
-    "Total Selisih) untuk Seluler & Desktop serta filter cepat di header Komparasi",
-    "Gabungkan Nama Produk dan Size menjadi 1 baris sejajar pada Kartu Item Mobile, Tabel Desktop, dan Riwayat SJ"
+    "Ubah navigasi seluler (< 1024px) dari hamburger drawer ala web menjadi Fixed Bottom Tab Bar (4 pintasan peran/kustom + tab Menu) dan Native App Launcher Bottom Sheet dengan grid ikon 4 kolom, kustomisasi tab bawah, & grouped settings",
+    "Sederhanakan Mobile Top App Bar menjadi Avatar + Judul Halaman + Bell/AI, serta amankan offset Dock & Kapasitas Rak di atas Bottom Tab Bar (Desktop tetap utuh)"
   ],
   "minSupportedVersion": "v2.0.0"
 }

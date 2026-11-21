@@ -348,7 +348,7 @@ export const MinimizedWorkspacesDock: React.FC<MinimizedWorkspacesDockProps> = (
     <DraggableFloatingBubble
       storageKey="minimized_workspaces_dock"
       defaultAnchor="bottom-left"
-      defaultOffset={{ x: 12, y: 12 }}
+      defaultOffset={{ x: 12, y: typeof window !== 'undefined' && window.innerWidth < 1024 ? 76 : 12 }}
       zIndexClass="z-[60]"
       className="max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-2rem)]"
       ariaLabel="Minimized Workspaces Dock"

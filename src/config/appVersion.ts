@@ -15,21 +15,45 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.23.3",
-  "versionCode": 433,
+  "version": "v2.23.5",
+  "versionCode": 435,
   "buildDate": "21 November 2026",
-  "buildHash": "wms-261121-v433-0013",
-  "releaseTitle": "WMS v2.23.3 — Rangkuman 1 Baris & Nama Produk + Size Sejajar di Pengecekan SJ",
+  "buildHash": "wms-261121-v435-0112",
+  "releaseTitle": "WMS v2.23.5 — Native Mobile App Shell (Bottom Tab Bar & App Launcher Sheet)",
   "releaseNotes": [
-    "Padatkan Rangkuman Pengecekan SJ menjadi 1 baris 3 kolom (Total SJ",
-    "Total Scan",
-    "Total Selisih) untuk Seluler & Desktop serta filter cepat di header Komparasi",
-    "Gabungkan Nama Produk dan Size menjadi 1 baris sejajar pada Kartu Item Mobile, Tabel Desktop, dan Riwayat SJ"
+    "Ubah navigasi seluler (< 1024px) dari hamburger drawer ala web menjadi Fixed Bottom Tab Bar (4 pintasan peran/kustom + tab Menu) dan Native App Launcher Bottom Sheet dengan grid ikon 4 kolom, kustomisasi tab bawah, & grouped settings",
+    "Sederhanakan Mobile Top App Bar menjadi Avatar + Judul Halaman + Bell/AI, serta amankan offset Dock & Kapasitas Rak di atas Bottom Tab Bar (Desktop tetap utuh)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.23.4",
+    "versionCode": 434,
+    "buildDate": "21 November 2026",
+    "buildHash": "wms-261121-v434-0038",
+    "releaseTitle": "WMS v2.23.4 — Modern Native Mobile Drawer (Opsi C)",
+    "releaseNotes": [
+      "Ubah Mobile Drawer menjadi gaya aplikasi seluler native: Kartu Profil di atas, 4 Control Center Tiles (Notif/Tema/Update/Sistem), Cari Menu Cepat, Pin Favorit lokal, grup lipat Operasional/HR, & gesture swipe kiri",
+      "Pertahankan Sidebar Desktop Auto-Hide/Pin tetap konsisten dan tambahkan safe-area bottom footer untuk tombol App & Keluar Akun"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
+  {
+    "version": "v2.23.3",
+    "versionCode": 433,
+    "buildDate": "21 November 2026",
+    "buildHash": "wms-261121-v433-0013",
+    "releaseTitle": "WMS v2.23.3 — Rangkuman 1 Baris & Nama Produk + Size Sejajar di Pengecekan SJ",
+    "releaseNotes": [
+      "Padatkan Rangkuman Pengecekan SJ menjadi 1 baris 3 kolom (Total SJ",
+      "Total Scan",
+      "Total Selisih) untuk Seluler & Desktop serta filter cepat di header Komparasi",
+      "Gabungkan Nama Produk dan Size menjadi 1 baris sejajar pada Kartu Item Mobile, Tabel Desktop, dan Riwayat SJ"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.23.2",
     "versionCode": 432,
@@ -103,29 +127,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseTitle": "WMS v2.22.8 — Dukung Copy-Paste Gambar Screenshot di Fitur AI",
     "releaseNotes": [
       "Tambahkan handler onPaste pada input chat WmsAiModal agar gambar hasil screenshot (Ctrl+V / Paste) langsung terlampir ke AI"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.22.7",
-    "versionCode": 427,
-    "buildDate": "20 November 2026",
-    "buildHash": "wms-261120-v427-1717",
-    "releaseTitle": "WMS v2.22.7 — Perbaiki Sinkronisasi Katalog PWA HP & Validasi Scan Kamera",
-    "releaseNotes": [
-      "Deteksi otomatis katalog IndexedDB tidak lengkap via count=exact di syncSmartLowEgressCache agar jumlah anomali & master SKU di PWA HP sama persis dengan Laptop",
-      "Tambahkan fallback verifikasi SKU live ke Supabase dan sanitasi karakter tak terlihat pada scan kamera HP"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.22.6",
-    "versionCode": 426,
-    "buildDate": "20 November 2026",
-    "buildHash": "wms-261120-v426-1652",
-    "releaseTitle": "WMS v2.22.6 — Mode Ringkas Tugas Picking saat Scanner/Kamera",
-    "releaseNotes": [
-      "Sembunyikan input qty manual saat mode input Scanner Fisik atau Kamera di Tugas Picking, tampilkan list ringkas Nama, Size, SKU, Lokasi, dan Qty"
     ],
     "minSupportedVersion": "v2.0.0"
   }

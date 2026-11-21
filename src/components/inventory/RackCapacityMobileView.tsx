@@ -943,7 +943,7 @@ export const RackCapacityMobileView: React.FC<RackCapacityMobileViewProps> = ({
 
       {/* 6. THUMB-ZONE FIXED MOBILE BOTTOM ACTION BAR (Normal Tools OR Multi-Select Batch Bar) */}
       {isMultiSelectMode || selectedMultiLocs.size > 0 ? (
-        <div className="fixed bottom-0 left-0 right-0 z-30 md:hidden bg-white/95 dark:bg-[#0E1420]/95 backdrop-blur-md border-t border-indigo-300 dark:border-indigo-800 shadow-[0_-8px_24px_rgba(15,23,42,0.12)] px-3 pt-2.5 pb-[calc(0.65rem+env(safe-area-inset-bottom))] space-y-2">
+        <div className="fixed bottom-[calc(64px+env(safe-area-inset-bottom))] left-2.5 right-2.5 z-30 md:hidden bg-white/95 dark:bg-[#0E1420]/95 backdrop-blur-md rounded-2xl border border-indigo-300 dark:border-indigo-800 shadow-[0_8px_24px_rgba(15,23,42,0.14)] px-3 py-2.5 space-y-2">
           <div className="flex items-center justify-between gap-2">
             <div className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5 min-w-0">
               <span className="px-2 py-0.5 rounded-lg bg-indigo-600 text-white font-mono text-[11px] tabular-nums">
@@ -1021,7 +1021,7 @@ export const RackCapacityMobileView: React.FC<RackCapacityMobileViewProps> = ({
       ) : (
         <nav
           aria-label="Aksi Cepat Kapasitas Rak"
-          className="fixed bottom-0 left-0 right-0 z-30 md:hidden bg-white/95 dark:bg-[#0E1420]/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-[0_-4px_20px_rgba(15,23,42,0.08)] px-2 pt-1.5 pb-[calc(0.45rem+env(safe-area-inset-bottom))]"
+          className="fixed bottom-[calc(64px+env(safe-area-inset-bottom))] left-2.5 right-2.5 z-30 md:hidden bg-white/95 dark:bg-[#0E1420]/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-[0_6px_20px_rgba(15,23,42,0.10)] px-2 py-1"
         >
           <div className="grid grid-cols-4 gap-1">
             {canRelocateRack ? (

@@ -4730,6 +4730,7 @@ export default function App() {
         companionPage={isDesktopViewport ? companionPage : null}
         onOpenCompanion={isDesktopViewport ? handleOpenCompanion : undefined}
         isMobileOpen={isMobileSidebarOpen}
+        onOpenMobile={() => setIsMobileSidebarOpen(true)}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={toggleSidebarCollapse}
@@ -4810,44 +4811,37 @@ export default function App() {
             )}
         </div>
 
-        {/* Sticky Mobile & Tablet Top Header Bar (< 1024px) */}
-        <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between gap-2 px-3 sm:px-4 min-h-[56px] py-1.5 bg-white/95 dark:bg-[#101726]/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 shadow-2xs print:hidden">
+        {/* Sticky Mobile & Tablet Native App Top Bar (< 1024px) */}
+        <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between gap-2 px-3 sm:px-4 h-[52px] bg-white/95 dark:bg-[#0e1525]/95 backdrop-blur-lg border-b border-slate-200/70 dark:border-slate-800/80 print:hidden">
           <div className="flex items-center gap-2.5 min-w-0 flex-1">
-            <button
-              type="button"
-              onClick={() => setIsMobileSidebarOpen(true)}
-              className="relative w-10 h-10 flex items-center justify-center rounded-xl text-slate-700 dark:text-slate-200 bg-slate-50/80 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 transition-all cursor-pointer border border-slate-200/80 dark:border-slate-700/70 shrink-0"
-              title="Buka Menu Navigasi"
-              aria-label="Buka Menu Navigasi"
-            >
-              <Menu className="w-5 h-5" />
-              {(newPickingTaskAlert || newManualShipmentAlert) && (
-                <span
-                  className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white dark:ring-[#101726]"
-                  aria-hidden="true"
+            {session ? (
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent('wms_open_user_profile'))}
+                className="relative w-9 h-9 rounded-full flex items-center justify-center active:scale-95 transition-transform cursor-pointer shrink-0 ring-1 ring-slate-200 dark:ring-slate-700"
+                title="Profil & Pengaturan Akun"
+                aria-label="Profil Akun"
+              >
+                <UserAvatar
+                  username={session.username}
+                  name={session.name}
+                  className="w-9 h-9 rounded-full"
                 />
-              )}
-            </button>
-
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 min-w-0">
                 <span
-                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                  className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-white dark:ring-[#0e1525] ${
                     isRealtimeConnected ? 'bg-emerald-500' : 'bg-amber-500'
                   }`}
-                  title={isRealtimeConnected ? 'Live Database Terhubung' : 'Menghubungkan Database...'}
+                  aria-hidden="true"
                 />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 truncate leading-none">
-                  Chocochips WMS
-                </span>
-              </div>
-              <h1
-                className="text-[15px] font-extrabold text-slate-900 dark:text-white tracking-tight truncate leading-snug"
-                title={getWorkspacePageMeta(activePage).label}
-              >
-                {getWorkspacePageMeta(activePage).label}
-              </h1>
-            </div>
+              </button>
+            ) : null}
+
+            <h1
+              className="text-[17px] font-bold text-slate-900 dark:text-white tracking-tight truncate leading-tight"
+              title={getWorkspacePageMeta(activePage).label}
+            >
+              {getWorkspacePageMeta(activePage).label}
+            </h1>
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
@@ -4863,29 +4857,12 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setIsAiModalOpen(true)}
-                className="inline-flex items-center justify-center gap-1 h-10 px-3 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs active:scale-95 transition-all cursor-pointer whitespace-nowrap shrink-0"
-                title="Buka Asisten AI Pintar WMS"
+                className="w-9 h-9 rounded-full flex items-center justify-center bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200/70 dark:border-indigo-800/60 active:scale-95 transition-all cursor-pointer shrink-0"
+                title="Asisten AI Pintar WMS"
                 aria-label="Buka Asisten AI"
               >
-                <Sparkles className="w-3.5 h-3.5 shrink-0" />
-                <span>AI</span>
+                <Sparkles className="w-4 h-4" />
               </button>
-            )}
-
-            {session && (
-              <div
-                className="hidden sm:inline-flex items-center gap-2 h-10 pl-1.5 pr-2.5 rounded-xl bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/70 dark:border-slate-700/70 max-w-[170px]"
-                title={`${session.name || getUserPersonName(session.username) || session.username} (@${session.username})`}
-              >
-                <UserAvatar
-                  username={session.username}
-                  name={session.name}
-                  className="w-7 h-7 rounded-lg"
-                />
-                <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
-                  {session.name || getUserPersonName(session.username) || session.username}
-                </span>
-              </div>
             )}
           </div>
         </header>
@@ -4908,7 +4885,7 @@ export default function App() {
 
         {/* Main Content Area + Optional Desktop Companion Drawer */}
         <div className="flex-1 flex flex-row min-w-0 w-full max-w-full items-start">
-          <main className={`flex-1 min-w-0 ${activePage === 'live_chat' ? 'pb-2 sm:pb-4' : 'pb-16 sm:pb-8'} p-2 sm:p-4 lg:p-6 w-full max-w-full`}>
+          <main className={`flex-1 min-w-0 ${activePage === 'live_chat' ? 'pb-20 lg:pb-4' : 'pb-24 lg:pb-6'} p-2 sm:p-4 lg:p-6 w-full max-w-full`}>
             {session && !canAccessPage(session, activePage) ? (
               <div className="min-h-[60vh] flex items-center justify-center p-4">
                 <div className="max-w-md w-full bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-2xl p-6 text-center shadow-lg space-y-4">
