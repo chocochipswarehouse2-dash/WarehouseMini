@@ -104,22 +104,28 @@ const SortHead: React.FC<{
   sort: InventorySortOption;
   onSort: (s: InventorySortOption) => void;
   className?: string;
-}> = ({ label, asc, desc, sort, onSort, className = '' }) => (
-  <button
-    type="button"
-    onClick={() => onSort(sort === desc ? asc : desc)}
-    className={`flex items-center gap-1 font-extrabold uppercase hover:text-amber-600 dark:hover:text-amber-400 cursor-pointer transition-colors ${className}`}
-  >
-    <span>{label}</span>
-    {sort === asc ? (
-      <ArrowUp className="w-3 h-3 text-amber-500" />
-    ) : sort === desc ? (
-      <ArrowDown className="w-3 h-3 text-amber-500" />
-    ) : (
-      <ArrowUpDown className="w-3 h-3 opacity-40" />
-    )}
-  </button>
-);
+  compact?: boolean;
+}> = ({ label, asc, desc, sort, onSort, className = '', compact = false }) => {
+  const isActive = sort === asc || sort === desc;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(sort === desc ? asc : desc)}
+      className={`flex items-center ${compact ? 'gap-0.5' : 'gap-1'} font-extrabold uppercase hover:text-indigo-600 dark:hover:text-amber-400 cursor-pointer transition-colors whitespace-nowrap ${
+        isActive ? 'text-indigo-700 dark:text-amber-400' : ''
+      } ${className}`}
+    >
+      <span>{label}</span>
+      {sort === asc ? (
+        <ArrowUp className="w-3 h-3 text-indigo-600 dark:text-amber-400 shrink-0" />
+      ) : sort === desc ? (
+        <ArrowDown className="w-3 h-3 text-indigo-600 dark:text-amber-400 shrink-0" />
+      ) : (
+        <ArrowUpDown className="w-3 h-3 opacity-35 shrink-0" />
+      )}
+    </button>
+  );
+};
 
 // ----------------------------------------------------------------
 // Main Inventory List Component
@@ -238,7 +244,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="h-[70vh] min-h-[400px] overflow-auto border border-slate-300 dark:border-slate-700 rounded-2xl bg-white dark:bg-[#0E1420] relative shadow-xs"
+        className="h-[calc(100dvh-285px)] sm:h-[calc(100vh-240px)] lg:h-[calc(100vh-225px)] min-h-[420px] overflow-auto border border-slate-200 dark:border-slate-700/90 rounded-2xl bg-white dark:bg-[#0E1420] relative shadow-xs"
       >
       {/* ========================================================
           1. DESKTOP VIEW: SIDE-BY-SIDE TABLE DENGAN CELL MERGED
@@ -299,15 +305,19 @@ export const InventoryList: React.FC<InventoryListProps> = ({
                           rowSpan={totalSkuRows}
                           className="py-2.5 px-3 align-top border-r border-slate-200 dark:border-slate-700/70 bg-white/40 dark:bg-transparent"
                         >
-                          <div
-                            className="font-bold text-xs text-slate-900 dark:text-slate-100 leading-snug line-clamp-2"
-                            title={group.produk}
+                          <button
+                            type="button"
+                            onClick={() => onOpen(group.sku)}
+                            className="text-left w-full group cursor-pointer"
+                            title={`${group.produk} — Klik untuk audit SKU & riwayat mutasi`}
                           >
-                            {group.produk}
-                          </div>
-                          <div className="text-[10px] text-slate-400 font-mono uppercase tracking-tight mt-0.5 truncate">
-                            {group.kategori}
-                          </div>
+                            <div className="font-bold text-xs text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 leading-snug line-clamp-2 transition-colors">
+                              {group.produk}
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-mono uppercase tracking-tight mt-0.5 truncate">
+                              {group.kategori}
+                            </div>
+                          </button>
                         </td>
 
                         <td
@@ -431,12 +441,19 @@ export const InventoryList: React.FC<InventoryListProps> = ({
                           rowSpan={group.perbaikanAreas.length}
                           className="py-2.5 px-3 align-top border-r border-slate-200 dark:border-slate-700/70"
                         >
-                          <div className="font-bold text-xs text-slate-900 dark:text-slate-100 leading-snug">
-                            {group.produk}
-                          </div>
-                          <div className="text-[10px] text-slate-400 font-mono uppercase tracking-tight mt-0.5">
-                            {group.kategori}
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => onOpen(group.sku)}
+                            className="text-left w-full group cursor-pointer"
+                            title={`${group.produk} — Klik untuk audit SKU & riwayat mutasi`}
+                          >
+                            <div className="font-bold text-xs text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 leading-snug transition-colors">
+                              {group.produk}
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-mono uppercase tracking-tight mt-0.5 truncate">
+                              {group.kategori}
+                            </div>
+                          </button>
                         </td>
 
                         <td
@@ -560,7 +577,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({
             <thead className="sticky top-0 z-20 bg-slate-100/95 dark:bg-[#121824]/95 text-slate-600 dark:text-slate-300 text-[10px] border-b border-slate-300 dark:border-slate-700 backdrop-blur-xs">
               <tr>
                 <th className="py-2 pl-2.5 pr-1.5 w-[44%] border-r border-slate-200/80 dark:border-slate-700/80">
-                  <SortHead label="Produk" asc="NAME_ASC" desc="NAME_DESC" sort={sort} onSort={onSort} />
+                  <SortHead label="Produk" asc="NAME_ASC" desc="NAME_DESC" sort={sort} onSort={onSort} compact />
                 </th>
                 <th className="py-2 px-1 w-[13%] text-center bg-blue-50/60 dark:bg-blue-950/25 border-r border-slate-200/80 dark:border-slate-700/80">
                   <SortHead
@@ -569,6 +586,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({
                     desc="DP_DESC"
                     sort={sort}
                     onSort={onSort}
+                    compact
                     className="justify-center text-blue-700 dark:text-blue-300"
                   />
                 </th>
@@ -579,11 +597,12 @@ export const InventoryList: React.FC<InventoryListProps> = ({
                     desc="FISIK_DESC"
                     sort={sort}
                     onSort={onSort}
+                    compact
                     className="justify-center"
                   />
                 </th>
                 <th className="py-2 pl-1.5 pr-2 w-[30%]">
-                  <SortHead label="Area & Rak" asc="AREA_ASC" desc="AREA_DESC" sort={sort} onSort={onSort} />
+                  <SortHead label="Area & Rak" asc="AREA_ASC" desc="AREA_DESC" sort={sort} onSort={onSort} compact />
                 </th>
               </tr>
             </thead>
@@ -979,9 +998,9 @@ export const InventoryList: React.FC<InventoryListProps> = ({
           <button
             type="button"
             onClick={() => setVisibleCount((prev) => Math.min(prev + CHUNK_SIZE * 2, skuGroups.length))}
-            className="px-4 py-1.5 text-xs font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl hover:bg-amber-100 transition-all cursor-pointer"
+            className="px-4 py-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-xl hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all cursor-pointer"
           >
-            Muat Lebih Banyak ({displayedGroups.length} dari {skuGroups.length} SKU ditampilkan)
+            Muat Lebih Banyak ({displayedGroups.length.toLocaleString('id-ID')} dari {skuGroups.length.toLocaleString('id-ID')} SKU)
           </button>
         </div>
       )}

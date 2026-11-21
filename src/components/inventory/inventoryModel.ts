@@ -76,7 +76,7 @@ export type InventorySortOption =
 const SIZE_ORDER_MAP: Record<string, number> = {
   ALL: 0, DEFAULT: 1, FREE: 2, XS: 3, S: 4, M: 5, L: 6, XL: 7, XXL: 8, '3XL': 9, '4XL': 10,
 };
-const getSizeOrder = (size: string): number => {
+export const getSizeOrder = (size: string): number => {
   const v = SIZE_ORDER_MAP[String(size || '').toUpperCase()];
   return v !== undefined ? v : 99;
 };
@@ -1277,26 +1277,53 @@ export function sortAreaRows(rows: InventoryAreaRow[], option: InventorySortOpti
   return recalculateRowSpans(sortedRows);
 }
 
+export type InventoryStockStatusFilter =
+  | 'ADA_STOK'
+  | 'FISIK_ONLY'
+  | 'DP_ONLY'
+  | 'STOK_MINUS'
+  | 'ALL';
+
 export interface InventoryAreaFilter {
   query: string;
   selectedArea?: string; // 'ALL' or 'Warehouse', 'Blok F', 'Perbaikan', 'Koli', etc.
   onlyActive?: boolean;
+  stockStatus?: InventoryStockStatusFilter;
+  selectedSize?: string; // 'ALL' or normalized size token
 }
 
 export function filterAreaRows(rows: InventoryAreaRow[], f: InventoryAreaFilter): InventoryAreaRow[] {
   const keywords = f.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const selArea = f.selectedArea && f.selectedArea !== 'ALL' ? f.selectedArea.toLowerCase() : null;
+  const selSize = f.selectedSize && f.selectedSize !== 'ALL' ? f.selectedSize.trim().toUpperCase() : null;
+  const stockStatus: InventoryStockStatusFilter =
+    f.stockStatus ?? (f.onlyActive ? 'ADA_STOK' : 'ALL');
 
   const rawOut: InventoryAreaRow[] = [];
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
-    if (f.onlyActive && !r.active) continue;
+
+    if (stockStatus === 'ADA_STOK') {
+      if (!r.active) continue;
+    } else if (stockStatus === 'FISIK_ONLY') {
+      if (r.qty <= 0) continue;
+    } else if (stockStatus === 'DP_ONLY') {
+      if (!(r.dp > 0 && r.qty <= 0)) continue;
+    } else if (stockStatus === 'STOK_MINUS') {
+      const hasNegLoc = r.locations.some((l) => l.qty < 0);
+      if (!(r.qty < 0 || r.isNeg || hasNegLoc)) continue;
+    }
+
     if (selArea) {
       if (selArea === 'perbaikan') {
         if (r.groupType !== 'PERBAIKAN' && r.areaLower !== 'perbaikan' && r.areaLower !== 'sortir') continue;
       } else if (r.areaLower !== selArea && !r.areaLower.includes(selArea)) {
         continue;
       }
+    }
+
+    if (selSize) {
+      if (String(r.size || '').trim().toUpperCase() !== selSize) continue;
     }
 
     let ok = true;

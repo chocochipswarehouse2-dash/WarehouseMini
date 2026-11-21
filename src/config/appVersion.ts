@@ -15,19 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.24.0",
-  "versionCode": 440,
+  "version": "v2.24.1",
+  "versionCode": 441,
   "buildDate": "21 November 2026",
-  "buildHash": "wms-261121-v440-1215",
-  "releaseTitle": "WMS v2.24.0 — Modul CSV Barcode & CSV Distribusi",
+  "buildHash": "wms-261121-v441-0546",
+  "releaseTitle": "WMS v2.24.1 — Optimasi Tabel, Filter & Sort Stok Produk",
   "releaseNotes": [
-    "Tambah modul CSV Barcode (export CSV DealPOS per outlet/lokasi + ZIP + cetak stiker 50x20/104x20mm & ceklis A4)",
-    "Tambah modul CSV Distribusi (import multi-file Excel Reguler & Back In Stock, kartu store 2-baris, Gudang Awal balance check, & ZIP per batch)"
+    "Menghapus 4 kartu ringkasan KPI pada tab Stok Produk (sudah tersedia di Dashboard Kapasitas) agar tabel langsung tampil penuh di seluler maupun desktop",
+    "Menambahkan filter Status Stok (Ada Stok, Fisik > 0, DP > 0 Fisik 0, Stok Minus, Semua Master), filter Size master, dropdown Urutkan, dan tombol Reset filter",
+    "Merapikan toolbar seluler bergaya aplikasi (aksi sekunder kolapsibel & swipe horizontal) serta memperluas tinggi area tabel stok produk"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.24.0",
+    "versionCode": 440,
+    "buildDate": "21 November 2026",
+    "buildHash": "wms-261121-v440-1215",
+    "releaseTitle": "WMS v2.24.0 — Modul CSV Barcode & CSV Distribusi",
+    "releaseNotes": [
+      "Tambah modul CSV Barcode (export CSV DealPOS per outlet/lokasi + ZIP + cetak stiker 50x20/104x20mm & ceklis A4)",
+      "Tambah modul CSV Distribusi (import multi-file Excel Reguler & Back In Stock, kartu store 2-baris, Gudang Awal balance check, & ZIP per batch)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.23.5",
     "versionCode": 435,
@@ -115,19 +128,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseTitle": "WMS v2.22.10 — Tambah Filter Kategori Tugas Picking",
     "releaseNotes": [
       "Tambahkan filter kategori Semua, Pengiriman Store, Order, SPS, Manual shipment/alter, Retur, dan Keranjang Order di PickingTasksView"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.22.9",
-    "versionCode": 429,
-    "buildDate": "20 November 2026",
-    "buildHash": "wms-261120-v429-1909",
-    "releaseTitle": "WMS v2.22.9 — Perbaiki Pendaftaran Web Push (Notifikasi saat PWA Ditutup)",
-    "releaseNotes": [
-      "Deteksi & perbaiki langganan push dengan kunci VAPID lama/rusak lalu daftar ulang otomatis",
-      "Segarkan pendaftaran push setiap aplikasi dibuka kembali dari background",
-      "Tampilkan alasan jika notifikasi saat aplikasi ditutup gagal diaktifkan"
     ],
     "minSupportedVersion": "v2.0.0"
   }

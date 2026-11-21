@@ -5,13 +5,7 @@ import {
   Download,
   MapPin,
   Printer,
-  Package,
-  Layers,
-  Building,
-  CheckCircle2,
   AlertCircle,
-  Filter,
-  ChevronDown,
   X,
   Box,
   Boxes,
@@ -26,6 +20,9 @@ import {
   ArrowRight,
   Maximize2,
   Sparkles,
+  ArrowUpDown,
+  RotateCcw,
+  MoreHorizontal,
 } from 'lucide-react';
 import {
   InventoryPickingCartDrawer,
@@ -46,11 +43,12 @@ import {
   computeAreaStats,
   buildAreaInventoryCsv,
   composeRows,
+  getSizeOrder,
   ALL_AREAS,
-  type AreaFilterType,
   type InventorySortOption,
-  type InventoryAreaRow,
+  type InventoryStockStatusFilter,
 } from './inventory/inventoryModel';
+import { isCorruptedColorCodeSize } from '../utils/sortUtils';
 import {
   useInventoryStock,
   getStockBySku,
@@ -79,13 +77,33 @@ export interface InventoryViewProps {
 }
 
 const AVAILABLE_AREAS = [
-  { id: 'ALL', label: 'Semua Area' },
-  { id: 'Warehouse', label: 'Warehouse' },
-  { id: 'Blok F', label: 'Blok F' },
-  { id: 'Koli', label: 'Koli' },
-  { id: 'Perbaikan', label: 'Perbaikan' },
-  { id: 'Aksesoris', label: 'Aksesoris' },
-  { id: 'Transit', label: 'Transit' },
+  { id: 'ALL', label: 'Semua Area', mobileLabel: 'Semua' },
+  { id: 'Warehouse', label: 'Warehouse', mobileLabel: 'Warehouse' },
+  { id: 'Blok F', label: 'Blok F', mobileLabel: 'Blok F' },
+  { id: 'Koli', label: 'Koli', mobileLabel: 'Koli' },
+  { id: 'Perbaikan', label: 'Perbaikan', mobileLabel: 'Perbaikan' },
+  { id: 'Aksesoris', label: 'Aksesoris', mobileLabel: 'Aksesoris' },
+  { id: 'Transit', label: 'Transit', mobileLabel: 'Transit' },
+];
+
+const SORT_OPTIONS: Array<{ value: InventorySortOption; label: string; shortLabel: string }> = [
+  { value: 'NAME_ASC', label: 'Nama Produk A–Z', shortLabel: 'Nama A–Z' },
+  { value: 'NAME_DESC', label: 'Nama Produk Z–A', shortLabel: 'Nama Z–A' },
+  { value: 'FISIK_DESC', label: 'Fisik Terbanyak', shortLabel: 'Fisik ↓' },
+  { value: 'FISIK_ASC', label: 'Fisik Tersedikit', shortLabel: 'Fisik ↑' },
+  { value: 'DP_DESC', label: 'DealPOS Terbanyak', shortLabel: 'DP ↓' },
+  { value: 'DP_ASC', label: 'DealPOS Tersedikit', shortLabel: 'DP ↑' },
+  { value: 'SKU_ASC', label: 'Kode SKU A–Z', shortLabel: 'SKU A–Z' },
+  { value: 'SIZE_ASC', label: 'Size Kecil → Besar', shortLabel: 'Size ↑' },
+  { value: 'AREA_ASC', label: 'Area A–Z', shortLabel: 'Area A–Z' },
+];
+
+const STOCK_STATUS_OPTIONS: Array<{ value: InventoryStockStatusFilter; label: string; shortLabel: string }> = [
+  { value: 'ADA_STOK', label: 'Ada Stok (Aktif)', shortLabel: 'Ada Stok' },
+  { value: 'FISIK_ONLY', label: 'Fisik di Rak > 0', shortLabel: 'Fisik > 0' },
+  { value: 'DP_ONLY', label: 'Ada di DP, Fisik 0', shortLabel: 'DP > 0, Fisik 0' },
+  { value: 'STOK_MINUS', label: 'Stok Minus / Anomali', shortLabel: 'Stok Minus' },
+  { value: 'ALL', label: 'Semua Master Produk', shortLabel: 'Semua Master' },
 ];
 
 export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
@@ -168,8 +186,25 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   const deferredSearch = useDeferredValue(searchQuery);
 
   const [selectedArea, setSelectedArea] = useState<string>('ALL');
-  const [onlyActive, setOnlyActive] = useState(true);
+  const [stockStatus, setStockStatus] = useState<InventoryStockStatusFilter>('ADA_STOK');
+  const [selectedSize, setSelectedSize] = useState<string>('ALL');
   const [sortOption, setSortOption] = useState<InventorySortOption>('NAME_ASC');
+  const [isMobileActionsOpen, setIsMobileActionsOpen] = useState(false);
+
+  const hasCustomFilters =
+    searchQuery.trim() !== '' ||
+    selectedArea !== 'ALL' ||
+    stockStatus !== 'ADA_STOK' ||
+    selectedSize !== 'ALL' ||
+    sortOption !== 'NAME_ASC';
+
+  const handleResetFilters = useCallback(() => {
+    setSearchQuery('');
+    setSelectedArea('ALL');
+    setStockStatus('ADA_STOK');
+    setSelectedSize('ALL');
+    setSortOption('NAME_ASC');
+  }, []);
 
   // 3. Selected SKU for Detail Drawer
   const [selectedSku, setSelectedSku] = useState<string | null>(null);
@@ -230,14 +265,33 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     return composeAreaRows(catalogBases, map);
   }, [catalogBases, stockVersion]);
 
+  // Available clean master sizes for quick size filtering
+  const availableSizes = useMemo(() => {
+    const sizeCounts = new Map<string, number>();
+    for (let i = 0; i < allAreaRows.length; i++) {
+      const r = allAreaRows[i];
+      if (!r.isFirstOfSku) continue;
+      const raw = String(r.size || '').trim().toUpperCase();
+      if (!raw || raw === '-' || isCorruptedColorCodeSize(raw)) continue;
+      sizeCounts.set(raw, (sizeCounts.get(raw) || 0) + 1);
+    }
+    return Array.from(sizeCounts.keys()).sort((a, b) => {
+      const oa = getSizeOrder(a);
+      const ob = getSizeOrder(b);
+      if (oa !== ob) return oa - ob;
+      return a.localeCompare(b);
+    });
+  }, [allAreaRows]);
+
   // Step C: Filter Area Rows
   const filteredAreaRows = useMemo(() => {
     return filterAreaRows(allAreaRows, {
       query: deferredSearch,
       selectedArea,
-      onlyActive,
+      stockStatus,
+      selectedSize,
     });
-  }, [allAreaRows, deferredSearch, selectedArea, onlyActive]);
+  }, [allAreaRows, deferredSearch, selectedArea, stockStatus, selectedSize]);
 
   // Step D: Sort Area Rows
   const sortedAreaRows = useMemo(() => {
@@ -756,304 +810,471 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       {activeTab === 'inventory' && (
         <>
           {/* ========================================================
-              1. KPI CARDS HEADER (Stok Fisik Nyata Gudang)
+              1. OPTIMIZED COMPACT TOOLBAR (Mobile App-Like & Desktop Spreadsheet)
+              Kartu Ringkasan KPI ditiadakan (tersedia di tab Kapasitas) agar
+              tabel stok produk & kontrol filter/sort langsung tampil optimal.
               ======================================================== */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
-            {/* KPI 1: Total SKU */}
-            <div className="p-3.5 rounded-2xl border bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-bold mb-1">
-            <span>TOTAL SKU TERDATA</span>
-            <div className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center">
-              <Layers className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-xl sm:text-2xl font-black text-slate-900 dark:text-slate-100 font-mono">
-            {stats.skuCount.toLocaleString('id-ID')}{' '}
-            <span className="text-xs font-normal text-slate-400">SKU</span>
-          </div>
-          <div className="text-[11px] text-slate-400 mt-1 truncate">
-            {catalogBases.length !== stats.skuCount ? `Difilter dari ${catalogBases.length.toLocaleString('id-ID')} master SKU` : 'Seluruh master produk'}
-          </div>
-        </div>
+          <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800/80 rounded-2xl p-2.5 sm:p-3 shadow-xs space-y-2">
+            {/* ROW 1: Search + Desktop Filter/Sort/Actions + Mobile Quick Actions */}
+            <div className="flex items-center gap-2">
+              {/* Search Input */}
+              <div className="relative flex-1 min-w-0 lg:min-w-[260px]">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  id="inputSearchInventory"
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Cari produk, SKU, rak..."
+                  className="w-full h-9 pl-9 pr-8 text-xs bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/60 focus:border-indigo-500 font-medium transition-all"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    aria-label="Bersihkan pencarian"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
 
-        {/* KPI 2: Total Fisik Gudang (Pcs) */}
-        <div className="p-3.5 rounded-2xl border bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-bold mb-1">
-            <span>TOTAL FISIK GUDANG</span>
-            <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center">
-              <Building className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
-            {stats.totalFisik.toLocaleString('id-ID')}{' '}
-            <span className="text-xs font-normal text-slate-400">pcs</span>
-          </div>
-          <div className="text-[11px] text-slate-400 mt-1 truncate">
-            Total barang fisik nyata di rak gudang
-          </div>
-        </div>
+              {/* DESKTOP INLINE SELECTORS (Status Stok, Size, Sort) */}
+              <div className="hidden lg:flex items-center gap-2 shrink-0">
+                <select
+                  aria-label="Filter Status Stok"
+                  value={stockStatus}
+                  onChange={(e) => setStockStatus(e.target.value as InventoryStockStatusFilter)}
+                  className={`h-9 px-2.5 text-xs font-bold rounded-xl border transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/50 ${
+                    stockStatus !== 'ADA_STOK'
+                      ? 'bg-indigo-50 dark:bg-indigo-950/50 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                  }`}
+                >
+                  {STOCK_STATUS_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
 
-        {/* KPI 3: Total Baris Area */}
-        <div className="p-3.5 rounded-2xl border bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-bold mb-1">
-            <span>BARIS AREA TERCATAT</span>
-            <div className="w-7 h-7 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center">
-              <Boxes className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-xl sm:text-2xl font-black text-slate-900 dark:text-slate-100 font-mono">
-            {stats.areaRowCount.toLocaleString('id-ID')}{' '}
-            <span className="text-xs font-normal text-slate-400">baris</span>
-          </div>
-          <div className="text-[11px] text-slate-400 mt-1 truncate">
-            Alokasi stok produk per area
-          </div>
-        </div>
+                {availableSizes.length > 0 && (
+                  <select
+                    aria-label="Filter Size"
+                    value={selectedSize}
+                    onChange={(e) => setSelectedSize(e.target.value)}
+                    className={`h-9 px-2.5 text-xs font-bold rounded-xl border transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/50 ${
+                      selectedSize !== 'ALL'
+                        ? 'bg-indigo-50 dark:bg-indigo-950/50 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'
+                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                    }`}
+                  >
+                    <option value="ALL">Semua Size</option>
+                    {availableSizes.map((sz) => (
+                      <option key={sz} value={sz}>
+                        Size {sz}
+                      </option>
+                    ))}
+                  </select>
+                )}
 
-        {/* KPI 4: Titik Rak Terisi */}
-        <div className="p-3.5 rounded-2xl border bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-bold mb-1">
-            <span>TITIK RAK TERISI</span>
-            <div className="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-600 flex items-center justify-center">
-              <MapPin className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-xl sm:text-2xl font-black text-purple-600 dark:text-purple-400 font-mono">
-            {stats.activeLocationsCount.toLocaleString('id-ID')}{' '}
-            <span className="text-xs font-normal text-slate-400">titik rak</span>
-          </div>
-          <div className="text-[11px] text-slate-400 mt-1 truncate">
-            Lokasi rak fisik aktif dengan stok &gt; 0
-          </div>
-        </div>
-      </div>
+                <div className="relative flex items-center">
+                  <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
+                  <select
+                    aria-label="Urutkan Stok Produk"
+                    value={sortOption}
+                    onChange={(e) => setSortOption(e.target.value as InventorySortOption)}
+                    className={`h-9 pl-8 pr-2.5 text-xs font-bold rounded-xl border transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/50 ${
+                      sortOption !== 'NAME_ASC'
+                        ? 'bg-indigo-50 dark:bg-indigo-950/50 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'
+                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                    }`}
+                  >
+                    {SORT_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
 
-      {/* ========================================================
-          2. TOOLBAR (Search, Filter Area, Ada Stok, Actions)
-          ======================================================== */}
-      <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800/80 rounded-2xl p-3.5 shadow-xs space-y-3">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          {/* Search Input */}
-          <div className="relative w-full lg:flex-1 lg:min-w-[260px]">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              id="inputSearchInventory"
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari Kategori / Nama Produk / SKU / Area / Lokasi Rak..."
-              className="w-full pl-9 pr-8 py-2 text-xs bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 font-medium transition-all"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
+              {/* DESKTOP ACTION BUTTONS (Anti-Pelangi: Neutral Outlines + Primary Indigo only for active Cart) */}
+              <div className="hidden lg:flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleOpenLokasiExport()}
+                  className="h-9 px-2.5 text-xs font-bold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  title="Ekspor Data & Cetak PDF per Lokasi Rak"
+                >
+                  <Printer className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                  <span className="hidden xl:inline">Lokasi &amp; Print</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsStockTakeRecOpen(true)}
+                  className="h-9 px-2.5 text-xs font-bold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  title="Rekomendasi Stock Take Ulang & Reset Scan Data"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                  <span className="hidden xl:inline">Rekomendasi SO</span>
+                </button>
+
+                <button
+                  type="button"
+                  id="btn-inventory-picking-cart"
+                  onClick={() => setIsCartDrawerOpen(true)}
+                  className={`h-9 px-3 text-xs font-bold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                    cartItems.length > 0
+                      ? 'bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-600 ring-2 ring-indigo-500/25'
+                      : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+                  }`}
+                  title="Buka Keranjang Order Picking"
+                >
+                  <ShoppingCart className="w-3.5 h-3.5" />
+                  <span>Keranjang</span>
+                  {cartItems.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black font-mono bg-white text-indigo-700">
+                      {cartItems.length}
+                    </span>
+                  )}
+                </button>
+
+                {canExportData && (
+                  <button
+                    type="button"
+                    onClick={handleExportCsv}
+                    className="h-9 px-2.5 text-xs font-bold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                    title="Unduh hasil inventori per area sebagai file CSV"
+                  >
+                    <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span className="hidden xl:inline">CSV</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  disabled={isRefreshing || phase === 'syncing'}
+                  onClick={handleManualRefresh}
+                  className="h-9 px-2.5 text-xs font-bold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs"
+                  title="Sinkronkan data terbaru dari database"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-slate-500 dark:text-slate-400 ${isRefreshing || phase === 'syncing' ? 'animate-spin text-indigo-500' : ''}`} />
+                  <span className="hidden 2xl:inline">
+                    {isRefreshing || phase === 'syncing' ? 'Sync...' : 'Refresh'}
+                  </span>
+                </button>
+              </div>
+
+              {/* MOBILE COMPACT ACTION ICONS (< lg) */}
+              <div className="flex lg:hidden items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsCartDrawerOpen(true)}
+                  aria-label="Keranjang Order Picking"
+                  className={`relative h-9 w-9 rounded-xl border flex items-center justify-center transition-all cursor-pointer active:scale-95 ${
+                    cartItems.length > 0
+                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                      : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  <ShoppingCart className="w-4 h-4" />
+                  {cartItems.length > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[9.5px] font-black font-mono flex items-center justify-center shadow-xs">
+                      {cartItems.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isRefreshing || phase === 'syncing'}
+                  onClick={handleManualRefresh}
+                  aria-label="Sinkronkan Data Inventori"
+                  className="h-9 w-9 rounded-xl border bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 flex items-center justify-center transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isRefreshing || phase === 'syncing' ? 'animate-spin text-indigo-500' : ''}`} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsMobileActionsOpen((prev) => !prev)}
+                  aria-label="Menu Aksi Inventori"
+                  aria-expanded={isMobileActionsOpen}
+                  className={`h-9 w-9 rounded-xl border flex items-center justify-center transition-all cursor-pointer active:scale-95 ${
+                    isMobileActionsOpen
+                      ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-slate-900 dark:border-white'
+                      : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* MOBILE COLLAPSIBLE SECONDARY ACTIONS BAR (Lokasi & Print, Rekomendasi SO, CSV) */}
+            {isMobileActionsOpen && (
+              <div className="flex lg:hidden items-center gap-1.5 overflow-x-auto no-scrollbar pt-1.5 border-t border-slate-100 dark:border-slate-800/80">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileActionsOpen(false);
+                    handleOpenLokasiExport();
+                  }}
+                  className="h-8 px-2.5 text-[11px] font-bold bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg flex items-center gap-1.5 whitespace-nowrap shrink-0 active:scale-95 cursor-pointer"
+                >
+                  <MapPin className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  <span>Lokasi &amp; Print</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileActionsOpen(false);
+                    setIsStockTakeRecOpen(true);
+                  }}
+                  className="h-8 px-2.5 text-[11px] font-bold bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg flex items-center gap-1.5 whitespace-nowrap shrink-0 active:scale-95 cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                  <span>Rekomendasi SO</span>
+                </button>
+
+                {canExportData && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMobileActionsOpen(false);
+                      handleExportCsv();
+                    }}
+                    className="h-8 px-2.5 text-[11px] font-bold bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg flex items-center gap-1.5 whitespace-nowrap shrink-0 active:scale-95 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>Unduh CSV</span>
+                  </button>
+                )}
+              </div>
             )}
-          </div>
 
-          {/* Quick Filter Toggles & Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* ADA STOK FILTER */}
-            <button
-              type="button"
-              onClick={() => setOnlyActive((prev) => !prev)}
-              className={`px-3 py-2 text-xs font-extrabold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
-                onlyActive
-                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 border-slate-900 dark:border-white'
-                  : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-              }`}
-              title="Tampilkan hanya produk yang memiliki stok fisik di rak"
-            >
-              <Package className="w-3.5 h-3.5" />
-              <span>ADA STOK</span>
-            </button>
+            {/* ROW 2: Horizontal Area Filter Pills + Desktop Reset & Count */}
+            <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-100 dark:border-slate-800/80">
+              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar whitespace-nowrap flex-1 min-w-0">
+                {AVAILABLE_AREAS.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => setSelectedArea(a.id)}
+                    className={`px-2.5 py-1 text-[11.5px] sm:text-xs rounded-lg font-bold transition-all cursor-pointer shrink-0 active:scale-95 ${
+                      selectedArea === a.id
+                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-2xs'
+                        : 'bg-slate-100 hover:bg-slate-200 dark:bg-[#0E1420] dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    <span className="sm:hidden">{a.mobileLabel}</span>
+                    <span className="hidden sm:inline">{a.label}</span>
+                  </button>
+                ))}
+              </div>
 
-            {/* LOKASI & PRINT MODAL BUTTON */}
-            <button
-              type="button"
-              onClick={() => handleOpenLokasiExport()}
-              className="px-3 py-2 text-xs font-extrabold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-              title="Ekspor Data & Cetak PDF per Lokasi Rak"
-            >
-              <MapPin className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-              <Printer className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-              <span className="hidden sm:inline">LOKASI &amp; PRINT</span>
-            </button>
-
-            {/* REKOMENDASI STOCK TAKE & RESET SCAN DATA */}
-            <button
-              type="button"
-              onClick={() => setIsStockTakeRecOpen(true)}
-              className="px-3 py-2 text-xs font-extrabold bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-              title="Rekomendasi Stock Take Ulang & Reset Scan Data untuk lokasi anomali, minus, dan lokasi terkait"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-              <span className="hidden sm:inline">REKOMENDASI SO</span>
-            </button>
-
-            {/* KERANJANG PICKING BUTTON */}
-            <button
-              type="button"
-              id="btn-inventory-picking-cart"
-              onClick={() => setIsCartDrawerOpen(true)}
-              className={`px-3 py-2 text-xs font-extrabold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
-                cartItems.length > 0
-                  ? 'bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-600 ring-2 ring-indigo-500/30'
-                  : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
-              }`}
-              title="Buka Keranjang Order Picking"
-            >
-              <ShoppingCart className="w-3.5 h-3.5" />
-              <span>KERANJANG</span>
-              {cartItems.length > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black font-mono bg-white text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
-                  {cartItems.length}
+              {/* Desktop inline reset & filtered count */}
+              <div className="hidden lg:flex items-center gap-2 shrink-0">
+                {hasCustomFilters && (
+                  <button
+                    type="button"
+                    onClick={handleResetFilters}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Reset</span>
+                  </button>
+                )}
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+                  <strong className="text-slate-800 dark:text-slate-200">
+                    {stats.skuCount.toLocaleString('id-ID')}
+                  </strong>{' '}
+                  SKU ·{' '}
+                  <strong className="text-slate-800 dark:text-slate-200">
+                    {sortedAreaRows.length.toLocaleString('id-ID')}
+                  </strong>{' '}
+                  baris
                 </span>
-              )}
-            </button>
+              </div>
+            </div>
 
-            {/* CSV EXPORT */}
-            {canExportData && (
-              <button
-                type="button"
-                onClick={handleExportCsv}
-                className="px-3 py-2 text-xs font-extrabold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                title="Unduh hasil inventori per area sebagai file CSV"
-              >
-                <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span className="hidden sm:inline">CSV</span>
-              </button>
-            )}
+            {/* ROW 3 (MOBILE ONLY < lg): Horizontal Swipeable Sort + Status Stok + Size + Reset Chips */}
+            <div className="flex lg:hidden items-center gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap pt-1 border-t border-slate-100 dark:border-slate-800/80">
+              <div className="relative inline-flex items-center shrink-0">
+                <ArrowUpDown className="w-3 h-3 text-slate-500 dark:text-slate-400 absolute left-2 pointer-events-none" />
+                <select
+                  aria-label="Urutkan"
+                  value={sortOption}
+                  onChange={(e) => setSortOption(e.target.value as InventorySortOption)}
+                  className={`h-7 pl-6 pr-2 text-[11px] font-bold rounded-lg border appearance-none cursor-pointer focus:outline-none ${
+                    sortOption !== 'NAME_ASC'
+                      ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'
+                      : 'bg-slate-50 dark:bg-[#0E1420] border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  {SORT_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.shortLabel}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            {/* REFRESH BUTTON */}
-            <button
-              type="button"
-              disabled={isRefreshing || phase === 'syncing'}
-              onClick={handleManualRefresh}
-              className="px-3 py-2 text-xs font-extrabold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs"
-              title="Sinkronkan data terbaru dari database"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 text-amber-500 ${isRefreshing || phase === 'syncing' ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">
-                {isRefreshing || phase === 'syncing' ? 'SYNCING...' : 'REFRESH'}
-              </span>
-            </button>
-          </div>
-        </div>
-
-        {/* Area Filter Tabs (Semua, Warehouse, Blok F, Koli, Perbaikan, Aksesoris, Transit) */}
-        <div className="flex items-center gap-1 overflow-x-auto py-1 border-t border-slate-100 dark:border-slate-800/80">
-          <span className="text-[11px] font-bold text-slate-400 mr-1 flex items-center gap-1 shrink-0">
-            <Filter className="w-3 h-3 text-amber-500" />
-            <span>Filter Area:</span>
-          </span>
-          <div className="flex items-center gap-1">
-            {AVAILABLE_AREAS.map((a) => (
-              <button
-                key={a.id}
-                type="button"
-                onClick={() => setSelectedArea(a.id)}
-                className={`px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer shrink-0 ${
-                  selectedArea === a.id
-                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
-                    : 'bg-slate-100 hover:bg-slate-200 dark:bg-[#0E1420] dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
+              <select
+                aria-label="Status Stok"
+                value={stockStatus}
+                onChange={(e) => setStockStatus(e.target.value as InventoryStockStatusFilter)}
+                className={`h-7 px-2 text-[11px] font-bold rounded-lg border shrink-0 cursor-pointer focus:outline-none ${
+                  stockStatus !== 'ADA_STOK'
+                    ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'
+                    : 'bg-slate-50 dark:bg-[#0E1420] border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
                 }`}
               >
-                {a.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
+                {STOCK_STATUS_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.shortLabel}
+                  </option>
+                ))}
+              </select>
 
-      {/* ========================================================
-          3. WARNING / ERROR BANNER
-          ======================================================== */}
-      {stockError && (
-        <div className="bg-rose-500/10 border border-rose-500/30 rounded-2xl p-3.5 text-xs text-rose-900 dark:text-rose-200 flex items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-2.5">
-            <AlertCircle className="w-5 h-5 text-rose-500 shrink-0" />
-            <p className="font-medium">{stockError}</p>
-          </div>
-          <button
-            type="button"
-            onClick={handleManualRefresh}
-            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-extrabold rounded-xl transition-all text-xs cursor-pointer shrink-0"
-          >
-            Coba Lagi
-          </button>
-        </div>
-      )}
+              {availableSizes.length > 0 && (
+                <select
+                  aria-label="Filter Size"
+                  value={selectedSize}
+                  onChange={(e) => setSelectedSize(e.target.value)}
+                  className={`h-7 px-2 text-[11px] font-bold rounded-lg border shrink-0 cursor-pointer focus:outline-none ${
+                    selectedSize !== 'ALL'
+                      ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'
+                      : 'bg-slate-50 dark:bg-[#0E1420] border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  <option value="ALL">Size: Semua</option>
+                  {availableSizes.map((sz) => (
+                    <option key={sz} value={sz}>
+                      Size: {sz}
+                    </option>
+                  ))}
+                </select>
+              )}
 
-      {isEmpty && phase === 'ready' && (
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3.5 text-xs text-amber-900 dark:text-amber-200 flex items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-2.5">
-            <AlertCircle className="w-5 h-5 text-amber-500 shrink-0" />
-            <div>
-              <p className="font-bold">Stok Fisik Kosong / Belum Termuat</p>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Katalog master siap, namun belum ada baris stok fisik rak gudang.
-              </p>
+              {hasCustomFilters && (
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="h-7 px-2 rounded-lg text-[11px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200/80 dark:border-rose-800/60 inline-flex items-center gap-1 shrink-0 active:scale-95 cursor-pointer"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Reset</span>
+                </button>
+              )}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={handleManualRefresh}
-            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-black font-extrabold rounded-xl transition-all text-xs cursor-pointer shrink-0"
-          >
-            Muat Sekarang
-          </button>
-        </div>
-      )}
 
-      {/* ========================================================
-          4. VIRTUALIZED INVENTORY LIST
-          ======================================================== */}
-      {phase === 'loading' && isEmpty ? (
-        <div className="py-20 flex flex-col items-center justify-center gap-3 bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl">
-          <RefreshCw className="w-8 h-8 text-amber-500 animate-spin" />
-          <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
-            Memuat data inventori dari Supabase &amp; IndexedDB...
-          </span>
-        </div>
-      ) : sortedAreaRows.length === 0 ? (
-        <div className="py-16 text-center space-y-2 bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl">
-          <Boxes className="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto" />
-          <div className="text-sm font-bold text-slate-700 dark:text-slate-300">
-            Tidak Ada Produk yang Sesuai Filter
+          {/* ========================================================
+              2. WARNING / ERROR BANNER
+              ======================================================== */}
+          {stockError && (
+            <div className="bg-rose-500/10 border border-rose-500/30 rounded-2xl p-3 text-xs text-rose-900 dark:text-rose-200 flex items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-2.5">
+                <AlertCircle className="w-5 h-5 text-rose-500 shrink-0" />
+                <p className="font-medium">{stockError}</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleManualRefresh}
+                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-extrabold rounded-xl transition-all text-xs cursor-pointer shrink-0"
+              >
+                Coba Lagi
+              </button>
+            </div>
+          )}
+
+          {isEmpty && phase === 'ready' && (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3 text-xs text-amber-900 dark:text-amber-200 flex items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-2.5">
+                <AlertCircle className="w-5 h-5 text-amber-500 shrink-0" />
+                <div>
+                  <p className="font-bold">Stok Fisik Kosong / Belum Termuat</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Katalog master siap, namun belum ada baris stok fisik rak gudang.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleManualRefresh}
+                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-black font-extrabold rounded-xl transition-all text-xs cursor-pointer shrink-0"
+              >
+                Muat Sekarang
+              </button>
+            </div>
+          )}
+
+          {/* ========================================================
+              3. VIRTUALIZED INVENTORY LIST
+              ======================================================== */}
+          {phase === 'loading' && isEmpty ? (
+            <div className="py-20 flex flex-col items-center justify-center gap-3 bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl">
+              <RefreshCw className="w-8 h-8 text-indigo-500 animate-spin" />
+              <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                Memuat data inventori dari Supabase &amp; IndexedDB...
+              </span>
+            </div>
+          ) : sortedAreaRows.length === 0 ? (
+            <div className="py-14 px-4 text-center space-y-2.5 bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl">
+              <Boxes className="w-11 h-11 text-slate-300 dark:text-slate-700 mx-auto" />
+              <div className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                Tidak Ada Produk yang Sesuai Filter
+              </div>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                Coba ubah kata kunci pencarian, status stok, size, atau filter area yang aktif.
+              </p>
+              {hasCustomFilters && (
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset Semua Filter</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            <InventoryList
+              rows={sortedAreaRows}
+              sort={sortOption}
+              onSort={setSortOption}
+              onOpen={setSelectedSku}
+              onLoc={handleOpenLokasiExport}
+              onAddToCart={handleAddToCart}
+              onNotify={onNotify}
+              resetKey={`${selectedArea}_${deferredSearch}_${stockStatus}_${selectedSize}_${sortOption}`}
+            />
+          )}
+
+          {/* Subtle Desktop Micro-Caption (Mobile uses InventoryList header bar) */}
+          <div className="hidden md:flex items-center justify-between text-[11px] text-slate-400 px-1">
+            <span>
+              Menampilkan{' '}
+              <strong className="text-slate-700 dark:text-slate-300 font-mono tabular-nums">
+                {stats.skuCount.toLocaleString('id-ID')}
+              </strong>{' '}
+              SKU (
+              <strong className="text-slate-700 dark:text-slate-300 font-mono tabular-nums">
+                {sortedAreaRows.length.toLocaleString('id-ID')}
+              </strong>{' '}
+              baris area) · Klik nama produk untuk detail &amp; riwayat mutasi.
+            </span>
+            <span className="text-[10.5px] text-slate-500 dark:text-slate-400 font-semibold">
+              Side-by-Side DP &amp; Fisik
+            </span>
           </div>
-          <p className="text-xs text-slate-400 max-w-sm mx-auto">
-            Coba bersihkan kata kunci pencarian atau matikan filter &ldquo;Ada Stok&rdquo; / ubah filter area.
-          </p>
-        </div>
-      ) : (
-        <InventoryList
-          rows={sortedAreaRows}
-          sort={sortOption}
-          onSort={setSortOption}
-          onOpen={setSelectedSku}
-          onLoc={handleOpenLokasiExport}
-          onAddToCart={handleAddToCart}
-          onNotify={onNotify}
-          resetKey={`${selectedArea}_${deferredSearch}_${onlyActive}_${sortOption}`}
-        />
-      )}
-
-      {/* Bottom status note */}
-      <div className="flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-400 px-2 gap-1">
-        <span>
-          Menampilkan <strong className="text-slate-700 dark:text-slate-300 font-mono">{sortedAreaRows.length.toLocaleString('id-ID')}</strong> baris area (dari{' '}
-          <strong className="text-slate-700 dark:text-slate-300 font-mono">{stats.skuCount.toLocaleString('id-ID')}</strong> total SKU fisik). Data tersaji berdampingan dengan DealPOS tanpa kalkulasi selisih.
-        </span>
-        <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">
-          Side-by-Side DP &amp; Fisik Aktif
-        </span>
-      </div>
-      </>
+        </>
       )}
 
       {/* ========================================================
