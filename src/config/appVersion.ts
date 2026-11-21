@@ -15,20 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.24.2",
-  "versionCode": 442,
+  "version": "v2.24.3",
+  "versionCode": 443,
   "buildDate": "21 November 2026",
-  "buildHash": "wms-261121-v442-0614",
-  "releaseTitle": "WMS v2.24.2 — Live Chat Full-Screen Edge-to-Edge",
+  "buildHash": "wms-261121-v443-1328",
+  "releaseTitle": "WMS v2.24.3 — Integrasi Database Live WMS DealPOS & Standardisasi Label Barcode 50x20mm",
   "releaseNotes": [
-    "Menghapus seluruh margin pinggir, padding ganda, dan bingkai kartu pada Live Chat agar tampil full-screen edge-to-edge seperti aplikasi chat asli di seluler maupun desktop",
-    "Ruang percakapan aktif di seluler kini tampil layar penuh (menutupi bilah navigasi bawah & header ganda) dengan safe-area top/bottom",
-    "Proporsi panel chat desktop diperluas (sidebar 25% & area chat 75% di layar xl+) serta dukungan edge-to-edge penuh di Panel Pendamping"
+    "Integrasi database langsung WMS & DealPOS tanpa wajib upload CSV",
+    "Pilihan mode Outlet Toko (DealPOS) vs Rak Fisik Gudang",
+    "Penyempurnaan layout stiker thermal 50x20mm Code128 & QR Code sesuai standard",
+    "Pratinjau label WYSIWYG realistis"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.24.2",
+    "versionCode": 442,
+    "buildDate": "21 November 2026",
+    "buildHash": "wms-261121-v442-0614",
+    "releaseTitle": "WMS v2.24.2 — Live Chat Full-Screen Edge-to-Edge",
+    "releaseNotes": [
+      "Menghapus seluruh margin pinggir, padding ganda, dan bingkai kartu pada Live Chat agar tampil full-screen edge-to-edge seperti aplikasi chat asli di seluler maupun desktop",
+      "Ruang percakapan aktif di seluler kini tampil layar penuh (menutupi bilah navigasi bawah & header ganda) dengan safe-area top/bottom",
+      "Proporsi panel chat desktop diperluas (sidebar 25% & area chat 75% di layar xl+) serta dukungan edge-to-edge penuh di Panel Pendamping"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.24.1",
     "versionCode": 441,
@@ -82,94 +96,20 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "version": "v2.23.3",
     "versionCode": 433,
     "buildDate": "21 November 2026",
-    "buildHash": "wms-261121-v433-0013",
-    "releaseTitle": "WMS v2.23.3 — Rangkuman 1 Baris & Nama Produk + Size Sejajar di Pengecekan SJ",
+    "buildHash": "wms-261121-v433-2345",
+    "releaseTitle": "WMS v2.23.3 — Optimasi Filter & Layout Kolom Distribusi Store",
     "releaseNotes": [
-      "Padatkan Rangkuman Pengecekan SJ menjadi 1 baris 3 kolom (Total SJ",
-      "Total Scan",
-      "Total Selisih) untuk Seluler & Desktop serta filter cepat di header Komparasi",
-      "Gabungkan Nama Produk dan Size menjadi 1 baris sejajar pada Kartu Item Mobile, Tabel Desktop, dan Riwayat SJ"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.23.2",
-    "versionCode": 432,
-    "buildDate": "20 November 2026",
-    "buildHash": "wms-261120-v432-2358",
-    "releaseTitle": "WMS v2.23.2 — Renovasi Tampilan Seluler & Ergonomi App-Shell Pengecekan SJ & Riwayat",
-    "releaseNotes": [
-      "Renovasi menyeluruh Tab Pengecekan SJ & Tab Riwayat agar tampil seperti aplikasi seluler native (Segmented Controls, Draft Carousel, Kartu Item Mobile bebas scroll horizontal, Filter lipat)",
-      "Sticky Bottom Selection Dock & 2 Native Bottom Action Sheets untuk aksi massal dan menu kartu SJ dengan tombol netral Anti-Pelangi"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.23.1",
-    "versionCode": 431,
-    "buildDate": "20 November 2026",
-    "buildHash": "wms-261120-v431-1622",
-    "releaseTitle": "WMS v2.23.1 — Kontrol Eksplisit Dispatched, Sub-Tab SELESAI & Anti-Duplikat 2 Arah",
-    "releaseNotes": [
-      "Opsi masuk Dispatched saat Submit/Bulk Submit/Edit ke SELESAI kini eksplisit dengan default OFF (tanpa automasi diam-diam)",
-      "Pause-on-Edit: alert & nonaktifkan sementara status Dispatched saat SJ SELESAI diedit, lalu tawarkan masuk kembali saat Simpan",
-      "Sub-tab status pengiriman di Riwayat SELESAI (Belum Jadwal Kirim, Dispatched, Terkirim, Batal Kirim) + Select All/Unselect & aksi massal",
-      "Arsip SJ lama ke Terkirim tersimpan di Supabase wms_system_docs tanpa membuat data trip palsu di Pengiriman Store",
-      "Anti-duplikat No SJ 2 arah: tabrakan No SJ di Pengiriman Store maupun Pengecekan SJ otomatis menggabungkan & melengkapi data tanpa kartu kembar"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.23.0",
-    "versionCode": 430,
-    "buildDate": "20 November 2026",
-    "buildHash": "wms-261120-v430-1407",
-    "releaseTitle": "WMS v2.23.0 — Over-Scan Alert Pengecekan SJ & Auto-Sync Pengiriman Store Dispatched",
-    "releaseNotes": [
-      "Suara & panel peringatan otomatis di Pengecekan SJ saat qty scan melebihi Qty SJ (berdampingan dengan item Di Luar SJ)",
-      "Auto-sync SJ Pengiriman status SELESAI ke Pengiriman Store Dispatched dengan estimasi 1 koli = 40 pcs & penyesuaian cepat koli aktual",
-      "Auto-tarik dari antrean Dispatched saat status Riwayat SJ diturunkan ke PENDING atau dihapus (aman untuk data sudah terkirim)",
-      "Tambahan guardrail skill & rule GEMINI.md §17 untuk konsistensi pembaruan jangka panjang"
+      "Perbaiki filter status pengiriman agar default hanya menampilkan SELESAI & BELUM KIRIM, mengabaikan status CANCEL/BATAL",
+      "Optimalkan proporsi lebar kolom tabel distribusi store agar serasi di layar desktop maupun seluler",
+      "Perbaiki badge ringkasan koli dan item per toko untuk visibilitas status pengiriman yang lebih jelas"
     ],
     "minSupportedVersion": "v2.0.0"
   }
 ];
 
-export const CURRENT_APP_VERSION = CURRENT_APP_VERSION_INFO.version;
-
-/**
- * Compare two semver-like strings (e.g. 'v2.5.1' vs 'v2.5.2')
- * Returns:
- *   1 if v1 > v2
- *  -1 if v1 < v2
- *   0 if v1 === v2
- */
-export function compareVersions(v1: string, v2: string): number {
-  const clean = (v: string) => v.replace(/^v/i, '').split('-')[0].split('.').map(n => parseInt(n, 10) || 0);
-  const p1 = clean(v1);
-  const p2 = clean(v2);
-
-  const len = Math.max(p1.length, p2.length);
-  for (let i = 0; i < len; i++) {
-    const num1 = p1[i] || 0;
-    const num2 = p2[i] || 0;
-    if (num1 > num2) return 1;
-    if (num1 < num2) return -1;
-  }
-  return 0;
-}
-
-export function isNewerVersion(
-  serverVersion: string,
-  clientVersion: string = CURRENT_APP_VERSION,
-  serverBuildHash?: string,
-  clientBuildHash: string = CURRENT_APP_VERSION_INFO.buildHash
-): boolean {
-  if (!serverVersion) return false;
-  const cmp = compareVersions(serverVersion, clientVersion);
-  if (cmp > 0) return true;
-  if (cmp === 0 && serverBuildHash && clientBuildHash && serverBuildHash !== clientBuildHash) {
-    return true;
-  }
-  return false;
-}
+export const APP_VERSION = CURRENT_APP_VERSION_INFO.version;
+export const APP_VERSION_CODE = CURRENT_APP_VERSION_INFO.versionCode;
+export const APP_BUILD_DATE = CURRENT_APP_VERSION_INFO.buildDate;
+export const APP_BUILD_HASH = CURRENT_APP_VERSION_INFO.buildHash;
+export const APP_RELEASE_TITLE = CURRENT_APP_VERSION_INFO.releaseTitle;
+export const APP_RELEASE_NOTES = CURRENT_APP_VERSION_INFO.releaseNotes;

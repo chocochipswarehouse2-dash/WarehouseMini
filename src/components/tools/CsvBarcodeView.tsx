@@ -32,7 +32,10 @@ interface CsvBarcodeViewProps {
   onNotify: (msg: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
-function buildInventoryFromWmsProducts(products: ProductItem[]): DealPosInventoryData {
+function buildInventoryFromWmsProducts(
+  products: ProductItem[],
+  mode: 'dealpos' | 'warehouse' = 'dealpos'
+): DealPosInventoryData {
   const outletSet = new Set<string>();
   const skuMap = new Map<string, DealPosSkuRow>();
   const productMap = new Map<string, DealPosProductGroup>();
@@ -47,19 +50,50 @@ function buildInventoryFromWmsProducts(products: ProductItem[]): DealPosInventor
     const price = String(p.price || 0);
 
     const stocks: Record<string, number> = {};
-    if (Array.isArray(p.locations) && p.locations.length > 0) {
-      for (const loc of p.locations) {
-        const locName = String(loc.lokasi || 'Warehouse').trim().toUpperCase();
-        const qty = Number(loc.qty) || 0;
-        if (locName && qty !== 0) {
-          stocks[locName] = (stocks[locName] || 0) + qty;
-          outletSet.add(locName);
+
+    if (mode === 'dealpos') {
+      // 1. Ekstrak dari dealpos_channels (CPJ, LMP, GI, MKG, BTS, CWS, dll.)
+      if (p.dealpos_channels && typeof p.dealpos_channels === 'object') {
+        for (const [chName, val] of Object.entries(p.dealpos_channels)) {
+          const cleanCh = String(chName).trim().toUpperCase();
+          if (!cleanCh) continue;
+          let qty = 0;
+          if (typeof val === 'number') qty = val;
+          else if (typeof val === 'string') qty = Number(val) || 0;
+          else if (val && typeof val === 'object') {
+            qty = Number((val as any).qty ?? (val as any).quantity ?? (val as any).stock ?? 0) || 0;
+          }
+          if (qty !== 0) {
+            stocks[cleanCh] = (stocks[cleanCh] || 0) + qty;
+            outletSet.add(cleanCh);
+          }
         }
       }
-    } else if (p.l && (Number(p.q) || 0) !== 0) {
-      const locName = String(p.l).trim().toUpperCase();
-      stocks[locName] = Number(p.q) || 0;
-      outletSet.add(locName);
+      // 2. Tambahkan default stock WH / BOOKED jika ada
+      if (p.d !== undefined && Number(p.d) !== 0 && !stocks['WH']) {
+        stocks['WH'] = Number(p.d) || 0;
+        outletSet.add('WH');
+      }
+      if (p.b !== undefined && Number(p.b) !== 0 && !stocks['BOOKED']) {
+        stocks['BOOKED'] = Number(p.b) || 0;
+        outletSet.add('BOOKED');
+      }
+    } else {
+      // Mode Rak Fisik Gudang (stok_real_fisik WMS)
+      if (Array.isArray(p.locations) && p.locations.length > 0) {
+        for (const loc of p.locations) {
+          const locName = String(loc.lokasi || 'Warehouse').trim().toUpperCase();
+          const qty = Number(loc.qty) || 0;
+          if (locName && qty !== 0) {
+            stocks[locName] = (stocks[locName] || 0) + qty;
+            outletSet.add(locName);
+          }
+        }
+      } else if (p.l && (Number(p.q) || 0) !== 0) {
+        const locName = String(p.l).trim().toUpperCase();
+        stocks[locName] = Number(p.q) || 0;
+        outletSet.add(locName);
+      }
     }
 
     const row: DealPosSkuRow = { sku, name, variant, category, price, stocks };
@@ -83,11 +117,15 @@ function buildInventoryFromWmsProducts(products: ProductItem[]): DealPosInventor
     skuMap,
     productMap,
     totalSkus: skuMap.size,
-    sourceLabel: 'Database WMS (Live Lokal)',
+    sourceLabel:
+      mode === 'dealpos'
+        ? 'Database WMS & DealPOS Terintegrasi (Live Supabase)'
+        : 'Database WMS Fisik Terintegrasi (Live Rak Gudang)',
   };
 }
 
 export const CsvBarcodeView: React.FC<CsvBarcodeViewProps> = ({ products, onNotify }) => {
+  const [dataMode, setDataMode] = useState<'dealpos' | 'warehouse'>('dealpos');
   const [importedDealPosData, setImportedDealPosData] = useState<DealPosInventoryData | null>(null);
   const [productSearch, setProductSearch] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -114,7 +152,10 @@ export const CsvBarcodeView: React.FC<CsvBarcodeViewProps> = ({ products, onNoti
 
   const csvInputRef = useRef<HTMLInputElement>(null);
 
-  const wmsInventoryData = useMemo(() => buildInventoryFromWmsProducts(products), [products]);
+  const wmsInventoryData = useMemo(
+    () => buildInventoryFromWmsProducts(products, dataMode),
+    [products, dataMode]
+  );
   const inventoryData = importedDealPosData || wmsInventoryData;
 
   const allActiveSkusSet = useMemo(() => {
@@ -378,22 +419,65 @@ export const CsvBarcodeView: React.FC<CsvBarcodeViewProps> = ({ products, onNoti
   return (
     <div className="w-full max-w-full px-2 sm:px-4 lg:px-6 py-4 space-y-5">
       {/* Header Toolbar */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
               CSV Barcode &amp; Export Outlet DealPOS
             </h1>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-              {inventoryData.sourceLabel}
-            </span>
+            {importedDealPosData ? (
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shadow-2xs">
+                <span>File CSV: {importedDealPosData.sourceLabel}</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shadow-2xs">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>{inventoryData.sourceLabel}</span>
+              </span>
+            )}
           </div>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-            Pilih produk/SKU lalu export CSV DealPOS per outlet/lokasi dalam 1 ZIP atau cetak stiker barcode &amp; ceklis.
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+            Data terintegrasi langsung dengan database WMS &amp; DealPOS ({inventoryData.totalSkus.toLocaleString('id-ID')} SKU • {inventoryData.outletCols.length} Saluran/Outlet aktif).
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Segmented Mode Switcher (DealPOS Outlet vs Rak Fisik Gudang) */}
+          <div className="flex items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs">
+            <button
+              type="button"
+              onClick={() => {
+                setImportedDealPosData(null);
+                setDataMode('dealpos');
+                setSelectedOutlets(new Set());
+                onNotify('Mode aktif: Outlet Toko (DealPOS Terintegrasi).', 'info');
+              }}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                !importedDealPosData && dataMode === 'dealpos'
+                  ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Outlet Toko (DealPOS)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setImportedDealPosData(null);
+                setDataMode('warehouse');
+                setSelectedOutlets(new Set());
+                onNotify('Mode aktif: Rak Fisik (Gudang WMS Terintegrasi).', 'info');
+              }}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                !importedDealPosData && dataMode === 'warehouse'
+                  ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Rak Fisik (Gudang WMS)
+            </button>
+          </div>
+
           <input
             ref={csvInputRef}
             type="file"
@@ -411,27 +495,28 @@ export const CsvBarcodeView: React.FC<CsvBarcodeViewProps> = ({ products, onNoti
               onClick={() => {
                 setImportedDealPosData(null);
                 setSelectedOutlets(new Set());
-                onNotify('Kembali menggunakan Database WMS Lokal.', 'info');
+                onNotify('Kembali ke Database Terintegrasi WMS & DealPOS.', 'info');
               }}
               className="h-9 px-3 rounded-xl text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 flex items-center gap-1.5"
             >
-              <Database className="w-3.5 h-3.5" />
-              <span>Pakai DB WMS</span>
+              <Database className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Kembali ke DB Live</span>
             </button>
           )}
           <button
             type="button"
             onClick={() => csvInputRef.current?.click()}
-            className="h-9 px-3.5 rounded-xl text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 flex items-center gap-1.5"
+            className="h-9 px-3 rounded-xl text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 flex items-center gap-1.5"
+            title="Upload CSV jika ingin menggunakan file export manual DealPOS"
           >
             <Upload className="w-3.5 h-3.5" />
-            <span>Import CSV DealPOS</span>
+            <span>Upload CSV</span>
           </button>
           <button
             type="button"
             disabled={isZipping || allActiveSkusSet.size === 0 || selectedOutlets.size === 0}
             onClick={handleDownloadZip}
-            className="h-9 px-4 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5 disabled:opacity-50"
+            className="h-9 px-4 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5 disabled:opacity-50 shadow-xs"
           >
             <Download className="w-3.5 h-3.5" />
             <span>{isZipping ? 'Membuat ZIP...' : 'Download ZIP'}</span>

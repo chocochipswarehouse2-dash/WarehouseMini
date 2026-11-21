@@ -74,21 +74,209 @@ export interface BatchBarcodePrintItem {
   outlet: string;
 }
 
-export interface BarcodeLabelConfig {
-  showName: boolean;
-  showVariant: boolean;
+export interface BarcodePrinterConfig {
+  lineMode: '1' | '2'; // '1' = 50x20mm Single, '2' = 104x20mm Twin
+  labelWidthMm: number;
+  labelHeightMm: number;
+  twoLineGapMm: number;
+  printPaddingMm: number;
+  fontFamily: string;
+
+  codeType: 'barcode' | 'qrcode';
+  barcodeFormat: string;
+  barcodeHeight: number;
+  barcodeWidth: number;
+  qrSize: number;
+
+  showProductName: boolean;
+  productNameSize: number;
+  productNameBold: boolean;
+  productNameCase: 'normal' | 'uppercase';
+
+  showVariantSize: boolean;
+  variantSize: number;
+  variantBold: boolean;
+
+  showSku: boolean;
+  skuSize: number;
+  skuBold: boolean;
+  skuPrefix: string;
+
   showPrice: boolean;
-  codeHeightMm: number;
-  fontSizePx: number;
+  priceSize: number;
+  priceBold: boolean;
+  pricePrefixType: 'Rp' | 'none' | 'IDR' | 'custom';
+  priceCustomPrefix: string;
+  priceCustomSuffix: string;
+  priceThousandSeparator: '.' | ',' | 'none';
+  customText: string;
 }
 
-export const DEFAULT_BARCODE_LABEL_CONFIG: BarcodeLabelConfig = {
-  showName: true,
-  showVariant: true,
-  showPrice: false,
-  codeHeightMm: 9,
-  fontSizePx: 8,
+export type BarcodeLabelConfig = BarcodePrinterConfig;
+
+export const DEFAULT_BARCODE_LABEL_CONFIG: BarcodePrinterConfig = {
+  lineMode: '1',
+  labelWidthMm: 50,
+  labelHeightMm: 20,
+  twoLineGapMm: 4,
+  printPaddingMm: 1.0,
+  fontFamily: 'sans-serif',
+
+  codeType: 'barcode',
+  barcodeFormat: 'CODE128',
+  barcodeHeight: 22,
+  barcodeWidth: 1.2,
+  qrSize: 42,
+
+  showProductName: true,
+  productNameSize: 7.5,
+  productNameBold: true,
+  productNameCase: 'normal',
+
+  showVariantSize: true,
+  variantSize: 7.0,
+  variantBold: false,
+
+  showSku: true,
+  skuSize: 7.5,
+  skuBold: true,
+  skuPrefix: '',
+
+  showPrice: true,
+  priceSize: 9.5,
+  priceBold: true,
+  pricePrefixType: 'Rp',
+  priceCustomPrefix: '',
+  priceCustomSuffix: '',
+  priceThousandSeparator: '.',
+  customText: '',
 };
+
+export function formatLabelPriceDisplay(
+  rawPrice: any,
+  config: Partial<BarcodePrinterConfig> = DEFAULT_BARCODE_LABEL_CONFIG
+): string {
+  if (!rawPrice && rawPrice !== 0) return '';
+  const numStr = String(rawPrice).replace(/[^\d]/g, '');
+  if (!numStr) return String(rawPrice);
+
+  let formattedNumber = '';
+  if (config.priceThousandSeparator === '.') {
+    formattedNumber = parseInt(numStr, 10).toLocaleString('id-ID');
+  } else if (config.priceThousandSeparator === ',') {
+    formattedNumber = parseInt(numStr, 10).toLocaleString('en-US');
+  } else {
+    formattedNumber = numStr;
+  }
+
+  let prefix = '';
+  if (config.pricePrefixType === 'Rp') prefix = 'Rp ';
+  else if (config.pricePrefixType === 'IDR') prefix = 'IDR ';
+  else if (config.pricePrefixType === 'custom') prefix = config.priceCustomPrefix || '';
+  else prefix = '';
+
+  const suffix = config.priceCustomSuffix || '';
+  return `${prefix}${formattedNumber}${suffix}`;
+}
+
+const KNOWN_CATEGORIES_LIST = [
+  'Cardigan', 'Jumpsuit', 'Bodysuit', 'Culottes', 'Culotte', 'Bralette', 'Leggings', 'Legging',
+  'Overalls', 'Overall', 'Blazer', 'Shorts', 'Short', 'Blouse', 'Jacket', 'Sweater', 'Hoodie',
+  'Corset', 'Pants', 'Dress', 'Skirt', 'Shirt', 'Outer', 'Vest', 'Knit', 'Tank', 'Jeans',
+  'Romper', 'Coat', 'Maxi', 'Midi', 'Mini', 'Top', 'Set', 'Tee'
+];
+KNOWN_CATEGORIES_LIST.sort((a, b) => b.length - a.length);
+
+const KNOWN_COLORS_LIST = [
+  'Denim Blue', 'Dark Denim', 'Light Denim', 'Baby Blue', 'Baby Pink', 'Dusty Pink', 'Dusty Blue',
+  'Broken White', 'Off White', 'All Size', 'Navy', 'Black', 'White', 'Cream', 'Pink', 'Sage',
+  'Khaki', 'Grey', 'Gray', 'Maroon', 'Burgundy', 'Camel', 'Lilac', 'Mint', 'Peach', 'Choco',
+  'Olive', 'Brown', 'Yellow', 'Blue', 'Red', 'Green', 'Mustard', 'Charcoal', 'Taupe', 'Ivory',
+  'Brick', 'Sand', 'Mocca', 'Champagne', 'Silver', 'Gold', 'Beige', 'Terracotta', 'Lavender',
+  'Coral', 'Emerald', 'Rust', 'Bronze', 'Tan', 'Denim'
+];
+KNOWN_COLORS_LIST.sort((a, b) => b.length - a.length);
+
+export function getAutoProductNameFontSize(text: string, baseSize = 7.5): number {
+  const len = (text || '').length;
+  const base = Number(baseSize) || 7.5;
+  if (len > 34) return Math.min(base, Math.max(5.5, base - 2.0));
+  if (len > 28) return Math.min(base, Math.max(6.0, base - 1.5));
+  if (len > 22) return Math.min(base, Math.max(6.6, base - 0.8));
+  return base;
+}
+
+export function parseLabelNameAndVariant(rawName: string, rawVariant?: string) {
+  const name = (rawName || '').trim();
+  const varStr = (rawVariant || '').trim();
+  const isPlaceholderVar = !varStr || varStr === '-' || /^(default|all\s*size|none|one\s*size)$/i.test(varStr);
+  const cleanVar = isPlaceholderVar ? '' : varStr;
+
+  const nameLower = name.toLowerCase();
+  let splitDone = false;
+  let mainName = name;
+  let color = '';
+
+  for (const cat of KNOWN_CATEGORIES_LIST) {
+    const regex = new RegExp('\\b' + cat.toLowerCase() + '\\b', 'i');
+    const match = regex.exec(name);
+    if (match) {
+      const catEnd = match.index + match[0].length;
+      const candidateMain = name.substring(0, catEnd).trim();
+      let candidateColor = name.substring(catEnd).trim();
+      candidateColor = candidateColor.replace(/^[-/\s]+/, '').trim();
+      if (candidateColor) {
+        mainName = candidateMain;
+        color = candidateColor;
+        splitDone = true;
+        break;
+      } else {
+        mainName = candidateMain;
+        color = '';
+        splitDone = true;
+        break;
+      }
+    }
+  }
+
+  if (!splitDone || !color) {
+    for (const c of KNOWN_COLORS_LIST) {
+      if (nameLower.endsWith(' ' + c.toLowerCase())) {
+        color = c;
+        mainName = name.substring(0, name.length - c.length - 1).trim();
+        break;
+      }
+    }
+  }
+
+  // QR Code Lines:
+  let qrRow1 = '';
+  let qrRow2 = '';
+  if (!color) {
+    qrRow1 = cleanVar ? `${mainName} | ${cleanVar}` : mainName;
+    qrRow2 = '';
+  } else {
+    qrRow1 = mainName;
+    qrRow2 = cleanVar ? `${color} | ${cleanVar}` : color;
+  }
+
+  // Barcode format (50x20mm standard: Name (Size)):
+  let barcodeFullName = name;
+  if (cleanVar) {
+    if (!name.endsWith(`(${cleanVar})`) && !name.endsWith(`[${cleanVar}]`)) {
+      barcodeFullName = `${name} (${cleanVar})`;
+    }
+  }
+
+  return {
+    mainName,
+    color,
+    cleanVar,
+    qrRow1,
+    qrRow2,
+    barcodeFullName,
+  };
+}
 
 export function extractBatchNumber(name: string, sheet = ''): string {
   const mSheet = (sheet || '').match(/\b(\d{3,4})\b/);

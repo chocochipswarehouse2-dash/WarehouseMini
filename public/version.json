@@ -1,13 +1,14 @@
 {
-  "version": "v2.24.2",
-  "versionCode": 442,
+  "version": "v2.24.3",
+  "versionCode": 443,
   "buildDate": "21 November 2026",
-  "buildHash": "wms-261121-v442-0614",
-  "releaseTitle": "WMS v2.24.2 — Live Chat Full-Screen Edge-to-Edge",
+  "buildHash": "wms-261121-v443-1328",
+  "releaseTitle": "WMS v2.24.3 — Integrasi Database Live WMS DealPOS & Standardisasi Label Barcode 50x20mm",
   "releaseNotes": [
-    "Menghapus seluruh margin pinggir, padding ganda, dan bingkai kartu pada Live Chat agar tampil full-screen edge-to-edge seperti aplikasi chat asli di seluler maupun desktop",
-    "Ruang percakapan aktif di seluler kini tampil layar penuh (menutupi bilah navigasi bawah & header ganda) dengan safe-area top/bottom",
-    "Proporsi panel chat desktop diperluas (sidebar 25% & area chat 75% di layar xl+) serta dukungan edge-to-edge penuh di Panel Pendamping"
+    "Integrasi database langsung WMS & DealPOS tanpa wajib upload CSV",
+    "Pilihan mode Outlet Toko (DealPOS) vs Rak Fisik Gudang",
+    "Penyempurnaan layout stiker thermal 50x20mm Code128 & QR Code sesuai standard",
+    "Pratinjau label WYSIWYG realistis"
   ],
   "minSupportedVersion": "v2.0.0"
 }
