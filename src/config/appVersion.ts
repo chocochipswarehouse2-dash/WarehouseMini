@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.24.1",
-  "versionCode": 441,
+  "version": "v2.24.2",
+  "versionCode": 442,
   "buildDate": "21 November 2026",
-  "buildHash": "wms-261121-v441-0546",
-  "releaseTitle": "WMS v2.24.1 — Optimasi Tabel, Filter & Sort Stok Produk",
+  "buildHash": "wms-261121-v442-0614",
+  "releaseTitle": "WMS v2.24.2 — Live Chat Full-Screen Edge-to-Edge",
   "releaseNotes": [
-    "Menghapus 4 kartu ringkasan KPI pada tab Stok Produk (sudah tersedia di Dashboard Kapasitas) agar tabel langsung tampil penuh di seluler maupun desktop",
-    "Menambahkan filter Status Stok (Ada Stok, Fisik > 0, DP > 0 Fisik 0, Stok Minus, Semua Master), filter Size master, dropdown Urutkan, dan tombol Reset filter",
-    "Merapikan toolbar seluler bergaya aplikasi (aksi sekunder kolapsibel & swipe horizontal) serta memperluas tinggi area tabel stok produk"
+    "Menghapus seluruh margin pinggir, padding ganda, dan bingkai kartu pada Live Chat agar tampil full-screen edge-to-edge seperti aplikasi chat asli di seluler maupun desktop",
+    "Ruang percakapan aktif di seluler kini tampil layar penuh (menutupi bilah navigasi bawah & header ganda) dengan safe-area top/bottom",
+    "Proporsi panel chat desktop diperluas (sidebar 25% & area chat 75% di layar xl+) serta dukungan edge-to-edge penuh di Panel Pendamping"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.24.1",
+    "versionCode": 441,
+    "buildDate": "21 November 2026",
+    "buildHash": "wms-261121-v441-0546",
+    "releaseTitle": "WMS v2.24.1 — Optimasi Tabel, Filter & Sort Stok Produk",
+    "releaseNotes": [
+      "Menghapus 4 kartu ringkasan KPI pada tab Stok Produk (sudah tersedia di Dashboard Kapasitas) agar tabel langsung tampil penuh di seluler maupun desktop",
+      "Menambahkan filter Status Stok (Ada Stok, Fisik > 0, DP > 0 Fisik 0, Stok Minus, Semua Master), filter Size master, dropdown Urutkan, dan tombol Reset filter",
+      "Merapikan toolbar seluler bergaya aplikasi (aksi sekunder kolapsibel & swipe horizontal) serta memperluas tinggi area tabel stok produk"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.24.0",
     "versionCode": 440,
@@ -117,17 +130,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Auto-sync SJ Pengiriman status SELESAI ke Pengiriman Store Dispatched dengan estimasi 1 koli = 40 pcs & penyesuaian cepat koli aktual",
       "Auto-tarik dari antrean Dispatched saat status Riwayat SJ diturunkan ke PENDING atau dihapus (aman untuk data sudah terkirim)",
       "Tambahan guardrail skill & rule GEMINI.md §17 untuk konsistensi pembaruan jangka panjang"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.22.10",
-    "versionCode": 430,
-    "buildDate": "20 November 2026",
-    "buildHash": "wms-261120-v430-2023",
-    "releaseTitle": "WMS v2.22.10 — Tambah Filter Kategori Tugas Picking",
-    "releaseNotes": [
-      "Tambahkan filter kategori Semua, Pengiriman Store, Order, SPS, Manual shipment/alter, Retur, dan Keranjang Order di PickingTasksView"
     ],
     "minSupportedVersion": "v2.0.0"
   }

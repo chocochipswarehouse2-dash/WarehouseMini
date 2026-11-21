@@ -796,14 +796,14 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
       className={
         isFloating
           ? 'flex flex-col w-full h-full bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 overflow-hidden'
-          : 'w-full max-w-full px-3 sm:px-4 lg:px-6 py-3'
+          : 'w-full max-w-full p-0 h-[calc(100dvh-112px-env(safe-area-inset-bottom))] lg:h-[calc(100vh-45px)] flex flex-col overflow-hidden bg-white dark:bg-slate-900'
       }
     >
       <div
         className={
           isFloating
             ? 'flex-1 flex flex-col min-h-0 overflow-hidden'
-            : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden flex flex-col lg:grid lg:grid-cols-12 h-[calc(100dvh-110px)] min-h-[540px]'
+            : 'flex-1 min-h-0 w-full bg-white dark:bg-slate-900 overflow-hidden flex flex-col lg:grid lg:grid-cols-12'
         }
       >
         {/* LEFT PANE: ROOMS & ONLINE USERS DIRECTORY */}
@@ -815,11 +815,11 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                 : 'flex-1 flex flex-col min-h-0 h-full overflow-hidden'
               : `${
                   showMobileDetail ? 'hidden lg:flex' : 'flex'
-                } lg:col-span-4 xl:col-span-4 flex-col border-r border-slate-200 dark:border-slate-800 min-h-0 h-full overflow-hidden`
+                } flex-1 lg:flex-none lg:col-span-4 xl:col-span-3 flex-col lg:border-r border-slate-200 dark:border-slate-800 min-h-0 h-full overflow-hidden bg-white dark:bg-slate-900`
           }`}
         >
           {/* Left Header */}
-          <div className="p-3 sm:p-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/80 flex items-center justify-between gap-2 shrink-0">
+          <div className="px-3.5 py-2.5 sm:py-3 border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-2 shrink-0">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <MessageSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
@@ -1238,8 +1238,10 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                 ? 'flex-1 flex flex-col min-h-0'
                 : 'hidden'
               : `${
-                  showMobileDetail ? 'flex' : 'hidden lg:flex'
-                } lg:col-span-8 xl:col-span-8 flex-col min-h-0 h-full bg-slate-50/40 dark:bg-slate-950/40`
+                  showMobileDetail
+                    ? 'fixed inset-0 z-[50] flex bg-white dark:bg-slate-900 lg:static lg:z-auto'
+                    : 'hidden lg:flex'
+                } lg:col-span-8 xl:col-span-9 flex-col min-h-0 h-full bg-slate-50/40 dark:bg-slate-950/40`
           }`}
         >
           {!activeRoom ? (
@@ -1260,7 +1262,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
               {(() => {
                 const meta = getRoomDisplayMeta(activeRoom);
                 return (
-                  <div className="px-3.5 py-2.5 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0">
+                  <div className="px-3.5 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] lg:py-2.5 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <button
                         type="button"

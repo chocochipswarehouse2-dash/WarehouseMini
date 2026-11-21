@@ -1,13 +1,13 @@
 {
-  "version": "v2.24.1",
-  "versionCode": 441,
+  "version": "v2.24.2",
+  "versionCode": 442,
   "buildDate": "21 November 2026",
-  "buildHash": "wms-261121-v441-0546",
-  "releaseTitle": "WMS v2.24.1 — Optimasi Tabel, Filter & Sort Stok Produk",
+  "buildHash": "wms-261121-v442-0614",
+  "releaseTitle": "WMS v2.24.2 — Live Chat Full-Screen Edge-to-Edge",
   "releaseNotes": [
-    "Menghapus 4 kartu ringkasan KPI pada tab Stok Produk (sudah tersedia di Dashboard Kapasitas) agar tabel langsung tampil penuh di seluler maupun desktop",
-    "Menambahkan filter Status Stok (Ada Stok, Fisik > 0, DP > 0 Fisik 0, Stok Minus, Semua Master), filter Size master, dropdown Urutkan, dan tombol Reset filter",
-    "Merapikan toolbar seluler bergaya aplikasi (aksi sekunder kolapsibel & swipe horizontal) serta memperluas tinggi area tabel stok produk"
+    "Menghapus seluruh margin pinggir, padding ganda, dan bingkai kartu pada Live Chat agar tampil full-screen edge-to-edge seperti aplikasi chat asli di seluler maupun desktop",
+    "Ruang percakapan aktif di seluler kini tampil layar penuh (menutupi bilah navigasi bawah & header ganda) dengan safe-area top/bottom",
+    "Proporsi panel chat desktop diperluas (sidebar 25% & area chat 75% di layar xl+) serta dukungan edge-to-edge penuh di Panel Pendamping"
   ],
   "minSupportedVersion": "v2.0.0"
 }

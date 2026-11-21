@@ -4892,7 +4892,13 @@ export default function App() {
 
         {/* Main Content Area + Optional Desktop Companion Drawer */}
         <div className="flex-1 flex flex-row min-w-0 w-full max-w-full items-start">
-          <main className={`flex-1 min-w-0 ${activePage === 'live_chat' ? 'pb-20 lg:pb-4' : 'pb-24 lg:pb-6'} p-2 sm:p-4 lg:p-6 w-full max-w-full`}>
+          <main
+            className={`flex-1 min-w-0 w-full max-w-full ${
+              activePage === 'live_chat'
+                ? 'p-0 pb-[calc(60px+env(safe-area-inset-bottom))] lg:pb-0'
+                : 'p-2 sm:p-4 lg:p-6 pb-24 lg:pb-6'
+            }`}
+          >
             {session && !canAccessPage(session, activePage) ? (
               <div className="min-h-[60vh] flex items-center justify-center p-4">
                 <div className="max-w-md w-full bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-2xl p-6 text-center shadow-lg space-y-4">
@@ -5391,7 +5397,7 @@ export default function App() {
                       session={session}
                       productCatalog={productDatabase}
                       onNotify={showToast}
-                      mode="full"
+                      mode="floating"
                       initialRoomId={liveChatManager.getSnapshot().activeRoomId}
                       allSkus={productDatabase.map((p) => p.k).filter(Boolean)}
                       onQuickSearchContext={(tagLabel) => {

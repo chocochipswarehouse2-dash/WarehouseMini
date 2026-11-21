@@ -463,8 +463,21 @@ export const DesktopCompanionDrawer: React.FC<DesktopCompanionDrawerProps> = ({
       </div>
 
       {/* Scrollable Body of Companion Panel */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4">
-        <div key={companionPage} className="w-full wms-page-enter">
+      <div
+        className={
+          companionPage === 'live_chat'
+            ? 'flex-1 flex flex-col min-h-0 overflow-hidden p-0'
+            : 'flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4'
+        }
+      >
+        <div
+          key={companionPage}
+          className={
+            companionPage === 'live_chat'
+              ? 'flex-1 flex flex-col min-h-0 h-full w-full wms-page-enter'
+              : 'w-full wms-page-enter'
+          }
+        >
           {children}
         </div>
       </div>
