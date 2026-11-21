@@ -487,6 +487,44 @@ html.dark .dark\:border-\[\#0f1523\] {
   --theme-950: #500724;
 }
 
+/* Smooth Native-Like Module Transition (Fade-In + Slide-Up for Mobile & Desktop) */
+@keyframes wmsModuleEnter {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes wmsHeaderTitleEnter {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 4px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.wms-page-enter {
+  animation: wmsModuleEnter 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.wms-header-title-enter {
+  animation: wmsHeaderTitleEnter 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wms-page-enter,
+  .wms-header-title-enter {
+    animation: none !important;
+  }
+}
+
 /* Universal Print Stylesheet: Paksa Putih Bersih & Nonaktifkan Tema Gelap saat Cetak */
 @media print {
   html,
@@ -581,6 +619,13 @@ html.dark .dark\:border-\[\#0f1523\] {
     background: #ffffff !important;
     color: #000000 !important;
     z-index: 999999 !important;
+  }
+
+  .wms-page-enter,
+  .wms-header-title-enter {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
   }
 }
 @media print { @page { margin: 0; } }

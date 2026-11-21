@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, ArrowUpDown, ExternalLink, MapPin, Package, Wrench, Boxes, ShoppingCart } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, ExternalLink, LayoutGrid, MapPin, Package, Table2, Wrench, Boxes, ShoppingCart } from 'lucide-react';
 import {
   type InventoryAreaRow,
   type InventorySortOption,
@@ -10,7 +10,7 @@ import { isCorruptedColorCodeSize } from '../../utils/sortUtils';
 // ----------------------------------------------------------------
 // Helper: Area Color Badges
 // ----------------------------------------------------------------
-export const AreaBadge: React.FC<{ area: string }> = ({ area }) => {
+export const AreaBadge: React.FC<{ area: string; compact?: boolean }> = ({ area, compact = false }) => {
   const a = (area || '').trim();
   let color = 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700';
 
@@ -31,7 +31,11 @@ export const AreaBadge: React.FC<{ area: string }> = ({ area }) => {
   }
 
   return (
-    <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[10.5px] font-bold border tracking-wide uppercase ${color}`}>
+    <span
+      className={`inline-flex items-center justify-center rounded border font-bold tracking-wide uppercase leading-none ${
+        compact ? 'px-1.5 py-0.5 text-[9px]' : 'px-2 py-0.5 rounded-md text-[10.5px]'
+      } ${color}`}
+    >
       {a}
     </span>
   );
@@ -153,6 +157,19 @@ export const InventoryList: React.FC<InventoryListProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [visibleCount, setVisibleCount] = useState(CHUNK_SIZE);
+  const [mobileViewMode, setMobileViewMode] = useState<'table' | 'card'>(() => {
+    try {
+      const saved = localStorage.getItem('wms_inventory_mobile_view_mode');
+      if (saved === 'card' || saved === 'table') return saved;
+    } catch {}
+    return 'table';
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('wms_inventory_mobile_view_mode', mobileViewMode);
+    } catch {}
+  }, [mobileViewMode]);
 
   // Group rows by SKU
   const skuGroups = useMemo(() => {
@@ -181,11 +198,48 @@ export const InventoryList: React.FC<InventoryListProps> = ({
   }, [skuGroups, visibleCount]);
 
   return (
-    <div
-      ref={containerRef}
-      onScroll={handleScroll}
-      className="h-[70vh] min-h-[400px] overflow-auto border border-slate-300 dark:border-slate-700 rounded-2xl bg-white dark:bg-[#0E1420] relative shadow-xs"
-    >
+    <div className="space-y-2">
+      {/* Mobile View Mode Bar (< md): Switcher Tabel (Default) vs Kartu */}
+      <div className="flex md:hidden items-center justify-between gap-2 px-1">
+        <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+          <span className="font-mono font-bold text-slate-800 dark:text-slate-200 tabular-nums">
+            {skuGroups.length.toLocaleString('id-ID')}
+          </span>{' '}
+          SKU · Ketuk produk untuk detail
+        </div>
+        <div className="inline-flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 shrink-0">
+          <button
+            type="button"
+            onClick={() => setMobileViewMode('table')}
+            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+              mobileViewMode === 'table'
+                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
+                : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            <Table2 className="w-3.5 h-3.5" />
+            <span>Tabel</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileViewMode('card')}
+            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+              mobileViewMode === 'card'
+                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
+                : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            <span>Kartu</span>
+          </button>
+        </div>
+      </div>
+
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="h-[70vh] min-h-[400px] overflow-auto border border-slate-300 dark:border-slate-700 rounded-2xl bg-white dark:bg-[#0E1420] relative shadow-xs"
+      >
       {/* ========================================================
           1. DESKTOP VIEW: SIDE-BY-SIDE TABLE DENGAN CELL MERGED
           Sesuai Blueprint Blueprint Spreadsheet:
@@ -496,11 +550,246 @@ export const InventoryList: React.FC<InventoryListProps> = ({
       </div>
 
       {/* ========================================================
-          2. MOBILE VIEW: KARTU INVENTORI HP (TOUCH-OPTIMIZED)
+          2A. MOBILE TABLE VIEW (< md, DEFAULT): TABEL RINGKAS SELULER
+          4 Kolom Proporsional (Tanpa Scroll Horizontal):
+          Produk & SKU | DP | Fisik | Area & Rak
+          ======================================================== */}
+      {mobileViewMode === 'table' && (
+        <div className="block md:hidden w-full">
+          <table className="w-full table-fixed border-collapse text-left">
+            <thead className="sticky top-0 z-20 bg-slate-100/95 dark:bg-[#121824]/95 text-slate-600 dark:text-slate-300 text-[10px] border-b border-slate-300 dark:border-slate-700 backdrop-blur-xs">
+              <tr>
+                <th className="py-2 pl-2.5 pr-1.5 w-[44%] border-r border-slate-200/80 dark:border-slate-700/80">
+                  <SortHead label="Produk" asc="NAME_ASC" desc="NAME_DESC" sort={sort} onSort={onSort} />
+                </th>
+                <th className="py-2 px-1 w-[13%] text-center bg-blue-50/60 dark:bg-blue-950/25 border-r border-slate-200/80 dark:border-slate-700/80">
+                  <SortHead
+                    label="DP"
+                    asc="DP_ASC"
+                    desc="DP_DESC"
+                    sort={sort}
+                    onSort={onSort}
+                    className="justify-center text-blue-700 dark:text-blue-300"
+                  />
+                </th>
+                <th className="py-2 px-1 w-[13%] text-center border-r border-slate-200/80 dark:border-slate-700/80">
+                  <SortHead
+                    label="Fisik"
+                    asc="FISIK_ASC"
+                    desc="FISIK_DESC"
+                    sort={sort}
+                    onSort={onSort}
+                    className="justify-center"
+                  />
+                </th>
+                <th className="py-2 pl-1.5 pr-2 w-[30%]">
+                  <SortHead label="Area & Rak" asc="AREA_ASC" desc="AREA_DESC" sort={sort} onSort={onSort} />
+                </th>
+              </tr>
+            </thead>
+
+            {displayedGroups.map((group) => {
+              const totalSkuRows = group.commercialAreas.length + group.perbaikanAreas.length;
+              const commercialStock = (group.commercialAreas || []).reduce((s, a) => s + (Number(a.qty) || 0), 0);
+              const commercialLocations = (group.commercialAreas || [])
+                .flatMap((a) => a.locations || [])
+                .filter((l) => l && l.lokasi && l.lokasi !== '-');
+              const cleanSize = group.size && group.size !== '-' && !isCorruptedColorCodeSize(group.size) ? group.size : '';
+
+              const renderProductCell = (rowSpanCount: number) => (
+                <td
+                  rowSpan={rowSpanCount}
+                  className="py-2 pl-2.5 pr-1.5 align-top border-r border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#0E1420]"
+                >
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => onOpen(group.sku)}
+                      className="text-left w-full min-w-0 active:opacity-70 cursor-pointer"
+                    >
+                      <div className="text-[11.5px] font-bold text-slate-900 dark:text-slate-100 leading-snug break-words">
+                        <span>{group.produk}</span>
+                        {cleanSize && (
+                          <span className="ml-1 inline-block px-1 py-0.2 rounded font-mono text-[9.5px] font-extrabold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700 align-middle leading-tight">
+                            {cleanSize}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+
+                    <div className="flex items-center justify-between gap-1 min-w-0">
+                      <button
+                        type="button"
+                        onClick={() => onOpen(group.sku)}
+                        className="font-mono text-[10px] font-semibold text-slate-500 dark:text-slate-400 truncate text-left cursor-pointer"
+                        title={group.sku}
+                      >
+                        {group.sku}
+                      </button>
+
+                      {onAddToCart && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (commercialStock <= 0) {
+                              if (onNotify) {
+                                onNotify(
+                                  `Stok fisik ${group.produk} kosong (0 pcs), tidak dapat ditambahkan ke keranjang picking`,
+                                  'warning'
+                                );
+                              }
+                              return;
+                            }
+                            onAddToCart(
+                              {
+                                sku: group.sku,
+                                nama_produk: group.produk,
+                                size: group.size,
+                                available_stock: commercialStock,
+                                locations: commercialLocations,
+                              },
+                              1
+                            );
+                          }}
+                          title={
+                            commercialStock > 0
+                              ? `Tambah ke Keranjang Picking (${commercialStock} pcs)`
+                              : 'Stok fisik kosong (0 pcs)'
+                          }
+                          aria-label={`Tambah ${group.produk} ke keranjang`}
+                          className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 transition-colors ${
+                            commercialStock > 0
+                              ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 active:scale-95 cursor-pointer'
+                              : 'text-slate-300 dark:text-slate-700 opacity-35 cursor-not-allowed'
+                          }`}
+                        >
+                          <ShoppingCart className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </td>
+              );
+
+              return (
+                <tbody
+                  key={`m-${group.sku}`}
+                  className="border-b-2 border-slate-200/90 dark:border-slate-700/80"
+                >
+                  {/* Commercial Rows */}
+                  {group.commercialAreas.map((row, idx) => (
+                    <tr
+                      key={`mc-${row.id}`}
+                      className="border-b border-slate-100 dark:border-slate-800/80 last:border-b-0"
+                    >
+                      {idx === 0 && renderProductCell(totalSkuRows)}
+
+                      {idx === 0 && (
+                        <td
+                          rowSpan={group.commercialAreas.length}
+                          className="py-2 px-1 align-middle text-center font-mono tabular-nums text-[12px] font-black text-blue-600 dark:text-blue-400 bg-blue-50/35 dark:bg-blue-950/20 border-r border-slate-200/80 dark:border-slate-800"
+                        >
+                          {group.commercialDp.toLocaleString('id-ID')}
+                        </td>
+                      )}
+
+                      <td className="py-2 px-1 align-middle text-center font-mono tabular-nums border-r border-slate-200/80 dark:border-slate-800">
+                        <QtyCell v={row.qty} isBold />
+                      </td>
+
+                      <td className="py-1.5 pl-1.5 pr-2 align-middle">
+                        <div className="space-y-1">
+                          <div>
+                            <AreaBadge area={row.area} compact />
+                          </div>
+                          {row.locations.length === 0 ? (
+                            <span className="text-[10px] text-slate-300 dark:text-slate-600">-</span>
+                          ) : (
+                            <div className="flex flex-wrap gap-1">
+                              {row.locations.map((loc) => (
+                                <button
+                                  key={loc.lokasi}
+                                  type="button"
+                                  onClick={() => onLoc(loc.lokasi)}
+                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9.5px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200/90 dark:border-slate-700 active:scale-95 cursor-pointer leading-none"
+                                >
+                                  <span>{loc.lokasi}</span>
+                                  <span className="text-amber-600 dark:text-amber-400 font-extrabold">
+                                    ({loc.qty})
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+
+                  {/* Perbaikan Rows */}
+                  {group.perbaikanAreas.map((row, idx) => (
+                    <tr
+                      key={`mp-${row.id}`}
+                      className="border-b border-rose-100 dark:border-rose-950/40 last:border-b-0 bg-rose-50/35 dark:bg-rose-950/15"
+                    >
+                      {group.commercialAreas.length === 0 && idx === 0 && renderProductCell(group.perbaikanAreas.length)}
+
+                      {idx === 0 && (
+                        <td
+                          rowSpan={group.perbaikanAreas.length}
+                          className="py-2 px-1 align-middle text-center font-mono tabular-nums text-[12px] font-black text-rose-600 dark:text-rose-400 bg-rose-50/60 dark:bg-rose-950/30 border-r border-rose-200/60 dark:border-rose-900/40"
+                        >
+                          {group.perbaikanDp.toLocaleString('id-ID')}
+                        </td>
+                      )}
+
+                      <td className="py-2 px-1 align-middle text-center font-mono tabular-nums text-[12px] font-black text-rose-600 dark:text-rose-400 border-r border-rose-200/60 dark:border-rose-900/40">
+                        {row.qty.toLocaleString('id-ID')}
+                      </td>
+
+                      <td className="py-1.5 pl-1.5 pr-2 align-middle">
+                        <div className="space-y-1">
+                          <div>
+                            <AreaBadge area={row.area} compact />
+                          </div>
+                          {row.locations.length === 0 ? (
+                            <span className="text-[10px] text-slate-300 dark:text-slate-600">-</span>
+                          ) : (
+                            <div className="flex flex-wrap gap-1">
+                              {row.locations.map((loc) => (
+                                <button
+                                  key={loc.lokasi}
+                                  type="button"
+                                  onClick={() => onLoc(loc.lokasi)}
+                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9.5px] font-mono font-bold bg-white dark:bg-slate-800 text-rose-800 dark:text-rose-200 border border-rose-200 dark:border-rose-800 active:scale-95 cursor-pointer leading-none"
+                                >
+                                  <span>{loc.lokasi}</span>
+                                  <span className="text-rose-600 dark:text-rose-400 font-extrabold">
+                                    ({loc.qty})
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              );
+            })}
+          </table>
+        </div>
+      )}
+
+      {/* ========================================================
+          2B. MOBILE CARD VIEW (< md, OPSIONAL): KARTU INVENTORI HP
           Setiap SKU menjadi 1 kartu dengan blok perbandingan:
           - Blok Siap Jual (Marketplace)
           - Blok Area Perbaikan (QC, Cuci, Permak, Defect)
           ======================================================== */}
+      {mobileViewMode === 'card' && (
       <div className="block md:hidden p-2.5 space-y-3">
         {displayedGroups.map((group) => {
           return (
@@ -682,6 +971,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({
           );
         })}
       </div>
+      )}
 
       {/* FOOTER PAGINATION / SCROLL INDICATOR */}
       {displayedGroups.length < skuGroups.length && (
@@ -695,6 +985,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({
           </button>
         </div>
       )}
+      </div>
     </div>
   );
 };

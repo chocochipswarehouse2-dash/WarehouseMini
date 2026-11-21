@@ -8,6 +8,7 @@ import {
   ChatPresenceUser
 } from '../../services/liveChatService';
 import { canAccessLiveChat } from '../../services/permissions';
+import { stripInternalOrderMetadata } from '../../services/orderChatNotificationService';
 import { LiveChatWorkspace } from './LiveChatWorkspace';
 
 interface LiveChatFloatingWidgetProps {
@@ -293,7 +294,7 @@ export const LiveChatFloatingWidget: React.FC<LiveChatFloatingWidgetProps> = ({
           </div>
 
           <p className="text-xs text-slate-200 line-clamp-2 mt-2 pl-11">
-            {toastMsg.message.text || (toastMsg.message.attachment_url ? '📷 Mengirim lampiran foto' : 'Pesan baru')}
+            {stripInternalOrderMetadata(toastMsg.message.text) || (toastMsg.message.attachment_url ? '📷 Mengirim lampiran foto' : 'Pesan baru')}
           </p>
 
           <div className="mt-2.5 pl-11 flex items-center justify-end gap-2">

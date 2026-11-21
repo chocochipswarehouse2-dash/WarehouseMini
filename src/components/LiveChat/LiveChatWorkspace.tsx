@@ -51,7 +51,7 @@ import {
   isProtectedStoreOpsGroup,
 } from '../../services/liveChatService';
 import { canManageChatGroups } from '../../services/permissions';
-import { ensureStoreOpsGroupsForSession } from '../../services/orderChatNotificationService';
+import { ensureStoreOpsGroupsForSession, stripInternalOrderMetadata } from '../../services/orderChatNotificationService';
 import { getUserPersonName } from '../../utils/userResolver';
 
 interface LiveChatWorkspaceProps {
@@ -546,8 +546,9 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
   };
 
   const renderMessageTextWithMentions = (text: string, isMine: boolean) => {
-    if (!text) return null;
-    const tokens = text.split(/(\s+)/);
+    const cleanText = stripInternalOrderMetadata(text);
+    if (!cleanText) return null;
+    const tokens = cleanText.split(/(\s+)/);
     return tokens.map((word, wIdx) => {
       if (word.startsWith('@') && word.length > 1) {
         const cleanWord = word.replace(/^[^\w@]+|[^\w]+$/g, '');
@@ -1141,7 +1142,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                                 : room.type === 'group' && room.last_message_sender_name
                                 ? `${room.last_message_sender_name}: `
                                 : ''}
-                              {room.last_message_text}
+                              {stripInternalOrderMetadata(room.last_message_text)}
                             </div>
                           )}
                         </div>
@@ -1531,7 +1532,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                                     }`}
                                   >
                                     <div className="font-bold truncate">{msg.reply_to.sender_name}</div>
-                                    <div className="truncate opacity-90">{msg.reply_to.text}</div>
+                                    <div className="truncate opacity-90">{stripInternalOrderMetadata(msg.reply_to.text)}</div>
                                   </div>
                                 )}
 
@@ -1786,7 +1787,7 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                                         id: msg.id,
                                         sender_username: msg.sender_username,
                                         sender_name: msg.sender_name,
-                                        text: msg.text || '📷 Foto Lampiran',
+                                        text: stripInternalOrderMetadata(msg.text) || '📷 Foto Lampiran',
                                         attachment_url: msg.attachment_url,
                                       });
                                       textareaRef.current?.focus();

@@ -56,7 +56,7 @@ export const WORKSPACE_PAGE_META: Record<string, WorkspacePageMeta> = {
   penerimaan_barang: { id: 'penerimaan_barang', label: 'Penerimaan Barang', shortLabel: 'Penerimaan', icon: Truck, pickerHidden: true },
   penerimaan: { id: 'penerimaan', label: 'Penerimaan Produksi', shortLabel: 'Penerimaan', icon: Truck, pickerHidden: true },
   pengiriman: { id: 'pengiriman', label: 'Pengiriman Barang', shortLabel: 'Pengiriman', icon: Truck, pickerHidden: true },
-  inventory: { id: 'inventory', label: 'Inventory & Scanner', shortLabel: 'Inventory', icon: Layers },
+  inventory: { id: 'inventory', label: 'Inventory', shortLabel: 'Inventory', icon: Layers },
   operasi_stok: { id: 'operasi_stok', label: 'Scanner & Log Stok', shortLabel: 'Scanner', icon: Layers, pickerHidden: true },
   scanner: { id: 'scanner', label: 'Scanner Barcode', shortLabel: 'Scanner', icon: Layers, pickerHidden: true },
   mutasi_log: { id: 'mutasi_log', label: 'Mutasi & Log Stok', shortLabel: 'Mutasi Log', icon: Layers, pickerHidden: true },
@@ -464,7 +464,9 @@ export const DesktopCompanionDrawer: React.FC<DesktopCompanionDrawerProps> = ({
 
       {/* Scrollable Body of Companion Panel */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4">
-        {children}
+        <div key={companionPage} className="w-full wms-page-enter">
+          {children}
+        </div>
       </div>
     </aside>
   );

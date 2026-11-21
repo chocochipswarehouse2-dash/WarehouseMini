@@ -4843,7 +4843,8 @@ export default function App() {
             ) : null}
 
             <h1
-              className="text-[17px] font-bold text-slate-900 dark:text-white tracking-tight truncate leading-tight"
+              key={activePage}
+              className="text-[17px] font-bold text-slate-900 dark:text-white tracking-tight truncate leading-tight wms-header-title-enter"
               title={getWorkspacePageMeta(activePage).label}
             >
               {getWorkspacePageMeta(activePage).label}
@@ -4924,7 +4925,7 @@ export default function App() {
                     return (
                       <div
                         key={`${session?.username || 'anon'}:${pageKey}`}
-                        className={isVisible ? 'block w-full' : 'hidden'}
+                        className={isVisible ? 'block w-full wms-page-enter' : 'hidden'}
                         aria-hidden={!isVisible}
                       >
                         {pageKey === 'dashboard' && (

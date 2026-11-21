@@ -25,6 +25,26 @@ import { supabaseFetch } from './supabase';
 import { isStoreAccountSession } from './permissions';
 import { isRealAlterItem, hasRealAlterItems, hasValidArData } from '../utils/alterationUtils';
 
+/**
+ * Menghapus blok metadata internal yang disisipkan di kolom notes_paket database
+ * ([ALTERATION_REPAIR]:{...}, [HISTORI_LOGS]:[...], [STORE_METADATA]:{...}, [RETUR_BARANG]:{...})
+ * agar tidak pernah bocor sebagai teks JSON mentah di Live Chat maupun preview pesan.
+ */
+export function stripInternalOrderMetadata(raw?: string | null): string {
+  if (!raw) return '';
+  return String(raw)
+    .replace(
+      /\r?\n?\[(?:ALTERATION_REPAIR|HISTORI_LOGS|STORE_METADATA|RETUR_BARANG)\]:\s*(?:\{[^\r\n]*\}|\[[^\r\n]*\])/g,
+      ''
+    )
+    .replace(
+      /\r?\n?\[(?:ALTERATION_REPAIR|HISTORI_LOGS|STORE_METADATA|RETUR_BARANG)\]:[\s\S]*?(?=\r?\n\[(?:ALTERATION_REPAIR|HISTORI_LOGS|STORE_METADATA|RETUR_BARANG)\]:|$)/g,
+      ''
+    )
+    .replace(/(📝\s*Catatan(?:\s+Paket)?:\s*)$/i, '$1-')
+    .trim();
+}
+
 function getOrderId(order: ManualShipmentOrder): string {
   return String(order.no_pesanan || order.no_transaksi_customer || (order as any).id || '-').trim();
 }
@@ -159,7 +179,7 @@ function formatAlterWorkOrderText(order: ManualShipmentOrder): string {
     `${ar?.perkiraan_selesai ? `• Target Selesai: ${ar.perkiraan_selesai}\n` : ''}` +
     `\n✂️ Rincian Item (${itemsToRender.length} Item):\n` +
     `${itemsList}${globalPhotoText}\n\n` +
-    `📝 Catatan: ${order.notes_paket || '-'}`
+    `📝 Catatan: ${stripInternalOrderMetadata(order.notes_paket) || '-'}`
   );
 }
 
@@ -259,7 +279,7 @@ export async function notifyOrderSubmittedToChat(
           `• Alamat: ${order.alamat_tujuan || '-'}\n` +
           `• Jasa Kirim: ${order.jasa_kirim || '-'}\n\n` +
           `📋 Daftar Produk (${totalQty} pcs):\n${itemsListStr}\n\n` +
-          `📝 Catatan Paket: ${order.notes_paket || '-'}`;
+          `📝 Catatan Paket: ${stripInternalOrderMetadata(order.notes_paket) || '-'}`;
       }
 
       if (msgText) {
@@ -993,6 +1013,7 @@ function normalizeRawManualShipmentRow(item: any): ManualShipmentOrder | null {
 
   return {
     ...item,
+    notes_paket: stripInternalOrderMetadata(rawNotes),
     items: parsedItems,
     alteration_repair_data,
     order_type: item.order_type || (isAlter ? 'alteration_repair' : 'manual_shipment'),
@@ -1028,7 +1049,7 @@ function buildSubmittedOrderMessageText(order: ManualShipmentOrder): string {
     `• Alamat: ${order.alamat_tujuan || '-'}\n` +
     `• Jasa Kirim: ${order.jasa_kirim || '-'}\n\n` +
     `📋 Daftar Produk (${totalQty} pcs):\n${itemsListStr}\n\n` +
-    `📝 Catatan Paket: ${order.notes_paket || '-'}`
+    `📝 Catatan Paket: ${stripInternalOrderMetadata(order.notes_paket) || '-'}`
   );
 }
 

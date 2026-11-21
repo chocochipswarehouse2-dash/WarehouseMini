@@ -240,7 +240,7 @@ export const ScannerPopupModal: React.FC<ScannerPopupModalProps> = ({
                 type="button"
                 onClick={onOpenFullPage}
                 className="py-1.5 px-2.5 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 hidden lg:flex items-center gap-1.5 rounded-lg transition-all cursor-pointer"
-                title="Buka di Tab Inventory & Scanner Halaman Penuh"
+                title="Buka di Tab Inventory Halaman Penuh"
               >
                 <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
                 <span>Halaman Penuh</span>
