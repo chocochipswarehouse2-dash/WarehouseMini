@@ -4,7 +4,8 @@ import {
   AlertTriangle, Package, FileText, Trash2, ClipboardCheck, X,
   Minus, Plus, RotateCcw, ArrowUpDown, ScanLine, Camera, Download,
   Edit3, ArrowLeftRight, Check, Search, Filter, Layers, ListFilter,
-  Wifi, WifiOff, CloudOff, ArrowDownToLine, Truck, Calendar
+  Wifi, WifiOff, CloudOff, ArrowDownToLine, Truck, Calendar,
+  SlidersHorizontal, MoreVertical
 } from 'lucide-react';
 import {
   UserSession,
@@ -446,6 +447,12 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
     () => getCachedSjShippingOverrides()
   );
   const [isBulkShippingAction, setIsBulkShippingAction] = useState<boolean>(false);
+
+  // Mobile App-Shell UI Controls (Filter drawer, Sticky bottom sheets, Import toggle)
+  const [showMobileRiwayatFilters, setShowMobileRiwayatFilters] = useState<boolean>(false);
+  const [mobileBulkActionSheetOpen, setMobileBulkActionSheetOpen] = useState<boolean>(false);
+  const [mobileCardMenuRec, setMobileCardMenuRec] = useState<PengecekanSJRecord | null>(null);
+  const [showMobileImportPanel, setShowMobileImportPanel] = useState<boolean>(false);
 
   // Offline & Sync Detection
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
@@ -1876,6 +1883,12 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
     dateToFilter
   );
 
+  const activeSecondaryFilterCount =
+    (sourceFilter.length > 0 ? 1 : 0) +
+    (destinationFilter.length > 0 ? 1 : 0) +
+    (dateFromFilter || dateToFilter ? 1 : 0) +
+    (riwayatSortBy !== 'tanggal_desc' ? 1 : 0);
+
   const selesaiShippingCounts = useMemo(() => {
     let all = 0;
     let belum_jadwal = 0;
@@ -2009,32 +2022,34 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   // ==========================================
   return (
     <div className="flex flex-col h-full bg-slate-50 dark:bg-[#0b1324]">
-      {/* ---- HEADER UTAMA ---- */}
-      <div className="shrink-0 px-4 sm:px-6 pt-5 pb-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f172a]">
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary-500/10 border border-primary-500/30 flex items-center justify-center text-primary-500 shrink-0">
+      {/* ---- HEADER UTAMA (APP-SHELL COMPACT DI HP, LENGKAP DI DESKTOP) ---- */}
+      <div className="shrink-0 px-3 sm:px-6 pt-3 sm:pt-5 pb-2.5 sm:pb-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f172a]">
+        <div className="flex items-center justify-between gap-2.5 mb-2.5 sm:mb-3.5">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/25 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
               <ClipboardCheck className="w-5 h-5" />
             </div>
-            <div>
-              <h1 className="text-base font-extrabold text-slate-900 dark:text-white leading-tight">
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white leading-tight truncate">
                 Pengecekan Surat Jalan
               </h1>
-              <p className="text-xs text-slate-400">
-                Pengecekan surat jalan, antrean draft, komparasi scan & riwayat penerimaan
+              <p className="hidden sm:block text-xs text-slate-400 truncate">
+                Pengecekan surat jalan, antrean draft, komparasi scan &amp; riwayat penerimaan
               </p>
             </div>
           </div>
 
-          {/* Quick Action Export Semua & Status Indikator */}
-          <div className="flex items-center gap-2">
-            <div className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${isOnline
+          {/* Status Indikator & Export Semua */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <div
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${isOnline
                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
                 : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
-              }`}>
+              }`}
+            >
               {isOnline ? (
                 <>
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                   <span>Online</span>
                 </>
               ) : (
@@ -2049,11 +2064,11 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
               <button
                 type="button"
                 onClick={() => exportPengecekanToCsv(records, `Semua_Riwayat_Pengecekan_SJ_${new Date().toISOString().slice(0, 10)}.csv`, productCatalog)}
-                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                className="h-9 sm:h-8 px-2.5 sm:px-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                title="Export semua data riwayat ke CSV"
               >
-                <Download className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Export Semua Data</span>
-                <span className="sm:hidden">Export</span>
+                <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span className="hidden sm:inline">Export Semua</span>
               </button>
             )}
           </div>
@@ -2061,181 +2076,195 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
 
         {/* OFFLINE INDICATOR BANNER */}
         {!isOnline && (
-          <div className="mb-3 px-3.5 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-amber-700 dark:text-amber-300 text-xs">
-            <div className="flex items-center gap-2.5">
+          <div className="mb-2.5 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2 text-amber-700 dark:text-amber-300 text-xs">
+            <div className="flex items-center gap-2 min-w-0">
               <WifiOff className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
-              <span>
-                <strong>Mode Offline Aktif:</strong> Internet terputus. Anda tetap bisa melakukan scan barcode dan import; progres scan tersimpan otomatis di perangkat Anda tanpa hilang.
+              <span className="line-clamp-2">
+                <strong>Mode Offline:</strong> Progres scan tetap tersimpan aman di perangkat.
               </span>
             </div>
-            <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-[10px] font-extrabold shrink-0 text-amber-700 dark:text-amber-300">
-              Aman & Tersimpan
+            <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-[10px] font-extrabold shrink-0">
+              Aman
             </span>
           </div>
         )}
 
         {/* PENDING OFFLINE SYNC BANNER */}
         {pendingOfflineCount > 0 && (
-          <div className="mb-3 px-3.5 py-2.5 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-between gap-3 text-blue-700 dark:text-blue-300 text-xs">
-            <div className="flex items-center gap-2.5">
+          <div className="mb-2.5 px-3 py-2 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-between gap-2 text-blue-700 dark:text-blue-300 text-xs">
+            <div className="flex items-center gap-2 min-w-0">
               <CloudOff className="w-4 h-4 shrink-0 text-blue-500" />
-              <span>
-                <strong>{pendingOfflineCount} Surat Jalan</strong> telah selesai dicek secara offline dan menunggu dikirim ke Databases.
+              <span className="truncate">
+                <strong>{pendingOfflineCount} SJ</strong> menunggu sinkronisasi.
               </span>
             </div>
             <button
               type="button"
               disabled={isSyncingOffline || !isOnline}
               onClick={handleManualSyncOffline}
-              className={`px-3 py-1 rounded-lg text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${!isOnline
-                  ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm'
-                }`}
+              className={`px-3 h-8 rounded-lg text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${!isOnline
+                ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                : 'bg-blue-600 hover:bg-blue-700 text-white shadow-xs'
+              }`}
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncingOffline ? 'animate-spin' : ''}`} />
-              <span>{isSyncingOffline ? 'Menyinkronkan...' : isOnline ? 'Sinkronkan Sekarang' : 'Menunggu Internet'}</span>
+              <span>{isSyncingOffline ? 'Sync...' : isOnline ? 'Sinkronkan' : 'Menunggu'}</span>
             </button>
           </div>
         )}
 
-        {/* TABS SELECTOR - Style Minimalis LoadingDock & Quality Control */}
-        <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl p-1.5 sm:p-2 flex items-center justify-between gap-2 shadow-xs">
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap py-0.5 px-0.5 w-full sm:w-auto">
-            <button
-              type="button"
-              id="tab-distribusi-pengecekan"
-              onClick={() => setActiveTab('pengecekan')}
-              className={`py-2 px-3.5 text-xs font-extrabold flex items-center justify-center gap-2 rounded-xl transition-all cursor-pointer select-none whitespace-nowrap shrink-0 relative ${activeTab === 'pengecekan'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
+        {/* TABS SELECTOR — NATIVE APP SEGMENTED CONTROL */}
+        <div className="bg-slate-100 dark:bg-slate-800/80 rounded-2xl p-1 grid grid-cols-2 sm:inline-flex gap-1">
+          <button
+            type="button"
+            id="tab-distribusi-pengecekan"
+            onClick={() => setActiveTab('pengecekan')}
+            className={`h-10 sm:h-9 px-3 sm:px-4 text-xs font-extrabold flex items-center justify-center gap-2 rounded-xl transition-all cursor-pointer select-none whitespace-nowrap ${activeTab === 'pengecekan'
+              ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <ScanLine className={`w-4 h-4 shrink-0 ${activeTab === 'pengecekan' ? 'text-emerald-600 dark:text-emerald-400' : ''}`} />
+            <span>Pengecekan</span>
+            {drafts.length > 0 && (
+              <span
+                className={`px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none tabular-nums ${activeTab === 'pengecekan'
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
                 }`}
-            >
-              <ScanLine className="w-4 h-4 shrink-0" />
-              <span>Pengecekan</span>
-              {drafts.length > 0 && (
-                <span
-                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-black leading-none ${activeTab === 'pengecekan'
-                      ? 'bg-white/25 text-white'
-                      : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
-                    }`}
-                >
-                  {drafts.length}
-                </span>
-              )}
-            </button>
+              >
+                {drafts.length}
+              </span>
+            )}
+          </button>
 
-            <button
-              type="button"
-              id="tab-distribusi-riwayat"
-              onClick={() => setActiveTab('riwayat')}
-              className={`py-2 px-3.5 text-xs font-extrabold flex items-center justify-center gap-2 rounded-xl transition-all cursor-pointer select-none whitespace-nowrap shrink-0 relative ${activeTab === 'riwayat'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
+          <button
+            type="button"
+            id="tab-distribusi-riwayat"
+            onClick={() => setActiveTab('riwayat')}
+            className={`h-10 sm:h-9 px-3 sm:px-4 text-xs font-extrabold flex items-center justify-center gap-2 rounded-xl transition-all cursor-pointer select-none whitespace-nowrap ${activeTab === 'riwayat'
+              ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <FileText className={`w-4 h-4 shrink-0 ${activeTab === 'riwayat' ? 'text-indigo-600 dark:text-indigo-400' : ''}`} />
+            <span>Riwayat</span>
+            {records.length > 0 && (
+              <span
+                className={`px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none tabular-nums ${activeTab === 'riwayat'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
                 }`}
-            >
-              <FileText className="w-4 h-4 shrink-0" />
-              <span>Riwayat</span>
-              {records.length > 0 && (
-                <span
-                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-black leading-none ${activeTab === 'riwayat'
-                      ? 'bg-white/25 text-white'
-                      : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                    }`}
-                >
-                  {records.length}
-                </span>
-              )}
-            </button>
-          </div>
+              >
+                {records.length}
+              </span>
+            )}
+          </button>
         </div>
       </div>
 
       {/* ---- TAB CONTENT BODY ---- */}
-      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-3 sm:py-4 pb-24 sm:pb-6 space-y-3 sm:space-y-4">
 
         {/* ======================================================== */}
         {/* TAB 1: PENGECEKAN BARANG & ANTREAN DRAFT                 */}
         {/* ======================================================== */}
         {activeTab === 'pengecekan' && (
           <>
-            {/* CARD IMPORT CSV */}
-            <div className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
-                    <Upload className="w-3.5 h-3.5 text-primary-500" />
-                    Import File Surat Jalan (Bisa Banyak CSV)
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.txt"
+              multiple
+              onChange={handleFilesChange}
+              className="hidden"
+            />
+
+            {/* CARD IMPORT CSV — COMPACT DI HP BILA SUDAH ADA ANTREAN AGAR SCAN LANGSUNG TERLIHAT */}
+            <div className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 p-3 sm:p-4 space-y-2.5 sm:space-y-3 shadow-2xs">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="text-xs font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
+                    <Upload className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                    <span className="truncate">Import CSV Surat Jalan</span>
                   </h3>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    1 file CSV = 1 draft. Jika 1 file berisi banyak No SJ, sistem otomatis memisahkannya dan langsung menyimpan ke Supabase sejak import pertama.
+                  <p className="hidden sm:block text-[11px] text-slate-400 mt-0.5">
+                    1 file CSV = 1 draft. Jika 1 file berisi banyak No SJ, sistem otomatis memisahkannya dan menyimpan ke Supabase.
                   </p>
                 </div>
-                {isSavingImport && (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[11px] font-bold shrink-0">
-                    <RefreshCw className="w-3 h-3 animate-spin" />
-                    Menyimpan ke Supabase...
-                  </span>
-                )}
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {isSavingImport && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[11px] font-bold">
+                      <RefreshCw className="w-3 h-3 animate-spin" />
+                      <span className="hidden sm:inline">Menyimpan...</span>
+                    </span>
+                  )}
+                  {drafts.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowMobileImportPanel(prev => !prev)}
+                      className="sm:hidden h-8 px-2.5 rounded-xl text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>{showMobileImportPanel ? 'Tutup' : '+ Import CSV'}</span>
+                      {showMobileImportPanel ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <div className="flex items-center gap-4 py-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="importType"
-                    value="Penerimaan"
-                    checked={importType === 'Penerimaan'}
-                    onChange={() => setImportType('Penerimaan')}
-                    className="w-4 h-4 text-primary-600 focus:ring-primary-500 border-slate-300"
-                  />
-                  <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">Penerimaan (Putaway)</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="importType"
-                    value="Pengiriman"
-                    checked={importType === 'Pengiriman'}
-                    onChange={() => setImportType('Pengiriman')}
-                    className="w-4 h-4 text-primary-600 focus:ring-primary-500 border-slate-300"
-                  />
-                  <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">Pengiriman (Picking)</span>
-                </label>
+              <div className={`${drafts.length > 0 && !showMobileImportPanel ? 'hidden sm:block' : 'block'} space-y-2.5`}>
+                {/* Segmented Toggle Tipe Import (App Native) */}
+                <div className="grid grid-cols-2 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl gap-1 sm:max-w-md">
+                  <button
+                    type="button"
+                    onClick={() => setImportType('Penerimaan')}
+                    className={`h-9 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${importType === 'Penerimaan'
+                      ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    <ArrowDownToLine className="w-3.5 h-3.5" />
+                    <span>Penerimaan (Putaway)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setImportType('Pengiriman')}
+                    className={`h-9 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${importType === 'Pengiriman'
+                      ? 'bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    <Truck className="w-3.5 h-3.5" />
+                    <span>Pengiriman (Picking)</span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full py-3 sm:py-4 px-3 border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-indigo-400 hover:bg-indigo-50/20 dark:hover:bg-indigo-950/10 rounded-2xl text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99]"
+                >
+                  <Upload className="w-4 h-4 text-indigo-500 shrink-0" />
+                  <span>Pilih File CSV Surat Jalan</span>
+                </button>
               </div>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".csv,.txt"
-                multiple
-                onChange={handleFilesChange}
-                className="hidden"
-              />
-
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full py-4 border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-primary-400 hover:bg-primary-50/20 dark:hover:bg-primary-950/10 rounded-2xl text-xs font-bold text-slate-600 dark:text-slate-300 flex flex-col sm:flex-row items-center justify-center gap-2 cursor-pointer transition-all"
-              >
-                <Upload className="w-4 h-4 text-primary-500" />
-                <span>Pilih satu atau beberapa file CSV Surat Jalan untuk diimport</span>
-              </button>
             </div>
 
-            {/* ANTREAN PENGECEKAN (DRAFT PEKERJAAN STAY DI TAB PENGECEKAN) */}
+            {/* ANTREAN PENGECEKAN — HORIZONTAL CAROUSEL DI HP, GRID DI DESKTOP */}
             {drafts.length > 0 && (
-              <div className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-slate-100 dark:border-slate-800/80">
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <Layers className="w-4 h-4 text-primary-500" />
-                      <h3 className="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider">
-                        Antrean Pengecekan ({drafts.length} Surat Jalan)
+              <div className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 p-3 sm:p-4 space-y-3 shadow-2xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-slate-100 dark:border-slate-800/80">
+                  <div className="flex items-center justify-between sm:justify-start gap-2.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Layers className="w-4 h-4 text-indigo-500 shrink-0" />
+                      <h3 className="text-xs sm:text-sm font-extrabold text-slate-800 dark:text-white truncate">
+                        Antrean SJ ({drafts.length})
                       </h3>
                     </div>
 
                     {drafts.length > 1 && (
-                      <label className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 cursor-pointer select-none">
+                      <label className="flex items-center gap-1.5 px-2.5 h-8 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 cursor-pointer select-none shrink-0">
                         <input
                           type="checkbox"
                           checked={selectedDraftIds.size > 0 && selectedDraftIds.size === drafts.length}
@@ -2251,7 +2280,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                               setSelectedDraftIds(new Set());
                             }
                           }}
-                          className="w-3.5 h-3.5 rounded border-slate-300 text-primary-500 focus:ring-primary-500 cursor-pointer"
+                          className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                         />
                         <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
                           {selectedDraftIds.size > 0 ? `${selectedDraftIds.size} Dipilih` : 'Pilih Semua'}
@@ -2260,28 +2289,27 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                     )}
                   </div>
 
-                  <div className="flex items-center gap-2 flex-wrap">
+                  {/* Aksi Massal Antrean — Rapi Tanpa Pelangi Tombol */}
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
                     <button
                       type="button"
                       disabled={submitting}
                       onClick={handleOpenBulkSubmitModal}
-                      className="px-3 py-1.5 text-xs font-extrabold rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 active:scale-95 text-white flex items-center gap-1.5 transition-all cursor-pointer shadow-sm shadow-indigo-600/20"
+                      className="flex-1 sm:flex-none h-9 px-3 text-xs font-bold rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 active:scale-95 text-white flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs whitespace-nowrap"
                       title="Submit beberapa atau semua Surat Jalan di antrean sekaligus ke Database"
                     >
                       {bulkSubmittingProgress ? (
                         <>
                           <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          <span>
-                            Menyimpan {bulkSubmittingProgress.current}/{bulkSubmittingProgress.total} SJ...
-                          </span>
+                          <span>{bulkSubmittingProgress.current}/{bulkSubmittingProgress.total} SJ...</span>
                         </>
                       ) : (
                         <>
                           <CheckCircle2 className="w-3.5 h-3.5" />
                           <span>
                             {selectedDraftIds.size > 0
-                              ? `Submit Sekaligus (${selectedDraftIds.size} SJ)`
-                              : `Submit Semua (${drafts.length} SJ)`}
+                              ? `Submit (${selectedDraftIds.size})`
+                              : `Submit Semua (${drafts.length})`}
                           </span>
                         </>
                       )}
@@ -2301,12 +2329,12 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                         setPickingModalDraft(null);
                         setPickingModalDrafts(targetDrafts);
                       }}
-                      className="px-3 py-1.5 text-xs font-extrabold rounded-xl bg-white dark:bg-slate-800 border border-emerald-300 dark:border-emerald-700/80 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 active:scale-95 flex items-center gap-1.5 transition-all cursor-pointer"
+                      className="flex-1 sm:flex-none h-9 px-3 text-xs font-bold rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
                       title="Kirim banyak atau semua Surat Jalan sekaligus ke Tugas Picking App, Grup WA Gudang, atau Cetak A4 Massal"
                     >
-                      <Send className="w-3.5 h-3.5" />
+                      <Send className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                       <span>
-                        Kirim Tugas Picking Massal ({selectedDraftIds.size > 0 ? selectedDraftIds.size : drafts.length} SJ)
+                        Picking ({selectedDraftIds.size > 0 ? selectedDraftIds.size : drafts.length})
                       </span>
                     </button>
 
@@ -2331,16 +2359,18 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                             }
                           });
                         }}
-                        className="px-2.5 py-1.5 text-xs font-bold rounded-xl bg-white dark:bg-slate-800 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center gap-1 transition-all cursor-pointer"
+                        className="h-9 px-2.5 text-xs font-bold rounded-xl bg-white dark:bg-slate-800 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0"
+                        title="Hapus draft terpilih"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                        <span>Hapus ({selectedDraftIds.size})</span>
+                        <span className="hidden sm:inline">Hapus ({selectedDraftIds.size})</span>
                       </button>
                     )}
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {/* Carousel Kartu Draft di HP / Grid di Tablet-Desktop */}
+                <div className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar gap-2.5 pb-1 -mx-1 px-1 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:gap-3">
                   {drafts.map(draft => {
                     const isSelected = draft.id === activeDraftId;
                     const isCheckedForBulk = selectedDraftIds.has(draft.id);
@@ -2355,12 +2385,12 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                       <div
                         key={draft.id}
                         onClick={() => setActiveDraftId(draft.id)}
-                        className={`p-3.5 rounded-xl border transition-all cursor-pointer relative flex flex-col justify-between ${isSelected
-                            ? 'border-primary-500 bg-primary-50/30 dark:bg-primary-950/20 ring-2 ring-primary-500/20 shadow-sm'
-                            : isCheckedForBulk
-                              ? 'border-emerald-500/60 bg-emerald-50/20 dark:bg-emerald-950/15 ring-1 ring-emerald-500/20'
-                              : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 hover:border-slate-300 dark:hover:border-slate-700'
-                          }`}
+                        className={`w-[276px] sm:w-auto shrink-0 snap-start p-3.5 rounded-2xl border transition-all cursor-pointer relative flex flex-col justify-between ${isSelected
+                          ? 'border-indigo-500 bg-indigo-50/40 dark:bg-indigo-950/25 ring-2 ring-indigo-500/20 shadow-xs'
+                          : isCheckedForBulk
+                            ? 'border-emerald-500/60 bg-emerald-50/25 dark:bg-emerald-950/15 ring-1 ring-emerald-500/20'
+                            : 'border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/35 hover:border-slate-300 dark:hover:border-slate-700'
+                        }`}
                       >
                         <div>
                           <div className="flex items-center justify-between mb-1.5 gap-2">
@@ -2377,55 +2407,57 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                     return next;
                                   });
                                 }}
-                                className="w-3.5 h-3.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer shrink-0"
-                                title="Pilih SJ ini untuk Kirim Tugas Picking Massal"
+                                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0"
+                                title="Pilih SJ ini untuk aksi massal"
                               />
-                              <span className="font-mono text-xs font-black text-slate-800 dark:text-white truncate">
+                              <span className="font-mono text-[13px] font-black text-slate-900 dark:text-white truncate">
                                 {draft.no_sj}
                               </span>
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
                               {isPernahSelesai && (
-                                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800" title="SJ ini sudah pernah selesai dicek dan tercatat di Riwayat">
-                                  ⚠️ Pernah Selesai
+                                <span className="text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800" title="SJ ini sudah pernah selesai dicek dan tercatat di Riwayat">
+                                  Pernah
                                 </span>
                               )}
-                              {isAlreadySentToApp && (
-                                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                                  ✓ Picking App
-                                </span>
-                              )}
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isSelected ? 'bg-primary-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                                }`}>
-                                {isSelected ? 'Sedang Dicek' : 'Antrean'}
+                              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${isSelected ? 'bg-indigo-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                                {isSelected ? 'Aktif' : 'Antrean'}
                               </span>
                             </div>
                           </div>
 
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
-                            <span>{draft.source} → {draft.destination}</span>
-                            <span className="mx-1.5">·</span>
+                          <div className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate mb-0.5">
+                            {draft.source} → {draft.destination}
+                          </div>
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2.5 flex items-center gap-1.5 truncate">
                             <span>{draft.tanggal_sj}</span>
                             {draft.tipe_import && (
                               <>
-                                <span className="mx-1.5">·</span>
-                                <span className={`font-bold ${draft.tipe_import === 'Penerimaan' ? 'text-indigo-500' : 'text-emerald-500'}`}>{draft.tipe_import}</span>
+                                <span>·</span>
+                                <span className={`font-bold ${draft.tipe_import === 'Penerimaan' ? 'text-indigo-600 dark:text-indigo-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                  {draft.tipe_import}
+                                </span>
+                              </>
+                            )}
+                            {isAlreadySentToApp && (
+                              <>
+                                <span>·</span>
+                                <span className="text-emerald-600 dark:text-emerald-400 font-bold">✓ App</span>
                               </>
                             )}
                           </div>
 
                           {/* Progress */}
                           <div className="mb-2">
-                            <div className="flex justify-between text-[10px] font-bold mb-1">
-                              <span className="text-slate-400">Progress Scan</span>
-                              <span className="text-slate-700 dark:text-slate-300">
+                            <div className="flex justify-between text-[11px] font-bold mb-1 tabular-nums">
+                              <span className="text-slate-400">Scan</span>
+                              <span className="text-slate-800 dark:text-slate-200">
                                 {totalScanned} / {totalQtySj} pcs ({progressPercent}%)
                               </span>
                             </div>
                             <div className="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
                               <div
-                                className={`h-full transition-all ${progressPercent === 100 ? 'bg-emerald-500' : 'bg-primary-500'
-                                  }`}
+                                className={`h-full transition-all ${progressPercent === 100 ? 'bg-emerald-500' : 'bg-indigo-600'}`}
                                 style={{ width: `${progressPercent}%` }}
                               />
                             </div>
@@ -2433,8 +2465,8 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                         </div>
 
                         {/* Card bottom actions */}
-                        <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800/80 mt-2">
-                          <span className="text-[10px] text-slate-400 font-medium">
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-200/70 dark:border-slate-700/70 mt-1.5 gap-1.5">
+                          <span className="text-[11px] text-slate-500 font-semibold tabular-nums">
                             {draft.items.length} SKU
                           </span>
 
@@ -2448,11 +2480,11 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                   setPickingModalDrafts([]);
                                   setPickingModalDraft(draft);
                                 }}
-                                className="px-2 py-1 text-[11px] font-extrabold rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                                className="h-8 px-2.5 text-[11px] font-bold rounded-lg bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 flex items-center gap-1 transition-all cursor-pointer"
                                 title="Format Picking (Cetak SJ, Kirim WA ke Grup, atau Kirim ke Tugas Picking App)"
                               >
                                 <Send className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                                <span>Format Picking</span>
+                                <span>Picking</span>
                               </button>
                             )}
 
@@ -2480,25 +2512,11 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                   }
                                 });
                               }}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer min-w-[32px] min-h-[32px] flex items-center justify-center active:scale-95"
+                              className="w-8 h-8 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer flex items-center justify-center active:scale-95"
                               title="Hapus draft dari antrean"
                               aria-label="Hapus draft dari antrean"
                             >
-                              <Trash2 className="w-4 h-4 text-rose-500/80 hover:text-rose-600" />
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveDraftId(draft.id);
-                              }}
-                              className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${isSelected
-                                  ? 'bg-primary-500 text-white shadow-xs'
-                                  : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'
-                                }`}
-                            >
-                              {isSelected ? 'Aktif' : 'Pilih SJ'}
+                              <Trash2 className="w-4 h-4 text-rose-500/80" />
                             </button>
                           </div>
                         </div>
@@ -2513,46 +2531,43 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
             {activeDraft ? (
               <>
                 {/* ACTIVE SJ HEADER BANNER */}
-                <div className="bg-gradient-to-r from-primary-500/10 to-primary-500/5 dark:from-primary-950/40 dark:to-primary-950/20 border border-primary-500/30 rounded-2xl p-4">
+                <div className="bg-white dark:bg-[#131d31] border border-indigo-200 dark:border-indigo-900/70 rounded-2xl p-3.5 sm:p-4 shadow-2xs space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md bg-primary-500 text-white">
-                          Surat Jalan Aktif
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md bg-indigo-600 text-white shrink-0">
+                          SJ Aktif
                         </span>
-                        <h2 className="text-base font-black text-slate-900 dark:text-white font-mono">
+                        <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono truncate">
                           {activeDraft.no_sj}
                         </h2>
-                      </div>
-                      <div className="text-xs text-slate-600 dark:text-slate-300 mt-1 flex items-center gap-2 flex-wrap">
-                        <span>Asal: <strong>{activeDraft.source}</strong></span>
-                        <span>→</span>
-                        <span>Tujuan: <strong>{activeDraft.destination}</strong></span>
-                        <span>·</span>
-                        <span>Tanggal: <strong>{activeDraft.tanggal_sj}</strong></span>
                         {activeDraft.tipe_import && (
-                          <>
-                            <span>·</span>
-                            <span>Tipe: <strong>{activeDraft.tipe_import}</strong></span>
-                          </>
+                          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${activeDraft.tipe_import === 'Penerimaan'
+                            ? 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800'
+                            : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
+                          }`}>
+                            {activeDraft.tipe_import}
+                          </span>
                         )}
                       </div>
-                      <div className="inline-flex items-center gap-1.5 text-[9.5px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 px-2 py-0.5 rounded-md shadow-2xs mt-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        <span>Tersimpan ke Supabase sejak import awal · Progres scan tersimpan otomatis di perangkat</span>
+                      <div className="text-[13px] sm:text-xs font-bold text-slate-800 dark:text-slate-100 mt-1.5">
+                        {activeDraft.source} <span className="text-slate-400 mx-1">→</span> {activeDraft.destination}
+                      </div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Tanggal: {activeDraft.tanggal_sj} · Tersimpan otomatis
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="grid grid-cols-3 sm:flex items-center gap-2 shrink-0">
                       {activeDraft.items && activeDraft.items.length > 0 && (
                         <button
                           type="button"
                           onClick={() => setPickingModalDraft(activeDraft)}
-                          className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
+                          className="h-9 px-2.5 sm:px-3.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
                           title="Pilih format picking: Cetak Lembar Kerja, Kirim WA ke Grup, atau Kirim ke Tugas Picking App"
                         >
-                          <Send className="w-3.5 h-3.5" />
-                          <span>Format Picking Picker</span>
+                          <Send className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          <span className="truncate">Picking</span>
                         </button>
                       )}
 
@@ -2570,10 +2585,10 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                             }
                           });
                         }}
-                        className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer"
+                        className="h-9 px-2.5 sm:px-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                       >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        Reset Scan
+                        <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">Reset</span>
                       </button>
 
                       <button
@@ -2592,52 +2607,53 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                             }
                           });
                         }}
-                        className="px-3 py-1.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 rounded-xl text-xs font-bold border border-rose-200 dark:border-rose-800/60 flex items-center gap-1.5 transition-all cursor-pointer"
+                        className="h-9 px-2.5 sm:px-3 bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-xl text-xs font-bold border border-rose-200 dark:border-rose-800/60 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                         title="Hapus draft dari antrean"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Hapus Draft</span>
+                        <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">Hapus</span>
                       </button>
                     </div>
                   </div>
                 </div>
 
                 {/* SCAN INPUT */}
-                <div className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-[11px] font-extrabold text-slate-600 dark:text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                      <ScanLine className="w-3.5 h-3.5 text-primary-500" />
-                      Scan Barcode / Input Manual
+                <div className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 p-3.5 sm:p-4 space-y-2.5 shadow-2xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-xs font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
+                      <ScanLine className="w-4 h-4 text-indigo-500" />
+                      <span>Scan Barcode / SKU</span>
                     </h3>
                     <button
                       type="button"
                       onClick={() => setShowCameraScanner(prev => !prev)}
-                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm ${showCameraScanner
-                          ? 'bg-rose-500 hover:bg-rose-600 text-white shadow-rose-500/20'
-                          : 'bg-primary-500 hover:bg-primary-600 text-white shadow-primary-500/20'
-                        }`}
+                      className={`h-9 flex items-center gap-1.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs ${showCameraScanner
+                        ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                        : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                      }`}
                     >
                       <Camera className="w-3.5 h-3.5" />
-                      <span>{showCameraScanner ? 'Tutup Kamera HP' : '📷 Buka Kamera HP'}</span>
+                      <span>{showCameraScanner ? 'Tutup Kamera' : 'Kamera HP'}</span>
                     </button>
                   </div>
+
                   {/* KAMERA SCANNER HP */}
                   {showCameraScanner && (
-                    <div className="rounded-2xl border-2 border-primary-500/40 p-3 bg-slate-900/90 text-white overflow-hidden space-y-2 shadow-lg">
+                    <div className="rounded-2xl border-2 border-indigo-500/40 p-3 bg-slate-900 text-white overflow-hidden space-y-2 shadow-lg">
                       <div className="flex items-center justify-between text-xs font-bold px-1">
-                        <span className="flex items-center gap-2 text-primary-400">
+                        <span className="flex items-center gap-2 text-indigo-300">
                           <Camera className="w-4 h-4 animate-pulse" />
-                          Scanner Kamera HP Aktif — Arahkan ke Barcode / QR Produk
+                          Arahkan ke Barcode / QR Produk
                         </span>
                         <button
                           type="button"
                           onClick={() => setShowCameraScanner(false)}
-                          className="text-[11px] px-2 py-0.5 rounded-lg bg-rose-500/80 hover:bg-rose-500 text-white"
+                          className="h-7 px-2.5 text-[11px] rounded-lg bg-rose-600 hover:bg-rose-500 text-white cursor-pointer"
                         >
                           Tutup
                         </button>
                       </div>
-                      <div className="rounded-xl overflow-hidden bg-black max-h-[300px] flex items-center justify-center">
+                      <div className="rounded-xl overflow-hidden bg-black max-h-[280px] flex items-center justify-center">
                         <CameraScanner
                           id="pengecekan-camera-scanner"
                           autoStart={true}
@@ -2648,32 +2664,29 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                           }}
                         />
                       </div>
-                      <p className="text-[10px] text-slate-400 text-center">
-                        Mendukung semua format barcode 1D (Code 128, EAN, UPC) & 2D QR Code.
-                      </p>
                     </div>
                   )}
 
                   <PhysicalScanInput
                     onScan={handleScan}
                     products={[]}
-                    placeholder="SCAN BARCODE ATAU KETIK SKU LALU ENTER..."
+                    placeholder="Scan barcode atau ketik SKU..."
                   />
-                  <p className="text-[10px] text-slate-400">
-                    Setiap scan otomatis menambah +1 qty. Jika ada item yang tidak terdaftar di surat jalan, sistem akan mencari informasi nama barang di database produk.
+                  <p className="text-[11px] text-slate-400 leading-snug">
+                    Tiap scan otomatis +1 qty. Item di luar SJ atau melebihi Qty SJ memicu suara pengingat.
                   </p>
                 </div>
 
                 {/* SUMMARY STATS */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
                   {[
-                    { id: 'qty', label: 'Total Qty SJ', value: summary.total_sj, color: 'text-slate-800 dark:text-white', bg: 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800', clickable: false },
-                    { id: 'scan', label: 'Total Discan', value: summary.total_scan + summary.total_unexpected_qty, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900', clickable: false },
-                    { id: 'cocok', label: 'SKU Cocok', value: summary.cocok, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900', clickable: true },
-                    { id: 'selisih', label: 'SKU Selisih', value: summary.kurang + summary.lebih + summary.unexpectedCount, color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900', clickable: true },
+                    { id: 'qty', label: 'Total Qty SJ', value: summary.total_sj, color: 'text-slate-900 dark:text-white', bg: 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800', clickable: false },
+                    { id: 'scan', label: 'Total Discan', value: summary.total_scan + summary.total_unexpected_qty, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50/70 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900', clickable: false },
+                    { id: 'cocok', label: 'SKU Cocok', value: summary.cocok, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900', clickable: true },
+                    { id: 'selisih', label: 'SKU Selisih', value: summary.kurang + summary.lebih + summary.unexpectedCount, color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50/70 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900', clickable: true },
                   ].map(({ id, label, value, color, bg, clickable }) => {
                     const isFilterActive = (id === 'cocok' && detailFilter === 'COCOK') || (id === 'selisih' && detailFilter === 'SELISIH');
-                    const ringStyle = isFilterActive ? 'ring-2 ring-primary-500 ring-offset-1 dark:ring-offset-slate-900' : '';
+                    const ringStyle = isFilterActive ? 'ring-2 ring-indigo-500 ring-offset-1 dark:ring-offset-slate-900' : '';
 
                     return (
                       <div
@@ -2683,52 +2696,65 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                           if (id === 'cocok') setDetailFilter(prev => prev === 'COCOK' ? 'ALL' : 'COCOK');
                           if (id === 'selisih') setDetailFilter(prev => prev === 'SELISIH' ? 'ALL' : 'SELISIH');
                         }}
-                        className={`${bg} rounded-xl p-3 border ${clickable ? 'cursor-pointer hover:shadow-md transition-all' : ''} ${ringStyle}`}
+                        className={`${bg} rounded-2xl p-3 border shadow-2xs ${clickable ? 'cursor-pointer active:scale-[0.98] transition-all' : ''} ${ringStyle}`}
                       >
-                        <div className="flex justify-between items-start">
-                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">{label}</div>
-                          {isFilterActive && <CheckCircle2 className="w-3.5 h-3.5 text-primary-500" />}
+                        <div className="flex justify-between items-center gap-1 mb-1">
+                          <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400">{label}</div>
+                          {clickable && (
+                            <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
+                              {isFilterActive ? 'Aktif ✓' : 'Filter'}
+                            </span>
+                          )}
                         </div>
-                        <div className={`text-2xl font-black ${color}`}>{value}</div>
+                        <div className={`text-2xl font-black tabular-nums leading-none ${color}`}>{value}</div>
                       </div>
                     );
                   })}
                 </div>
 
-                {/* KOMPARASI BARANG TABLE */}
-                <div className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
-                  <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <ArrowUpDown className="w-3.5 h-3.5 text-primary-500" />
-                      <span className="text-[11px] font-extrabold text-slate-600 dark:text-slate-400 uppercase tracking-widest">
-                        Komparasi Barang ({comparisonData.length} SKU di Surat Jalan)
+                {/* KOMPARASI BARANG (KARTU APP DI HP, TABEL LENGKAP DI DESKTOP) */}
+                <div className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-2xs">
+                  <div className="px-3.5 sm:px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <ArrowUpDown className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                      <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200 truncate">
+                        Komparasi Barang ({comparisonData.length} SKU)
                       </span>
                     </div>
+                    {detailFilter !== 'ALL' && (
+                      <button
+                        type="button"
+                        onClick={() => setDetailFilter('ALL')}
+                        className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 cursor-pointer shrink-0"
+                      >
+                        Reset Filter ({detailFilter})
+                      </button>
+                    )}
                   </div>
 
-                  {/* ANOMALI SCAN: BARANG DI LUAR SJ & BARANG MELEBIHI QTY SJ (DITARUH DI ATAS AGAR LANGSUNG TERLIHAT TANPA PERLU SCROLL) */}
+                  {/* ANOMALI SCAN: BARANG DI LUAR SJ & BARANG MELEBIHI QTY SJ */}
                   {(detailFilter === 'ALL' || detailFilter === 'SELISIH') &&
                     (Object.keys(activeDraft.unexpected || {}).length > 0 || overScannedItems.length > 0) && (
-                    <div className="border-b border-amber-200 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/30 px-4 py-3 space-y-2.5">
+                    <div className="border-b border-amber-200 dark:border-amber-800 bg-amber-50/75 dark:bg-amber-950/30 px-3.5 sm:px-4 py-3 space-y-2.5">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 text-[11px] font-extrabold text-amber-800 dark:text-amber-300 uppercase tracking-wider">
+                        <div className="flex items-center gap-1.5 text-xs font-extrabold text-amber-800 dark:text-amber-300">
                           <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
                           <span>
-                            Perhatian: Barang Di Luar SJ &amp; Lebih Qty ({Object.keys(activeDraft.unexpected || {}).length + overScannedItems.length} SKU)
+                            Perhatian: Di Luar SJ &amp; Lebih Qty ({Object.keys(activeDraft.unexpected || {}).length + overScannedItems.length} SKU)
                           </span>
                         </div>
-                        <span className="text-[10px] font-black px-2 py-0.5 bg-amber-200/80 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200 rounded-lg">
-                          Perlu Perhatian
+                        <span className="text-[10px] font-extrabold px-2 py-0.5 bg-amber-200/80 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200 rounded-md">
+                          Perlu Cek
                         </span>
                       </div>
-                      <p className="text-[10px] text-amber-700 dark:text-amber-400">
-                        Item yang tidak ada di SJ maupun yang jumlah scan-nya melebihi Qty SJ ({activeDraft.no_sj}) ditandai otomatis di sini. Kurangi ke Qty SJ bila terjadi double-scan.
+                      <p className="text-[11px] text-amber-800/85 dark:text-amber-300/90 leading-snug">
+                        Item tidak ada di SJ maupun melebihi Qty SJ ({activeDraft.no_sj}) ditandai di sini. Kurangi ke Qty SJ bila double-scan.
                       </p>
 
-                      <div className="space-y-1.5">
+                      <div className="space-y-2">
                         {/* 1. Item Di Luar Surat Jalan */}
                         {Object.entries(activeDraft.unexpected || {}).map(([sku, val]) => (
-                          <div key={`unexp-${sku}`} className="flex items-center justify-between bg-white dark:bg-[#131d31] border border-amber-300 dark:border-amber-700/80 rounded-xl px-3 py-2 shadow-2xs gap-2">
+                          <div key={`unexp-${sku}`} className="flex flex-col sm:flex-row sm:items-center justify-between bg-white dark:bg-[#131d31] border border-amber-300 dark:border-amber-700/80 rounded-xl p-3 shadow-2xs gap-2.5">
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-1.5">
                                 <span className="font-mono text-xs font-black text-amber-900 dark:text-amber-300">{sku}</span>
@@ -2736,38 +2762,38 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                   Di Luar SJ
                                 </span>
                               </div>
-                              <div className="text-[11px] text-slate-600 dark:text-slate-300 truncate mt-0.5 font-medium">
+                              <div className="text-xs text-slate-700 dark:text-slate-200 line-clamp-2 mt-0.5 font-semibold">
                                 {val.nama || 'Produk Master'}
                               </div>
                             </div>
 
-                            <div className="flex items-center gap-2 shrink-0">
-                              <div className="flex items-center gap-1">
+                            <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0 pt-1.5 sm:pt-0 border-t sm:border-t-0 border-amber-100 dark:border-amber-900/40">
+                              <div className="flex items-center gap-1.5">
                                 <button
                                   type="button"
                                   onClick={() => handleManualUnexpectedQty(sku, val.qty - 1)}
-                                  className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-rose-100 dark:hover:bg-rose-900 flex items-center justify-center transition-colors cursor-pointer"
+                                  className="w-9 h-9 sm:w-7 sm:h-7 rounded-xl sm:rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-rose-100 dark:hover:bg-rose-900 flex items-center justify-center transition-colors cursor-pointer"
                                   aria-label="Kurangi qty luar SJ"
                                 >
-                                  <Minus className="w-2.5 h-2.5" />
+                                  <Minus className="w-3.5 h-3.5" />
                                 </button>
-                                <span className="font-bold text-xs text-amber-700 dark:text-amber-300 w-8 text-center">
+                                <span className="font-mono font-black text-sm sm:text-xs text-amber-700 dark:text-amber-300 w-9 text-center tabular-nums">
                                   +{val.qty}
                                 </span>
                                 <button
                                   type="button"
                                   onClick={() => handleManualUnexpectedQty(sku, val.qty + 1)}
-                                  className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-emerald-100 dark:hover:bg-emerald-900 flex items-center justify-center transition-colors cursor-pointer"
+                                  className="w-9 h-9 sm:w-7 sm:h-7 rounded-xl sm:rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-emerald-100 dark:hover:bg-emerald-900 flex items-center justify-center transition-colors cursor-pointer"
                                   aria-label="Tambah qty luar SJ"
                                 >
-                                  <Plus className="w-2.5 h-2.5" />
+                                  <Plus className="w-3.5 h-3.5" />
                                 </button>
                               </div>
 
                               <button
                                 type="button"
                                 onClick={() => handleRemoveUnexpected(sku)}
-                                className="p-1 text-slate-400 hover:text-rose-500 cursor-pointer transition-colors"
+                                className="w-9 h-9 sm:w-7 sm:h-7 rounded-xl sm:rounded-md text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center justify-center cursor-pointer transition-colors"
                                 title="Hapus dari daftar lebihan"
                               >
                                 <X className="w-4 h-4" />
@@ -2778,12 +2804,12 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
 
                         {/* 2. Item Ada di SJ namun Qty Scan > Qty SJ */}
                         {overScannedItems.map((item) => (
-                          <div key={`over-${item.sku}`} className="flex items-center justify-between bg-white dark:bg-[#131d31] border border-rose-300 dark:border-rose-800/80 rounded-xl px-3 py-2 shadow-2xs gap-2">
+                          <div key={`over-${item.sku}`} className="flex flex-col sm:flex-row sm:items-center justify-between bg-white dark:bg-[#131d31] border border-rose-300 dark:border-rose-800/80 rounded-xl p-3 shadow-2xs gap-2.5">
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-1.5">
                                 <span className="font-mono text-xs font-black text-rose-800 dark:text-rose-300">{item.sku}</span>
                                 <span className="text-[10px] font-extrabold px-1.5 py-0.5 bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 rounded border border-rose-300 dark:border-rose-800">
-                                  Lebih dari SJ (+{item.selisih})
+                                  Lebih (+{item.selisih})
                                 </span>
                                 {item.size && item.size !== '-' && (
                                   <span className="text-[10px] font-bold px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded">
@@ -2791,44 +2817,44 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                   </span>
                                 )}
                               </div>
-                              <div className="text-[11px] text-slate-600 dark:text-slate-300 truncate mt-0.5 font-medium">
+                              <div className="text-xs text-slate-700 dark:text-slate-200 line-clamp-2 mt-0.5 font-semibold">
                                 {item.nama_produk}
-                                <span className="ml-1.5 text-[10px] font-bold text-rose-600 dark:text-rose-400">
+                                <span className="ml-1.5 text-[11px] font-bold text-rose-600 dark:text-rose-400 tabular-nums">
                                   (SJ: {item.qty_sj} · Scan: {item.qty_scan})
                                 </span>
                               </div>
                             </div>
 
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <div className="flex items-center gap-1">
+                            <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0 pt-1.5 sm:pt-0 border-t sm:border-t-0 border-rose-100 dark:border-rose-900/40">
+                              <div className="flex items-center gap-1.5">
                                 <button
                                   type="button"
                                   onClick={() => handleManualQty(item.sku, item.qty_scan - 1)}
-                                  className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-rose-100 dark:hover:bg-rose-900 flex items-center justify-center transition-colors cursor-pointer"
+                                  className="w-9 h-9 sm:w-7 sm:h-7 rounded-xl sm:rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-rose-100 dark:hover:bg-rose-900 flex items-center justify-center transition-colors cursor-pointer"
                                   title="Kurangi qty scan"
                                 >
-                                  <Minus className="w-2.5 h-2.5" />
+                                  <Minus className="w-3.5 h-3.5" />
                                 </button>
-                                <span className="font-bold text-xs text-rose-700 dark:text-rose-300 w-8 text-center">
+                                <span className="font-mono font-black text-sm sm:text-xs text-rose-700 dark:text-rose-300 w-9 text-center tabular-nums">
                                   {item.qty_scan}
                                 </span>
                                 <button
                                   type="button"
                                   onClick={() => handleManualQty(item.sku, item.qty_scan + 1)}
-                                  className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-emerald-100 dark:hover:bg-emerald-900 flex items-center justify-center transition-colors cursor-pointer"
+                                  className="w-9 h-9 sm:w-7 sm:h-7 rounded-xl sm:rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-emerald-100 dark:hover:bg-emerald-900 flex items-center justify-center transition-colors cursor-pointer"
                                   title="Tambah qty scan"
                                 >
-                                  <Plus className="w-2.5 h-2.5" />
+                                  <Plus className="w-3.5 h-3.5" />
                                 </button>
                               </div>
 
                               <button
                                 type="button"
                                 onClick={() => handleManualQty(item.sku, item.qty_sj)}
-                                className="px-2 py-1 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 transition-colors cursor-pointer whitespace-nowrap"
+                                className="h-9 sm:h-7 px-2.5 rounded-xl sm:rounded-lg text-xs sm:text-[10px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 transition-colors cursor-pointer whitespace-nowrap tabular-nums"
                                 title={`Kembalikan ke Qty SJ (${item.qty_sj})`}
                               >
-                                = {item.qty_sj}
+                                Reset = {item.qty_sj}
                               </button>
                             </div>
                           </div>
@@ -2837,7 +2863,100 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                     </div>
                   )}
 
-                  <div className="overflow-x-auto">
+                  {/* TAMPILAN SELULER: KARTU ITEM TANPA GESER SAMPING */}
+                  <div className="sm:hidden divide-y divide-slate-100 dark:divide-slate-800">
+                    {comparisonData.filter(item => {
+                      if (detailFilter === 'ALL') return true;
+                      if (detailFilter === 'COCOK') return item.status === 'COCOK';
+                      if (detailFilter === 'SELISIH') return item.status === 'KURANG' || item.status === 'LEBIH';
+                      return true;
+                    }).map(item => {
+                      const lk = lookupProductBySku(item.sku, productCatalog, item.nama_produk, item.size);
+                      const displaySize = lk.found
+                        ? (lk.size || '-')
+                        : (isRealSize(item.size) && !isCorruptedColorCodeSize(item.sku, item.size) && item.size !== 'Default' ? item.size : '-');
+                      return (
+                        <div
+                          key={`mob-${item.sku}`}
+                          className={`p-3.5 space-y-2.5 ${item.status === 'COCOK' ? 'bg-emerald-50/35 dark:bg-emerald-950/10' :
+                            item.status === 'KURANG' ? 'bg-rose-50/35 dark:bg-rose-950/10' :
+                              item.status === 'LEBIH' ? 'bg-amber-50/35 dark:bg-amber-950/10' : ''
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="text-[13px] font-bold text-slate-900 dark:text-white leading-snug">
+                                {item.nama_produk}
+                              </div>
+                              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                <span className="font-mono text-[11px] font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                                  {item.sku}
+                                </span>
+                                {displaySize !== '-' && (
+                                  <span className="font-mono text-[11px] font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                                    {displaySize}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="shrink-0">
+                              <StatusBadge status={item.status} />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+                            <div className="flex items-center gap-3 text-xs tabular-nums">
+                              <div>
+                                <span className="text-[10px] font-semibold text-slate-400 block">Qty SJ</span>
+                                <span className="font-mono font-extrabold text-slate-800 dark:text-slate-200">{item.qty_sj}</span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-semibold text-slate-400 block">Selisih</span>
+                                <span className={`font-mono font-extrabold ${item.selisih === 0 ? 'text-emerald-600 dark:text-emerald-400' :
+                                  item.selisih < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400'
+                                }`}>
+                                  {item.selisih > 0 ? `+${item.selisih}` : item.selisih}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleManualQty(item.sku, item.qty_scan - 1)}
+                                className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 active:bg-rose-100 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center justify-center cursor-pointer"
+                                aria-label="Kurangi qty scan"
+                              >
+                                <Minus className="w-4 h-4" />
+                              </button>
+                              <input
+                                type="number"
+                                value={item.qty_scan}
+                                onFocus={e => e.target.select()}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  handleManualQty(item.sku, val === '' ? 0 : Math.max(0, parseInt(val, 10) || 0));
+                                }}
+                                className="w-14 h-9 text-center font-mono font-black bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 border border-slate-300 dark:border-slate-600 rounded-xl text-sm tabular-nums"
+                                min={0}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleManualQty(item.sku, item.qty_scan + 1)}
+                                className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 active:bg-emerald-100 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center justify-center cursor-pointer"
+                                aria-label="Tambah qty scan"
+                              >
+                                <Plus className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* TAMPILAN TABLET / DESKTOP: TABEL LENGKAP */}
+                  <div className="hidden sm:block overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 uppercase tracking-wider text-[10px]">
@@ -2891,7 +3010,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                             </td>
 
                             {/* 4. Qty SJ */}
-                            <td className="px-3 py-3 text-center font-mono font-bold text-slate-800 dark:text-slate-200 text-xs align-middle">
+                            <td className="px-3 py-3 text-center font-mono font-bold text-slate-800 dark:text-slate-200 text-xs align-middle tabular-nums">
                               {item.qty_sj}
                             </td>
 
@@ -2901,7 +3020,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => handleManualQty(item.sku, item.qty_scan - 1)}
-                                  className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-rose-100 dark:hover:bg-rose-900 text-slate-600 dark:text-slate-200 flex items-center justify-center transition-colors cursor-pointer"
+                                  className="w-7 h-7 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-rose-100 dark:hover:bg-rose-900 text-slate-600 dark:text-slate-200 flex items-center justify-center transition-colors cursor-pointer"
                                 >
                                   <Minus className="w-3 h-3" />
                                 </button>
@@ -2913,13 +3032,13 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                     const val = e.target.value;
                                     handleManualQty(item.sku, val === '' ? 0 : Math.max(0, parseInt(val, 10) || 0));
                                   }}
-                                  className="w-12 text-center font-mono font-black bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none border border-slate-300 dark:border-slate-600 rounded-lg text-xs py-1 shadow-2xs"
+                                  className="w-12 text-center font-mono font-black bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none border border-slate-300 dark:border-slate-600 rounded-lg text-xs py-1 shadow-2xs tabular-nums"
                                   min={0}
                                 />
                                 <button
                                   type="button"
                                   onClick={() => handleManualQty(item.sku, item.qty_scan + 1)}
-                                  className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-emerald-100 dark:hover:bg-emerald-900 text-slate-600 dark:text-slate-200 flex items-center justify-center transition-colors cursor-pointer"
+                                  className="w-7 h-7 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-emerald-100 dark:hover:bg-emerald-900 text-slate-600 dark:text-slate-200 flex items-center justify-center transition-colors cursor-pointer"
                                 >
                                   <Plus className="w-3 h-3" />
                                 </button>
@@ -2928,7 +3047,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
 
                             {/* 6. Selisih */}
                             <td className="px-3 py-3 text-center align-middle">
-                              <span className={`font-mono font-black text-xs ${item.selisih === 0 ? 'text-emerald-500' :
+                              <span className={`font-mono font-black text-xs tabular-nums ${item.selisih === 0 ? 'text-emerald-500' :
                                   item.selisih < 0 ? 'text-rose-500' : 'text-amber-500'
                                 }`}>
                                 {item.selisih > 0 ? `+${item.selisih}` : item.selisih}
@@ -2947,8 +3066,8 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                 </div>
 
                 {/* CATATAN TAMBAHAN (OPSIONAL) */}
-                <div className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 p-3.5">
-                  <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider block mb-1">
+                <div className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 p-3.5 shadow-2xs">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
                     Catatan Pengecekan (Opsional)
                   </label>
                   <input
@@ -2959,31 +3078,31 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                       setDrafts(prev => prev.map(d => d.id === activeDraft.id ? { ...d, catatan: text } : d));
                     }}
                     placeholder="Contoh: Kondisi fisik barang rapi, dus luar ada sedikit sobek..."
-                    className="w-full text-xs px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white focus:outline-none focus:border-primary-500"
+                    className="w-full h-10 sm:h-9 text-xs px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
                   />
                 </div>
 
-                {/* SUBMIT ke Database (STATUS PENDING) */}
-                <div className={`rounded-2xl border-2 p-4 ${summary.has_selisih
+                {/* SUBMIT KE DATABASE */}
+                <div className={`rounded-2xl border p-4 shadow-2xs space-y-3 ${summary.has_selisih
                     ? 'bg-rose-50/70 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800'
                     : 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800'
                   }`}>
-                  <div className="flex items-start gap-2 mb-3">
+                  <div className="flex items-start gap-2.5">
                     {summary.has_selisih
                       ? <AlertTriangle className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
                       : <CheckCircle2 className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />}
-                    <div>
-                      <div className={`text-sm font-bold ${summary.has_selisih ? 'text-rose-700 dark:text-rose-300' : 'text-emerald-700 dark:text-emerald-300'}`}>
+                    <div className="min-w-0 flex-1">
+                      <div className={`text-sm font-extrabold ${summary.has_selisih ? 'text-rose-700 dark:text-rose-300' : 'text-emerald-700 dark:text-emerald-300'}`}>
                         {summary.has_selisih
                           ? `Terdapat ${summary.kurang + summary.lebih + summary.unexpectedCount} SKU berselisih.`
                           : 'Semua barang cocok dengan Surat Jalan ✓'}
                       </div>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 mb-2">
-                        Keseluruhan data per baris produk akan ditulis ke Database.
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Keseluruhan data produk akan disimpan ke Database.
                       </p>
 
                       {summary.has_selisih && (
-                        <div className="flex items-center gap-2 flex-wrap mt-2">
+                        <div className="grid grid-cols-1 sm:flex items-center gap-2 mt-2.5">
                           {summary.kurang > 0 && (
                             <button
                               type="button"
@@ -3008,11 +3127,11 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                   type: 'kurang',
                                 });
                               }}
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#25D366] hover:bg-[#1DA851] text-white text-[11px] font-bold rounded-lg transition-colors shadow-xs cursor-pointer"
+                              className="h-9 px-3 bg-white dark:bg-slate-900 hover:bg-emerald-50 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                               title="Kirim laporan selisih kurang via Bot Fonnte atau WhatsApp Web"
                             >
-                              <Send className="w-3.5 h-3.5" />
-                              Share ke WA (Selisih Kurang)
+                              <Send className="w-3.5 h-3.5 text-[#25D366]" />
+                              <span>Share WA (Selisih Kurang)</span>
                             </button>
                           )}
 
@@ -3051,11 +3170,11 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                   type: 'lebih',
                                 });
                               }}
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold rounded-lg transition-colors shadow-xs cursor-pointer"
+                              className="h-9 px-3 bg-white dark:bg-slate-900 hover:bg-amber-50 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                               title="Kirim laporan selisih lebih via Bot Fonnte atau WhatsApp Web"
                             >
-                              <Send className="w-3.5 h-3.5" />
-                              Share ke WA (Selisih Lebih)
+                              <Send className="w-3.5 h-3.5 text-amber-500" />
+                              <span>Share WA (Selisih Lebih)</span>
                             </button>
                           )}
                         </div>
@@ -3063,37 +3182,38 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between mb-3 mt-2 p-3 bg-slate-50 dark:bg-[#0f172a] rounded-xl border border-slate-200 dark:border-slate-700">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Tentukan Status Surat Jalan:</label>
-                    <div className="flex items-center gap-4">
-                      <label className="flex items-center gap-1.5 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="submitStatus"
-                          value="pending"
-                          checked={submitStatus === 'pending'}
-                          onChange={() => setSubmitStatus('pending')}
-                          className="w-4 h-4 text-primary-600 border-slate-300 focus:ring-primary-500"
-                        />
-                        <span className="text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded">PENDING</span>
-                      </label>
-                      <label className="flex items-center gap-1.5 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="submitStatus"
-                          value="selesai"
-                          checked={submitStatus === 'selesai'}
-                          onChange={() => setSubmitStatus('selesai')}
-                          className="w-4 h-4 text-emerald-600 border-slate-300 focus:ring-emerald-500"
-                        />
-                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded">SELESAI</span>
-                      </label>
+                  {/* Segmented Status Submit (App Native 2 Columns) */}
+                  <div className="space-y-1.5">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                      Status Simpan Surat Jalan
+                    </span>
+                    <div className="grid grid-cols-2 p-1 bg-white/90 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setSubmitStatus('pending')}
+                        className={`h-10 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${submitStatus === 'pending'
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        <span>PENDING</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSubmitStatus('selesai')}
+                        className={`h-10 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${submitStatus === 'selesai'
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        <span>SELESAI</span>
+                      </button>
                     </div>
                   </div>
 
                   {/* Opsi Eksplisit (Default OFF): Masuk ke Pengiriman Store > Dispatched */}
                   {submitStatus === 'selesai' && isPengirimanTypeRecord(activeDraft) && (
-                    <label className="flex items-start gap-2.5 mb-4 p-3 rounded-xl border border-indigo-200 dark:border-indigo-800/70 bg-indigo-50/60 dark:bg-indigo-950/25 cursor-pointer select-none">
+                    <label className="flex items-start gap-2.5 p-3 rounded-xl border border-indigo-200 dark:border-indigo-800/70 bg-white/90 dark:bg-indigo-950/30 cursor-pointer select-none">
                       <input
                         type="checkbox"
                         checked={sendToDispatchedOnSubmit}
@@ -3102,10 +3222,10 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                       />
                       <div className="min-w-0">
                         <div className="text-xs font-bold text-indigo-900 dark:text-indigo-200">
-                          Sekaligus masukkan ke antrean Pengiriman Store &gt; Dispatched
+                          Sekaligus masukkan ke Pengiriman Store &gt; Dispatched
                         </div>
-                        <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
-                          Opsional (default nonaktif). Jika dicentang, fisik scan ({summary.total_scan + summary.total_unexpected_qty} pcs · Est. ~{estimateKoliFromPcs(summary.total_scan + summary.total_unexpected_qty, ESTIMATED_PCS_PER_KOLI)} Koli) langsung masuk antrean Dispatched. Jika tidak dicentang, Anda dapat mengirimnya kapan saja dari tab Riwayat &gt; SELESAI.
+                        <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-snug">
+                          Default nonaktif. Jika dicentang, fisik scan ({summary.total_scan + summary.total_unexpected_qty} pcs · Est. ~{estimateKoliFromPcs(summary.total_scan + summary.total_unexpected_qty, ESTIMATED_PCS_PER_KOLI)} Koli) langsung masuk Dispatched.
                         </div>
                       </div>
                     </label>
@@ -3115,7 +3235,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                     type="button"
                     onClick={handleSubmitPengecekan}
                     disabled={submitting}
-                    className="w-full py-3.5 bg-primary-500 hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-sm font-extrabold flex items-center justify-center gap-2 transition-all shadow-md shadow-primary-500/20 cursor-pointer"
+                    className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-sm font-extrabold flex items-center justify-center gap-2 transition-all shadow-md shadow-indigo-600/20 active:scale-[0.99] cursor-pointer"
                   >
                     {submitting ? (
                       <><RefreshCw className="w-4 h-4 animate-spin" /> Menyimpan ke Database...</>
@@ -3127,20 +3247,20 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
               </>
             ) : (
               /* EMPTY STATE APABILA ANTREAN KOSONG */
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary-500/10 to-primary-500/5 border border-primary-500/20 flex items-center justify-center mb-4">
-                  <FileText className="w-10 h-10 text-primary-400" />
+              <div className="flex flex-col items-center justify-center py-14 text-center bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 px-4">
+                <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center mb-3.5">
+                  <FileText className="w-8 h-8 text-indigo-500" />
                 </div>
-                <h3 className="text-base font-bold text-slate-700 dark:text-slate-300 mb-1">
+                <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 mb-1">
                   Antrean Pengecekan Kosong
                 </h3>
-                <p className="text-xs text-slate-400 max-w-sm leading-relaxed">
-                  Import satu atau beberapa file CSV Surat Jalan untuk memulai antrean pekerjaan. Sistem akan otomatis memisahkan per No SJ.
+                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm leading-relaxed">
+                  Import satu atau beberapa file CSV Surat Jalan untuk memulai antrean pekerjaan.
                 </p>
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="mt-5 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-md shadow-primary-500/20 cursor-pointer"
+                  className="mt-4 h-11 px-5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-sm cursor-pointer"
                 >
                   <Upload className="w-4 h-4" />
                   Import CSV Sekarang
@@ -3153,118 +3273,204 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         {/* ======================================================== */}
         {/* TAB 2: RIWAYAT PENGECEKAN (PENGGANTI REKAP PENERIMAAN)    */}
         {/* ======================================================== */}
-        {activeTab === 'riwayat' && (
+        {activeTab === 'riwayat' && (() => {
+          const openBulkPickingModal = (targetList: PengecekanSJRecord[]) => {
+            const withItems = targetList.filter((r) => r.items && r.items.length > 0);
+            if (withItems.length === 0) {
+              onShowToast('Pilih minimal 1 Surat Jalan yang memiliki item untuk Format Picking Massal.', 'warning');
+              return;
+            }
+            const mappedDrafts: PengecekanSJDraft[] = withItems.map((rec) => ({
+              id: rec.id || `${rec.no_sj}___${rec.source}___${rec.destination}`,
+              no_sj: rec.no_sj,
+              source: rec.source,
+              destination: rec.destination,
+              tanggal_sj: rec.tanggal_sj,
+              tipe_import: rec.tipe_import || (rec.destination?.toLowerCase().includes('warehouse') ? 'Penerimaan' : 'Pengiriman') || 'Pengiriman',
+              file_name: `SJ-${rec.no_sj}`,
+              items: rec.items.map((i) => ({
+                sku: i.sku,
+                nama_produk: i.nama_produk,
+                category: i.category,
+                qty_sj: i.qty_sj || i.qty_scan || 1,
+              })),
+              scanQty: {},
+              unexpected: {},
+              status: 'draft',
+              created_at: rec.created_at,
+              updated_at: rec.updated_at || new Date().toISOString(),
+            }));
+            setPickingModalInitialTab('app');
+            setPickingModalDraft(null);
+            setPickingModalDrafts(mappedDrafts);
+          };
+
+          const selectedList = filteredRecords.filter((r) => selectedRecords.has(r.id));
+          const selectedSelesaiPengiriman = selectedList.filter(
+            (r) => r.status === 'selesai' && isPengirimanTypeRecord(r)
+          );
+
+          return (
           <div className="space-y-3">
-            {/* SUB-TAB TIPE: SEMUA vs PENERIMAAN vs PENGIRIMAN */}
-            <div className="bg-white dark:bg-[#131d31] p-2 sm:p-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
-              <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl overflow-x-auto">
-                <button
-                  type="button"
-                  id="btn-riwayat-semua"
-                  onClick={() => setRiwayatTypeFilter('ALL')}
-                  className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer select-none shrink-0 ${riwayatTypeFilter === 'ALL'
-                      ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                >
-                  <Package className="w-3.5 h-3.5" />
-                  <span>Semua Riwayat</span>
-                  <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold ${riwayatTypeFilter === 'ALL' ? 'bg-slate-700 dark:bg-slate-200 text-white dark:text-slate-900' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                    }`}>
-                    {riwayatCounts.all}
-                  </span>
-                </button>
+            {/* SUB-TAB TIPE: NATIVE 3-SEGMENT CONTROL */}
+            <div className="bg-slate-100 dark:bg-slate-800/80 p-1 rounded-2xl border border-slate-200/80 dark:border-slate-700/70 grid grid-cols-3 gap-1">
+              <button
+                type="button"
+                id="btn-riwayat-semua"
+                onClick={() => setRiwayatTypeFilter('ALL')}
+                className={`min-h-[40px] flex items-center justify-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer select-none ${
+                  riwayatTypeFilter === 'ALL'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Package className="w-3.5 h-3.5 shrink-0 hidden sm:inline text-slate-500 dark:text-slate-400" />
+                <span className="sm:hidden">Semua</span>
+                <span className="hidden sm:inline">Semua Riwayat</span>
+                <span className={`px-1.5 py-0.5 text-[10px] rounded-md font-mono font-bold tabular-nums ${
+                  riwayatTypeFilter === 'ALL'
+                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                    : 'bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                }`}>
+                  {riwayatCounts.all}
+                </span>
+              </button>
 
-                <button
-                  type="button"
-                  id="btn-riwayat-penerimaan"
-                  onClick={() => setRiwayatTypeFilter('PENERIMAAN')}
-                  className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer select-none shrink-0 ${riwayatTypeFilter === 'PENERIMAAN'
-                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400'
-                    }`}
-                >
-                  <ArrowDownToLine className="w-3.5 h-3.5" />
-                  <span>Penerimaan / Mutasi Masuk</span>
-                  <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold ${riwayatTypeFilter === 'PENERIMAAN' ? 'bg-white/20 text-white' : 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300'
-                    }`}>
-                    {riwayatCounts.penerimaan}
-                  </span>
-                </button>
+              <button
+                type="button"
+                id="btn-riwayat-penerimaan"
+                onClick={() => setRiwayatTypeFilter('PENERIMAAN')}
+                className={`min-h-[40px] flex items-center justify-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer select-none ${
+                  riwayatTypeFilter === 'PENERIMAAN'
+                    ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-xs'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400'
+                }`}
+              >
+                <ArrowDownToLine className="w-3.5 h-3.5 shrink-0 hidden sm:inline text-indigo-500" />
+                <span className="sm:hidden">Masuk</span>
+                <span className="hidden sm:inline">Penerimaan / Mutasi Masuk</span>
+                <span className={`px-1.5 py-0.5 text-[10px] rounded-md font-mono font-bold tabular-nums ${
+                  riwayatTypeFilter === 'PENERIMAAN'
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-indigo-100/80 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300'
+                }`}>
+                  {riwayatCounts.penerimaan}
+                </span>
+              </button>
 
-                <button
-                  type="button"
-                  id="btn-riwayat-pengiriman"
-                  onClick={() => setRiwayatTypeFilter('PENGIRIMAN')}
-                  className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer select-none shrink-0 ${riwayatTypeFilter === 'PENGIRIMAN'
-                      ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400'
-                    }`}
-                >
-                  <Truck className="w-3.5 h-3.5" />
-                  <span>Pengiriman / Transfer Toko</span>
-                  <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold ${riwayatTypeFilter === 'PENGIRIMAN' ? 'bg-white/20 text-white' : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
-                    }`}>
-                    {riwayatCounts.pengiriman}
-                  </span>
-                </button>
-              </div>
+              <button
+                type="button"
+                id="btn-riwayat-pengiriman"
+                onClick={() => setRiwayatTypeFilter('PENGIRIMAN')}
+                className={`min-h-[40px] flex items-center justify-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer select-none ${
+                  riwayatTypeFilter === 'PENGIRIMAN'
+                    ? 'bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 shadow-xs'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400'
+                }`}
+              >
+                <Truck className="w-3.5 h-3.5 shrink-0 hidden sm:inline text-emerald-500" />
+                <span className="sm:hidden">Kirim</span>
+                <span className="hidden sm:inline">Pengiriman / Transfer Toko</span>
+                <span className={`px-1.5 py-0.5 text-[10px] rounded-md font-mono font-bold tabular-nums ${
+                  riwayatTypeFilter === 'PENGIRIMAN'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-emerald-100/80 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                }`}>
+                  {riwayatCounts.pengiriman}
+                </span>
+              </button>
             </div>
 
-            {/* HEADER FILTER & STATS */}
-            <div className="bg-white dark:bg-[#131d31] p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2.5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="relative flex-1">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            {/* HEADER FILTER & STATS (COMPACT APP SEARCH + COLLAPSIBLE MOBILE DRAWER) */}
+            <div className="bg-white dark:bg-[#131d31] p-3 sm:p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2.5 shadow-xs">
+              {/* Row 1: Search + Mobile Filter Toggle + Refresh */}
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1 min-w-0">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="text"
                     value={searchFilter}
                     onChange={e => setSearchFilter(e.target.value)}
                     placeholder="Cari No SJ, Asal, Tujuan, atau SKU..."
-                    className="w-full text-xs pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white focus:outline-none focus:border-primary-500"
+                    className="w-full h-10 sm:h-9 text-xs pl-9 pr-8 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
                   />
+                  {searchFilter && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchFilter('')}
+                      aria-label="Hapus pencarian"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
 
-                {/* Status Filter Buttons */}
-                <div className="flex items-center gap-1 flex-wrap">
-                  {(['ALL', 'PENDING', 'SELESAI', 'COCOK', 'SELISIH'] as const).map(st => (
+                {/* Mobile Collapsible Filter Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowMobileRiwayatFilters((prev) => !prev)}
+                  className={`sm:hidden relative h-10 px-3 rounded-xl border text-xs font-bold flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors ${
+                    showMobileRiwayatFilters || activeSecondaryFilterCount > 0
+                      ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                  }`}
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <span>Filter</span>
+                  {activeSecondaryFilterCount > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-indigo-600 text-white text-[10px] font-mono font-extrabold tabular-nums">
+                      {activeSecondaryFilterCount}
+                    </span>
+                  )}
+                </button>
+
+                {/* Primary Refresh Delta */}
+                <button
+                  type="button"
+                  onClick={loadRecords}
+                  className="h-10 w-10 sm:h-9 sm:w-auto sm:px-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 text-xs font-bold"
+                  title="Refresh delta (hanya data baru)"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingRecords ? 'animate-spin text-indigo-600' : ''}`} />
+                  <span className="hidden sm:inline">Refresh</span>
+                </button>
+
+                {/* Desktop Full Reload */}
+                <button
+                  type="button"
+                  onClick={forceReloadRecords}
+                  className="hidden sm:flex h-9 px-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-xl items-center gap-1.5 transition-all cursor-pointer shrink-0 text-xs font-bold"
+                  title="Muat ulang SEMUA data dari awal (reset cache lokal)"
+                >
+                  <RotateCcw className={`w-3.5 h-3.5 ${loadingRecords ? 'animate-spin' : ''}`} />
+                  <span className="hidden lg:inline">Muat Ulang Penuh</span>
+                </button>
+              </div>
+
+              {/* Row 2: Swipeable Single-Line Status Chips */}
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap pb-0.5">
+                {(['ALL', 'PENDING', 'SELESAI', 'COCOK', 'SELISIH'] as const).map(st => {
+                  const active = statusFilter === st;
+                  return (
                     <button
                       key={st}
                       type="button"
                       onClick={() => setStatusFilter(st)}
-                      className={`px-2.5 py-1.5 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer ${statusFilter === st
-                          ? 'bg-primary-500 text-white shadow-xs'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                        }`}
+                      className={`min-h-[36px] px-3 py-1.5 rounded-xl text-[11px] font-extrabold transition-all cursor-pointer shrink-0 border ${
+                        active
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                          : 'bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border-slate-200/80 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
+                      }`}
                     >
                       {st === 'ALL' ? 'Semua' : st}
                     </button>
-                  ))}
-
-                  <button
-                    type="button"
-                    onClick={loadRecords}
-                    className="px-2 py-1.5 flex items-center gap-1 text-slate-500 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg transition-all cursor-pointer ml-1 text-xs font-medium"
-                    title="Refresh delta (hanya data baru)"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${loadingRecords ? 'animate-spin' : ''}`} />
-                    <span className="hidden sm:inline">Refresh</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={forceReloadRecords}
-                    className="px-2 py-1.5 flex items-center gap-1 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/20 rounded-lg transition-all cursor-pointer text-xs font-medium"
-                    title="Muat ulang SEMUA data dari awal (reset cache lokal)"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${loadingRecords ? 'animate-spin' : ''}`} />
-                    <span className="hidden sm:inline">Muat Ulang Penuh</span>
-                  </button>
-                </div>
+                  );
+                })}
               </div>
 
-              {/* FILTER ASAL, TUJUAN, TANGGAL & SORTING */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/80 items-center">
+              {/* Row 3: Collapsible Secondary Filters (Hidden on Mobile unless Filter toggled) */}
+              <div className={`${showMobileRiwayatFilters ? 'grid' : 'hidden sm:grid'} grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 items-center`}>
                 {/* Filter Asal (Multi-Select Dropsearch) */}
                 <div className="lg:col-span-3">
                   <MultiSelectDropsearch
@@ -3297,7 +3503,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                       title="Dari Tanggal SJ"
                       value={dateFromFilter}
                       onChange={(e) => setDateFromFilter(e.target.value)}
-                      className="w-full text-xs pl-8 pr-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 focus:outline-none focus:border-primary-500"
+                      className="w-full h-10 sm:h-9 text-xs pl-8 pr-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 focus:outline-none focus:border-indigo-500"
                     />
                   </div>
                   <span className="text-[11px] text-slate-400 shrink-0">s/d</span>
@@ -3308,7 +3514,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                       title="Sampai Tanggal SJ"
                       value={dateToFilter}
                       onChange={(e) => setDateToFilter(e.target.value)}
-                      className="w-full text-xs px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 focus:outline-none focus:border-primary-500"
+                      className="w-full h-10 sm:h-9 text-xs px-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 focus:outline-none focus:border-indigo-500"
                     />
                   </div>
                 </div>
@@ -3321,7 +3527,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                       aria-label="Urutkan Riwayat"
                       value={riwayatSortBy}
                       onChange={(e) => setRiwayatSortBy(e.target.value as any)}
-                      className="w-full text-xs pl-8 pr-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 focus:outline-none focus:border-primary-500 font-semibold"
+                      className="w-full h-10 sm:h-9 text-xs pl-8 pr-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 focus:outline-none focus:border-indigo-500 font-semibold"
                     >
                       <option value="tanggal_desc">Urut: Tanggal Terbaru</option>
                       <option value="tanggal_asc">Urut: Tanggal Terlama</option>
@@ -3344,10 +3550,44 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                         setDateToFilter('');
                       }}
                       title="Reset semua filter"
-                      className="px-2.5 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center gap-1 shrink-0 cursor-pointer"
+                      className="hidden sm:flex h-9 px-2.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 items-center gap-1 shrink-0 cursor-pointer"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
                       <span className="hidden xl:inline">Reset</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Mobile Utility Strip inside Filter Drawer (Muat Ulang Penuh & Reset) */}
+                <div className="sm:hidden col-span-full flex items-center justify-between gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      forceReloadRecords();
+                      setShowMobileRiwayatFilters(false);
+                    }}
+                    className="flex-1 h-10 px-3 rounded-xl text-xs font-bold bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <RotateCcw className={`w-3.5 h-3.5 ${loadingRecords ? 'animate-spin' : ''}`} />
+                    <span>Muat Ulang Penuh</span>
+                  </button>
+                  {hasActiveRiwayatFilters && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchFilter('');
+                        setStatusFilter('ALL');
+                        setShippingSubTab('ALL');
+                        setSourceFilter([]);
+                        setDestinationFilter([]);
+                        setDateFromFilter('');
+                        setDateToFilter('');
+                        setShowMobileRiwayatFilters(false);
+                      }}
+                      className="h-10 px-3.5 rounded-xl text-xs font-bold bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 flex items-center gap-1.5 cursor-pointer shrink-0"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      <span>Reset Filter</span>
                     </button>
                   )}
                 </div>
@@ -3368,11 +3608,11 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                 </div>
                 <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap pb-0.5">
                   {([
-                    { id: 'ALL', label: 'Semua Selesai', count: selesaiShippingCounts.all },
-                    { id: 'belum_jadwal', label: 'Belum Jadwal Kirim', count: selesaiShippingCounts.belum_jadwal },
-                    { id: 'dispatched', label: 'Dispatched', count: selesaiShippingCounts.dispatched },
-                    { id: 'terkirim', label: 'Terkirim', count: selesaiShippingCounts.terkirim },
-                    { id: 'batal_kirim', label: 'Batal Kirim', count: selesaiShippingCounts.batal_kirim },
+                    { id: 'ALL', mobileLabel: 'Semua Selesai', label: 'Semua Selesai', count: selesaiShippingCounts.all },
+                    { id: 'belum_jadwal', mobileLabel: 'Belum Jadwal', label: 'Belum Jadwal Kirim', count: selesaiShippingCounts.belum_jadwal },
+                    { id: 'dispatched', mobileLabel: 'Dispatched', label: 'Dispatched', count: selesaiShippingCounts.dispatched },
+                    { id: 'terkirim', mobileLabel: 'Terkirim', label: 'Terkirim', count: selesaiShippingCounts.terkirim },
+                    { id: 'batal_kirim', mobileLabel: 'Batal Kirim', label: 'Batal Kirim', count: selesaiShippingCounts.batal_kirim },
                   ] as const).map((tab) => {
                     const active = shippingSubTab === tab.id;
                     return (
@@ -3383,15 +3623,16 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                           setShippingSubTab(tab.id);
                           setSelectedRecords(new Set());
                         }}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 border ${
+                        className={`min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 border ${
                           active
                             ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
                             : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
                         }`}
                       >
-                        <span>{tab.label}</span>
+                        <span className="sm:hidden">{tab.mobileLabel}</span>
+                        <span className="hidden sm:inline">{tab.label}</span>
                         <span
-                          className={`px-1.5 py-0.2 rounded-md font-mono text-[10px] font-bold ${
+                          className={`px-1.5 py-0.5 rounded-md font-mono text-[10px] font-bold tabular-nums ${
                             active
                               ? 'bg-white/20 text-white'
                               : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
@@ -3406,12 +3647,12 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
               </div>
             )}
 
-            {/* BULK ACTIONS (MULTI-SELECT, SELECT ALL / UNSELECT, KIRIM DISPATCHED & STATUS) */}
+            {/* BULK SELECTION BAR (COMPACT ON MOBILE, FULL ANTI-PELANGI TOOLBAR ON DESKTOP) */}
             {(userIsAdmin || canAction) && filteredRecords.length > 0 && (
-              <div className="flex flex-col gap-2.5 px-3 py-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
-                  <div className="flex items-center gap-2.5 flex-wrap">
-                    <label className="flex items-center gap-2 cursor-pointer group">
+              <div className="flex flex-col gap-2 px-3 py-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-800">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <label className="flex items-center gap-2 cursor-pointer group min-h-[32px]">
                       <input
                         type="checkbox"
                         checked={selectedRecords.size > 0 && selectedRecords.size === filteredRecords.length}
@@ -3429,68 +3670,60 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                         }}
                         className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-700 cursor-pointer"
                       />
-                      <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                        {selectedRecords.size > 0 ? `${selectedRecords.size} / ${filteredRecords.length} Dipilih` : `Pilih Semua (${filteredRecords.length})`}
+                      <span className="text-xs font-extrabold text-slate-700 dark:text-slate-200 tabular-nums truncate">
+                        {selectedRecords.size > 0 ? `${selectedRecords.size} / ${filteredRecords.length} dipilih` : `Pilih Semua (${filteredRecords.length})`}
                       </span>
                     </label>
 
-                    <div className="flex items-center gap-1.5">
+                    {selectedRecords.size > 0 && selectedRecords.size < filteredRecords.length && (
                       <button
                         type="button"
                         onClick={() => setSelectedRecords(new Set(filteredRecords.map(r => r.id)))}
-                        disabled={selectedRecords.size === filteredRecords.length}
-                        className="px-2 py-1 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 disabled:opacity-40 cursor-pointer"
+                        className="hidden sm:inline-flex px-2 py-1 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 cursor-pointer"
                       >
                         Select All
                       </button>
-                      {selectedRecords.size > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedRecords(new Set())}
-                          className="px-2 py-1 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 cursor-pointer"
-                        >
-                          Unselect
-                        </button>
-                      )}
-                    </div>
+                    )}
+                    {selectedRecords.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRecords(new Set())}
+                        className="px-2 py-1 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 cursor-pointer"
+                      >
+                        Batal
+                      </button>
+                    )}
                   </div>
 
-                  <div className="flex items-center gap-1.5 flex-wrap w-full sm:w-auto justify-end">
+                  {/* Mobile Right Action Chip */}
+                  <div className="flex sm:hidden items-center gap-1.5 shrink-0">
+                    {selectedRecords.size === 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => openBulkPickingModal(filteredRecords)}
+                        className="h-8 px-2.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-[11px] font-bold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Send className="w-3 h-3 text-emerald-600" />
+                        <span>Picking ({filteredRecords.length})</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setMobileBulkActionSheetOpen(true)}
+                        className="h-8 px-3 bg-indigo-600 text-white rounded-xl text-[11px] font-extrabold flex items-center gap-1.5 shadow-xs cursor-pointer"
+                      >
+                        <span>Aksi ({selectedRecords.size})</span>
+                        <ChevronUp className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Desktop Toolbar Buttons (Anti-Pelangi: all neutral outline) */}
+                  <div className="hidden sm:flex items-center gap-1.5 flex-wrap justify-end">
                     <button
                       type="button"
-                      onClick={() => {
-                        const targetRecords = selectedRecords.size > 0
-                          ? filteredRecords.filter(r => selectedRecords.has(r.id) && r.items && r.items.length > 0)
-                          : filteredRecords.filter(r => r.items && r.items.length > 0);
-                        if (targetRecords.length === 0) {
-                          onShowToast('Pilih minimal 1 Surat Jalan yang memiliki item untuk Format Picking Massal.', 'warning');
-                          return;
-                        }
-                        const mappedDrafts: PengecekanSJDraft[] = targetRecords.map(rec => ({
-                          id: rec.id || `${rec.no_sj}___${rec.source}___${rec.destination}`,
-                          no_sj: rec.no_sj,
-                          source: rec.source,
-                          destination: rec.destination,
-                          tanggal_sj: rec.tanggal_sj,
-                          tipe_import: rec.tipe_import || (rec.destination?.toLowerCase().includes('warehouse') ? 'Penerimaan' : 'Pengiriman') || 'Pengiriman',
-                          file_name: `SJ-${rec.no_sj}`,
-                          items: rec.items.map(i => ({
-                            sku: i.sku,
-                            nama_produk: i.nama_produk,
-                            category: i.category,
-                            qty_sj: i.qty_sj || i.qty_scan || 1,
-                          })),
-                          scanQty: {},
-                          unexpected: {},
-                          status: 'draft',
-                          created_at: rec.created_at,
-                          updated_at: rec.updated_at || new Date().toISOString(),
-                        }));
-                        setPickingModalInitialTab('app');
-                        setPickingModalDraft(null);
-                        setPickingModalDrafts(mappedDrafts);
-                      }}
-                      className="px-2.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                      onClick={() => openBulkPickingModal(selectedList.length > 0 ? selectedList : filteredRecords)}
+                      className="px-2.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer"
                       title="Kirim Tugas Picking Massal untuk SJ terpilih (atau semua SJ yang tampil)"
                     >
                       <Send className="w-3 h-3 text-emerald-600" />
@@ -3503,7 +3736,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                           type="button"
                           onClick={() => handleBulkUpdateStatus('pending')}
                           disabled={isBulkUpdating || selectedRecords.size === 0}
-                          className="px-2.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer disabled:opacity-40"
+                          className="px-2.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer disabled:opacity-40"
                         >
                           {isBulkUpdating && bulkStatusAction === 'pending' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Edit3 className="w-3 h-3 text-blue-600" />}
                           Set PENDING
@@ -3512,7 +3745,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                           type="button"
                           onClick={() => handleBulkUpdateStatus('selesai')}
                           disabled={isBulkUpdating || selectedRecords.size === 0}
-                          className="px-2.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer disabled:opacity-40"
+                          className="px-2.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer disabled:opacity-40"
                         >
                           {isBulkUpdating && bulkStatusAction === 'selesai' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
                           Set SELESAI
@@ -3522,71 +3755,65 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                   </div>
                 </div>
 
-                {/* BARIS AKSI PENGIRIMAN EKSPLISIT (UNTUK TAB SELESAI / SJ PENGIRIMAN TERPILIH) */}
-                {(statusFilter === 'SELESAI' || selectedRecords.size > 0) && riwayatTypeFilter !== 'PENERIMAAN' && (() => {
-                  const selectedList = filteredRecords.filter((r) => selectedRecords.has(r.id));
-                  const selectedSelesaiPengiriman = selectedList.filter(
-                    (r) => r.status === 'selesai' && isPengirimanTypeRecord(r)
-                  );
-                  return (
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/80 dark:border-slate-700/70">
-                      <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
-                        <Truck className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                        <span>
-                          Aksi Pengiriman Store ({selectedSelesaiPengiriman.length} SJ Pengiriman Selesai dipilih)
-                        </span>
+                {/* DESKTOP BARIS AKSI PENGIRIMAN EKSPLISIT (UNTUK TAB SELESAI / SJ PENGIRIMAN TERPILIH) */}
+                {(statusFilter === 'SELESAI' || selectedRecords.size > 0) && riwayatTypeFilter !== 'PENERIMAAN' && (
+                  <div className="hidden sm:flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/80 dark:border-slate-700/70">
+                    <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                      <Truck className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                      <span>
+                        Aksi Pengiriman Store ({selectedSelesaiPengiriman.length} SJ Pengiriman Selesai dipilih)
                       </span>
+                    </span>
 
-                      <div className="flex items-center gap-1.5 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        disabled={isBulkShippingAction || selectedSelesaiPengiriman.length === 0}
+                        onClick={() => void handleSendRecordsToDispatched(selectedSelesaiPengiriman)}
+                        className="px-3 py-1.5 rounded-lg text-[11px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-40 transition-all"
+                        title="Kirim SJ Pengiriman Selesai terpilih ke Pengiriman Store > Dispatched (gabung otomatis jika No SJ sama)"
+                      >
+                        {isBulkShippingAction ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Truck className="w-3 h-3" />}
+                        <span>Kirim ke Dispatched ({selectedSelesaiPengiriman.length})</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isBulkShippingAction || selectedSelesaiPengiriman.length === 0}
+                        onClick={() => void handleBulkSetShippingOverride(selectedSelesaiPengiriman, 'terkirim')}
+                        className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1 cursor-pointer disabled:opacity-40 transition-all"
+                        title="Tandai SJ lama sebagai Terkirim di Pengecekan SJ (tanpa membuat trip di Pengiriman Store)"
+                      >
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        <span>Pindah ke Terkirim</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isBulkShippingAction || selectedSelesaiPengiriman.length === 0}
+                        onClick={() => void handleBulkSetShippingOverride(selectedSelesaiPengiriman, 'batal_kirim')}
+                        className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1 cursor-pointer disabled:opacity-40 transition-all"
+                        title="Tandai SJ sebagai Batal Kirim (menarik keluar dari Dispatched jika ada)"
+                      >
+                        <X className="w-3 h-3 text-rose-500" />
+                        <span>Batal Kirim</span>
+                      </button>
+
+                      {shippingSubTab !== 'belum_jadwal' && (
                         <button
                           type="button"
                           disabled={isBulkShippingAction || selectedSelesaiPengiriman.length === 0}
-                          onClick={() => void handleSendRecordsToDispatched(selectedSelesaiPengiriman)}
-                          className="px-3 py-1.5 rounded-lg text-[11px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-40 transition-all"
-                          title="Kirim SJ Pengiriman Selesai terpilih ke Pengiriman Store > Dispatched (gabung otomatis jika No SJ sama)"
+                          onClick={() => void handleBulkSetShippingOverride(selectedSelesaiPengiriman, null)}
+                          className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center gap-1 cursor-pointer disabled:opacity-40 transition-all"
+                          title="Kembalikan ke Belum Jadwal Kirim"
                         >
-                          {isBulkShippingAction ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Truck className="w-3 h-3" />}
-                          <span>Kirim ke Dispatched ({selectedSelesaiPengiriman.length})</span>
+                          <RotateCcw className="w-3 h-3" />
+                          <span>Belum Jadwal</span>
                         </button>
-
-                        <button
-                          type="button"
-                          disabled={isBulkShippingAction || selectedSelesaiPengiriman.length === 0}
-                          onClick={() => void handleBulkSetShippingOverride(selectedSelesaiPengiriman, 'terkirim')}
-                          className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1 cursor-pointer disabled:opacity-40 transition-all"
-                          title="Tandai SJ lama sebagai Terkirim di Pengecekan SJ (tanpa membuat trip di Pengiriman Store)"
-                        >
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          <span>Pindah ke Terkirim</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={isBulkShippingAction || selectedSelesaiPengiriman.length === 0}
-                          onClick={() => void handleBulkSetShippingOverride(selectedSelesaiPengiriman, 'batal_kirim')}
-                          className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1 cursor-pointer disabled:opacity-40 transition-all"
-                          title="Tandai SJ sebagai Batal Kirim (menarik keluar dari Dispatched jika ada)"
-                        >
-                          <X className="w-3 h-3 text-rose-500" />
-                          <span>Batal Kirim</span>
-                        </button>
-
-                        {shippingSubTab !== 'belum_jadwal' && (
-                          <button
-                            type="button"
-                            disabled={isBulkShippingAction || selectedSelesaiPengiriman.length === 0}
-                            onClick={() => void handleBulkSetShippingOverride(selectedSelesaiPengiriman, null)}
-                            className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center gap-1 cursor-pointer disabled:opacity-40 transition-all"
-                            title="Kembalikan ke Belum Jadwal Kirim"
-                          >
-                            <RotateCcw className="w-3 h-3" />
-                            <span>Belum Jadwal</span>
-                          </button>
-                        )}
-                      </div>
+                      )}
                     </div>
-                  );
-                })()}
+                  </div>
+                )}
               </div>
             )}
 
@@ -3600,11 +3827,11 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
 
             {loadingRecords && filteredRecords.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-slate-400 gap-3">
-                <RefreshCw className="w-7 h-7 animate-spin text-primary-500" />
+                <RefreshCw className="w-7 h-7 animate-spin text-indigo-500" />
                 <span className="text-sm font-medium">Memuat seluruh riwayat pengecekan...</span>
               </div>
             ) : filteredRecords.length === 0 ? (
-              <div className="text-center py-16 bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+              <div className="text-center py-14 bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
                 <Package className="w-12 h-12 mx-auto mb-3 text-slate-300 dark:text-slate-600" />
                 {records.length > 0 ? (
                   <>
@@ -3626,7 +3853,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                         setDateFromFilter('');
                         setDateToFilter('');
                       }}
-                      className="mt-4 px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
+                      className="mt-4 h-10 px-4 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
                     >
                       Tampilkan Semua ({records.length} SJ)
                     </button>
@@ -3634,7 +3861,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                 ) : (
                   <>
                     <p className="text-sm font-bold text-slate-700 dark:text-slate-300">Belum ada data riwayat pengecekan</p>
-                    <p className="text-xs text-slate-400 mt-1">Submit pengecekan di tab Pengecekan Barang untuk mencatat ke riwayat.</p>
+                    <p className="text-xs text-slate-400 mt-1">Submit pengecekan di tab Pengecekan untuk mencatat ke riwayat.</p>
                   </>
                 )}
               </div>
@@ -3646,18 +3873,24 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                   const isPengirimanRec = isPengirimanTypeRecord(rec);
                   const shipStatus = rec.status === 'selesai' && isPengirimanRec ? getRecordShippingStatus(rec) : null;
                   const liveDispatchRep = shipStatus === 'dispatched' ? noSjReportMap.get(rec.no_sj.trim().toUpperCase()) : undefined;
+                  const itemsList = isEditing && editFormData ? editFormData.items : rec.items;
 
                   return (
                     <div
                       key={rec.id}
-                      className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs"
+                      className={`bg-white dark:bg-[#131d31] rounded-2xl border transition-colors overflow-hidden shadow-xs ${
+                        selectedRecords.has(rec.id)
+                          ? 'border-indigo-400 dark:border-indigo-600 ring-1 ring-indigo-400/30'
+                          : 'border-slate-200 dark:border-slate-800'
+                      }`}
                     >
-                      {/* ROW HEADER */}
-                      <div
-                        className="flex items-start gap-3 px-4 py-3.5 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
-                      >
+                      {/* CARD HEADER */}
+                      <div className="flex items-start gap-2.5 sm:gap-3 p-3.5 sm:px-4 hover:bg-slate-50/70 dark:hover:bg-slate-800/30 transition-colors">
                         {(userIsAdmin || canAction) && (
-                          <div className="shrink-0 flex items-start pt-1 pr-1" onClick={(e) => e.stopPropagation()}>
+                          <label
+                            className="shrink-0 flex items-center justify-center p-1 -m-1 mt-0.5 cursor-pointer"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <input
                               type="checkbox"
                               checked={selectedRecords.has(rec.id)}
@@ -3669,107 +3902,228 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                               }}
                               className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-700 cursor-pointer"
                             />
-                          </div>
+                          </label>
                         )}
-                        <div
-                          className="shrink-0 cursor-pointer pt-2"
-                          onClick={() => {
-                            if (!isEditing) setExpandedRow(isExpanded ? null : rec.id);
-                          }}
-                        >
-                          <div className={`w-2.5 h-2.5 rounded-full ${rec.status === 'pending' ? 'bg-blue-500' :
-                              rec.status_komparasi === 'COCOK' ? 'bg-emerald-500' : 'bg-rose-500'
-                            }`} />
-                        </div>
 
                         <div
-                          className="flex-1 min-w-0 cursor-pointer flex flex-col gap-1.5"
+                          className="flex-1 min-w-0 cursor-pointer space-y-1.5"
                           onClick={() => {
                             if (!isEditing) setExpandedRow(isExpanded ? null : rec.id);
                           }}
                         >
-                          {/* ROW 1: NO SJ & BADGES */}
-                          <div className="flex items-start justify-between gap-1.5 flex-wrap sm:flex-nowrap">
-                            <span className="text-[13px] sm:text-sm font-black text-slate-800 dark:text-white font-mono shrink-0">{rec.no_sj}</span>
-                            <div className="flex gap-1 flex-wrap justify-end">
+                          {/* Baris 1: No SJ + Max 2 Top Badges */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className={`w-2 h-2 rounded-full shrink-0 ${
+                                rec.status === 'pending'
+                                  ? 'bg-blue-500'
+                                  : rec.status_komparasi === 'COCOK'
+                                  ? 'bg-emerald-500'
+                                  : 'bg-rose-500'
+                              }`} />
+                              <span className="text-[15px] sm:text-sm font-black text-slate-900 dark:text-white font-mono truncate">
+                                {rec.no_sj}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1 shrink-0">
                               {rec.tipe_import && (
-                                <span className={`inline-flex items-center justify-center text-[10px] font-extrabold px-2 py-0.5 rounded-full ${rec.tipe_import === 'Penerimaan'
-                                    ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800'
-                                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
-                                  }`}>
+                                <span className={`inline-flex items-center justify-center text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                                  rec.tipe_import === 'Penerimaan'
+                                    ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
+                                    : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                                }`}>
                                   {rec.tipe_import}
                                 </span>
                               )}
                               <StatusBadge status={rec.status_komparasi} />
+                              <span className="text-slate-400 pl-0.5">
+                                {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Baris 2: Rute Asal -> Tujuan + Qty Scan/SJ */}
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="text-[13px] font-bold text-slate-800 dark:text-slate-200 leading-snug line-clamp-2 min-w-0">
+                              {rec.source || 'Gudang'}
+                              <span className="mx-1.5 text-slate-400 dark:text-slate-600">→</span>
+                              {rec.destination || 'Outlet Tujuan'}
+                            </div>
+                            <div className="shrink-0 text-right">
+                              <div className="text-[13px] sm:text-xs font-extrabold text-slate-900 dark:text-white tabular-nums">
+                                {rec.total_qty_terima} / {rec.total_qty_sj} pcs
+                              </div>
+                              <div className="text-[11px] font-medium text-slate-400 tabular-nums">
+                                {rec.total_sku || rec.items?.length || 0} SKU
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Baris 3: Tanggal · Admin + Lifecycle Status Chips */}
+                          <div className="flex items-center justify-between gap-2 pt-0.5">
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 min-w-0">
+                              <span className="shrink-0 font-mono">{rec.tanggal_sj}</span>
+                              {rec.submitted_by && (
+                                <>
+                                  <span className="text-slate-300 dark:text-slate-600 shrink-0">·</span>
+                                  <span className="truncate">{rec.submitted_by}</span>
+                                </>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
                               {rec.status === 'pending' && (
-                                <span className="inline-flex items-center justify-center text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
+                                <span className="inline-flex items-center text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
                                   PENDING
                                 </span>
                               )}
                               {shipStatus === 'belum_jadwal' && (
-                                <span className="inline-flex items-center justify-center text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                                  Belum Jadwal Kirim
+                                <span className="inline-flex items-center text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                  Belum Jadwal
                                 </span>
                               )}
                               {shipStatus === 'dispatched' && (
-                                <span className="inline-flex items-center justify-center text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                <span className="inline-flex items-center text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
                                   Dispatched{liveDispatchRep ? ` · ${liveDispatchRep.total_koli} Koli` : ''}
                                 </span>
                               )}
                               {shipStatus === 'terkirim' && (
-                                <span className="inline-flex items-center justify-center text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                <span className="inline-flex items-center text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
                                   Terkirim
                                 </span>
                               )}
                               {shipStatus === 'batal_kirim' && (
-                                <span className="inline-flex items-center justify-center text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                                <span className="inline-flex items-center text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
                                   Batal Kirim
                                 </span>
                               )}
                               {rec.sync_status === 'pending_sync' && (
-                                <span className="inline-flex items-center justify-center text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-400 border border-amber-300 dark:border-amber-700 gap-1">
+                                <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
                                   <CloudOff className="w-2.5 h-2.5" />
                                   Offline
                                 </span>
                               )}
                             </div>
                           </div>
-
-                          {/* ROW 2: SOURCE->DEST & QTY */}
-                          <div className="flex items-start justify-between gap-2 mt-0.5">
-                            <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 leading-snug line-clamp-2">
-                              {rec.source || 'Gudang'} <span className="mx-1 text-slate-400 dark:text-slate-600">→</span> {rec.destination || 'Outlet Tujuan'}
-                            </div>
-                            <div className="text-xs font-extrabold text-slate-800 dark:text-slate-200 shrink-0 text-right">
-                              {rec.total_qty_terima} / {rec.total_qty_sj} pcs
-                            </div>
-                          </div>
-
-                          {/* ROW 3: DATE/ADMIN & SKU */}
-                          <div className="flex items-center justify-between gap-2 mt-0.5">
-                            <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 min-w-0">
-                              <span className="shrink-0">{rec.tanggal_sj}</span>
-                              <span className="text-slate-300 dark:text-slate-600 shrink-0">·</span>
-                              <span className="truncate">Admin: {rec.submitted_by}</span>
-                            </div>
-                            <div className="text-[10px] text-slate-400 shrink-0 text-right">
-                              {rec.total_sku || rec.items?.length || 0} SKU <span className="hidden sm:inline">· terima / SJ</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="shrink-0 text-slate-400 pt-0.5">
-                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                         </div>
                       </div>
 
                       {/* EXPANDED DETAIL & ACTIONS */}
                       {isExpanded && (
                         <div className="border-t border-slate-100 dark:border-slate-800">
-                          {/* TOOLBAR AKSI: KIRIM DISPATCHED, KEMBALIKAN KE PENGECEKAN, EDIT, EXPORT, HAPUS */}
-                          <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800 flex-wrap">
+                          {/* MOBILE ACTION STRIP (1 PRIMARY + CLEAN 3-COLUMN BAR) */}
+                          <div className="sm:hidden px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800 space-y-2">
+                            {isEditing ? (
+                              <div className="grid grid-cols-2 gap-2">
+                                <button
+                                  type="button"
+                                  onClick={handleSaveEdit}
+                                  disabled={savingEdit}
+                                  className="h-10 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+                                >
+                                  {savingEdit ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                                  <span>Simpan Edit</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingRecordId(null);
+                                    setEditFormData(null);
+                                    setEditWasDispatched(false);
+                                    setEditRequeueDispatched(false);
+                                  }}
+                                  className="h-10 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                  <span>Batal</span>
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                {(userIsAdmin || canAction) &&
+                                  rec.status === 'selesai' &&
+                                  isPengirimanRec &&
+                                  (shipStatus === 'belum_jadwal' || shipStatus === 'batal_kirim') && (
+                                    <button
+                                      type="button"
+                                      disabled={isBulkShippingAction}
+                                      onClick={() => void handleSendRecordsToDispatched([rec])}
+                                      className="w-full h-10 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 shadow-xs cursor-pointer disabled:opacity-50"
+                                    >
+                                      <Truck className="w-4 h-4" />
+                                      <span>Kirim ke Dispatched</span>
+                                    </button>
+                                  )}
+
+                                <div className="grid grid-cols-3 gap-2">
+                                  {rec.items && rec.items.length > 0 ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const draftFromRec: PengecekanSJDraft = {
+                                          id: rec.id || `${rec.no_sj}___${rec.source}___${rec.destination}`,
+                                          no_sj: rec.no_sj,
+                                          source: rec.source,
+                                          destination: rec.destination,
+                                          tanggal_sj: rec.tanggal_sj,
+                                          tipe_import: rec.tipe_import || (rec.destination?.toLowerCase().includes('warehouse') ? 'Penerimaan' : 'Pengiriman') || 'Pengiriman',
+                                          file_name: `SJ-${rec.no_sj}`,
+                                          items: rec.items.map(i => ({
+                                            sku: i.sku,
+                                            nama_produk: i.nama_produk,
+                                            category: i.category,
+                                            qty_sj: i.qty_sj || i.qty_scan || 1,
+                                          })),
+                                          scanQty: {},
+                                          unexpected: {},
+                                          status: 'draft',
+                                          created_at: rec.created_at,
+                                          updated_at: rec.updated_at || new Date().toISOString(),
+                                        };
+                                        setPickingModalDraft(draftFromRec);
+                                      }}
+                                      className="h-9 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                                    >
+                                      <Send className="w-3.5 h-3.5 text-emerald-600" />
+                                      <span>Picking</span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => exportPengecekanToCsv([rec], `Pengecekan_SJ_${rec.no_sj}_${rec.tanggal_sj}.csv`, productCatalog)}
+                                      className="h-9 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                                    >
+                                      <Download className="w-3.5 h-3.5 text-slate-500" />
+                                      <span>CSV</span>
+                                    </button>
+                                  )}
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleKembalikanKePengecekan(rec)}
+                                    className="h-9 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                                  >
+                                    <ArrowLeftRight className="w-3.5 h-3.5 text-amber-500" />
+                                    <span>Scan Ulang</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => setMobileCardMenuRec(rec)}
+                                    className="h-9 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer"
+                                  >
+                                    <MoreVertical className="w-3.5 h-3.5 text-slate-500" />
+                                    <span>Menu</span>
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+
+                          {/* DESKTOP TOOLBAR AKSI (ANTI-PELANGI: MAX 1 SOLID PRIMARY + NEUTRAL OUTLINE) */}
+                          <div className="hidden sm:flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800 flex-wrap">
                             <div className="flex items-center gap-2 flex-wrap">
-                              {/* KIRIM KE DISPATCHED SATUAN (UNTUK SJ PENGIRIMAN SELESAI YANG BELUM DI DISPATCHED / TERKIRIM) */}
                               {(userIsAdmin || canAction) &&
                                 rec.status === 'selesai' &&
                                 isPengirimanRec &&
@@ -3786,18 +4140,16 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                   </button>
                                 )}
 
-                              {/* KEMBALIKAN KE TAB PENGECEKAN */}
                               <button
                                 type="button"
                                 onClick={() => handleKembalikanKePengecekan(rec)}
-                                className="px-3 py-1.5 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-700 dark:text-amber-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-amber-200 dark:border-amber-800 cursor-pointer"
+                                className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-slate-200 dark:border-slate-700 cursor-pointer"
                                 title="Buka kembali SJ ini di tab pengecekan untuk scan ulang"
                               >
                                 <ArrowLeftRight className="w-3.5 h-3.5 text-amber-500" />
                                 Kembalikan ke Tab Pengecekan
                               </button>
 
-                              {/* FORMAT PICKING LANGSUNG DARI RIWAYAT */}
                               {rec.items && rec.items.length > 0 && (
                                 <button
                                   type="button"
@@ -3824,7 +4176,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                     };
                                     setPickingModalDraft(draftFromRec);
                                   }}
-                                  className="px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-emerald-200 dark:border-emerald-800 cursor-pointer"
+                                  className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-slate-200 dark:border-slate-700 cursor-pointer"
                                   title="Format Picking (Cetak Lembar Kerja, Kirim WA ke Grup, atau Kirim ke Tugas Picking App)"
                                 >
                                   <Send className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
@@ -3832,17 +4184,15 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                 </button>
                               )}
 
-                              {/* EXPORT DATA SJ INI */}
                               <button
                                 type="button"
                                 onClick={() => exportPengecekanToCsv([rec], `Pengecekan_SJ_${rec.no_sj}_${rec.tanggal_sj}.csv`, productCatalog)}
-                                className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-slate-200 dark:border-slate-700 cursor-pointer"
+                                className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-slate-200 dark:border-slate-700 cursor-pointer"
                               >
                                 <Download className="w-3.5 h-3.5 text-slate-500" />
                                 Export CSV
                               </button>
 
-                              {/* SHARE SELISIH WA */}
                               {rec.items.some(i => i.status_item === 'KURANG' || i.selisih < 0) && (
                                 <button
                                   type="button"
@@ -3857,7 +4207,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                       type: 'kurang',
                                     });
                                   }}
-                                  className="px-3 py-1.5 bg-[#25D366]/10 hover:bg-[#25D366]/20 text-[#1DA851] dark:text-[#25D366] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-[#25D366]/30 cursor-pointer"
+                                  className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-slate-200 dark:border-slate-700 cursor-pointer"
                                   title="Share daftar selisih kurang via Bot Fonnte / WhatsApp"
                                 >
                                   <Send className="w-3.5 h-3.5 text-[#25D366]" />
@@ -3879,7 +4229,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                       type: 'lebih',
                                     });
                                   }}
-                                  className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-amber-500/30 cursor-pointer"
+                                  className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-950/30 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-slate-200 dark:border-slate-700 cursor-pointer"
                                   title="Share daftar selisih lebih via Bot Fonnte / WhatsApp"
                                 >
                                   <Send className="w-3.5 h-3.5 text-amber-500" />
@@ -3895,9 +4245,9 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                   <button
                                     type="button"
                                     onClick={() => handleStartEdit(rec)}
-                                    className="px-3 py-1.5 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 text-blue-600 dark:text-blue-400 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-blue-200 dark:border-blue-800 cursor-pointer"
+                                    className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-slate-200 dark:border-slate-700 cursor-pointer"
                                   >
-                                    <Edit3 className="w-3.5 h-3.5" />
+                                    <Edit3 className="w-3.5 h-3.5 text-indigo-500" />
                                     Edit
                                   </button>
                                 ) : (
@@ -3919,7 +4269,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                         setEditWasDispatched(false);
                                         setEditRequeueDispatched(false);
                                       }}
-                                      className="px-2.5 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                                      className="px-2.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
                                     >
                                       Batal
                                     </button>
@@ -3930,7 +4280,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                   type="button"
                                   onClick={() => handleDeleteRecord(rec)}
                                   disabled={deletingId === rec.id}
-                                  className="px-3 py-1.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/40 text-rose-600 dark:text-rose-400 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-rose-200 dark:border-rose-800 cursor-pointer disabled:opacity-50"
+                                  className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-600 dark:text-rose-400 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-slate-200 dark:border-slate-700 cursor-pointer disabled:opacity-50"
                                 >
                                   {deletingId === rec.id ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                                   Hapus
@@ -3941,21 +4291,25 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
 
                           {/* EDIT METADATA FORM (JIKA SEDANG EDIT) */}
                           {isEditing && editFormData && (
-                            <div className="p-3 bg-blue-50/50 dark:bg-blue-950/20 border-b border-blue-200 dark:border-blue-900 space-y-2.5">
+                            <div className="p-3.5 bg-blue-50/50 dark:bg-blue-950/20 border-b border-blue-200 dark:border-blue-900 space-y-2.5">
                               {editWasDispatched && (
-                                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-[11px] font-bold text-amber-800 dark:text-amber-300">
-                                  <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                                <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-[11px] font-bold text-amber-800 dark:text-amber-300">
+                                  <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                                   <span>
                                     Status Dispatched SJ ini sedang dinonaktifkan sementara selama edit. Centang opsi di bawah jika ingin memasukkannya kembali ke Dispatched saat Simpan.
                                   </span>
                                 </div>
                               )}
 
-                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                                 <div>
-                                  <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Status SJ</label>
-                                  <div className="flex items-center gap-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1 h-[26px]">
-                                    <label className="flex items-center gap-1 cursor-pointer">
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Status SJ</label>
+                                  <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl h-10 sm:h-8">
+                                    <label className={`flex items-center justify-center rounded-lg cursor-pointer text-[11px] font-extrabold transition-all ${
+                                      editFormData.status === 'pending'
+                                        ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
+                                        : 'text-slate-500'
+                                    }`}>
                                       <input
                                         type="radio"
                                         name={`status-${editFormData.id}`}
@@ -3965,51 +4319,55 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                           setEditFormData({ ...editFormData, status: 'pending' });
                                           setEditRequeueDispatched(false);
                                         }}
-                                        className="w-3 h-3 text-blue-600 border-slate-300 focus:ring-blue-500"
+                                        className="sr-only"
                                       />
-                                      <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">PENDING</span>
+                                      PENDING
                                     </label>
-                                    <label className="flex items-center gap-1 cursor-pointer">
+                                    <label className={`flex items-center justify-center rounded-lg cursor-pointer text-[11px] font-extrabold transition-all ${
+                                      editFormData.status === 'selesai'
+                                        ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                                        : 'text-slate-500'
+                                    }`}>
                                       <input
                                         type="radio"
                                         name={`status-${editFormData.id}`}
                                         value="selesai"
                                         checked={editFormData.status === 'selesai'}
                                         onChange={() => setEditFormData({ ...editFormData, status: 'selesai' })}
-                                        className="w-3 h-3 text-emerald-600 border-slate-300 focus:ring-emerald-500"
+                                        className="sr-only"
                                       />
-                                      <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">SELESAI</span>
+                                      SELESAI
                                     </label>
                                   </div>
                                 </div>
 
                                 <div>
-                                  <label className="text-[9px] font-bold text-slate-400 uppercase">Asal (Source)</label>
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Asal (Source)</label>
                                   <input
                                     type="text"
                                     value={editFormData.source}
                                     onChange={e => setEditFormData({ ...editFormData, source: e.target.value })}
-                                    className="w-full text-xs px-2 py-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg"
+                                    className="w-full h-10 sm:h-8 text-xs px-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-xl"
                                   />
                                 </div>
 
                                 <div>
-                                  <label className="text-[9px] font-bold text-slate-400 uppercase">Tujuan (Destination)</label>
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Tujuan (Destination)</label>
                                   <input
                                     type="text"
                                     value={editFormData.destination}
                                     onChange={e => setEditFormData({ ...editFormData, destination: e.target.value })}
-                                    className="w-full text-xs px-2 py-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg"
+                                    className="w-full h-10 sm:h-8 text-xs px-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-xl"
                                   />
                                 </div>
 
                                 <div>
-                                  <label className="text-[9px] font-bold text-slate-400 uppercase">Catatan</label>
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Catatan</label>
                                   <input
                                     type="text"
                                     value={editFormData.catatan || ''}
                                     onChange={e => setEditFormData({ ...editFormData, catatan: e.target.value })}
-                                    className="w-full text-xs px-2 py-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg"
+                                    className="w-full h-10 sm:h-8 text-xs px-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-xl"
                                   />
                                 </div>
                               </div>
@@ -4017,7 +4375,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                               {editFormData.status === 'selesai' &&
                                 isPengirimanTypeRecord(editFormData) &&
                                 noSjReportMap.get(editFormData.no_sj.trim().toUpperCase())?.status !== 'sent' && (
-                                  <label className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 cursor-pointer select-none">
+                                  <label className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 cursor-pointer select-none">
                                     <input
                                       type="checkbox"
                                       checked={editRequeueDispatched}
@@ -4034,8 +4392,108 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                             </div>
                           )}
 
-                          {/* TABEL KOMPARASI LENGKAP */}
-                          <div className="overflow-x-auto">
+                          {/* MOBILE NATIVE ITEM CARDS (ZERO HORIZONTAL SCROLL) */}
+                          <div className="sm:hidden divide-y divide-slate-100 dark:divide-slate-800">
+                            {itemsList.length === 0 ? (
+                              <div className="px-4 py-8 text-center text-slate-400 text-xs">
+                                Belum ada rincian item SKU pada surat jalan ini.
+                              </div>
+                            ) : (
+                              itemsList.map((item, i) => {
+                                const selisih = item.qty_scan - item.qty_sj;
+                                const lk = lookupProductBySku(item.sku, productCatalog, item.nama_produk, item.size);
+                                const displaySize = lk.found
+                                  ? (lk.size || '-')
+                                  : (isRealSize(item.size) && !isCorruptedColorCodeSize(item.sku, item.size) && item.size !== 'Default' ? item.size : '-');
+
+                                return (
+                                  <div
+                                    key={`${item.sku}-${i}`}
+                                    className={`px-3.5 py-3 space-y-2 ${
+                                      item.status_item === 'COCOK'
+                                        ? 'bg-emerald-50/25 dark:bg-emerald-950/10'
+                                        : item.status_item === 'KURANG'
+                                        ? 'bg-rose-50/25 dark:bg-rose-950/10'
+                                        : item.status_item === 'LEBIH'
+                                        ? 'bg-amber-50/25 dark:bg-amber-950/10'
+                                        : ''
+                                    }`}
+                                  >
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <div className="text-[13px] font-bold text-slate-900 dark:text-slate-100 leading-snug break-words">
+                                          {resolveProductName(item.sku, item.nama_produk)}
+                                        </div>
+                                        <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                                          <span className="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700">
+                                            {item.sku}
+                                          </span>
+                                          <span className="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600">
+                                            {displaySize}
+                                          </span>
+                                          {item.is_unexpected && (
+                                            <span className="text-[9.5px] font-extrabold text-amber-600 dark:text-amber-400">
+                                              DI LUAR SJ
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <div className="shrink-0">
+                                        <StatusBadge status={item.status_item} />
+                                      </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-3 gap-2 pt-1">
+                                      <div className="px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/60 text-center">
+                                        <div className="text-[10px] font-bold text-slate-400 uppercase">SJ</div>
+                                        <div className="text-xs font-black text-slate-800 dark:text-slate-200 tabular-nums">{item.qty_sj}</div>
+                                      </div>
+
+                                      <div className="px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/60 text-center">
+                                        <div className="text-[10px] font-bold text-slate-400 uppercase">Scan</div>
+                                        {isEditing && editFormData ? (
+                                          <input
+                                            type="number"
+                                            value={item.qty_scan}
+                                            onFocus={e => e.target.select()}
+                                            onChange={e => {
+                                              const raw = e.target.value;
+                                              const newQty = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
+                                              const newItems = [...editFormData.items];
+                                              newItems[i] = {
+                                                ...newItems[i],
+                                                qty_scan: newQty,
+                                                selisih: newQty - newItems[i].qty_sj,
+                                                status_item: (newQty - newItems[i].qty_sj) === 0 ? 'COCOK' : (newQty - newItems[i].qty_sj) < 0 ? 'KURANG' : 'LEBIH',
+                                              };
+                                              setEditFormData({ ...editFormData, items: newItems });
+                                            }}
+                                            className="w-full h-7 mt-0.5 text-center font-extrabold bg-white dark:bg-slate-900 border border-indigo-400 dark:border-indigo-600 rounded-lg text-xs tabular-nums"
+                                            min={0}
+                                          />
+                                        ) : (
+                                          <div className="text-xs font-black text-slate-900 dark:text-white tabular-nums">{item.qty_scan}</div>
+                                        )}
+                                      </div>
+
+                                      <div className="px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/60 text-center">
+                                        <div className="text-[10px] font-bold text-slate-400 uppercase">Selisih</div>
+                                        <div className={`text-xs font-black tabular-nums ${
+                                          selisih === 0 ? 'text-emerald-600 dark:text-emerald-400' :
+                                          selisih < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400'
+                                        }`}>
+                                          {selisih > 0 ? `+${selisih}` : selisih}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+
+                          {/* DESKTOP TABLE KOMPARASI LENGKAP */}
+                          <div className="hidden sm:block overflow-x-auto">
                             <table className="w-full text-xs">
                               <thead>
                                 <tr className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 uppercase tracking-wider text-[10px]">
@@ -4049,14 +4507,14 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                {(isEditing && editFormData ? editFormData.items : rec.items).length === 0 ? (
+                                {itemsList.length === 0 ? (
                                   <tr>
                                     <td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-xs">
                                       Belum ada rincian item SKU pada surat jalan ini.
                                     </td>
                                   </tr>
                                 ) : (
-                                  (isEditing && editFormData ? editFormData.items : rec.items).map((item, i) => {
+                                  itemsList.map((item, i) => {
                                     const selisih = item.qty_scan - item.qty_sj;
                                     return (
                                       <tr
@@ -4067,7 +4525,6 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                               item.status_item === 'LEBIH' ? 'bg-amber-50/30 dark:bg-amber-950/10' : ''
                                         }
                                       >
-                                        {/* 1. Nama Produk */}
                                         <td className="px-3 py-2 text-slate-900 dark:text-slate-100 min-w-[200px] align-middle">
                                           <div className="font-bold text-xs leading-snug break-words">
                                             {resolveProductName(item.sku, item.nama_produk)}
@@ -4076,7 +4533,6 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                             <div className="text-[9.5px] text-slate-400 font-normal truncate mt-0.5">{item.category}</div>
                                           )}
                                         </td>
-                                        {/* 2. Size */}
                                         <td className="px-2 py-2 text-center align-middle w-16">
                                           <span className="inline-block px-1.5 py-0.5 rounded font-mono text-[11px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
                                             {(() => {
@@ -4086,7 +4542,6 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                             })()}
                                           </span>
                                         </td>
-                                        {/* 3. SKU */}
                                         <td className="px-3 py-2 font-mono text-xs text-slate-700 dark:text-slate-300 font-bold min-w-[130px] align-middle">
                                           <span className="bg-slate-100/70 dark:bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-200/80 dark:border-slate-700/80 inline-block">
                                             {item.sku}
@@ -4095,11 +4550,10 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                             <span className="block text-[8.5px] text-amber-600 font-sans font-extrabold mt-0.5">LEBIHAN DI LUAR SJ</span>
                                           )}
                                         </td>
-                                        {/* 4. Qty SJ */}
-                                        <td className="px-3 py-2 text-center font-bold text-slate-700 dark:text-slate-300">
+                                        <td className="px-3 py-2 text-center font-bold text-slate-700 dark:text-slate-300 tabular-nums">
                                           {item.qty_sj}
                                         </td>
-                                        <td className="px-3 py-2 text-center font-bold">
+                                        <td className="px-3 py-2 text-center font-bold tabular-nums">
                                           {isEditing && editFormData ? (
                                             <input
                                               type="number"
@@ -4124,7 +4578,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                             item.qty_scan
                                           )}
                                         </td>
-                                        <td className="px-3 py-2 text-center">
+                                        <td className="px-3 py-2 text-center tabular-nums">
                                           <span className={`font-extrabold ${selisih === 0 ? 'text-emerald-500' :
                                               selisih < 0 ? 'text-rose-500' : 'text-amber-500'
                                             }`}>
@@ -4148,8 +4602,62 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                 })}
               </div>
             )}
+
+            {/* MOBILE STICKY BOTTOM SELECTION DOCK */}
+            {(userIsAdmin || canAction) && selectedRecords.size > 0 && (
+              <div className="fixed inset-x-3 bottom-3 z-40 sm:hidden">
+                <div className="bg-slate-900 dark:bg-slate-950 text-white rounded-2xl px-3 py-2.5 shadow-2xl border border-slate-700/80 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRecords(new Set())}
+                      aria-label="Batalkan semua pilihan"
+                      className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 flex items-center justify-center shrink-0 cursor-pointer"
+                    >
+                      <X className="w-4 h-4 text-slate-300" />
+                    </button>
+                    <span className="text-xs font-extrabold tabular-nums truncate">
+                      {selectedRecords.size} SJ dipilih
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {selectedSelesaiPengiriman.length > 0 && riwayatTypeFilter !== 'PENERIMAAN' ? (
+                      <button
+                        type="button"
+                        disabled={isBulkShippingAction}
+                        onClick={() => void handleSendRecordsToDispatched(selectedSelesaiPengiriman)}
+                        className="h-9 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        {isBulkShippingAction ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Truck className="w-3.5 h-3.5" />}
+                        <span>Dispatched ({selectedSelesaiPengiriman.length})</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => openBulkPickingModal(selectedList)}
+                        className="h-9 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>Picking ({selectedList.length})</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setMobileBulkActionSheetOpen(true)}
+                      className="h-9 px-3 bg-slate-800 hover:bg-slate-700 text-slate-100 rounded-xl text-xs font-bold flex items-center gap-1 border border-slate-700 cursor-pointer"
+                    >
+                      <MoreVertical className="w-3.5 h-3.5" />
+                      <span>Aksi</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        )}
+          );
+        })()}
         {/* MODAL PILIHAN FORMAT DISTRIBUSI PICKING UNTUK TIPE PENGIRIMAN */}
         <DistribusiPickingModal
           isOpen={Boolean(pickingModalDraft || pickingModalDrafts.length > 0)}
@@ -4394,6 +4902,381 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
             </div>
           </div>
         )}
+
+        {/* MOBILE BOTTOM ACTION SHEET: AKSI MASSAL TERPILIH */}
+        {mobileBulkActionSheetOpen && (() => {
+          const selectedList = filteredRecords.filter((r) => selectedRecords.has(r.id));
+          const selectedSelesaiPengiriman = selectedList.filter(
+            (r) => r.status === 'selesai' && isPengirimanTypeRecord(r)
+          );
+          const openPickingFromSheet = () => {
+            const targetList = selectedList.length > 0 ? selectedList : filteredRecords;
+            const withItems = targetList.filter((r) => r.items && r.items.length > 0);
+            if (withItems.length === 0) {
+              onShowToast('Pilih minimal 1 Surat Jalan yang memiliki item untuk Format Picking Massal.', 'warning');
+              return;
+            }
+            const mappedDrafts: PengecekanSJDraft[] = withItems.map((rec) => ({
+              id: rec.id || `${rec.no_sj}___${rec.source}___${rec.destination}`,
+              no_sj: rec.no_sj,
+              source: rec.source,
+              destination: rec.destination,
+              tanggal_sj: rec.tanggal_sj,
+              tipe_import: rec.tipe_import || (rec.destination?.toLowerCase().includes('warehouse') ? 'Penerimaan' : 'Pengiriman') || 'Pengiriman',
+              file_name: `SJ-${rec.no_sj}`,
+              items: rec.items.map((i) => ({
+                sku: i.sku,
+                nama_produk: i.nama_produk,
+                category: i.category,
+                qty_sj: i.qty_sj || i.qty_scan || 1,
+              })),
+              scanQty: {},
+              unexpected: {},
+              status: 'draft',
+              created_at: rec.created_at,
+              updated_at: rec.updated_at || new Date().toISOString(),
+            }));
+            setPickingModalInitialTab('app');
+            setPickingModalDraft(null);
+            setPickingModalDrafts(mappedDrafts);
+          };
+
+          return (
+            <div
+              className="fixed inset-0 z-[9990] bg-black/55 backdrop-blur-xs flex items-end sm:hidden"
+              onClick={() => setMobileBulkActionSheetOpen(false)}
+            >
+              <div
+                className="w-full bg-white dark:bg-[#131d31] rounded-t-3xl border-t border-slate-200 dark:border-slate-800 shadow-2xl pb-6 pt-2.5 px-4 space-y-3 animate-in slide-in-from-bottom-4 duration-150 max-h-[85vh] overflow-y-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="w-10 h-1.5 rounded-full bg-slate-300 dark:bg-slate-700 mx-auto" />
+                <div className="flex items-center justify-between gap-2 pb-1 border-b border-slate-100 dark:border-slate-800">
+                  <div>
+                    <h4 className="text-sm font-black text-slate-900 dark:text-white">
+                      Aksi Massal ({selectedList.length} SJ dipilih)
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      {selectedSelesaiPengiriman.length > 0
+                        ? `${selectedSelesaiPengiriman.length} SJ Pengiriman Selesai siap diproses`
+                        : 'Pilih tindakan untuk Surat Jalan terpilih'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setMobileBulkActionSheetOpen(false)}
+                    className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {riwayatTypeFilter !== 'PENERIMAAN' && selectedSelesaiPengiriman.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 px-1">
+                      Pengiriman Store ({selectedSelesaiPengiriman.length} SJ Selesai)
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isBulkShippingAction}
+                      onClick={() => {
+                        setMobileBulkActionSheetOpen(false);
+                        void handleSendRecordsToDispatched(selectedSelesaiPengiriman);
+                      }}
+                      className="w-full h-12 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold flex items-center justify-between gap-2 shadow-xs cursor-pointer disabled:opacity-50"
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <Truck className="w-4 h-4" />
+                        Kirim ke Dispatched
+                      </span>
+                      <span className="px-2 py-0.5 rounded-lg bg-white/20 font-mono text-[11px] tabular-nums">
+                        {selectedSelesaiPengiriman.length}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isBulkShippingAction}
+                      onClick={() => {
+                        setMobileBulkActionSheetOpen(false);
+                        void handleBulkSetShippingOverride(selectedSelesaiPengiriman, 'terkirim');
+                      }}
+                      className="w-full h-12 px-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs font-bold flex items-center gap-2.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>Pindah ke Terkirim (Arsip SJ)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isBulkShippingAction}
+                      onClick={() => {
+                        setMobileBulkActionSheetOpen(false);
+                        void handleBulkSetShippingOverride(selectedSelesaiPengiriman, 'batal_kirim');
+                      }}
+                      className="w-full h-12 px-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs font-bold flex items-center gap-2.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <X className="w-4 h-4 text-rose-500" />
+                      <span>Tandai Batal Kirim</span>
+                    </button>
+
+                    {shippingSubTab !== 'belum_jadwal' && (
+                      <button
+                        type="button"
+                        disabled={isBulkShippingAction}
+                        onClick={() => {
+                          setMobileBulkActionSheetOpen(false);
+                          void handleBulkSetShippingOverride(selectedSelesaiPengiriman, null);
+                        }}
+                        className="w-full h-12 px-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-2.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <RotateCcw className="w-4 h-4 text-slate-500" />
+                        <span>Kembalikan ke Belum Jadwal Kirim</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 px-1">
+                    Operasional & Status Riwayat
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileBulkActionSheetOpen(false);
+                      openPickingFromSheet();
+                    }}
+                    className="w-full h-12 px-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs font-bold flex items-center gap-2.5 cursor-pointer"
+                  >
+                    <Send className="w-4 h-4 text-emerald-600" />
+                    <span>Kirim Tugas Picking ({selectedList.length > 0 ? selectedList.length : filteredRecords.length} SJ)</span>
+                  </button>
+
+                  {userIsAdmin && selectedList.length > 0 && (
+                    <>
+                      <button
+                        type="button"
+                        disabled={isBulkUpdating}
+                        onClick={() => {
+                          setMobileBulkActionSheetOpen(false);
+                          void handleBulkUpdateStatus('pending');
+                        }}
+                        className="w-full h-12 px-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs font-bold flex items-center gap-2.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <Edit3 className="w-4 h-4 text-blue-600" />
+                        <span>Ubah Status ke PENDING</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isBulkUpdating}
+                        onClick={() => {
+                          setMobileBulkActionSheetOpen(false);
+                          void handleBulkUpdateStatus('selesai');
+                        }}
+                        className="w-full h-12 px-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs font-bold flex items-center gap-2.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        <span>Ubah Status ke SELESAI</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* MOBILE BOTTOM ACTION SHEET: MENU KARTU SJ SATUAN */}
+        {mobileCardMenuRec && (() => {
+          const rec = mobileCardMenuRec;
+          const isPengirimanRec = isPengirimanTypeRecord(rec);
+          const shipStatus = rec.status === 'selesai' && isPengirimanRec ? getRecordShippingStatus(rec) : null;
+
+          return (
+            <div
+              className="fixed inset-0 z-[9990] bg-black/55 backdrop-blur-xs flex items-end sm:hidden"
+              onClick={() => setMobileCardMenuRec(null)}
+            >
+              <div
+                className="w-full bg-white dark:bg-[#131d31] rounded-t-3xl border-t border-slate-200 dark:border-slate-800 shadow-2xl pb-6 pt-2.5 px-4 space-y-3 animate-in slide-in-from-bottom-4 duration-150 max-h-[85vh] overflow-y-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="w-10 h-1.5 rounded-full bg-slate-300 dark:bg-slate-700 mx-auto" />
+                <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
+                  <div className="min-w-0">
+                    <h4 className="text-sm font-black font-mono text-slate-900 dark:text-white truncate">
+                      {rec.no_sj}
+                    </h4>
+                    <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 truncate">
+                      {rec.source || 'Gudang'} → {rec.destination || 'Outlet Tujuan'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setMobileCardMenuRec(null)}
+                    className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center shrink-0 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {(userIsAdmin || canAction) &&
+                    rec.status === 'selesai' &&
+                    isPengirimanRec &&
+                    (shipStatus === 'belum_jadwal' || shipStatus === 'batal_kirim') && (
+                      <button
+                        type="button"
+                        disabled={isBulkShippingAction}
+                        onClick={() => {
+                          setMobileCardMenuRec(null);
+                          void handleSendRecordsToDispatched([rec]);
+                        }}
+                        className="w-full h-12 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold flex items-center gap-2.5 shadow-xs cursor-pointer disabled:opacity-50"
+                      >
+                        <Truck className="w-4 h-4" />
+                        <span>Kirim ke Dispatched</span>
+                      </button>
+                    )}
+
+                  {rec.items && rec.items.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileCardMenuRec(null);
+                        const draftFromRec: PengecekanSJDraft = {
+                          id: rec.id || `${rec.no_sj}___${rec.source}___${rec.destination}`,
+                          no_sj: rec.no_sj,
+                          source: rec.source,
+                          destination: rec.destination,
+                          tanggal_sj: rec.tanggal_sj,
+                          tipe_import: rec.tipe_import || (rec.destination?.toLowerCase().includes('warehouse') ? 'Penerimaan' : 'Pengiriman') || 'Pengiriman',
+                          file_name: `SJ-${rec.no_sj}`,
+                          items: rec.items.map(i => ({
+                            sku: i.sku,
+                            nama_produk: i.nama_produk,
+                            category: i.category,
+                            qty_sj: i.qty_sj || i.qty_scan || 1,
+                          })),
+                          scanQty: {},
+                          unexpected: {},
+                          status: 'draft',
+                          created_at: rec.created_at,
+                          updated_at: rec.updated_at || new Date().toISOString(),
+                        };
+                        setPickingModalDraft(draftFromRec);
+                      }}
+                      className="w-full h-12 px-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs font-bold flex items-center gap-2.5 cursor-pointer"
+                    >
+                      <Send className="w-4 h-4 text-emerald-600" />
+                      <span>Format Picking (App / WA / Print)</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileCardMenuRec(null);
+                      handleKembalikanKePengecekan(rec);
+                    }}
+                    className="w-full h-12 px-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs font-bold flex items-center gap-2.5 cursor-pointer"
+                  >
+                    <ArrowLeftRight className="w-4 h-4 text-amber-500" />
+                    <span>Kembalikan ke Tab Pengecekan</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileCardMenuRec(null);
+                      exportPengecekanToCsv([rec], `Pengecekan_SJ_${rec.no_sj}_${rec.tanggal_sj}.csv`, productCatalog);
+                    }}
+                    className="w-full h-12 px-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs font-bold flex items-center gap-2.5 cursor-pointer"
+                  >
+                    <Download className="w-4 h-4 text-slate-500" />
+                    <span>Export CSV</span>
+                  </button>
+
+                  {rec.items.some(i => i.status_item === 'KURANG' || i.selisih < 0) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileCardMenuRec(null);
+                        setSelisihWaModalParams({
+                          no_sj: rec.no_sj,
+                          destination: rec.destination,
+                          source: rec.source,
+                          tanggal_sj: rec.tanggal_sj,
+                          items: rec.items,
+                          productCatalog,
+                          type: 'kurang',
+                        });
+                      }}
+                      className="w-full h-12 px-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs font-bold flex items-center gap-2.5 cursor-pointer"
+                    >
+                      <Send className="w-4 h-4 text-[#25D366]" />
+                      <span>Share WA (Selisih Kurang)</span>
+                    </button>
+                  )}
+
+                  {rec.items.some(i => i.status_item === 'LEBIH' || i.selisih > 0) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileCardMenuRec(null);
+                        setSelisihWaModalParams({
+                          no_sj: rec.no_sj,
+                          destination: rec.destination,
+                          source: rec.source,
+                          tanggal_sj: rec.tanggal_sj,
+                          items: rec.items,
+                          productCatalog,
+                          type: 'lebih',
+                        });
+                      }}
+                      className="w-full h-12 px-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs font-bold flex items-center gap-2.5 cursor-pointer"
+                    >
+                      <Send className="w-4 h-4 text-amber-500" />
+                      <span>Share WA (Selisih Lebih)</span>
+                    </button>
+                  )}
+
+                  {userIsAdmin && (
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMobileCardMenuRec(null);
+                          setExpandedRow(rec.id);
+                          handleStartEdit(rec);
+                        }}
+                        className="w-full h-12 px-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs font-bold flex items-center gap-2.5 cursor-pointer"
+                      >
+                        <Edit3 className="w-4 h-4 text-indigo-500" />
+                        <span>Edit Surat Jalan</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={deletingId === rec.id}
+                        onClick={() => {
+                          setMobileCardMenuRec(null);
+                          handleDeleteRecord(rec);
+                        }}
+                        className="w-full h-12 px-4 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 text-xs font-extrabold flex items-center gap-2.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        <span>Hapus Riwayat</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

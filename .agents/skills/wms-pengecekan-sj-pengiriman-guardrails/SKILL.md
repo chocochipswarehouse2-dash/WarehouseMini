@@ -74,6 +74,17 @@ description: Guardrails, invariants, regression checklist, and bug log for Penge
 10. **Zero-Reload Realtime Refresh**:
     - Semua mutasi Dispatched & shipping override WAJIB memancarkan `wms_pengiriman_store_updated`; baik `DistribusiStoreTab` maupun `PengirimanStoreTab` wajib mendengarkannya tanpa `window.location.reload()`.
 
+### D. Mobile App-Shell & Ergonomic Viewport Guardrails (`< 640px`)
+11. **Zero Horizontal Table Scroll & Native Mobile Item Cards**:
+    - Baik daftar item komparasi di **Tab Pengecekan** maupun detail item di **Tab Riwayat** WAJIB merender **Kartu Item Mobile (`sm:hidden`)** vertikal (Nama Produk, SKU, Size, SJ, Scan/Terima, Selisih, Status) lengkap dengan stepper `-` / `+` thumb-friendly (`>= 36px` / `h-9 w-9`) saat scan atau edit, sementara `<table>` penuh hanya dirender pada `hidden sm:block`.
+12. **Native Segmented Controls, Collapsible Filters & Draft Carousel**:
+    - Sub-tab utama & tipe riwayat WAJIB menggunakan segmented control 2/3 kolom rapi di HP (tanpa bar warna-warni berjejal).
+    - Filter sekunder Riwayat (Asal, Tujuan, Rentang Tanggal, Urutan, Muat Ulang Penuh) WAJIB terlipat di balik tombol **Filter** (`SlidersHorizontal` + badge jumlah filter aktif) pada layar HP (`< 640px`).
+    - Antrean Draft SJ di HP menggunakan horizontal swipe snap carousel (`snap-x`) dan area Import CSV otomatis terlipat bila sudah ada antrean aktif agar scanner langsung terlihat di atas lipatan layar.
+13. **Anti-Pelangi & Native Bottom Action Sheets (Tanpa Tombol Menumpuk)**:
+    - Toolbar card yang diperluas dan aksi massal di HP WAJIB memisahkan 1 tombol CTA utama (`bg-indigo-600`) dengan aksi sekunder di **Bottom Action Sheet** (`mobileBulkActionSheetOpen` / `mobileCardMenuRec`) + **Sticky Bottom Selection Dock** (`fixed inset-x-3 bottom-3 z-40 sm:hidden`) saat checkbox dipilih.
+    - Semua tombol aksi sekunder di desktop maupun mobile wajib mengikuti aturan **Anti-Pelangi Tombol** (`GEMINI.md §10`).
+
 ---
 
 ## 3. Checklist Regresi (Wajib Diverifikasi Setiap Modifikasi)
@@ -89,6 +100,7 @@ description: Guardrails, invariants, regression checklist, and bug log for Penge
 - [ ] Klik `Edit` pada SJ `SELESAI` yang sedang `Dispatched` → muncul alert konfirmasi & status Dispatched otomatis ditarik sementara; saat Simpan `SELESAI` → tersedia checkbox (default OFF) untuk memasukkan kembali ke Dispatched.
 - [ ] Input manual di `Pengiriman Store > 1. Input Barang` dengan No SJ yang sama dengan kartu `Dispatched` → muncul modal konfirmasi `Gabung & Simpan`, hasil akhir hanya **1 kartu** dengan koli aktual terkonfirmasi + foto lengkap (0 duplikat).
 - [ ] Push dari Pengecekan SJ dengan No SJ yang sudah diinput manual di `Dispatched` → **tidak** menimpa koli aktual/foto manual.
+- [ ] Tampilan HP Seluler (`< 640px`) Tab Pengecekan & Tab Riwayat bebas horizontal scroll tabel, menggunakan Native Segmented Control, Filter Sekunder terlipat, Draft Carousel horizontal, Kartu Item Mobile + stepper `36px+`, Sticky Bottom Selection Dock, dan Bottom Action Sheet (`mobileBulkActionSheetOpen` & `mobileCardMenuRec`) yang seluruh tombolnya berfungsi nyata.
 - [ ] `npm run build` dan `tsc --noEmit` bebas error di seluruh file terkait.
 
 ---
@@ -99,3 +111,4 @@ description: Guardrails, invariants, regression checklist, and bug log for Penge
 |---|---|---|
 | 2026-11-20 | `v2.23.0` | Rilis awal fitur Over-Scan Alert + Panel Anomali Terpadu di Pengecekan SJ, sinkronisasi SJ Pengiriman ke `Pengiriman Store > Dispatched` dengan estimasi 1 koli = 40 pcs + override koli aktual, privasi penuh (tanpa catatan selisih internal), dan perbaikan hardcode `satuan === 'Pcs' ? 1` di `pengirimanStore.ts` & Modal Edit Dispatched. |
 | 2026-11-20 | `v2.23.1` | Perombakan pengamanan sesuai keputusan operasional: (1) Matikan blind auto-sync — ganti dengan checkbox opsional **default OFF** saat Submit/Bulk Submit/Edit ke `SELESAI`; (2) Pause-on-Edit alert yang menarik sementara SJ dari `Dispatched` saat SJ `SELESAI` diedit; (3) Tambah 4 sub-tab status pengiriman di Riwayat `SELESAI` (`Belum Jadwal Kirim \| Dispatched \| Terkirim \| Batal Kirim`) lengkap dengan multi-select, `Select All`/`Unselect`, `Kirim ke Dispatched`, `Pindah ke Terkirim` (arsip `wms_system_docs` tanpa membuat trip palsu), dan `Batal Kirim`; (4) Perbaikan anti-tabrakan No SJ 2 arah (`savePengirimanStoreBatch` & `syncPengecekanSjToPengirimanDispatched`) agar tabrakan No SJ selalu **menggabungkan / melengkapi / memperbarui** tanpa duplikat dan tanpa menimpa input manual. |
+| 2026-11-20 | `v2.23.2` | Renovasi menyeluruh Mobile App-Shell UX untuk Tab **Pengecekan** & Tab **Riwayat** (`DistribusiStoreTab.tsx`): Native Segmented Controls 2/3 kolom, Import CSV lipat saat ada draft, Horizontal Snap Carousel untuk Antrean SJ, tombol scanner/kamera & stepper `-`/`+` berukuran thumb-friendly (`36px–40px`), Kartu Item Mobile (`sm:hidden`, 0 horizontal table scroll), Filter Sekunder Riwayat terlipat dengan badge count, Kartu Riwayat bersih maks 2 badge atas + hierarki tipografi jelas, Sticky Bottom Selection Dock, serta 2 Native Bottom Action Sheets untuk Aksi Massal dan Menu Kartu SJ dengan tombol netral Anti-Pelangi. |

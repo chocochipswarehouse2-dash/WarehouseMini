@@ -15,22 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.23.1",
-  "versionCode": 431,
+  "version": "v2.23.2",
+  "versionCode": 432,
   "buildDate": "20 November 2026",
-  "buildHash": "wms-261120-v431-1622",
-  "releaseTitle": "WMS v2.23.1 — Kontrol Eksplisit Dispatched, Sub-Tab SELESAI & Anti-Duplikat 2 Arah",
+  "buildHash": "wms-261120-v432-2358",
+  "releaseTitle": "WMS v2.23.2 — Renovasi Tampilan Seluler & Ergonomi App-Shell Pengecekan SJ & Riwayat",
   "releaseNotes": [
-    "Opsi masuk Dispatched saat Submit/Bulk Submit/Edit ke SELESAI kini eksplisit dengan default OFF (tanpa automasi diam-diam)",
-    "Pause-on-Edit: alert & nonaktifkan sementara status Dispatched saat SJ SELESAI diedit, lalu tawarkan masuk kembali saat Simpan",
-    "Sub-tab status pengiriman di Riwayat SELESAI (Belum Jadwal Kirim, Dispatched, Terkirim, Batal Kirim) + Select All/Unselect & aksi massal",
-    "Arsip SJ lama ke Terkirim tersimpan di Supabase wms_system_docs tanpa membuat data trip palsu di Pengiriman Store",
-    "Anti-duplikat No SJ 2 arah: tabrakan No SJ di Pengiriman Store maupun Pengecekan SJ otomatis menggabungkan & melengkapi data tanpa kartu kembar"
+    "Renovasi menyeluruh Tab Pengecekan SJ & Tab Riwayat agar tampil seperti aplikasi seluler native (Segmented Controls, Draft Carousel, Kartu Item Mobile bebas scroll horizontal, Filter lipat)",
+    "Sticky Bottom Selection Dock & 2 Native Bottom Action Sheets untuk aksi massal dan menu kartu SJ dengan tombol netral Anti-Pelangi"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.23.1",
+    "versionCode": 431,
+    "buildDate": "20 November 2026",
+    "buildHash": "wms-261120-v431-1622",
+    "releaseTitle": "WMS v2.23.1 — Kontrol Eksplisit Dispatched, Sub-Tab SELESAI & Anti-Duplikat 2 Arah",
+    "releaseNotes": [
+      "Opsi masuk Dispatched saat Submit/Bulk Submit/Edit ke SELESAI kini eksplisit dengan default OFF (tanpa automasi diam-diam)",
+      "Pause-on-Edit: alert & nonaktifkan sementara status Dispatched saat SJ SELESAI diedit, lalu tawarkan masuk kembali saat Simpan",
+      "Sub-tab status pengiriman di Riwayat SELESAI (Belum Jadwal Kirim, Dispatched, Terkirim, Batal Kirim) + Select All/Unselect & aksi massal",
+      "Arsip SJ lama ke Terkirim tersimpan di Supabase wms_system_docs tanpa membuat data trip palsu di Pengiriman Store",
+      "Anti-duplikat No SJ 2 arah: tabrakan No SJ di Pengiriman Store maupun Pengecekan SJ otomatis menggabungkan & melengkapi data tanpa kartu kembar"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.23.0",
     "versionCode": 430,
@@ -111,17 +123,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseTitle": "WMS v2.22.5 — Dukung Range & Multi Rak pada Edit Spesifik Rak",
     "releaseNotes": [
       "Tambahkan parser range (A001-A010) dan multi rak (A001, B005) dengan live preview target pada tab Edit Spesifik Rak di Setup Kapasitas"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.22.4",
-    "versionCode": 424,
-    "buildDate": "20 November 2026",
-    "buildHash": "wms-261120-v424-1552",
-    "releaseTitle": "WMS v2.22.4 — Rapikan Tabel 1-Baris di Workspace Tugas Putaway",
-    "releaseNotes": [
-      "Tampilkan Nama Produk, Size, SKU & Asal, Qty, serta tombol aksi dalam 1 baris tabel rapi pada tampilan desktop di PutawayWorkspaceModal"
     ],
     "minSupportedVersion": "v2.0.0"
   }
