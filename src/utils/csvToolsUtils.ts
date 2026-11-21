@@ -77,6 +77,68 @@ export interface BatchBarcodePrintItem {
 export const NON_STORE_CHANNELS_REGEX =
   /^(total|subtotal|grand\s*total|sum|tp$|total_stok|total\s*stok|total_qty|total\s*qty|booked|b$|d$|cabang|barang\s*cacat|barang_cacat|defect|diskon\s*defect|permak|permak\s*\/?\s*cuci|gudang\s*permak|buying\s*staff|buying_staff|endorsement|ga$|gudang\s*awal|log$|gudang\s*logistik|qc$|gudang\s*qc|gudang_retur|gudang\s*retur|loss_damage|loss\/damage|sample\s*studio|sample_studio|studio$|sample\s*live|sample_live|live$|barang\s*live|wh$|warehouse|gudang\s*utama|gudang_utama|map$)/i;
 
+/**
+ * Standarisasi Penamaan Outlet & Bazaar WMS
+ * - Bazaar diformat dengan awalan B- (contoh: B-EMP untuk Emporium, B-LWS untuk Living World)
+ */
+export function normalizeOutletName(rawName: string): string {
+  const clean = String(rawName || '').trim();
+  const upper = clean.toUpperCase().replace(/\s+/g, '_');
+
+  // Specific Bazaar Mappings
+  if (/^(bazaar_emporium|bazar_emporium|emporium_pluit|b_?emp)/i.test(upper) || upper.includes('EMPORIUM')) {
+    return 'B-EMP';
+  }
+  if (
+    /^(bazaar_living_world|bazar_living_world|bazaar_lwt|bazaar_lws|b_?lwt|b_?lws)/i.test(upper) ||
+    (upper.includes('BAZAAR') && (upper.includes('LIVING') || upper.includes('LWT') || upper.includes('LWS')))
+  ) {
+    return 'B-LWS';
+  }
+  if (/^(bazaar_panakkukang|bazar_panakkukang|panakkukang|b_?pnk|b_?mks)/i.test(upper) || upper.includes('PANAKKUKANG')) {
+    return 'B-PNK';
+  }
+  if (/^(bazaar_central_park|bazar_central_park|b_?cp|b_?cpj)/i.test(upper) || (upper.includes('BAZAAR') && upper.includes('CENTRAL'))) {
+    return 'B-CPJ';
+  }
+  if (/^(bazaar_lippo_mall_puri|bazar_lippo|b_?lmp)/i.test(upper) || (upper.includes('BAZAAR') && upper.includes('LIPPO'))) {
+    return 'B-LMP';
+  }
+  if (/^(bazaar_summarecon|bazar_summarecon|b_?sms|b_?spm)/i.test(upper) || (upper.includes('BAZAAR') && upper.includes('SUMMARECON'))) {
+    return 'B-SMS';
+  }
+  if (/^(bazaar_pakuwon|bazar_pakuwon|b_?pms)/i.test(upper) || (upper.includes('BAZAAR') && upper.includes('PAKUWON'))) {
+    return 'B-PMS';
+  }
+
+  // Generic Bazaar prefix if starts with BAZAAR_ or BAZAR_
+  if (/^(bazaar_|bazar_)/i.test(upper)) {
+    const suffix = upper
+      .replace(/^(bazaar_|bazar_)/i, '')
+      .replace(/_MALL|_TANGERANG|_SURABAYA|_JAKARTA|_MEDAN/g, '')
+      .slice(0, 4);
+    return `B-${suffix}`;
+  }
+
+  return clean;
+}
+
+export function getOutletDisplayName(code: string): { code: string; title: string; isBazaar: boolean } {
+  const norm = normalizeOutletName(code);
+  const isBazaar = norm.startsWith('B-');
+  let title = norm;
+
+  if (norm === 'B-EMP') title = 'B-EMP (Bazaar Emporium)';
+  else if (norm === 'B-LWS') title = 'B-LWS (Bazaar Living World)';
+  else if (norm === 'B-PNK') title = 'B-PNK (Bazaar Panakkukang)';
+  else if (norm === 'B-CPJ') title = 'B-CPJ (Bazaar Central Park)';
+  else if (norm === 'B-LMP') title = 'B-LMP (Bazaar Lippo Mall)';
+  else if (norm === 'B-SMS') title = 'B-SMS (Bazaar Summarecon)';
+  else if (norm === 'B-PMS') title = 'B-PMS (Bazaar Pakuwon)';
+
+  return { code: norm, title, isBazaar };
+}
+
 export interface BarcodePrinterConfig {
   lineMode: '1' | '2'; // '1' = 50x20mm Single, '2' = 104x20mm Twin
   labelWidthMm: number;
@@ -129,30 +191,30 @@ export const DEFAULT_BARCODE_LABEL_CONFIG: BarcodePrinterConfig = {
   labelHeightMm: 20,
   twoLineGapMm: 4,
   printPaddingMm: 1.0,
-  fontFamily: 'sans-serif',
+  fontFamily: "'Quicksand', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
 
-  codeType: 'barcode',
+  codeType: 'qrcode',
   barcodeFormat: 'CODE128',
   barcodeHeight: 22,
   barcodeWidth: 1.2,
-  qrSize: 42,
+  qrSize: 44,
 
   showProductName: true,
-  productNameSize: 7.5,
+  productNameSize: 8.5,
   productNameBold: true,
   productNameCase: 'normal',
 
   showVariantSize: true,
-  variantSize: 7.0,
+  variantSize: 8.0,
   variantBold: false,
 
   showSku: true,
-  skuSize: 7.5,
+  skuSize: 6.8,
   skuBold: true,
   skuPrefix: '',
 
   showPrice: true,
-  priceSize: 9.5,
+  priceSize: 11.0,
   priceBold: true,
   pricePrefixType: 'Rp',
   priceCustomPrefix: '',
@@ -630,7 +692,8 @@ export function parseDealPOSInventoryCsv(text: string, sourceLabel = 'CSV DealPO
       ignoredHeaders.has(cleanUp) ||
       NON_STORE_CHANNELS_REGEX.test(cleanUp);
     if (!metaCols.has(idx) && clean && !isIgnored) {
-      outletCols.push({ idx, name: clean });
+      const normName = normalizeOutletName(clean);
+      outletCols.push({ idx, name: normName });
     }
   });
 
@@ -651,7 +714,7 @@ export function parseDealPOSInventoryCsv(text: string, sourceLabel = 'CSV DealPO
     outletCols.forEach((o) => {
       const val = Number(r[o.idx]);
       if (!Number.isNaN(val) && val !== 0) {
-        stocks[o.name] = val;
+        stocks[o.name] = (stocks[o.name] || 0) + val;
       }
     });
 

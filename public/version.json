@@ -1,13 +1,13 @@
 {
-  "version": "v2.24.5",
-  "versionCode": 445,
+  "version": "v2.24.6",
+  "versionCode": 446,
   "buildDate": "21 November 2026",
-  "buildHash": "wms-261121-v445-1530",
-  "releaseTitle": "WMS v2.24.5 — Penyempurnaan Spasi Baris Label & Filtrasi Murni Store Fisik DealPOS",
+  "buildHash": "wms-261121-v446-1547",
+  "releaseTitle": "WMS v2.24.6 — Standardisasi Penamaan Entitas Bazaar Prefix B- & Integrasi Engine Cetak Teruji WMS",
   "releaseNotes": [
-    "Filter ketat saluran non-store (BOOKED, PERMAK/CUCI, BARANG CACAT, dll) agar murni Store Fisik DealPOS",
-    "Perbaiki spasi baris label QR code yang renggang dan presisikan jarak baris teks",
-    "Tambahkan kontrol cepat orientasi Lanskap Potret & rotasi 90/270 derajat Xprinter XP-420B"
+    "Standarisasi penamaan entitas bazaar prefix B- (B-EMP, B-LWS, B-PNK, B-SMS)",
+    "Adopsi styling & CSS cetak Quicksand + JetBrains Mono dari modul teruji WMS",
+    "Penyempurnaan @page dan layout thermal roll 50x20mm pada CSV Barcode & CSV Distribusi"
   ],
   "minSupportedVersion": "v2.0.0"
 }

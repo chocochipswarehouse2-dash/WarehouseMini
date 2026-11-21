@@ -24,6 +24,8 @@ import {
   downloadZipBlob,
   parseDealPOSInventoryCsv,
   NON_STORE_CHANNELS_REGEX,
+  normalizeOutletName,
+  getOutletDisplayName,
 } from '../../utils/csvToolsUtils';
 import { BatchBarcodePrintModal } from './BatchBarcodePrintModal';
 import { ChecklistPrintModal } from './ChecklistPrintModal';
@@ -55,10 +57,12 @@ function buildInventoryFromWmsProducts(
     if (mode === 'dealpos') {
       // 1. Ekstrak dari dealpos_channels HANYA untuk Store Fisik (CPJ, LMP, MKG, BTS, CWS, DPM, GST, PMS, dll.)
       // Non-store entities (BOOKED, PERMAK/CUCI, BARANG CACAT, DEFECT, BUYING_STAFF, GA, LOG, QC, WH, MAP) difilter bersih.
+      // Standarisasi Bazaar dengan prefix B- (contoh: B-EMP, B-LWS, B-PNK)
       if (p.dealpos_channels && typeof p.dealpos_channels === 'object') {
         for (const [chName, val] of Object.entries(p.dealpos_channels)) {
           const cleanCh = String(chName).trim().toUpperCase();
           if (!cleanCh || NON_STORE_CHANNELS_REGEX.test(cleanCh)) continue;
+          const normCh = normalizeOutletName(cleanCh);
           let qty = 0;
           if (typeof val === 'number') qty = val;
           else if (typeof val === 'string') qty = Number(val) || 0;
@@ -66,8 +70,8 @@ function buildInventoryFromWmsProducts(
             qty = Number((val as any).qty ?? (val as any).quantity ?? (val as any).stock ?? 0) || 0;
           }
           if (qty !== 0) {
-            stocks[cleanCh] = (stocks[cleanCh] || 0) + qty;
-            outletSet.add(cleanCh);
+            stocks[normCh] = (stocks[normCh] || 0) + qty;
+            outletSet.add(normCh);
           }
         }
       }
@@ -823,7 +827,14 @@ export const CsvBarcodeView: React.FC<CsvBarcodeViewProps> = ({ products, onNoti
                       className="flex items-center gap-1.5 min-w-0 flex-1 text-left"
                     >
                       <input type="checkbox" checked={isChecked} readOnly className="rounded text-indigo-600 shrink-0" />
-                      <span className="font-bold text-xs text-slate-900 dark:text-white truncate">{o.name}</span>
+                      <span className="font-bold text-xs text-slate-900 dark:text-white truncate" title={getOutletDisplayName(o.name).title}>
+                        {o.name}
+                      </span>
+                      {o.name.startsWith('B-') && (
+                        <span className="text-[9px] font-extrabold px-1 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 shrink-0">
+                          BAZAR
+                        </span>
+                      )}
                     </button>
                     <div className="flex items-center gap-1 shrink-0">
                       <span

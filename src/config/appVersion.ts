@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.24.5",
-  "versionCode": 445,
+  "version": "v2.24.6",
+  "versionCode": 446,
   "buildDate": "21 November 2026",
-  "buildHash": "wms-261121-v445-1530",
-  "releaseTitle": "WMS v2.24.5 — Penyempurnaan Spasi Baris Label & Filtrasi Murni Store Fisik DealPOS",
+  "buildHash": "wms-261121-v446-1547",
+  "releaseTitle": "WMS v2.24.6 — Standardisasi Penamaan Entitas Bazaar Prefix B- & Integrasi Engine Cetak Teruji WMS",
   "releaseNotes": [
-    "Filter ketat saluran non-store (BOOKED, PERMAK/CUCI, BARANG CACAT, dll) agar murni Store Fisik DealPOS",
-    "Perbaiki spasi baris label QR code yang renggang dan presisikan jarak baris teks",
-    "Tambahkan kontrol cepat orientasi Lanskap Potret & rotasi 90/270 derajat Xprinter XP-420B"
+    "Standarisasi penamaan entitas bazaar prefix B- (B-EMP, B-LWS, B-PNK, B-SMS)",
+    "Adopsi styling & CSS cetak Quicksand + JetBrains Mono dari modul teruji WMS",
+    "Penyempurnaan @page dan layout thermal roll 50x20mm pada CSV Barcode & CSV Distribusi"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.24.5",
+    "versionCode": 445,
+    "buildDate": "21 November 2026",
+    "buildHash": "wms-261121-v445-1530",
+    "releaseTitle": "WMS v2.24.5 — Penyempurnaan Spasi Baris Label & Filtrasi Murni Store Fisik DealPOS",
+    "releaseNotes": [
+      "Filter ketat saluran non-store (BOOKED, PERMAK/CUCI, BARANG CACAT, dll) agar murni Store Fisik DealPOS",
+      "Perbaiki spasi baris label QR code yang renggang dan presisikan jarak baris teks",
+      "Tambahkan kontrol cepat orientasi Lanskap Potret & rotasi 90/270 derajat Xprinter XP-420B"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.24.4",
     "versionCode": 444,
@@ -115,19 +128,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Ubah Mobile Drawer menjadi gaya aplikasi seluler native: Kartu Profil di atas, 4 Control Center Tiles (Notif/Tema/Update/Sistem), Cari Menu Cepat, Pin Favorit lokal, grup lipat Operasional/HR, & gesture swipe kiri",
       "Pertahankan Sidebar Desktop Auto-Hide/Pin tetap konsisten dan tambahkan safe-area bottom footer untuk tombol App & Keluar Akun"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.23.3",
-    "versionCode": 433,
-    "buildDate": "21 November 2026",
-    "buildHash": "wms-261121-v433-2345",
-    "releaseTitle": "WMS v2.23.3 — Optimasi Filter & Layout Kolom Distribusi Store",
-    "releaseNotes": [
-      "Perbaiki filter status pengiriman agar default hanya menampilkan SELESAI & BELUM KIRIM, mengabaikan status CANCEL/BATAL",
-      "Optimalkan proporsi lebar kolom tabel distribusi store agar serasi di layar desktop maupun seluler",
-      "Perbaiki badge ringkasan koli dan item per toko untuk visibilitas status pengiriman yang lebih jelas"
     ],
     "minSupportedVersion": "v2.0.0"
   }

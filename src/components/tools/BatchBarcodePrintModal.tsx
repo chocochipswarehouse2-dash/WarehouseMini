@@ -20,6 +20,7 @@ import {
   getAutoProductNameFontSize,
   parseLabelNameAndVariant,
   printHtmlInHiddenIframe,
+  getOutletDisplayName,
 } from '../../utils/csvToolsUtils';
 
 interface BatchBarcodePrintModalProps {
@@ -129,11 +130,11 @@ const StickerPreviewCard: React.FC<{
             </div>
           )}
         </div>
-        <div className="flex-1 min-w-0 flex flex-col justify-center gap-0.5 h-full py-0.5 text-left overflow-hidden">
+        <div className="flex-1 min-w-0 flex flex-col justify-center h-full py-0.5 text-left overflow-hidden">
           {config.showProductName && (
             <div
               style={{
-                fontSize: `${Number(config.productNameSize) || 7.5}pt`,
+                fontSize: `${Number(config.productNameSize) || 8.5}pt`,
                 textTransform: config.productNameCase === 'uppercase' ? 'uppercase' : 'none',
               }}
               className="font-bold text-slate-950 truncate leading-tight"
@@ -143,16 +144,16 @@ const StickerPreviewCard: React.FC<{
           )}
           {config.showVariantSize && qrRow2 ? (
             <div
-              style={{ fontSize: `${Number(config.variantSize) || 7.0}pt` }}
-              className="text-slate-600 truncate leading-tight"
+              style={{ fontSize: `${Number(config.variantSize) || 8.0}pt` }}
+              className="text-slate-700 truncate leading-tight mt-[0.8px]"
             >
               {qrRow2}
             </div>
           ) : null}
           {config.showSku && (
             <div
-              style={{ fontSize: `${Number(config.skuSize) || 6.5}pt` }}
-              className="font-mono font-semibold text-slate-700 truncate leading-tight"
+              style={{ fontSize: `${Number(config.skuSize) || 6.8}pt` }}
+              className="font-mono font-bold text-slate-800 truncate leading-tight my-[1px]"
             >
               {config.skuPrefix}
               {item.sku}
@@ -160,8 +161,8 @@ const StickerPreviewCard: React.FC<{
           )}
           {priceLine ? (
             <div
-              style={{ fontSize: `${Number(config.priceSize) || 9.0}pt` }}
-              className="font-extrabold text-slate-950 truncate leading-tight tracking-tight mt-0.5"
+              style={{ fontSize: `${Number(config.priceSize) || 11.0}pt` }}
+              className="font-black text-slate-950 truncate leading-tight tracking-tight mt-[1px]"
             >
               {priceLine}
             </div>
@@ -402,53 +403,61 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
         }
 
         if (config.codeType === 'qrcode') {
-          const qrPx = Number(config.qrSize) || 42;
+          const qrPx = Number(config.qrSize) || 44;
           return `
-            <div class="sticker-cell is-qr" style="width: ${cellWidthMm}mm !important; height: ${cellHeightMm}mm !important; box-sizing: border-box !important; padding: ${
-              config.printPaddingMm || 1.0
-            }mm 1.2mm 0.8mm 1.2mm !important; display: flex !important; flex-direction: row !important; align-items: center !important; overflow: hidden !important; background: #ffffff !important; color: #000000 !important; ${
+            <div class="sticker-cell is-qr ${isPortrait ? 'mode-portrait' : 'mode-landscape'}" style="width: ${cellWidthMm}mm !important; height: ${cellHeightMm}mm !important; box-sizing: border-box !important; padding: ${
+              isPortrait ? '1.5mm 1mm' : '1mm 1.5mm'
+            } !important; display: flex !important; flex-direction: ${
+              isPortrait ? 'column' : 'row'
+            } !important; align-items: center !important; justify-content: ${
+              isPortrait ? 'center' : 'flex-start'
+            } !important; overflow: hidden !important; background: #ffffff !important; color: #000000 !important; font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important; ${
             effectiveTransform
               ? `transform: ${effectiveTransform} !important; transform-origin: center center !important;`
               : ''
           }">
-              <div style="width: ${qrPx}px; height: ${qrPx}px; flex-shrink: 0; margin-right: 2.2mm; display: flex; align-items: center; justify-content: center;">
-                <img src="${codeAsset}" style="width: ${qrPx}px; height: ${qrPx}px; display: block;" />
+              <div style="width: ${qrPx}px; height: ${qrPx}px; flex-shrink: 0; margin-right: ${
+                isPortrait ? '0' : '1.8mm'
+              }; margin-bottom: ${
+                isPortrait ? '1.2mm' : '0'
+              }; display: flex; align-items: center; justify-content: center;">
+                <img src="${codeAsset}" style="width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; display: block;" />
               </div>
-              <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 0.5mm; height: 100%; overflow: hidden; padding: 0.2mm 0; line-height: 1.2; text-align: left;">
+              <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; overflow: hidden; text-align: ${
+                isPortrait ? 'center' : 'left'
+              };">
                 ${
                   config.showProductName
-                    ? `<div style="font-size: ${Number(config.productNameSize) || 7.5}pt; font-weight: ${
-                        config.productNameBold ? '700' : '400'
-                      }; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #000000; text-transform: ${
+                    ? `<div style="font-size: ${Number(config.productNameSize) || 8.5}pt; font-weight: ${
+                        config.productNameBold ? '800' : '700'
+                      }; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #000000; line-height: 1.15; letter-spacing: -0.01em; text-transform: ${
                         config.productNameCase === 'uppercase' ? 'uppercase' : 'none'
                       };">${escapeHtml(qrRow1)}</div>`
                     : ''
                 }
                 ${
                   config.showVariantSize && qrRow2
-                    ? `<div style="font-size: ${Number(config.variantSize) || 7.0}pt; font-weight: ${
-                        config.variantBold ? '700' : '400'
-                      }; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(
+                    ? `<div style="font-size: ${Number(config.variantSize) || 8.0}pt; font-weight: ${
+                        config.variantBold ? '700' : '600'
+                      }; color: #111111; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.15; margin-top: 0.2mm; letter-spacing: -0.01em;">${escapeHtml(
                         qrRow2
                       )}</div>`
                     : ''
                 }
                 ${
                   config.showSku
-                    ? `<div style="font-family: monospace; font-size: ${
-                        Number(config.skuSize) || 6.5
-                      }pt; font-weight: ${
-                        config.skuBold ? '700' : '400'
-                      }; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(
+                    ? `<div style="font-family: 'JetBrains Mono', monospace; font-size: ${
+                        Number(config.skuSize) || 6.8
+                      }pt; font-weight: 700; color: #333333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; margin: 0.3mm 0;">${escapeHtml(
                         config.skuPrefix
                       )}${escapeHtml(it.sku)}</div>`
                     : ''
                 }
                 ${
                   priceLine
-                    ? `<div style="font-size: ${Number(config.priceSize) || 9.0}pt; font-weight: ${
-                        config.priceBold ? '800' : '400'
-                      }; color: #000000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.2px; margin-top: 0.4mm;">${priceLine}</div>`
+                    ? `<div style="font-size: ${Number(config.priceSize) || 11.0}pt; font-weight: ${
+                        config.priceBold ? '900' : '800'
+                      }; color: #000000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; letter-spacing: -0.01em; margin-top: 0.2mm;">${priceLine}</div>`
                     : ''
                 }
               </div>
@@ -523,11 +532,18 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
 <html>
 <head>
   <meta charset="utf-8" />
+  <meta name="color-scheme" content="light" />
   <title>${escapeHtml(title)}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700;800;900&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
   <style>
+    :root {
+      color-scheme: light !important;
+    }
     @page {
-      size: ${pageWidthMm}mm ${pageHeightMm}mm;
-      margin: 0;
+      size: ${pageWidthMm}mm ${pageHeightMm}mm ${isPortrait ? 'portrait' : 'landscape'};
+      margin: 0mm !important;
     }
     * {
       box-sizing: border-box;
@@ -542,7 +558,8 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
       padding: 0 !important;
       background: #ffffff !important;
       color: #000000 !important;
-      font-family: Arial, Helvetica, sans-serif !important;
+      color-scheme: light !important;
+      font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
     }
     .print-row-page {
       width: ${pageWidthMm}mm !important;
@@ -1040,7 +1057,12 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
                       ) : (
                         <Square className="w-3.5 h-3.5 shrink-0" />
                       )}
-                      <span className="truncate">{o}</span>
+                      <span className="truncate" title={getOutletDisplayName(o).title}>{o}</span>
+                      {o.startsWith('B-') && (
+                        <span className="text-[8px] font-extrabold px-1 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 shrink-0">
+                          BAZAR
+                        </span>
+                      )}
                     </span>
                     <span className="font-mono text-[10px] font-bold shrink-0">
                       {pcs.toLocaleString('id-ID')}
