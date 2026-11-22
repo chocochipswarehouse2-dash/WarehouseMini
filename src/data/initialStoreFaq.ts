@@ -509,41 +509,42 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
     id: 'faq-custom-sort-rekap-pesanan',
     category: 'manual_shipment',
     is_pinned: true,
-    question: 'Bagaimana cara mengubah opsi tampilan (Panel Rapi, Tabel, Kartu) dan mengurutkan (Custom Sort) daftar pesanan di Rekap Manual Shipment & Alter?',
-    answer: 'Di pojok kanan atas Rekap Pesanan Toko tersedia 3 opsi tampilan: "Panel Rapi" (tampilan split Master-Detail), "Tabel", dan "Kartu". Seluruh mode tampilan dilengkapi dropdown "Urutkan" (Custom Sort) untuk mengurutkan berdasarkan Waktu (Terbaru/Terlama FIFO), Nama Toko/Outlet, Customer, Jasa Kirim, Jumlah Qty, hingga Prioritas Belum Cetak.',
+    question: 'Bagaimana cara mengubah opsi tampilan (Tabel & Kartu), menggunakan menu Aksi, dan mengurutkan daftar pesanan di Rekap Manual Shipment & Alter?',
+    answer: 'Di pojok kanan atas Rekap Pesanan tersedia 2 opsi tampilan yang rapi di desktop maupun HP: "Tabel" (tabel terstruktur di desktop & daftar ringkas pas layar di HP) dan "Kartu" (kartu aplikasi yang bersih). Setiap pesanan dilengkapi 1 tombol aksi utama sesuai tahap serta tombol "Aksi (⋯)" yang mengelompokkan seluruh menu cetak, resi, komunikasi, dan pengelolaan dengan rapi.',
     target_audience: 'all',
 
     // PERSPEKTIF ADMIN GUDANG
-    answer_admin: 'Sebagai Admin Gudang / CS, Anda dapat menggunakan menu dropdown "Urutkan:" yang berada tepat di sebelah kanan kolom pencarian (maupun dengan mengklik langsung judul kolom pada tampilan Tabel) baik di Rekap Pesanan Toko (Manual Shipment & Alter) maupun di Rekap Retur Barang. Fitur ini memudahkan tim gudang memproses antrean berdasarkan sistem FIFO (Terlama ➔ Terbaru), mengelompokkan paket per Outlet/Store (A ➔ Z), mengelompokkan per Kurir/Ekspedisi saat handover manifest, atau memprioritaskan pesanan yang Belum Cetak Label/Picking.',
+    answer_admin: 'Sebagai Admin Gudang / CS, Anda dapat beralih cepat antara tampilan "Tabel" (default desktop) dan "Kartu" (default HP) di pojok kanan atas Rekap Pesanan. Seluruh menu aksi tiap pesanan (Cetak Picking, Cetak Label A6, Picking WA Grup, SJ DealPOS, Input Resi, Jadwal Store, Edit, Batalkan) tersusun rapi dalam 1 menu "⋯" sehingga tidak lagi tersebar di banyak kolom. Gunakan menu "Urutkan" untuk antrean FIFO (Terlama), per Store, per Kurir, atau Prioritas Belum Cetak.',
     action_steps_admin: [
-      { step: 1, title: 'Gunakan Dropdown [Urutkan:] di Toolbar Pencarian', desc: 'Pada tab Rekap Pesanan Toko atau Rekap Retur Barang, klik menu "Urutkan:" di sebelah kolom pencarian.' },
-      { step: 2, title: 'Pilih Kriteria Urutan Operasional', desc: 'Pilih "⏳ Terlama ➔ Terbaru (FIFO)" untuk memproses antrean paling awal lebih dulu, "🏬 Per Toko / Store (A ➔ Z)" untuk pengelompokan cabang, "🚚 Jasa Kirim (A ➔ Z)" untuk serah terima kurir, atau "🖨️ Prioritas Belum Cetak" & "✂️ Target Selesai Alter Terdekat".' },
-      { step: 3, title: 'Klik Header Kolom pada Mode Tabel', desc: 'Jika menggunakan tampilan Tabel, Anda juga dapat mengklik judul kolom ("No. Pesanan & Store", "Customer & Pengiriman", "Rincian Produk", "Resi & Cetak") untuk membalik urutan secara cepat.' },
-      { step: 4, title: 'Klik [Reset] untuk Kembali ke Default', desc: 'Klik tombol merah "Reset" di sebelah kanan toolbar untuk mengembalikan urutan ke default (🕒 Terbaru ➔ Terlama).' }
+      { step: 1, title: 'Pilih Mode Tampilan [Tabel] atau [Kartu]', desc: 'Klik switcher "Tabel | Kartu" di pojok kanan atas Rekap Pesanan. Menu utilitas (Export CSV, Muat Ulang Penuh, Slide SOP) tersimpan rapi di tombol titik tiga (⋯) di sebelahnya.' },
+      { step: 2, title: 'Gunakan Tombol Aksi Utama & Menu [⋯] per Pesanan', desc: 'Klik tombol aksi utama pada baris/kartu untuk langkah berikutnya (misal Cetak Picking, Cetak Label A6, atau Input Resi), atau klik tombol "⋯" (Aksi) untuk membuka semua opsi yang dikelompokkan rapi.' },
+      { step: 3, title: 'Urutkan Antrean via Dropdown Urutkan atau Header Tabel', desc: 'Pilih urutan (Terlama/FIFO, Store A-Z, Kurir A-Z, Belum Cetak Dulu, atau Target Alter Terdekat) melalui dropdown di samping kolom pencarian, atau klik judul kolom pada mode Tabel.' },
+      { step: 4, title: 'Klik [Reset] untuk Kembali ke Default', desc: 'Klik tombol "Reset" saat filter aktif untuk mengembalikan daftar ke urutan default (Terbaru).' }
     ],
     button_badges_admin: [
-      { label: 'Urutkan: Terbaru / Terlama (FIFO)', color: 'indigo', icon: 'ArrowUpDown' },
-      { label: 'Per Toko / Store (A ➔ Z)', color: 'blue', icon: 'Store' },
-      { label: 'Prioritas Belum Cetak', color: 'amber', icon: 'Printer' },
+      { label: 'Tabel | Kartu', color: 'indigo', icon: 'Table' },
+      { label: 'Aksi (⋯)', color: 'slate', icon: 'MoreHorizontal' },
+      { label: 'Filter', color: 'blue', icon: 'Filter' },
       { label: 'Reset', color: 'rose', icon: 'RefreshCw' }
     ],
-    admin_notes: '💡 Urutan yang Anda pilih juga otomatis berlaku ketika Anda mengekspor data ke CSV (Export CSV) maupun saat melakukan Cetak Picking List / Label A6 Massal.',
+    admin_notes: '💡 Urutan yang Anda pilih otomatis berlaku saat Export CSV (di menu ⋯ header) maupun Cetak Massal.',
 
     // PERSPEKTIF TIM STORE / OUTLET
-    answer_store: 'Tim Store dapat mengurutkan daftar pesanan di tab Rekap Pesanan Toko menggunakan menu dropdown "Urutkan:" di sebelah kolom pencarian. Anda bisa melihat pesanan dari yang paling baru diinput (Terbaru ➔ Terlama), mengurutkan dari antrean paling lama (Terlama ➔ Terbaru), mengurutkan berdasarkan Nama Customer (A ➔ Z), Jasa Kirim, maupun Target Selesai Alterasi.',
+    answer_store: 'Tim Store dapat memilih tampilan "Kartu" (nyaman di HP seperti aplikasi seluler) atau "Tabel" (daftar ringkas pas layar HP tanpa geser kiri-kanan) di pojok kanan atas Rekap Pesanan. Ketuk baris/nama customer untuk melihat detail lengkap, gunakan tombol utama (seperti "Kirim ke Gudang" atau "WA Customer"), atau ketuk tombol "Aksi (⋯)" untuk cetak SJ Struk, Chat Gudang, atau mengajukan pembatalan ke Admin.',
     action_steps_store: [
-      { step: 1, title: 'Buka Tab Rekap Pesanan Toko', desc: 'Masuk ke menu Pesanan Saya ➔ klik tab "Rekap Pesanan".' },
-      { step: 2, title: 'Klik Menu [Urutkan:] di Samping Kolom Cari', desc: 'Pilih urutan yang diinginkan: "🕒 Terbaru ➔ Terlama", "⏳ Terlama ➔ Terbaru (FIFO)", "👤 Nama Customer (A ➔ Z)", "🚚 Jasa Kirim", atau "✂️ Target Selesai Alter Terdekat".' },
-      { step: 3, title: 'Klik Judul Kolom di Tampilan Tabel', desc: 'Pada mode tampilan Tabel, klik langsung judul kolom untuk mengganti urutan naik/turun secara instan.' }
+      { step: 1, title: 'Buka Tab Rekap Pesanan', desc: 'Masuk ke menu Pesanan Saya ➔ Store ➔ klik tab "Rekap Pesanan".' },
+      { step: 2, title: 'Pilih Mode [Kartu] atau [Tabel]', desc: 'Gunakan tombol "Tabel | Kartu" di pojok kanan atas sesuai kenyamanan layar HP atau komputer Anda.' },
+      { step: 3, title: 'Gunakan Tombol Utama & Menu [Aksi ⋯]', desc: 'Ketuk tombol aksi utama pada kartu/baris pesanan, atau ketuk ikon "⋯" (Aksi) untuk membuka menu cetak SJ Struk, Chat Gudang, Notif Store, atau Ajukan Pembatalan ke Admin.' },
+      { step: 4, title: 'Cari & Urutkan Pesanan', desc: 'Gunakan kolom pencarian, dropdown Urutkan, atau tombol Filter untuk menemukan pesanan tertentu dengan cepat.' }
     ],
     button_badges_store: [
-      { label: 'Urutkan: Terbaru / Terlama', color: 'indigo', icon: 'ArrowUpDown' },
-      { label: 'Nama Customer (A ➔ Z)', color: 'emerald', icon: 'User' },
-      { label: 'Jasa Kirim (A ➔ Z)', color: 'blue', icon: 'Truck' }
+      { label: 'Tabel | Kartu', color: 'indigo', icon: 'LayoutGrid' },
+      { label: 'Aksi (⋯)', color: 'slate', icon: 'MoreHorizontal' },
+      { label: 'Filter', color: 'blue', icon: 'Filter' }
     ],
-    store_notes: 'ℹ️ Jika ingin kembali ke urutan awal (pesanan terbaru di bagian paling atas), cukup pilih "🕒 Terbaru ➔ Terlama" atau klik tombol "Reset".',
+    store_notes: 'ℹ️ Di tampilan HP, mode Tabel dirancang pas lebar layar tanpa geser samping — cukup ketuk baris pesanan untuk membuka detail lengkap.',
 
-    keywords: ['sort', 'urutkan', 'sorting', 'terlama', 'terbaru', 'fifo', 'urut toko', 'per toko', 'urut customer', 'urut kurir', 'rekap pesanan', 'rekap retur'],
+    keywords: ['sort', 'urutkan', 'sorting', 'terlama', 'terbaru', 'fifo', 'urut toko', 'per toko', 'urut customer', 'urut kurir', 'rekap pesanan', 'rekap retur', 'tabel', 'kartu', 'aksi'],
     view_count: 95
   }
 ];

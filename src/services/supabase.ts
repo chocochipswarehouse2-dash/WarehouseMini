@@ -2009,8 +2009,9 @@ export async function deleteLogProdukByDateRange(
  * Aggregates physical scans per (invoice, sku, lokasi), prevents gateway retry duplicates,
  * batch-fetches live system stock from stok_real_fisik, and enqueues discrepant items (selisih !== 0).
  */
-// Singleton in-flight lock for background stock opname reconciliation
+// Singleton in-flight lock + 30s throttle for background stock opname reconciliation
 let syncPendingSoPromise: Promise<{ success: boolean; processedInvoices: number; newQueueItemsCount: number; error?: string }> | null = null;
+let lastSyncPendingSoAt = 0;
 
 /**
  * Automatically reconciles and calculates stock_opname_queue from raw log_produk scans (type = 'SO').
@@ -2024,12 +2025,16 @@ let syncPendingSoPromise: Promise<{ success: boolean; processedInvoices: number;
  */
 export async function syncPendingStockOpnameFromLogProduk(
   lookbackDays = 7,
-  options?: { forceInvoices?: string[] }
+  options?: { forceInvoices?: string[]; force?: boolean }
 ): Promise<{ success: boolean; processedInvoices: number; newQueueItemsCount: number; error?: string }> {
   if (syncPendingSoPromise && !options?.forceInvoices) {
     return syncPendingSoPromise;
   }
+  if (!options?.force && !options?.forceInvoices && Date.now() - lastSyncPendingSoAt < 30_000) {
+    return { success: true, processedInvoices: 0, newQueueItemsCount: 0 };
+  }
 
+  lastSyncPendingSoAt = Date.now();
   syncPendingSoPromise = (async () => {
     try {
       const sinceDate = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString();
@@ -2623,82 +2628,128 @@ function deduplicateQueueItems(items: StockOpnameQueueItem[]): StockOpnameQueueI
   return Array.from(map.values());
 }
 
+// Low-egress SWR cache & in-flight deduplication for stock_opname_queue (prevents 8.6 MB full-table storms)
+const soQueueCache = new Map<string, { data: StockOpnameQueueItem[]; ts: number }>();
+const soQueueInFlight = new Map<string, Promise<StockOpnameQueueItem[]>>();
+const SO_QUEUE_CACHE_TTL_MS = 20_000;
+
+export function invalidateStockOpnameQueueCache(): void {
+  soQueueCache.clear();
+}
+
 /**
- * Fetch stock opname queue items directly from Supabase with status filter
+ * Fetch stock opname queue items directly from Supabase with status filter, safe default limits & SWR deduplication.
+ * Default limits: PENDING = 5000 (all active pending items, tiny payload), APPROVED/REJECTED/ALL = 500 latest rows
+ * (instead of 17,000+ historical rows / ~8.6 MB on every page open).
  */
 export async function fetchStockOpnameQueue(
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL' = 'ALL',
-  limit = 100000
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL' = 'PENDING',
+  limit?: number,
+  options?: { forceRefresh?: boolean; skipAutoSync?: boolean }
 ): Promise<StockOpnameQueueItem[]> {
-  // Sync raw SO scans from log_produk to ensure all pending opnames are calculated & queued
-  try {
-    await syncPendingStockOpnameFromLogProduk();
-  } catch (syncErr) {
-    console.warn('Auto-sync pending SO warning:', syncErr);
+  const effectiveLimit = typeof limit === 'number' && limit > 0
+    ? limit
+    : status === 'PENDING'
+      ? 5000
+      : 500;
+  const cacheKey = `${status}__${effectiveLimit}`;
+
+  if (!options?.forceRefresh) {
+    const cached = soQueueCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < SO_QUEUE_CACHE_TTL_MS) {
+      return cached.data;
+    }
+    const pending = soQueueInFlight.get(cacheKey);
+    if (pending) return pending;
   }
 
-  try {
-    const statusQuery = status !== 'ALL' ? `status=eq.${encodeURIComponent(status)}&` : '';
-    const data = await supabaseFetchAllPages<StockOpnameQueueItem>(
-      'stock_opname_queue',
-      `select=*&${statusQuery}order=tanggal.desc,id.asc`,
-      limit
-    );
-    if (data && Array.isArray(data)) {
-      const deduped = deduplicateQueueItems(data);
-      // Cache data for instant 0ms subsequent loads
-      if (typeof window !== 'undefined' && window.localStorage) {
-        try {
-          localStorage.setItem(`wms_so_queue_cache_${status}`, JSON.stringify(deduped.slice(0, 1000)));
-          if (status === 'ALL') {
-            localStorage.setItem('wms_so_queue_cache_ALL', JSON.stringify(deduped.slice(0, 1000)));
-          }
-        } catch {}
+  const runFetch = (async (): Promise<StockOpnameQueueItem[]> => {
+    // Sync raw SO scans from log_produk only when viewing PENDING or ALL (and throttled to 30s)
+    if (!options?.skipAutoSync && (status === 'PENDING' || status === 'ALL')) {
+      try {
+        await syncPendingStockOpnameFromLogProduk();
+      } catch (syncErr) {
+        console.warn('Auto-sync pending SO warning:', syncErr);
       }
-      return deduped;
     }
-    return [];
-  } catch (err) {
-    console.warn('REST fetch SO queue warning, attempting fallback:', err);
-    
-    // Fallback 1: Direct Supabase JS Client
+
+    const selectCols = 'id,sesi_id,tanggal,sku,nama_produk,size,lokasi,area,qty_sistem,qty_fisik,selisih,status,jenis,alasan,operator,invoice,approved_by,tanggal_approve';
+
     try {
-      const client = getSupabaseClient();
-      let query = client.from('stock_opname_queue').select('*').order('tanggal', { ascending: false }).limit(limit);
-      if (status !== 'ALL') {
-        query = query.eq('status', status);
-      }
-      const { data, error } = await query;
-      if (!error && data && Array.isArray(data)) {
-        const deduped = deduplicateQueueItems(data as StockOpnameQueueItem[]);
+      const statusQuery = status !== 'ALL' ? `status=eq.${encodeURIComponent(status)}&` : '';
+      const data = effectiveLimit <= 1000
+        ? await supabaseFetch<StockOpnameQueueItem[]>(
+            'stock_opname_queue',
+            'GET',
+            null,
+            `select=${selectCols}&${statusQuery}order=tanggal.desc,id.asc&limit=${effectiveLimit}`
+          )
+        : await supabaseFetchAllPages<StockOpnameQueueItem>(
+            'stock_opname_queue',
+            `select=${selectCols}&${statusQuery}order=tanggal.desc,id.asc`,
+            effectiveLimit
+          );
+      if (data && Array.isArray(data)) {
+        const deduped = deduplicateQueueItems(data);
+        soQueueCache.set(cacheKey, { data: deduped, ts: Date.now() });
         if (typeof window !== 'undefined' && window.localStorage) {
           try {
-            localStorage.setItem(`wms_so_queue_cache_${status}`, JSON.stringify(deduped.slice(0, 1000)));
-            if (status === 'ALL') {
-              localStorage.setItem('wms_so_queue_cache_ALL', JSON.stringify(deduped.slice(0, 1000)));
+            localStorage.setItem(`wms_so_queue_cache_${status}`, JSON.stringify(deduped.slice(0, 500)));
+            if (status === 'ALL' || status === 'PENDING') {
+              localStorage.setItem('wms_so_queue_cache_ALL', JSON.stringify(deduped.slice(0, 500)));
             }
           } catch {}
         }
         return deduped;
       }
-    } catch (fallbackErr) {
-      console.warn('Fallback to Supabase JS Client also failed:', fallbackErr);
-    }
+      return [];
+    } catch (err) {
+      console.warn('REST fetch SO queue warning, attempting fallback:', err);
 
-    // Fallback 2: Cached data from local storage
-    if (typeof window !== 'undefined' && window.localStorage) {
+      // Fallback 1: Direct Supabase JS Client
       try {
-        const cached = localStorage.getItem(`wms_so_queue_cache_${status}`) || localStorage.getItem('wms_so_queue_cache_ALL');
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            return deduplicateQueueItems(parsed);
-          }
+        const client = getSupabaseClient();
+        let query = client.from('stock_opname_queue').select(selectCols).order('tanggal', { ascending: false }).limit(effectiveLimit);
+        if (status !== 'ALL') {
+          query = query.eq('status', status);
         }
-      } catch {}
-    }
+        const { data, error } = await query;
+        if (!error && data && Array.isArray(data)) {
+          const deduped = deduplicateQueueItems(data as StockOpnameQueueItem[]);
+          soQueueCache.set(cacheKey, { data: deduped, ts: Date.now() });
+          if (typeof window !== 'undefined' && window.localStorage) {
+            try {
+              localStorage.setItem(`wms_so_queue_cache_${status}`, JSON.stringify(deduped.slice(0, 500)));
+            } catch {}
+          }
+          return deduped;
+        }
+      } catch (fallbackErr) {
+        console.warn('Fallback to Supabase JS Client also failed:', fallbackErr);
+      }
 
-    return [];
+      // Fallback 2: Cached data from local storage
+      if (typeof window !== 'undefined' && window.localStorage) {
+        try {
+          const cached = localStorage.getItem(`wms_so_queue_cache_${status}`) || localStorage.getItem('wms_so_queue_cache_ALL');
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              return deduplicateQueueItems(parsed);
+            }
+          }
+        } catch {}
+      }
+
+      return [];
+    }
+  })();
+
+  soQueueInFlight.set(cacheKey, runFetch);
+  try {
+    return await runFetch;
+  } finally {
+    soQueueInFlight.delete(cacheKey);
   }
 }
 
@@ -4298,7 +4349,23 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
       b[code] = q;
     });
 
-    // Also copy all keys from dp.b if available
+    // Also copy any compact flat non-meta outlet/channel keys directly from dp into b
+    const FLAT_SKIP_KEYS = new Set([
+      'b', 'd', 'cabang', 'total_stok', 'MAP', 'LIVE', 'STUDIO', 'PERMAK', 'DEFECT',
+      'Gudang Utama', 'Barang Live', 'Sample Studio', 'Permak / Cuci', 'Barang Cacat',
+    ]);
+    Object.keys(dp).forEach((k) => {
+      if (FLAT_SKIP_KEYS.has(k)) return;
+      const val = dp[k];
+      if (val !== null && val !== undefined && typeof val !== 'object') {
+        const num = Number(val);
+        if (Number.isFinite(num) && num !== 0 && b[k] === undefined) {
+          b[k] = num;
+        }
+      }
+    });
+
+    // Also copy all keys from dp.b if available (legacy bloated format backward compatibility)
     if (dp.b && typeof dp.b === 'object') {
       Object.keys(dp.b).forEach((k) => {
         b[k] = Number(dp.b[k]) || 0;
@@ -7251,6 +7318,30 @@ export async function importMasterProdukBatch(
     }
   }
 
+  const COMPACT_SKIP_KEYS = new Set([
+    'b', 'd', 'cabang', 'total_stok',
+    'Gudang Utama', 'Barang Live', 'Sample Studio', 'Permak / Cuci', 'Barang Cacat',
+  ]);
+  const compactDealpos = (raw: any): Record<string, number> => {
+    if (!raw || typeof raw !== 'object') return {};
+    const out: Record<string, number> = {};
+    const collect = (obj: any) => {
+      if (!obj || typeof obj !== 'object') return;
+      for (const [k, v] of Object.entries(obj)) {
+        if (COMPACT_SKIP_KEYS.has(k) || (v !== null && typeof v === 'object')) continue;
+        const num = Number(v);
+        if (Number.isFinite(num) && num !== 0 && out[k] === undefined) {
+          out[k] = num;
+        }
+      }
+    };
+    collect(raw);
+    if (raw.d && typeof raw.d === 'object') collect(raw.d);
+    if (raw.b && typeof raw.b === 'object') collect(raw.b);
+    if (raw.cabang && typeof raw.cabang === 'object') collect(raw.cabang);
+    return out;
+  };
+
   for (let i = 0; i < total; i += CHUNK_SIZE) {
     const chunk = records.slice(i, i + CHUNK_SIZE).map((r) => ({
       sku: r.sku,
@@ -7258,7 +7349,7 @@ export async function importMasterProdukBatch(
       kategori: r.kategori || '',
       size: r.size || '',
       price: typeof r.price === 'number' ? r.price : 0,
-      dealpos_channels: r.dealpos_channels || {},
+      dealpos_channels: compactDealpos(r.dealpos_channels),
     }));
 
     await uploadSlice(chunk, i);

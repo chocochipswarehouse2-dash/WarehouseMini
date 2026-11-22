@@ -310,7 +310,7 @@ export const ScannerPopupModal: React.FC<ScannerPopupModalProps> = ({
         )}
 
         {/* MAIN SCROLLABLE SCANNER WORKSPACE */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-5">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-5">
           {renderScannerWorkspace(layoutMode, !isMinimized)}
         </div>
       </div>

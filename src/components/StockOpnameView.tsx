@@ -22,6 +22,7 @@ import {
 import { StockOpnameQueueItem, ProductItem, UserSession } from '../types';
 import {
   fetchStockOpnameQueue,
+  invalidateStockOpnameQueueCache,
   approveStockOpnameQueueItems,
   rejectStockOpnameQueueItems,
   undoStockOpnameQueueItems,
@@ -110,12 +111,26 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
     return Array.from(map.values());
   };
 
-  const loadSoData = async (_arg?: any) => {
-    const silentSync = typeof _arg === 'boolean' ? _arg : true;
+  const statusFilterRef = React.useRef<'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL'>(statusFilter);
+  statusFilterRef.current = statusFilter;
+
+  const loadSoData = async (
+    argOrStatus?: boolean | 'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL' | React.MouseEvent,
+    forceRefresh = false
+  ) => {
+    const targetStatus: 'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL' =
+      argOrStatus === 'PENDING' || argOrStatus === 'APPROVED' || argOrStatus === 'REJECTED' || argOrStatus === 'ALL'
+        ? argOrStatus
+        : statusFilterRef.current;
+    const isExplicitRefresh = forceRefresh || (argOrStatus !== undefined && typeof argOrStatus === 'object');
+
     // 1. Instant Cache Load: Render immediately if cached data exists (0ms response)
     if (typeof window !== 'undefined' && window.localStorage && soQueue.length === 0) {
       try {
-        const cached = localStorage.getItem('wms_so_queue_cache_ALL') || localStorage.getItem('so_queue_cache_ALL');
+        const cached =
+          localStorage.getItem(`wms_so_queue_cache_${targetStatus}`) ||
+          localStorage.getItem('wms_so_queue_cache_ALL') ||
+          localStorage.getItem('so_queue_cache_ALL');
         if (cached) {
           const parsed = JSON.parse(cached);
           if (Array.isArray(parsed) && parsed.length > 0) {
@@ -125,23 +140,18 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
       } catch {}
     }
 
-    setIsLoading(soQueue.length === 0);
+    setIsLoading(soQueue.length === 0 || isExplicitRefresh);
     setFetchError(null);
     try {
-      if (silentSync) {
-        // Auto-reconcile any pending WhatsApp/External SO scans from log_produk to stock_opname_queue in background
-        syncPendingStockOpnameFromLogProduk().then((syncRes) => {
-          if (syncRes && syncRes.newQueueItemsCount > 0) {
-            fetchStockOpnameQueue('ALL').then((freshData) => {
-              if (freshData && Array.isArray(freshData)) {
-                setSoQueue(dedupQueueList(freshData));
-              }
-            }).catch(() => {});
-          }
-        }).catch(() => {});
+      if (isExplicitRefresh) {
+        invalidateStockOpnameQueueCache();
       }
-
-      const data = await fetchStockOpnameQueue('ALL');
+      // Fetch ONLY the active status tab (PENDING = tiny <50 KB; history tabs = 500 latest rows instead of 17,000+ rows / 8.6 MB!)
+      const defaultLimit = targetStatus === 'PENDING' ? 5000 : 500;
+      const data = await fetchStockOpnameQueue(targetStatus, defaultLimit, {
+        forceRefresh: isExplicitRefresh,
+        skipAutoSync: targetStatus === 'APPROVED' || targetStatus === 'REJECTED',
+      });
       if (data && Array.isArray(data)) {
         setSoQueue(dedupQueueList(data));
       }
@@ -158,19 +168,24 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
   };
 
   /**
-   * Force full reload: reset delta sync cache so ALL data is fetched fresh
-   * regardless of timestamps. Use this after manual backfill / sheet import.
+   * Force full reload: reset cache & pull active tab fresh (up to 1500 rows for history tabs, all for PENDING).
    */
   const forceReloadSoData = async () => {
     setIsLoading(true);
     setFetchError(null);
     try {
-      await syncPendingStockOpnameFromLogProduk().catch(() => {});
-      const data = await fetchStockOpnameQueue();
+      invalidateStockOpnameQueueCache();
+      await syncPendingStockOpnameFromLogProduk(7, { force: true }).catch(() => {});
+      const targetStatus = statusFilterRef.current;
+      const reloadLimit = targetStatus === 'PENDING' ? 5000 : 1500;
+      const data = await fetchStockOpnameQueue(targetStatus, reloadLimit, {
+        forceRefresh: true,
+        skipAutoSync: true,
+      });
       const unique = dedupQueueList(data);
       setSoQueue(unique);
       setSelectedSoIds([]);
-      if (onNotify) onNotify(`Muat ulang penuh selesai — ${unique.length} baris dimuat.`, 'success');
+      if (onNotify) onNotify(`Muat ulang selesai — ${unique.length} baris (${targetStatus}) dimuat.`, 'success');
     } catch (e: any) {
       console.error('Error force reloading SO data:', e);
       setFetchError(e.message || 'Gagal memuat ulang penuh');
@@ -180,34 +195,65 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
     }
   };
 
+  // Lazy-fetch whenever user switches status tab (PENDING vs APPROVED vs REJECTED vs ALL)
   useEffect(() => {
-    loadSoData();
+    void loadSoData(statusFilter, false);
+  }, [statusFilter]);
 
-    // Subscribe to realtime updates for stock_opname_queue & log_produk SO inserts
+  useEffect(() => {
+    let realtimeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleDebouncedRefresh = () => {
+      if (realtimeDebounceTimer) clearTimeout(realtimeDebounceTimer);
+      realtimeDebounceTimer = setTimeout(() => {
+        invalidateStockOpnameQueueCache();
+        const st = statusFilterRef.current;
+        fetchStockOpnameQueue(st, st === 'PENDING' ? 5000 : 500, {
+          forceRefresh: true,
+          skipAutoSync: true,
+        })
+          .then((freshData) => {
+            if (freshData && Array.isArray(freshData)) {
+              setSoQueue(dedupQueueList(freshData));
+            }
+          })
+          .catch(() => {});
+      }, 1500);
+    };
+
+    // Debounced realtime subscription (prevents 30x batch-approve storm = 250 MB egress!)
     const unsubQueue = globalRealtimeStore.subscribe('stock_opname_queue', () => {
-      fetchStockOpnameQueue('ALL').then((freshData) => {
-        if (freshData && Array.isArray(freshData)) {
-          setSoQueue(dedupQueueList(freshData));
-        }
-      }).catch(() => {});
+      scheduleDebouncedRefresh();
     });
 
     const unsubLog = globalRealtimeStore.subscribe('log_produk', (payload) => {
       const newRow = payload?.new as any;
       if (newRow && newRow.type === 'SO') {
-        syncPendingStockOpnameFromLogProduk().then((res) => {
-          if (res && res.newQueueItemsCount > 0) {
-            fetchStockOpnameQueue('ALL').then((freshData) => {
-              if (freshData && Array.isArray(freshData)) {
-                setSoQueue(dedupQueueList(freshData));
+        if (realtimeDebounceTimer) clearTimeout(realtimeDebounceTimer);
+        realtimeDebounceTimer = setTimeout(() => {
+          syncPendingStockOpnameFromLogProduk(7, { force: true })
+            .then((res) => {
+              if (res && res.newQueueItemsCount > 0) {
+                invalidateStockOpnameQueueCache();
+                const st = statusFilterRef.current;
+                fetchStockOpnameQueue(st, st === 'PENDING' ? 5000 : 500, {
+                  forceRefresh: true,
+                  skipAutoSync: true,
+                })
+                  .then((freshData) => {
+                    if (freshData && Array.isArray(freshData)) {
+                      setSoQueue(dedupQueueList(freshData));
+                    }
+                  })
+                  .catch(() => {});
               }
-            }).catch(() => {});
-          }
-        }).catch(() => {});
+            })
+            .catch(() => {});
+        }, 1800);
       }
     });
 
     return () => {
+      if (realtimeDebounceTimer) clearTimeout(realtimeDebounceTimer);
       unsubQueue();
       unsubLog();
     };
@@ -283,14 +329,14 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
           const res = await approveStockOpnameQueueItems(itemsToApprove, currentOperator);
           if (res.success) {
             if (onNotify) onNotify(`Berhasil Approve ${res.count} item SO & mencatat log adjustment!`, 'success');
-            await loadSoData();
+            await loadSoData(undefined, true);
           } else {
             if (onNotify) onNotify(`Gagal approve: ${res.error}`, 'error');
-            await loadSoData();
+            await loadSoData(undefined, true);
           }
         } catch (e: any) {
           if (onNotify) onNotify(`Terjadi kesalahan: ${e.message}`, 'error');
-          await loadSoData();
+          await loadSoData(undefined, true);
         } finally {
           setIsActionLoading(false);
           hideGlobalLoading();
@@ -320,7 +366,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
           const res = await undoStockOpnameQueueItems(itemsToUndo);
           if (res.success) {
             if (onNotify) onNotify(`Berhasil Undo ${res.count} item SO.`, 'success');
-            await loadSoData();
+            await loadSoData(undefined, true);
           } else {
             if (onNotify) onNotify(`Gagal undo: ${res.error}`, 'error');
           }
@@ -528,7 +574,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
     showGlobalLoading('Menyinkronkan scan SO baru dan stok sistem...');
     try {
       // 1. Rekonsiliasi scan SO baru dari log_produk ke stock_opname_queue
-      const syncResult = await syncPendingStockOpnameFromLogProduk();
+      const syncResult = await syncPendingStockOpnameFromLogProduk(7, { force: true });
 
       // 2. Sinkronkan ulang perhitungan sisa stok fisik untuk antrean PENDING
       const res = await resyncStockOpnameQueueItems(selectedSoIds.length > 0 ? selectedSoIds : undefined);
@@ -540,7 +586,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
             'success'
           );
         }
-        await loadSoData();
+        await loadSoData(undefined, true);
       } else {
         if (onNotify) onNotify(`Gagal sinkronisasi: ${res.error}`, 'error');
       }
@@ -573,7 +619,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
                 'success'
               );
             }
-            await loadSoData();
+            await loadSoData(undefined, true);
           } else {
             if (onNotify) onNotify(`Gagal kalkulasi ulang: ${res.error}`, 'error');
           }

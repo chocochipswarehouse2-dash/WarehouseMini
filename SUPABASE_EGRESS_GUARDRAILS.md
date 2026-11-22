@@ -54,11 +54,34 @@ Setiap kali membuat modul baru, menambah fitur sync/notifikasi, atau memperbaiki
 - Ingat bahwa di Desktop (`>= 1024px`), hingga **4 tab halaman** bisa tetap *mounted* secara bersamaan di latar belakang (`document.visibilityState` tetap `'visible'`).
 - Oleh karena itu, komponen halaman **TIDAK BOLEH** menjalankan polling agresif terus-menerus selama mounted jika halaman tersebut bukan fokus utama, atau harus memakai interval hemat (`>= 60–180 detik`).
 
+### Rule 8 — `master_produk.dealpos_channels` Wajib Format Flat Non-Zero (Tanpa Duplikasi `b`/`d`/`cabang` & Key `:0`)
+- Jangan pernah menyimpan duplikat objek bersarang (`b`, `d`, `cabang`), `total_stok`, atau ~23 outlet bernilai `0` di kolom JSONB `master_produk.dealpos_channels` (sebelumnya membengkakkan 29.885 baris menjadi **34–39 MB** per full sync).
+- Simpan HANYA key flat bernilai non-zero + `TP` (Tag Price), misal `{"TP":395000,"MAP":3,"CPJ":1}`, sehingga total tabel turun **~87,8% menjadi ~4,16 MB** (100% lossless; outlet yang tidak ada otomatis dibaca `0` oleh `extractProductFromRow`).
+- Utility pemadatan aman tersedia di `tools/compact_master_dealpos_channels.cjs`.
+
+### Rule 9 — Service Worker & `wms_system_docs` Wajib Watermark `updated_at` (~180 Byte) + Filter Realtime
+- Background Service Worker (`public/pwa-extras.js`) **DILARANG** polling setiap 20 detik. Gunakan interval minimal **180 detik**, query watermark `select=section_id,updated_at` sebelum menarik konten dokumen (`wms_chat_rooms_index_v1`, `recount_active_queue`), dan delta `created_at=gt...` / `updated_at=gt...` dengan proyeksi kolom minimal.
+- Subscription `postgres_changes` pada `wms_system_docs` **WAJIB** menggunakan `filter: section_id=eq.<key>` agar dokumen non-chat berukuran 60–105 KB (`recount_audit_results`, `produksi_qty_nota_map`, `wms_putaway_tasks_v1`) tidak ikut di-fanout ke semua perangkat.
+- Subscription `postgres_changes` pada `master_produk` **DILARANG** dipasang global di `App.tsx` (gunakan `broadcast('catalog_updated')` + watermark delta).
+- Query `stock_opname_queue` **WAJIB** terfilter per `status` (`PENDING` default) dengan SWR cache + debounce Realtime (`>= 1500 ms`), bukan menarik 17.000+ baris historis (~8,64 MB) setiap buka halaman atau setiap batch approve.
+
 ---
 
-## 3. Checklist Audit Sebelum Merilis Fitur Baru
+## 3. Audit Tahap 2 (21 November 2026)
+
+Pasca perbaikan Tahap 1, lonjakan sisa **~204,9 MB/hari PostgREST (95,7%)** + **~9,3 MB/hari Realtime (4,3%)** berhasil diidentifikasi dari audit langsung ke tabel produksi:
+1. **Bloat `master_produk.dealpos_channels`**: 29.885 baris × ~1.089 byte JSONB duplikat = **~34–39 MB** per full sync (dipadatkan -87,8% ke **~4,16 MB**).
+2. **Hidden Service Worker Polling (`public/pwa-extras.js`)**: Menarik `wms_system_docs`, `manual_shipment` (dengan `notes_paket`), `lembur`, `perijinan_cuti`, `izin_pulang_cepat` setiap **20 detik** tanpa watermark (diubah ke 180 detik + watermark `updated_at` + delta filter).
+3. **`stock_opname_queue` Full-Table Fetch Storm**: 17.338 baris (**8,64 MB**) ditarik penuh (`ALL`, `limit=100000`) saat buka halaman & tanpa debounce di setiap event Realtime (diubah ke status-scoped `PENDING` default + limit 500 histori + SWR cache + debounce 1,5 detik).
+4. **Live Chat `wms_system_docs` Unfiltered Realtime & Tab Focus GET**: Dipersempit ke `filter=section_id=eq.wms_chat_rooms_index_v1` & tombstones, parsing langsung dari payload Realtime, dan cek watermark ~180 byte saat `focus`/`visibilitychange`/120s timer.
+5. **Role-Gating Realtime Lanjutan (`App.tsx`)**: Menghapus listener global `master_produk`, memindahkan `log_produk` & `peminjaman` ke `!isStoreOrCsOnly`, serta gating `retur_barang`, HR, dan `penerimaan_recount_queue`.
+
+---
+
+## 4. Checklist Audit Sebelum Merilis Fitur Baru
 Sebelum menyatakan tugas selesai, pastikan:
 - [ ] Tidak ada `setInterval` baru dengan interval `< 30000 ms` yang memanggil `supabaseFetch` / `fetch(...)`.
 - [ ] Tidak ada query list baru dengan `select=*` tanpa `limit`.
-- [ ] Semua listener Realtime baru sudah di-cleanup di `return () => { ... }` dan di-gate sesuai role yang berkepentingan.
+- [ ] Semua listener Realtime baru sudah di-cleanup di `return () => { ... }`, di-gate sesuai role, dan memakai `filter:` jika mendengar tabel besar seperti `wms_system_docs`.
 - [ ] Jika ada data yang sering dibaca banyak komponen, sudah ada SWR cache / deduplikasi.
+- [ ] Data JSONB di `master_produk.dealpos_channels` tetap flat non-zero tanpa key `:0` atau duplikat `b`/`d`/`cabang`.

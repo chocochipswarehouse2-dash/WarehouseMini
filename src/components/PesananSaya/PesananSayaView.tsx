@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Package, LayoutDashboard, Truck, Store, ShoppingBag, 
-  Globe, ShoppingCart, Tag, Search, Radio 
+  Package, Store, ShoppingBag, 
+  Globe, ShoppingCart, Tag, Radio 
 } from 'lucide-react';
 import { UserSession, ProductItem } from '../../types';
 import { ManualShipmentTab } from './ManualShipmentTab';
@@ -14,7 +14,7 @@ interface PesananSayaViewProps {
   onRefreshCatalog?: () => Promise<void> | void;
 }
 
-type TabType = 'dashboard' | 'manual_shipment' | 'shopee' | 'iglive' | 'tiktok' | 'website' | 'woocommerce' | 'lazada';
+type TabType = 'manual_shipment' | 'shopee' | 'iglive' | 'tiktok' | 'website' | 'woocommerce' | 'lazada';
 
 import { hasPermission, isSuperadmin } from '../../services/permissions';
 import { ShopeeTab } from './ShopeeTab';
@@ -40,7 +40,6 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
   const userIsAdmin = isSuperadmin(session);
   
   const allTabs: TabConfig[] = [
-    { id: 'dashboard', label: 'Dashboard', shortLabel: 'Dashboard', icon: LayoutDashboard, color: 'bg-blue-600 shadow-blue-600/25 ring-blue-500/50', permissionKey: 'tab_ops_pesanan_dashboard' },
     { id: 'manual_shipment', label: 'Store', shortLabel: 'Store', icon: Store, color: 'bg-indigo-600 shadow-indigo-600/25 ring-indigo-500/50', permissionKey: 'tab_ops_pesanan_manual_shipment' },
     { id: 'shopee', label: 'Shopee', shortLabel: 'Shopee', icon: ShoppingBag, color: 'bg-orange-600 shadow-orange-600/25 ring-orange-500/50', permissionKey: 'tab_ops_pesanan_shopee' },
     { id: 'website', label: 'Website', shortLabel: 'Website', icon: Globe, color: 'bg-cyan-600 shadow-cyan-600/25 ring-cyan-500/50', permissionKey: 'tab_ops_pesanan_website' },
@@ -62,13 +61,14 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
       }
     }
     if (tabs.some(t => t.id === 'manual_shipment')) return 'manual_shipment';
-    return tabs.length > 0 ? tabs[0].id : 'dashboard';
+    return tabs.length > 0 ? tabs[0].id : 'manual_shipment';
   });
 
   useEffect(() => {
     const applyTarget = (detail: any) => {
       if (!detail) return;
-      const targetTab = (detail.tab || detail.subTab || 'manual_shipment') as TabType;
+      const requestedTab = detail.tab || detail.subTab || 'manual_shipment';
+      const targetTab = (requestedTab === 'dashboard' ? 'manual_shipment' : requestedTab) as TabType;
       if (tabs.some(t => t.id === targetTab)) {
         setActiveTab(targetTab);
       }
@@ -103,7 +103,7 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
   );
 
   return (
-    <div className="flex flex-col space-y-3 pb-8">
+    <div className="flex flex-col space-y-2 sm:space-y-3 pb-6 sm:pb-8">
       {/* Header & Tabs Style Quality Control - Hemat Area Kerja & Rapi di HP */}
       <div className="bg-slate-100/90 dark:bg-[#09090b]/90 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs shrink-0 print:hidden">
         <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar scroll-smooth py-0.5 px-0.5">
@@ -116,10 +116,10 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
                 type="button"
                 id={`tab-pesanan-${tab.id}`}
                 onClick={() => setActiveTab(tab.id as TabType)}
-                className={`flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-2 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm whitespace-nowrap shrink-0 transition-all duration-200 cursor-pointer select-none ${
+                className={`flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-2 sm:py-2 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm whitespace-nowrap shrink-0 transition-all duration-200 cursor-pointer select-none ${
                   isActive
-                    ? `${tab.color} text-white shadow-md ring-1`
-                    : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
+                    ? `${tab.color} text-white shadow-sm ring-1`
+                    : 'bg-white/80 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
@@ -156,45 +156,6 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
               <p className="text-sm text-slate-500 dark:text-slate-400">
                 Anda tidak memiliki akses ke fitur pesanan apapun. Silakan hubungi Superadmin.
               </p>
-            </div>
-          </div>
-        )}
-        
-        {tabs.length > 0 && activeTab === 'dashboard' && (
-          <div className="py-2">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {/* Dummy Dashboard Content as requested */}
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-                <h3 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-2 border-b border-slate-100 dark:border-slate-800 pb-3 flex items-center gap-2">
-                  <LayoutDashboard className="w-4 h-4 text-primary-500" />
-                  Progress Semua Penanganan
-                </h3>
-                <div className="space-y-2">
-                  <div>
-                    <div className="flex justify-between text-xs font-bold mb-1.5">
-                      <span className="text-slate-600 dark:text-slate-300">Manual Shipment</span>
-                      <span className="text-indigo-600 dark:text-indigo-400">Loading...</span>
-                    </div>
-                    <div className="h-2.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                      <div className="h-full bg-indigo-500 w-1/2"></div>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-xs font-bold mb-1.5">
-                      <span className="text-slate-600 dark:text-slate-300">Shopee</span>
-                      <span className="text-orange-600 dark:text-orange-400">Loading...</span>
-                    </div>
-                    <div className="h-2.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                      <div className="h-full bg-orange-500 w-1/3"></div>
-                    </div>
-                  </div>
-                  <div className="pt-4 mt-2 border-t border-slate-100 dark:border-slate-800">
-                    <p className="text-xs text-slate-500 text-center">
-                      Dashboard utama ini nantinya akan menampilkan progress gabungan pesanan Store, Shopee, Website, dan channel lainnya secara real-time.
-                    </p>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         )}

@@ -781,6 +781,9 @@ class LiveChatManager {
   private hasSeededUnread = false;
   private syncTimer: any = null;
   private swListenerBound = false;
+  private lastServerRoomsUpdatedAt = '';
+  private lastServerTombstonesUpdatedAt = '';
+  private roomsSyncInFlight: Promise<ChatRoom[]> | null = null;
 
   public subscribe(listener: ChatStateListener): () => void {
     this.listeners.add(listener);
@@ -1050,13 +1053,13 @@ class LiveChatManager {
       clearInterval(this.syncTimer);
       this.syncTimer = null;
     }
-    // Low-egress fallback sync + Presence Heartbeat (Realtime broadcast & postgres_changes handle instant delivery)
+    // Ultra-low-egress watermark fallback sync + Presence Heartbeat (every 120s; checks ~180B updated_at first -> 0 KB content if unchanged)
     this.syncTimer = setInterval(() => {
       if (this.currentSession?.username && typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        void this.syncRoomsFromServer(true);
+        void this.syncRoomsIfChanged(true);
         this.trackPresence();
       }
-    }, 60000);
+    }, 120000);
 
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window && !this.crossTabChannel) {
       try {
@@ -1099,13 +1102,13 @@ class LiveChatManager {
       }
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible' && this.currentSession?.username) {
-          void this.syncRoomsFromServer(true);
+          void this.syncRoomsIfChanged(true);
           this.trackPresence();
         }
       });
       window.addEventListener('focus', () => {
         if (this.currentSession?.username) {
-          void this.syncRoomsFromServer(true);
+          void this.syncRoomsIfChanged(true);
           this.trackPresence();
         }
       });
@@ -1240,29 +1243,43 @@ class LiveChatManager {
         }
       });
 
-      // Postgres Changes Event 5: Listen to wms_system_docs updates (multi-device DB sync)
+      // Postgres Changes Event 5: Filtered ONLY to chat rooms index & deletion tombstones
+      // (blocks 105KB recount_audit_results, 62KB produksi_qty_nota_map, 57KB putaway & other rooms' message blobs from Realtime fanout!)
       ch.on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'wms_system_docs' },
+        { event: '*', schema: 'public', table: 'wms_system_docs', filter: `section_id=eq.${ROOMS_INDEX_DOC_KEY}` },
         (payload: any) => {
-          const docKey = String(
-            payload?.new?.doc_key ||
-              payload?.new?.section_id ||
-              payload?.old?.doc_key ||
-              payload?.old?.section_id ||
-              ''
-          );
-          if (docKey === ROOMS_INDEX_DOC_KEY || docKey === ROOMS_TOMBSTONE_DOC_KEY) {
-            void this.syncRoomsFromServer(true);
-          } else if (docKey.startsWith(ROOM_MSGS_DOC_PREFIX)) {
-            const changedRoomId = docKey.slice(ROOM_MSGS_DOC_PREFIX.length);
-            if (
-              changedRoomId &&
-              (this.state.activeRoomId === changedRoomId || Boolean(this.state.messagesByRoom[changedRoomId]))
-            ) {
-              void this.syncRoomMessagesFromServer(changedRoomId);
+          const newUpdatedAt = String(payload?.new?.updated_at || '');
+          if (newUpdatedAt && newUpdatedAt === this.lastServerRoomsUpdatedAt) return;
+          const rawContent = payload?.new?.content;
+          if (rawContent !== undefined && rawContent !== null) {
+            let parsedRooms: ChatRoom[] | null = null;
+            if (Array.isArray(rawContent)) {
+              parsedRooms = rawContent as ChatRoom[];
+            } else if (typeof rawContent === 'string') {
+              try {
+                const p = JSON.parse(rawContent);
+                if (Array.isArray(p)) parsedRooms = p as ChatRoom[];
+              } catch {}
+            }
+            if (Array.isArray(parsedRooms)) {
+              if (newUpdatedAt) this.lastServerRoomsUpdatedAt = newUpdatedAt;
+              void this.applyAuthoritativeRoomsSnapshot(parsedRooms, null, true);
+              return;
             }
           }
+          void this.syncRoomsFromServer(true);
+        }
+      );
+
+      ch.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'wms_system_docs', filter: `section_id=eq.${ROOMS_TOMBSTONE_DOC_KEY}` },
+        (payload: any) => {
+          const newUpdatedAt = String(payload?.new?.updated_at || '');
+          if (newUpdatedAt && newUpdatedAt === this.lastServerTombstonesUpdatedAt) return;
+          if (newUpdatedAt) this.lastServerTombstonesUpdatedAt = newUpdatedAt;
+          void this.syncRoomsFromServer(true);
         }
       );
 
@@ -1384,38 +1401,99 @@ class LiveChatManager {
   }
 
   /**
+   * Ultra-low-egress background sync: checks ~180-byte updated_at watermark first.
+   * Only downloads the 29 KB rooms index if updated_at actually changed (or pending offline flush exists).
+   */
+  public async syncRoomsIfChanged(triggerNotification = false): Promise<ChatRoom[]> {
+    if (!this.currentSession?.username) return [];
+    if (this.pendingUpsertRooms.size > 0 || !this.lastServerRoomsUpdatedAt) {
+      return this.syncRoomsFromServer(triggerNotification);
+    }
+    try {
+      const rows = await supabaseFetch<Array<{ section_id?: string; updated_at?: string }>>(
+        'wms_system_docs',
+        'GET',
+        null,
+        `select=section_id,updated_at&section_id=in.(${ROOMS_INDEX_DOC_KEY},${ROOMS_TOMBSTONE_DOC_KEY})`
+      );
+      if (Array.isArray(rows) && rows.length > 0) {
+        const idxRow = rows.find((r) => r.section_id === ROOMS_INDEX_DOC_KEY);
+        const tombRow = rows.find((r) => r.section_id === ROOMS_TOMBSTONE_DOC_KEY);
+        const idxChanged = Boolean(idxRow?.updated_at && idxRow.updated_at !== this.lastServerRoomsUpdatedAt);
+        const tombChanged = Boolean(tombRow?.updated_at && tombRow.updated_at !== this.lastServerTombstonesUpdatedAt);
+        if (!idxChanged && !tombChanged) {
+          return this.state.rooms;
+        }
+      }
+    } catch {
+      return this.state.rooms;
+    }
+    return this.syncRoomsFromServer(triggerNotification);
+  }
+
+  /**
    * Syncs the authoritative rooms index and deletion tombstones from wms_system_docs.
    * Ensures any room deleted on Laptop is immediately removed from HP's state & IndexedDB.
    */
   public async syncRoomsFromServer(triggerNotification = false): Promise<ChatRoom[]> {
     if (!this.currentSession?.username) return [];
-    const me = this.currentSession.username.trim().toLowerCase();
-    this.state.isLoadingRooms = true;
-    this.notify();
+    if (this.roomsSyncInFlight) return this.roomsSyncInFlight;
 
-    try {
-      // Retry flushing any pending rooms that previously failed to save while offline
-      if (this.pendingUpsertRooms.size > 0) {
-        const pendingBatch = Array.from(this.pendingUpsertRooms.values());
-        const flushed = await this.mutateRoomsIndexOnServer({
-          mode: 'upsert',
-          upsertRooms: pendingBatch,
-        });
-        if (flushed) {
-          for (const pr of pendingBatch) {
-            this.pendingUpsertRooms.delete(pr.id);
+    this.roomsSyncInFlight = (async () => {
+      this.state.isLoadingRooms = true;
+      this.notify();
+
+      try {
+        // Retry flushing any pending rooms that previously failed to save while offline
+        if (this.pendingUpsertRooms.size > 0) {
+          const pendingBatch = Array.from(this.pendingUpsertRooms.values());
+          const flushed = await this.mutateRoomsIndexOnServer({
+            mode: 'upsert',
+            upsertRooms: pendingBatch,
+          });
+          if (flushed) {
+            for (const pr of pendingBatch) {
+              this.pendingUpsertRooms.delete(pr.id);
+            }
           }
         }
+
+        const [indexRes, tombRes] = await Promise.all([
+          fetchSystemDocJsonDetailed<ChatRoom[]>(ROOMS_INDEX_DOC_KEY),
+          fetchSystemDocJsonDetailed<Record<string, string>>(ROOMS_TOMBSTONE_DOC_KEY),
+        ]);
+
+        if (indexRes.updatedAt) this.lastServerRoomsUpdatedAt = indexRes.updatedAt;
+        if (tombRes.updatedAt) this.lastServerTombstonesUpdatedAt = tombRes.updatedAt;
+
+        const serverRooms = indexRes.ok && Array.isArray(indexRes.data) ? indexRes.data : null;
+        const serverTombstones = tombRes.ok && tombRes.data && typeof tombRes.data === 'object' ? tombRes.data : null;
+
+        return await this.applyAuthoritativeRoomsSnapshot(serverRooms, serverTombstones, triggerNotification);
+      } catch (err) {
+        console.warn('[LiveChat] syncRoomsFromServer warning:', err);
+        return this.state.rooms;
+      } finally {
+        this.state.isLoadingRooms = false;
+        this.notify();
       }
+    })();
 
-      const [indexRes, tombRes] = await Promise.all([
-        fetchSystemDocJsonDetailed<ChatRoom[]>(ROOMS_INDEX_DOC_KEY),
-        fetchSystemDocJsonDetailed<Record<string, string>>(ROOMS_TOMBSTONE_DOC_KEY),
-      ]);
+    try {
+      return await this.roomsSyncInFlight;
+    } finally {
+      this.roomsSyncInFlight = null;
+    }
+  }
 
-      const serverRooms = indexRes.ok && Array.isArray(indexRes.data) ? indexRes.data : null;
-      const serverTombstones = tombRes.ok && tombRes.data && typeof tombRes.data === 'object' ? tombRes.data : null;
-
+  private async applyAuthoritativeRoomsSnapshot(
+    serverRooms: ChatRoom[] | null,
+    serverTombstones: Record<string, string> | null,
+    triggerNotification = false
+  ): Promise<ChatRoom[]> {
+    if (!this.currentSession?.username) return [];
+    const me = this.currentSession.username.trim().toLowerCase();
+    try {
       if (serverTombstones) {
         for (const [rid, ts] of Object.entries(serverTombstones)) {
           if (!rid || typeof ts !== 'string') continue;
@@ -1598,13 +1676,28 @@ class LiveChatManager {
         }
       }
 
+      const prevActiveRoom = this.state.activeRoomId
+        ? this.state.rooms.find((r) => r.id === this.state.activeRoomId)
+        : undefined;
+      const nextActiveRoom = this.state.activeRoomId
+        ? myRooms.find((r) => r.id === this.state.activeRoomId)
+        : undefined;
+
       this.state.rooms = myRooms;
       this.state.isLoadingRooms = false;
       this.notify();
 
-      // Also delta-sync messages for the currently open room so message deletions/edits sync across devices
-      if (this.state.activeRoomId) {
-        void this.syncRoomMessagesFromServer(this.state.activeRoomId);
+      // Delta-sync active room messages only on explicit refresh OR when active room metadata actually changed
+      if (this.state.activeRoomId && nextActiveRoom) {
+        const activeMetaChanged =
+          !triggerNotification ||
+          !prevActiveRoom ||
+          prevActiveRoom.last_message_id !== nextActiveRoom.last_message_id ||
+          prevActiveRoom.updated_at !== nextActiveRoom.updated_at ||
+          prevActiveRoom.last_message_text !== nextActiveRoom.last_message_text;
+        if (activeMetaChanged) {
+          void this.syncRoomMessagesFromServer(this.state.activeRoomId);
+        }
       }
 
       return myRooms;

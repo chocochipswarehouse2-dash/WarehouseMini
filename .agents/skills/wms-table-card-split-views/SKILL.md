@@ -1,31 +1,35 @@
 ---
 name: wms-table-card-split-views
-description: Standard blueprint for designing and maintaining Table View (Versi Tabel), Card Grid View (Versi Kartu), and Master-Detail Split View (Panel Rapi) in WMS Inventory, including column proportions, sorting, multi-select batch actions, and rendering performance. Activate whenever working on data tables, order recaps, inventory lists, or view mode switchers.
+description: Standard blueprint for designing and maintaining the unified 2-Mode Views — Table View (Desktop Executive Table + Mobile Fit-to-Screen Compact List) and Card View (Single-Elevation Native App Cards) — across all WMS modules. Supersedes the deprecated 3-mode Panel Rapi (split) view. Always pair with wms-app-view-consistency.
 ---
 
-# WMS Multi-View Architecture: Panel Rapi (Split), Versi Tabel & Versi Kartu
+# WMS Unified 2-Mode Views: Versi Tabel & Versi Kartu
 
-Whenever a module displays a collection of orders, shipments, returns, or inventory records, follow these exact structural standards for the View Mode Switcher and its three presentation modes (`split`, `table`, `card`), as well as rendering performance rules.
+> **Update Standar Global**: Mode **`Panel Rapi` (`split`) resmi dihapus/dideprekasi** pada halaman rekap dan daftar operasional WMS demi kesederhanaan, konsistensi lintas modul, dan ruang kerja yang lebih lega. Seluruh modul daftar/rekap WAJIB hanya menyediakan **2 opsi tampilan (`Tabel` & `Kartu`)** dengan merujuk pada `.agents/skills/wms-app-view-consistency/SKILL.md`.
 
 ---
 
-## 1. View Mode Switcher Standard
+## 1. 2-Mode View Switcher Standard
 
-Persist the user's preferred view mode in `sessionStorage` and render a unified segmented button group in the top-right toolbar:
+Persist the user's preferred view mode in `sessionStorage` with responsive default (`'card'` on `< 768px`, `'table'` on `>= 768px`), and render a clean 2-option segmented switcher in the top-right toolbar:
 
 ```tsx
-<div className="flex border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-slate-800 shadow-xs">
-  {/* 1. Panel Rapi (Master-Detail Split View) */}
-  <button type="button" onClick={() => handleSetViewMode('split')} className={...}>
-    <Layers className="w-3.5 h-3.5" />
-    <span>Panel Rapi</span>
-  </button>
-  {/* 2. Versi Tabel (Full Spreadsheet Table) */}
+const [viewMode, setViewMode] = useState<'table' | 'card'>(() => {
+  if (typeof window !== 'undefined') {
+    const saved = sessionStorage.getItem('module_view_mode');
+    if (saved === 'table' || saved === 'card') return saved;
+    return window.innerWidth < 768 ? 'card' : 'table';
+  }
+  return 'table';
+});
+```
+
+```tsx
+<div className="inline-flex p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100/80 dark:bg-slate-800">
   <button type="button" onClick={() => handleSetViewMode('table')} className={...}>
     <Table className="w-3.5 h-3.5" />
     <span>Tabel</span>
   </button>
-  {/* 3. Versi Kartu (Responsive Card Grid) */}
   <button type="button" onClick={() => handleSetViewMode('card')} className={...}>
     <LayoutGrid className="w-3.5 h-3.5" />
     <span>Kartu</span>
@@ -35,49 +39,36 @@ Persist the user's preferred view mode in `sessionStorage` and render a unified 
 
 ---
 
-## 2. Mode 1: Versi Panel Rapi / Master-Detail Split View (`viewMode === 'split'`)
+## 2. Mode 1: Versi Tabel (`viewMode === 'table'`) — Dual-Mode Desktop & Mobile
 
-Designed for maximum visual clarity without cramped columns. Splits the workspace into a **Left Master List** and a **Right Detail & Action Workspace** (`grid grid-cols-1 lg:grid-cols-12 gap-4 items-start`):
+### A. Desktop Executive Table (`hidden md:block`)
+1. **Maksimal 5–6 Kolom Proporsional (`lg:table-fixed w-full`)**:
+   - Checkbox (`w-10`)
+   - Col 1 (`Pesanan & Store`): `lg:w-[20%]` — `#no_pesanan` (mono), 1 status badge, Store · Tanggal, PIC · Ref/DPOS (tipografi bersih, **TANPA kotak abu-abu bersarang**).
+   - Col 2 (`Customer & Kurir`): `lg:w-[17%]` — Nama Customer, No. Telp (mono), Kurir, alamat clamped 2 baris.
+   - Col 3 (`Produk`): `lg:w-[27%]` — Daftar item dengan pembatas hairline `divide-y` (Nama, Size, `×qty`, SKU, fulfillment, catatan alter).
+   - Col 4 (`Dokumen & Resi`): `lg:w-[20%]` — Ringkasan 2–3 baris rapi (`SJ DealPOS`, `Resi / Jadwal`, `Pick ✓ · Label ✓`).
+   - Col 5 (`Aksi`): `lg:w-[16%] text-right` — **Hanya 2 kontrol seragam**: `1 Primary Contextual CTA` + tombol `⋯` pembuka **Action Sheet Terkelompok** (DILARANG menaruh `<select>` mentah atau menebar tombol aksi di banyak kolom!).
 
-### A. Left Pane (`lg:col-span-5 xl:col-span-4`) — Master List & Quick Filters
-1. **Header**: Module title on the left (`font-extrabold text-base`), `{filteredOrders.length} ditampilkan` on the right.
-2. **Stage Filter Pills (`rounded-full`)**: `Pesanan Baru`, `Sedang Diproses`, `Selesai`, `Dibatalkan`, `Semua` with live counts. Active pill uses `bg-indigo-600 text-white border-indigo-600 font-bold`.
-3. **Search & Compact Sort/Filter Bar**: Search input + `Urutkan` dropdown + `Jenis` selector + `Filter` button (expands advanced filters inline) + `Reset` button.
-4. **Sub-Filter Pills (Print Status)**: `Semua Status Cetak`, `Belum Cetak Label`, `Belum Cetak Picking`, `Sudah Cetak Label`.
-5. **Multi-Select Row**: `Pilih semua` checkbox + compact batch action buttons (`SJ Struk`, `Label A6`, `Picking`, `WA Grup`) when `selectedOrders.size > 0`.
-6. **Scrollable Master Card List (`max-h-[calc(100vh-270px)] overflow-y-auto divide-y`)**:
-   - Active card highlight: `border-l-4 border-l-indigo-600 bg-indigo-50/35 dark:bg-indigo-950/30`.
-   - **Row 1**: Checkbox + Customer Name (`font-extrabold text-xs sm:text-sm truncate`) + Stage Pill on the right.
-   - **Row 2**: `{order.no_pesanan} · {order.nama_pengirim}` (`text-[11px] text-slate-500 pl-6 truncate`).
-   - **Row 3**: First product name & size + `+{extraCount} lainnya` (`text-xs font-semibold pl-6 truncate`).
-   - **Row 4**: **4-Segment Progress Bar** (`grid-cols-4 gap-1.5 h-1` for `Label`, `Picking`, `Resi`, `Kirim`) + status text on the right (`Menunggu resi` or resi number).
-
-### B. Right Pane (`lg:col-span-7 xl:col-span-8 lg:sticky lg:top-3`) — Detail & Action Workspace
-1. **Top Header**:
-   - Left: Customer Name (`text-lg sm:text-xl font-extrabold`) + Stage Badge + `Fulfillment Anda` badge + subtitle (`#no_pesanan · nama_pengirim · tanggal · jasa_kirim`).
-   - Right: Primary action buttons (`Kirim` / `Sudah Kirim WH`, `SJ Struk`, and `Detail` eye icon).
-2. **4-Step Interactive Workflow Stepper (`grid-cols-2 sm:grid-cols-4 gap-2.5`)**:
-   - `1. Label`, `2. Picking`, `3. Resi`, `4. Kirim`.
-   - Completed steps show light emerald background (`bg-emerald-50/70 border-emerald-400`) and an indigo circle with a white checkmark (`✓`). Clicking steps 1–3 triggers the corresponding print or resi modal (for authorized roles).
-3. **Middle 2-Column Body (`grid-cols-1 xl:grid-cols-12 gap-5`)**:
-   - **Left (`xl:col-span-7`) — `Rincian produk ({totalPcs} pcs)`**: Clean item cards showing product name, size, `x{qty}`, fulfillment store/marketplace, SKU, alteration instructions/photos, and right-aligned item status/action (`Tandai Terima`, `Sudah Terima`, `Belum Terima WH`, `Tandai Sold`, `Pulihkan`).
-   - **Right (`xl:col-span-5`) — `Resi` & `Info pesanan`**:
-     - `Resi`: Shows `Menunggu resi` + `+ Input Resi` button, or the resi number + Copy + `WA Customer` + `Ubah Resi`.
-     - `Info pesanan`: 12-column key-value grid (`PIC`, `Ref`, `DealPOS`, `SJ & Jadwal`, `SJ DealPOS`, `No. Telp`, `Alamat`, `Catatan`).
-4. **Bottom 2-Column Footer (`Cetak` & `Aksi lainnya`)**:
-   - **Left (`Cetak`)**: Pill buttons for `✓ Label A6`, `✓ Picking A4`, `Picking WA Grup`, `SJ Struk Kasir`, `SPK Penjahit`.
-   - **Right (`Aksi lainnya`)**: Pill buttons for all role-authorized actions (`Cetak SPK Gudang`, `Tandai Dikirim Store`, `Tandai Diterima Warehouse`, `Input Bukti Kirim & Selesai`, `Input SJ DealPOS`, `Update Resi`, `Notifikasi WA ke Store`, `Kirim WA Alter`, `Edit Pesanan`, `Batalkan Pesanan`, `Hapus`, or `Ajukan Batal ke Admin`).
+### B. Mobile Native Compact List-Table (`md:hidden`) — ZERO Horizontal Scroll
+- Di layar HP (`< 768px`), mode `Tabel` **WAJIB** tampil sebagai daftar ringkas pas 100% lebar layar (`divide-y bg-white dark:bg-slate-900`) tanpa scroll horizontal:
+  - Ketuk baris langsung membuka modal Detail Lengkap.
+  - Baris 1: Nama Customer (bold) + 1 status badge ringkas.
+  - Baris 2: `#no_pesanan` (mono) · Store · Total Pcs · Kurir.
+  - Baris 3: Item pertama (`+N item`) + indikator status mikro (`Alter`, `Resi ✓`, `SJ ✓`).
+  - Sisi kanan: Tombol `⋯` (`w-10 h-10`) membuka **Native Slide-Up Bottom Action Sheet**.
 
 ---
 
-## 3. Mode 2: Versi Tabel (`viewMode === 'table'`)
+## 3. Mode 2: Versi Kartu (`viewMode === 'card'`) — Single-Elevation App Cards
 
-For users who prefer a traditional multi-column spreadsheet view:
+- Grid responsif: `grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-2.5 sm:gap-4 p-1.5 sm:p-4`.
+- **Single-Elevation Discipline**: 1 permukaan kartu bersih (`rounded-2xl border bg-white dark:bg-slate-900`) dipisah garis tipis `border-slate-100 dark:border-slate-800` — **ZERO kotak berwarna bersarang di dalam kartu**.
+- **Footer Seragam 2 Kontrol**: `1 Primary Contextual CTA` (`flex-1 h-10 sm:h-9 rounded-xl`) + tombol `Aksi ⋯` (`h-10 sm:h-9 rounded-xl`) yang membuka Bottom Action Sheet di HP / Action Modal di Desktop.
 
-1. **Proportional Column Widths (`table-auto lg:table-fixed`)**:
-   - Explicitly assign percentage widths on `lg:` headers so columns never crush each other:
-     - Checkbox: `w-9 text-center`
-     - Col 1 (`No. Pesanan & Store`): `lg:w-[20%]`
+---
+
+## 4. Legacy Reference Notes (Sorting & Performance)
      - Col 2 (`Customer & Pengiriman`): `lg:w-[16%]`
      - Col 3 (`Rincian Produk & Alteration`): `lg:w-[23%]`
      - Col 4 (`DealPOS (SJ & Jadwal)`): `lg:w-[15%]`

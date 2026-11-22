@@ -153,7 +153,6 @@ import {
   syncSmartLowEgressCache,
   getPickingPriority,
   isWarehouseLocation,
-  isBulkMasterImportActive,
 } from './services/supabase';
 import { invalidateManualShipmentsCache } from './services/gasManualShipment';
 import { WmsUser } from './types';
@@ -1802,10 +1801,8 @@ export default function App() {
     let debounceCatalogTimer: any = null;
     let pickingDebounceTimer: any = null;
     let logDeltaFlushTimer: any = null;
-    let masterUpsertFlushTimer: any = null;
     let incomingPickingRows: Array<{ no_sj: string; tujuan?: string; nama_produk?: string; sku?: string }> = [];
     const pendingLogDeltaMap = new Map<string, number>();
-    const pendingMasterUpsertMap = new Map<string, ProductItem>();
 
     const flushLogDeltas = () => {
       logDeltaFlushTimer = null;
@@ -1833,145 +1830,95 @@ export default function App() {
       }
     };
 
-    const flushMasterUpserts = () => {
-      masterUpsertFlushTimer = null;
-      if (pendingMasterUpsertMap.size === 0) return;
-      if (isBulkMasterImportActive()) {
-        pendingMasterUpsertMap.clear();
-        return;
-      }
-      const batch = new Map(pendingMasterUpsertMap);
-      pendingMasterUpsertMap.clear();
-
-      bulkUpsertProductsInLocalDb(Array.from(batch.values())).catch(() => {});
-      setProductDatabase((prev) => {
-        const indexBySku = new Map<string, number>();
-        for (let i = 0; i < prev.length; i++) {
-          const key = String(prev[i]?.k || '').toUpperCase();
-          if (key) indexBySku.set(key, i);
-        }
-        const next = [...prev];
-        for (const [sku, item] of batch.entries()) {
-          const idx = indexBySku.get(sku);
-          if (idx !== undefined) {
-            next[idx] = { ...next[idx], ...item };
-          } else {
-            next.push(item);
-          }
-        }
-        return next;
-      });
-    };
-
     try {
       const supabase = getSupabaseClient();
       const isStoreOrCsOnly = isStoreAccountSession(session) || isCustomerServiceSession(session);
-      const channel = supabase
-        .channel('wms-realtime-activity')
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'log_produk' },
-          (payload) => {
-            invalidateStokFisikCache();
-            if (payload.eventType === 'INSERT' && payload.new) {
-              const newLog = payload.new as { type?: string; sku?: string; lokasi?: string; qty?: number; invoice?: string };
+      const canListenRetur = canReceiveAdminOrderNotif(session) || isCustomerServiceSession(session);
+      const canListenHr = isWarehouseAccountOnly(session) || canReceiveEmployeeOwnHrNotif(session);
+      const canListenRecount = canReceiveRecountNotif(session);
+      const channel = supabase.channel('wms-realtime-activity');
 
-              // Jangan kirim push notification spam global untuk setiap scan barcode #IN / #OUT biasa!
-              // Hanya kirim notifikasi ke Admin & Warehouse jika ada scan antrian Stock Opname (#SO) baru
-              if (newLog.type === 'SO' && canReceiveAdminOrderNotif(session)) {
-                const soDedupKey = `SO_SCAN_${String(newLog.invoice || newLog.lokasi || Date.now()).toUpperCase()}`;
-                if (!notifiedOrderIdsRef.current.has(soDedupKey)) {
-                  notifiedOrderIdsRef.current.add(soDedupKey);
-                  showPushNotification(`📋 Antrian Stock Opname Baru — Rak ${newLog.lokasi || '-'}`, {
-                    body: `Scan #SO diterima (${newLog.sku || 'Produk'}). Buka Stock Opname untuk review & approval.`,
-                    tag: `so-queue-${newLog.lokasi || 'rak'}`,
-                    page: 'stock_opname',
-                  });
+      // Broadcast ringan untuk SPS baru (tidak mengirim WAL massal ke Store/CS)
+      if (!isStoreOrCsOnly) {
+        channel
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'log_produk' },
+            (payload) => {
+              invalidateStokFisikCache();
+              if (payload.eventType === 'INSERT' && payload.new) {
+                const newLog = payload.new as { type?: string; sku?: string; lokasi?: string; qty?: number; invoice?: string };
+
+                // Jangan kirim push notification spam global untuk setiap scan barcode #IN / #OUT biasa!
+                // Hanya kirim notifikasi ke Admin & Warehouse jika ada scan antrian Stock Opname (#SO) baru
+                if (newLog.type === 'SO' && canReceiveAdminOrderNotif(session)) {
+                  const soDedupKey = `SO_SCAN_${String(newLog.invoice || newLog.lokasi || Date.now()).toUpperCase()}`;
+                  if (!notifiedOrderIdsRef.current.has(soDedupKey)) {
+                    notifiedOrderIdsRef.current.add(soDedupKey);
+                    showPushNotification(`📋 Antrian Stock Opname Baru — Rak ${newLog.lokasi || '-'}`, {
+                      body: `Scan #SO diterima (${newLog.sku || 'Produk'}). Buka Stock Opname untuk review & approval.`,
+                      tag: `so-queue-${newLog.lokasi || 'rak'}`,
+                      page: 'stock_opname',
+                    });
+                  }
                 }
-              }
 
-              void processPickingSync(newLog).catch(console.error);
+                void processPickingSync(newLog).catch(console.error);
 
-              // Queue local state delta (batched so bulk relocations/deletes never clone 28k arrays per row)
-              if (newLog.sku && newLog.lokasi && newLog.qty) {
-                const skuUpper = newLog.sku.toUpperCase();
-                const qty = Number(newLog.qty) || 0;
-                const signed =
-                  newLog.type === 'IN' || newLog.type === 'ADJ_IN'
-                    ? qty
-                    : newLog.type === 'OUT' || newLog.type === 'ADJ_OUT'
-                    ? -qty
-                    : 0;
-                if (signed !== 0) {
-                  pendingLogDeltaMap.set(skuUpper, (pendingLogDeltaMap.get(skuUpper) || 0) + signed);
-                  if (!logDeltaFlushTimer) {
-                    logDeltaFlushTimer = setTimeout(flushLogDeltas, 500);
+                // Queue local state delta (batched so bulk relocations/deletes never clone 28k arrays per row)
+                if (newLog.sku && newLog.lokasi && newLog.qty) {
+                  const skuUpper = newLog.sku.toUpperCase();
+                  const qty = Number(newLog.qty) || 0;
+                  const signed =
+                    newLog.type === 'IN' || newLog.type === 'ADJ_IN'
+                      ? qty
+                      : newLog.type === 'OUT' || newLog.type === 'ADJ_OUT'
+                      ? -qty
+                      : 0;
+                  if (signed !== 0) {
+                    pendingLogDeltaMap.set(skuUpper, (pendingLogDeltaMap.get(skuUpper) || 0) + signed);
+                    if (!logDeltaFlushTimer) {
+                      logDeltaFlushTimer = setTimeout(flushLogDeltas, 500);
+                    }
                   }
                 }
               }
-            }
-            if (payload.eventType === 'INSERT') {
-              const newRow = payload.new as any;
-              if (newRow && newRow.type === 'SO') {
-                syncPendingStockOpnameFromLogProduk().catch(() => {});
-              }
-            }
-            globalRealtimeStore.notify('log_produk', payload);
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'master_produk' },
-          (payload) => {
-            if (isBulkMasterImportActive()) {
-              return;
-            }
-            globalRealtimeStore.notify('master_produk', payload);
-            if (payload.new) {
-              const raw = payload.new as any;
-              const sku = String(raw.sku || raw.k || '').toUpperCase().trim();
-              if (sku) {
-                const item: ProductItem = {
-                  k: sku,
-                  sku: sku,
-                  p: raw.nama_produk || raw.nama || raw.p || sku,
-                  s: raw.size || raw.s || '-',
-                  lokasi: raw.lokasi || 'Warehouse',
-                  category: raw.kategori || raw.category || 'IN',
-                  price: Number(raw.harga || raw.price) || 0,
-                };
-                pendingMasterUpsertMap.set(sku, item);
-                if (!masterUpsertFlushTimer) {
-                  masterUpsertFlushTimer = setTimeout(flushMasterUpserts, 700);
+              if (payload.eventType === 'INSERT') {
+                const newRow = payload.new as any;
+                if (newRow && newRow.type === 'SO') {
+                  syncPendingStockOpnameFromLogProduk().catch(() => {});
                 }
               }
+              globalRealtimeStore.notify('log_produk', payload);
             }
-          }
-        );
-
-      channel
-        .on(
-          'broadcast',
-          { event: 'new_sps_request' },
-          ({ payload }) => {
-            if (payload) {
+          )
+          .on(
+            'broadcast',
+            { event: 'new_sps_request' },
+            ({ payload }) => {
+              if (payload) {
+                invalidatePickingListCache();
+                globalRealtimeStore.notify('peminjaman', { eventType: 'INSERT', new: payload });
+                handleIncomingSpsRef.current(payload);
+              }
+            }
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'peminjaman' },
+            (payload) => {
               invalidatePickingListCache();
-              globalRealtimeStore.notify('peminjaman', { eventType: 'INSERT', new: payload });
-              handleIncomingSpsRef.current(payload);
+              globalRealtimeStore.notify('peminjaman', payload);
+              if (payload.eventType === 'INSERT' && payload.new) {
+                handleIncomingSpsRef.current(payload.new);
+              }
             }
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'peminjaman' },
-          (payload) => {
-            invalidatePickingListCache();
-            globalRealtimeStore.notify('peminjaman', payload);
-            if (payload.eventType === 'INSERT' && payload.new) {
-              handleIncomingSpsRef.current(payload.new);
-            }
-          }
-        );
+          );
+      }
+
+      // NOTE: master_produk postgres_changes sengaja TIDAK di-subscribe global karena 1x import 29.885 SKU
+      // akan meledakkan 39 MB x N user lewat WebSocket WAL. Perubahan master disinkronkan via broadcast('catalog_updated')
+      // + watermark updated_at di syncSmartLowEgressCache().
 
       if (!isStoreOrCsOnly) {
         channel
@@ -2308,8 +2255,10 @@ export default function App() {
               }
             }
           }
-        )
-        .on(
+        );
+
+      if (canListenRetur) {
+        channel.on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'retur_barang' },
           (payload) => {
@@ -2409,19 +2358,23 @@ export default function App() {
               }
             }
           }
-        )
-        .on(
-          'broadcast',
-          { event: 'new_hr_request' },
-          ({ payload }) => {
-            if (payload && payload.sourceTable && payload.record) {
-              handleIncomingHrRequestRef.current(payload.sourceTable, payload.record);
+        );
+      }
+
+      if (canListenHr) {
+        channel
+          .on(
+            'broadcast',
+            { event: 'new_hr_request' },
+            ({ payload }) => {
+              if (payload && payload.sourceTable && payload.record) {
+                handleIncomingHrRequestRef.current(payload.sourceTable, payload.record);
+              }
             }
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'lembur' },
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'lembur' },
           (payload) => {
             if (payload.eventType === 'INSERT' && payload.new) {
               const row = payload.new as any;
@@ -2540,28 +2493,34 @@ export default function App() {
               }
             }
           }
-        )
-        .on(
-          'broadcast',
-          { event: 'new_recount_queue' },
-          ({ payload }) => {
-            if (payload && Array.isArray(payload.items)) {
-              payload.items.forEach((item: any) => {
-                handleIncomingRecountRef.current(item);
-              });
+        );
+      }
+
+      if (canListenRecount) {
+        channel
+          .on(
+            'broadcast',
+            { event: 'new_recount_queue' },
+            ({ payload }) => {
+              if (payload && Array.isArray(payload.items)) {
+                payload.items.forEach((item: any) => {
+                  handleIncomingRecountRef.current(item);
+                });
+              }
             }
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'penerimaan_recount_queue' },
-          (payload) => {
-            if (payload.new) {
-              handleIncomingRecountRef.current(payload.new);
+          )
+          .on(
+            'postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'penerimaan_recount_queue' },
+            (payload) => {
+              if (payload.new) {
+                handleIncomingRecountRef.current(payload.new);
+              }
             }
-          }
-        )
-        .subscribe((status) => {
+          );
+      }
+
+      channel.subscribe((status) => {
           setIsRealtimeConnected(status === 'SUBSCRIBED');
           if (status === 'SUBSCRIBED') {
             globalRealtimeStore.setActiveChannel(channel);
@@ -2572,7 +2531,6 @@ export default function App() {
         if (debounceCatalogTimer) clearTimeout(debounceCatalogTimer);
         if (pickingDebounceTimer) clearTimeout(pickingDebounceTimer);
         if (logDeltaFlushTimer) clearTimeout(logDeltaFlushTimer);
-        if (masterUpsertFlushTimer) clearTimeout(masterUpsertFlushTimer);
         globalRealtimeStore.setActiveChannel(null);
         supabase.removeChannel(channel);
       };
@@ -3149,7 +3107,7 @@ export default function App() {
         ) {
           void triggerServiceWorkerCheckNow();
         }
-      }, 20000);
+      }, 180000);
       return () => {
         clearInterval(swChatKeepAlive);
         window.removeEventListener('pointerdown', handleFirstGesturePermission);
@@ -3377,15 +3335,31 @@ export default function App() {
           } catch {}
         }
 
-        // Cek Antrian Hitung Ulang Fisik baru untuk Admin & Produksi
+        // Cek Antrian Hitung Ulang Fisik baru untuk Admin & Produksi (watermark updated_at dulu -> hemat 19 KB/cek!)
         if (userCanProduksi) {
           try {
-            const docRows = await supabaseFetch<any[]>(
+            const wmRows = await supabaseFetch<Array<{ updated_at?: string }>>(
               'wms_system_docs',
               'GET',
               null,
-              'select=content,updated_at&section_id=eq.recount_active_queue&limit=1'
+              'select=updated_at&section_id=eq.recount_active_queue&limit=1'
             );
+            const cloudRecountUpd = Array.isArray(wmRows) && wmRows[0]?.updated_at ? String(wmRows[0].updated_at) : '';
+            const lastSeenRecountUpd = localStorage.getItem('wms_last_recount_doc_updated_at') || '';
+            const docRows =
+              cloudRecountUpd && cloudRecountUpd === lastSeenRecountUpd
+                ? []
+                : await supabaseFetch<any[]>(
+                    'wms_system_docs',
+                    'GET',
+                    null,
+                    'select=content,updated_at&section_id=eq.recount_active_queue&limit=1'
+                  );
+            if (cloudRecountUpd && cloudRecountUpd !== lastSeenRecountUpd) {
+              try {
+                localStorage.setItem('wms_last_recount_doc_updated_at', cloudRecountUpd);
+              } catch {}
+            }
             if (isMounted && Array.isArray(docRows) && docRows.length > 0 && docRows[0]?.content) {
               let parsedMap = docRows[0].content;
               if (typeof parsedMap === 'string') {
@@ -3639,9 +3613,9 @@ export default function App() {
         if (userIsWarehouseOnly) {
           try {
             const [recentLembur, recentCuti, recentIpc] = await Promise.all([
-              supabaseFetch<any[]>('lembur', 'GET', null, 'select=*&order=created_at.desc&limit=25').catch(() => []),
-              supabaseFetch<any[]>('perijinan_cuti', 'GET', null, 'select=*&order=created_at.desc&limit=25').catch(() => []),
-              supabaseFetch<any[]>('izin_pulang_cepat', 'GET', null, 'select=*&order=created_at.desc&limit=20').catch(() => []),
+              supabaseFetch<any[]>('lembur', 'GET', null, 'select=id,created_at&order=created_at.desc&limit=25').catch(() => []),
+              supabaseFetch<any[]>('perijinan_cuti', 'GET', null, 'select=id,nik,jenis,tgl_mulai,tanggal_mulai,created_at&order=created_at.desc&limit=25').catch(() => []),
+              supabaseFetch<any[]>('izin_pulang_cepat', 'GET', null, 'select=id,nik,tanggal,created_at&order=created_at.desc&limit=20').catch(() => []),
             ]);
 
             if (Array.isArray(recentLembur)) {
@@ -4896,7 +4870,7 @@ export default function App() {
             className={`flex-1 min-w-0 w-full max-w-full ${
               activePage === 'live_chat'
                 ? 'p-0 pb-[calc(60px+env(safe-area-inset-bottom))] lg:pb-0'
-                : 'p-2 sm:p-4 lg:p-6 pb-24 lg:pb-6'
+                : 'px-1 pt-1.5 sm:p-4 lg:p-6 pb-24 lg:pb-6'
             }`}
           >
             {session && !canAccessPage(session, activePage) ? (
@@ -5062,12 +5036,12 @@ export default function App() {
 
                               if (layoutMode === 'split') {
                                 return (
-                                  <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-                                    <div className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-3 space-y-3">
+                                  <div className="w-full min-w-0 grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 items-start">
+                                    <div className="min-w-0 lg:col-span-5 xl:col-span-4 lg:sticky lg:top-3 space-y-3">
                                       {inputCard}
                                       {saveBar}
                                     </div>
-                                    <div className="lg:col-span-7 xl:col-span-8">
+                                    <div className="min-w-0 lg:col-span-7 xl:col-span-8">
                                       <ScannedItemsList
                                         items={scannedData}
                                         onRemoveItem={handleRemoveItem}
@@ -5082,10 +5056,10 @@ export default function App() {
 
                               if (layoutMode === 'table') {
                                 return (
-                                  <div className="w-full space-y-3">
+                                  <div className="w-full min-w-0 space-y-3">
                                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
-                                      <div className="lg:col-span-8">{inputCard}</div>
-                                      <div className="lg:col-span-4 flex flex-col justify-end">{saveBar}</div>
+                                      <div className="min-w-0 lg:col-span-8">{inputCard}</div>
+                                      <div className="min-w-0 lg:col-span-4 flex flex-col justify-end">{saveBar}</div>
                                     </div>
                                     <ScannedItemsList
                                       items={scannedData}
@@ -5732,12 +5706,12 @@ export default function App() {
 
           if (layoutMode === 'split') {
             return (
-              <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-                <div className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-0 space-y-3">
+              <div className="w-full min-w-0 grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 items-start">
+                <div className="min-w-0 lg:col-span-5 xl:col-span-4 lg:sticky lg:top-0 space-y-3">
                   {inputCard}
                   {saveBar}
                 </div>
-                <div className="lg:col-span-7 xl:col-span-8">
+                <div className="min-w-0 lg:col-span-7 xl:col-span-8">
                   <ScannedItemsList
                     items={scannedData}
                     onRemoveItem={handleRemoveItem}
@@ -5752,10 +5726,10 @@ export default function App() {
 
           if (layoutMode === 'table') {
             return (
-              <div className="w-full space-y-3">
+              <div className="w-full min-w-0 space-y-3">
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
-                  <div className="lg:col-span-8">{inputCard}</div>
-                  <div className="lg:col-span-4 flex flex-col justify-end">{saveBar}</div>
+                  <div className="min-w-0 lg:col-span-8">{inputCard}</div>
+                  <div className="min-w-0 lg:col-span-4 flex flex-col justify-end">{saveBar}</div>
                 </div>
                 <ScannedItemsList
                   items={scannedData}

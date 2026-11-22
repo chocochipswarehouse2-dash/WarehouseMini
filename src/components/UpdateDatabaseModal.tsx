@@ -670,32 +670,8 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
               kategori: kategori,
               size: size,
               price: priceNum,
-              dealpos_channels: {
-                MAP: 0,
-                LIVE: 0,
-                STUDIO: 0,
-                PERMAK: 0,
-                DEFECT: 0,
-                'Gudang Utama': 0,
-                'Barang Live': 0,
-                'Sample Studio': 0,
-                'Permak / Cuci': 0,
-                'Barang Cacat': 0,
-                WH: 0,
-                QC: 0,
-                GA: 0,
-                LOG: 0,
-                WEB: 0,
-                SHP: 0,
-                TPD: 0,
-                TTK: 0,
-                LZD: 0,
-                WOO: 0,
-                cabang: {},
-                d: {},
-                b: {},
-                total_stok: 0,
-              },
+              // Ultra-compact flat non-zero map (slashes master_produk egress ~88%: 34 MB -> ~4 MB)
+              dealpos_channels: {},
             };
             productsMap.set(sku, record);
           } else {
@@ -706,37 +682,17 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
             if (record.price === 0 && priceNum > 0) record.price = priceNum;
           }
 
-          // Populate inventory quantities from this file into the record's dealpos_channels
+          // Populate ONLY non-zero channel quantities as flat keys (no zero entries, no b/d/cabang duplicates)
           const dp = record.dealpos_channels!;
           fileChannelCols.forEach(({ colIdx, channelKey }) => {
             const rawVal = String(r[colIdx] || '0').replace(/[^0-9.-]+/g, '');
             const qty = Number(rawVal) || 0;
-
-            if (qty !== 0 || dp[channelKey] === undefined) {
-              // Direct flat key
-              dp[channelKey] = (dp[channelKey] || 0) + qty;
-
-              // Aliases for 5-komparasi
-              if (channelKey === 'MAP') dp['Gudang Utama'] = (dp['Gudang Utama'] || 0) + qty;
-              if (channelKey === 'LIVE') dp['Barang Live'] = (dp['Barang Live'] || 0) + qty;
-              if (channelKey === 'STUDIO') dp['Sample Studio'] = (dp['Sample Studio'] || 0) + qty;
-              if (channelKey === 'PERMAK') dp['Permak / Cuci'] = (dp['Permak / Cuci'] || 0) + qty;
-              if (channelKey === 'DEFECT') dp['Barang Cacat'] = (dp['Barang Cacat'] || 0) + qty;
-
-              // Categorize into d (DealPOS 5-Komparasi) or b (Branches/Outlets/Singles)
-              if (['MAP', 'LIVE', 'STUDIO', 'PERMAK', 'DEFECT'].includes(channelKey)) {
-                dp.d = dp.d || {};
-                dp.d[channelKey] = (dp.d[channelKey] || 0) + qty;
-                if (channelKey === 'MAP') dp.d['Gudang Utama'] = dp.d[channelKey];
-                if (channelKey === 'LIVE') dp.d['Barang Live'] = dp.d[channelKey];
-                if (channelKey === 'STUDIO') dp.d['Sample Studio'] = dp.d[channelKey];
-                if (channelKey === 'PERMAK') dp.d['Permak / Cuci'] = dp.d[channelKey];
-                if (channelKey === 'DEFECT') dp.d['Barang Cacat'] = dp.d[channelKey];
+            if (qty !== 0) {
+              const nextVal = (Number(dp[channelKey]) || 0) + qty;
+              if (nextVal !== 0) {
+                dp[channelKey] = nextVal;
               } else {
-                dp.cabang = dp.cabang || {};
-                dp.cabang[channelKey] = (dp.cabang[channelKey] || 0) + qty;
-                dp.b = dp.b || {};
-                dp.b[channelKey] = (dp.b[channelKey] || 0) + qty;
+                delete dp[channelKey];
               }
             }
           });
@@ -752,36 +708,17 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
         throw new Error('Tidak ditemukan data SKU yang valid di dalam file CSV yang diupload');
       }
 
-      // Calculate total_stok for each record (chunked with yield)
+      // Clean any zero entries that cancelled out across multiple files (chunked with yield)
       for (let idx = 0; idx < finalRecords.length; idx++) {
         const rec = finalRecords[idx];
         if (rec.dealpos_channels) {
-          let tot = 0;
           const dp = rec.dealpos_channels;
-          // Sum 5-komparasi
-          tot += Number(dp.MAP || 0);
-          tot += Number(dp.LIVE || 0);
-          tot += Number(dp.STUDIO || 0);
-          tot += Number(dp.PERMAK || 0);
-          tot += Number(dp.DEFECT || 0);
-          // Sum offline & online
-          tot += Number(dp.WH || 0);
-          tot += Number(dp.QC || 0);
-          tot += Number(dp.GA || 0);
-          tot += Number(dp.LOG || 0);
-          tot += Number(dp.WEB || 0);
-          tot += Number(dp.SHP || 0);
-          tot += Number(dp.TPD || 0);
-          tot += Number(dp.TTK || 0);
-          tot += Number(dp.LZD || 0);
-          tot += Number(dp.WOO || 0);
-          // Sum outlets
-          if (dp.cabang && typeof dp.cabang === 'object') {
-            Object.values(dp.cabang).forEach((v) => {
-              tot += Number(v) || 0;
-            });
+          for (const k of Object.keys(dp)) {
+            const n = Number(dp[k]);
+            if (!Number.isFinite(n) || n === 0) {
+              delete dp[k];
+            }
           }
-          dp.total_stok = tot;
         }
         if (idx > 0 && idx % 3000 === 0) {
           await yieldToMain();
@@ -1321,7 +1258,8 @@ CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (t
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {parsedItems.slice(0, 5).map((item, idx) => {
                         const dp = item.dealpos_channels || ({} as any);
-                        const cabangCount = Object.keys(dp.cabang || {}).length;
+                        const whKeys = new Set(['MAP', 'LIVE', 'STUDIO', 'PERMAK', 'DEFECT', 'TP', 'total_stok', 'b', 'd', 'cabang', 'Gudang Utama', 'Barang Live', 'Sample Studio', 'Permak / Cuci', 'Barang Cacat']);
+                        const cabangCount = Object.keys(dp).filter((k) => !whKeys.has(k) && Number(dp[k]) !== 0).length;
                         return (
                           <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                             <td className="p-2 font-mono font-bold text-primary-600 dark:text-primary-400">{item.sku}</td>
@@ -1333,7 +1271,7 @@ CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (t
                             </td>
                             <td className="p-2 text-[10px]">
                               <span className="text-slate-600 dark:text-slate-400 font-mono">
-                                GU:{dp['Gudang Utama'] || 0} | Live:{dp['Barang Live'] || 0} | Studio:{dp['Sample Studio'] || 0}
+                                GU:{dp.MAP ?? dp['Gudang Utama'] ?? 0} | Live:{dp.LIVE ?? dp['Barang Live'] ?? 0} | Studio:{dp.STUDIO ?? dp['Sample Studio'] ?? 0}
                               </span>
                             </td>
                             <td className="p-2 text-[10px]">

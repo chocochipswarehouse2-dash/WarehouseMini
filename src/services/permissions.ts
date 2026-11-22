@@ -87,7 +87,6 @@ export const PERMISSION_GROUPS = [
     description: 'Daftar pesanan dari semua channel',
     permissions: [
       { key: 'menu_ops_pesanan_saya', label: 'Menu Pesanan Saya', description: 'Akses halaman Pesanan Saya', isSuperadminOnly: false },
-      { key: 'tab_ops_pesanan_dashboard', label: 'Tab Dashboard', description: 'Dashboard pesanan', isSuperadminOnly: false },
       { key: 'tab_ops_pesanan_manual_shipment', label: 'Tab Manual Shipment', description: 'Kelola kiriman manual', isSuperadminOnly: false },
       { key: 'tab_ops_pesanan_transfer_order', label: 'Tab Transfer Order', description: 'Kelola transfer order', isSuperadminOnly: false },
       { key: 'tab_ops_pesanan_shopee', label: 'Tab Shopee', description: 'Data pesanan Shopee', isSuperadminOnly: false },

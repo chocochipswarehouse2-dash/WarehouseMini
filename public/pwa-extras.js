@@ -166,13 +166,42 @@ async function checkNewOrdersInBackground() {
   const lastCheckMs = Number(cfg.lastCheckedAt) || Date.now() - 15 * 60 * 1000;
   const nowMs = Date.now();
   const MAX_AGE_MS = 12 * 60 * 60 * 1000;
+  const sinceIso = new Date(Math.max(nowMs - MAX_AGE_MS, lastCheckMs - 60000)).toISOString();
+  const prevDocUpdatedAt = (cfg.lastDocUpdatedAt && typeof cfg.lastDocUpdatedAt === 'object') ? { ...cfg.lastDocUpdatedAt } : {};
+  let docWatermarkChanged = false;
   let updated = false;
   const newlyNotifiedIds = [];
 
-  // 1. Jika Admin/Superadmin: Cek pesanan baru (Manual Shipment & Alter) + Retur Barang
+  // 0. Lightweight watermark check (~180 bytes) untuk dokumen wms_system_docs agar tidak mengunduh 29KB+19KB tiap siklus jika tidak berubah
+  const watchedDocIds = [];
+  if (cfg.username) watchedDocIds.push('wms_chat_rooms_index_v1');
+  if (cfg.isAdmin || cfg.canProduksi) watchedDocIds.push('recount_active_queue');
+  const changedDocs = new Set();
+  if (watchedDocIds.length > 0) {
+    try {
+      const wmUrl = `${cfg.supabaseUrl}/rest/v1/wms_system_docs?select=section_id,updated_at&section_id=in.(${watchedDocIds.join(',')})`;
+      const wmRes = await fetch(wmUrl, { method: 'GET', headers });
+      if (wmRes.ok) {
+        const wmRows = await wmRes.json();
+        if (Array.isArray(wmRows)) {
+          for (const w of wmRows) {
+            const sid = String(w.section_id || '');
+            const upd = String(w.updated_at || '');
+            if (sid && upd && prevDocUpdatedAt[sid] !== upd) {
+              changedDocs.add(sid);
+              prevDocUpdatedAt[sid] = upd;
+              docWatermarkChanged = true;
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // 1. Jika Admin/Superadmin: Cek pesanan baru (Manual Shipment & Alter) + Retur Barang (delta created_at saja)
   if (cfg.isAdmin) {
     try {
-      const msUrl = `${cfg.supabaseUrl}/rest/v1/manual_shipment?select=id,no_pesanan,no_transaksi_customer,nama_pengirim,pic_store,nama_tujuan,jasa_kirim,qty,notes_paket,created_at&order=created_at.desc&limit=10`;
+      const msUrl = `${cfg.supabaseUrl}/rest/v1/manual_shipment?select=id,no_pesanan,no_transaksi_customer,nama_pengirim,pic_store,nama_tujuan,jasa_kirim,qty,created_at&created_at=gt.${encodeURIComponent(sinceIso)}&order=created_at.desc&limit=10`;
       const res = await fetch(msUrl, { method: 'GET', headers });
       if (res.ok) {
         const rows = await res.json();
@@ -262,9 +291,9 @@ async function checkNewOrdersInBackground() {
       }
     } catch {}
 
-    // Cek juga tiket Retur Barang baru untuk Admin
+    // Cek juga tiket Retur Barang baru untuk Admin (delta created_at)
     try {
-      const rtrUrl = `${cfg.supabaseUrl}/rest/v1/retur_barang?select=id,no_retur,nama_customer,created_at&order=created_at.desc&limit=5`;
+      const rtrUrl = `${cfg.supabaseUrl}/rest/v1/retur_barang?select=id,no_retur,nama_customer,created_at&created_at=gt.${encodeURIComponent(sinceIso)}&order=created_at.desc&limit=5`;
       const resRtr = await fetch(rtrUrl, { method: 'GET', headers });
       if (resRtr.ok) {
         const rowsRtr = await resRtr.json();
@@ -297,9 +326,9 @@ async function checkNewOrdersInBackground() {
 
   // 2. Jika Admin/Superadmin ATAU Picker: Cek Permintaan SPS baru & Tugas Picking (picking_list) baru
   if (cfg.isAdmin || cfg.isPicker) {
-    // 2A-1. Cek Permintaan Peminjaman Sementara (SPS) baru
+    // 2A-1. Cek Permintaan Peminjaman Sementara (SPS) baru (delta created_at)
     try {
-      const spsUrl = `${cfg.supabaseUrl}/rest/v1/peminjaman?select=id,no_peminjaman,pic,keperluan,sku,nama_produk,qty,created_at&order=created_at.desc&limit=15`;
+      const spsUrl = `${cfg.supabaseUrl}/rest/v1/peminjaman?select=id,no_peminjaman,pic,keperluan,sku,nama_produk,qty,created_at&created_at=gt.${encodeURIComponent(sinceIso)}&order=created_at.desc&limit=15`;
       const resSps = await fetch(spsUrl, { method: 'GET', headers });
       if (resSps.ok) {
         const rowsSps = await resSps.json();
@@ -347,9 +376,9 @@ async function checkNewOrdersInBackground() {
       }
     } catch {}
 
-    // 2A-2. Cek Tugas Picking Baru (picking_list)
+    // 2A-2. Cek Tugas Picking Baru (picking_list, delta created_at)
     try {
-      const pckUrl = `${cfg.supabaseUrl}/rest/v1/picking_list?select=id,no_sj,tujuan,nama_produk,sku,created_at&order=created_at.desc&limit=20`;
+      const pckUrl = `${cfg.supabaseUrl}/rest/v1/picking_list?select=id,no_sj,tujuan,nama_produk,sku,created_at&created_at=gt.${encodeURIComponent(sinceIso)}&order=created_at.desc&limit=20`;
       const resPck = await fetch(pckUrl, { method: 'GET', headers });
       if (resPck.ok) {
         const rowsPck = await resPck.json();
@@ -395,8 +424,8 @@ async function checkNewOrdersInBackground() {
     } catch {}
   }
 
-  // 2A-3. Khusus Admin/Warehouse ATAU Tim Produksi: Cek Antrian Hitung Ulang Fisik Baru (recount_active_queue)
-  if (cfg.isAdmin || cfg.canProduksi) {
+  // 2A-3. Khusus Admin/Warehouse ATAU Tim Produksi: Cek Antrian Hitung Ulang Fisik Baru HANYA jika watermark berubah
+  if ((cfg.isAdmin || cfg.canProduksi) && changedDocs.has('recount_active_queue')) {
     try {
       const recUrl = `${cfg.supabaseUrl}/rest/v1/wms_system_docs?select=content,updated_at&section_id=eq.recount_active_queue&limit=1`;
       const resRec = await fetch(recUrl, { method: 'GET', headers });
@@ -450,10 +479,10 @@ async function checkNewOrdersInBackground() {
     } catch {}
   }
 
-  // 2A-4. Khusus Customer Service (CS): Cek Update Status Retur Barang (diproses / dikirim / resi terbit)
+  // 2A-4. Khusus Customer Service (CS): Cek Update Status Retur Barang (delta updated_at)
   if (cfg.isCustomerService) {
     try {
-      const csRtrUrl = `${cfg.supabaseUrl}/rest/v1/retur_barang?select=id,no_retur,nama_customer,status,no_resi,no_sj_gudang_retur,updated_at&order=updated_at.desc&limit=8`;
+      const csRtrUrl = `${cfg.supabaseUrl}/rest/v1/retur_barang?select=id,no_retur,nama_customer,status,no_resi,no_sj_gudang_retur,updated_at&updated_at=gt.${encodeURIComponent(sinceIso)}&order=updated_at.desc&limit=8`;
       const resCsRtr = await fetch(csRtrUrl, { method: 'GET', headers });
       if (resCsRtr.ok) {
         const rowsCsRtr = await resCsRtr.json();
@@ -512,9 +541,9 @@ async function checkNewOrdersInBackground() {
     String(cfg.username || '').trim().toLowerCase() === 'chocochips.warehouse2@gmail.com';
 
   if (isWarehouseUser) {
-    // a) Cek Pengajuan Lembur Baru
+    // a) Cek Pengajuan Lembur Baru (delta created_at, kolom spesifik tanpa select=*)
     try {
-      const lmbUrl = `${cfg.supabaseUrl}/rest/v1/lembur?select=*&order=created_at.desc&limit=8`;
+      const lmbUrl = `${cfg.supabaseUrl}/rest/v1/lembur?select=id,nik,nama,tanggal,jam_mulai,jam_selesai,alasan_lembur,deskripsi,created_at&created_at=gt.${encodeURIComponent(sinceIso)}&order=created_at.desc&limit=8`;
       const resLmb = await fetch(lmbUrl, { method: 'GET', headers });
       if (resLmb.ok) {
         const rowsLmb = await resLmb.json();
@@ -549,9 +578,9 @@ async function checkNewOrdersInBackground() {
       }
     } catch {}
 
-    // b) Cek Pengajuan Ijin / Cuti / Sakit / Ijin Pulang Cepat Baru
+    // b) Cek Pengajuan Ijin / Cuti / Sakit / Ijin Pulang Cepat Baru (delta created_at, tanpa select=*)
     try {
-      const cutiUrl = `${cfg.supabaseUrl}/rest/v1/perijinan_cuti?select=*&order=created_at.desc&limit=8`;
+      const cutiUrl = `${cfg.supabaseUrl}/rest/v1/perijinan_cuti?select=id,nik,nama,jenis,tgl_mulai,tanggal_mulai,tgl_selesai,tanggal_selesai,alasan,keterangan,created_at&created_at=gt.${encodeURIComponent(sinceIso)}&order=created_at.desc&limit=8`;
       const resCuti = await fetch(cutiUrl, { method: 'GET', headers });
       if (resCuti.ok) {
         const rowsCuti = await resCuti.json();
@@ -593,9 +622,9 @@ async function checkNewOrdersInBackground() {
       }
     } catch {}
 
-    // c) Cek Izin Pulang Cepat (jika diajukan langsung dari halaman Presensi)
+    // c) Cek Izin Pulang Cepat (delta created_at, tanpa select=*)
     try {
-      const ipcUrl = `${cfg.supabaseUrl}/rest/v1/izin_pulang_cepat?select=*&order=created_at.desc&limit=6`;
+      const ipcUrl = `${cfg.supabaseUrl}/rest/v1/izin_pulang_cepat?select=id,nik,nama,tanggal,jam_pulang_rencana,jam_pulang_awal,alasan,created_at&created_at=gt.${encodeURIComponent(sinceIso)}&order=created_at.desc&limit=6`;
       const resIpc = await fetch(ipcUrl, { method: 'GET', headers });
       if (resIpc.ok) {
         const rowsIpc = await resIpc.json();
@@ -633,8 +662,8 @@ async function checkNewOrdersInBackground() {
     } catch {}
   }
 
-  // 3. Cek Pesan Live Chat & Ruang Diskusi Baru untuk User yang sedang login
-  if (cfg.username) {
+  // 3. Cek Pesan Live Chat & Ruang Diskusi Baru HANYA jika watermark wms_chat_rooms_index_v1 berubah (hemat 29 KB/siklus)
+  if (cfg.username && changedDocs.has('wms_chat_rooms_index_v1')) {
     try {
       const me = String(cfg.username || '').trim().toLowerCase();
       const chatIdxUrl = `${cfg.supabaseUrl}/rest/v1/wms_system_docs?select=content&or=(section_id.eq.wms_chat_rooms_index_v1,doc_key.eq.wms_chat_rooms_index_v1)&limit=1`;
@@ -739,6 +768,7 @@ async function checkNewOrdersInBackground() {
       ...cfg,
       notifiedIds: trimmedIds,
       lastCheckedAt: nowMs,
+      lastDocUpdatedAt: prevDocUpdatedAt,
     });
 
     // Beritahu tab client jika ada yang terbuka di background
@@ -756,6 +786,7 @@ async function checkNewOrdersInBackground() {
     await saveSwConfig({
       ...cfg,
       lastCheckedAt: nowMs,
+      ...(docWatermarkChanged ? { lastDocUpdatedAt: prevDocUpdatedAt } : {}),
     });
   }
 }
@@ -953,14 +984,14 @@ async function handleBackgroundChatAction(actionType, roomId, replyText) {
   }
 }
 
-// Keep a responsive background interval while the Service Worker thread is alive
+// Low-egress background fallback interval (Web Push + Realtime handle instant delivery)
 let swCheckInterval = null;
 function ensureSwBackgroundTimer() {
   if (swCheckInterval) return;
-  // Cek berkala setiap 20 detik di background Service Worker saat tab tidak sedang fokus
+  // Cek berkala setiap 3 menit (180 detik) di background Service Worker saat tab tidak fokus
   swCheckInterval = setInterval(() => {
     checkNewOrdersInBackground().catch(() => {});
-  }, 20000);
+  }, 180000);
 }
 
 self.addEventListener('message', (event) => {
