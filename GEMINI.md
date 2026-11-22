@@ -1,278 +1,120 @@
-# Antigravity Agent Guidelines
+# Antigravity Agent Guidelines — WMS Inventory Chocochips
 
-These rules apply to all tasks and agents working on the WMS Inventory project:
+Aturan permanen ini berlaku untuk **SEMUA tugas & SEMUA agen coding** yang bekerja pada proyek WMS Inventory. File ini dijaga ringkas (< 15 KB) agar 100% terbaca utuh tanpa terpotong.
 
-## 1. Pre-Task: Always Sync with GitHub & Check GAS Status
-Before starting any analysis, planning, edits, or commands:
-1. **Pull Git Updates**: Run `git pull --rebase` to ensure the local repository has the latest commits from `origin/main`.
-2. **Check GAS Live Status**: Run `node tools/gas_status.cjs` to check Google Apps Script deployment version and connectivity.
+---
 
-## 2. Supabase Migration & Schema Synchronization
-Whenever database schemas, table structures, or payload models are updated (whether from git pull, changes to `src/services/supabase.ts`, `.sql` files, TypeScript interfaces in `src/types/`, or GAS sync logic):
-- Immediately review and update Supabase migration modules (e.g., `migrate.js`, `tools/migrate-supabase.cjs`, and `test-webhook.ts`).
-- Ensure all column mappings, field names, and payload structures match the latest schema specifications.
+## 1. Pre-Task: Sync GitHub, GAS, Memori Permanen & AI Dev Backlog
+Sebelum memulai analisis, perencanaan, edit kode, atau perintah apa pun:
+1. **Pull Git Updates**: Jalankan `git pull --rebase` untuk memastikan repositori lokal sinkron dengan `origin/main`.
+2. **Check GAS Live Status**: Jalankan `node tools/gas_status.cjs` untuk cek versi deployment Google Apps Script.
+3. **Pull AI Dev Reports**: Jalankan `node tools/pull_ai_dev_reports.cjs` untuk menarik laporan tugas yang belum bisa dieksekusi AI dari Supabase ke `docs/memory/AI_CAPABILITY_GAPS.md`.
+4. **Baca Memori Permanen**: Tinjau `docs/memory/WMS_FEATURE_REGISTRY.md`, `docs/memory/WMS_MODULE_CHANGELOG.md`, dan `docs/PENDING_PLANS.md` sebelum mengubah modul apa pun agar tidak melanggar invarian fitur yang sudah tertanam.
 
-## 3. Post-Task: Build, Auto-Deploy & Proactive Status Reporting
-Whenever modifications are completed, execute the full deployment lifecycle without waiting for user prompts:
-1. **Bump Version & Release Notes (When Frontend `src/` Changes)**:
-   Gunakan aturan Semantic Versioning (`MAJOR.MINOR.PATCH`) yang tegas:
-   - **`--major` (`v3.0.0`)**: Digunakan jika ada perombakan arsitektur besar / breaking changes menyeluruh pada aplikasi.
-   - **`--minor` (`v2.X.0`)**: **WAJIB DIGUNAKAN saat ada Penambahan Fitur Baru / Modul Baru** (contoh: rilis fitur baru *Asisten AI Pintar*, modul baru *Fulfilment Pesanan Online*, integrasi baru). Angka minor naik (`v2.6.x` $\rightarrow$ `v2.7.0`) dan patch di-reset ke `0`.
-     ```bash
-     node tools/bump_version.cjs bump --minor --title "WMS v2.X.0 — <Judul Fitur Baru>" --notes "<Catatan 1>|<Catatan 2>"
-     ```
-   - **Default Patch (`v2.X.Y`)**: Digunakan untuk **Perbaikan Bug, Optimasi Performa, Penyesuaian Logic/UI Kecil, dan Hotfix**.
-     ```bash
-     node tools/bump_version.cjs bump --title "<Judul Rilis>" --notes "<Catatan 1>|<Catatan 2>"
-     ```
-   Pastikan `package.json`, `src/config/appVersion.ts`, dan `public/version.json` selalu tersinkronisasi (dikelola otomatis oleh `tools/bump_version.cjs`).
-2. **Validate Build**: Run `npm run build` to verify that there are no compilation or bundling errors.
-3. **Deploy Google Apps Script (GAS)**: If any file under `gas/` or GAS deployment scripts was touched, run:
-   ```bash
-   node tools/gas_deploy.cjs
-   ```
-   Confirm new project version and active deployment update.
-4. **Commit & Push (Vercel)**: Stage changes (including `package.json`, `src/config/appVersion.ts`, and `public/version.json`), commit with a concise conventional commit message, and push to GitHub:
-   ```bash
-   git push origin main
-   ```
-5. **Mandatory Proactive Deployment Status**: ALWAYS include a dedicated `### 🚀 Deployment Status` table in the response detailing:
-   - App Release Version (`v2.5.x`) & Build Hash
-   - Git Commit Hash & Message
-   - GitHub / Vercel auto-deploy status
-   - Google Apps Script version & deployment status
-   The user must never need to ask whether changes are deployed.
+---
 
-## 4. WMS Stock Opname (SO) Blueprint & Calculation Standard
+## 2. Supabase Migration, Schema & Egress Guardrails
+- Setiap perubahan skema tabel, payload model, `src/services/supabase.ts`, file `.sql`, atau sinkronisasi GAS wajib menyelaraskan modul migrasi (`migrate.js`, `tools/migrate-supabase.cjs`, `test-webhook.ts`).
+- **Egress Minimal**: Gunakan SWR cache / IndexedDB (`localDb.ts`), hindari polling cepat, selalu pakai `select=...` spesifik dan `limit=...` pada query daftar.
+- **Penyimpanan**: Data bisnis ke Supabase; foto dokumentasi ke Google Drive (via GAS).
 
-### A. Core Principles
-- **Unit of Calculation**: Every Stock Opname queue is calculated strictly **per scan invoice with type `SO`** (from WA `#SO`, Web Scanner, or CSV/Excel import).
-- **Full Location Reconciliation**: The scan invoice represents the **exhaustive physical reality** of the specified location(s) at that time.
-- **Unscanned Items (0-Scan Rule)**: Any SKU recorded in the database (`stok_real_fisik`) at that location that is **NOT scanned** during that SO session is deemed to have **`Scan Fisik = 0`**.
-- **Target Equilibrium**: Upon approval, the final physical stock in the database for that location **MUST MATCH THE PHYSICAL SCAN EXACTLY**.
+---
 
-### B. Standard Formula
-$$\mathbf{Selisih\ /\ Adjustment} = \mathbf{Scan\ Fisik} - \mathbf{Stok\ Sistem\ Database}$$
-- **Selisih > 0 (+)** $\rightarrow$ **`ADJ_IN`** (Add stock to match physical reality)
-- **Selisih < 0 (-)** $\rightarrow$ **`ADJ_OUT`** (Deduct stock to match physical reality)
-- **Selisih = 0** $\rightarrow$ Matched / In Sync (No adjustment log created)
+## 3. Post-Task: Memori Permanen, Bump Version, Build & Auto-Deploy
+Setelah modifikasi selesai, jalankan siklus rilis penuh:
+1. **Update Memori Permanen Global (WAJIB)**: Perbarui `docs/memory/WMS_FEATURE_REGISTRY.md` (jika ada modul/fitur/invarian baru) dan tambahkan ringkasan perubahan di paling atas `docs/memory/WMS_MODULE_CHANGELOG.md`.
+2. **Semantic Versioning (`tools/bump_version.cjs`)**:
+   - `--major` (`v3.0.0`): Perombakan arsitektur besar / breaking changes.
+   - `--minor` (`v2.X.0`): **WAJIB** untuk penambahan fitur/modul baru.
+   - Default Patch (`v2.X.Y`): Bug fix, optimasi performa, penyesuaian UI/logic kecil.
+   - Jalankan `node tools/bump_version.cjs verify-release` untuk memastikan sinkronisasi versi, safety Service Worker, & memori permanen lolos (`passed: true`).
+3. **Validate Build & Lint**: Jalankan `npm run build` dan `npm run lint`.
+4. **Deploy GAS (jika `gas/` berubah)**: Jalankan `node tools/gas_deploy.cjs`.
+5. **Commit & Push**: Commit perubahan beserta `package.json`, `src/config/appVersion.ts`, `public/version.json`, dan `docs/memory/*`, lalu `git push origin main`.
+6. **Mandatory Proactive Deployment Status**: Selalu sertakan tabel `### 🚀 Deployment Status` di akhir jawaban (Versi & Build Hash, Git Commit, Vercel Auto-Deploy, GAS Status).
 
-### C. Standard Calculation Truth Table
-| No | Scenario | Stok Sistem (DB) | Scan Fisik (SO) | Formula ($Scan - Sistem$) | Action upon Approval | Final Stock |
-|---|---|:---:|:---:|:---:|:---:|:---:|
-| 1 | Unscanned item (lost/zeroed) | `1` | `0` | $0 - 1 = \mathbf{-1}$ | `ADJ_OUT (1)` | `0` |
-| 2 | Newly discovered item in rack | `0` | `1` | $1 - 0 = \mathbf{+1}$ | `ADJ_IN (1)` | `1` |
-| 3 | Physical count higher | `2` | `5` | $5 - 2 = \mathbf{+3}$ | `ADJ_IN (3)` | `5` |
-| 4 | Physical count lower | `5` | `3` | $3 - 5 = \mathbf{-2}$ | `ADJ_OUT (2)` | `3` |
-| 5 | Negative DB anomaly, physical empty | `-2` | `0` | $0 - (-2) = \mathbf{+2}$ | `ADJ_IN (2)` | `0` |
-| 6 | Negative DB anomaly, physical found | `-1` | `3` | $3 - (-1) = \mathbf{+4}$ | `ADJ_IN (4)` | `3` |
-| 7 | In sync | `4` | `4` | $4 - 4 = \mathbf{0}$ | Skip (no adjustment) | `4` |
+---
 
-### D. Multi-Channel Ingestion Standards
-All 3 ingestion methods MUST follow the exact same reconciliation blueprint:
-1. **WhatsApp Ingestion**: `#SO [Lokasi]` $\rightarrow$ logged as `log_produk (type: 'SO')` $\rightarrow$ auto-reconciled against all items in `stok_real_fisik` for that `lokasi`.
-2. **Web Scanner Ingestion**: Operator selects SO mode $\rightarrow$ scans items for a rack $\rightarrow$ auto-reconciled against all items in `stok_real_fisik` for that `lokasi`.
-3. **CSV/Excel Ingestion**: User uploads CSV/Excel containing columns `SKU`, `Qty`, `Lokasi` $\rightarrow$ auto-reconciled against all items in `stok_real_fisik` for the specified location(s).
+## 4. WMS Stock Opname (SO) Blueprint
+- Dihitung ketat per invoice scan tipe `SO` (WA `#SO`, Web Scanner, atau CSV/Excel).
+- **0-Scan Rule**: SKU di `stok_real_fisik` pada lokasi terkait yang tidak discan dianggap `Scan Fisik = 0`.
+- **Formula Wajib**: `Selisih = Scan Fisik - Stok Sistem Database`.
+  - `Selisih > 0` -> `ADJ_IN`; `Selisih < 0` -> `ADJ_OUT`; `Selisih = 0` -> Skip.
+- Penyesuaian (`ADJ_IN`/`ADJ_OUT`) HANYA boleh dibuat saat user berwenang klik **Approve Stock Opname**.
 
-## 5. WMS Core Flow (IN, OUT) & Picking Task Sync Blueprint
+---
 
-### A. The Supremacy of `log_produk` (Single Source of Truth)
-- **Append-Only Ledger**: `log_produk` is the immutable ledger for all movements (IN, OUT, SO, ADJ).
-- **Equal Ingestion Channels**: WhatsApp (WA), Web App Scanner, and CSV Import are strictly ingestion channels. They share the same hierarchy and logic rules.
-- **HARD CONSTRAINT (NO AUTO-ADJUSTMENT)**: During normal operations (Picking, Inbound, Outbound), agents and systems are **STRICTLY FORBIDDEN** from automatically generating shadow `#IN` or `#OUT` mutations to artificially balance stock. All physical stock mutations MUST originate from explicit physical operator scans.
-- **SOLE EXCEPTION**: The system is ONLY permitted to inject automated mutation data (`ADJ_IN` or `ADJ_OUT`) strictly when the "Approve Stock Opname" function is executed by an authorized user, to force database stock to match the physical reality.
+## 5. Core Flow (`log_produk`) & Picking Task Sync
+- **`log_produk` adalah Single Source of Truth (Append-Only)**: DILARANG auto-generate shadow `#IN`/`#OUT` saat operasi normal. Semua mutasi fisik wajib berasal dari scan operator (kecuali Approve SO).
+- **Explicit Picking Correlation**: Korelasi scan WA (`#OUT [invoice_picking]`) wajib menggunakan `invoice_picking` unik — DILARANG menebak dari `no_sj`, lokasi, atau timestamp.
+- **Human Accountability**: Sistem dilarang menutup anomali under-pick/over-pick otomatis; operator wajib menyelesaikan lewat scan fisik.
 
-### B. The Picking Task Sync (Explicit Invoicing)
-- **Entity Definitions**:
-  - `no_sj` (e.g., 26.10.00010) is a Business Document ID. It is NOT guaranteed to be globally unique (may be duplicated across routes).
-  - **`invoice_picking`** (e.g., WA20261003IZZO) is a Queue Registration ID. It is **GUARANTEED UNIQUE** and is auto-generated by the system *when a request module (Refill, SPS, Shopee) registers a task into the Picking Queue*.
-- **HARD CONSTRAINT (NO GUESSWORK)**: The system MUST use `invoice_picking` to correlate WA scans (e.g., `#OUT WA20261003IZZO`) with Picking targets. Agents are FORBIDDEN from using `no_sj`, location, or timestamps to infer correlations.
+---
 
-### C. Anomaly Resolution & Self-Healing
-The WMS acts purely as a stateless calculator and notification auditor.
-- **Under-pick Scenario**: Fonnte WA alerts operator $\rightarrow$ Operator physically retrieves item $\rightarrow$ Operator scans `#OUT [invoice_picking]`.
-- **Wrong/Over-pick Scenario**: Fonnte WA alerts operator $\rightarrow$ Operator physically returns item to shelf $\rightarrow$ Operator scans standard `#IN`.
-- **HARD CONSTRAINT (HUMAN ACCOUNTABILITY)**: The system is FORBIDDEN from automatically closing anomalies. It only recalculates the `invoice_picking` totals and updates the warning status (e.g., "Still missing 2"). Final task resolution is the absolute responsibility of the human operator.
+## 6. Restore Point
+- Tag stabil pra-picking-sync: `restore-point-pre-picking-sync` (`docs/blueprints/RESTORE_POINT.md`).
 
-## 6. System Restore Points (Safe Fallback)
-If the system becomes unstable or logic breaks during the implementation of the "Smart Picking & WA Sync" architecture, agents MUST offer the user to revert to the pre-picking-sync stable state.
-- **Git Tag**: `restore-point-pre-picking-sync`
-- **Agent Instruction**: To rollback, execute `git reset --hard restore-point-pre-picking-sync` and push force if necessary, then confirm GAS/Supabase states. This tag guarantees a pristine state before any Picking/WA sync codebase changes were made.
+---
 
-## 7. WMS Area & Location Prioritization Blueprint
+## 7. Area Mapping & Picking Prioritization (`getAreaFromLokasi`)
+- **Priority 1**: Warehouse (`A/B/C/D001-100`), Aksesoris (`BELT/CARD/GIFT/BOX...`), Transit (`X`/`TRANSIT`).
+- **Priority 2**: Kolian (`R0/V0/Z0...`).
+- **Priority 3**: Blok F (`TIKTOK`, `SHOPEE`, `STUDIO`, `IGLIVE`).
+- **DO NOT PICK**: Perbaikan (`CC...`, `PMK...`, `DF...`, `SORTIR`) & Anomali selalu dikecualikan dari picking otomatis. Khusus Pengecekan SJ hanya Priority 1 & 2 (`isPickingEligibleForPengecekan`).
+- **Resolusi Anomali**: Jika lokasi valid namun salah label area -> koreksi label `area` saja (DILARANG `ADJ_OUT`/`ADJ_IN`). Jika lokasi tidak valid di denah -> wajib verifikasi & approval manusia.
 
-### A. Location Definitions & Mapping
-All location string inputs MUST be strictly mapped to their respective areas using the master function (`getAreaFromLokasi`).
-- **Warehouse**: `A001`-`A100`, `B001`-`B100`, `C001`-`C100`, `D001`-`D100`
-- **Aksesoris**: `BELT...`, `CARD...`, `GIFT...`, `BOX...`
-- **Transit**: `X` / `TRANSIT`
-- **Kolian**: `R0...`, `V0...`, `Z0...`
-- **Blok F**: `TIKTOK`, `SHOPEE`, `STUDIO`, `IGLIVE` (termasuk `IGlive` / `IG LIVE`)
-- **Perbaikan**: `CC...` (Cuci), `PMK...` (Permak), `DF...` (Defect), `SORTIR` (1 lokasi statis seperti Shopee/TikTok/Studio, dapat diatur di Setup Kapasitas)
-- **Anomaly**: Any location string not fitting the above patterns MUST be flagged as an anomaly.
+---
 
-### B. Picking Prioritization Hierarchy
-Agents modifying UI sorting or task allocation MUST strictly enforce the following hierarchy (Priority 1 = Top):
-1. **Priority 1**: Warehouse + Aksesoris + Transit
-2. **Priority 2**: Kolian
-3. **Priority 3**: Blok F
-4. **Priority 4 (Fallback)**: Empty / Null locations
-5. **DO NOT PICK**: `Perbaikan` (Cuci, Permak, Defect, Sortir) and `Anomali` areas are strictly excluded from automated picking recommendations.
+## 8. Master Produk Lookup & Role-Aware FAQ Sync
+- **Master Produk Integrity**: Nama produk dan size di seluruh modul WAJIB menggunakan lookup SKU Master Produk (`lookupProductBySku` di `src/utils/productLookup.ts`). Dilarang memunculkan anomali nama/size di luar master data.
+- **Mandatory FAQ Sync**: Perubahan fitur/tombol/alur di `ManualShipmentTab`, `AlterationRepairTab`, atau `ReturBarangTab` wajib menyinkronkan `src/data/initialStoreFaq.ts` dengan perspektif peran ketat (Store PIC tidak boleh disuruh klik tombol khusus Admin).
 
-*Note (Pengecekan Surat Jalan)*: Khusus picking dari Modul Pengecekan Surat Jalan (`DistribusiPickingModal`), filter lokasi hanya menampilkan **Priority 1 (Warehouse + Aksesoris + Transit)** dan **Priority 2 (Kolian)** via helper `isPickingEligibleForPengecekan()`. Lokasi Blok F, Perbaikan (termasuk Sortir), dan Anomali tidak ditampilkan.
+---
 
-*Note (General UI)*: The frontend UI must display ALL valid picking locations simultaneously (grouped/sorted by priority) so that pickers have full visibility if Priority 1 stock is insufficient.
+## 9. Pusat Resolusi — Retur Barang (`PUSAT_RESOLUSI_RETUR_BLUEPRINT.md`)
+- Disimpan terisolasi di `public.retur_barang` dengan prefix `RTR-` (difilter keluar dari `manual_shipment`).
+- 3 tahap deterministik: `diterima` (email via GAS) -> `diproses` (cetak Label A6 / Picking List / input SJ DealPOS Gudang Retur) -> `dikirim` (input `no_resi`).
+- Label A6 (`100mm x 150mm`) & Picking List A4 wajib mencetak `produk_pengganti`, bukan `produk_pesanan`.
 
-### C. Standar Resolusi Anomali Area vs Anomali Lokasi
-1. **Kasus 1: Lokasi Valid, Area Salah/Anomali (Area Mismatch)**:
-   - Contoh: Lokasi `R024` tercatat area `Warehouse`, `DF010` tercatat area `Warehouse`, atau `BELT001` tercatat `Anomali`.
-   - **Tindakan**: Sistem/script hanya boleh mengoreksi label `area`-nya secara langsung (`UPDATE area = getAreaFromLokasi(lokasi)`).
-   - **HARD CONSTRAINT**: DILARANG KERAS menyuntikkan `ADJ_OUT` / `ADJ_IN` atau menolkan stok fisik hanya karena salah nama area. Kuantitas fisik barang tidak boleh berkurang 1 pcs pun.
-2. **Kasus 2: Lokasi Tidak Valid / Tidak Ada di Denah (Anomali Lokasi)**:
-   - Contoh: Lokasi berupa salah ketik operator, tanda strip `-`, nama non-rak, atau string acak.
-   - **Tindakan**: DILARANG melakukan pembersihan (*cleanup*) otomatis oleh script tanpa izin.
-   - **Wajib Verifikasi & Persetujuan Manusia**: Wajib melalui audit fisik di lapangan dan memerlukan konfirmasi/persetujuan eksplisit (*approval*) dari user/admin sebelum tindakan penyesuaian stok dilakukan.
+---
 
-## 8. WMS Feature Update & Dynamic FAQ Auto-Maintenance Standard
+## 10. UI/UX, Responsive Desktop & Mobile Native, 2-Mode & Print Standards
+Patuhi skills di `.agents/skills/`:
+- **Theme & Anti-Pelangi Tombol**: Maksimal **1 tombol solid primary** (`bg-indigo-600 text-white`) per baris/toolbar; tombol sekunder berupa outline netral. Gunakan `font-mono` untuk SKU, Order ID, Resi, SJ, DealPOS.
+- **Fluid Desktop & Native Mobile**:
+  - Desktop (`>= 768px`): Web-based, fluid elastis (`w-full max-w-full`, anti dead-zone saat zoom-out), default mode `Tabel`.
+  - Mobile (`< 640px`): Rasa aplikasi seluler native, target sentuh `40–48px`, tab navigasi horizontal swipe (`overflow-x-auto no-scrollbar`), filter sekunder via **Slide-Up Bottom Sheet**, mode Tabel compact pas layar (zero horizontal scroll), default mode `Kartu`.
+- **2-Mode Standard**: Hanya `Tabel` & `Kartu` (`split` dideprekasi). Gunakan $O(1)$ `Map` lookups.
+- **5 Format Cetak**: A4 Picking/SJ, WA Grup Tree, Picking Task QR, Label Thermal A6, Struk Thermal 58/80mm.
 
-### A. Mandatory Auto-Update of FAQs on Feature Changes
-Whenever features, buttons, modal flows, validation rules, or business logic are added, modified, or revised in `ManualShipmentTab`, `AlterationRepairTab`, or Order Workflows (e.g., Split Fulfil, Form Alter, Multi-Store, Kirim ke Gudang, Resi, DealPOS, Pembatalan):
-1. **Mandatory FAQ Synchronization**: The agent MUST automatically review and update `src/data/initialStoreFaq.ts` (and corresponding Supabase FAQ seeds) so that the user and store teams do not have to write documentation manually.
-2. **Strict Role-Aware Perspective (Store vs. Admin)**:
-   - Instructions and action steps in FAQs MUST be strictly written from the **real perspective of the role performing the action**.
-   - **HARD CONSTRAINT (NO MISLEADING BUTTONS)**: NEVER instruct a Store PIC to click a button or perform an action that is restricted only to Admin (e.g., `Batalkan Pesanan`, `Tandai Sold Out`, `Update Resi`).
-   - If an action requires Admin authority, the FAQ for Store MUST instruct them on how to request/escalate it (e.g., via the "Ajukan Kendala ke Superadmin" tab in `StoreHelpModal` or chat), while clearly describing that Admin will execute the button in the system.
-3. **Miniature UI Badges Consistency**: Always verify that the miniature UI badges listed in the FAQ (`button_badges`) correspond to actual buttons in the interface that match the operator's permission scope.
+---
 
-## 9. Pusat Resolusi — Retur Barang Blueprint
-For any modifications to `PusatResolusiView`, `ReturBarangTab`, or `returBarangService.ts`, agents MUST read and adhere to `PUSAT_RESOLUSI_RETUR_BLUEPRINT.md`:
-1. **Data Isolation & Storage**: Retur Barang tickets are stored in the dedicated table `public.retur_barang` with `no_retur` prefixed by `RTR-`. The service `returBarangService.ts` automatically manages CRUD on `public.retur_barang` (with fallback to `manual_shipment` if needed). `fetchManualShipments()` and `gasSync.ts` strictly filter out any `RTR-` records to guarantee 100% isolation from Store Manual Shipment Rekap and Dashboards.
-2. **3-Stage Deterministic Flow**:
-   - **Pesanan Baru (`diterima`)**: Newly submitted by CS; auto-sends email notification via GAS (`MailApp.sendEmail`) to recipients configured in `pusat_resolusi_settings` (`wms_system_docs`).
-   - **Pesanan Diproses (`diproses`)**: Triggered when Label A6 or Picking List is printed, WA Group Picking is requested, or Admin inputs `no_sj_gudang_retur` / `no_invoice_return`.
-   - **Pesanan Selesai (`dikirim`)**: Triggered when Admin inputs `no_resi` (replacement shipment tracking number).
-3. **Print & DealPOS Rules**:
-   - **Label A6 (`100mm x 150mm`)** and **Picking List (`A4`)** MUST always render `produk_pengganti` (Replacement Items), NEVER `produk_pesanan` (returned items).
-   - Admin manages two distinct DealPOS documents: `no_sj_gudang_retur` (SJ DealPOS to Gudang Retur) and `no_invoice_return` (Invoice Return DealPOS when return is completed).
+## 11. Zero-Reload Background Update & Active Screen Protection
+- Data bisnis disinkronkan realtime tanpa reload halaman.
+- Update bundel PWA diunduh di background; klik **"Perbarui"** hanya menjalankan `prepareUpdateInBackground()` (TIDAK boleh `window.location.reload()` langsung) dan aktif aman saat berpindah menu (kecuali staging scan sedang aktif) atau saat user klik eksplisit **"Muat Ulang Sekarang"**.
 
-## 10. WMS UI/UX, Responsive (Desktop & HP Seluler) & Multi-View Frontend Standards
-Whenever designing, modifying, or tidying up any frontend component, table, card, modal, or print template, agents MUST activate and adhere to the workspace frontend skills in `.agents/skills/`:
-1. **UI/UX Design System (`.agents/skills/wms-ui-ux-design-system/SKILL.md`)**:
-   - **Semantic Color Theme (Light & Dark Mode)**: Primary `indigo-600`, Success `emerald-600`, Warning `amber-500`, Danger `rose-600`, Alteration `rose`/`purple`, Neutral `slate`.
-   - **Typography & Sizing**: Consistent scale (`text-base sm:text-lg` headers, `text-xs` body, `text-[11px]` subtitles, `text-[10px]` badges, and mandatory `font-mono` for all SKUs, Order IDs, Resi, SJ, and DealPOS numbers).
-   - **Visual Neatness & Hierarchy**: Uniform button/input heights in toolbars, maximum 3 visual nesting levels, and **zero dangling separator dots (`·`)** when optional fields are empty.
-   - **Toolbar & Button Hierarchy (Anti-Pelangi Tombol)**: Maksimal **1 tombol solid primary** per baris/toolbar (e.g. `bg-indigo-600 text-white`). Semua tombol sekunder (Refresh, CSV, Filter, Buka Sheet) WAJIB berupa netral outline/ghost (`bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200`). DILARANG KERAS menjejalkan 4–5 tombol solid berbeda warna menyala (oranye + biru + hijau + kuning) berdampingan.
-2. **Responsive Desktop & Mobile / HP Seluler (`.agents/skills/wms-responsive-desktop-mobile/SKILL.md`)**:
-   - **Global Container & Zoom Out Elasticity (Anti-Dead Zones)**: Seluruh workspace utama WAJIB bersifat fluid elastis (`w-full max-w-full px-1 sm:px-4 lg:px-6`) dan DILARANG membatasi kontainer utama dengan `max-w-7xl` (1280px) atau `max-w-[1600px]` yang menyisakan area kosong putih melompong raksasa di tepi kiri-kanan saat browser **Zoom Out (67%–90%)** atau monitor lebar (`1920px+`). Pada layar HP (`< 640px`), DILARANG menumpuk padding tepi berlapis (`p-2` + `p-2.5` + `p-4`) yang mempersempit area kerja; kontainer dalam modul WAJIB `p-0` agar layar HP lega seperti aplikasi seluler native.
-   - **Mobile Tab Sub-Navigation (Swipe Horizontal vs Menumpuk Vertikal)**: Tab navigasi modul pada tampilan HP WAJIB swipe horizontal (`flex overflow-x-auto no-scrollbar whitespace-nowrap`). DILARANG menumpuk tab secara vertikal (`flex-wrap`) yang memakan sepertiga layar HP sebelum data terlihat.
-   - **Mobile Metric Card Hygiene**: Kartu statistik pada HP tidak boleh memotong teks dengan `truncate` sembarangan (mencegah teks terpotong seperti `maksimu_` atau `rak m...`). Gunakan teks ringkas atau `line-clamp-2`.
-   - **Desktop (`md:` / `lg:` / `xl:`)**: Mendukung tabel operasional terstruktur (`lg:table-fixed`), grid kartu multi-kolom elastis, dan hover tooltips.
-   - **Mobile / HP Seluler (`< 640px`)**: Rasa aplikasi seluler native — target sentuh minimal `40–48px`, filter sekunder di dalam panel lipat (`Filter`), mode Tabel berupa **Compact List-Table pas layar (ZERO horizontal scroll)**, serta menu aksi terkelompok via **Native Slide-Up Bottom Sheet** (bukan `<select>` mentah atau tombol kecil berceceran).
-3. **Cross-Module View Consistency & 2-Mode Standard — `Tabel` & `Kartu` (`.agents/skills/wms-app-view-consistency/SKILL.md` & `.agents/skills/wms-table-card-split-views/SKILL.md`)**:
-   - **Standar 2 Mode (`Tabel` & `Kartu`)**: Seluruh halaman daftar/rekap WAJIB hanya menyediakan **2 opsi tampilan (`Tabel` | `Kartu`)** — `Panel Rapi` (`split`) resmi dihapus/dideprekasi agar UI seragam, ringkas, dan tidak membingungkan. Default otomatis: `Kartu` di HP (`< 768px`), `Tabel` di Desktop (`>= 768px`).
-   - **Versi Tabel (`table`)**:
-     - **Desktop (`hidden md:block`)**: Maksimal 5–6 kolom proporsional (`lg:table-fixed w-full`), tanpa kotak abu-abu/warna bersarang di dalam sel, dan seluruh aksi rapi di kolom kanan.
-     - **Mobile (`md:hidden`)**: **Compact List-Table 100% pas lebar layar HP** tanpa scroll horizontal — ketuk baris membuka Detail, tombol `⋯` di kanan membuka Bottom Action Sheet.
-   - **Versi Kartu (`card`)**: Single-elevation app card (`grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4`), tanpa kotak-di-dalam-kotak berwarna, dengan pembatas garis tipis `divide-y` dan footer 2 kontrol (`1 Primary CTA` + `Aksi ⋯`).
-   - **Konsolidasi Tombol (Anti-Berceceran)**: Maksimal **1 tombol primary** per toolbar/baris/kartu. Utilitas header (Export CSV, Muat Ulang Penuh, SOP) dirapikan dalam menu `⋯` header; seluruh aksi pesanan dikelompokkan rapi dengan keterangan jelas di dalam **Order Action Sheet** (Bottom Sheet di HP, Modal bersih di Desktop).
-   - **Rendering Performance**: Selalu gunakan $O(1)$ `Map` lookups dibanding nested `.find()`.
-4. **Operational Print, Thermal & Picking WA Documents (`.agents/skills/wms-print-receipt-documents/SKILL.md`)**:
-   - Unified data-enrichment, live rack priority sorting (`Priority 1 Warehouse/Aksesoris/Transit` $\rightarrow$ `Priority 2 Kolian` $\rightarrow$ `Priority 3 Blok F` or `Store Code`), and high-contrast monochrome layouts across all 5 operational formats:
-     1. **Picking List / SJ Cetak A4 (`210mm x 297mm`)**
-     2. **Picking List WA Grup (Fonnte Tree Broadcast)**
-     3. **Picking List Tugas Picking (`invoice_picking` + `no_sj` + QR)**
-     4. **Label Pengiriman Paket Thermal A6 (`100mm x 150mm`)**
-     5. **Cetak Ukuran Struk Kasir Thermal (`58mm/60mm` & `80mm` Rangkap 2 & SPK)**
-5. **UI/UX Pro Max Design Intelligence (`.agents/skills/ui-ux-pro-max/SKILL.md`)**:
-   - Integrasi database desain profesional (80 visual styles, 192 product palettes, 119 UX guidelines, 74 font pairings) menggunakan script `python .agents/skills/ui-ux-pro-max/scripts/search.py "<query>"`.
-   - Mengarahkan implementasi antarmuka agar menghindari tampilan kaku / generik AI, mempertahankan 8pt spacing system, micro-interactions, dark mode elegance, dan visual hierarchy kelas enterprise tanpa mengganggu fungsionalitas dan logika bisnis yang sudah berjalan.
-
-## 11. Zero-Reload Background Update & Active Screen Protection Blueprint
-
-### A. Dual Update Architecture (Data vs Code Bundle)
-- **Data Business Updates (Katalog, Stok, Resolusi, Pesanan)**: Wajib disinkronkan via Supabase Realtime / WebSocket events (`catalog_updated`, event listener). DILARANG KERAS memaksa reload halaman untuk memuat pembaruan data bisnis.
-- **Application Code Bundle Updates (Vite / PWA SW)**: Saat versi baru (`v2.x.x`) dideploy, sistem Service Worker mengunduh bundle baru di background tanpa menginterupsi pengguna.
-
-### B. Zero-Reload Background Update (Hard Constraint)
-- **DILARANG FORCED RELOAD SAAT KLIK PERBARUI**: Mengklik tombol **"Perbarui"** pada widget mengambang (`AppUpdateFloatingWidget`) maupun modal detail (`AppUpdateModal`) **TIDAK BOLEH** langsung memicu `window.location.reload()`.
-- **Background Preparation**: Tombol update bertugas mengeksekusi `prepareUpdateInBackground()`, yaitu mengirim sinyal `SKIP_WAITING` ke Service Worker dan menandai status lokal bahwa bundel baru telah tersimpan di cache. Widget wajib langsung berganti tampilan hijau bertuliskan **`✅ Tersimpan (Akan aktif saat pindah menu)`**.
-- **Aktivasi Alami & Aman (Safe Menu Transition)**: Pembaruan kode baru hanya boleh diaktifkan saat transisi alami: ketika pengguna berpindah menu/halaman via sidebar (`handleSelectPage` di `App.tsx`) dan tidak ada sesi barcode scan staging yang belum tersimpan (`wms_active_staging_scans`).
-- **Reload Eksplisit Hanya Atas Izin User**: Reload seketika HANYA diperbolehkan jika pengguna secara eksplisit menekan tombol **"Muat Ulang Sekarang"** di dalam modal rincian update.
-- **Proteksi Pekerjaan Aktif (Zero Data Loss)**: Dilarang membuat fitur atau alur di modul manapun (Gudang, Produksi, Store, Packing, Resolusi, dll.) yang mengeksekusi `window.location.reload()` secara mendadak saat form, scanner, atau tabel sedang aktif dioperasikan.
-
+---
 
 ## 12. Live Chat Guardrails
-Setiap perubahan pada Live Chat (liveChatService.ts, LiveChatWorkspace.tsx, LiveChatFloatingWidget.tsx, public/pwa-extras.js, direktori user/role Customer Service) WAJIB membaca dan mematuhi `.agents/skills/wms-live-chat-guardrails/SKILL.md` (invarian + checklist regresi). Tambahkan bug baru yang ditemukan ke skill tersebut.
+- Perubahan pada `liveChatService.ts`, `LiveChatWorkspace.tsx`, `LiveChatFloatingWidget.tsx`, atau `public/pwa-extras.js` wajib membaca `.agents/skills/wms-live-chat-guardrails/SKILL.md`.
 
-## 13. Desktop Multitasking Isolation & Mobile Operational Protection (HARD CONSTRAINT)
-Fitur **Multitasking / Multi-Tab Keep-Alive & Slide-Over Companion Drawer** (misal membuka *Produksi* bersamaan dengan *Trello UP* tanpa reset halaman) WAJIB mematuhi aturan isolasi arsitektur berikut secara permanen pada setiap update fitur, perbaikan bug, atau penambahan halaman baru:
-1. **100% Desktop-Only (`>= 1024px` / `lg:`)**:
-   - Bar Multi-Tab Workspace, Keep-Alive multi-view, dan Slide-Over Drawer **HANYA BOLEH** aktif pada layar Laptop/PC (`window.innerWidth >= 1024`).
-   - Pada perangkat HP Seluler / Mobile (`< 1024px`), sistem WAJIB merender **hanya 1 halaman aktif (`activePage`)** secara eksklusif (unmount halaman lain saat pindah menu) dan menyembunyikan seluruh UI multitasking (`hidden lg:flex`).
-2. **Zero Mobile Performance & Viewport Degradation**:
-   - DILARANG KERAS membiarkan komponen halaman yang sedang tidak aktif tetap hidup (*mounted/keep-alive*) di memori RAM HP Seluler, karena dapat menyebabkan lag, *out-of-memory*, atau mengganggu kamera/scanner barcode operasional.
-   - DILARANG menambahkan bar navigasi ekstra yang memakan ruang vertikal pada layar HP (`< 1024px`).
-3. **Desktop Memory Cap (Anti-Freeze)**:
-   - Di Laptop/PC (`>= 1024px`), jumlah tab halaman yang ditahan tetap hidup (*Keep-Alive*) di latar belakang dibatasi maksimal **4 tab aktif** (LRU eviction otomatis jika membuka tab ke-5, atau dapat ditutup manual dengan tombol `×` pada tab).
-   - Setiap penambahan halaman/modul baru di `App.tsx` wajib mengikuti pola render tunggal terpusat (`renderPageContent(pageId)`) agar otomatis kompatibel dengan Single-View di HP maupun Multi-Tab Keep-Alive & Slide-Over Drawer di Laptop/PC.
+---
 
-## 14. Dokumentasi Terstruktur, Pending Plans Persistence & Proactive Reminder Standard
-1. **Struktur Penyimpanan Dokumen (`docs/`)**:
-   Seluruh dokumen penting proyek wajib disimpan secara rapi sesuai fungsinya di dalam folder [`docs/`](file:///d:/Antigravity/WMS%20Inventory/docs/README.md) (dengan indeks utama di [`docs/README.md`](file:///d:/Antigravity/WMS%20Inventory/docs/README.md)):
-   - [`docs/PENDING_PLANS.md`](file:///d:/Antigravity/WMS%20Inventory/docs/PENDING_PLANS.md): Daftar indeks rencana fitur (*Plans* & PRD) yang masih menunggu review/eksekusi.
-   - [`docs/plans/`](file:///d:/Antigravity/WMS%20Inventory/docs/plans): Tempat seluruh dokumen *Implementation Plan* dan *PRD* (contoh: `docs/plans/PLAN_<NAMA_FITUR>.md`).
-   - [`docs/blueprints/`](file:///d:/Antigravity/WMS%20Inventory/docs/blueprints): Blueprint arsitektur modul dan standar sistem permanen.
-   - [`docs/guides/`](file:///d:/Antigravity/WMS%20Inventory/docs/guides): Panduan setup teknis, migrasi, dan operasional.
-   - [`docs/sql/`](file:///d:/Antigravity/WMS%20Inventory/docs/sql): Seluruh skema SQL database Supabase, migrasi, dan webhook.
-2. **Penyimpanan Dokumen Plan & Auto-Remind jika User Skip / Pindah Task**:
-   - Setiap kali agen membuat *Implementation Plan* atas permintaan user, selain menyimpannya di direktori artifact sesi, agen WAJIB menyimpan salinan permanennya di `docs/plans/` dan mencatatnya di [`docs/PENDING_PLANS.md`](file:///d:/Antigravity/WMS%20Inventory/docs/PENDING_PLANS.md) dengan status `⏳ PENDING REVIEW`.
-   - Apabila user belum mereview atau belum memproses plan tersebut dan tiba-tiba meminta mengerjakan hal/fitur lain terlebih dahulu, agen WAJIB tetap memprioritaskan permintaan baru user sampai tuntas, lalu **menyertakan pengingat singkat (*gentle reminder*)** di bagian akhir respons bahwa masih ada plan berstatus `⏳ PENDING REVIEW` di [`docs/PENDING_PLANS.md`](file:///d:/Antigravity/WMS%20Inventory/docs/PENDING_PLANS.md) yang siap dieksekusi kapan saja.
-3. **Update Status Saat Selesai**: Setelah plan tersebut disetujui dan selesai diimplementasikan, agen wajib memperbarui statusnya di `docs/PENDING_PLANS.md` menjadi `✅ SELESAI`.
+## 13. Desktop Multitasking Isolation (`>= 1024px` Only)
+- Multi-Tab Keep-Alive & Slide-Over Companion Drawer HANYA aktif di Desktop (`>= 1024px`).
+- Pada HP Seluler (`< 1024px`), render **hanya 1 halaman aktif (`activePage`)** secara eksklusif (unmount halaman lain) agar RAM ringan dan kamera/scanner tidak terganggu.
 
+---
 
-## 14. Dokumentasi Terstruktur, Pending Plans Persistence & Proactive Reminder Standard
-1. **Struktur Penyimpanan Dokumen (`docs/`)**:
-   Seluruh dokumen penting proyek wajib disimpan secara rapi sesuai fungsinya di dalam folder [`docs/`](file:///d:/Antigravity/WMS%20Inventory/docs/README.md) (dengan indeks utama di [`docs/README.md`](file:///d:/Antigravity/WMS%20Inventory/docs/README.md)):
-   - [`docs/PENDING_PLANS.md`](file:///d:/Antigravity/WMS%20Inventory/docs/PENDING_PLANS.md): Daftar indeks rencana fitur (*Plans* & PRD) yang masih menunggu review/eksekusi.
-   - [`docs/plans/`](file:///d:/Antigravity/WMS%20Inventory/docs/plans): Tempat seluruh dokumen *Implementation Plan* dan *PRD* (contoh: `docs/plans/PLAN_<NAMA_FITUR>.md`).
-   - [`docs/blueprints/`](file:///d:/Antigravity/WMS%20Inventory/docs/blueprints): Blueprint arsitektur modul dan standar sistem permanen.
-   - [`docs/guides/`](file:///d:/Antigravity/WMS%20Inventory/docs/guides): Panduan setup teknis, migrasi, dan operasional.
-   - [`docs/sql/`](file:///d:/Antigravity/WMS%20Inventory/docs/sql): Seluruh skema SQL database Supabase, migrasi, dan webhook.
-2. **Penyimpanan Dokumen Plan & Auto-Remind jika User Skip / Pindah Task**:
-   - Setiap kali agen membuat *Implementation Plan* atas permintaan user, selain menyimpannya di direktori artifact sesi, agen WAJIB menyimpan salinan permanennya di `docs/plans/` dan mencatatnya di [`docs/PENDING_PLANS.md`](file:///d:/Antigravity/WMS%20Inventory/docs/PENDING_PLANS.md) dengan status `⏳ PENDING REVIEW`.
-   - Apabila user belum mereview atau belum memproses plan tersebut dan tiba-tiba meminta mengerjakan hal/fitur lain terlebih dahulu, agen WAJIB tetap memprioritaskan permintaan baru user sampai tuntas, lalu **menyertakan pengingat singkat (*gentle reminder*)** di bagian akhir respons bahwa masih ada plan berstatus `⏳ PENDING REVIEW` di [`docs/PENDING_PLANS.md`](file:///d:/Antigravity/WMS%20Inventory/docs/PENDING_PLANS.md) yang siap dieksekusi kapan saja.
-3. **Update Status Saat Selesai**: Setelah plan tersebut disetujui dan selesai diimplementasikan, agen wajib memperbarui statusnya di `docs/PENDING_PLANS.md` menjadi `✅ SELESAI`.
-
-
-
-## 15. Product Lookup Integrity (HARD CONSTRAINT)
-Setiap lookup nama produk / size WAJIB mengikuti `.agents/skills/wms-product-lookup-integrity/SKILL.md`:
-1. Master Produk (`master_produk`) = satu-satunya kebenaran; VLOOKUP SKU persis (`lookupProductBySku`).
-2. DILARANG menebak size dari akhiran SKU (regex) atau nama dari prefix SKU saudara; akhiran huruf SKU umumnya kode warna (YL, OL, EM, CM, DM, DD).
-3. Katalog marketing/Trello hanya untuk pencarian; nama & size yang disimpan/ditampilkan wajib disejajarkan ke master.
-4. Koreksi data master yang tercemar hanya setelah verifikasi fisik + approval user (lihat `docs/audits/`).
-
-## 16. Zero Chunk-Load Error & Static View Bundling Standard (HARD CONSTRAINT — MANDATORY FOR ALL AGENTS)
-Untuk mencegah error operasional `Failed to fetch dynamically imported module` saat perpindahan menu di tengah rilis Vercel baru:
-1. **DILARANG KERAS Menggunakan `React.lazy(() => import(...))` pada Halaman Utama (`src/App.tsx`)**:
-   - Seluruh halaman/modul utama di `src/App.tsx` WAJIB di-import secara **statis** (`import ... from './components/...'`) agar masuk ke dalam bundel aplikasi utama yang sudah tersedia di memori sejak awal sesi dibuka.
-   - Dengan static import, perpindahan antar menu (Gudang, Loading Dock, Produksi, Store, Packing, Presensi, dll.) 100% bebas request jaringan tambahan untuk file chunk `.js` per halaman, sehingga **tidak akan pernah gagal** meskipun ada deploy versi baru di Vercel.
-2. **Vercel Rewrite Rule (`vercel.json`)**:
-   - Aturan rewrite SPA di `vercel.json` WAJIB mengecualikan `/assets/` (`"source": "/((?!assets/).*)"`) agar file statis yang tidak ditemukan tidak pernah mengembalikan `index.html` (`text/html`) yang memicu MIME/chunk error.
-3. **Self-Healing Preload Guard (`src/main.tsx` & `src/components/ErrorBoundary.tsx`)**:
-   - Jangan pernah menghapus listener `vite:preloadError` di `src/main.tsx` maupun pembersihan Service Worker cache otomatis di `ErrorBoundary.tsx`.
-
-## 17. Supabase Egress Guardrails & Low-Bandwidth Standard (MANDATORY FOR ALL AGENTS)
-Karena seluruh gambar/foto sudah disimpan di Google Drive, lalu lintas Supabase 100% hanya berupa data teks JSON dan **TIDAK BOLEH** membengkak hingga ratusan MB/hari. Setiap agent yang membuat modul baru, polling, query, atau listener Realtime WAJIB membaca dan mematuhi [SUPABASE_EGRESS_GUARDRAILS.md](SUPABASE_EGRESS_GUARDRAILS.md):
-1. **Dilarang Fast Polling (`< 30s`)** pada modul yang sudah memakai Realtime (`broadcast` / `postgres_changes`); fallback interval minimal `60s` dan wajib cek `document.visibilityState === 'visible'`.
-2. **Dilarang `select=*` tanpa `limit`** pada tabel transaksi atau tabel berkolom JSON besar (`notes_paket`, `raw_json`, `items`, `content`).
-3. **Wajib SWR Cache & In-Flight Deduplication** untuk fungsi fetch tabel utama agar mount bersamaan / multi-tab Keep-Alive tidak menggandakan request.
-4. **Wajib Role-Gating Realtime `postgres_changes`** agar akun Store/CS tidak menerima payload tabel internal gudang.
-5. **Dilarang Menyimpan Data Append-Only sebagai 1 JSON Blob Raksasa** di `wms_system_docs` untuk fitur baru.
-
-## 18. Pengecekan Surat Jalan & Pengiriman Store Guardrails (HARD CONSTRAINT)
-Setiap perubahan, perbaikan bug, atau pengembangan fitur pada **Pengecekan Surat Jalan** (`src/components/PesananSaya/DistribusiStoreTab.tsx`), **Pengiriman Store** (`src/components/Pengiriman/PengirimanStoreTab.tsx`), maupun jembatan sinkronisasi (`src/services/pengirimanStore.ts`) WAJIB membaca, mematuhi, dan **selalu memperbarui** `.agents/skills/wms-pengecekan-sj-pengiriman-guardrails/SKILL.md` (termasuk mencatat setiap bug/perbaikan/update baru ke tabel Log Bug & Pembaruan):
-1. **Alert Over-Scan & Di Luar SJ**: Suara peringatan (`playErrorBeep`) + toast + panel peringatan atas WAJIB aktif untuk kedua kondisi: SKU tidak ada di SJ **dan** SKU di SJ yang `qty_scan > qty_sj` (tanpa menduplikasi baris database ke `unexpected`).
-2. **Kontrol Eksplisit Tanpa Automasi Diam-Diam (Default OFF)**: Submit/Bulk Submit/Edit ke `SELESAI` WAJIB menggunakan checkbox opsional (**default OFF**). Pada Riwayat tab `SELESAI`, sediakan sub-tab `Belum Jadwal Kirim | Dispatched | Terkirim | Batal Kirim`, multi-select (`Select All`/`Unselect`), `Kirim ke Dispatched` (estimasi `1 koli = 40 pcs`, bebas override koli aktual), serta arsip massal `Terkirim` di `wms_system_docs` (`pengecekan_sj_shipping_overrides`) **tanpa** membuat data trip palsu di `Pengiriman Store`.
-3. **Pause-on-Edit & Downgrade Protection**: Mengedit SJ `SELESAI` yang sedang di `Dispatched` WAJIB memunculkan alert & menarik sementara status Dispatched-nya dulu (saat Simpan `SELESAI`, beri opsi checkbox default OFF untuk masuk Dispatched kembali). Downgrade `SELESAI → PENDING`, `Batal Kirim`, maupun hapus riwayat menarik dari `Dispatched` tapi **DILARANG** menghapus data yang sudah `sent`.
-4. **2-Way Anti-Duplicate Smart Merge & Privasi Store**: Tabrakan No SJ sama (baik dari Pengecekan SJ → Dispatched maupun Input Manual → Dispatched) WAJIB **menggabungkan/melengkapi/memperbarui** pada 1 kartu (0 duplikat, tidak menimpa koli aktual/foto manual). **DILARANG KERAS** mencantumkan catatan selisih internal (seperti `SJ X pcs / Fisik Y pcs`) pada item `Pengiriman Store`.
+## 14. Mandatory Permanent Global Feature Memory, Cross-Agent GitHub Sync & AI Self-Reporting Backlog
+1. **Sinkronisasi Memori Dua Arah (AI Studio <-> GitHub <-> Antigravity)**:
+   - GitHub (`origin/main`) adalah satu-satunya perantara kebenaran (*Single Source of Truth*) antara agen **AI Studio** dan **Antigravity**.
+   - Semua berkas memori (`GEMINI.md`, `docs/memory/*`, `docs/PENDING_PLANS.md`, `docs/plans/*`) wajib memakai **relative path Markdown** (bukan `file:///d:/...`) agar terbaca konsisten di kedua lingkungan.
+   - Setiap perpindahan kerja antar agen wajib mendokumentasikan status pending & checklist eksekusi di `docs/PENDING_PLANS.md` dan `docs/plans/PRD_PLAN_*.md`.
+2. **Memori Permanen Menyeluruh**: Setiap perubahan pada modul apa pun di WMS (bukan hanya AI) **WAJIB** memperbarui:
+   - `docs/memory/WMS_FEATURE_REGISTRY.md` (jika ada modul, tab, tool, tabel, atau invarian baru/berubah).
+   - `docs/memory/WMS_MODULE_CHANGELOG.md` (ringkasan perubahan terstruktur di entri teratas).
+3. **AI Self-Reporting Loop**:
+   - Saat Asisten AI WMS menerima permintaan pengguna yang belum bisa dieksekusi, AI mencatat spesifikasi ke Supabase (`wms_system_docs` -> `wms_ai_capability_gaps_index`) melalui tool `report_ai_capability_gap`.
+   - Agen coding menarik laporan ini lewat `node tools/pull_ai_dev_reports.cjs` ke `docs/memory/AI_CAPABILITY_GAPS.md`, lalu menandai selesai setelah diimplementasikan dengan `node tools/pull_ai_dev_reports.cjs --resolve <GAP-ID> "<catatan>"`.
+4. **Pending Plans Awareness**: Hormati status rencana yang ditandai `⏳ PENDING REVIEW` di `docs/PENDING_PLANS.md` (jangan dieksekusi sebelum disetujui user), dan eksekusi/verifikasi item berstatus `⏳ PENDING EXECUTION (ANTIGRAVITY)` sesuai PRD-nya.

@@ -1,0 +1,56 @@
+# WMS Feature Registry — Memori Permanen Global Semua Modul
+
+> **Dokumen Hidup (Living Memory)** — Wajib dibaca oleh **SEMUA agen coding** di awal sesi dan **WAJIB DIPERBARUI** setiap kali ada penambahan fitur baru, revisi logika bisnis, perubahan komponen/service, atau penambahan tabel database di modul mana pun (bukan hanya fitur AI).
+
+---
+
+## Ringkasan Arsitektur Inti
+- **Frontend**: React 19 + TypeScript + Vite + Tailwind CSS v4 + PWA (`vite-plugin-pwa` Zero-Reload Background Update).
+- **Database Utama**: Supabase PostgreSQL (`src/services/supabase.ts` + SWR cache + IndexedDB `src/services/localDb.ts` untuk 28.000+ Master Produk agar egress minimal).
+- **Penyimpanan Foto & Email/Sheet**: Google Apps Script (`gas/`) -> Google Drive + Google Sheets + `MailApp`.
+- **Server Proxy AI & Push**: `api/ai.js` (`@google/genai` server-side `gemini-3.1-flash-lite` & `gemini-4-hydrogen`, SSE streaming) dan `server.ts`.
+- **Single Source of Truth**:
+  - Nama & Size Produk -> **Master Produk** (`lookupProductBySku` di `src/utils/productLookup.ts`).
+  - Mutasi Stok -> **`log_produk`** (append-only, dilarang auto-adjust kecuali Approve Stock Opname).
+  - Korelasi Picking WA -> **`invoice_picking`** unik (bukan `no_sj`).
+  - Data Retur Barang -> **`public.retur_barang`** (`RTR-...`), terisolasi 100% dari `manual_shipment`.
+
+---
+
+## Peta Lengkap 22+ Modul Tertanam WMS Chocochips
+
+| No | Modul & `ActivePage` | Komponen Utama | Service / Backend | Tabel Supabase / Storage | Aturan & Invarian Kritis |
+|---:|---|---|---|---|---|
+| 1 | **Dashboard Utama** (`dashboard`) | `DashboardView` (`src/App.tsx`) | `supabase.ts`, `rackCapacityService.ts` | `stok_real_fisik`, `log_produk`, `rack_capacities` | KPI stok, kapasitas rak, navigasi cepat, hemat egress via cache lokal. |
+| 2 | **Inventory & Denah 3D** (`inventory`) | `InventoryView`, `Warehouse3DView`, `InventoryCartModal` | `supabase.ts`, `localDb.ts`, `productLookup.ts` | `stok_real_fisik`, `master_produk` | Lookup SKU ketat via `lookupProductBySku`, stok fisik vs DealPOS, Denah 3D rak, Keranjang Order. |
+| 3 | **Scanner Barcode** (`scanner`, `ScannerPopupModal`) | `CameraScanner.tsx`, `ScannerPopupModal.tsx` | `supabase.ts`, `productLookup.ts` | `log_produk` | Default kamera HP **selalu Camera 0** (rear utama), dropdown tersortir prioritas, aman offline/staging (`wms_active_staging_scans`). |
+| 4 | **Stock Opname (SO)** (`stock_opname`) | `StockOpnameView` | `supabase.ts` (`fetchStockOpnameQueue`) | `stock_opname_queue`, `log_produk`, `stok_real_fisik` | Rumus `Selisih = Scan Fisik - Stok Sistem`. Unscanned item = `0` (`ADJ_OUT`). Hanya buat `ADJ_IN`/`ADJ_OUT` saat klik Approve. |
+| 5 | **Putaway Penataan Rak** (`stock_opname` / Putaway) | `PutawayView` | `putawayService.ts` (`fetchPutawayTasks`) | `putaway_tasks`, `rack_capacities` | Rekomendasi rak aman berdasarkan kapasitas maksimal & prioritas area. |
+| 6 | **Operasi Stok & Kapasitas Rak** (`operasi_stok`) | `OperasiStokView`, `LocationPurgeModal` | `rackCapacityService.ts` | `rack_capacities`, `stok_real_fisik` | Mapping area via `getAreaFromLokasi`: Warehouse, Aksesoris, Transit, Kolian, Blok F, Perbaikan (`CC`/`PMK`/`DF`/`SORTIR`), Anomali. |
+| 7 | **Log Mutasi Produk** (`mutasi_log`) | `MutasiLogView` | `supabase.ts` (`fetchLogsBySearch`) | `log_produk` | Ledger append-only seluruh IN, OUT, SO, ADJ_IN, ADJ_OUT. |
+| 8 | **Penerimaan Produksi (CMT & Kargo)** (`produksi`, `penerimaan`) | `PenerimaanProduksiView.tsx`, `ProduksiSpreadsheetView.tsx`, `ProduksiQcTab` | `supabase.ts`, `trelloSyncService.ts`, `gasSync.ts` | `penerimaan_produksi`, `qc_reports`, `recount_logs` | Mode Spreadsheet / Tabel / Kartu; filter **Range Tanggal** (`Dari s/d Sampai`, Bottom Sheet di HP); auto-lookup kode/UP/foto Trello; Push Sheet. |
+| 9 | **Trello UP (Katalog Produksi)** (`trello_up`) | `TrelloUpView`, `TrelloImage` | `trelloSyncService.ts` | `trello_up_items` + GDrive/Trello | Sinkron kode produksi, kode UP, nama produk resmi, dan foto referensi. |
+| 10 | **Penerimaan Barang (Paket & Mutasi Store)** (`penerimaan_barang`) | `PenerimaanBarangView` | `penerimaanBarang.ts` | `penerimaan_paket`, `penerimaan_mutasi_store` | Foto dokumentasi disimpan ke Google Drive via GAS; metadata ke Supabase. |
+| 11 | **Loading Dock & Packing** (`loading_dock`, `packing`) | `LoadingDockView`, `PackingView` | `supabase.ts` | `loading_dock_batches`, `picking_list` | Koordinasi batch loading dock & verifikasi barang siap kirim. |
+| 12 | **Antrean Tugas Picking** (`picking_tasks`) | `PickingTasksView`, `DistribusiPickingModal` | `supabase.ts`, `pickingSync` | `picking_list`, `log_produk` | Prioritas 1 (Warehouse/Aksesoris/Transit) -> 2 (Kolian) -> 3 (Blok F). Perbaikan & Anomali dikecualikan. Korelasi WA wajib `invoice_picking`. |
+| 13 | **Pengiriman & Distribusi Store** (`pengiriman`, `csv_distribusi`) | `PengirimanView`, `PengecekanSjView` | `pengirimanStore.ts`, `pengirimanPaket.ts` | `distribusi_sj`, `pengiriman_store_reports`, `pengiriman_store_trips`, `handover_paket` | Pengecekan SJ hanya picking Priority 1 & 2 (`isPickingEligibleForPengecekan`). Trip armada & handover paket kurir. |
+| 14 | **Pesanan & Manual Shipment** (`pesanan_saya`, `manual_shipment`) | `ManualShipmentTab`, `AlterationRepairTab`, `IgLiveTab`, `ShopeeTab` | `supabase.ts`, `igLiveService.ts`, `gasSync.ts` | `manual_shipment`, `ig_live_orders` | Split Fulfil, Alteration/Permak, Resi, DealPOS. Wajib sinkron FAQ role-aware (`src/data/initialStoreFaq.ts`). Filter keluar record `RTR-`. |
+| 15 | **Pusat Resolusi — Retur Barang** (`pusat_resolusi`) | `PusatResolusiView`, `ReturBarangTab` | `returBarangService.ts` | `retur_barang`, `wms_system_docs` (`pusat_resolusi_settings`) | Prefix `RTR-`, alur 3 tahap (`diterima` -> `diproses` -> `dikirim`). Label A6 & Picking List cetak `produk_pengganti`. |
+| 16 | **Perbaikan (Cuci/Permak/Defect/Sortir)** (`perbaikan`) | `PerbaikanView` | `supabase.ts` (`fetchPerbaikanTicketsFromSupabase`) | `perbaikan_tickets` | Lokasi `CC...`, `PMK...`, `DF...`, `SORTIR` selalu dikecualikan dari picking otomatis. |
+| 17 | **Peminjaman Barang (SPS/Studio)** (`peminjaman`) | `PeminjamanView` | `supabase.ts` (`fetchPeminjamanFromSupabase`) | `peminjaman_sps` | Tracking peminjaman & pengembalian item foto/studio/live. |
+| 18 | **Katalog Produk & Master SKU** (`katalog_produk`) | `KatalogProdukView` | `supabase.ts`, `localDb.ts`, `productLookup.ts` | `master_produk`, `katalog_batches` | Master data 28.000+ SKU & batch rilis online/offline. |
+| 19 | **Rekap Tagihan JNE** (`rekap_tagihan_jne`) | `RekapTagihanJneView` | `jneRekapService.ts` | Google Sheets (GAS) + cache lokal | Audit ongkir, nomor resi, dan rekonsiliasi tagihan JNE. |
+| 20 | **Agenda, Project & Sticky Notes** (`agenda`, `roadmap`) | `AgendaProjectView` | `supabase.ts` (`getAgendaEvents`, `getProjects`, `getNotes`, `getDelegatedTasks`) | `agenda_events`, `projects`, `sticky_notes`, `delegated_tasks` | Kalender tim, project deadline/sub-tasks, delegasi, draft via AI. |
+| 21 | **HR & Admin** (`karyawan`, `presensi`, `roster_shift`, `lembur_cuti`, `hr_approval`, `hr_rekap`) | `KaryawanView`, `PresensiView`, `RosterShiftView`, `LemburCutiView`, `HrApprovalView`, `HrRekapView` | `supabase.ts` (HR fetchers) | `karyawan`, `presensi`, `roster_shift`, `lembur`, `cuti`, `izin_pulang_awal` | Akses ketat role HR & Superadmin (`menu_hr_*`). |
+| 22 | **Live Chat & Store Help** (`live_chat`, `StoreHelpModal`) | `LiveChatWorkspace.tsx`, `LiveChatFloatingWidget.tsx`, `StoreHelpModal.tsx` | `liveChatService.ts`, `storeHelpService.ts` | `live_chat_*`, `store_faqs`, `store_help_tickets` | Guardrails di `.agents/skills/wms-live-chat-guardrails/SKILL.md`. FAQ Store tidak boleh menyuruh Store klik tombol Admin. |
+| 23 | **Cetak Dokumen & Utilitas CSV** (`cetak_label`, `cetak_barcode`, `csv_barcode`) | `CetakLabelView`, `CetakBarcodeView`, `CsvBarcodeView` | `productLookup.ts`, `aiReportExporter.ts` | — | 5 format cetak operasional (A4 SJ/Picking, WA Tree, Picking QR, Thermal A6, Thermal Struk 58/80mm). |
+| 24 | **Asisten AI Pintar WMS** (`WmsAiModal.tsx`) | `src/components/ai/WmsAiModal.tsx` | `src/services/wmsAiService.ts`, `src/services/wmsAiExtendedTools.ts`, `src/services/wmsAiGapReportService.ts`, `src/utils/aiReportExporter.ts`, `api/ai.js` | `wms_system_docs` (`wms_ai_config`, `wms_ai_capability_gaps_index`, sessions) | Full-coverage 29+ Gemini tools lintas modul, Export Excel/CSV/PDF/MD, Smart Import Master Validation, Smart Navigation 1-klik, & AI Self-Reporting Capability Gap backlog (`tools/pull_ai_dev_reports.cjs`). |
+| 25 | **Pengaturan Sistem, RBAC & Zero-Reload Update** (`pengaturan_sistem`) | `SettingsModal`, `AppUpdateFloatingWidget`, `AppUpdateModal` | `permissions.ts`, `appVersion.ts` | `wms_users`, `public/version.json` | Desktop-only Multi-Tab Keep-Alive (`>= 1024px`); Zero-Reload background SW update; verifikasi rilis via `tools/bump_version.cjs`. |
+
+---
+
+## Daftar File Memori Permanen & Sinkronisasi
+- `docs/memory/WMS_FEATURE_REGISTRY.md` — Peta induk semua modul (file ini).
+- `docs/memory/WMS_MODULE_CHANGELOG.md` — Log kronologis setiap penambahan/revisi fitur semua modul.
+- `docs/memory/AI_CAPABILITY_GAPS.md` — Backlog laporan tugas yang belum bisa dieksekusi Asisten AI (disinkronkan dari Supabase via `node tools/pull_ai_dev_reports.cjs`).
+- `docs/PENDING_PLANS.md` — Daftar PRD & rencana fitur yang masih `⏳ PENDING REVIEW`.

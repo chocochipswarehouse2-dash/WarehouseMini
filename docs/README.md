@@ -6,13 +6,20 @@ Seluruh dokumen penting proyek ini telah dikelompokkan berdasarkan fungsi dan ke
 
 ## 🗂️ Struktur Direktori `docs/`
 
-### 1. 📋 [`docs/PENDING_PLANS.md`](file:///d:/Antigravity/WMS%20Inventory/docs/PENDING_PLANS.md) — **Daftar Plan & Fitur Menunggu Review**
+### 0. 🧠 [`docs/memory/`](./memory) — **Memori Permanen Global Semua Modul & Backlog AI** *(WAJIB BACA & UPDATE SEMUA AGEN)*
+Pusat memori hidup lintas sesi agar setiap agen coding selalu mengetahui seluruh fitur yang tertanam dan riwayat revisinya:
+- [`WMS_FEATURE_REGISTRY.md`](./memory/WMS_FEATURE_REGISTRY.md) — Peta lengkap 25 modul WMS, komponen, service, tabel Supabase, dan invarian bisnis.
+- [`WMS_MODULE_CHANGELOG.md`](./memory/WMS_MODULE_CHANGELOG.md) — Log kronologis setiap revisi & penambahan fitur semua modul.
+- [`AI_CAPABILITY_GAPS.md`](./memory/AI_CAPABILITY_GAPS.md) — Backlog laporan tugas yang belum bisa dieksekusi AI (ditarik otomatis via `node tools/pull_ai_dev_reports.cjs`).
+
+### 1. 📋 [`docs/PENDING_PLANS.md`](./PENDING_PLANS.md) — **Daftar Plan & Fitur Menunggu Review**
 Berisi tabel antrean rencana fitur (*Implementation Plans* & PRD) yang sudah dirancang namun belum dieksekusi/direview. Agent akan otomatis mengingatkan daftar ini jika Anda sedang beralih mengerjakan fitur lain.
 
-### 2. 📝 [`docs/plans/`](file:///d:/Antigravity/WMS%20Inventory/docs/plans) — **Rencana Implementasi & PRD Fitur**
+### 2. 📝 [`docs/plans/`](./plans) — **Rencana Implementasi & PRD Fitur**
 Tempat penyimpanan seluruh dokumen *Implementation Plan* dan *Product Requirements Document (PRD)*:
-- [`PLAN_AUTO_LOOKUP_PRODUKSI_TRELLO.md`](file:///d:/Antigravity/WMS%20Inventory/docs/plans/PLAN_AUTO_LOOKUP_PRODUKSI_TRELLO.md) — Rencana fitur Auto-Lookup Nama Produk, UP & Foto pada Tabel & Input Penerimaan Produksi dari Trello UP.
-- [`PRD_PLAN_FULFILMENT_PESANAN_ONLINE_JALUR_C.md`](file:///d:/Antigravity/WMS%20Inventory/docs/plans/PRD_PLAN_FULFILMENT_PESANAN_ONLINE_JALUR_C.md) — PRD & Plan Modul Fulfilment Pesanan Online (Jalur C).
+- [`PLAN_AUTO_LOOKUP_PRODUKSI_TRELLO.md`](./plans/PLAN_AUTO_LOOKUP_PRODUKSI_TRELLO.md) — Rencana fitur Auto-Lookup Nama Produk, UP & Foto pada Tabel & Input Penerimaan Produksi dari Trello UP.
+- [`PRD_PLAN_FULFILMENT_PESANAN_ONLINE_JALUR_C.md`](./plans/PRD_PLAN_FULFILMENT_PESANAN_ONLINE_JALUR_C.md) — PRD & Plan Modul Fulfilment Pesanan Online (Jalur C).
+- [`PRD_PLAN_AI_FULL_COVERAGE_DAN_MEMORI_PERMANEN_SYNC.md`](./plans/PRD_PLAN_AI_FULL_COVERAGE_DAN_MEMORI_PERMANEN_SYNC.md) — PRD & Plan Optimasi Full-Coverage Asisten AI WMS, AI Self-Reporting Backlog & Sinkronisasi Memori Permanen Lintas Agen (AI Studio <-> GitHub <-> Antigravity).
 
 ### 3. 🏗️ [`docs/blueprints/`](file:///d:/Antigravity/WMS%20Inventory/docs/blueprints) — **Blueprint Arsitektur & Standar Sistem**
 Berisi aturan bisnis permanen, standar arsitektur, dan titik pemulihan sistem:

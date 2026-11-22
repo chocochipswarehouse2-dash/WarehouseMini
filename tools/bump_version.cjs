@@ -189,6 +189,29 @@ function runVerifyRelease(args) {
     }
   } catch {}
 
+  // Check Permanent Global Feature Memory files & open AI capability gaps
+  const memoryRegistryPath = path.join(ROOT, 'docs', 'memory', 'WMS_FEATURE_REGISTRY.md');
+  const memoryChangelogPath = path.join(ROOT, 'docs', 'memory', 'WMS_MODULE_CHANGELOG.md');
+  const aiGapsPath = path.join(ROOT, 'docs', 'memory', 'AI_CAPABILITY_GAPS.md');
+  const permanentMemoryReady =
+    fs.existsSync(memoryRegistryPath) &&
+    fs.existsSync(memoryChangelogPath) &&
+    fs.existsSync(aiGapsPath);
+
+  if (!permanentMemoryReady) {
+    issues.push('Permanent Global Memory docs missing under docs/memory/ (WMS_FEATURE_REGISTRY.md, WMS_MODULE_CHANGELOG.md, AI_CAPABILITY_GAPS.md).');
+  }
+
+  let openAiCapabilityGaps = 0;
+  if (fs.existsSync(aiGapsPath)) {
+    try {
+      const gapsRaw = fs.readFileSync(aiGapsPath, 'utf8');
+      const openSection = gapsRaw.split('## Resolved / Selesai')[0] || gapsRaw;
+      const matches = openSection.match(/^### \[GAP-/gm);
+      openAiCapabilityGaps = matches ? matches.length : 0;
+    } catch {}
+  }
+
   const report = {
     checkedAt: new Date().toISOString(),
     passed: issues.length === 0,
@@ -197,6 +220,8 @@ function runVerifyRelease(args) {
     buildDate: pubVer.buildDate,
     releaseTitle: pubVer.releaseTitle,
     multiUserSafeSw: !issues.some(i => i.includes('MULTI-USER HAZARD')),
+    permanentMemoryReady,
+    openAiCapabilityGaps,
     faqSyncNotice:
       modifiedOrderFiles.length > 0 && !faqModified
         ? `Order workflow files modified (${modifiedOrderFiles.join(', ')}) — verify if src/data/initialStoreFaq.ts needs role-aware FAQ updates.`

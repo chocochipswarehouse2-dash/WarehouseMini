@@ -18,11 +18,11 @@ export interface AiReportTableData {
   headers: string[];
   rows: (string | number)[][];
   summary?: string;
-  preferredFormat?: 'excel' | 'pdf' | 'both';
+  preferredFormat?: 'excel' | 'pdf' | 'csv' | 'both' | 'all';
 }
 
 /**
- * Membersihkan simbol markdown (**bold**, `code`, dll.) agar tampilan sel di Excel & PDF bersih
+ * Membersihkan simbol markdown (**bold**, `code`, dll.) agar tampilan sel di Excel, CSV & PDF bersih
  */
 export function cleanMarkdownCellText(val: string | number | null | undefined): string {
   if (val === null || val === undefined) return '';
@@ -45,9 +45,20 @@ function buildSafeFilename(rawName?: string, fallbackTitle?: string): string {
   return `${base || 'Laporan_WMS_AI'}_${datePart}`;
 }
 
+function triggerBlobDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 /**
  * Mengekstrak semua tabel Markdown dari teks balasan AI agar setiap tabel di chat
- * juga bisa langsung diunduh ke Excel / PDF dengan 1 klik.
+ * juga bisa langsung diunduh ke Excel / CSV / PDF dengan 1 klik.
  */
 export function extractMarkdownTablesFromText(
   content: string,
@@ -89,7 +100,7 @@ export function extractMarkdownTablesFromText(
         title: cleanMarkdownCellText(lastHeading) || defaultTitle,
         headers,
         rows,
-        preferredFormat: 'both',
+        preferredFormat: 'all',
       });
     }
   };
@@ -110,6 +121,45 @@ export function extractMarkdownTablesFromText(
   if (buffer.length > 0) flush();
 
   return tables;
+}
+
+/**
+ * Mengunduh data tabel AI ke dalam format CSV (.csv) dengan UTF-8 BOM (aman untuk Excel & DealPOS)
+ */
+export function exportAiTableToCsv(table: AiReportTableData): void {
+  const cleanTitle = cleanMarkdownCellText(table.title || 'Laporan Data WMS AI');
+  const cleanHeaders = (table.headers || []).map((h) => cleanMarkdownCellText(h));
+  const cleanRows = (table.rows || []).map((row) =>
+    row.map((cell) => cleanMarkdownCellText(cell))
+  );
+
+  const escapeCsvCell = (val: string): string => {
+    const str = String(val ?? '');
+    if (/[",\r\n]/.test(str)) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+
+  const csvLines = [
+    cleanHeaders.map(escapeCsvCell).join(','),
+    ...cleanRows.map((row) => row.map(escapeCsvCell).join(','))
+  ];
+
+  // UTF-8 BOM agar Microsoft Excel langsung membaca karakter Indonesia dengan benar
+  const csvContent = '\uFEFF' + csvLines.join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const filename = `${buildSafeFilename(table.filename, cleanTitle)}.csv`;
+  triggerBlobDownload(blob, filename);
+}
+
+/**
+ * Mengunduh konten teks Markdown (.md) seperti Laporan Capability Gap / Backlog Dev AI
+ */
+export function exportMarkdownFile(rawFilename: string, markdownContent: string): void {
+  const safeBase = buildSafeFilename(rawFilename, 'Laporan_WMS_AI');
+  const blob = new Blob([markdownContent], { type: 'text/markdown;charset=utf-8;' });
+  triggerBlobDownload(blob, `${safeBase}.md`);
 }
 
 /**

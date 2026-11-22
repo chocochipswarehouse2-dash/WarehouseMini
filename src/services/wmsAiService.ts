@@ -49,7 +49,13 @@ import {
   PickingListItem
 } from '../types';
 import { AiAttachment } from '../utils/aiAttachmentParser';
-export type { AiAttachment };
+import {
+  EXTENDED_AI_TOOL_DECLARATIONS,
+  executeExtendedAiTool,
+  AiNavigationShortcut
+} from './wmsAiExtendedTools';
+import { AiCapabilityGapReport } from './wmsAiGapReportService';
+export type { AiAttachment, AiNavigationShortcut, AiCapabilityGapReport };
 
 export const SYSTEM_DOC_AI_CONFIG_ID = 'wms_ai_config';
 
@@ -91,8 +97,10 @@ export interface AiChatMessage {
     headers: string[];
     rows: (string | number)[][];
     summary?: string;
-    preferredFormat?: 'excel' | 'pdf' | 'both';
+    preferredFormat?: 'excel' | 'pdf' | 'csv' | 'both' | 'all';
   };
+  capabilityGapReport?: AiCapabilityGapReport;
+  navigationShortcut?: AiNavigationShortcut;
 }
 
 export interface AiChatSession {
@@ -521,7 +529,7 @@ const AI_TOOLS = [
       },
       {
         name: 'generate_exportable_report',
-        description: 'Membuat dokumen laporan data terstruktur yang siap diunduh oleh pengguna dalam format File Excel (.xlsx) maupun Dokumen PDF (.pdf). WAJIB panggil tool ini ketika pengguna meminta dibuatkan laporan dalam format PDF atau Excel (baik laporan stok rak/DealPOS, laporan penerimaan CMT/Kargo, rekap bulanan, maupun tabel data kustom).',
+        description: 'Membuat dokumen laporan data terstruktur yang siap diunduh oleh pengguna dalam format File Excel (.xlsx), CSV (.csv), maupun Dokumen PDF (.pdf). WAJIB panggil tool ini ketika pengguna meminta dibuatkan laporan/ekspor dalam format PDF, Excel, atau CSV (baik laporan stok rak/DealPOS, penerimaan CMT/Kargo, rekap bulanan, hasil validasi impor, maupun tabel data kustom).',
         parameters: {
           type: 'OBJECT',
           properties: {
@@ -539,7 +547,7 @@ const AI_TOOLS = [
             },
             preferred_format: {
               type: 'STRING',
-              description: 'Format yang diminta pengguna: "excel", "pdf", atau "both" (default: "both")'
+              description: 'Format yang diminta pengguna: "excel", "pdf", "csv", "both", atau "all" (default: "all")'
             },
             summary: {
               type: 'STRING',
@@ -862,7 +870,10 @@ const AI_TOOLS = [
   }
 ];
 
-const ALL_TOOL_DECLARATIONS = AI_TOOLS[0].functionDeclarations;
+const ALL_TOOL_DECLARATIONS = [
+  ...AI_TOOLS[0].functionDeclarations,
+  ...EXTENDED_AI_TOOL_DECLARATIONS
+];
 
 export function getToolsForRole(role: AiUserRole, session?: UserSession | null) {
   const perms: Partial<UserPermissions> = session?.permissions || {};
@@ -884,7 +895,10 @@ export function getToolsForRole(role: AiUserRole, session?: UserSession | null) 
         'query_hr_operations',
         'prepare_production_receipt_form',
         'view_production_receipt_form_draft',
-        'audit_stock_and_mutations'
+        'audit_stock_and_mutations',
+        'query_so_and_putaway',
+        'query_loading_dock_and_packing',
+        'get_executive_daily_summary'
       ]);
       if (storeHiddenTools.has(decl.name)) return false;
     }
@@ -3486,26 +3500,37 @@ PANDUAN & ATURAN UTAMA:
    - Jika pengguna memberikan daftar banyak produk sekaligus, gunakan SATU KALI panggilan tool "lookup_product_stock" dengan parameter "queries" berupa array seluruh nama produk.
    - Sajikan dalam format TABEL MARKDOWN LENGKAP dan DILARANG menyingkat lokasi rak dengan kata "dll." — tampilkan seluruh rak dan jumlah pcs-nya secara lengkap.
 
-3. AUDIT STOK, KAPASITAS RAK, PICKING, QC, PERBAIKAN, RETUR & JNE:
-   - Gunakan "audit_stock_and_mutations" untuk mengecek mutasi log_produk (IN/OUT/SO/ADJ), selisih stok fisik vs DealPOS, serta rak kosong/tersedia/overload.
-   - Gunakan "check_picking_and_channel_orders" untuk memantau tugas picking (invoice_picking, no_sj, under/over-pick) dan order IG Live.
-   - Gunakan "check_qc_repair_and_loans" untuk inspeksi QC, antrean Perbaikan (Cuci/Permak/Defect), dan Peminjaman SPS.
-   - Gunakan "check_retur_and_jne_rekap" untuk tiket Retur Barang (RTR-...) di Pusat Resolusi dan Rekap Tagihan Ongkir JNE.
-   - Gunakan "query_hr_operations" (khusus HR & Superadmin) untuk Roster Shift, Presensi, dan pengajuan Lembur/Cuti/Izin Pulang Awal.
+3. CAKUPAN PENUH SELURUH MODUL WMS (GUDANG, PRODUKSI, PENGIRIMAN, ORDER, RESOLUSI, HR & EKSEKUTIF):
+   - Gunakan "audit_stock_and_mutations" untuk mutasi log_produk (IN/OUT/SO/ADJ), selisih fisik vs DealPOS, & kapasitas rak.
+   - Gunakan "query_so_and_putaway" untuk antrean Stock Opname (SO) dan tugas Putaway penataan rak.
+   - Gunakan "query_loading_dock_and_packing" untuk status batch Loading Dock & progres packing.
+   - Gunakan "query_distribusi_and_pengiriman" untuk Distribusi SJ, Pengiriman Store, Trip Armada, Handover Paket, Penerimaan Paket Masuk, & Mutasi Store.
+   - Gunakan "query_all_order_channels" untuk seluruh kanal pesanan (Manual Shipment, Alteration/Permak, Shopee, Website, IG Live) dan "check_picking_and_channel_orders" untuk antrean picking.
+   - Gunakan "check_qc_repair_and_loans" untuk inspeksi QC, Perbaikan (Cuci/Permak/Defect/Sortir), & Peminjaman SPS.
+   - Gunakan "check_retur_and_jne_rekap" untuk tiket Retur Barang (RTR-...) & Rekap Tagihan Ongkir JNE.
+   - Gunakan "query_store_help_tickets" untuk tiket kendala dari tim Store.
+   - Gunakan "query_hr_operations" (khusus HR & Superadmin) untuk Roster Shift, Presensi, Lembur/Cuti/Izin.
+   - Gunakan "get_executive_daily_summary" untuk ringkasan KPI operasional harian lintas modul.
 
-4. INTEGRASI KALENDER AGENDA, PROJECT ROADMAP & STICKY NOTES:
-   - Gunakan "query_agenda_and_projects" untuk memeriksa jadwal Agenda, deadline & progress Project, sub-tasks tertunda, serta Sticky Notes/Checklists.
-   - Gunakan "prepare_agenda_or_project_draft" ketika pengguna meminta dibuatkan Agenda baru, Project baru dengan checklist tasks, atau Sticky Note — data hanya disiapkan sebagai draft modal agar pengguna mereview & klik Simpan sendiri.
+4. QNA FITUR/SOP, NAVIGASI CEPAT & INTEGRASI AGENDA/PROJECT:
+   - Gunakan "query_wms_knowledge_and_sop" saat pengguna bertanya cara pakai fitur WMS, aturan SOP, atau FAQ (patuhi batas kewenangan peran Store vs Admin).
+   - Gunakan "open_wms_module_shortcut" bila pengguna ingin diarahkan atau langsung membuka modul/halaman WMS tertentu.
+   - Gunakan "query_agenda_and_projects" dan "prepare_agenda_or_project_draft" untuk Agenda, Project, & Sticky Notes.
 
 5. HUMAN-IN-THE-LOOP DRAFT ASSISTANT (PRODUKSI, MANUAL SHIPMENT, RETUR BARANG, AGENDA & PROJECT):
    - AI TIDAK BOLEH langsung memodifikasi stok fisik rak/log_produk atau langsung menyimpan pesanan/retur/agenda permanen tanpa konfirmasi.
    - Gunakan "prepare_production_receipt_form", "prepare_manual_shipment_draft", "prepare_retur_barang_draft", dan "prepare_agenda_or_project_draft" untuk mengisi Draft Form agar pengguna mengecek & menekan Submit/Simpan sendiri.
 
-6. EKSPOR LAPORAN EXCEL & PDF + EKSTRAKSI MULTIMODAL (FOTO, PDF, EXCEL/CSV):
-   - Anda dapat membaca foto dokumen, dokumen PDF invoice/SJ/tagihan, serta spreadsheet Excel/CSV hingga 250 baris beserta ringkasan totalnya.
-   - Ketika pengguna meminta laporan Excel (.xlsx) atau PDF (.pdf), panggil "generate_exportable_report" setelah data terverifikasi.
+6. EKSPOR EXCEL/CSV/PDF + SMART IMPORT & VALIDASI LAMPIRAN (FOTO, PDF, EXCEL/CSV):
+   - Anda dapat membaca foto dokumen, PDF invoice/SJ/tagihan, serta file Excel/CSV.
+   - Saat pengguna melampirkan file/daftar barang untuk diimpor, direkonsiliasi, atau dicek anomali nama/size-nya, WAJIB panggil "validate_items_against_master" agar seluruh item divalidasi ketat dengan Master Produk resmi & stok live.
+   - Ketika pengguna meminta laporan atau file ekspor Excel (.xlsx), CSV (.csv), atau PDF (.pdf), WAJIB panggil "generate_exportable_report" setelah data terverifikasi.
 
-7. TONE OF VOICE: Ramah, ringkas, komunikatif, proaktif bertanya jika data form belum lengkap, dan solutif.`;
+7. SELF-REPORTING CAPABILITY GAP (WAJIB UNTUK TUGAS YANG BELUM BISA DIKERJAKAN AI):
+   - Jika pengguna meminta tugas, integrasi, otomasi, atau aksi WMS yang TIDAK TERSEDIA di tool Anda saat ini (misal: eksekusi otomatis API eksternal baru, fitur cetak custom baru, analisis modul yang belum punya endpoint), JANGAN hanya menolak!
+   - WAJIB panggil tool "report_ai_capability_gap" secara proaktif untuk mencatat spesifikasi pengembangannya ke backlog agen coding (Supabase -> docs/memory/AI_CAPABILITY_GAPS.md), lalu sampaikan dengan ramah ke pengguna bahwa laporan pengembangan dengan nomor GAP-ID telah tercatat otomatis untuk dikerjakan agen saat pull update (dan berikan alternatif langkah manual di WMS jika ada).
+
+8. TONE OF VOICE: Ramah, ringkas, komunikatif, proaktif bertanya jika data form belum lengkap, dan solutif.`;
 
 function buildFullSystemInstruction(session?: UserSession | null): string {
   const now = new Date();
@@ -3561,6 +3586,8 @@ export async function sendChatMessageToGemini(
   executedTools: string[];
   trelloCandidates?: TrelloCandidatePreview[];
   reportTable?: AiChatMessage['reportTable'];
+  capabilityGapReport?: AiCapabilityGapReport;
+  navigationShortcut?: AiNavigationShortcut;
   modelUsed?: string;
 }> {
   const aiRole = resolveAiUserRole(session);
@@ -3665,6 +3692,8 @@ export async function sendChatMessageToGemini(
 
   const executedTools: string[] = [];
   let generatedReportTable: AiChatMessage['reportTable'] | undefined = undefined;
+  let loggedCapabilityGap: AiCapabilityGapReport | undefined = undefined;
+  let generatedNavigationShortcut: AiNavigationShortcut | undefined = undefined;
   let modelUsed = speedMode === 'deep' ? 'gemini-4-hydrogen' : 'gemini-3.1-flash-lite';
   const collectedCandidatesMap = new Map<string, TrelloCandidatePreview>();
   const handleCollectTrelloPreviews = (previews: TrelloCandidatePreview[]) => {
@@ -3837,7 +3866,11 @@ export async function sendChatMessageToGemini(
         const rawRows = Array.isArray(fnArgs.rows)
           ? fnArgs.rows.map((r: any) => (Array.isArray(r) ? r.map((c: any) => String(c ?? '')) : []))
           : [];
-        const prefFmt = String(fnArgs.preferred_format || 'both').toLowerCase();
+        const prefFmt = String(fnArgs.preferred_format || 'all').toLowerCase();
+        const normalizedFmt =
+          prefFmt === 'excel' || prefFmt === 'pdf' || prefFmt === 'csv' || prefFmt === 'both' || prefFmt === 'all'
+            ? prefFmt
+            : 'all';
         generatedReportTable = {
           title: String(fnArgs.title || 'Laporan Data WMS AI').trim(),
           subtitle: fnArgs.subtitle ? String(fnArgs.subtitle).trim() : undefined,
@@ -3845,15 +3878,28 @@ export async function sendChatMessageToGemini(
           headers: rawHeaders,
           rows: rawRows,
           summary: fnArgs.summary ? String(fnArgs.summary).trim() : undefined,
-          preferredFormat: prefFmt === 'excel' ? 'excel' : prefFmt === 'pdf' ? 'pdf' : 'both'
+          preferredFormat: normalizedFmt
         };
         return {
           status: 'report_ready',
-          pesan: `Dokumen laporan "${generatedReportTable.title}" (${rawRows.length} baris data) telah berhasil disusun dan tombol Download Excel (.xlsx) serta Download PDF (.pdf) kini tampil di layar pengguna.`,
+          pesan: `Dokumen laporan "${generatedReportTable.title}" (${rawRows.length} baris data) telah berhasil disusun dan tombol Download Excel (.xlsx), CSV (.csv), serta PDF (.pdf) kini tampil di layar pengguna.`,
           total_baris: rawRows.length,
           kolom: rawHeaders
         };
       }
+
+      // Dispatch ke 10 Extended Cross-Module & Self-Reporting Tools
+      const extendedOutcome = await executeExtendedAiTool(fnName, fnArgs, {
+        session,
+        aiRole,
+        lastUserPrompt: userPrompt
+      });
+      if (extendedOutcome.handled) {
+        if (extendedOutcome.gapReport) loggedCapabilityGap = extendedOutcome.gapReport;
+        if (extendedOutcome.navigationShortcut) generatedNavigationShortcut = extendedOutcome.navigationShortcut;
+        return extendedOutcome.result;
+      }
+
       return { error: `Fungsi ${fnName} tidak dikenali.` };
     } catch (toolExecErr: any) {
       return { error: toolExecErr?.message || 'Gagal mengeksekusi data WMS' };
@@ -3896,6 +3942,8 @@ export async function sendChatMessageToGemini(
         executedTools,
         trelloCandidates: finalCandidates.length > 0 ? finalCandidates : undefined,
         reportTable: generatedReportTable,
+        capabilityGapReport: loggedCapabilityGap,
+        navigationShortcut: generatedNavigationShortcut,
         modelUsed
       };
     }
@@ -3950,6 +3998,8 @@ export async function sendChatMessageToGemini(
         executedTools,
         trelloCandidates: finalCandidates.length > 0 ? finalCandidates : undefined,
         reportTable: generatedReportTable,
+        capabilityGapReport: loggedCapabilityGap,
+        navigationShortcut: generatedNavigationShortcut,
         modelUsed
       };
     }
@@ -3965,6 +4015,8 @@ export async function sendChatMessageToGemini(
     executedTools,
     trelloCandidates: finalCandidates.length > 0 ? finalCandidates : undefined,
     reportTable: generatedReportTable,
+    capabilityGapReport: loggedCapabilityGap,
+    navigationShortcut: generatedNavigationShortcut,
     modelUsed
   };
 }

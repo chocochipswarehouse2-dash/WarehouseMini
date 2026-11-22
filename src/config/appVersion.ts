@@ -15,19 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.24.9",
-  "versionCode": 449,
+  "version": "v2.25.0",
+  "versionCode": 450,
   "buildDate": "22 November 2026",
-  "buildHash": "wms-261122-v449-1356",
-  "releaseTitle": "WMS v2.24.9 — Filter Rentang Tanggal Spreadsheet Produksi",
+  "buildHash": "wms-261122-v450-1438",
+  "releaseTitle": "WMS v2.25.0 — Memori Permanen Global & Full-Coverage Asisten AI WMS",
   "releaseNotes": [
-    "Mengubah dropdown daftar SJ pada tampilan Spreadsheet Produksi menjadi filter rentang tanggal (Dari s/d Sampai)",
-    "Tampilan Desktop inline date range dan Seluler berupa bottom sheet dengan preset cepat (Hari Ini, 7 Hari, 30 Hari, Bulan Ini) yang tersinkronisasi dengan filter Riwayat Produksi"
+    "Fondasi Memori Permanen Global semua modul di docs/memory/ (Feature Registry, Changelog & AI Backlog) + pembersihan GEMINI.md",
+    "Sistem AI Self-Reporting Capability Gap (Supabase + panel Backlog Dev + CLI pull_ai_dev_reports.cjs)",
+    "Upgrade Full-Coverage Asisten AI: 10 tool lintas modul (SOP/FAQ QnA, Loading Dock, Distribusi/Pengiriman, Order Channels, SO/Putaway, Store Help, Ringkasan Eksekutif, Validasi Master Produk, Navigasi 1-Klik) & Export CSV (.csv)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.24.9",
+    "versionCode": 449,
+    "buildDate": "22 November 2026",
+    "buildHash": "wms-261122-v449-1356",
+    "releaseTitle": "WMS v2.24.9 — Filter Rentang Tanggal Spreadsheet Produksi",
+    "releaseNotes": [
+      "Mengubah dropdown daftar SJ pada tampilan Spreadsheet Produksi menjadi filter rentang tanggal (Dari s/d Sampai)",
+      "Tampilan Desktop inline date range dan Seluler berupa bottom sheet dengan preset cepat (Hari Ini, 7 Hari, 30 Hari, Bulan Ini) yang tersinkronisasi dengan filter Riwayat Produksi"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.24.8",
     "versionCode": 448,
@@ -116,19 +129,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Menghapus seluruh margin pinggir, padding ganda, dan bingkai kartu pada Live Chat agar tampil full-screen edge-to-edge seperti aplikasi chat asli di seluler maupun desktop",
       "Ruang percakapan aktif di seluler kini tampil layar penuh (menutupi bilah navigasi bawah & header ganda) dengan safe-area top/bottom",
       "Proporsi panel chat desktop diperluas (sidebar 25% & area chat 75% di layar xl+) serta dukungan edge-to-edge penuh di Panel Pendamping"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.24.1",
-    "versionCode": 441,
-    "buildDate": "21 November 2026",
-    "buildHash": "wms-261121-v441-0546",
-    "releaseTitle": "WMS v2.24.1 — Optimasi Tabel, Filter & Sort Stok Produk",
-    "releaseNotes": [
-      "Menghapus 4 kartu ringkasan KPI pada tab Stok Produk (sudah tersedia di Dashboard Kapasitas) agar tabel langsung tampil penuh di seluler maupun desktop",
-      "Menambahkan filter Status Stok (Ada Stok, Fisik > 0, DP > 0 Fisik 0, Stok Minus, Semua Master), filter Size master, dropdown Urutkan, dan tombol Reset filter",
-      "Merapikan toolbar seluler bergaya aplikasi (aksi sekunder kolapsibel & swipe horizontal) serta memperluas tinggi area tabel stok produk"
     ],
     "minSupportedVersion": "v2.0.0"
   }

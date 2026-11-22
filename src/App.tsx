@@ -5621,6 +5621,9 @@ export default function App() {
         onNavigateToAgendaDraft={() => {
           handleSelectPage('agenda');
         }}
+        onNavigateToPage={(page) => {
+          handleSelectPage(page);
+        }}
       />
 
       {/* Wide Popup Scanner Modal (Minimizable & Offline Outbox Safe) */}

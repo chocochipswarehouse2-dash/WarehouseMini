@@ -42,17 +42,29 @@ import {
   RotateCcw as ReturIcon,
   Zap,
   Brain,
-  Square
+  Square,
+  FileDown,
+  ClipboardList,
+  Compass
 } from 'lucide-react';
-import { UserSession } from '../../types';
+import { ActivePage, UserSession } from '../../types';
 import { isWarehouseAccountOnly } from '../../services/permissions';
 import { DraggableFloatingBubble, BubbleDragHandle } from '../common/DraggableFloatingBubble';
 import { parseAiAttachmentFile, AiAttachment } from '../../utils/aiAttachmentParser';
 import {
   exportAiTableToExcel,
+  exportAiTableToCsv,
   exportAiTableToPdf,
+  exportMarkdownFile,
   cleanMarkdownCellText
 } from '../../utils/aiReportExporter';
+import {
+  AiCapabilityGapReport,
+  fetchAiCapabilityGaps,
+  updateAiCapabilityGapStatus,
+  deleteAiCapabilityGap,
+  formatAiCapabilityGapsMarkdown
+} from '../../services/wmsAiGapReportService';
 import { TrelloImage } from '../Trello/TrelloImage';
 import {
   AiChatMessage,
@@ -82,6 +94,7 @@ interface WmsAiModalProps {
   onNavigateToManualShipmentForm?: () => void;
   onNavigateToReturForm?: () => void;
   onNavigateToAgendaDraft?: () => void;
+  onNavigateToPage?: (page: ActivePage) => void;
 }
 
 function getSuggestedPrompts(role: AiUserRole) {
@@ -209,7 +222,8 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
   onNavigateToProduksiInput,
   onNavigateToManualShipmentForm,
   onNavigateToReturForm,
-  onNavigateToAgendaDraft
+  onNavigateToAgendaDraft,
+  onNavigateToPage
 }) => {
   const sessionUser = session?.username || 'default_user';
   const sessionsStorageKey = `wms_ai_sessions_${sessionUser}`;
@@ -508,10 +522,65 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
     }
   };
 
-  // Role, Model Status, Cloud Sync, Voice-to-Text & Superadmin Access Settings
+  // Role, Model Status, Cloud Sync, Voice-to-Text, Dev Backlog & Superadmin Access Settings
   const aiUserRole = useMemo(() => resolveAiUserRole(session), [session]);
   const suggestedPrompts = useMemo(() => getSuggestedPrompts(aiUserRole), [aiUserRole]);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isBacklogOpen, setIsBacklogOpen] = useState<boolean>(false);
+  const [devBacklogGaps, setDevBacklogGaps] = useState<AiCapabilityGapReport[]>([]);
+  const [isLoadingBacklog, setIsLoadingBacklog] = useState<boolean>(false);
+  const canViewDevBacklog = aiUserRole === 'superadmin' || aiUserRole === 'warehouse_ops';
+  const openBacklogCount = useMemo(
+    () => devBacklogGaps.filter((g) => g.status !== 'done').length,
+    [devBacklogGaps]
+  );
+
+  const loadDevBacklog = async (forceRefresh = false) => {
+    setIsLoadingBacklog(true);
+    try {
+      const items = await fetchAiCapabilityGaps(forceRefresh);
+      setDevBacklogGaps(items);
+    } finally {
+      setIsLoadingBacklog(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen && canViewDevBacklog) {
+      loadDevBacklog(false);
+    }
+  }, [isOpen, canViewDevBacklog]);
+
+  const handleToggleGapStatus = async (gap: AiCapabilityGapReport) => {
+    const nextStatus = gap.status === 'done' ? 'open' : 'done';
+    const updated = await updateAiCapabilityGapStatus(
+      gap.id,
+      nextStatus,
+      nextStatus === 'done' ? `Ditandai selesai oleh ${session?.username || 'admin'}` : ''
+    );
+    setDevBacklogGaps(updated);
+    onNotify?.(
+      nextStatus === 'done'
+        ? `Laporan ${gap.id} ditandai selesai`
+        : `Laporan ${gap.id} dibuka kembali`,
+      'success'
+    );
+  };
+
+  const handleDeleteGap = async (gapId: string) => {
+    const updated = await deleteAiCapabilityGap(gapId);
+    setDevBacklogGaps(updated);
+    onNotify?.(`Laporan ${gapId} dihapus dari backlog`, 'info');
+  };
+
+  const handleNavigateShortcut = (page: ActivePage, label: string) => {
+    if (onNavigateToPage) {
+      onNavigateToPage(page);
+      setIsMinimized(true);
+      onNotify?.(`Membuka modul ${label}...`, 'info');
+    }
+  };
+
   const [aiConfig, setAiConfig] = useState<WmsAiConfig>({
     allowedUsers: ['admin', 'warehouse', 'chocoadm'],
     enabled: true,
@@ -892,7 +961,17 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
           else if (toolName === 'prepare_retur_barang_draft') toolLabel = 'Menyiapkan Draft Tiket Retur Barang...';
           else if (toolName === 'query_agenda_and_projects') toolLabel = 'Membaca jadwal Agenda, Project & Catatan...';
           else if (toolName === 'prepare_agenda_or_project_draft') toolLabel = 'Menyiapkan Draft Agenda / Project / Catatan...';
-          else if (toolName === 'generate_exportable_report') toolLabel = 'Menyusun dokumen laporan PDF & Excel...';
+          else if (toolName === 'generate_exportable_report') toolLabel = 'Menyusun dokumen laporan Excel, CSV & PDF...';
+          else if (toolName === 'query_wms_knowledge_and_sop') toolLabel = 'Mencari panduan SOP & FAQ resmi WMS...';
+          else if (toolName === 'query_loading_dock_and_packing') toolLabel = 'Mengecek antrean Loading Dock & status packing...';
+          else if (toolName === 'query_distribusi_and_pengiriman') toolLabel = 'Mengambil data Distribusi SJ, Pengiriman & Paket...';
+          else if (toolName === 'query_all_order_channels') toolLabel = 'Mengecek pesanan Manual Shipment, Shopee, Web & IG Live...';
+          else if (toolName === 'query_so_and_putaway') toolLabel = 'Mengecek antrean Stock Opname & tugas Putaway...';
+          else if (toolName === 'query_store_help_tickets') toolLabel = 'Membaca tiket kendala dari tim Store...';
+          else if (toolName === 'get_executive_daily_summary') toolLabel = 'Menghitung ringkasan KPI operasional harian WMS...';
+          else if (toolName === 'validate_items_against_master') toolLabel = 'Memvalidasi daftar item terhadap Master Produk & stok live...';
+          else if (toolName === 'open_wms_module_shortcut') toolLabel = 'Menyiapkan tombol pintasan modul WMS...';
+          else if (toolName === 'report_ai_capability_gap') toolLabel = 'Mencatat laporan kebutuhan fitur ke Backlog Dev Agen...';
           setActiveToolName(toolLabel);
           // Bersihkan placeholder streaming sementara jika AI memutuskan memanggil tool
           setMessages((prev) => prev.filter((m) => m.id !== streamingMsgId));
@@ -937,6 +1016,10 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
         setLastModelUsed(formatPrettyModelName(result.modelUsed));
       }
 
+      if (result.capabilityGapReport && canViewDevBacklog) {
+        loadDevBacklog(true);
+      }
+
       const botMsg: AiChatMessage = {
         id: streamingMsgId,
         role: 'model',
@@ -945,7 +1028,9 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
         isStreaming: false,
         toolCallsExecuted: result.executedTools,
         trelloCandidates: result.trelloCandidates,
-        reportTable: result.reportTable
+        reportTable: result.reportTable,
+        capabilityGapReport: result.capabilityGapReport,
+        navigationShortcut: result.navigationShortcut
       };
 
       setMessages((prev) => {
@@ -1078,18 +1163,30 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
             <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Tabel Data ({rows.length} Baris)
             </span>
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => {
                   exportAiTableToExcel(exportPayload);
                   onNotify?.('File Excel (.xlsx) berhasil diunduh!', 'success');
                 }}
-                className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-extrabold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                className="px-2 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-extrabold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
                 title="Download tabel ini dalam format Microsoft Excel (.xlsx)"
               >
                 <FileSpreadsheet className="w-3 h-3" />
                 <span>Excel (.xlsx)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  exportAiTableToCsv(exportPayload);
+                  onNotify?.('File CSV (.csv) berhasil diunduh!', 'success');
+                }}
+                className="px-2 py-1 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[10px] font-extrabold flex items-center gap-1 transition-colors cursor-pointer"
+                title="Download tabel ini dalam format CSV (.csv UTF-8)"
+              >
+                <FileDown className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                <span>CSV (.csv)</span>
               </button>
               <button
                 type="button"
@@ -1373,6 +1470,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
               onClick={() => {
                 setIsHistoryOpen(!isHistoryOpen);
                 setIsSettingsOpen(false);
+                setIsBacklogOpen(false);
               }}
               title="Lihat riwayat percakapan lampau"
               className={`px-2 sm:px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
@@ -1390,6 +1488,40 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
               )}
             </button>
 
+            {/* AI Dev Backlog Button (Superadmin / Warehouse Ops) */}
+            {canViewDevBacklog && (
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !isBacklogOpen;
+                  setIsBacklogOpen(next);
+                  setIsSettingsOpen(false);
+                  setIsHistoryOpen(false);
+                  if (next) loadDevBacklog(true);
+                }}
+                title="Lihat Backlog Laporan Pengembangan AI (tugas yang belum bisa dieksekusi AI)"
+                className={`px-2 sm:px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  isBacklogOpen
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                <ClipboardList className="w-3.5 h-3.5" />
+                <span className="hidden md:inline text-[11px]">Backlog Dev</span>
+                {openBacklogCount > 0 && (
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+                      isBacklogOpen
+                        ? 'bg-indigo-700 text-white'
+                        : 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300'
+                    }`}
+                  >
+                    {openBacklogCount}
+                  </span>
+                )}
+              </button>
+            )}
+
             {/* Owner Settings & Whitelist Button (Khusus Akun @warehouse / Pemilik Sistem) */}
             {isOwnerWarehouse && (
               <button
@@ -1397,6 +1529,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                 onClick={() => {
                   setIsSettingsOpen(!isSettingsOpen);
                   setIsHistoryOpen(false);
+                  setIsBacklogOpen(false);
                 }}
                 title="Kelola Whitelist User & Status Layanan Server AI (Khusus Akun @warehouse)"
                 className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
@@ -1543,6 +1676,142 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* AI DEV BACKLOG PANEL (SELF-REPORTING CAPABILITY GAPS) */}
+        {/* ========================================================================= */}
+        {isBacklogOpen && canViewDevBacklog && (
+          <div className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/95 dark:bg-slate-800/95 p-3 sm:p-4 shrink-0 max-h-[52vh] flex flex-col gap-3 animate-in slide-in-from-top duration-200">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <ClipboardList className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                  <h4 className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">
+                    Backlog Pengembangan AI ({openBacklogCount} Open / {devBacklogGaps.length} Total)
+                  </h4>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  Laporan otomatis saat AI menerima tugas baru yang belum didukung. Agen coding menarik daftar ini via <span className="font-mono font-bold">node tools/pull_ai_dev_reports.cjs</span>.
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const md = formatAiCapabilityGapsMarkdown(devBacklogGaps);
+                    exportMarkdownFile('WMS_AI_Capability_Gaps_Backlog', md);
+                    onNotify?.('File Markdown Backlog Dev AI (.md) berhasil diunduh', 'success');
+                  }}
+                  disabled={devBacklogGaps.length === 0}
+                  className="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Unduh Semua (.md)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => loadDevBacklog(true)}
+                  disabled={isLoadingBacklog}
+                  className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingBacklog ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">Muat Ulang</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsBacklogOpen(false)}
+                  className="px-2 py-1.5 text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 font-bold cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-y-auto space-y-2 pr-1">
+              {isLoadingBacklog && devBacklogGaps.length === 0 ? (
+                <div className="py-6 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Memuat backlog laporan dari Supabase...</span>
+                </div>
+              ) : devBacklogGaps.length === 0 ? (
+                <div className="py-6 text-center text-xs text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700">
+                  Belum ada laporan gap kapabilitas AI yang tercatat. Saat AI menemui tugas WMS yang belum didukung, laporan akan muncul otomatis di sini.
+                </div>
+              ) : (
+                devBacklogGaps.map((gap) => (
+                  <div
+                    key={gap.id}
+                    className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700/80 flex flex-col sm:flex-row sm:items-start justify-between gap-2.5"
+                  >
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                          {gap.id}
+                        </span>
+                        <span
+                          className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded ${
+                            gap.status === 'done'
+                              ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                              : 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                          }`}
+                        >
+                          {gap.status === 'done' ? 'Selesai' : 'Open'}
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300">
+                          {gap.moduleArea}
+                        </span>
+                        {gap.occurrences > 1 && (
+                          <span className="text-[10px] font-mono font-bold text-rose-600 dark:text-rose-400">
+                            {gap.occurrences}x diminta
+                          </span>
+                        )}
+                      </div>
+                      <h5 className="text-xs font-extrabold text-slate-900 dark:text-white">
+                        {gap.title}
+                      </h5>
+                      <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                        <span className="font-bold">Usulan Tool:</span> {gap.proposedToolOrFeature}
+                      </p>
+                      <p className="text-[10px] text-slate-400">
+                        Pelapor: <span className="font-mono">{gap.reportedBy}</span> • {new Date(gap.createdAt).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleGapStatus(gap)}
+                        className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[11px] font-bold cursor-pointer"
+                      >
+                        {gap.status === 'done' ? 'Buka Lagi' : 'Tandai Selesai'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const md = formatAiCapabilityGapsMarkdown([gap], `AI Dev Report — ${gap.id}`);
+                          exportMarkdownFile(`AI_Gap_${gap.id}`, md);
+                        }}
+                        title="Unduh spesifikasi laporan (.md)"
+                        className="p-1.5 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                      {isOwnerWarehouse && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteGap(gap.id)}
+                          title="Hapus laporan"
+                          className="p-1.5 rounded-lg bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600 border border-slate-200 dark:border-slate-700 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
@@ -1996,7 +2265,81 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                         </div>
                       )}
 
-                    {/* Kartu Laporan Siap Unduh (PDF & Excel) jika tool generate_exportable_report dieksekusi */}
+                    {/* Kartu Pintasan Navigasi Modul WMS (1-Klik) */}
+                    {!isUser && msg.navigationShortcut && onNavigateToPage && (
+                      <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 bg-indigo-50/70 dark:bg-indigo-950/30 p-3 rounded-xl border border-indigo-200/80 dark:border-indigo-800/80">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                            <Compass className="w-3.5 h-3.5 shrink-0" />
+                            <span>Pintasan Modul WMS</span>
+                          </div>
+                          <p className="text-xs font-extrabold text-slate-900 dark:text-white mt-0.5">
+                            {msg.navigationShortcut.label}
+                          </p>
+                          <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
+                            {msg.navigationShortcut.description}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleNavigateShortcut(
+                              msg.navigationShortcut!.page,
+                              msg.navigationShortcut!.label
+                            )
+                          }
+                          className="px-3 py-2 rounded-xl text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer shrink-0"
+                        >
+                          <span>Buka {msg.navigationShortcut.label}</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Kartu Laporan AI Capability Gap (Tercatat untuk Agen Coding saat Pull Update) */}
+                    {!isUser && msg.capabilityGapReport && (
+                      <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 bg-amber-50/80 dark:bg-amber-950/30 p-3 rounded-xl border border-amber-200 dark:border-amber-800/80 space-y-2">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                              <ClipboardList className="w-3.5 h-3.5 shrink-0" />
+                              <span>Laporan Pengembangan Agen Tercatat</span>
+                            </div>
+                            <h4 className="text-xs font-black text-slate-900 dark:text-white mt-0.5">
+                              {msg.capabilityGapReport.title}
+                            </h4>
+                            <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
+                              {msg.capabilityGapReport.proposedToolOrFeature}
+                            </p>
+                          </div>
+                          <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-white dark:bg-slate-900 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700 shrink-0">
+                            {msg.capabilityGapReport.id}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                            Modul: <strong className="text-slate-700 dark:text-slate-200">{msg.capabilityGapReport.moduleArea}</strong> • Siap ditarik agen saat pull update
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const md = formatAiCapabilityGapsMarkdown(
+                                [msg.capabilityGapReport!],
+                                `AI Dev Report — ${msg.capabilityGapReport!.id}`
+                              );
+                              exportMarkdownFile(`AI_Gap_${msg.capabilityGapReport!.id}`, md);
+                              onNotify?.(`Laporan ${msg.capabilityGapReport!.id} (.md) berhasil diunduh!`, 'success');
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[11px] font-extrabold flex items-center gap-1.5 transition-colors cursor-pointer"
+                          >
+                            <Download className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                            <span>Unduh Laporan (.md)</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Kartu Laporan Siap Unduh (Excel, CSV & PDF) jika tool generate_exportable_report dieksekusi */}
                     {!isUser && msg.reportTable && msg.reportTable.rows && msg.reportTable.rows.length > 0 && (
                       <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/70 p-3 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2.5">
                         <div className="flex items-start justify-between gap-2">
@@ -2026,10 +2369,22 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                               exportAiTableToExcel(msg.reportTable!);
                               onNotify?.(`Laporan Excel "${msg.reportTable!.title}" berhasil diunduh!`, 'success');
                             }}
-                            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                            className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
                           >
                             <FileSpreadsheet className="w-3.5 h-3.5" />
                             <span>Unduh Excel (.xlsx)</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              exportAiTableToCsv(msg.reportTable!);
+                              onNotify?.(`Laporan CSV "${msg.reportTable!.title}" berhasil diunduh!`, 'success');
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-extrabold flex items-center gap-1.5 transition-colors cursor-pointer"
+                          >
+                            <FileDown className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                            <span>Unduh CSV (.csv)</span>
                           </button>
 
                           <button
