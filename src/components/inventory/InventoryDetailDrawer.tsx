@@ -44,7 +44,7 @@ import {
   type AreaFilterType,
   type InventoryRow,
 } from './inventoryModel';
-import { SelisihCell } from './InventoryList';
+import { AreaBadge, SelisihCell } from './InventoryList';
 import { fetchLogsBySku, deleteLogProdukItem, updateLogProdukItem, getAreaFromLokasi, supabaseFetch } from '../../services/supabase';
 import { applyDelta } from './useInventoryStock';
 import { formatOperatorWithPersonName } from '../../utils/userResolver';
@@ -793,64 +793,41 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
               </div>
 
               {/* Filters, Search & View Mode Switcher (Tabel vs Kartu) */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {(
-                    [
-                      { key: 'ALL', label: `Semua (${logs.length})` },
-                      { key: 'IN', label: 'Masuk / IN' },
-                      { key: 'OUT', label: 'Keluar / OUT' },
-                      { key: 'SO', label: `SO (${logStats.soCount})` },
-                      { key: 'ADJ', label: `Adjust (${logStats.adjCount})` },
-                    ] as const
-                  ).map((f) => (
-                    <button
-                      key={f.key}
-                      type="button"
-                      onClick={() => setLogFilter(f.key)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                        logFilter === f.key
-                          ? 'bg-indigo-600 text-white shadow-2xs'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      {f.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <div className="relative flex-1 sm:w-64">
-                    <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <div className="flex flex-col gap-2">
+                {/* Search + View Switcher + Refresh */}
+                <div className="flex items-center gap-2 w-full">
+                  <div className="relative flex-1 min-w-0">
+                    <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                     <input
                       type="text"
                       value={logSearch}
                       onChange={(e) => setLogSearch(e.target.value)}
-                      placeholder="Cari invoice, lokasi rak, operator..."
-                      className="w-full pl-8 pr-7 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0E1420] text-xs font-medium text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500"
+                      placeholder="Cari invoice, rak, operator..."
+                      className="w-full min-h-[38px] pl-8 pr-8 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-medium text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 transition-colors"
                     />
                     {logSearch && (
                       <button
                         type="button"
                         onClick={() => setLogSearch('')}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-md flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-sm cursor-pointer"
+                        aria-label="Hapus pencarian"
                       >
                         ×
                       </button>
                     )}
                   </div>
 
-                  {/* View Mode Switcher: Tabel vs Kartu */}
-                  <div className="inline-flex items-center bg-slate-100 dark:bg-slate-800/90 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700/80 shrink-0">
+                  {/* View Mode Switcher: Kartu vs Tabel */}
+                  <div className="inline-flex items-center bg-slate-100 dark:bg-slate-800/90 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700/80 shrink-0 min-h-[38px]">
                     <button
                       type="button"
                       onClick={() => handleSetLogViewMode('TABLE')}
-                      className={`py-1 px-2.5 text-[11px] font-bold rounded-md flex items-center gap-1 transition-all cursor-pointer ${
+                      className={`h-8 px-2.5 text-[11px] font-bold rounded-lg flex items-center gap-1 transition-all cursor-pointer ${
                         logViewMode === 'TABLE'
                           ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs border border-slate-200/80 dark:border-slate-700'
                           : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
                       }`}
-                      title="Tampilan Tabel seperti di Log Produk"
+                      title="Tampilan Tabel"
                     >
                       <Table2 className="w-3.5 h-3.5 shrink-0" />
                       <span>Tabel</span>
@@ -858,7 +835,7 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
                     <button
                       type="button"
                       onClick={() => handleSetLogViewMode('CARD')}
-                      className={`py-1 px-2.5 text-[11px] font-bold rounded-md flex items-center gap-1 transition-all cursor-pointer ${
+                      className={`h-8 px-2.5 text-[11px] font-bold rounded-lg flex items-center gap-1 transition-all cursor-pointer ${
                         logViewMode === 'CARD'
                           ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs border border-slate-200/80 dark:border-slate-700'
                           : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
@@ -874,11 +851,38 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
                     type="button"
                     onClick={() => row.sku && loadProductLogs(row.sku)}
                     disabled={loadingLogs}
-                    className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 transition-colors cursor-pointer shrink-0"
+                    className="w-[38px] h-[38px] inline-flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer shrink-0 disabled:opacity-50"
                     title="Segarkan data log produk"
+                    aria-label="Segarkan data log produk"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${loadingLogs ? 'animate-spin text-indigo-500' : ''}`} />
                   </button>
+                </div>
+
+                {/* Horizontal-swipe quick type filter strip */}
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                  {(
+                    [
+                      { key: 'ALL', label: `Semua (${logs.length})` },
+                      { key: 'IN', label: 'Masuk (IN)' },
+                      { key: 'OUT', label: 'Keluar (OUT)' },
+                      { key: 'SO', label: `Opname (${logStats.soCount})` },
+                      { key: 'ADJ', label: `Adjust (${logStats.adjCount})` },
+                    ] as const
+                  ).map((f) => (
+                    <button
+                      key={f.key}
+                      type="button"
+                      onClick={() => setLogFilter(f.key)}
+                      className={`px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap shrink-0 transition-colors cursor-pointer border ${
+                        logFilter === f.key
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                          : 'bg-white dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -901,21 +905,201 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
                   </p>
                 </div>
               ) : logViewMode === 'TABLE' ? (
-                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0E1420] overflow-hidden shadow-2xs">
-                  <div className="overflow-x-auto scrollbar-thin">
-                    <table className="w-full min-w-[760px] text-left text-xs border-collapse lg:table-fixed">
-                      <thead>
-                        <tr className="bg-slate-50 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                          <th className="py-2.5 px-3 w-[16%]">Tipe &amp; Waktu</th>
-                          <th className="py-2.5 px-3 w-[20%]">Invoice &amp; Sumber</th>
-                          <th className="py-2.5 px-3 w-[15%]">Lokasi &amp; Area</th>
-                          <th className="py-2.5 px-3 w-[8%] text-center">Qty</th>
-                          <th className="py-2.5 px-3 w-[9%] text-center">Stok</th>
-                          <th className="py-2.5 px-3 w-[23%]">Operator &amp; Catatan</th>
-                          <th className="py-2.5 px-3 w-[9%] text-right">Aksi</th>
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-2xs">
+                  {/* MOBILE INVENTORY-STYLE TABLE (< md): 4 Proportional Columns, Zero Horizontal Scroll */}
+                  <div className="block md:hidden w-full">
+                    <table className="w-full table-fixed border-collapse text-left">
+                      <thead className="sticky top-0 z-10 bg-slate-100/95 dark:bg-[#121824]/95 text-slate-600 dark:text-slate-300 text-[10px] font-extrabold uppercase border-b border-slate-300 dark:border-slate-700">
+                        <tr>
+                          <th className="py-2 pl-2.5 pr-1.5 w-[44%] border-r border-slate-200/90 dark:border-slate-700/80">
+                            Tipe &amp; Invoice
+                          </th>
+                          <th className="py-2 px-1 w-[14%] text-center border-r border-slate-200/90 dark:border-slate-700/80">
+                            Qty
+                          </th>
+                          <th className="py-2 px-1 w-[14%] text-center bg-slate-200/40 dark:bg-slate-800/60 border-r border-slate-200/90 dark:border-slate-700/80">
+                            Stok
+                          </th>
+                          <th className="py-2 pl-1.5 pr-2 w-[28%]">
+                            Lokasi
+                          </th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                      <tbody className="divide-y divide-slate-200/90 dark:divide-slate-800">
+                        {filteredLogs.map((log, idx) => {
+                          const isPlus = log.type === 'IN' || log.type === 'ADJ_IN';
+                          const isMinus = log.type === 'OUT' || log.type === 'ADJ_OUT';
+                          const isSo = log.type === 'SO';
+                          const resolvedArea = getAreaFromLokasi(log.lokasi || '', log.area);
+                          const isLocAnomaly = resolvedArea === 'Anomali';
+                          const logKey = log.id || `${log.invoice}_${log.sku}_${log.created_at}`;
+                          const stokSaatItu = logStockMap.get(logKey) ?? 0;
+                          const qtyCellBg = isPlus
+                            ? 'bg-emerald-50/40 dark:bg-emerald-950/20'
+                            : isMinus
+                            ? 'bg-rose-50/40 dark:bg-rose-950/20'
+                            : 'bg-indigo-50/35 dark:bg-indigo-950/20';
+
+                          return (
+                            <tr
+                              key={log.id || `${log.invoice}_${idx}`}
+                              className="bg-white dark:bg-[#0E1420]"
+                            >
+                              {/* Col 1: Type, Invoice, Time, Operator */}
+                              <td className="py-2 pl-2.5 pr-1.5 align-top border-r border-slate-200/80 dark:border-slate-800">
+                                <div className="space-y-1 min-w-0">
+                                  <div className="flex items-center gap-1 flex-wrap">
+                                    <span
+                                      className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border font-mono leading-none ${
+                                        log.type === 'IN'
+                                          ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
+                                          : log.type === 'OUT'
+                                          ? 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20'
+                                          : log.type === 'ADJ_IN'
+                                          ? 'bg-teal-500/10 text-teal-700 dark:text-teal-400 border-teal-500/20'
+                                          : log.type === 'ADJ_OUT'
+                                          ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20'
+                                          : 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20'
+                                      }`}
+                                    >
+                                      {log.type}
+                                    </span>
+                                    <span className="text-[9.5px] font-mono text-slate-400 tabular-nums">
+                                      {formatDateTime(log.created_at)}
+                                    </span>
+                                  </div>
+
+                                  {log.invoice && log.invoice !== '-' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyInv(log.invoice)}
+                                      className="inline-flex items-center gap-1 max-w-full font-mono text-[10.5px] font-bold text-slate-800 dark:text-slate-100 hover:text-indigo-600 cursor-pointer"
+                                      title="Salin invoice"
+                                    >
+                                      <span className="truncate">{log.invoice}</span>
+                                      {copiedInv === log.invoice ? (
+                                        <Check className="w-2.5 h-2.5 text-emerald-500 shrink-0" />
+                                      ) : (
+                                        <Copy className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                                      )}
+                                    </button>
+                                  )}
+
+                                  {log.operator && (
+                                    <div className="flex items-center gap-1 text-[10px] font-medium text-slate-600 dark:text-slate-300 min-w-0">
+                                      <User className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                                      <span className="truncate">{formatOperatorWithPersonName(log.operator)}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+
+                              {/* Col 2: Qty */}
+                              <td
+                                className={`py-2 px-1 align-middle text-center font-mono tabular-nums border-r border-slate-200/80 dark:border-slate-800 ${qtyCellBg}`}
+                              >
+                                <span
+                                  className={`text-[12.5px] font-black ${
+                                    isPlus
+                                      ? 'text-emerald-700 dark:text-emerald-400'
+                                      : isMinus
+                                      ? 'text-rose-600 dark:text-rose-400'
+                                      : isSo
+                                      ? 'text-blue-600 dark:text-blue-400'
+                                      : 'text-amber-600 dark:text-amber-400'
+                                  }`}
+                                >
+                                  {isPlus ? '+' : isMinus ? '-' : ''}
+                                  {Math.abs(Number(log.qty) || 0)}
+                                </span>
+                              </td>
+
+                              {/* Col 3: Stok */}
+                              <td className="py-2 px-1 align-middle text-center font-mono tabular-nums bg-slate-50/60 dark:bg-slate-800/30 border-r border-slate-200/80 dark:border-slate-800">
+                                <span
+                                  className={`text-[12.5px] font-black ${
+                                    stokSaatItu > 0
+                                      ? 'text-slate-900 dark:text-slate-100'
+                                      : stokSaatItu === 0
+                                      ? 'text-amber-600 dark:text-amber-400'
+                                      : 'text-rose-600 dark:text-rose-400'
+                                  }`}
+                                >
+                                  {stokSaatItu}
+                                </span>
+                              </td>
+
+                              {/* Col 4: Area + Rak + Actions */}
+                              <td className="py-2 pl-1.5 pr-2 align-middle">
+                                <div className="space-y-1 min-w-0">
+                                  <div>
+                                    {isLocAnomaly ? (
+                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded border text-[9px] font-bold uppercase leading-none bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800">
+                                        Anomali
+                                      </span>
+                                    ) : (
+                                      <AreaBadge area={resolvedArea} compact />
+                                    )}
+                                  </div>
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span
+                                      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border leading-none truncate ${
+                                        isLocAnomaly
+                                          ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                                          : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200/90 dark:border-slate-700'
+                                      }`}
+                                    >
+                                      {log.lokasi || '-'}
+                                    </span>
+                                    <div className="inline-flex items-center gap-0.5 shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleStartEdit(log);
+                                        }}
+                                        className="w-6 h-6 inline-flex items-center justify-center rounded text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 cursor-pointer"
+                                        title="Edit log"
+                                      >
+                                        <Pencil className="w-3 h-3" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setDeletingLog(log);
+                                        }}
+                                        className="w-6 h-6 inline-flex items-center justify-center rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                                        title="Hapus log"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* DESKTOP INVENTORY-STYLE TABLE (hidden md:block) */}
+                  <div className="hidden md:block overflow-x-auto scrollbar-thin">
+                    <table className="w-full text-left text-xs border-collapse lg:table-fixed">
+                      <thead>
+                        <tr className="bg-slate-100 dark:bg-[#121824] border-b-2 border-slate-300 dark:border-slate-600 text-[10px] font-extrabold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                          <th className="py-2.5 px-3 w-[16%] border-r border-slate-300/80 dark:border-slate-700">Tipe &amp; Waktu</th>
+                          <th className="py-2.5 px-3 w-[20%] border-r border-slate-300/80 dark:border-slate-700">Invoice &amp; Sumber</th>
+                          <th className="py-2.5 px-3 w-[15%] border-r border-slate-300/80 dark:border-slate-700">Area &amp; Lokasi</th>
+                          <th className="py-2.5 px-2 w-[8%] text-center border-r border-slate-300/80 dark:border-slate-700">Qty</th>
+                          <th className="py-2.5 px-2 w-[9%] text-center bg-slate-200/45 dark:bg-slate-800/50 border-r border-slate-300/80 dark:border-slate-700">Stok</th>
+                          <th className="py-2.5 px-3 w-[23%] border-r border-slate-300/80 dark:border-slate-700">Operator &amp; Catatan</th>
+                          <th className="py-2.5 px-3 w-[9%] text-center">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                         {filteredLogs.map((log, idx) => {
                           const isPlus = log.type === 'IN' || log.type === 'ADJ_IN';
                           const isMinus = log.type === 'OUT' || log.type === 'ADJ_OUT';
@@ -934,6 +1118,11 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
                             opLower.includes('staging');
                           const logKey = log.id || `${log.invoice}_${log.sku}_${log.created_at}`;
                           const stokSaatItu = logStockMap.get(logKey) ?? 0;
+                          const qtyCellBg = isPlus
+                            ? 'bg-emerald-50/40 dark:bg-emerald-950/20'
+                            : isMinus
+                            ? 'bg-rose-50/40 dark:bg-rose-950/20'
+                            : 'bg-indigo-50/35 dark:bg-indigo-950/20';
 
                           return (
                             <tr
@@ -941,19 +1130,19 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
                               className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
                             >
                               {/* 1. Tipe & Waktu */}
-                              <td className="py-2.5 px-3 whitespace-nowrap">
+                              <td className="py-2.5 px-3 whitespace-nowrap border-r border-slate-200 dark:border-slate-800">
                                 <div className="flex items-center gap-1.5">
                                   <span
                                     className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1 border font-mono ${
                                       log.type === 'IN'
-                                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                                        ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
                                         : log.type === 'OUT'
-                                        ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
+                                        ? 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20'
                                         : log.type === 'ADJ_IN'
-                                        ? 'bg-teal-500/10 text-teal-600 dark:text-teal-400 border-teal-500/20'
+                                        ? 'bg-teal-500/10 text-teal-700 dark:text-teal-400 border-teal-500/20'
                                         : log.type === 'ADJ_OUT'
-                                        ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
-                                        : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20'
+                                        ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20'
+                                        : 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20'
                                     }`}
                                   >
                                     {isSo ? (
@@ -966,16 +1155,16 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
                                     {log.type}
                                   </span>
                                 </div>
-                                <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 font-mono">
+                                <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 font-mono tabular-nums">
                                   {formatDateTime(log.created_at)}
                                 </div>
                               </td>
 
                               {/* 2. Invoice & Sumber */}
-                              <td className="py-2.5 px-3">
+                              <td className="py-2.5 px-3 border-r border-slate-200 dark:border-slate-800">
                                 <div className="flex flex-col gap-1 items-start">
                                   <div className="flex items-center gap-1.5 max-w-full">
-                                    <span className="font-mono font-bold text-slate-800 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md text-[11px] truncate select-all">
+                                    <span className="font-mono font-bold text-slate-800 dark:text-slate-100 text-[11px] truncate select-all">
                                       {log.invoice || '-'}
                                     </span>
                                     {log.invoice && log.invoice !== '-' && (
@@ -995,48 +1184,57 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
                                   </div>
                                   <div>
                                     {isWa ? (
-                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/80">
-                                        <Smartphone className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" /> WA
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
+                                        <Smartphone className="w-2.5 h-2.5" /> WhatsApp
                                       </span>
                                     ) : isWeb ? (
-                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200 dark:border-sky-800/80">
-                                        <Monitor className="w-2.5 h-2.5 text-sky-600 dark:text-sky-400" /> Web App
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-sky-700 dark:text-sky-400">
+                                        <Monitor className="w-2.5 h-2.5" /> Web App
                                       </span>
                                     ) : (
-                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                                        <Globe className="w-2.5 h-2.5 text-slate-500" /> System
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                                        <Globe className="w-2.5 h-2.5" /> System
                                       </span>
                                     )}
                                   </div>
                                 </div>
                               </td>
 
-                              {/* 3. Lokasi & Area */}
-                              <td className="py-2.5 px-3 whitespace-nowrap">
-                                <div
-                                  className={`font-bold flex items-center gap-1 font-mono ${
-                                    isLocAnomaly
-                                      ? 'text-rose-600 dark:text-rose-400'
-                                      : 'text-indigo-600 dark:text-indigo-400'
-                                  }`}
-                                >
-                                  <MapPin className="w-3 h-3 shrink-0" />
-                                  <span>{log.lokasi || '-'}</span>
+                              {/* 3. Area & Lokasi */}
+                              <td className="py-2.5 px-3 whitespace-nowrap border-r border-slate-200 dark:border-slate-800">
+                                <div>
+                                  <span
+                                    className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-mono font-bold border ${
+                                      isLocAnomaly
+                                        ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                                        : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+                                    }`}
+                                  >
+                                    {log.lokasi || '-'}
+                                  </span>
                                 </div>
-                                <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                                  {isLocAnomaly ? '⚠️ Anomali' : resolvedArea}
+                                <div className="mt-1">
+                                  {isLocAnomaly ? (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded border text-[9.5px] font-bold uppercase leading-none bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800">
+                                      Anomali
+                                    </span>
+                                  ) : (
+                                    <AreaBadge area={resolvedArea} compact />
+                                  )}
                                 </div>
                               </td>
 
                               {/* 4. Qty */}
-                              <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                              <td
+                                className={`py-2.5 px-2 text-center whitespace-nowrap font-mono tabular-nums border-r border-slate-200 dark:border-slate-800 ${qtyCellBg}`}
+                              >
                                 <span
-                                  className={`inline-block px-2.5 py-1 rounded-lg font-black text-xs font-mono ${
+                                  className={`font-black text-[13px] ${
                                     isPlus
-                                      ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                                      ? 'text-emerald-700 dark:text-emerald-400'
                                       : isMinus
-                                      ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
-                                      : 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
+                                      ? 'text-rose-600 dark:text-rose-400'
+                                      : 'text-blue-600 dark:text-blue-400'
                                   }`}
                                 >
                                   {isPlus ? '+' : isMinus ? '-' : ''}
@@ -1045,23 +1243,25 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
                               </td>
 
                               {/* 5. Stok (Saldo Saat Mutasi) */}
-                              <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                              <td
+                                className="py-2.5 px-2 text-center whitespace-nowrap font-mono tabular-nums bg-slate-50/70 dark:bg-slate-800/35 border-r border-slate-200 dark:border-slate-800"
+                                title={`Sisa stok di ${log.lokasi || 'rak'} pada detik transaksi ini: ${stokSaatItu} pcs`}
+                              >
                                 <span
-                                  className={`inline-block px-2.5 py-1 rounded-lg font-black text-xs font-mono border ${
+                                  className={`font-black text-[13px] ${
                                     stokSaatItu > 0
-                                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 border-slate-200 dark:border-slate-700'
+                                      ? 'text-slate-900 dark:text-slate-100'
                                       : stokSaatItu === 0
-                                      ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800/60'
-                                      : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800/60'
+                                      ? 'text-amber-600 dark:text-amber-400'
+                                      : 'text-rose-600 dark:text-rose-400'
                                   }`}
-                                  title={`Sisa stok di ${log.lokasi || 'rak'} pada detik transaksi ini: ${stokSaatItu} pcs`}
                                 >
                                   {stokSaatItu}
                                 </span>
                               </td>
 
                               {/* 6. Operator & Catatan */}
-                              <td className="py-2.5 px-3">
+                              <td className="py-2.5 px-3 border-r border-slate-200 dark:border-slate-800">
                                 {log.operator && (
                                   <div className="flex items-center gap-1 text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
                                     <User className="w-3 h-3 text-slate-400 shrink-0" />
@@ -1079,15 +1279,15 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
                               </td>
 
                               {/* 7. Aksi */}
-                              <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                                <div className="inline-flex items-center justify-end gap-1">
+                              <td className="py-2.5 px-2 text-center whitespace-nowrap">
+                                <div className="inline-flex items-center justify-center gap-1">
                                   <button
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleStartEdit(log);
                                     }}
-                                    className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors cursor-pointer"
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-colors cursor-pointer"
                                     title="Edit log produk ini"
                                   >
                                     <Pencil className="w-3.5 h-3.5" />
@@ -1118,14 +1318,32 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
                     const isPlus = log.type === 'IN' || log.type === 'ADJ_IN';
                     const isMinus = log.type === 'OUT' || log.type === 'ADJ_OUT';
                     const isSo = log.type === 'SO';
+                    const resolvedArea = getAreaFromLokasi(log.lokasi || '', log.area);
+                    const isLocAnomaly = resolvedArea === 'Anomali';
+                    const invUpper = (log.invoice || '').toUpperCase();
+                    const opLower = (log.operator || '').toLowerCase();
+                    const isWa =
+                      invUpper.startsWith('WA') ||
+                      opLower.includes('@g.us') ||
+                      opLower.includes('628');
+                    const isWeb =
+                      invUpper.startsWith('WEB') ||
+                      opLower.includes('web') ||
+                      opLower.includes('staging');
 
                     const typeBadgeClass = isPlus
-                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                      ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
                       : isMinus
-                      ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
+                      ? 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20'
                       : isSo
-                      ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20'
-                      : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
+                      ? 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20'
+                      : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20';
+
+                    const qtyCellBg = isPlus
+                      ? 'bg-emerald-50/40 dark:bg-emerald-950/20'
+                      : isMinus
+                      ? 'bg-rose-50/40 dark:bg-rose-950/20'
+                      : 'bg-indigo-50/35 dark:bg-indigo-950/20';
 
                     const qtyPrefix = isPlus ? '+' : isMinus ? '-' : '';
                     const logKey = log.id || `${log.invoice}_${log.sku}_${log.created_at}`;
@@ -1134,112 +1352,159 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
                     return (
                       <div
                         key={log.id || `${log.invoice}_${idx}`}
-                        className="p-3.5 rounded-2xl bg-slate-50/70 dark:bg-[#0E1420] border border-slate-200/80 dark:border-slate-800 space-y-2 hover:border-slate-300 dark:hover:border-slate-700 transition-colors flex flex-col justify-between"
+                        className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs overflow-hidden flex flex-col justify-between divide-y divide-slate-100 dark:divide-slate-800/80"
                       >
-                        <div className="space-y-2">
-                          {/* Top Row: Type Badge + Qty + Stok + Date + Actions */}
+                        {/* Body */}
+                        <div className="p-3.5 space-y-2.5">
+                          {/* Top Row: Type + Source | Timestamp */}
                           <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 min-w-0">
                               <span
                                 className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase border font-mono ${typeBadgeClass}`}
                               >
                                 {log.type}
                               </span>
-                              <span
-                                className={`font-mono text-sm font-black ${
+                              <span className="text-[10.5px] font-semibold text-slate-500 dark:text-slate-400">
+                                {isWa ? 'WhatsApp' : isWeb ? 'Web App' : 'System'}
+                              </span>
+                            </div>
+
+                            <div className="text-[10.5px] font-mono text-slate-400 dark:text-slate-500 flex items-center gap-1 tabular-nums shrink-0">
+                              <Calendar className="w-3 h-3 shrink-0" />
+                              <span>{formatDateTime(log.created_at)}</span>
+                            </div>
+                          </div>
+
+                          {/* Structured 3-Column Metrics Bar: QTY | STOK | LOKASI */}
+                          <div className="grid grid-cols-3 divide-x divide-slate-200/80 dark:divide-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-800 overflow-hidden bg-slate-50/50 dark:bg-slate-800/30">
+                            <div className={`px-2 py-2 text-center ${qtyCellBg}`}>
+                              <div className="text-[9.5px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                Qty
+                              </div>
+                              <div
+                                className={`font-mono text-[15px] font-black tabular-nums leading-tight mt-0.5 ${
                                   isPlus
-                                    ? 'text-emerald-600 dark:text-emerald-400'
+                                    ? 'text-emerald-700 dark:text-emerald-400'
                                     : isMinus
                                     ? 'text-rose-600 dark:text-rose-400'
                                     : 'text-blue-600 dark:text-blue-400'
                                 }`}
                               >
                                 {qtyPrefix}
-                                {Math.abs(Number(log.qty) || 0)} pcs
-                              </span>
-                              <span
-                                className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold border ${
+                                {Math.abs(Number(log.qty) || 0)}
+                              </div>
+                            </div>
+
+                            <div className="px-2 py-2 text-center">
+                              <div className="text-[9.5px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                Stok
+                              </div>
+                              <div
+                                className={`font-mono text-[15px] font-black tabular-nums leading-tight mt-0.5 ${
                                   stokSaatItu > 0
-                                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+                                    ? 'text-slate-900 dark:text-white'
                                     : stokSaatItu === 0
-                                    ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800/60'
-                                    : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800/60'
+                                    ? 'text-amber-600 dark:text-amber-400'
+                                    : 'text-rose-600 dark:text-rose-400'
                                 }`}
                                 title={`Sisa stok di ${log.lokasi || 'rak'} saat itu`}
                               >
-                                Stok: {stokSaatItu}
-                              </span>
+                                {stokSaatItu}
+                              </div>
                             </div>
 
-                            <div className="flex items-center gap-2">
-                              <div className="text-[10px] font-medium text-slate-400 flex items-center gap-1">
-                                <Calendar className="w-3 h-3 text-slate-400" />
-                                <span>{formatDateTime(log.created_at)}</span>
+                            <div className="px-2 py-2 text-center min-w-0">
+                              <div
+                                className={`text-[9.5px] font-bold uppercase tracking-wider truncate ${
+                                  isLocAnomaly
+                                    ? 'text-rose-600 dark:text-rose-400'
+                                    : 'text-slate-500 dark:text-slate-400'
+                                }`}
+                              >
+                                {isLocAnomaly ? 'Anomali' : resolvedArea}
                               </div>
-
-                              {/* Edit & Delete Action Buttons */}
-                              <div className="flex items-center gap-0.5 pl-1.5 border-l border-slate-200 dark:border-slate-800">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleStartEdit(log);
-                                  }}
-                                  className="p-1 rounded-md text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors cursor-pointer"
-                                  title="Edit log produk ini"
-                                >
-                                  <Pencil className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setDeletingLog(log);
-                                  }}
-                                  className="p-1 rounded-md text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
-                                  title="Hapus log produk ini"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                              <div
+                                className={`font-mono text-[13px] font-extrabold leading-tight mt-0.5 truncate ${
+                                  isLocAnomaly
+                                    ? 'text-rose-600 dark:text-rose-400'
+                                    : 'text-indigo-600 dark:text-indigo-400'
+                                }`}
+                                title={log.lokasi || '-'}
+                              >
+                                {log.lokasi || '-'}
                               </div>
                             </div>
                           </div>
 
-                          {/* Middle Row: Location & Invoice */}
-                          <div className="flex items-center justify-between text-xs gap-2 pt-0.5">
-                            <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300 font-bold min-w-0">
-                              <MapPin className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                              <span className="font-mono">{log.lokasi || '-'}</span>
-                              {log.area && (
-                                <span className="text-[10px] text-slate-400 font-normal">
-                                  ({log.area})
-                                </span>
+                          {/* Metadata Rows */}
+                          <div className="space-y-1 text-[11px]">
+                            <div className="flex items-center justify-between gap-2">
+                              {log.operator ? (
+                                <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300 min-w-0">
+                                  <User className="w-3 h-3 text-slate-400 shrink-0" />
+                                  <span className="font-medium truncate">
+                                    {formatOperatorWithPersonName(log.operator)}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-slate-400">-</span>
+                              )}
+
+                              {log.invoice && log.invoice !== '-' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyInv(log.invoice)}
+                                  className="inline-flex items-center gap-1 font-mono font-bold text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 truncate max-w-[55%] cursor-pointer shrink-0"
+                                  title="Ketuk untuk menyalin invoice"
+                                >
+                                  <span className="truncate">{log.invoice}</span>
+                                  {copiedInv === log.invoice ? (
+                                    <Check className="w-3 h-3 text-emerald-500 shrink-0" />
+                                  ) : (
+                                    <Copy className="w-3 h-3 text-slate-400 shrink-0" />
+                                  )}
+                                </button>
+                              ) : (
+                                <span className="font-mono text-slate-400">-</span>
                               )}
                             </div>
-                            <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate font-semibold">
-                              {log.invoice || '-'}
-                            </div>
-                          </div>
-                        </div>
 
-                        {/* Bottom Row: Operator & Keterangan */}
-                        {(log.operator || log.keterangan) && (
-                          <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800/80 text-[10.5px] text-slate-500 dark:text-slate-400 flex flex-col gap-0.5">
-                            {log.operator && (
-                              <div className="flex items-center gap-1 truncate">
-                                <User className="w-3 h-3 text-slate-400 shrink-0" />
-                                <span className="font-medium text-slate-600 dark:text-slate-300 truncate">
-                                  {formatOperatorWithPersonName(log.operator)}
-                                </span>
-                              </div>
-                            )}
                             {log.keterangan && (
-                              <div className="italic text-slate-500 dark:text-slate-400 truncate" title={log.keterangan}>
+                              <div
+                                className="italic text-slate-500 dark:text-slate-400 line-clamp-2"
+                                title={log.keterangan}
+                              >
                                 &ldquo;{log.keterangan}&rdquo;
                               </div>
                             )}
                           </div>
-                        )}
+                        </div>
+
+                        {/* Clean 2-Button Touch Footer */}
+                        <div className="px-3 py-2 bg-slate-50/70 dark:bg-slate-900/60 flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStartEdit(log);
+                            }}
+                            className="flex-1 sm:flex-none min-h-[36px] px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                          >
+                            <Pencil className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Edit</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeletingLog(log);
+                            }}
+                            className="min-h-[36px] px-3 py-1.5 rounded-xl border border-rose-200/80 dark:border-rose-900/50 bg-white dark:bg-slate-800 text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Hapus</span>
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
