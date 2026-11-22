@@ -1,13 +1,12 @@
 {
-  "version": "v2.24.7",
-  "versionCode": 447,
-  "buildDate": "21 November 2026",
-  "buildHash": "wms-261121-v447-1609",
-  "releaseTitle": "WMS v2.24.7 — Integrasi Lengkap Entitas WMS & B-LWS B-PNK QC WH MAP",
+  "version": "v2.24.8",
+  "versionCode": 448,
+  "buildDate": "22 November 2026",
+  "buildHash": "wms-261122-v448-1122",
+  "releaseTitle": "WMS v2.24.8 — Default Kamera Scanner ke Camera 0",
   "releaseNotes": [
-    "Pastikan B-LWS, B-PNK Panakkukang, QC, WH, MAP selalu tampil lengkap di CSV Barcode",
-    "Tingkatkan pencarian outlet agar mengenali nama panjang Panakkukang & Living World",
-    "Tambah filter cepat kategori Bazaar (B-) dan Gudang/QC WMS"
+    "Default kamera scanner HP otomatis memilih camera 0 (kamera belakang utama)",
+    "Dropdown pilihan kamera diurutkan dengan kamera belakang utama di posisi teratas dan selalu sinkron dengan lensa aktif"
   ],
   "minSupportedVersion": "v2.0.0"
 }

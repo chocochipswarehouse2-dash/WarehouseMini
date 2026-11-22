@@ -15,20 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.24.7",
-  "versionCode": 447,
-  "buildDate": "21 November 2026",
-  "buildHash": "wms-261121-v447-1609",
-  "releaseTitle": "WMS v2.24.7 — Integrasi Lengkap Entitas WMS & B-LWS B-PNK QC WH MAP",
+  "version": "v2.24.8",
+  "versionCode": 448,
+  "buildDate": "22 November 2026",
+  "buildHash": "wms-261122-v448-1122",
+  "releaseTitle": "WMS v2.24.8 — Default Kamera Scanner ke Camera 0",
   "releaseNotes": [
-    "Pastikan B-LWS, B-PNK Panakkukang, QC, WH, MAP selalu tampil lengkap di CSV Barcode",
-    "Tingkatkan pencarian outlet agar mengenali nama panjang Panakkukang & Living World",
-    "Tambah filter cepat kategori Bazaar (B-) dan Gudang/QC WMS"
+    "Default kamera scanner HP otomatis memilih camera 0 (kamera belakang utama)",
+    "Dropdown pilihan kamera diurutkan dengan kamera belakang utama di posisi teratas dan selalu sinkron dengan lensa aktif"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.24.7",
+    "versionCode": 447,
+    "buildDate": "21 November 2026",
+    "buildHash": "wms-261121-v447-1609",
+    "releaseTitle": "WMS v2.24.7 — Integrasi Lengkap Entitas WMS & B-LWS B-PNK QC WH MAP",
+    "releaseNotes": [
+      "Pastikan B-LWS, B-PNK Panakkukang, QC, WH, MAP selalu tampil lengkap di CSV Barcode",
+      "Tingkatkan pencarian outlet agar mengenali nama panjang Panakkukang & Living World",
+      "Tambah filter cepat kategori Bazaar (B-) dan Gudang/QC WMS"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.24.6",
     "versionCode": 446,
@@ -117,18 +129,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Tambah modul CSV Barcode (export CSV DealPOS per outlet/lokasi + ZIP + cetak stiker 50x20/104x20mm & ceklis A4)",
       "Tambah modul CSV Distribusi (import multi-file Excel Reguler & Back In Stock, kartu store 2-baris, Gudang Awal balance check, & ZIP per batch)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.23.5",
-    "versionCode": 435,
-    "buildDate": "21 November 2026",
-    "buildHash": "wms-261121-v435-0112",
-    "releaseTitle": "WMS v2.23.5 — Native Mobile App Shell (Bottom Tab Bar & App Launcher Sheet)",
-    "releaseNotes": [
-      "Ubah navigasi seluler (< 1024px) dari hamburger drawer ala web menjadi Fixed Bottom Tab Bar (4 pintasan peran/kustom + tab Menu) dan Native App Launcher Bottom Sheet dengan grid ikon 4 kolom, kustomisasi tab bawah, & grouped settings",
-      "Sederhanakan Mobile Top App Bar menjadi Avatar + Judul Halaman + Bell/AI, serta amankan offset Dock & Kapasitas Rak di atas Bottom Tab Bar (Desktop tetap utuh)"
     ],
     "minSupportedVersion": "v2.0.0"
   }

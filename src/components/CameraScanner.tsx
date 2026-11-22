@@ -69,6 +69,63 @@ const playCameraScanBeep = () => {
   } catch {}
 };
 
+// Score cameras so primary rear lens ("camera 0, facing back") always wins default selection
+const getCameraPriorityScore = (cam: CameraDevice, originalIndex: number): number => {
+  const label = (cam.label || '').toLowerCase();
+  const isFront = /\b(front|depan|user|selfie|truedepth)\b/i.test(label);
+  const isBack = /\b(back|rear|belakang|environment)\b/i.test(label);
+  const isCamera0 = /\bcamera\s*(?:2\s+)?0\b/i.test(label);
+  const isAuxiliaryLens = /\b(ultra[\s-]?wide|wide[\s-]?angle\s*0\.5|macro|telephoto|tele|depth|tof|mono|infrared|ir)\b/i.test(label);
+
+  const camNumMatch = label.match(/\bcamera\s*(?:2\s+)?(\d+)\b/i);
+  const camNum = camNumMatch ? parseInt(camNumMatch[1], 10) : 99;
+
+  // 1. Explicit "camera 0" (Android primary rear lens)
+  if (isCamera0 && !isFront) {
+    return isBack ? 0 : 1;
+  }
+
+  // 2. Other rear/back cameras (main lenses before ultrawide/macro/tele, lower index first)
+  if (isBack && !isFront) {
+    if (!isAuxiliaryLens) {
+      return 10 + Math.min(camNum, 80);
+    }
+    return 100 + Math.min(camNum, 80);
+  }
+
+  // 3. Unlabeled or desktop webcams
+  if (!isFront) {
+    return 200 + originalIndex;
+  }
+
+  // 4. Front cameras (lowest priority)
+  return 300 + Math.min(camNum, 80) + originalIndex * 0.01;
+};
+
+const sortCamerasByPriority = (devices: CameraDevice[]): CameraDevice[] => {
+  return devices
+    .map((cam, idx) => ({ cam, score: getCameraPriorityScore(cam, idx) }))
+    .sort((a, b) => a.score - b.score)
+    .map((entry) => entry.cam);
+};
+
+const pickPreferredCamera = (devices: CameraDevice[]): CameraDevice | undefined => {
+  const validDevices = devices.filter((d) => Boolean(d.id));
+  if (validDevices.length === 0) return undefined;
+  return sortCamerasByPriority(validDevices)[0];
+};
+
+const getActiveVideoDeviceId = (containerId: string): string => {
+  try {
+    const videoEl = document.querySelector(`#${containerId} video`) as HTMLVideoElement | null;
+    const stream = videoEl?.srcObject as MediaStream | null;
+    const track = stream?.getVideoTracks?.()[0];
+    return track?.getSettings?.()?.deviceId || '';
+  } catch {
+    return '';
+  }
+};
+
 export const CameraScanner: React.FC<CameraScannerProps> = ({
   onScan,
   onRequestWakeLock,
@@ -89,6 +146,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   const lastScanCodeRef = useRef<string>('');
   const isMountedRef = useRef(true);
   const isStartingRef = useRef(false);
+  const hasAutoSwitchedToPreferredRef = useRef(false);
 
   // Keep latest callbacks in refs to avoid stale closures inside html5QrCode background loop
   const onScanRef = useRef(onScan);
@@ -102,22 +160,30 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   });
 
   // Safely enumerate devices using native Web API without creating conflict stream
-  const enumerateAvailableCameras = useCallback(async () => {
+  const enumerateAvailableCameras = useCallback(async (syncDefaultIfEmpty = false) => {
     try {
       if (typeof navigator !== 'undefined' && navigator.mediaDevices?.enumerateDevices) {
         const devs = await navigator.mediaDevices.enumerateDevices();
         const videoDevs = devs.filter((d) => d.kind === 'videoinput');
         if (videoDevs.length > 0 && isMountedRef.current) {
-          const deviceList: CameraDevice[] = videoDevs.map((d, idx) => ({
+          const hasRealLabels = videoDevs.some((d) => Boolean(d.label?.trim()) && Boolean(d.deviceId));
+          const rawList: CameraDevice[] = videoDevs.map((d, idx) => ({
             id: d.deviceId,
             label: d.label || `Kamera ${idx + 1}`,
           }));
-          setCameras(deviceList);
+          const sortedList = hasRealLabels ? sortCamerasByPriority(rawList) : rawList;
+          setCameras(sortedList);
+          const preferred = hasRealLabels ? pickPreferredCamera(sortedList) : undefined;
+          if (syncDefaultIfEmpty && preferred?.id) {
+            setSelectedCameraId((prev) => prev || preferred.id);
+          }
+          return { devices: sortedList, hasRealLabels, preferred };
         }
       }
     } catch (e) {
       console.warn('Gagal membaca list kamera:', e);
     }
+    return { devices: [] as CameraDevice[], hasRealLabels: false, preferred: undefined as CameraDevice | undefined };
   }, []);
 
   const stopCamera = useCallback(async () => {
@@ -140,11 +206,13 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   }, []);
 
   const startCamera = useCallback(
-    async (cameraIdToUse?: string) => {
+    async (cameraIdToUse?: string, isExplicitUserSelection = false) => {
       if (!isMountedRef.current || isStartingRef.current) return;
       isStartingRef.current = true;
       setError(null);
       setIsInitializing(true);
+
+      let autoSwitchCameraId: string | null = null;
 
       if (onRequestWakeLockRef.current) {
         try {
@@ -167,6 +235,18 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         return;
       }
 
+      // 2. If no specific camera ID was passed, try to resolve "camera 0" (primary rear camera) upfront
+      let targetCameraId = cameraIdToUse?.trim() || '';
+      if (!targetCameraId) {
+        const preEnum = await enumerateAvailableCameras(false);
+        if (preEnum.hasRealLabels && preEnum.preferred?.id) {
+          targetCameraId = preEnum.preferred.id;
+          if (isMountedRef.current) {
+            setSelectedCameraId(targetCameraId);
+          }
+        }
+      }
+
       try {
         const html5QrCode = new Html5Qrcode(id, {
           formatsToSupport: SUPPORTED_BARCODE_FORMATS,
@@ -177,9 +257,9 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         });
         scannerRef.current = html5QrCode;
 
-        // Determine constraint: prefer specific ID if provided, otherwise default to environment
-        const cameraConfig = cameraIdToUse
-          ? cameraIdToUse
+        // Determine constraint: prefer specific ID (e.g. camera 0) if resolved, otherwise default to environment
+        const cameraConfig = targetCameraId
+          ? targetCameraId
           : { facingMode: 'environment' };
 
         const scanConfig = {
@@ -226,19 +306,45 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         if (isMountedRef.current) {
           setIsScanning(true);
           setPermissionDenied(false);
-          if (cameraIdToUse) {
-            setSelectedCameraId(cameraIdToUse);
-          }
         }
 
         // Enumerate devices once stream is established and permission is granted
-        await enumerateAvailableCameras();
+        const postEnum = await enumerateAvailableCameras(false);
+        const activeDeviceId = getActiveVideoDeviceId(id);
+
+        // If started via generic facingMode (first-time permission grant) and OS picked another lens
+        // instead of camera 0 (e.g. camera 2 ultrawide or camera 1 front), auto-switch once to camera 0
+        if (
+          !isExplicitUserSelection &&
+          !targetCameraId &&
+          postEnum.hasRealLabels &&
+          postEnum.preferred?.id &&
+          activeDeviceId &&
+          activeDeviceId !== postEnum.preferred.id &&
+          !hasAutoSwitchedToPreferredRef.current
+        ) {
+          hasAutoSwitchedToPreferredRef.current = true;
+          autoSwitchCameraId = postEnum.preferred.id;
+          if (isMountedRef.current) {
+            setSelectedCameraId(postEnum.preferred.id);
+          }
+        } else if (isMountedRef.current) {
+          const syncedId =
+            targetCameraId ||
+            activeDeviceId ||
+            postEnum.preferred?.id ||
+            postEnum.devices[0]?.id ||
+            '';
+          if (syncedId) {
+            setSelectedCameraId(syncedId);
+          }
+        }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         console.warn('Error starting camera attempt 1:', err);
 
         // Fallback strategy for NotReadableError or device busy: wait 350ms and retry with general environment
-        if (msg.includes('NotReadableError') || msg.includes('Could not start video source') || cameraIdToUse) {
+        if (msg.includes('NotReadableError') || msg.includes('Could not start video source') || targetCameraId) {
           try {
             if (scannerRef.current) {
               try {
@@ -281,7 +387,15 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
               setIsScanning(true);
               setPermissionDenied(false);
             }
-            await enumerateAvailableCameras();
+            const fallbackEnum = await enumerateAvailableCameras(false);
+            const activeFallbackId = getActiveVideoDeviceId(id);
+            if (isMountedRef.current) {
+              const syncedFallbackId =
+                activeFallbackId || fallbackEnum.preferred?.id || fallbackEnum.devices[0]?.id || '';
+              if (syncedFallbackId) {
+                setSelectedCameraId(syncedFallbackId);
+              }
+            }
             return;
           } catch (fallbackErr) {
             console.error('Fallback camera start failed:', fallbackErr);
@@ -302,6 +416,10 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         }
         isStartingRef.current = false;
       }
+
+      if (autoSwitchCameraId && isMountedRef.current) {
+        void startCamera(autoSwitchCameraId, false);
+      }
     },
     [id, stopCamera, enumerateAvailableCameras]
   );
@@ -309,7 +427,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   // Mount effect: run device enumeration and autostart cleanly
   useEffect(() => {
     isMountedRef.current = true;
-    enumerateAvailableCameras();
+    hasAutoSwitchedToPreferredRef.current = false;
 
     if (autoStart) {
       const timer = setTimeout(() => {
@@ -320,6 +438,8 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         isMountedRef.current = false;
         stopCamera();
       };
+    } else {
+      enumerateAvailableCameras(true);
     }
 
     return () => {
@@ -386,7 +506,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
               onChange={(e) => {
                 const newId = e.target.value;
                 setSelectedCameraId(newId);
-                startCamera(newId);
+                startCamera(newId, true);
               }}
               className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs rounded-lg px-2 py-1 outline-none truncate focus:ring-1 focus:ring-emerald-500 font-medium cursor-pointer"
             >
