@@ -3617,6 +3617,13 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                 dataList={dataList}
                 productCatalog={productCatalog}
                 searchQuery={searchQuery}
+                filterStartDate={filterStartDate}
+                filterEndDate={filterEndDate}
+                onDateRangeChange={(start, end) => {
+                  setFilterStartDate(start);
+                  setFilterEndDate(end);
+                  setCurrentPage(1);
+                }}
                 onOpenLightbox={(img) => setLightboxImage(img)}
                 onShowToast={onShowToast}
                 onOpenHitungUlang={handleOpenHitungUlang}

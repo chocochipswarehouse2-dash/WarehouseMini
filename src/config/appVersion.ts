@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.24.8",
-  "versionCode": 448,
+  "version": "v2.24.9",
+  "versionCode": 449,
   "buildDate": "22 November 2026",
-  "buildHash": "wms-261122-v448-1122",
-  "releaseTitle": "WMS v2.24.8 — Default Kamera Scanner ke Camera 0",
+  "buildHash": "wms-261122-v449-1356",
+  "releaseTitle": "WMS v2.24.9 — Filter Rentang Tanggal Spreadsheet Produksi",
   "releaseNotes": [
-    "Default kamera scanner HP otomatis memilih camera 0 (kamera belakang utama)",
-    "Dropdown pilihan kamera diurutkan dengan kamera belakang utama di posisi teratas dan selalu sinkron dengan lensa aktif"
+    "Mengubah dropdown daftar SJ pada tampilan Spreadsheet Produksi menjadi filter rentang tanggal (Dari s/d Sampai)",
+    "Tampilan Desktop inline date range dan Seluler berupa bottom sheet dengan preset cepat (Hari Ini, 7 Hari, 30 Hari, Bulan Ini) yang tersinkronisasi dengan filter Riwayat Produksi"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.24.8",
+    "versionCode": 448,
+    "buildDate": "22 November 2026",
+    "buildHash": "wms-261122-v448-1122",
+    "releaseTitle": "WMS v2.24.8 — Default Kamera Scanner ke Camera 0",
+    "releaseNotes": [
+      "Default kamera scanner HP otomatis memilih camera 0 (kamera belakang utama)",
+      "Dropdown pilihan kamera diurutkan dengan kamera belakang utama di posisi teratas dan selalu sinkron dengan lensa aktif"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.24.7",
     "versionCode": 447,
@@ -117,18 +129,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Menghapus 4 kartu ringkasan KPI pada tab Stok Produk (sudah tersedia di Dashboard Kapasitas) agar tabel langsung tampil penuh di seluler maupun desktop",
       "Menambahkan filter Status Stok (Ada Stok, Fisik > 0, DP > 0 Fisik 0, Stok Minus, Semua Master), filter Size master, dropdown Urutkan, dan tombol Reset filter",
       "Merapikan toolbar seluler bergaya aplikasi (aksi sekunder kolapsibel & swipe horizontal) serta memperluas tinggi area tabel stok produk"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.24.0",
-    "versionCode": 440,
-    "buildDate": "21 November 2026",
-    "buildHash": "wms-261121-v440-1215",
-    "releaseTitle": "WMS v2.24.0 — Modul CSV Barcode & CSV Distribusi",
-    "releaseNotes": [
-      "Tambah modul CSV Barcode (export CSV DealPOS per outlet/lokasi + ZIP + cetak stiker 50x20/104x20mm & ceklis A4)",
-      "Tambah modul CSV Distribusi (import multi-file Excel Reguler & Back In Stock, kartu store 2-baris, Gudang Awal balance check, & ZIP per batch)"
     ],
     "minSupportedVersion": "v2.0.0"
   }
