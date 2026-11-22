@@ -35,6 +35,7 @@ import {
   ArrowUp,
   ArrowDown,
   CalendarDays,
+  MoreHorizontal,
 } from 'lucide-react';
 import {
   UserSession,
@@ -63,6 +64,7 @@ import {
   formatDatesSummary,
 } from '../../services/gasProduksiSync';
 import { getSizeWeight } from '../../utils/sortUtils';
+import { ProduksiActionSheet } from './ProduksiActionSheet';
 import {
   loadRecountWorkspaceDraft,
   saveRecountWorkspaceDraft,
@@ -467,6 +469,8 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
 
   // Quick Code Picker Modal State (Multiple Choice + Notes)
   const [isPickerModalOpen, setIsPickerModalOpen] = useState<boolean>(false);
+  const [isAuditMenuOpen, setIsAuditMenuOpen] = useState<boolean>(false);
+  const [actionSheetQueueItem, setActionSheetQueueItem] = useState<any | null>(null);
   const [pickerSearch, setPickerSearch] = useState<string>('');
   const [pickerSortOrder, setPickerSortOrder] = useState<RecountQueueSortOrder>('date_desc');
   const [selectedPickerCodes, setSelectedPickerCodes] = useState<Set<string>>(new Set());
@@ -1823,98 +1827,98 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       {/* ========================================================
           1. STATS METRICS & KPI CARDS (TERPILIH DI ANTRIAN)
           ======================================================== */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
         {/* Total Kode Terpilih */}
-        <div
+        <button
+          type="button"
           onClick={() => {
             setFilterStatus('all');
             setActiveMode('queue');
           }}
-          className={`p-3 sm:p-4 rounded-2xl border transition-all cursor-pointer shadow-xs ${
+          className={`p-2.5 sm:p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
             filterStatus === 'all' && activeMode === 'queue'
-              ? 'bg-slate-900 text-white border-slate-900 ring-2 ring-slate-800'
-              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 hover:border-slate-300'
+              ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-slate-900 dark:border-white shadow-xs'
+              : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 text-slate-800 dark:text-slate-200 hover:border-slate-300'
           }`}
         >
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider opacity-75">Antrian Terpilih</span>
-            <Layers className="w-4 h-4 text-slate-400" />
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[11px] font-semibold opacity-75">Total Antrian</span>
+            <Layers className="w-3.5 h-3.5 opacity-60 shrink-0" />
           </div>
-          <div className="text-xl sm:text-2xl font-black mt-1">{metrics.total}</div>
-          <div className="text-[10px] opacity-70 mt-0.5">Kode masuk antrian audit</div>
-        </div>
+          <div className="text-lg sm:text-2xl font-extrabold mt-0.5 tabular-nums">{metrics.total}</div>
+        </button>
 
-        {/* Belum Dihitung (Antrian) */}
-        <div
+        {/* Belum Dihitung */}
+        <button
+          type="button"
           onClick={() => {
             setFilterStatus('uncounted');
             setActiveMode('queue');
           }}
-          className={`p-3 sm:p-4 rounded-2xl border transition-all cursor-pointer shadow-xs ${
+          className={`p-2.5 sm:p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
             filterStatus === 'uncounted' && activeMode === 'queue'
-              ? 'bg-amber-600 text-white border-amber-600 ring-2 ring-amber-500'
-              : 'bg-white dark:bg-slate-900 border-amber-200 dark:border-amber-900/40 text-amber-900 dark:text-amber-300 hover:border-amber-300'
+              ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+              : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 text-slate-800 dark:text-slate-200 hover:border-amber-300'
           }`}
         >
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider opacity-75">Antrian Belum</span>
-            <Clock className={`w-4 h-4 ${filterStatus === 'uncounted' && activeMode === 'queue' ? 'text-white' : 'text-amber-500'}`} />
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[11px] font-semibold opacity-75">Belum Dihitung</span>
+            <Clock className={`w-3.5 h-3.5 shrink-0 ${filterStatus === 'uncounted' && activeMode === 'queue' ? 'text-white' : 'text-amber-500'}`} />
           </div>
-          <div className={`text-xl sm:text-2xl font-black mt-1 ${
+          <div className={`text-lg sm:text-2xl font-extrabold mt-0.5 tabular-nums ${
             filterStatus === 'uncounted' && activeMode === 'queue' ? 'text-white' : 'text-amber-600 dark:text-amber-400'
           }`}>
             {metrics.uncounted}
           </div>
-          <div className="text-[10px] opacity-70 mt-0.5">Menunggu hitung fisik</div>
-        </div>
+        </button>
 
         {/* Ada Selisih */}
-        <div
+        <button
+          type="button"
           onClick={() => {
             setFilterStatus('diff');
             setActiveMode('queue');
           }}
-          className={`p-3 sm:p-4 rounded-2xl border transition-all cursor-pointer shadow-xs ${
+          className={`p-2.5 sm:p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
             filterStatus === 'diff' && activeMode === 'queue'
-              ? 'bg-rose-600 text-white border-rose-600 ring-2 ring-rose-500'
-              : 'bg-white dark:bg-slate-900 border-rose-200 dark:border-rose-900/40 text-rose-900 dark:text-rose-300 hover:border-rose-300'
+              ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+              : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 text-slate-800 dark:text-slate-200 hover:border-rose-300'
           }`}
         >
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider opacity-75">Ada Selisih</span>
-            <AlertTriangle className={`w-4 h-4 ${filterStatus === 'diff' && activeMode === 'queue' ? 'text-white' : 'text-rose-500'}`} />
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[11px] font-semibold opacity-75">Ada Selisih</span>
+            <AlertTriangle className={`w-3.5 h-3.5 shrink-0 ${filterStatus === 'diff' && activeMode === 'queue' ? 'text-white' : 'text-rose-500'}`} />
           </div>
-          <div className={`text-xl sm:text-2xl font-black mt-1 ${
+          <div className={`text-lg sm:text-2xl font-extrabold mt-0.5 tabular-nums ${
             filterStatus === 'diff' && activeMode === 'queue' ? 'text-white' : 'text-rose-600 dark:text-rose-400'
           }`}>
             {metrics.diff}
           </div>
-          <div className="text-[10px] opacity-70 mt-0.5">Fisik ≠ Surat Jalan</div>
-        </div>
+        </button>
 
         {/* Selesai / Klop */}
-        <div
+        <button
+          type="button"
           onClick={() => {
             setFilterStatus('match');
             setActiveMode('queue');
           }}
-          className={`p-3 sm:p-4 rounded-2xl border transition-all cursor-pointer shadow-xs ${
+          className={`p-2.5 sm:p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
             filterStatus === 'match' && activeMode === 'queue'
-              ? 'bg-emerald-600 text-white border-emerald-600 ring-2 ring-emerald-500'
-              : 'bg-white dark:bg-slate-900 border-emerald-200 dark:border-emerald-900/40 text-emerald-900 dark:text-emerald-300 hover:border-emerald-300'
+              ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+              : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 text-slate-800 dark:text-slate-200 hover:border-emerald-300'
           }`}
         >
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider opacity-75">Klop (Match)</span>
-            <CheckCircle2 className={`w-4 h-4 ${filterStatus === 'match' && activeMode === 'queue' ? 'text-white' : 'text-emerald-500'}`} />
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[11px] font-semibold opacity-75">Klop (Match)</span>
+            <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${filterStatus === 'match' && activeMode === 'queue' ? 'text-white' : 'text-emerald-500'}`} />
           </div>
-          <div className={`text-xl sm:text-2xl font-black mt-1 ${
+          <div className={`text-lg sm:text-2xl font-extrabold mt-0.5 tabular-nums ${
             filterStatus === 'match' && activeMode === 'queue' ? 'text-white' : 'text-emerald-600 dark:text-emerald-400'
           }`}>
             {metrics.match}
           </div>
-          <div className="text-[10px] opacity-70 mt-0.5">Diaudit &amp; Sesuai 100%</div>
-        </div>
+        </button>
       </div>
 
       {/* ========================================================
@@ -1925,33 +1929,32 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
             MODE 1: ANTRIAN AUDIT & DAFTAR PEKERJAAN
             ======================================================== */
         <div className="space-y-3">
-          {/* Toolbar Antrian: Search, Filter Tabs, & Button Panggil Kode */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 shadow-xs space-y-3">
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-              {/* Search Bar */}
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          {/* Compact Toolbar Antrian */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-2.5 sm:p-3 shadow-xs space-y-2.5">
+            {/* Row 1: Search + 1 Primary CTA + Secondary/Overflow */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <div className="relative flex-1 min-w-0">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
-                  placeholder="Cari Kode Produksi, Nama Produk, Petugas, Catatan Petunjuk..."
+                  placeholder="Cari kode, nama produk, petugas, petunjuk..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-9 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 transition"
+                  className="w-full min-h-[42px] pl-9 pr-9 py-2 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm font-medium text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
                 />
                 {searchQuery && (
                   <button
                     type="button"
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
                 )}
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2 shrink-0">
-                {/* Button Panggil / Multiple Choice Modal */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {/* Single Primary CTA */}
                 <button
                   type="button"
                   onClick={() => {
@@ -1959,45 +1962,41 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                     setPickerCodeNotes({});
                     setIsPickerModalOpen(true);
                   }}
-                  className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+                  className="flex-1 sm:flex-initial min-h-[42px] px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
                 >
                   <ListPlus className="w-4 h-4" />
-                  <span>+ Panggil Kode (Multiple)</span>
+                  <span>Panggil Kode</span>
                 </button>
 
-                {/* Batch Re-Push All Counted Codes Button */}
+                {/* Desktop Secondary Neutral Buttons */}
                 <button
                   type="button"
                   onClick={handleBatchRePushToSheet}
                   disabled={isBatchSyncing || isSyncingSheet || (metrics.total - metrics.uncounted === 0)}
-                  className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition cursor-pointer"
-                  title="Kirim ulang (Re-Push) semua hasil hitung ulang fisik antrian ke Master Sheet Google Spreadsheet sekaligus secara otomatis"
+                  className="hidden lg:inline-flex min-h-[42px] px-3 py-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-45 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold items-center gap-1.5 transition cursor-pointer"
+                  title="Kirim ulang semua hasil hitung ulang ke Google Sheet"
                 >
-                  <CloudUpload className={`w-4 h-4 ${isBatchSyncing ? 'animate-bounce' : ''}`} />
+                  <CloudUpload className={`w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 ${isBatchSyncing ? 'animate-bounce' : ''}`} />
                   <span>
                     {isBatchSyncing
-                      ? `Re-Push (${batchSyncProgress?.current || 0}/${batchSyncProgress?.total || 0})...`
-                      : `Re-Push Semua (${metrics.total - metrics.uncounted})`}
+                      ? `Re-Push (${batchSyncProgress?.current || 0}/${batchSyncProgress?.total || 0})`
+                      : `Re-Push (${metrics.total - metrics.uncounted})`}
                   </span>
                 </button>
 
-                {/* Cloud Sync Button (Tarik Hasil Hitung Ulang & Antrian Terbaru) */}
                 <button
                   type="button"
                   onClick={async () => {
                     try {
                       setIsSyncingCloudQueue(true);
-                      // 1. Ambil data hasil hitung ulang terbaru dari Cloud
                       const cloudAuditMap = await fetchRecountAuditMapFromCloud();
                       if (cloudAuditMap && typeof cloudAuditMap === 'object') {
                         setRecountAuditMap(cloudAuditMap);
                       }
-                      // 2. Ambil antrian terbaru dari Cloud
                       const q = await fetchPenerimaanRecountQueueFromSupabase();
                       if (q && typeof q === 'object') setQueueMap(q);
-                      // 3. Paksa refresh data penerimaan dari Supabase Cloud (bypass cache)
                       await (onRefreshData as any)(true);
-                      onShowToast('✅ Sinkronisasi Cloud Berhasil! Data hasil hitung ulang ditarik dari Cloud.', 'success');
+                      onShowToast('Sinkronisasi Cloud berhasil.', 'success');
                     } catch (err) {
                       console.error('Gagal sinkron:', err);
                       onShowToast('Gagal sinkronisasi data Cloud', 'error');
@@ -2006,61 +2005,65 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                     }
                   }}
                   disabled={isSyncingCloudQueue}
-                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition cursor-pointer"
-                  title="Tarik hasil hitung ulang & antrian terbaru dari Cloud Supabase agar semua perangkat langsung tersinkronkan"
+                  className="hidden lg:inline-flex min-h-[42px] px-3 py-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold items-center gap-1.5 transition cursor-pointer"
+                  title="Tarik hasil hitung ulang & antrian terbaru dari Cloud"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isSyncingCloudQueue ? 'animate-spin' : ''}`} />
-                  <span>{isSyncingCloudQueue ? 'Menyinkronkan...' : 'Sinkronkan Cloud'}</span>
+                  <span>{isSyncingCloudQueue ? 'Sync...' : 'Sync Cloud'}</span>
+                </button>
+
+                {/* Mobile Overflow Menu for Re-Push & Sync */}
+                <button
+                  type="button"
+                  onClick={() => setIsAuditMenuOpen(true)}
+                  aria-label="Menu utilitas audit"
+                  className="lg:hidden min-h-[42px] min-w-[42px] px-2.5 py-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-center transition cursor-pointer shrink-0"
+                >
+                  <MoreHorizontal className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
             {/* Batch Re-Push Live Progress Banner */}
             {isBatchSyncing && batchSyncProgress && (
-              <div className="bg-purple-50 dark:bg-purple-950/70 border border-purple-200 dark:border-purple-800 rounded-xl p-3 flex items-center justify-between gap-3 animate-in fade-in duration-200">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-purple-600 text-white flex items-center justify-center shrink-0">
-                    <CloudUpload className="w-4 h-4 animate-bounce" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-black text-purple-950 dark:text-purple-100 flex items-center gap-2">
-                      <span>Sedang Mengirim ke Google Sheet...</span>
-                      <span className="px-2 py-0.5 rounded-full bg-purple-200 dark:bg-purple-900 text-purple-800 dark:text-purple-200 text-[10px] font-bold">
-                        {batchSyncProgress.current} dari {batchSyncProgress.total} Kode
-                      </span>
+              <div className="bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 rounded-xl p-2.5 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <CloudUpload className="w-4 h-4 text-indigo-600 dark:text-indigo-400 animate-bounce shrink-0" />
+                  <div className="min-w-0 text-xs">
+                    <div className="font-bold text-indigo-950 dark:text-indigo-100 truncate">
+                      Mengirim ke Sheet ({batchSyncProgress.current}/{batchSyncProgress.total})
                     </div>
-                    <div className="text-[11px] text-purple-700 dark:text-purple-300 font-mono mt-0.5">
-                      Memproses: <strong>{batchSyncProgress.activeCode}</strong>
+                    <div className="text-[11px] text-indigo-700 dark:text-indigo-300 font-mono truncate">
+                      #{batchSyncProgress.activeCode}
                     </div>
                   </div>
                 </div>
-                <div className="w-28 sm:w-40 bg-purple-200 dark:bg-purple-900 h-2 rounded-full overflow-hidden shrink-0">
+                <div className="w-24 sm:w-36 bg-indigo-200 dark:bg-indigo-900 h-2 rounded-full overflow-hidden shrink-0">
                   <div
-                    className="bg-purple-600 h-full transition-all duration-300 rounded-full"
+                    className="bg-indigo-600 h-full transition-all duration-300 rounded-full"
                     style={{ width: `${Math.round((batchSyncProgress.current / batchSyncProgress.total) * 100)}%` }}
                   />
                 </div>
               </div>
             )}
 
-            {/* Filter Tabs / Pills */}
-            <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[11px] font-bold text-slate-400 mr-1">Status:</span>
+            {/* Row 2: Horizontal-Swipe Status Filter + Compact Kategori & Sort Controls */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar flex-nowrap">
                 {[
                   { id: 'all', label: `Semua (${metrics.total})` },
-                  { id: 'uncounted', label: `⏳ Antrian Belum (${metrics.uncounted})` },
-                  { id: 'diff', label: `⚠️ Ada Selisih (${metrics.diff})` },
-                  { id: 'match', label: `✅ Klop (${metrics.match})` },
+                  { id: 'uncounted', label: `Belum (${metrics.uncounted})` },
+                  { id: 'diff', label: `Selisih (${metrics.diff})` },
+                  { id: 'match', label: `Klop (${metrics.match})` },
                 ].map((st) => (
                   <button
                     key={st.id}
                     type="button"
                     onClick={() => setFilterStatus(st.id as any)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    className={`min-h-[34px] px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer shrink-0 whitespace-nowrap ${
                       filterStatus === st.id
-                        ? 'bg-rose-600 text-white shadow-2xs'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                        ? 'bg-indigo-600 text-white shadow-2xs'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                     }`}
                   >
                     {st.label}
@@ -2068,90 +2071,30 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                 ))}
               </div>
 
-              {/* Kategori Switcher */}
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-[11px] font-bold">
-                {['Semua', 'Lokal CMT', 'Kargo'].map((kat) => (
-                  <button
-                    key={kat}
-                    type="button"
-                    onClick={() => setFilterKategori(kat)}
-                    className={`px-2.5 py-0.5 rounded-md transition cursor-pointer ${
-                      filterKategori === kat
-                        ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-2xs font-black'
-                        : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    {kat}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Row 3: Sort Options (Terlama ➔ Terbaru, Terbaru ➔ Terlama, Prioritas Selisih) */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[11px] font-bold text-slate-400 mr-1 flex items-center gap-1">
-                  <ArrowUpDown className="w-3.5 h-3.5 text-rose-500" />
-                  <span>Urutkan:</span>
-                </span>
-
-                <button
-                  type="button"
-                  onClick={() => handleSortChange('date_asc')}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                    sortOrder === 'date_asc'
-                      ? 'bg-rose-600 text-white shadow-2xs ring-1 ring-rose-500'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-750'
-                  }`}
-                  title="Urutkan dari tanggal kedatangan terlama ke terbaru (FIFO / barang lama dihitung dulu)"
+              <div className="grid grid-cols-2 sm:flex items-center gap-1.5 shrink-0">
+                <select
+                  value={filterKategori}
+                  onChange={(e) => setFilterKategori(e.target.value)}
+                  aria-label="Filter kategori"
+                  className="min-h-[36px] px-2.5 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
                 >
-                  <ArrowUp className={`w-3.5 h-3.5 ${sortOrder === 'date_asc' ? 'text-white' : 'text-amber-500'}`} />
-                  <span>Terlama ➔ Terbaru</span>
-                </button>
+                  <option value="Semua">Semua Kategori</option>
+                  <option value="Lokal CMT">Lokal CMT</option>
+                  <option value="Kargo">Kargo</option>
+                </select>
 
-                <button
-                  type="button"
-                  onClick={() => handleSortChange('date_desc')}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                    sortOrder === 'date_desc'
-                      ? 'bg-rose-600 text-white shadow-2xs ring-1 ring-rose-500'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-750'
-                  }`}
-                  title="Urutkan dari tanggal kedatangan terbaru ke terlama"
-                >
-                  <ArrowDown className={`w-3.5 h-3.5 ${sortOrder === 'date_desc' ? 'text-white' : 'text-cyan-500'}`} />
-                  <span>Terbaru ➔ Terlama</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleSortChange('priority')}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                    sortOrder === 'priority'
-                      ? 'bg-rose-600 text-white shadow-2xs ring-1 ring-rose-500'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-750'
-                  }`}
-                  title="Prioritas: Ada Selisih ➔ Antrian Belum ➔ Klop"
-                >
-                  <Sparkles className={`w-3.5 h-3.5 ${sortOrder === 'priority' ? 'text-white' : 'text-amber-500'}`} />
-                  <span>Prioritas Selisih</span>
-                </button>
-              </div>
-
-              {/* Right: Dropdown for Additional Sort Options */}
-              <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0">
-                <span className="text-[11px] text-slate-400 font-bold hidden sm:inline">Lainnya:</span>
                 <select
                   value={sortOrder}
                   onChange={(e) => handleSortChange(e.target.value as RecountQueueSortOrder)}
-                  className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold py-1 px-2.5 rounded-lg cursor-pointer focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  aria-label="Urutkan antrian"
+                  className="min-h-[36px] px-2.5 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
                 >
-                  <option value="date_asc">📅 Tgl Masuk: Terlama ➔ Terbaru</option>
-                  <option value="date_desc">📅 Tgl Masuk: Terbaru ➔ Terlama</option>
-                  <option value="priority">⚡ Prioritas: Selisih ➔ Belum</option>
-                  <option value="diff_desc">⚠️ Selisih Terbanyak (Absolute)</option>
-                  <option value="code_asc">🔤 Kode Produksi (A ➔ Z)</option>
-                  <option value="code_desc">🔤 Kode Produksi (Z ➔ A)</option>
+                  <option value="date_asc">Terlama ke Terbaru</option>
+                  <option value="date_desc">Terbaru ke Terlama</option>
+                  <option value="priority">Prioritas Selisih</option>
+                  <option value="diff_desc">Selisih Terbanyak</option>
+                  <option value="code_asc">Kode (A - Z)</option>
+                  <option value="code_desc">Kode (Z - A)</option>
                 </select>
               </div>
             </div>
@@ -2159,25 +2102,25 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
 
           {/* Antrian List / Cards */}
           {filteredQueue.length === 0 ? (
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-10 sm:p-14 text-center text-slate-400 space-y-3">
-              <div className="w-14 h-14 mx-auto rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center">
-                <Scale className="w-7 h-7" />
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-10 text-center text-slate-400 space-y-3">
+              <div className="w-12 h-12 mx-auto rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                <Scale className="w-6 h-6" />
               </div>
-              <div className="max-w-md mx-auto space-y-1">
-                <p className="text-base font-extrabold text-slate-700 dark:text-slate-200">
+              <div className="max-w-sm mx-auto space-y-1">
+                <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
                   {codeGroups.length === 0
-                    ? 'Belum Ada Kode di Antrian Hitung Ulang'
-                    : 'Tidak ada kode antrian yang sesuai filter'}
+                    ? 'Belum ada kode di antrian audit'
+                    : 'Tidak ada kode yang sesuai filter'}
                 </p>
-                <p className="text-xs text-slate-400 leading-relaxed">
+                <p className="text-xs text-slate-500">
                   {codeGroups.length === 0
-                    ? 'Pilih kode barang melalui fitur Multiple Choice di bawah untuk memasukkan beberapa kode sekaligus lengkap dengan petunjuk instruksi.'
-                    : 'Coba ubah kata kunci pencarian atau ganti status filter di atas.'}
+                    ? 'Tambahkan satu atau beberapa kode produksi ke antrian hitung ulang.'
+                    : 'Ubah kata kunci pencarian atau status filter.'}
                 </p>
               </div>
 
               {codeGroups.length === 0 && (
-                <div className="pt-2">
+                <div className="pt-1">
                   <button
                     type="button"
                     onClick={() => {
@@ -2185,38 +2128,37 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                       setPickerCodeNotes({});
                       setIsPickerModalOpen(true);
                     }}
-                    className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black inline-flex items-center gap-2 shadow-sm transition cursor-pointer"
+                    className="min-h-[42px] px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1.5 shadow-xs transition cursor-pointer"
                   >
                     <ListPlus className="w-4 h-4" />
-                    <span>Pilih Kode ke Antrian (Multiple)</span>
+                    <span>Panggil Kode ke Antrian</span>
                   </button>
                 </div>
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
               {filteredQueue.map((item) => {
                 return (
                   <div
                     key={item.kode_produksi}
-                    className={`bg-white dark:bg-slate-900 border rounded-2xl p-3.5 transition shadow-xs flex flex-col justify-between ${
+                    className={`bg-white dark:bg-slate-900 border rounded-2xl overflow-hidden transition shadow-xs flex flex-col justify-between ${
                       item.has_diff
-                        ? 'border-rose-300 dark:border-rose-900/60 bg-rose-50/10'
+                        ? 'border-rose-200 dark:border-rose-900/60'
                         : item.is_counted
-                        ? 'border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/10'
-                        : 'border-slate-200 dark:border-slate-800'
+                        ? 'border-emerald-200 dark:border-emerald-900/50'
+                        : 'border-slate-200/90 dark:border-slate-800'
                     }`}
                   >
-                    <div>
-                      {/* Top Bar: Code Badge + Category + Remove Queue Button */}
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <div className="flex items-center gap-2">
-                          {/* Thumbnail */}
+                    <div className="p-3.5 space-y-2.5">
+                      {/* Top Bar: Thumbnail + Code + Clean Status */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
                           {item.photo_url ? (
                             <img
                               src={item.photo_url}
                               alt={item.kode_produksi}
-                              className="w-10 h-10 rounded-lg object-contain bg-slate-100 dark:bg-slate-800 border border-slate-200 cursor-pointer"
+                              className="w-11 h-11 rounded-xl object-cover bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 cursor-zoom-in shrink-0"
                               referrerPolicy="no-referrer"
                               onClick={() =>
                                 onOpenLightbox &&
@@ -2228,189 +2170,146 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                               }
                             />
                           ) : (
-                            <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
+                            <div className="w-11 h-11 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 shrink-0">
                               <ImageIcon className="w-5 h-5" />
                             </div>
                           )}
-                          <div>
+                          <div className="min-w-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-mono text-sm font-black text-slate-900 dark:text-white">
-                                {item.kode_produksi}
+                              <span className="font-mono text-sm font-bold text-slate-900 dark:text-white">
+                                #{item.kode_produksi}
                               </span>
                               {(item.latest_date || item.earliest_date) && (
                                 <span
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
+                                  className="text-[11px] font-mono text-slate-500 dark:text-slate-400"
                                   title={`Tanggal Kedatangan: ${formatDatesSummary(item.distinct_dates)}`}
                                 >
-                                  <CalendarDays className="w-2.5 h-2.5 text-slate-400 shrink-0" />
-                                  <span>{formatDatesSummary(item.distinct_dates)}</span>
+                                  · {formatDatesSummary(item.distinct_dates)}
                                 </span>
                               )}
                             </div>
-                            <span className="block text-[10px] text-slate-500 font-bold">
-                              {item.kategori} {item.vendor_up ? `• UP: ${item.vendor_up}` : ''}
+                            <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
+                              {item.nama_produk || 'Produk Tanpa Nama'}
+                            </p>
+                            <span className="block text-[11px] text-slate-500 truncate">
+                              {item.kategori}{item.vendor_up ? ` · UP ${item.vendor_up}` : ''}
                             </span>
                           </div>
                         </div>
 
-                        {/* Status Badge & Close button */}
-                        <div className="flex items-center gap-1.5">
-                          <div>
-                            {!item.is_counted ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:border-amber-800">
-                                <Clock className="w-3 h-3" />
-                                <span>Belum Dihitung</span>
-                              </span>
-                            ) : item.total_selisih === 0 ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800">
-                                <CheckCircle2 className="w-3 h-3" />
-                                <span>✅ Match (0)</span>
-                              </span>
-                            ) : (item.total_selisih || 0) < 0 ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:border-rose-800">
-                                <TrendingDown className="w-3 h-3" />
-                                <span>⚠️ Kurang ({item.total_selisih} pcs)</span>
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:border-blue-800">
-                                <TrendingUp className="w-3 h-3" />
-                                <span>📦 Lebih (+{item.total_selisih} pcs)</span>
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Tombol Hapus dari Antrian */}
-                          <button
-                            type="button"
-                            onClick={(e) => handleRemoveFromQueue(item.kode_produksi, e)}
-                            className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition cursor-pointer"
-                            title="Keluarkan dari antrian terpilih"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
+                        {/* Status Badge (Clean, No Emojis) */}
+                        <div className="shrink-0">
+                          {!item.is_counted ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800">
+                              Belum
+                            </span>
+                          ) : item.total_selisih === 0 ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800">
+                              Klop
+                            </span>
+                          ) : (item.total_selisih || 0) < 0 ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800 tabular-nums">
+                              Kurang {item.total_selisih}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800 tabular-nums">
+                              Lebih +{item.total_selisih}
+                            </span>
+                          )}
                         </div>
                       </div>
 
-                      {/* Product Name */}
-                      <p className="text-xs font-bold text-slate-700 dark:text-slate-200 line-clamp-1 mb-2">
-                        {item.nama_produk || 'Produk Tanpa Nama'}
-                      </p>
-
-                      {/* Qty Comparison Box */}
-                      <div className="grid grid-cols-3 gap-1 bg-slate-50 dark:bg-slate-800/60 p-2 rounded-xl border border-slate-200 dark:border-slate-750 text-center font-mono">
-                        <div>
-                          <span className="text-[9px] text-slate-400 font-bold block uppercase">Hitung Awal</span>
-                          <span className="text-xs font-black text-slate-800 dark:text-slate-100">{item.total_asli} pcs</span>
+                      {/* Hairline 3-Column Comparison Strip */}
+                      <div className="grid grid-cols-3 divide-x divide-slate-200/80 dark:divide-slate-800 bg-slate-50/80 dark:bg-slate-800/50 py-2 rounded-xl border border-slate-100 dark:border-slate-800 text-center">
+                        <div className="px-1">
+                          <span className="text-[10px] text-slate-400 font-medium block">Awal</span>
+                          <span className="text-xs font-bold text-slate-800 dark:text-slate-100 tabular-nums">{item.total_asli}</span>
                         </div>
-                        <div>
-                          <span className="text-[9px] text-slate-400 font-bold block uppercase">Hitung Ulang</span>
-                          <span className="text-xs font-black text-blue-600 dark:text-blue-400">
-                            {item.total_fisik !== null ? `${item.total_fisik} pcs` : '-'}
+                        <div className="px-1">
+                          <span className="text-[10px] text-slate-400 font-medium block">Fisik</span>
+                          <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 tabular-nums">
+                            {item.total_fisik !== null ? item.total_fisik : '—'}
                           </span>
                         </div>
-                        <div>
-                          <span className="text-[9px] text-slate-400 font-bold block uppercase">Selisih</span>
+                        <div className="px-1">
+                          <span className="text-[10px] text-slate-400 font-medium block">Selisih</span>
                           <span
-                            className={`text-xs font-black ${
+                            className={`text-xs font-bold tabular-nums ${
                               item.total_selisih === null
                                 ? 'text-slate-400'
                                 : item.total_selisih === 0
-                                ? 'text-emerald-600'
+                                ? 'text-emerald-600 dark:text-emerald-400'
                                 : item.total_selisih < 0
-                                ? 'text-rose-600'
-                                : 'text-blue-600'
+                                ? 'text-rose-600 dark:text-rose-400'
+                                : 'text-blue-600 dark:text-blue-400'
                             }`}
                           >
                             {item.total_selisih !== null
                               ? item.total_selisih > 0
                                 ? `+${item.total_selisih}`
                                 : item.total_selisih
-                              : '-'}
+                              : '—'}
                           </span>
                         </div>
                       </div>
 
-                      {/* Catatan / Petunjuk Khusus Kode (Highlight Box) */}
+                      {/* Petunjuk Khusus */}
                       {item.catatan_petunjuk ? (
-                        <div
+                        <button
+                          type="button"
                           onClick={(e) => handlePromptEditCardNote(item.kode_produksi, e)}
-                          className="mt-2 p-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-xl text-xs flex items-start justify-between gap-1.5 cursor-pointer hover:border-amber-300 transition"
-                          title="Klik untuk mengubah petunjuk"
+                          className="w-full text-left px-2.5 py-2 bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/50 rounded-xl text-[11px] flex items-start justify-between gap-2 cursor-pointer hover:border-amber-300 transition"
                         >
-                          <div className="flex items-start gap-1.5 overflow-hidden">
-                            <span className="text-amber-600 font-black text-[11px] shrink-0">📌 Petunjuk:</span>
-                            <span className="text-amber-900 dark:text-amber-200 font-bold text-[11px] leading-tight break-words">
-                              {item.catatan_petunjuk}
-                            </span>
-                          </div>
-                          <Edit3 className="w-3 h-3 text-amber-600 shrink-0 mt-0.5" />
-                        </div>
+                          <span className="text-amber-900 dark:text-amber-200 font-medium leading-snug break-words">
+                            <strong className="font-bold">Petunjuk:</strong> {item.catatan_petunjuk}
+                          </span>
+                          <Edit3 className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                        </button>
                       ) : (
                         <button
                           type="button"
                           onClick={(e) => handlePromptEditCardNote(item.kode_produksi, e)}
-                          className="mt-2 text-[10px] font-bold text-slate-400 hover:text-amber-600 flex items-center gap-1 transition cursor-pointer"
+                          className="text-[11px] font-medium text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 transition cursor-pointer"
                         >
                           <Plus className="w-3 h-3" />
-                          <span>Beri Petunjuk Khusus (misal: kurang 23 pcs)</span>
+                          <span>Tambah petunjuk</span>
                         </button>
                       )}
 
-                      {/* Auditor & Timestamp Footer */}
-                      <div className="mt-2 text-[10px] text-slate-500 space-y-0.5">
-                        {item.last_auditor ? (
-                          <div className="flex items-center justify-between">
-                            <span>Petugas: <strong className="text-slate-700 dark:text-slate-300">{item.last_auditor}</strong></span>
-                            {item.last_round ? <span className="text-rose-600 font-bold">Putaran {item.last_round}</span> : null}
-                          </div>
-                        ) : (
-                          <div className="text-slate-400 italic">Belum ada riwayat audit fisik</div>
-                        )}
-                        {item.last_audit_date ? (
-                          <div className="text-slate-400 text-[9px]">
-                            Update: {new Date(item.last_audit_date).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}
-                          </div>
-                        ) : null}
-                      </div>
+                      {/* Auditor Metadata */}
+                      {item.last_auditor && (
+                        <div className="flex items-center justify-between text-[11px] text-slate-500">
+                          <span className="truncate">
+                            {item.last_auditor}
+                            {item.last_round ? ` · Putaran ${item.last_round}` : ''}
+                          </span>
+                          {item.last_audit_date && (
+                            <span className="text-[10px] text-slate-400 shrink-0">
+                              {new Date(item.last_audit_date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex items-center gap-1.5 pt-3 mt-2 border-t border-slate-100 dark:border-slate-800">
+                    {/* Clean 2-Control Native Footer (1 Primary CTA + Action Sheet) */}
+                    <div className="px-3 py-2.5 bg-slate-50/70 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() => handleOpenWorkspace(item.kode_produksi)}
-                        className="flex-1 py-1.5 px-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 shadow-2xs transition cursor-pointer"
+                        className="flex-1 min-h-[40px] py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
                       >
                         <Scale className="w-3.5 h-3.5" />
                         <span>{item.is_counted ? 'Re-Audit Fisik' : 'Hitung Sekarang'}</span>
                       </button>
 
-                      {/* Direct Re-Push Sheet Button */}
                       <button
                         type="button"
-                        onClick={(e) => handleDirectRePushToSheet(item, e)}
-                        className="p-1.5 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 rounded-xl text-xs font-bold transition cursor-pointer border border-indigo-200 dark:border-indigo-800"
-                        title="Re-Push / Kirim Ulang Hasil Audit ke Google Sheet"
+                        onClick={() => setActionSheetQueueItem(item)}
+                        aria-label="Menu aksi antrian"
+                        className="min-h-[40px] min-w-[40px] px-2.5 py-2 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-center transition cursor-pointer shrink-0"
                       >
-                        <CloudUpload className="w-3.5 h-3.5" />
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={(e) => handleOpenHistoryModal(item.kode_produksi, e)}
-                        className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition cursor-pointer"
-                        title="Lihat Log Riwayat Putaran & Rincian Varian"
-                      >
-                        <History className="w-3.5 h-3.5" />
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={(e) => handleRemoveFromQueue(item.kode_produksi, e)}
-                        className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-rose-100 hover:text-rose-600 text-slate-400 rounded-xl text-xs font-bold transition cursor-pointer"
-                        title="Hapus / Keluarkan dari Antrian"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <MoreHorizontal className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
@@ -2424,9 +2323,9 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
             MODE 2: LEMBAR KERJA VERIFIKASI FISIK (WORKSPACE FOKUS)
             ======================================================== */
         activeGroup && (
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-sm space-y-5 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-3 sm:p-5 shadow-xs space-y-4 animate-in fade-in duration-150">
             {/* Top Navigation Bar */}
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 flex-wrap gap-2">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -2434,44 +2333,44 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                   setSelectedCode('');
                   setActiveMode('queue');
                 }}
-                className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                className="min-h-[38px] px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Kembali ke Antrian</span>
+                <span>Antrian</span>
               </button>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <button
                   type="button"
-                  disabled={isSyncingSheet}
-                  onClick={(e) => handleDirectRePushToSheet(activeGroup, e)}
-                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
-                  title="Kirim ulang data hitung fisik kode ini ke Master Sheet Google Spreadsheet"
+                  onClick={handlePrintPhysicalForm}
+                  className="min-h-[38px] px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border border-slate-200 dark:border-slate-700"
+                  title="Cetak Lembar Kerja Fisik"
                 >
-                  <CloudUpload className={`w-3.5 h-3.5 ${isSyncingSheet ? 'animate-bounce' : ''}`} />
-                  <span>{isSyncingSheet ? 'Mengirim...' : 'Re-Push Sheet'}</span>
+                  <Printer className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Cetak Form</span>
                 </button>
 
                 <button
                   type="button"
-                  onClick={handlePrintPhysicalForm}
-                  className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border border-slate-200 dark:border-slate-700"
-                  title="Cetak Lembar Kerja Fisik (Kertas)"
+                  disabled={isSyncingSheet}
+                  onClick={(e) => handleDirectRePushToSheet(activeGroup, e)}
+                  className="min-h-[38px] px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 text-indigo-700 dark:text-indigo-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border border-indigo-200 dark:border-indigo-800"
+                  title="Kirim ulang data hitung fisik kode ini ke Google Sheet"
                 >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>Cetak Form Kertas</span>
+                  <CloudUpload className={`w-3.5 h-3.5 ${isSyncingSheet ? 'animate-bounce' : ''}`} />
+                  <span>{isSyncingSheet ? 'Mengirim...' : 'Re-Push'}</span>
                 </button>
               </div>
             </div>
 
             {/* Header Kode & Metadata Produk */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-50 dark:bg-slate-850 p-4 rounded-2xl border border-slate-200 dark:border-slate-750">
-              <div className="flex items-center gap-3">
+            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 bg-slate-50/80 dark:bg-slate-800/40 p-3 sm:p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-3 min-w-0">
                 {activeGroup.photo_url ? (
                   <img
                     src={activeGroup.photo_url}
                     alt={activeGroup.kode_produksi}
-                    className="w-16 h-16 rounded-xl object-contain bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xs cursor-pointer"
+                    className="w-14 h-14 rounded-xl object-cover bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 cursor-zoom-in shrink-0"
                     referrerPolicy="no-referrer"
                     onClick={() =>
                       onOpenLightbox &&
@@ -2483,34 +2382,34 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                     }
                   />
                 ) : (
-                  <div className="w-16 h-16 rounded-xl bg-white dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center text-slate-400">
-                    <ImageIcon className="w-6 h-6" />
+                  <div className="w-14 h-14 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-400 shrink-0">
+                    <ImageIcon className="w-5 h-5" />
                   </div>
                 )}
 
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-base font-black text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 px-2.5 py-0.5 rounded-lg border border-rose-200 dark:border-rose-900">
-                      {activeGroup.kode_produksi}
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono text-sm sm:text-base font-bold text-indigo-700 dark:text-indigo-300">
+                      #{activeGroup.kode_produksi}
                     </span>
-                    <span className="text-xs font-bold text-slate-500 bg-slate-200/60 dark:bg-slate-800 px-2 py-0.5 rounded">
+                    <span className="text-[11px] font-semibold text-slate-500 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-md">
                       {activeGroup.kategori}
                     </span>
                   </div>
-                  <h3 className="text-sm font-extrabold text-slate-900 dark:text-white mt-1">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white mt-0.5 line-clamp-1">
                     {activeGroup.nama_produk || 'Produk Tanpa Nama'}
                   </h3>
-                  <p className="text-xs text-slate-500">
-                    Total Hitung Awal: <strong className="text-slate-800 dark:text-slate-200">{activeGroup.total_asli} pcs</strong>
-                    {activeGroup.vendor_up ? ` • UP: ${activeGroup.vendor_up}` : ''}
+                  <p className="text-xs text-slate-500 tabular-nums">
+                    Awal: <strong className="text-slate-800 dark:text-slate-200">{activeGroup.total_asli} pcs</strong>
+                    {activeGroup.vendor_up ? ` · UP ${activeGroup.vendor_up}` : ''}
                   </p>
                 </div>
               </div>
 
               {/* Form Metadata Auditor & Tanggal */}
-              <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
+              <div className="grid grid-cols-2 gap-2 w-full lg:w-auto">
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 block mb-1">Tanggal Audit:</label>
+                  <label className="text-[11px] font-semibold text-slate-500 block mb-1">Tanggal Audit</label>
                   <input
                     type="date"
                     value={auditDate}
@@ -2518,11 +2417,11 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                       isWorkspaceDirtyRef.current = true;
                       setAuditDate(e.target.value);
                     }}
-                    className="px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200"
+                    className="w-full min-h-[40px] px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-slate-200"
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 block mb-1">Nama Petugas / Auditor:</label>
+                  <label className="text-[11px] font-semibold text-slate-500 block mb-1">Auditor</label>
                   <input
                     type="text"
                     value={auditorName}
@@ -2531,7 +2430,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                       setAuditorName(e.target.value);
                     }}
                     placeholder="Nama Auditor..."
-                    className="px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200"
+                    className="w-full min-h-[40px] px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-slate-200"
                   />
                 </div>
               </div>
@@ -2539,70 +2438,164 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
 
             {/* Instruction Note Banner in Workspace */}
             {activeGroup.catatan_petunjuk ? (
-              <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-2xl flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-base">📌</span>
-                  <div>
-                    <span className="text-[10px] uppercase font-black tracking-wider text-amber-700 dark:text-amber-400 block">
-                      Petunjuk Instruksi Khusus Kode Ini:
-                    </span>
-                    <span className="text-xs font-bold text-amber-950 dark:text-amber-100">
-                      {activeGroup.catatan_petunjuk}
-                    </span>
-                  </div>
+              <div className="px-3 py-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-amber-700 dark:text-amber-400 block">
+                    Petunjuk Khusus
+                  </span>
+                  <span className="text-xs font-semibold text-amber-950 dark:text-amber-100">
+                    {activeGroup.catatan_petunjuk}
+                  </span>
                 </div>
                 <button
                   type="button"
                   onClick={(e) => handlePromptEditCardNote(activeGroup.kode_produksi, e)}
-                  className="text-xs font-bold text-amber-700 dark:text-amber-300 hover:underline shrink-0"
+                  className="text-xs font-semibold text-amber-700 dark:text-amber-300 hover:underline shrink-0 cursor-pointer"
                 >
-                  Ubah Petunjuk
+                  Ubah
                 </button>
               </div>
             ) : null}
 
             {/* Quick Helper Actions */}
-            <div className="flex items-center justify-between flex-wrap gap-2 pt-1">
-              <div className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <Scale className="w-4 h-4 text-rose-500" />
-                <span>Lembar Verifikasi Fisik per Varian (Warna &amp; Size)</span>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                Verifikasi Fisik ({activeVariants.length} Varian)
               </div>
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={handleQuickFillSameAsOriginal}
-                  className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 rounded-lg text-xs font-bold border border-emerald-200 dark:border-emerald-800 transition cursor-pointer"
+                  className="min-h-[36px] px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 rounded-xl text-xs font-semibold border border-emerald-200 dark:border-emerald-800 transition cursor-pointer"
                 >
-                  ⚡ Set Sesuai Hitungan Awal
+                  Set Sesuai Awal
                 </button>
                 <button
                   type="button"
                   onClick={handleResetInputs}
-                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400 rounded-lg text-xs font-bold transition cursor-pointer"
+                  className="min-h-[36px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300 rounded-xl text-xs font-semibold transition cursor-pointer"
                 >
                   Kosongkan
                 </button>
               </div>
             </div>
 
-            {/* Tabel Lembar Kerja Fisik */}
-            <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-2xl">
-              <table className="w-full text-xs text-left border-collapse min-w-[650px]">
+            {/* MOBILE NATIVE RECOUNT CARDS (Zero Horizontal Scroll!) */}
+            <div className="md:hidden space-y-2.5">
+              {activeVariants.map((v, idx) => {
+                const key = `${v.warna}_${v.size}`;
+                const inp = variantInputs[key] || { recountQty: null, note: '' };
+                const isCustomEntered = inp.recountQty !== null;
+                const selisih = isCustomEntered ? inp.recountQty - v.qty_asli : 0;
+
+                return (
+                  <div
+                    key={key}
+                    className={`rounded-2xl border p-3 space-y-2.5 ${
+                      isCustomEntered
+                        ? selisih === 0
+                          ? 'border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/20 dark:bg-emerald-950/10'
+                          : selisih < 0
+                          ? 'border-rose-200 dark:border-rose-900/60 bg-rose-50/20 dark:bg-rose-950/10'
+                          : 'border-blue-200 dark:border-blue-900/60 bg-blue-50/20 dark:bg-blue-950/10'
+                        : 'border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-[11px] font-mono text-slate-400 shrink-0">{idx + 1}.</span>
+                        <span className="text-sm font-bold text-slate-900 dark:text-white truncate">{v.warna}</span>
+                        <span className="px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[11px] font-mono font-bold shrink-0">
+                          {v.size}
+                        </span>
+                      </div>
+                      <span className="text-xs font-semibold text-slate-500 tabular-nums shrink-0">
+                        Awal: <strong className="text-slate-800 dark:text-slate-200">{v.qty_asli}</strong>
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1">
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          placeholder={`Fisik (awal ${v.qty_asli})`}
+                          value={inp.recountQty !== null ? inp.recountQty : ''}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? null : parseInt(e.target.value, 10);
+                            isWorkspaceDirtyRef.current = true;
+                            setVariantInputs((prev) => ({
+                              ...prev,
+                              [key]: {
+                                recountQty: val,
+                                note: prev[key]?.note || '',
+                              },
+                            }));
+                          }}
+                          className="w-full min-h-[44px] px-3 py-2 text-center font-mono font-bold text-base rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+
+                      <div className="min-w-[82px] text-center">
+                        {isCustomEntered ? (
+                          <div
+                            className={`px-2.5 py-2 rounded-xl text-xs font-bold font-mono tabular-nums ${
+                              selisih === 0
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                : selisih < 0
+                                ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                                : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                            }`}
+                          >
+                            {selisih === 0 ? 'Klop' : selisih > 0 ? `+${selisih}` : selisih}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-slate-400">Belum</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <input
+                      type="text"
+                      placeholder="Catatan varian (opsional)..."
+                      value={inp.note || ''}
+                      onChange={(e) => {
+                        const noteVal = e.target.value;
+                        isWorkspaceDirtyRef.current = true;
+                        setVariantInputs((prev) => ({
+                          ...prev,
+                          [key]: {
+                            recountQty: prev[key]?.recountQty ?? null,
+                            note: noteVal,
+                          },
+                        }));
+                      }}
+                      className="w-full min-h-[38px] text-xs px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 outline-none text-slate-700 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* DESKTOP TABLE LEMBAR KERJA FISIK */}
+            <div className="hidden md:block overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-2xl">
+              <table className="w-full text-xs text-left border-collapse">
                 <thead>
-                  <tr className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-extrabold uppercase text-[10px] tracking-wider border-b border-slate-200 dark:border-slate-700">
+                  <tr className="bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200 dark:border-slate-700">
                     <th className="py-2.5 px-3 text-center w-12">No</th>
                     <th className="py-2.5 px-3">Warna</th>
                     <th className="py-2.5 px-3 text-center w-16">Size</th>
-                    <th className="py-2.5 px-3 text-center w-28">Hitungan Awal</th>
-                    <th className="py-2.5 px-3 text-center w-36 bg-blue-50/70 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200">
-                      Qty Hitung Ulang
+                    <th className="py-2.5 px-3 text-center w-24">Awal</th>
+                    <th className="py-2.5 px-3 text-center w-36 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-200">
+                      Hitung Ulang
                     </th>
                     <th className="py-2.5 px-3 text-center w-24">Selisih</th>
-                    <th className="py-2.5 px-3 text-center w-28">Status</th>
-                    <th className="py-2.5 px-3 min-w-[120px]">Catatan Varian</th>
+                    <th className="py-2.5 px-3 text-center w-24">Status</th>
+                    <th className="py-2.5 px-3">Catatan Varian</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-800 bg-white dark:bg-slate-900 font-medium">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900 font-medium">
                   {activeVariants.map((v, idx) => {
                     const key = `${v.warna}_${v.size}`;
                     const inp = variantInputs[key] || { recountQty: null, note: '' };
@@ -2610,15 +2603,14 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                     const selisih = isCustomEntered ? (inp.recountQty - v.qty_asli) : 0;
 
                     return (
-                      <tr key={key} className="hover:bg-slate-50 dark:hover:bg-slate-850/60 transition">
-                        <td className="py-2 px-3 text-center text-slate-400 font-bold">{idx + 1}</td>
-                        <td className="py-2 px-3 font-bold text-slate-800 dark:text-slate-100">{v.warna}</td>
+                      <tr key={key} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition">
+                        <td className="py-2 px-3 text-center text-slate-400 font-mono">{idx + 1}</td>
+                        <td className="py-2 px-3 font-semibold text-slate-800 dark:text-slate-100">{v.warna}</td>
                         <td className="py-2 px-3 text-center font-mono font-bold">{v.size}</td>
-                        <td className="py-2 px-3 text-center font-mono font-bold text-slate-700 dark:text-slate-300">
+                        <td className="py-2 px-3 text-center font-mono font-bold text-slate-700 dark:text-slate-300 tabular-nums">
                           {v.qty_asli}
                         </td>
-                        {/* Input Qty Fisik */}
-                        <td className="py-1 px-2 text-center bg-blue-50/30 dark:bg-blue-950/20">
+                        <td className="py-1.5 px-2 text-center bg-indigo-50/20 dark:bg-indigo-950/15">
                           <input
                             type="number"
                             inputMode="numeric"
@@ -2636,53 +2628,50 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                                 },
                               }));
                             }}
-                            className={`w-24 text-center font-mono font-black text-xs py-1.5 px-2 rounded-lg border outline-none transition ${
+                            className={`w-24 text-center font-mono font-bold text-xs py-1.5 px-2 rounded-lg border outline-none transition ${
                               isCustomEntered
                                 ? selisih === 0
                                   ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 border-emerald-300'
                                   : selisih < 0
-                                  ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 border-rose-300 ring-1 ring-rose-300'
-                                  : 'bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-200 border-blue-300 ring-1 ring-blue-300'
-                                : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
+                                  ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 border-rose-300'
+                                  : 'bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-200 border-blue-300'
+                                : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
                             }`}
                           />
                         </td>
-                        {/* Selisih */}
-                        <td className="py-2 px-3 text-center font-mono font-bold">
+                        <td className="py-2 px-3 text-center font-mono font-bold tabular-nums">
                           {isCustomEntered ? (
                             selisih === 0 ? (
-                              <span className="text-emerald-600 font-bold">0</span>
+                              <span className="text-emerald-600">0</span>
                             ) : selisih < 0 ? (
-                              <span className="text-rose-600 font-black">{selisih}</span>
+                              <span className="text-rose-600">{selisih}</span>
                             ) : (
-                              <span className="text-blue-600 font-black">+{selisih}</span>
+                              <span className="text-blue-600">+{selisih}</span>
                             )
                           ) : (
-                            <span className="text-slate-300">-</span>
+                            <span className="text-slate-300">—</span>
                           )}
                         </td>
-                        {/* Status */}
                         <td className="py-2 px-3 text-center">
                           {isCustomEntered ? (
                             selisih === 0 ? (
-                              <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                                Match
+                              <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                                Klop
                               </span>
                             ) : selisih < 0 ? (
-                              <span className="inline-block px-2 py-0.5 rounded text-[10px] font-black bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300">
+                              <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300">
                                 Kurang
                               </span>
                             ) : (
-                              <span className="inline-block px-2 py-0.5 rounded text-[10px] font-black bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300">
+                              <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
                                 Lebih
                               </span>
                             )
                           ) : (
-                            <span className="text-slate-400 text-[10px] italic">Belum diisi</span>
+                            <span className="text-slate-400 text-[10px]">Belum</span>
                           )}
                         </td>
-                        {/* Catatan Varian */}
-                        <td className="py-1 px-2">
+                        <td className="py-1.5 px-2">
                           <input
                             type="text"
                             placeholder="Catatan varian..."
@@ -2698,7 +2687,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                                 },
                               }));
                             }}
-                            className="w-full text-xs py-1 px-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none text-slate-700 dark:text-slate-200 focus:bg-white"
+                            className="w-full text-xs py-1.5 px-2.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none text-slate-700 dark:text-slate-200 focus:bg-white dark:focus:bg-slate-900"
                           />
                         </td>
                       </tr>
@@ -2709,29 +2698,29 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
             </div>
 
             {/* Total Metrics Comparison Banner */}
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-900 text-white p-4 rounded-2xl shadow-sm">
-              <div className="text-center sm:text-left">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">Total SJ Diterima</span>
-                <span className="text-xl font-black font-mono">{workspaceSummary.totalAsli} pcs</span>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-900 dark:bg-slate-950 text-white p-3.5 sm:p-4 rounded-2xl border border-slate-800">
+              <div>
+                <span className="text-[10px] uppercase font-semibold text-slate-400 block">SJ Diterima</span>
+                <span className="text-base sm:text-xl font-bold font-mono tabular-nums">{workspaceSummary.totalAsli} pcs</span>
               </div>
-              <div className="text-center">
-                <span className="text-[10px] uppercase font-bold text-amber-300 block">
-                  {workspaceSummary.hasNota ? 'Target Qty Nota' : 'Qty Nota Buyer'}
+              <div>
+                <span className="text-[10px] uppercase font-semibold text-amber-300 block">
+                  {workspaceSummary.hasNota ? 'Qty Nota' : 'Nota Buyer'}
                 </span>
-                <span className="text-xl font-black font-mono text-amber-300">
-                  {workspaceSummary.hasNota ? `${workspaceSummary.targetNota} pcs` : '-'}
+                <span className="text-base sm:text-xl font-bold font-mono text-amber-300 tabular-nums">
+                  {workspaceSummary.hasNota ? `${workspaceSummary.targetNota} pcs` : '—'}
                 </span>
               </div>
-              <div className="text-center">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">Fisik Hitung Ulang</span>
-                <span className="text-xl font-black font-mono text-blue-400">{workspaceSummary.totalFisik} pcs</span>
+              <div>
+                <span className="text-[10px] uppercase font-semibold text-slate-400 block">Fisik Hitung</span>
+                <span className="text-base sm:text-xl font-bold font-mono text-blue-400 tabular-nums">{workspaceSummary.totalFisik} pcs</span>
               </div>
-              <div className="text-center sm:text-right">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">
+              <div>
+                <span className="text-[10px] uppercase font-semibold text-slate-400 block">
                   Selisih vs {workspaceSummary.hasNota ? 'Nota' : 'SJ'}
                 </span>
                 <span
-                  className={`text-2xl font-black font-mono ${
+                  className={`text-base sm:text-xl font-extrabold font-mono tabular-nums ${
                     workspaceSummary.totalSelisih === 0
                       ? 'text-emerald-400'
                       : workspaceSummary.totalSelisih < 0
@@ -2749,8 +2738,8 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
 
             {/* General Notes */}
             <div>
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                Catatan Umum Audit (Opsional):
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                Catatan Umum Audit (Opsional)
               </label>
               <textarea
                 rows={2}
@@ -2759,36 +2748,36 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                   isWorkspaceDirtyRef.current = true;
                   setGeneralNotes(e.target.value);
                 }}
-                placeholder="Tuliskan keterangan bila ada riwayat reject, selisih kirim, atau instruksi dari supervisor..."
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                placeholder="Riwayat reject, selisih kirim, atau catatan supervisor..."
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
 
             {/* Save & Push Master Sheet Actions */}
-            <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-800 flex-wrap gap-2">
+            <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800 gap-2">
               <button
                 type="button"
                 onClick={() => setActiveMode('queue')}
-                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition cursor-pointer"
+                className="min-h-[44px] px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200 rounded-xl text-xs font-semibold transition cursor-pointer shrink-0"
               >
-                Batal &amp; Kembali
+                Batal
               </button>
 
               <button
                 type="button"
                 disabled={isSavingAudit || isSyncingSheet}
                 onClick={handleSaveAndAutoPush}
-                className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-sm transition cursor-pointer"
+                className="flex-1 sm:flex-initial min-h-[44px] px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
               >
                 {isSavingAudit || isSyncingSheet ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>{isSyncingSheet ? 'Auto-Pushing Google Sheet...' : 'Menyimpan Hasil Audit...'}</span>
+                    <span>{isSyncingSheet ? 'Push Sheet...' : 'Menyimpan...'}</span>
                   </>
                 ) : (
                   <>
                     <Save className="w-4 h-4" />
-                    <span>Simpan &amp; Auto-Push Master Sheet</span>
+                    <span>Simpan &amp; Push Sheet</span>
                   </>
                 )}
               </button>
@@ -2801,8 +2790,8 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
           3. MODAL: MULTIPLE CHOICE KODE + NOTES PER KODE
           ======================================================== */}
       {isPickerModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/55 backdrop-blur-[2px] animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 border-t sm:border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
             {/* Modal Header */}
             <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -3472,6 +3461,122 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
           </div>
         )}
       </div>
+
+      {/* NATIVE ACTION SHEET: UTILITAS AUDIT */}
+      <ProduksiActionSheet
+        isOpen={isAuditMenuOpen}
+        onClose={() => setIsAuditMenuOpen(false)}
+        title="Utilitas Audit Hitung Ulang"
+        subtitle="Sinkronisasi data audit ke Google Sheet & Cloud"
+        groups={[
+          {
+            title: 'Sinkronisasi',
+            items: [
+              {
+                id: 'repush-all',
+                label: isBatchSyncing
+                  ? `Re-Push (${batchSyncProgress?.current || 0}/${batchSyncProgress?.total || 0})`
+                  : `Re-Push Semua ke Sheet (${metrics.total - metrics.uncounted})`,
+                description: 'Kirim ulang semua hasil hitung fisik antrian ke Master Sheet',
+                icon: <CloudUpload className="w-4 h-4" />,
+                tone: 'primary',
+                disabled: isBatchSyncing || isSyncingSheet || (metrics.total - metrics.uncounted === 0),
+                onClick: handleBatchRePushToSheet,
+              },
+              {
+                id: 'sync-cloud',
+                label: isSyncingCloudQueue ? 'Menyinkronkan...' : 'Sinkronkan Cloud',
+                description: 'Tarik hasil audit & antrian terbaru dari Supabase',
+                icon: <RefreshCw className={`w-4 h-4 ${isSyncingCloudQueue ? 'animate-spin' : ''}`} />,
+                disabled: isSyncingCloudQueue,
+                onClick: async () => {
+                  try {
+                    setIsSyncingCloudQueue(true);
+                    const cloudAuditMap = await fetchRecountAuditMapFromCloud();
+                    if (cloudAuditMap && typeof cloudAuditMap === 'object') {
+                      setRecountAuditMap(cloudAuditMap);
+                    }
+                    const q = await fetchPenerimaanRecountQueueFromSupabase();
+                    if (q && typeof q === 'object') setQueueMap(q);
+                    await (onRefreshData as any)(true);
+                    onShowToast('Sinkronisasi Cloud berhasil.', 'success');
+                  } catch (err) {
+                    console.error('Gagal sinkron:', err);
+                    onShowToast('Gagal sinkronisasi data Cloud', 'error');
+                  } finally {
+                    setIsSyncingCloudQueue(false);
+                  }
+                },
+              },
+            ],
+          },
+        ]}
+      />
+
+      {/* NATIVE ACTION SHEET: AKSI KARTU ANTRIAN AUDIT */}
+      <ProduksiActionSheet
+        isOpen={Boolean(actionSheetQueueItem)}
+        onClose={() => setActionSheetQueueItem(null)}
+        title={actionSheetQueueItem ? `Kode #${actionSheetQueueItem.kode_produksi}` : ''}
+        subtitle={
+          actionSheetQueueItem
+            ? `${actionSheetQueueItem.nama_produk || 'Produk'} · Awal ${actionSheetQueueItem.total_asli} pcs`
+            : undefined
+        }
+        groups={
+          actionSheetQueueItem
+            ? [
+                {
+                  title: 'Aksi Audit',
+                  items: [
+                    {
+                      id: 'open-workspace',
+                      label: actionSheetQueueItem.is_counted ? 'Re-Audit Fisik' : 'Hitung Sekarang',
+                      description: 'Buka lembar verifikasi fisik per varian',
+                      icon: <Scale className="w-4 h-4" />,
+                      tone: 'primary',
+                      onClick: () => handleOpenWorkspace(actionSheetQueueItem.kode_produksi),
+                    },
+                    {
+                      id: 'repush',
+                      label: 'Re-Push ke Google Sheet',
+                      description: 'Kirim ulang hasil audit kode ini ke Master Sheet',
+                      icon: <CloudUpload className="w-4 h-4" />,
+                      onClick: () => handleDirectRePushToSheet(actionSheetQueueItem),
+                    },
+                    {
+                      id: 'history',
+                      label: 'Log Riwayat Putaran',
+                      description: 'Lihat riwayat putaran audit & detail per varian',
+                      icon: <History className="w-4 h-4" />,
+                      onClick: () => handleOpenHistoryModal(actionSheetQueueItem.kode_produksi),
+                    },
+                    {
+                      id: 'note',
+                      label: actionSheetQueueItem.catatan_petunjuk ? 'Ubah Petunjuk Khusus' : 'Tambah Petunjuk Khusus',
+                      description: 'Catat instruksi khusus untuk petugas penghitung',
+                      icon: <Edit3 className="w-4 h-4" />,
+                      onClick: () => handlePromptEditCardNote(actionSheetQueueItem.kode_produksi),
+                    },
+                  ],
+                },
+                {
+                  title: 'Antrian',
+                  items: [
+                    {
+                      id: 'remove',
+                      label: 'Keluarkan dari Antrian',
+                      description: 'Hapus kode ini dari daftar antrian audit aktif',
+                      icon: <Trash2 className="w-4 h-4" />,
+                      tone: 'danger',
+                      onClick: () => handleRemoveFromQueue(actionSheetQueueItem.kode_produksi),
+                    },
+                  ],
+                },
+              ]
+            : []
+        }
+      />
     </div>
   );
 };

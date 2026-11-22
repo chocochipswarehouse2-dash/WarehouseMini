@@ -29,6 +29,8 @@ import {
   ChevronLeft,
   ChevronRight,
   RefreshCw,
+  MoreHorizontal,
+  Scale,
 } from 'lucide-react';
 import { PenerimaanProduksiItem, ProductItem, ProduksiQtyNotaRecord } from '../../types';
 import { exportProduksiToModernExcel } from '../../utils/excelProduksiExporter';
@@ -53,6 +55,7 @@ import {
 } from '../../services/supabase';
 import { PushSuratJalanModal } from './PushSuratJalanModal';
 import { PushDateSheetsModal } from './PushDateSheetsModal';
+import { ProduksiActionSheet } from './ProduksiActionSheet';
 import { lookupProductBySku } from '../../utils/productLookup';
 
 interface ProduksiSpreadsheetViewProps {
@@ -212,6 +215,8 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
 
   // Export Modal state
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
+  const [isToolbarMenuOpen, setIsToolbarMenuOpen] = useState<boolean>(false);
+  const [actionSheetBlock, setActionSheetBlock] = useState<any | null>(null);
   const [selectedExportDates, setSelectedExportDates] = useState<string[]>([]);
   const [selectedExportSjs, setSelectedExportSjs] = useState<string[]>([]);
   const [isExportingExcel, setIsExportingExcel] = useState<boolean>(false);
@@ -1777,47 +1782,46 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
 
   return (
     <div className="space-y-4 font-sans">
-      {/* COMPACT TOOLBAR: CMT vs KARGO & ACTIONS */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-2.5 shadow-xs print:hidden">
-        {/* Tab switcher: CMT vs Kargo */}
-        <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
-          <button
-            type="button"
-            onClick={() => handleTabChange('CMT')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1.5 cursor-pointer ${activeTab === 'CMT'
-              ? 'bg-rose-500 text-white shadow-xs'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+      {/* COMPACT TOOLBAR: CMT vs KARGO & CONSOLIDATED ACTIONS */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-2 sm:p-2.5 shadow-xs print:hidden">
+        {/* Left: CMT vs Kargo + Date Filter */}
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+          <div className="grid grid-cols-2 sm:flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl flex-1 sm:flex-initial">
+            <button
+              type="button"
+              onClick={() => handleTabChange('CMT')}
+              className={`min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center cursor-pointer whitespace-nowrap ${
+                activeTab === 'CMT'
+                  ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
-          >
-            <span>🧵</span>
-            <span>Lokal CMT</span>
-          </button>
+            >
+              Lokal CMT
+            </button>
 
-          <button
-            type="button"
-            onClick={() => handleTabChange('Kargo')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1.5 cursor-pointer ${activeTab === 'Kargo'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            <button
+              type="button"
+              onClick={() => handleTabChange('Kargo')}
+              className={`min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center cursor-pointer whitespace-nowrap ${
+                activeTab === 'Kargo'
+                  ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
-          >
-            <span>📦</span>
-            <span>Kargo</span>
-          </button>
-        </div>
+            >
+              Kargo
+            </button>
+          </div>
 
-        {/* Action button cluster & Date Filter */}
-        <div className="flex items-center gap-1.5 flex-wrap justify-end">
           {/* Quick Date Filter Selector */}
-          <div className="flex items-center gap-1 px-2.5 py-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
-            <Calendar className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+          <div className="flex items-center gap-1.5 min-h-[40px] px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-xs flex-1 sm:flex-initial min-w-[140px]">
+            <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             <select
               value={selectedDateFilter}
               onChange={(e) => setSelectedDateFilter(e.target.value)}
-              className="bg-transparent font-bold text-slate-800 dark:text-slate-200 outline-none cursor-pointer text-xs pr-1"
+              className="w-full bg-transparent font-semibold text-slate-800 dark:text-slate-200 outline-none cursor-pointer text-xs pr-1"
               title="Filter Tanggal Penerimaan"
             >
-              <option value="all">Semua Tanggal ({availableDates.length})</option>
+              <option value="all">Semua Tgl ({availableDates.length})</option>
               {availableDates.map((dStr) => {
                 const [dPart, sjPart] = dStr.split('||');
                 const label = sjPart
@@ -1834,14 +1838,17 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
               <button
                 type="button"
                 onClick={() => setSelectedDateFilter('all')}
-                className="text-slate-400 hover:text-rose-500 p-0.5 cursor-pointer"
+                className="text-slate-400 hover:text-rose-500 p-0.5 cursor-pointer shrink-0"
                 title="Reset ke Semua Tanggal"
               >
-                <X className="w-3 h-3" />
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
+        </div>
 
+        {/* Right: Max 1 Primary CTA + Secondary + Overflow Action Sheet */}
+        <div className="flex items-center gap-1.5 justify-end">
           <button
             type="button"
             onClick={() => {
@@ -1851,98 +1858,72 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                 })
               );
             }}
-            className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-blue-700 dark:text-blue-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border border-blue-200 dark:border-blue-800 shadow-2xs"
-            title={`Buka Form Input Penerimaan ${activeTab === 'Kargo' ? 'Kargo' : 'Lokal CMT'} (Bisa Diminimize & Perlindungan Offline)`}
+            className="flex-1 sm:flex-initial min-h-[40px] px-3 py-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer border border-slate-200 dark:border-slate-700"
+            title={`Buka Form Input Penerimaan ${activeTab === 'Kargo' ? 'Kargo' : 'Lokal CMT'}`}
           >
-            <Plus className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-            <span>Form Input {activeTab}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleAddNewBlock}
-            className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border border-slate-200 dark:border-slate-700 shadow-2xs"
-            title="Tambah Tabel Kode Baru"
-          >
-            <Plus className="w-3.5 h-3.5 text-rose-500" />
-            <span>Tambah Kode</span>
+            <Plus className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+            <span>Input {activeTab}</span>
           </button>
 
           <button
             type="button"
             disabled={isSyncingQtyNota}
             onClick={() => handleSyncQtyNotaFromSheet(false)}
-            className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 disabled:opacity-50 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border border-slate-200 dark:border-slate-700 shadow-2xs"
-            title="Tarik Qty Nota yang diisi Buyer di Google Sheet, backup ke Supabase, dan buat Antrian Hitung Ulang otomatis jika selisih"
+            className="hidden xl:inline-flex min-h-[40px] px-3 py-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold items-center gap-1.5 transition cursor-pointer border border-slate-200 dark:border-slate-700"
+            title="Tarik Qty Nota dari Google Sheet"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-amber-500 ${isSyncingQtyNota ? 'animate-spin' : ''}`} />
-            <span>{isSyncingQtyNota ? 'Sync Nota...' : 'Tarik Qty Nota'}</span>
+            <span>{isSyncingQtyNota ? 'Sync...' : 'Tarik Nota'}</span>
           </button>
 
           <button
             type="button"
             onClick={() => setIsPushDateModalOpen(true)}
-            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition cursor-pointer shadow-xs"
-            title={selectedDateFilter !== 'all' ? `Push Sheet Khusus Tanggal ${formatDateHeader(selectedDateFilter.split('||')[0])}` : 'Push Sheet Per Tanggal'}
+            className="flex-1 sm:flex-initial min-h-[40px] px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
+            title={
+              selectedDateFilter !== 'all'
+                ? `Push Sheet Tanggal ${formatDateHeader(selectedDateFilter.split('||')[0])}`
+                : 'Push Sheet Per Tanggal'
+            }
           >
             <CloudUpload className="w-3.5 h-3.5" />
             <span>
               {selectedDateFilter !== 'all'
-                ? `Push Sheet (${formatDateHeader(selectedDateFilter.split('||')[0])})`
+                ? `Push (${formatDateHeader(selectedDateFilter.split('||')[0])})`
                 : 'Push Sheet'}
             </span>
           </button>
 
-          <a
-            href={`https://docs.google.com/spreadsheets/d/${PRODUKSI_SPREADSHEET_ID}/edit`}
-            target="_blank"
-            rel="noreferrer"
-            className="px-2.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border border-slate-200 dark:border-slate-700 shadow-2xs"
-            title="Buka Google Spreadsheet (Indeks DAFTAR_TANGGAL & Tab Master)"
-          >
-            <ExternalLink className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-            <span className="hidden sm:inline">Buka Sheet</span>
-          </a>
-
           <button
             type="button"
-            onClick={handleOpenExportModal}
-            className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 shadow-2xs transition cursor-pointer"
-            title={`Download Excel Modern ${activeTab} (.xlsx)`}
+            onClick={() => setIsToolbarMenuOpen(true)}
+            aria-label="Menu utilitas spreadsheet"
+            className="min-h-[40px] min-w-[40px] px-2.5 py-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer border border-slate-200 dark:border-slate-700 shrink-0"
+            title="Menu Spreadsheet lainnya"
           >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>Excel ({activeTab})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="p-1.5 sm:px-2.5 sm:py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1 transition cursor-pointer border border-slate-200 dark:border-slate-700 shadow-2xs"
-            title="Cetak Lanskap Spreadsheet"
-          >
-            <Printer className="w-3.5 h-3.5 text-slate-500" />
-            <span className="hidden sm:inline">Cetak</span>
+            <MoreHorizontal className="w-4 h-4" />
+            <span className="hidden md:inline">Lainnya</span>
           </button>
         </div>
       </div>
 
       {/* Info strip */}
-      <div className="flex items-center justify-between text-xs text-slate-500 px-1 flex-wrap gap-2 print:hidden">
+      <div className="flex items-center justify-between text-xs text-slate-500 px-0.5 flex-wrap gap-2 print:hidden">
         <div className="flex items-center gap-2 flex-wrap">
-          <span>
-            Menampilkan <strong className="text-slate-900 dark:text-white">{filteredBlocks.length} Tabel Kode</strong> pada Tab{' '}
-            <strong className="text-rose-600 dark:text-rose-400">{activeTab}</strong>
+          <span className="tabular-nums">
+            <strong className="text-slate-900 dark:text-white">{filteredBlocks.length}</strong> Tabel Kode ·{' '}
+            <strong className="text-indigo-600 dark:text-indigo-400">{activeTab}</strong>
           </span>
           {selectedDateFilter !== 'all' && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-bold border border-blue-200 dark:border-blue-800 text-[11px]">
-              Tgl: {(() => {
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-semibold border border-indigo-200 dark:border-indigo-800 text-[11px]">
+              {(() => {
                 const [dPart, sjPart] = selectedDateFilter.split('||');
                 return sjPart ? `${formatDateHeader(dPart)} (${sjPart})` : formatDateHeader(dPart);
               })()}
               <button
                 type="button"
                 onClick={() => setSelectedDateFilter('all')}
-                className="hover:text-blue-900 dark:hover:text-white cursor-pointer"
+                className="hover:opacity-75 cursor-pointer"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1950,19 +1931,19 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
           )}
           {effectiveQuery && (
             <span className="text-slate-400">
-              (Filter pencarian: "{effectiveQuery}")
+              Pencarian: &ldquo;{effectiveQuery}&rdquo;
             </span>
           )}
         </div>
-        <div className="text-[11px] text-slate-400 font-medium hidden md:block">
-          💡 Foto produk ditampilkan utuh &amp; proporsional.
+        <div className="text-[11px] text-slate-400 md:hidden">
+          Geser tabel ke samping untuk melihat kolom tanggal
         </div>
       </div>
 
       {/* EXPORT OPTIONS MODAL (MULTI-CHOICE SELECTION) */}
       {isExportModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-lg w-full p-5 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-slate-950/55 backdrop-blur-[2px] flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white dark:bg-slate-900 border-t sm:border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-2xl max-w-lg w-full p-4 sm:p-5 shadow-2xl space-y-4 max-h-[88vh] overflow-y-auto pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pb-5">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2">
                 <div className="p-2 bg-emerald-100 dark:bg-emerald-950 text-emerald-600 rounded-xl">
@@ -2243,238 +2224,172 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                     : 'border border-slate-300 dark:border-slate-700'
                     }`}
                 >
-                  {/* Block Header Toolbar */}
+                  {/* Block Header Toolbar (Clean Mobile & Desktop Hierarchy) */}
                   <div
-                    className={`px-3.5 py-2.5 border-b flex items-center justify-between text-xs font-bold flex-wrap gap-2 ${isEditingThisBlock
-                      ? 'bg-rose-50 dark:bg-rose-950/50 border-rose-200 dark:border-rose-800'
-                      : 'bg-slate-50 dark:bg-slate-800/90 border-slate-200 dark:border-slate-700'
-                      }`}
+                    className={`px-3 sm:px-4 py-2.5 border-b space-y-2 text-xs ${
+                      isEditingThisBlock
+                        ? 'bg-indigo-50/70 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800'
+                        : 'bg-slate-50/80 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700'
+                    }`}
                   >
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-200 font-mono text-[11px] font-black border border-rose-300 dark:border-rose-800">
-                        KODE: {block.code}
-                      </span>
-
-                      {isEditingThisBlock && (
-                        <span className="px-2 py-0.5 rounded bg-amber-500 text-white text-[10px] font-black uppercase tracking-wider animate-pulse">
-                          MODE EDIT AKTIF
+                    {/* Top Row: Code + Primary KPI + Consolidated Actions */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                        <span className="px-2 py-0.5 rounded-md bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 font-mono text-xs font-bold shrink-0">
+                          #{block.code}
                         </span>
-                      )}
 
-                      <span className="text-slate-400">•</span>
-                      <span>Total Datang: <strong className="text-slate-900 dark:text-white">{block.totalDatang} pcs</strong></span>
-                      {isCMT && (
-                        <>
-                          <span className="text-slate-400">•</span>
-                          <span>Retur: <strong className="text-red-600 dark:text-red-400">{block.totalRetur || 0} pcs</strong></span>
-                          <span className="text-slate-400">•</span>
-                          <span>Net: <strong className="text-emerald-600 dark:text-emerald-400">{block.totalNet} pcs</strong></span>
-                        </>
-                      )}
-                      {block.hasRecount && block.totalRecountFisik !== null && block.totalRecountFisik !== undefined && (
-                        <>
-                          <span className="text-slate-400">•</span>
-                          <span className="px-2 py-0.5 rounded-md bg-emerald-100/80 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 text-[11px] font-mono">
-                            Hitung Ulang: <strong>{block.totalRecountFisik} pcs</strong>
+                        {isEditingThisBlock && (
+                          <span className="px-2 py-0.5 rounded-md bg-amber-500 text-white text-[10px] font-bold uppercase tracking-wider shrink-0">
+                            Edit Aktif
                           </span>
-                        </>
-                      )}
-                      {block.qtyNota !== null && block.qtyNota !== undefined && (
-                        <>
-                          <span className="text-slate-400">•</span>
-                          <span className="px-2 py-0.5 rounded-md bg-amber-100/80 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800 text-[11px] font-mono">
-                            Qty Nota: <strong>{block.qtyNota} pcs</strong>
-                          </span>
-                        </>
-                      )}
-                      {(() => {
-                        const hasNota = block.qtyNota !== null && block.qtyNota !== undefined;
-                        const hasRecount = block.hasRecount && block.totalRecountFisik !== null && block.totalRecountFisik !== undefined;
-                        let selisih: number | null = null;
-                        if (hasNota) {
-                          const base = hasRecount ? block.totalRecountFisik! : block.totalNet;
-                          selisih = base - Number(block.qtyNota);
-                        } else if (hasRecount) {
-                          selisih = block.totalRecountFisik! - block.totalNet;
-                        }
-                        if (selisih === null) return null;
-                        const isMatch = selisih === 0;
-                        const isKurang = selisih < 0;
-                        return (
-                          <>
-                            <span className="text-slate-400">•</span>
-                            <span
-                              className={`px-2 py-0.5 rounded-md text-[11px] font-mono font-black border ${isMatch
-                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
-                                : isKurang
-                                  ? 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800'
-                                  : 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800'
-                                }`}
-                            >
-                              Selisih {hasNota ? 'Nota' : 'SJ'}: {selisih > 0 ? `+${selisih}` : selisih} pcs
-                            </span>
-                          </>
-                        );
-                      })()}
-
-                      {/* SURAT JALAN BADGES & QUICK EDIT */}
-                      <span className="text-slate-400">•</span>
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
-                          <FileText className="w-3.5 h-3.5 text-blue-600" />
-                          <span>No. SJ ({block.distinctSjs?.length || 0}):</span>
-                        </span>
-                        {(!block.distinctSjs || block.distinctSjs.length === 0) ? (
-                          <span className="text-[11px] text-slate-400 italic">Otomatis (SJ-{block.code})</span>
-                        ) : (
-                          block.distinctSjs.map((sjObj) => (
-                            <button
-                              key={sjObj.no_surat_jalan}
-                              type="button"
-                              onClick={() => onOpenEditBatch && onOpenEditBatch(sjObj.no_surat_jalan)}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-mono text-[11px] font-bold border border-blue-200 dark:border-blue-800 transition cursor-pointer group shadow-2xs"
-                              title={`Klik untuk Edit Surat Jalan ${sjObj.no_surat_jalan} (Total ${sjObj.qty} pcs, ${sjObj.tanggal})`}
-                            >
-                              <span>📄 {sjObj.no_surat_jalan}</span>
-                              <span className="text-[10px] text-blue-500 font-semibold">({sjObj.qty} pcs)</span>
-                              <Edit3 className="w-3 h-3 text-blue-400 group-hover:text-blue-600 transition" />
-                            </button>
-                          ))
                         )}
+
+                        <span className="font-semibold text-slate-700 dark:text-slate-200 tabular-nums">
+                          {isCMT ? (
+                            <>
+                              Net <strong className="text-emerald-600 dark:text-emerald-400">{block.totalNet}</strong>
+                              <span className="text-slate-400 font-normal"> (Datang {block.totalDatang}{block.totalRetur ? ` · Retur ${block.totalRetur}` : ''})</span>
+                            </>
+                          ) : (
+                            <>
+                              Datang <strong className="text-slate-900 dark:text-white">{block.totalDatang} pcs</strong>
+                            </>
+                          )}
+                        </span>
+
+                        {(() => {
+                          const hasNota = block.qtyNota !== null && block.qtyNota !== undefined;
+                          const hasRecount = block.hasRecount && block.totalRecountFisik !== null && block.totalRecountFisik !== undefined;
+                          let selisih: number | null = null;
+                          if (hasNota) {
+                            const base = hasRecount ? block.totalRecountFisik! : block.totalNet;
+                            selisih = base - Number(block.qtyNota);
+                          } else if (hasRecount) {
+                            selisih = block.totalRecountFisik! - block.totalNet;
+                          }
+                          if (selisih === null) return null;
+                          const isMatch = selisih === 0;
+                          const isKurang = selisih < 0;
+                          return (
+                            <span
+                              className={`px-2 py-0.5 rounded-md text-[11px] font-mono font-bold border tabular-nums ${
+                                isMatch
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+                                  : isKurang
+                                    ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800'
+                                    : 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800'
+                              }`}
+                            >
+                              Selisih {hasNota ? 'Nota' : 'SJ'}: {selisih > 0 ? `+${selisih}` : selisih}
+                            </span>
+                          );
+                        })()}
                       </div>
 
-                      {/* DISPLAY CATATAN / KETERANGAN DATA */}
-                      {isEditingThisBlock ? (
-                        <div className="flex items-center gap-1.5 ml-1">
-                          <FileText className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                          <input
-                            type="text"
-                            placeholder="Edit catatan produk ini..."
-                            value={block.catatan || ''}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setBlocks((prev) =>
-                                prev.map((b) => (b.id === block.id ? { ...b, catatan: val } : b))
-                              );
-                            }}
-                            className="px-2 py-0.5 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 rounded text-xs text-amber-900 dark:text-amber-200 outline-none w-48 sm:w-64"
-                          />
-                        </div>
-                      ) : block.catatan ? (
-                        <div className="flex items-center gap-1.5 px-2.5 py-0.5 bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 border border-amber-200/80 dark:border-amber-800 rounded-lg text-[11px] font-medium ml-1">
-                          <FileText className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                          <span><strong>Catatan:</strong> {block.catatan}</span>
-                        </div>
-                      ) : null}
+                      {/* Mode Edit & Save Controls (Consolidated) */}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {isEditingThisBlock ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleAddColor(block.id)}
+                              className="min-h-[34px] px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-200 rounded-lg text-[11px] font-semibold border border-slate-200 dark:border-slate-700 transition flex items-center gap-1 cursor-pointer"
+                            >
+                              <Plus className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>Warna</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleSaveBlockChanges(block.id)}
+                              className="min-h-[34px] px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Simpan</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleCancelEditBlock(block.id)}
+                              className="min-h-[34px] px-2.5 py-1 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-semibold transition flex items-center gap-1 cursor-pointer"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">Batal</span>
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditBlock(block)}
+                              className="min-h-[34px] px-2.5 py-1 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 transition flex items-center gap-1 cursor-pointer"
+                              title="Edit angka tabel ini"
+                            >
+                              <Edit3 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                              <span className="hidden sm:inline">Edit Tabel</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setActionSheetBlock(block)}
+                              aria-label="Menu aksi blok kode"
+                              className="min-h-[34px] min-w-[34px] px-2 py-1 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg border border-slate-200 dark:border-slate-700 transition flex items-center justify-center cursor-pointer"
+                            >
+                              <MoreHorizontal className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
 
-                    {/* Mode Edit & Save Controls */}
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {isEditingThisBlock ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => handleAddColor(block.id)}
-                            className="px-2.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-200 rounded-lg text-[11px] font-bold border border-slate-300 dark:border-slate-600 transition flex items-center gap-1 cursor-pointer"
-                            title="Tambah Warna Baru"
-                          >
-                            <Plus className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>+ Warna</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleSaveBlockChanges(block.id)}
-                            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-black transition flex items-center gap-1.5 shadow-sm cursor-pointer"
-                            title="Konfirmasi & Simpan Perubahan ke Supabase Cloud"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                            <span>Simpan</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleCancelEditBlock(block.id)}
-                            className="px-2.5 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
-                            title="Batal Edit"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                            <span>Batal</span>
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          {/* Edit Surat Jalan Action Button */}
-                          {onOpenEditBatch && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (!block.distinctSjs || block.distinctSjs.length === 0) {
-                                  onOpenEditBatch(`SJ-${block.code}`);
-                                } else if (block.distinctSjs.length === 1) {
-                                  onOpenEditBatch(block.distinctSjs[0].no_surat_jalan);
-                                } else {
-                                  const sjNames = block.distinctSjs
-                                    .map((s, i) => `${i + 1}. ${s.no_surat_jalan} (${s.qty} pcs, ${s.tanggal})`)
-                                    .join('\n');
-                                  const selectedIdx = window.prompt(
-                                    `Kode ${block.code} memiliki ${block.distinctSjs.length} Nomor Surat Jalan:\n\n${sjNames}\n\nKetik nomor (1 - ${block.distinctSjs.length}) yang ingin diedit:`,
-                                    '1'
-                                  );
-                                  if (selectedIdx) {
-                                    const idx = parseInt(selectedIdx, 10) - 1;
-                                    if (block.distinctSjs[idx]) {
-                                      onOpenEditBatch(block.distinctSjs[idx].no_surat_jalan);
-                                    }
-                                  }
-                                }
-                              }}
-                              className="px-2.5 py-1.5 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-bold border border-blue-200 dark:border-blue-800 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                              title={
-                                block.distinctSjs && block.distinctSjs.length > 1
-                                  ? `Pilih salah satu dari ${block.distinctSjs.length} Surat Jalan untuk diedit`
-                                  : `Buka Form Edit Surat Jalan untuk Kode ${block.code}`
-                              }
-                            >
-                              <FileText className="w-3.5 h-3.5 text-blue-600" />
-                              <span>
-                                Edit SJ {block.distinctSjs && block.distinctSjs.length > 1 ? `(${block.distinctSjs.length})` : ''}
-                              </span>
-                            </button>
-                          )}
-
-                          {onOpenHitungUlang && (
-                            <button
-                              type="button"
-                              onClick={() => onOpenHitungUlang(block.code)}
-                              className="px-2.5 py-1.5 bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 text-rose-700 dark:text-rose-300 rounded-lg text-xs font-bold border border-rose-200 dark:border-rose-800 transition flex items-center gap-1 cursor-pointer"
-                              title={`Buka Lembar Hitung Ulang Fisik untuk Kode ${block.code}`}
-                            >
-                              <Layers className="w-3.5 h-3.5 text-rose-500" />
-                              <span>Hitung Ulang</span>
-                            </button>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={() => handleStartEditBlock(block)}
-                            className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg text-xs font-black border border-rose-300 dark:border-rose-800 transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                            title="Buka Mode Edit Inline untuk tabel ini"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                            <span>Edit Tabel</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteBlock(block.id)}
-                            className="p-1.5 hover:bg-red-100 dark:hover:bg-red-950/60 text-slate-400 hover:text-red-600 rounded-lg transition cursor-pointer"
-                            title="Hapus Tabel Ini"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </>
+                    {/* Second Row: Compact Recount / Nota / SJ Links / Catatan */}
+                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar text-[11px] text-slate-500 dark:text-slate-400">
+                      {block.hasRecount && block.totalRecountFisik !== null && block.totalRecountFisik !== undefined && (
+                        <span className="shrink-0 font-mono text-emerald-700 dark:text-emerald-300 font-semibold">
+                          Fisik: {block.totalRecountFisik}
+                        </span>
                       )}
+                      {block.qtyNota !== null && block.qtyNota !== undefined && (
+                        <span className="shrink-0 font-mono text-amber-700 dark:text-amber-300 font-semibold">
+                          Nota: {block.qtyNota}
+                        </span>
+                      )}
+
+                      {(!block.distinctSjs || block.distinctSjs.length === 0) ? (
+                        <span className="shrink-0 italic">SJ-{block.code}</span>
+                      ) : (
+                        block.distinctSjs.map((sjObj) => (
+                          <button
+                            key={sjObj.no_surat_jalan}
+                            type="button"
+                            onClick={() => onOpenEditBatch && onOpenEditBatch(sjObj.no_surat_jalan)}
+                            className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-slate-700 dark:text-slate-200 font-mono font-semibold border border-slate-200 dark:border-slate-700 transition cursor-pointer"
+                            title={`Edit SJ ${sjObj.no_surat_jalan} (${sjObj.qty} pcs, ${sjObj.tanggal})`}
+                          >
+                            <span>{sjObj.no_surat_jalan}</span>
+                            <span className="text-[10px] text-slate-400">({sjObj.qty})</span>
+                          </button>
+                        ))
+                      )}
+
+                      {isEditingThisBlock ? (
+                        <input
+                          type="text"
+                          placeholder="Catatan produk..."
+                          value={block.catatan || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setBlocks((prev) =>
+                              prev.map((b) => (b.id === block.id ? { ...b, catatan: val } : b))
+                            );
+                          }}
+                          className="px-2 py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-md text-xs text-slate-800 dark:text-slate-100 outline-none w-48 shrink-0"
+                        />
+                      ) : block.catatan ? (
+                        <span className="shrink-0 italic text-amber-700 dark:text-amber-300">
+                          Catatan: {block.catatan}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
 
@@ -3367,6 +3282,145 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
           </div>
         </div>
       )}
+
+      {/* NATIVE ACTION SHEET: UTILITAS SPREADSHEET */}
+      <ProduksiActionSheet
+        isOpen={isToolbarMenuOpen}
+        onClose={() => setIsToolbarMenuOpen(false)}
+        title={`Menu Spreadsheet (${activeTab})`}
+        subtitle="Tambah kode, sinkronisasi Qty Nota, ekspor Excel, dan cetak"
+        groups={[
+          {
+            title: 'Input & Sinkronisasi',
+            items: [
+              {
+                id: 'add-code',
+                label: 'Tambah Tabel Kode Baru',
+                description: 'Buat blok tabel kode produk baru langsung di spreadsheet',
+                icon: <Plus className="w-4 h-4" />,
+                tone: 'primary',
+                onClick: handleAddNewBlock,
+              },
+              {
+                id: 'sync-nota',
+                label: isSyncingQtyNota ? 'Menarik Qty Nota...' : 'Tarik Qty Nota dari Sheet',
+                description: 'Ambil Qty Nota buyer dari Google Sheet & cek selisih otomatis',
+                icon: <RefreshCw className={`w-4 h-4 ${isSyncingQtyNota ? 'animate-spin' : ''}`} />,
+                tone: 'warning',
+                disabled: isSyncingQtyNota,
+                onClick: () => handleSyncQtyNotaFromSheet(false),
+              },
+            ],
+          },
+          {
+            title: 'Ekspor & Cetak',
+            items: [
+              {
+                id: 'export-xlsx',
+                label: `Download Excel (${activeTab})`,
+                description: 'Unduh file Excel modern (.xlsx) dengan pilihan tanggal/SJ',
+                icon: <FileSpreadsheet className="w-4 h-4" />,
+                tone: 'success',
+                onClick: handleOpenExportModal,
+              },
+              {
+                id: 'open-gsheet',
+                label: 'Buka Google Spreadsheet',
+                description: 'Buka file master spreadsheet di tab baru',
+                icon: <ExternalLink className="w-4 h-4" />,
+                onClick: () => {
+                  const link = document.createElement('a');
+                  link.href = `https://docs.google.com/spreadsheets/d/${PRODUKSI_SPREADSHEET_ID}/edit`;
+                  link.target = '_blank';
+                  link.rel = 'noreferrer';
+                  link.click();
+                },
+              },
+              {
+                id: 'print',
+                label: 'Cetak Lanskap',
+                description: 'Cetak tampilan spreadsheet saat ini',
+                icon: <Printer className="w-4 h-4" />,
+                onClick: () => window.print(),
+              },
+            ],
+          },
+        ]}
+      />
+
+      {/* NATIVE ACTION SHEET: AKSI BLOK KODE SPREADSHEET */}
+      <ProduksiActionSheet
+        isOpen={Boolean(actionSheetBlock)}
+        onClose={() => setActionSheetBlock(null)}
+        title={actionSheetBlock ? `Kode #${actionSheetBlock.code}` : ''}
+        subtitle={
+          actionSheetBlock
+            ? `Datang ${actionSheetBlock.totalDatang} pcs${isCMT ? ` · Net ${actionSheetBlock.totalNet} pcs` : ''}`
+            : undefined
+        }
+        groups={
+          actionSheetBlock
+            ? [
+                {
+                  title: 'Aksi Tabel Kode',
+                  items: [
+                    {
+                      id: 'edit-inline',
+                      label: 'Edit Tabel Inline',
+                      description: 'Ubah warna, qty datang/retur, atau catatan langsung',
+                      icon: <Edit3 className="w-4 h-4" />,
+                      tone: 'primary',
+                      onClick: () => handleStartEditBlock(actionSheetBlock),
+                    },
+                    ...(onOpenHitungUlang
+                      ? [
+                          {
+                            id: 'audit',
+                            label: 'Audit Hitung Ulang Fisik',
+                            description: `Buka lembar hitung ulang untuk kode #${actionSheetBlock.code}`,
+                            icon: <Scale className="w-4 h-4" />,
+                            onClick: () => onOpenHitungUlang(actionSheetBlock.code),
+                          },
+                        ]
+                      : []),
+                    ...(onOpenEditBatch
+                      ? (actionSheetBlock.distinctSjs && actionSheetBlock.distinctSjs.length > 0
+                          ? actionSheetBlock.distinctSjs.map((sjObj: any) => ({
+                              id: `edit-sj-${sjObj.no_surat_jalan}`,
+                              label: `Edit SJ ${sjObj.no_surat_jalan}`,
+                              description: `${sjObj.qty} pcs · ${sjObj.tanggal}`,
+                              icon: <FileText className="w-4 h-4" />,
+                              onClick: () => onOpenEditBatch(sjObj.no_surat_jalan),
+                            }))
+                          : [
+                              {
+                                id: 'edit-sj-default',
+                                label: `Edit SJ-${actionSheetBlock.code}`,
+                                description: 'Buka form edit Surat Jalan',
+                                icon: <FileText className="w-4 h-4" />,
+                                onClick: () => onOpenEditBatch(`SJ-${actionSheetBlock.code}`),
+                              },
+                            ])
+                      : []),
+                  ],
+                },
+                {
+                  title: 'Hapus',
+                  items: [
+                    {
+                      id: 'delete-block',
+                      label: 'Hapus Tabel Kode',
+                      description: `Hapus seluruh baris tabel kode #${actionSheetBlock.code}`,
+                      icon: <Trash2 className="w-4 h-4" />,
+                      tone: 'danger',
+                      onClick: () => handleDeleteBlock(actionSheetBlock.id),
+                    },
+                  ],
+                },
+              ]
+            : []
+        }
+      />
     </div>
   );
 };

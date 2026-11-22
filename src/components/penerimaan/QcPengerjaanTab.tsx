@@ -291,12 +291,12 @@ export const QcPengerjaanTab: React.FC<QcPengerjaanTabProps> = ({
   }
 
   return (
-    <div className="space-y-4 pb-20 animate-fadeIn">
+    <div className="space-y-3 pb-20 animate-fadeIn">
       {/* 0. SUB-TAB PEMILIHAN: QC PRODUKSI vs QC MUTASI */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-2.5 sm:p-3 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          {/* Main Segmented Toggle */}
-          <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl max-w-full overflow-x-auto">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-2 sm:p-2.5 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          {/* Segmented Toggle */}
+          <div className="grid grid-cols-2 sm:inline-flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl w-full sm:w-auto">
             <button
               type="button"
               id="btn-subtab-qc-produksi"
@@ -304,17 +304,21 @@ export const QcPengerjaanTab: React.FC<QcPengerjaanTabProps> = ({
                 setQcMode('PRODUKSI');
                 setSearchQuery('');
               }}
-              className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer select-none shrink-0 ${
+              className={`inline-flex items-center justify-center gap-1.5 px-3 sm:px-3.5 min-h-[38px] rounded-lg text-xs font-bold transition-all cursor-pointer select-none ${
                 qcMode === 'PRODUKSI'
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-1 ring-indigo-500'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700/60'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              <Factory className="w-4 h-4" />
+              <Factory className="w-3.5 h-3.5 shrink-0" />
               <span>QC Produksi</span>
-              <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold ${
-                qcMode === 'PRODUKSI' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-              }`}>
+              <span
+                className={`px-1.5 py-0.5 text-[10px] rounded-full font-mono tabular-nums ${
+                  qcMode === 'PRODUKSI'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                }`}
+              >
                 {produksiJobs.length}
               </span>
             </button>
@@ -326,39 +330,41 @@ export const QcPengerjaanTab: React.FC<QcPengerjaanTabProps> = ({
                 setQcMode('MUTASI');
                 setSearchQuery('');
               }}
-              className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer select-none shrink-0 ${
+              className={`inline-flex items-center justify-center gap-1.5 px-3 sm:px-3.5 min-h-[38px] rounded-lg text-xs font-bold transition-all cursor-pointer select-none ${
                 qcMode === 'MUTASI'
-                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25 ring-1 ring-emerald-500'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700/60'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              <ArrowLeftRight className="w-4 h-4" />
+              <ArrowLeftRight className="w-3.5 h-3.5 shrink-0" />
               <span>QC Mutasi</span>
-              <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold ${
-                qcMode === 'MUTASI' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-              }`}>
+              <span
+                className={`px-1.5 py-0.5 text-[10px] rounded-full font-mono tabular-nums ${
+                  qcMode === 'MUTASI'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                }`}
+              >
                 {mutasiJobs.length}
               </span>
             </button>
           </div>
 
-          {/* Subtitle / Source info */}
-          <div className="flex items-center justify-between sm:justify-end gap-2 text-xs">
-            <div className="text-slate-500 dark:text-slate-400 text-[11px] sm:text-xs">
-              {qcMode === 'PRODUKSI' ? (
-                <span>Sumber: <strong>Form Penerimaan Produksi CMT</strong></span>
-              ) : (
-                <span>Sumber: <strong>Pengecekan SJ (Penerimaan / Mutasi Masuk)</strong></span>
-              )}
-            </div>
+          {/* Source info & Sync button */}
+          <div className="flex items-center justify-between sm:justify-end gap-2 px-1 sm:px-0">
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+              {qcMode === 'PRODUKSI'
+                ? 'Sumber: Penerimaan Produksi CMT'
+                : 'Sumber: Pengecekan SJ Mutasi Masuk'}
+            </span>
             {qcMode === 'MUTASI' && (
               <button
                 type="button"
                 onClick={loadMutasiSJ}
                 disabled={loadingMutasi}
-                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-lg transition cursor-pointer border border-emerald-200 dark:border-emerald-800"
+                className="inline-flex items-center gap-1.5 px-2.5 min-h-[34px] text-[11px] font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition cursor-pointer border border-slate-200 dark:border-slate-700 shrink-0"
               >
-                <RefreshCw className={`w-3 h-3 ${loadingMutasi ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingMutasi ? 'animate-spin' : ''}`} />
                 <span>Sync SJ</span>
               </button>
             )}
@@ -366,108 +372,104 @@ export const QcPengerjaanTab: React.FC<QcPengerjaanTabProps> = ({
         </div>
       </div>
 
-      {/* 1. Header Banner & Quick KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3.5">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs">
-          <p className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Total Job {qcMode === 'PRODUKSI' ? 'QC Produksi' : 'QC Mutasi'}
+      {/* 1. Compact KPI Strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+        <button
+          type="button"
+          onClick={() => setFilterStatus('Semua')}
+          className={`text-left bg-white dark:bg-slate-900 border rounded-2xl p-2.5 sm:p-3.5 transition-all cursor-pointer ${
+            filterStatus === 'Semua'
+              ? 'border-indigo-300 dark:border-indigo-700 ring-1 ring-indigo-500/20'
+              : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+          }`}
+        >
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Total Job QC
           </p>
-          <div className="flex items-baseline gap-2 mt-1">
-            <span className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
+          <div className="flex items-baseline gap-1.5 mt-0.5">
+            <span className="text-lg sm:text-2xl font-black font-mono tabular-nums text-slate-900 dark:text-white">
               {kpis.totalJobs}
             </span>
-            <span className="text-[10px] text-slate-400">Job Kode</span>
+            <span className="text-[10px] text-slate-400">job</span>
           </div>
-          <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold mt-1">
-            {kpis.completedJobs} Selesai • {kpis.inProgressJobs} Aktif
+          <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
+            <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{kpis.completedJobs} selesai</span>
+            {' · '}
+            <span className="text-indigo-600 dark:text-indigo-400 font-semibold">{kpis.inProgressJobs} aktif</span>
           </p>
-        </div>
+        </button>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs">
-          <p className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Total Qty Setoran Awal
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-2.5 sm:p-3.5">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Setoran Awal
           </p>
-          <div className="flex items-baseline gap-2 mt-1">
-            <span className={`text-xl sm:text-2xl font-black ${qcMode === 'PRODUKSI' ? 'text-indigo-600 dark:text-indigo-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-              {kpis.totalQtyAwal}
+          <div className="flex items-baseline gap-1.5 mt-0.5">
+            <span className="text-lg sm:text-2xl font-black font-mono tabular-nums text-indigo-600 dark:text-indigo-400">
+              {kpis.totalQtyAwal.toLocaleString('id-ID')}
             </span>
-            <span className="text-[10px] text-slate-400">Pcs Fisik</span>
+            <span className="text-[10px] text-slate-400">pcs</span>
           </div>
-          <p className="text-[10px] text-slate-500 mt-1 font-medium">
-            Diperiksa: <strong>{kpis.totalQtyDiperiksa} pcs</strong>
+          <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
+            Diperiksa: <strong className="text-slate-700 dark:text-slate-200">{kpis.totalQtyDiperiksa.toLocaleString('id-ID')}</strong>
           </p>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs">
-          <p className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-            Lolos OKE (Grade A)
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-2.5 sm:p-3.5">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+            Lolos Grade A
           </p>
-          <div className="flex items-baseline gap-2 mt-1">
-            <span className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400">
-              {kpis.totalQtyOke}
+          <div className="flex items-baseline gap-1.5 mt-0.5">
+            <span className="text-lg sm:text-2xl font-black font-mono tabular-nums text-emerald-600 dark:text-emerald-400">
+              {kpis.totalQtyOke.toLocaleString('id-ID')}
             </span>
-            <span className="text-[10px] text-emerald-600/70">Pcs</span>
+            <span className="text-[10px] text-emerald-600/70">pcs</span>
           </div>
-          <p className="text-[10px] text-amber-600 dark:text-amber-400 font-bold mt-1">
-            Reject: {kpis.totalQtyReject} pcs
+          <p className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold mt-0.5 tabular-nums">
+            Reject: {kpis.totalQtyReject.toLocaleString('id-ID')} pcs
           </p>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs">
-          <p className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-blue-700 dark:text-blue-400">
-            Rata-rata Pass Rate
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-2.5 sm:p-3.5">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Pass Rate
           </p>
-          <div className="flex items-baseline gap-2 mt-1">
-            <span className="text-xl sm:text-2xl font-black text-blue-600 dark:text-blue-400">
+          <div className="flex items-baseline gap-1.5 mt-0.5">
+            <span className="text-lg sm:text-2xl font-black font-mono tabular-nums text-slate-900 dark:text-white">
               {kpis.avgPassRate}%
             </span>
-            <span className="text-[10px] text-blue-600/70">Kelolosan</span>
+            <span className="text-[10px] text-slate-400">lolos</span>
           </div>
-          <p className="text-[10px] text-slate-500 mt-1 font-medium">
-            Standar Mutu {qcMode === 'PRODUKSI' ? 'Produksi' : 'Mutasi'}
+          <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+            Mutu {qcMode === 'PRODUKSI' ? 'Produksi' : 'Mutasi'}
           </p>
         </div>
       </div>
 
       {/* 2. Filter & Search Toolbar */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2.5 sm:gap-3 items-center">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-2.5 sm:p-3 shadow-xs space-y-2">
+        <div className="flex flex-col sm:flex-row gap-2">
           {/* Search Input */}
-          <div className="lg:col-span-5 relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
-              placeholder={qcMode === 'PRODUKSI' ? "Cari Kode Produksi, No Surat Jalan, Warna, PIC..." : "Cari SKU, Kode, No SJ, Asal/Tujuan, PIC..."}
+              placeholder={
+                qcMode === 'PRODUKSI'
+                  ? 'Cari kode produksi, no SJ, warna, PIC...'
+                  : 'Cari SKU, kode, no SJ, asal toko, PIC...'
+              }
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50/50 dark:bg-slate-800/50 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+              className="w-full pl-9 pr-3 min-h-[40px] text-xs border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50/70 dark:bg-slate-800/60 text-slate-900 dark:text-white placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
             />
           </div>
 
-          {/* Status Filter */}
-          <div className="lg:col-span-4 flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
-            {['Semua', 'Menunggu', 'Pengerjaan', 'Selesai'].map((st) => (
-              <button
-                key={st}
-                type="button"
-                onClick={() => setFilterStatus(st)}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  filterStatus === st
-                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-2xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                }`}
-              >
-                {st}
-              </button>
-            ))}
-          </div>
-
           {/* Kategori Filter */}
-          <div className="lg:col-span-3">
+          <div className="sm:w-44 shrink-0">
             <select
               value={filterKategori}
               onChange={(e) => setFilterKategori(e.target.value)}
-              className="w-full px-3 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50/50 dark:bg-slate-800/50 font-medium"
+              className="w-full px-3 min-h-[40px] text-xs border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
             >
               <option value="Semua">Semua Kategori</option>
               {qcMode === 'PRODUKSI' ? (
@@ -476,19 +478,52 @@ export const QcPengerjaanTab: React.FC<QcPengerjaanTabProps> = ({
                   <option value="Kargo">Kargo</option>
                 </>
               ) : (
-                <>
-                  <option value="Mutasi">Semua Mutasi</option>
-                </>
+                <option value="Mutasi">Semua Mutasi</option>
               )}
             </select>
           </div>
         </div>
+
+        {/* Status Filter — Horizontal Swipe on Mobile */}
+        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+          {[
+            { id: 'Semua', label: 'Semua', count: kpis.totalJobs },
+            { id: 'Menunggu', label: 'Menunggu', count: kpis.draftJobs },
+            { id: 'Pengerjaan', label: 'Pengerjaan', count: kpis.inProgressJobs },
+            { id: 'Selesai', label: 'Selesai', count: kpis.completedJobs },
+          ].map((st) => {
+            const active = filterStatus === st.id;
+            return (
+              <button
+                key={st.id}
+                type="button"
+                onClick={() => setFilterStatus(st.id)}
+                className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer shrink-0 ${
+                  active
+                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-2xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <span>{st.label}</span>
+                <span
+                  className={`text-[10px] font-mono tabular-nums px-1.5 py-0.2 rounded-full ${
+                    active
+                      ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300'
+                      : 'bg-slate-200/70 dark:bg-slate-700/80 text-slate-500 dark:text-slate-400'
+                  }`}
+                >
+                  {st.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* 3. Daftar Kartu Master QC (1 Kode = 1 Kartu Rekap) */}
+      {/* 3. Daftar Kartu Master QC */}
       {filteredJobs.length === 0 ? (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-12 text-center space-y-2">
-          <Layers className="w-10 h-10 text-slate-300 dark:text-slate-700 mx-auto" />
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-10 text-center space-y-2">
+          <Layers className="w-9 h-9 text-slate-300 dark:text-slate-700 mx-auto" />
           <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">
             {qcMode === 'PRODUKSI'
               ? 'Tidak ada Kode Produksi yang cocok dengan filter'
@@ -497,11 +532,11 @@ export const QcPengerjaanTab: React.FC<QcPengerjaanTabProps> = ({
           <p className="text-xs text-slate-400 max-w-md mx-auto">
             {qcMode === 'PRODUKSI'
               ? 'Pastikan data penerimaan barang sudah diinput di tab Form Penerimaan.'
-              : 'Data QC Mutasi otomatis muncul saat Pengecekan Surat Jalan Penerimaan disubmit di modul Pengecekan SJ.'}
+              : 'Data QC Mutasi otomatis muncul saat Pengecekan Surat Jalan Penerimaan disubmit.'}
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {filteredJobs.map((job) => {
             const isCompleted = job.status === 'COMPLETED';
             const inProgress = job.status === 'IN_PROGRESS';
@@ -509,45 +544,51 @@ export const QcPengerjaanTab: React.FC<QcPengerjaanTabProps> = ({
               job.total_qty_awal > 0
                 ? Math.min(100, Math.round((job.total_diperiksa / job.total_qty_awal) * 100))
                 : 0;
-
             const isMutasiJob = job.source_type === 'MUTASI';
 
             return (
               <div
                 key={job.id}
                 id={`qc-card-${job.id}`}
-                className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-3.5 group"
+                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all flex flex-col justify-between"
               >
-                {/* Header Kartu */}
-                <div className="space-y-2.5">
+                <div className="p-3.5 space-y-3">
+                  {/* Card Top Bar */}
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
-                        isMutasiJob ? 'bg-emerald-700 text-white' : 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
-                      } shrink-0`}>
+                      <span className="font-mono text-[11px] font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md truncate">
                         SJ {job.no_surat_jalan}
                       </span>
-                      <span className="text-xs font-semibold text-slate-500 truncate">
-                        {job.kategori || (isMutasiJob ? 'Mutasi Masuk' : 'Lokal CMT')}
+                      <span className="text-[11px] text-slate-400 truncate">
+                        {job.kategori || (isMutasiJob ? 'Mutasi' : 'Lokal CMT')}
                       </span>
                     </div>
 
                     <span
-                      className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
+                      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider shrink-0 ${
                         isCompleted
-                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
                           : inProgress
-                          ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
-                          : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                          ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
+                          : 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
                       }`}
                     >
-                      {isCompleted ? '🟢 Selesai' : inProgress ? '🔵 Pengerjaan' : '🟡 Menunggu'}
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          isCompleted
+                            ? 'bg-emerald-500'
+                            : inProgress
+                            ? 'bg-indigo-500'
+                            : 'bg-amber-500'
+                        }`}
+                      />
+                      {isCompleted ? 'Selesai' : inProgress ? 'Pengerjaan' : 'Menunggu'}
                     </span>
                   </div>
 
-                  {/* Foto & Info Utama */}
+                  {/* Thumbnail + Identity + Qty */}
                   <div className="flex items-start gap-3">
-                    <div className="w-16 h-16 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shrink-0 overflow-hidden flex items-center justify-center">
+                    <div className="w-14 h-14 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 shrink-0 overflow-hidden flex items-center justify-center">
                       {job.foto_url ? (
                         <img
                           src={job.foto_url}
@@ -555,101 +596,114 @@ export const QcPengerjaanTab: React.FC<QcPengerjaanTabProps> = ({
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        <Layers className="w-6 h-6 text-slate-300 dark:text-slate-600" />
+                        <Layers className="w-5 h-5 text-slate-400 dark:text-slate-600" />
                       )}
                     </div>
 
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase ${
-                          isMutasiJob ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-400'
-                        }`}>
-                          {isMutasiJob ? 'QC Mutasi Surat Jalan' : 'QC Produksi'}
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="text-sm font-black font-mono text-slate-900 dark:text-white truncate">
+                          {isMutasiJob ? `SJ ${job.no_surat_jalan}` : `#${job.kode_produksi}`}
+                        </h3>
+                        <span className="font-mono font-black text-sm tabular-nums text-indigo-600 dark:text-indigo-400 shrink-0">
+                          {job.total_qty_awal} <span className="text-[10px] font-semibold text-slate-400">pcs</span>
                         </span>
                       </div>
-                      <h3 className="text-base font-black font-mono text-slate-900 dark:text-white truncate mt-0.5">
-                        {isMutasiJob ? `SJ ${job.no_surat_jalan}` : `#${job.kode_produksi}`}
-                      </h3>
-                      <p className="text-[11px] font-bold text-slate-600 dark:text-slate-300 truncate">
-                        {isMutasiJob ? `🏪 Asal: ${job.store_asal || 'Store'}` : job.nama_produk}
+
+                      <p className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate mt-0.5">
+                        {isMutasiJob ? `Asal: ${job.store_asal || 'Store'}` : job.nama_produk || '-'}
                       </p>
-                      <p className="text-xs font-medium text-slate-600 dark:text-slate-400 truncate">
-                        {isMutasiJob ? (
-                          <>📦 Rincian: <strong className="text-slate-800 dark:text-slate-200">{job.sizes.length} SKU / Varian</strong></>
-                        ) : (
-                          <>Warna: <strong className="text-slate-800 dark:text-slate-200">{job.warna || '-'}</strong></>
-                        )}
-                      </p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        Fisik: <strong className={`${isMutasiJob ? 'text-emerald-600 dark:text-emerald-400' : 'text-indigo-600 dark:text-indigo-400'} font-bold`}>{job.total_qty_awal} pcs</strong> ({job.sizes.length} {isMutasiJob ? 'Item' : 'Size'})
+
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                        {isMutasiJob
+                          ? `${job.sizes.length} SKU / Varian`
+                          : [job.warna && job.warna !== '-' ? job.warna : null, `${job.sizes.length} size`]
+                              .filter(Boolean)
+                              .join(' · ')}
                       </p>
                     </div>
                   </div>
 
-                  {/* Tim PIC Pemeriksa */}
-                  <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                  {/* PIC inline strip */}
+                  <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
                     <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                     {job.pic_list && job.pic_list.length > 0 ? (
                       job.pic_list.map((pic) => (
                         <span
                           key={pic}
-                          className="px-1.5 py-0.2 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+                          className="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
                         >
                           {pic}
                         </span>
                       ))
                     ) : (
-                      <span className="text-[10px] text-slate-400 italic">Belum ada PIC</span>
+                      <span className="text-[11px] text-slate-400">Belum ada PIC</span>
                     )}
                   </div>
 
-                  {/* Progress Bar */}
-                  <div className="space-y-1 pt-1">
+                  {/* Slim Progress Bar */}
+                  <div className="space-y-1">
                     <div className="flex items-center justify-between text-[11px]">
-                      <span className="text-slate-500 font-medium">Progress QC:</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-200">
-                        {job.total_diperiksa} / {job.total_qty_awal} pcs ({progressPercent}%)
+                      <span className="text-slate-500 dark:text-slate-400">Progress QC</span>
+                      <span className="font-mono font-bold tabular-nums text-slate-800 dark:text-slate-200">
+                        {job.total_diperiksa}/{job.total_qty_awal} pcs ({progressPercent}%)
                       </span>
                     </div>
-                    <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex">
+                    <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex">
                       <div
                         style={{ width: `${(job.total_qty_oke / (job.total_qty_awal || 1)) * 100}%` }}
                         className="bg-emerald-500 h-full"
                         title="Lolos OKE"
                       />
                       <div
-                        style={{ width: `${((job.total_qty_noda + job.total_qty_permak + job.total_qty_defect) / (job.total_qty_awal || 1)) * 100}%` }}
+                        style={{
+                          width: `${
+                            ((job.total_qty_noda + job.total_qty_permak + job.total_qty_defect) /
+                              (job.total_qty_awal || 1)) *
+                            100
+                          }%`,
+                        }}
                         className="bg-rose-500 h-full"
                         title="Reject"
                       />
                     </div>
                   </div>
+                </div>
 
-                  {/* 4 Quick Pills */}
-                  <div className="grid grid-cols-4 gap-1 text-center pt-1 text-[10px]">
-                    <div className="p-1 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-bold">
-                      OKE: {job.total_qty_oke}
-                    </div>
-                    <div className="p-1 rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 font-bold">
-                      Noda: {job.total_qty_noda}
-                    </div>
-                    <div className="p-1 rounded-md bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300 font-bold">
-                      Permak: {job.total_qty_permak}
-                    </div>
-                    <div className="p-1 rounded-md bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-bold">
-                      Defect: {job.total_qty_defect}
-                    </div>
+                {/* Hairline 4-Metric Summary Strip */}
+                <div className="grid grid-cols-4 divide-x divide-slate-100 dark:divide-slate-800 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 text-center py-2">
+                  <div>
+                    <span className="block text-[9px] font-bold uppercase text-slate-400">OKE</span>
+                    <span className="text-xs font-black font-mono tabular-nums text-emerald-600 dark:text-emerald-400">
+                      {job.total_qty_oke}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="block text-[9px] font-bold uppercase text-slate-400">Noda</span>
+                    <span className="text-xs font-black font-mono tabular-nums text-amber-600 dark:text-amber-400">
+                      {job.total_qty_noda}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="block text-[9px] font-bold uppercase text-slate-400">Permak</span>
+                    <span className="text-xs font-black font-mono tabular-nums text-orange-600 dark:text-orange-400">
+                      {job.total_qty_permak}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="block text-[9px] font-bold uppercase text-slate-400">Defect</span>
+                    <span className="text-xs font-black font-mono tabular-nums text-rose-600 dark:text-rose-400">
+                      {job.total_qty_defect}
+                    </span>
                   </div>
                 </div>
 
-                {/* Footer Action Buttons */}
-                <div className="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                {/* Footer Action Controls */}
+                <div className="flex items-center gap-2 p-2.5 border-t border-slate-100 dark:border-slate-800">
                   <button
                     type="button"
                     onClick={() => setActiveJobId(job.id)}
-                    className={`flex-1 inline-flex items-center justify-center gap-1.5 py-2 ${
-                      isMutasiJob ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20'
-                    } text-white rounded-xl text-xs font-black transition-all shadow-md cursor-pointer active:scale-98`}
+                    className="flex-1 inline-flex items-center justify-center gap-1.5 min-h-[40px] bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer active:scale-[0.98]"
                   >
                     <Play className="w-3.5 h-3.5 fill-current" />
                     <span>{isCompleted ? 'Lihat / Edit QC' : 'Kerjakan QC'}</span>
@@ -658,10 +712,11 @@ export const QcPengerjaanTab: React.FC<QcPengerjaanTabProps> = ({
                   <button
                     type="button"
                     onClick={() => setBeritaAcaraJob(job)}
-                    className="p-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-colors cursor-pointer"
+                    className="inline-flex items-center justify-center gap-1.5 px-3 min-h-[40px] bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer shrink-0"
                     title="Cetak Berita Acara & Rekap"
                   >
-                    <Printer className="w-4 h-4" />
+                    <Printer className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Berita Acara</span>
                   </button>
                 </div>
               </div>
