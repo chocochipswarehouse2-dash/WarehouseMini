@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   Search,
   CheckSquare,
@@ -336,11 +337,11 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
           {/* Controls for Manual Batch Qty */}
           <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
             <span className="text-xs font-bold text-slate-500">Set Qty Seragam:</span>
-            <input
-              type="number"
-              min="1"
+            <NumberInput
+              min={1}
               value={manualBatchQty}
-              onChange={(e) => setManualBatchQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+              selectOnFocus
+              onValueChange={(val) => setManualBatchQty(Math.max(1, val))}
               className="w-16 px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-center text-xs font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
             <button
@@ -572,12 +573,12 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
                           >
                             -
                           </button>
-                          <input
-                            type="number"
-                            min="1"
+                          <NumberInput
+                            min={1}
                             value={effectiveQty}
-                            onChange={(e) =>
-                              handleItemQtyChange(prod, parseInt(e.target.value, 10) || 1)
+                            selectOnFocus
+                            onValueChange={(val) =>
+                              handleItemQtyChange(prod, Math.max(1, val))
                             }
                             className="w-12 text-center py-0.5 font-black bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded text-xs text-slate-900 dark:text-white"
                           />

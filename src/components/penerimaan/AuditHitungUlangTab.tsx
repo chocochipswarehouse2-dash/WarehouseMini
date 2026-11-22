@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   Search,
   Filter,
@@ -2516,19 +2517,19 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
 
                     <div className="flex items-center gap-2">
                       <div className="flex-1">
-                        <input
-                          type="number"
-                          inputMode="numeric"
+                        <NumberInput
                           min={0}
+                          allowEmpty
+                          selectOnFocus
                           placeholder={`Fisik (awal ${v.qty_asli})`}
                           value={inp.recountQty !== null ? inp.recountQty : ''}
-                          onChange={(e) => {
-                            const val = e.target.value === '' ? null : parseInt(e.target.value, 10);
+                          onStringValueChange={(raw) => {
+                            const val = raw === '' ? null : parseInt(raw, 10);
                             isWorkspaceDirtyRef.current = true;
                             setVariantInputs((prev) => ({
                               ...prev,
                               [key]: {
-                                recountQty: val,
+                                recountQty: val !== null && !Number.isNaN(val) ? val : null,
                                 note: prev[key]?.note || '',
                               },
                             }));
@@ -2611,19 +2612,19 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                           {v.qty_asli}
                         </td>
                         <td className="py-1.5 px-2 text-center bg-indigo-50/20 dark:bg-indigo-950/15">
-                          <input
-                            type="number"
-                            inputMode="numeric"
+                          <NumberInput
                             min={0}
+                            allowEmpty
+                            selectOnFocus
                             placeholder={String(v.qty_asli)}
                             value={inp.recountQty !== null ? inp.recountQty : ''}
-                            onChange={(e) => {
-                              const val = e.target.value === '' ? null : parseInt(e.target.value, 10);
+                            onStringValueChange={(raw) => {
+                              const val = raw === '' ? null : parseInt(raw, 10);
                               isWorkspaceDirtyRef.current = true;
                               setVariantInputs((prev) => ({
                                 ...prev,
                                 [key]: {
-                                  recountQty: val,
+                                  recountQty: val !== null && !Number.isNaN(val) ? val : null,
                                   note: prev[key]?.note || '',
                                 },
                               }));

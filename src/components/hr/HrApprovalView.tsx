@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   CheckCircle2,
   XCircle,
@@ -1548,11 +1549,13 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
                   </div>
                   <div>
                     <label className="block text-slate-600 dark:text-slate-400 font-bold mb-1">Durasi (Jam)</label>
-                    <input
-                      type="number"
-                      step="0.5"
+                    <NumberInput
+                      min={0}
+                      step={0.5}
+                      allowDecimal
                       value={editingItem.durasi_jam ?? 0}
-                      onChange={(e) => setEditingItem({ ...editingItem, durasi_jam: parseFloat(e.target.value) || 0 })}
+                      selectOnFocus
+                      onValueChange={(val) => setEditingItem({ ...editingItem, durasi_jam: val })}
                       className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-mono font-bold"
                     />
                   </div>
@@ -1590,10 +1593,11 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
                   </div>
                   <div>
                     <label className="block text-slate-600 dark:text-slate-400 font-bold mb-1">Jumlah Hari</label>
-                    <input
-                      type="number"
+                    <NumberInput
+                      min={1}
                       value={editingItem.jumlah_hari ?? 1}
-                      onChange={(e) => setEditingItem({ ...editingItem, jumlah_hari: parseInt(e.target.value, 10) || 1 })}
+                      selectOnFocus
+                      onValueChange={(val) => setEditingItem({ ...editingItem, jumlah_hari: Math.max(1, val) })}
                       className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-mono font-bold"
                     />
                   </div>

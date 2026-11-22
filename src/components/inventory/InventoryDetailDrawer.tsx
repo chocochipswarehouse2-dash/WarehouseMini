@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   Printer,
   X,
@@ -1648,11 +1649,11 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({
                 <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
                   Kuantitas (Qty Pcs)
                 </label>
-                <input
-                  type="number"
-                  min="1"
+                <NumberInput
+                  min={1}
                   value={editForm.qty}
-                  onChange={(e) => setEditForm((prev) => ({ ...prev, qty: Math.max(1, parseInt(e.target.value) || 1) }))}
+                  selectOnFocus
+                  onValueChange={(val) => setEditForm((prev) => ({ ...prev, qty: Math.max(1, val) }))}
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 font-mono font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:border-amber-500"
                 />
               </div>

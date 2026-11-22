@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   X,
   Package,
@@ -374,18 +375,15 @@ export const PutawayPreviewModal: React.FC<PutawayPreviewModalProps> = ({
                                   )}
                                 </span>
                                 <div className="flex items-center gap-1 shrink-0">
-                                  <input
-                                    type="number"
+                                  <NumberInput
                                     min={1}
                                     max={it.availableQty}
                                     disabled={!isChecked}
                                     value={chosenQty}
-                                    onChange={(e) => {
-                                      const val = Math.max(
-                                        1,
-                                        Math.min(it.availableQty, Math.floor(Number(e.target.value) || 1))
-                                      );
-                                      setCustomQtyByKey((prev) => ({ ...prev, [it.key]: val }));
+                                    selectOnFocus
+                                    onValueChange={(val) => {
+                                      const clamped = Math.max(1, Math.min(it.availableQty, Math.floor(val)));
+                                      setCustomQtyByKey((prev) => ({ ...prev, [it.key]: clamped }));
                                     }}
                                     className="w-14 px-1.5 py-0.5 text-right text-xs font-mono font-bold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white disabled:opacity-50"
                                   />

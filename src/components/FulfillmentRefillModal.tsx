@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { NumberInput } from './common/NumberInput';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
 import {
   Upload,
@@ -1291,22 +1292,13 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
                         />
                       </div>
                       <div className="col-span-10 sm:col-span-2">
-                        <input
-                          type="number"
-                          min="1"
+                        <NumberInput
+                          min={1}
                           required
                           placeholder="Qty"
                           value={row.qty}
-                          onFocus={(e) => e.target.select()}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            handleManualRowChange(idx, 'qty', val === '' ? '' : Math.max(0, parseInt(val, 10) || 0));
-                          }}
-                          onBlur={() => {
-                            if (row.qty === '' || Number(row.qty) < 1) {
-                              handleManualRowChange(idx, 'qty', 1);
-                            }
-                          }}
+                          selectOnFocus
+                          onValueChange={(val) => handleManualRowChange(idx, 'qty', Math.max(1, val))}
                           className="w-full p-2 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-800 dark:text-white"
                         />
                       </div>

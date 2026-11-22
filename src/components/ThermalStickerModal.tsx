@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
+import { NumberInput } from './common/NumberInput';
 import {
   Printer,
   X,
@@ -1060,12 +1061,12 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                     >
                       <Minus className="w-3 h-3" />
                     </button>
-                    <input
-                      type="number"
+                    <NumberInput
                       min={1}
                       max={999}
                       value={singleCopies}
-                      onChange={(e) => setSingleCopies(Math.max(1, parseInt(e.target.value) || 1))}
+                      selectOnFocus
+                      onValueChange={(val) => setSingleCopies(Math.max(1, val))}
                       className="w-12 px-1 py-1 text-center font-mono font-bold text-xs bg-transparent text-slate-900 dark:text-white outline-none"
                     />
                     <button
@@ -1370,14 +1371,14 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                             >
                               <Minus className="w-3 h-3" />
                             </button>
-                            <input
-                              type="number"
+                            <NumberInput
                               min={1}
                               max={999}
                               disabled={!isSelected}
                               value={copies}
-                              onChange={(e) =>
-                                handleTicketCopiesChange(t.ticket_no, parseInt(e.target.value) || 1)
+                              selectOnFocus
+                              onValueChange={(val) =>
+                                handleTicketCopiesChange(t.ticket_no, Math.max(1, val))
                               }
                               className="w-10 px-1 py-1 text-center font-mono font-bold text-[11px] bg-transparent text-purple-700 dark:text-purple-300 disabled:opacity-40 outline-none"
                               title="Jumlah stiker yang akan dicetak untuk tiket ini"

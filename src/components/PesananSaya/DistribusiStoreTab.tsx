@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   Upload, RefreshCw, Send, ChevronDown, ChevronUp, CheckCircle2,
   AlertTriangle, Package, FileText, Trash2, ClipboardCheck, X,
@@ -2836,9 +2837,15 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                 >
                                   <Minus className="w-3.5 h-3.5" />
                                 </button>
-                                <span className="font-mono font-black text-sm sm:text-xs text-amber-700 dark:text-amber-300 w-9 text-center tabular-nums">
-                                  +{val.qty}
-                                </span>
+                                <NumberInput
+                                  min={1}
+                                  max={99999}
+                                  value={val.qty}
+                                  selectOnFocus
+                                  onValueChange={(newQty) => handleManualUnexpectedQty(sku, newQty)}
+                                  aria-label="Qty luar SJ"
+                                  className="w-12 h-9 sm:h-7 text-center font-mono font-black text-sm sm:text-xs text-amber-700 dark:text-amber-300 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 rounded-xl sm:rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500/40 tabular-nums"
+                                />
                                 <button
                                   type="button"
                                   onClick={() => handleManualUnexpectedQty(sku, val.qty + 1)}
@@ -2896,9 +2903,15 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                 >
                                   <Minus className="w-3.5 h-3.5" />
                                 </button>
-                                <span className="font-mono font-black text-sm sm:text-xs text-rose-700 dark:text-rose-300 w-9 text-center tabular-nums">
-                                  {item.qty_scan}
-                                </span>
+                                <NumberInput
+                                  min={0}
+                                  max={99999}
+                                  value={item.qty_scan}
+                                  selectOnFocus
+                                  onValueChange={(newQty) => handleManualQty(item.sku, newQty)}
+                                  aria-label="Qty scan"
+                                  className="w-12 h-9 sm:h-7 text-center font-mono font-black text-sm sm:text-xs text-rose-700 dark:text-rose-300 bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-700 rounded-xl sm:rounded-md focus:outline-none focus:ring-2 focus:ring-rose-500/40 tabular-nums"
+                                />
                                 <button
                                   type="button"
                                   onClick={() => handleManualQty(item.sku, item.qty_scan + 1)}
@@ -2992,16 +3005,12 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                               >
                                 <Minus className="w-4 h-4" />
                               </button>
-                              <input
-                                type="number"
+                              <NumberInput
                                 value={item.qty_scan}
-                                onFocus={e => e.target.select()}
-                                onChange={e => {
-                                  const val = e.target.value;
-                                  handleManualQty(item.sku, val === '' ? 0 : Math.max(0, parseInt(val, 10) || 0));
-                                }}
-                                className="w-14 h-9 text-center font-mono font-black bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 border border-slate-300 dark:border-slate-600 rounded-xl text-sm tabular-nums"
                                 min={0}
+                                selectOnFocus
+                                onValueChange={(val) => handleManualQty(item.sku, Math.max(0, val))}
+                                className="w-14 h-9 text-center font-mono font-black bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 border border-slate-300 dark:border-slate-600 rounded-xl text-sm tabular-nums"
                               />
                               <button
                                 type="button"
@@ -3086,16 +3095,12 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                 >
                                   <Minus className="w-3 h-3" />
                                 </button>
-                                <input
-                                  type="number"
+                                <NumberInput
                                   value={item.qty_scan}
-                                  onFocus={e => e.target.select()}
-                                  onChange={e => {
-                                    const val = e.target.value;
-                                    handleManualQty(item.sku, val === '' ? 0 : Math.max(0, parseInt(val, 10) || 0));
-                                  }}
-                                  className="w-12 text-center font-mono font-black bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none border border-slate-300 dark:border-slate-600 rounded-lg text-xs py-1 shadow-2xs tabular-nums"
                                   min={0}
+                                  selectOnFocus
+                                  onValueChange={(val) => handleManualQty(item.sku, Math.max(0, val))}
+                                  className="w-12 text-center font-mono font-black bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none border border-slate-300 dark:border-slate-600 rounded-lg text-xs py-1 shadow-2xs tabular-nums"
                                 />
                                 <button
                                   type="button"
@@ -4519,24 +4524,22 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                       <div className="px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/60 text-center">
                                         <div className="text-[10px] font-bold text-slate-400 uppercase">Scan</div>
                                         {isEditing && editFormData ? (
-                                          <input
-                                            type="number"
+                                          <NumberInput
+                                            min={0}
                                             value={item.qty_scan}
-                                            onFocus={e => e.target.select()}
-                                            onChange={e => {
-                                              const raw = e.target.value;
-                                              const newQty = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
+                                            selectOnFocus
+                                            onValueChange={(newQty) => {
+                                              const qty = Math.max(0, newQty);
                                               const newItems = [...editFormData.items];
                                               newItems[i] = {
                                                 ...newItems[i],
-                                                qty_scan: newQty,
-                                                selisih: newQty - newItems[i].qty_sj,
-                                                status_item: (newQty - newItems[i].qty_sj) === 0 ? 'COCOK' : (newQty - newItems[i].qty_sj) < 0 ? 'KURANG' : 'LEBIH',
+                                                qty_scan: qty,
+                                                selisih: qty - newItems[i].qty_sj,
+                                                status_item: (qty - newItems[i].qty_sj) === 0 ? 'COCOK' : (qty - newItems[i].qty_sj) < 0 ? 'KURANG' : 'LEBIH',
                                               };
                                               setEditFormData({ ...editFormData, items: newItems });
                                             }}
                                             className="w-full h-7 mt-0.5 text-center font-extrabold bg-white dark:bg-slate-900 border border-indigo-400 dark:border-indigo-600 rounded-lg text-xs tabular-nums"
-                                            min={0}
                                           />
                                         ) : (
                                           <div className="text-xs font-black text-slate-900 dark:text-white tabular-nums">{item.qty_scan}</div>
@@ -4623,24 +4626,22 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                         </td>
                                         <td className="px-3 py-2 text-center font-bold tabular-nums">
                                           {isEditing && editFormData ? (
-                                            <input
-                                              type="number"
+                                            <NumberInput
+                                              min={0}
                                               value={item.qty_scan}
-                                              onFocus={e => e.target.select()}
-                                              onChange={e => {
-                                                const raw = e.target.value;
-                                                const newQty = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
+                                              selectOnFocus
+                                              onValueChange={(newQty) => {
+                                                const qty = Math.max(0, newQty);
                                                 const newItems = [...editFormData.items];
                                                 newItems[i] = {
                                                   ...newItems[i],
-                                                  qty_scan: newQty,
-                                                  selisih: newQty - newItems[i].qty_sj,
-                                                  status_item: (newQty - newItems[i].qty_sj) === 0 ? 'COCOK' : (newQty - newItems[i].qty_sj) < 0 ? 'KURANG' : 'LEBIH',
+                                                  qty_scan: qty,
+                                                  selisih: qty - newItems[i].qty_sj,
+                                                  status_item: (qty - newItems[i].qty_sj) === 0 ? 'COCOK' : (qty - newItems[i].qty_sj) < 0 ? 'KURANG' : 'LEBIH',
                                                 };
                                                 setEditFormData({ ...editFormData, items: newItems });
                                               }}
                                               className="w-14 text-center font-bold px-1 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs"
-                                              min={0}
                                             />
                                           ) : (
                                             item.qty_scan

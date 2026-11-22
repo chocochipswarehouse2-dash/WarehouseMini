@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   X,
   ArrowRight,
@@ -2516,19 +2517,16 @@ export const LocationRelocationModal: React.FC<LocationRelocationModalProps> = (
                                       }}
                                       className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
                                     />
-                                    <input
-                                      type="number"
+                                    <NumberInput
                                       min={0}
                                       max={it.maxQty}
                                       value={it.moveQty}
-                                      onChange={(e) => {
-                                        const val = Math.max(
-                                          0,
-                                          Math.min(it.maxQty, Math.floor(Number(e.target.value) || 0))
-                                        );
+                                      selectOnFocus
+                                      onValueChange={(val) => {
+                                        const clamped = Math.max(0, Math.min(it.maxQty, Math.floor(val)));
                                         setPartialQtys((prev) => ({
                                           ...prev,
-                                          [it.sku]: val,
+                                          [it.sku]: clamped,
                                         }));
                                         setIsConfirming(false);
                                       }}

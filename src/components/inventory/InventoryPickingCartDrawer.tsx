@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useCallback } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   X,
   ShoppingCart,
@@ -492,11 +493,11 @@ export const InventoryPickingCartDrawer: React.FC<InventoryPickingCartDrawerProp
                 </div>
 
                 <div className="w-16 shrink-0">
-                  <input
-                    type="number"
+                  <NumberInput
                     min={1}
                     value={quickQty}
-                    onChange={(e) => setQuickQty(Math.max(1, parseInt(e.target.value) || 1))}
+                    selectOnFocus
+                    onValueChange={(val) => setQuickQty(Math.max(1, val))}
                     className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-2 py-2 text-xs font-mono font-bold text-center text-slate-800 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
                     title="Qty Pesanan"
                   />
@@ -830,11 +831,11 @@ export const InventoryPickingCartDrawer: React.FC<InventoryPickingCartDrawerProp
                           >
                             <Minus className="w-3 h-3" />
                           </button>
-                          <input
-                            type="number"
+                          <NumberInput
                             min={1}
                             value={itemQty}
-                            onChange={(e) => onUpdateQty(item.sku, Math.max(1, parseInt(e.target.value) || 1))}
+                            selectOnFocus
+                            onValueChange={(val) => onUpdateQty(item.sku, Math.max(1, val))}
                             className="w-12 text-center text-xs font-mono font-bold text-slate-900 dark:text-white bg-transparent focus:outline-hidden"
                           />
                           <button

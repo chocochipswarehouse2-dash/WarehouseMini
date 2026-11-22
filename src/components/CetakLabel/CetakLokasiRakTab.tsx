@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   Printer,
   Plus,
@@ -1200,11 +1201,11 @@ export const CetakLokasiRakTab: React.FC<CetakLokasiRakTabProps> = ({ onShowToas
                         <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
                           Dari No
                         </label>
-                        <input
-                          type="number"
-                          min="1"
+                        <NumberInput
+                          min={1}
                           value={rangeStart}
-                          onChange={(e) => setRangeStart(parseInt(e.target.value, 10) || 1)}
+                          selectOnFocus
+                          onValueChange={(val) => setRangeStart(Math.max(1, val))}
                           className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-slate-900 dark:text-white"
                         />
                       </div>
@@ -1212,11 +1213,11 @@ export const CetakLokasiRakTab: React.FC<CetakLokasiRakTabProps> = ({ onShowToas
                         <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
                           Sampai
                         </label>
-                        <input
-                          type="number"
-                          min="1"
+                        <NumberInput
+                          min={1}
                           value={rangeEnd}
-                          onChange={(e) => setRangeEnd(parseInt(e.target.value, 10) || 1)}
+                          selectOnFocus
+                          onValueChange={(val) => setRangeEnd(Math.max(1, val))}
                           className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-slate-900 dark:text-white"
                         />
                       </div>
@@ -1252,11 +1253,11 @@ export const CetakLokasiRakTab: React.FC<CetakLokasiRakTabProps> = ({ onShowToas
                     <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
                       <div className="flex items-center gap-2 text-xs">
                         <span className="text-[11px] font-semibold text-slate-500">Salinan per rak:</span>
-                        <input
-                          type="number"
-                          min="1"
+                        <NumberInput
+                          min={1}
                           value={rangeCopies}
-                          onChange={(e) => setRangeCopies(parseInt(e.target.value, 10) || 1)}
+                          selectOnFocus
+                          onValueChange={(val) => setRangeCopies(Math.max(1, val))}
                           className="w-14 px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-center"
                         />
                         <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">
@@ -1308,11 +1309,11 @@ export const CetakLokasiRakTab: React.FC<CetakLokasiRakTabProps> = ({ onShowToas
                         <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
                           Salinan
                         </label>
-                        <input
-                          type="number"
-                          min="1"
+                        <NumberInput
+                          min={1}
                           value={manualCopies}
-                          onChange={(e) => setManualCopies(parseInt(e.target.value, 10) || 1)}
+                          selectOnFocus
+                          onValueChange={(val) => setManualCopies(Math.max(1, val))}
                           className="w-full px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-center text-slate-900 dark:text-white"
                         />
                       </div>
@@ -1482,11 +1483,11 @@ export const CetakLokasiRakTab: React.FC<CetakLokasiRakTabProps> = ({ onShowToas
                       <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
                         Salinan
                       </label>
-                      <input
-                        type="number"
-                        min="1"
+                      <NumberInput
+                        min={1}
                         value={customCopies}
-                        onChange={(e) => setCustomCopies(parseInt(e.target.value, 10) || 1)}
+                        selectOnFocus
+                        onValueChange={(val) => setCustomCopies(Math.max(1, val))}
                         className="w-full px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-center text-slate-900 dark:text-white"
                       />
                     </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   Edit2,
   Save,
@@ -2529,13 +2530,13 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                           <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
                             Latitude
                           </label>
-                          <input
-                            type="number"
+                          <NumberInput
                             step="any"
+                            allowDecimal
+                            allowNegative
                             required
                             value={loc.latitude}
-                            onChange={(e) => {
-                              const val = parseFloat(e.target.value) || 0;
+                            onValueChange={(val) => {
                               setEditingLocConfig((prev) => {
                                 const copy = [...prev.locations];
                                 copy[idx] = { ...copy[idx], latitude: val };
@@ -2550,13 +2551,13 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                           <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
                             Longitude
                           </label>
-                          <input
-                            type="number"
+                          <NumberInput
                             step="any"
+                            allowDecimal
+                            allowNegative
                             required
                             value={loc.longitude}
-                            onChange={(e) => {
-                              const val = parseFloat(e.target.value) || 0;
+                            onValueChange={(val) => {
                               setEditingLocConfig((prev) => {
                                 const copy = [...prev.locations];
                                 copy[idx] = { ...copy[idx], longitude: val };

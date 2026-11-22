@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import { 
   Printer, 
   Plus, 
@@ -1106,20 +1107,11 @@ export const LabelPaketTab: React.FC = () => {
               <div className="pt-2 flex gap-3 items-end">
                 <div className="w-24">
                   <label className="block text-[10px] font-bold text-slate-500 mb-1">Jumlah Copy</label>
-                  <input
-                    type="number"
+                  <NumberInput
                     min={1}
                     value={qty}
-                    onFocus={(e) => e.target.select()}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setQty(val === '' ? '' : Math.max(0, parseInt(val, 10) || 0));
-                    }}
-                    onBlur={() => {
-                      if (qty === '' || Number(qty) < 1) {
-                        setQty(1);
-                      }
-                    }}
+                    selectOnFocus
+                    onValueChange={(val) => setQty(Math.max(1, val))}
                     className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-center font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>

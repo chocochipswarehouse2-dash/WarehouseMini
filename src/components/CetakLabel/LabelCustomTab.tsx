@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import { 
   Printer, 
   Plus, 
@@ -761,12 +762,12 @@ export const LabelCustomTab: React.FC = () => {
                 <div className="flex items-center gap-2 pt-1">
                   <div className="w-24">
                     <label className="block text-[10px] font-bold text-slate-500 mb-1">Salinan (Qty)</label>
-                    <input
-                      type="number"
+                    <NumberInput
                       min={1}
                       max={99}
                       value={formCopies}
-                      onChange={(e) => setFormCopies(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      selectOnFocus
+                      onValueChange={(val) => setFormCopies(Math.max(1, val))}
                       className="w-full px-2 py-2 text-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white"
                     />
                   </div>
@@ -1242,11 +1243,11 @@ export const LabelCustomTab: React.FC = () => {
                   <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
                     Dari Nomor:
                   </label>
-                  <input
-                    type="number"
+                  <NumberInput
                     min={1}
                     value={seqStart}
-                    onChange={(e) => setSeqStart(parseInt(e.target.value, 10) || 1)}
+                    selectOnFocus
+                    onValueChange={(val) => setSeqStart(Math.max(1, val))}
                     className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-bold text-center text-slate-900 dark:text-white"
                   />
                 </div>
@@ -1254,11 +1255,11 @@ export const LabelCustomTab: React.FC = () => {
                   <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
                     Sampai Nomor:
                   </label>
-                  <input
-                    type="number"
+                  <NumberInput
                     min={1}
                     value={seqEnd}
-                    onChange={(e) => setSeqEnd(parseInt(e.target.value, 10) || 1)}
+                    selectOnFocus
+                    onValueChange={(val) => setSeqEnd(Math.max(1, val))}
                     className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-bold text-center text-slate-900 dark:text-white"
                   />
                 </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { NumberInput } from './common/NumberInput';
 import QRCode from 'qrcode';
 import {
   Printer,
@@ -1019,11 +1020,11 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                         >
                           -
                         </button>
-                        <input
-                          type="number"
-                          min="1"
+                        <NumberInput
+                          min={1}
                           value={item.copies}
-                          onChange={(e) => handleSetCopies(item.id, parseInt(e.target.value, 10) || 1)}
+                          selectOnFocus
+                          onValueChange={(val) => handleSetCopies(item.id, Math.max(1, val))}
                           className="w-14 text-center py-1 font-black bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded text-xs text-slate-900 dark:text-white"
                         />
                         <button

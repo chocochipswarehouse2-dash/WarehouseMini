@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   FileSpreadsheet,
   Users,
@@ -1766,20 +1767,23 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-500 font-bold mb-1">Durasi (Jam)</label>
-                  <input
-                    type="number"
-                    step="0.5"
+                  <NumberInput
+                    min={0}
+                    step={0.5}
+                    allowDecimal
                     value={editingLembur.durasi_jam}
-                    onChange={(e) => setEditingLembur({ ...editingLembur, durasi_jam: parseFloat(e.target.value) || 0 })}
+                    selectOnFocus
+                    onValueChange={(val) => setEditingLembur({ ...editingLembur, durasi_jam: val })}
                     className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-mono"
                   />
                 </div>
                 <div>
                   <label className="block text-slate-500 font-bold mb-1">Total Upah Lembur (Rp)</label>
-                  <input
-                    type="number"
-                    value={editingLembur.total_lembur || 0}
-                    onChange={(e) => setEditingLembur({ ...editingLembur, total_lembur: parseInt(e.target.value) || 0 })}
+                  <NumberInput
+                    min={0}
+                    value={editingLembur.total_lembur ?? 0}
+                    selectOnFocus
+                    onValueChange={(val) => setEditingLembur({ ...editingLembur, total_lembur: val })}
                     className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-mono"
                   />
                 </div>
@@ -1880,11 +1884,11 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
 
               <div>
                 <label className="block text-slate-500 font-bold mb-1">Durasi (Jumlah Hari)</label>
-                <input
-                  type="number"
-                  min="1"
+                <NumberInput
+                  min={1}
                   value={editingCuti.jumlah_hari}
-                  onChange={(e) => setEditingCuti({ ...editingCuti, jumlah_hari: parseInt(e.target.value) || 1 })}
+                  selectOnFocus
+                  onValueChange={(val) => setEditingCuti({ ...editingCuti, jumlah_hari: Math.max(1, val) })}
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-mono"
                 />
               </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   Users,
   Search,
@@ -1099,10 +1100,11 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                       <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
                         Gaji Pokok (Rp)
                       </label>
-                      <input
-                        type="number"
-                        value={formData.gaji_pokok || 0}
-                        onChange={(e) => setFormData({ ...formData, gaji_pokok: Number(e.target.value) })}
+                      <NumberInput
+                        min={0}
+                        value={formData.gaji_pokok ?? 0}
+                        selectOnFocus
+                        onValueChange={(val) => setFormData({ ...formData, gaji_pokok: val })}
                         className="w-full px-3 py-1.5 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                       />
                     </div>
@@ -1110,10 +1112,11 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                       <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
                         Rate Lembur per Jam (Rp)
                       </label>
-                      <input
-                        type="number"
-                        value={formData.rate_lembur || 10000}
-                        onChange={(e) => setFormData({ ...formData, rate_lembur: Number(e.target.value) })}
+                      <NumberInput
+                        min={0}
+                        value={formData.rate_lembur ?? 10000}
+                        selectOnFocus
+                        onValueChange={(val) => setFormData({ ...formData, rate_lembur: val })}
                         className="w-full px-3 py-1.5 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                       />
                     </div>

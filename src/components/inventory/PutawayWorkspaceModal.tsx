@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import confetti from 'canvas-confetti';
 import {
   X,
@@ -1764,18 +1765,18 @@ export const PutawayWorkspaceModal: React.FC<PutawayWorkspaceModalProps> = ({
                     <label className="block text-[11px] font-bold text-slate-500 mb-1">
                       Qty Ditaruh di Rak Ini (Sisa: {Math.max(0, editingItem.qty_target - editingItem.qty_placed)} pcs)
                     </label>
-                    <input
-                      type="number"
+                    <NumberInput
                       min={1}
                       max={Math.max(1, editingItem.qty_target - editingItem.qty_placed)}
                       value={overrideSplitQty}
-                      onChange={(e) =>
+                      selectOnFocus
+                      onValueChange={(val) =>
                         setOverrideSplitQty(
                           Math.max(
                             1,
                             Math.min(
                               Math.max(1, editingItem.qty_target - editingItem.qty_placed),
-                              Math.floor(Number(e.target.value) || 1)
+                              Math.floor(val)
                             )
                           )
                         )

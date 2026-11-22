@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   Package,
   Calendar,
@@ -424,13 +425,14 @@ export const PenerimaanPaketTab: React.FC<PenerimaanPaketTabProps> = ({ session,
                 <span>Qty Paket (Jumlah Paket / Dus)</span>
                 <span className="text-rose-500">*</span>
               </label>
-              <input
-                type="number"
+              <NumberInput
                 min={1}
+                allowEmpty
                 required
                 placeholder="Contoh: 3 Paket"
                 value={qtyPaket}
-                onChange={(e) => setQtyPaket(e.target.value === '' ? '' : Number(e.target.value))}
+                selectOnFocus
+                onStringValueChange={(val) => setQtyPaket(val === '' ? '' : Number(val))}
                 className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800 dark:text-slate-100"
               />
             </div>

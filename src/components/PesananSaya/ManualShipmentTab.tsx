@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   Package, PackageCheck, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft, Copy, Clock, MessageCircle, MessageSquare, ExternalLink, Store, FileCheck, Layers, AlertOctagon, RotateCcw, Ban, SendHorizonal, Scissors, Sparkles, Camera, Image as ImageIcon, Upload, Eye, Loader2, Mail, Filter, Cog, Play, CheckSquare, Building2, LayoutGrid, Table, GitFork, ShieldAlert, HelpCircle, ArrowUpDown, MoreHorizontal
 } from 'lucide-react';
@@ -2085,20 +2086,11 @@ _WMS Warehouse System_`;
                       {/* QTY */}
                       <div className="md:col-span-2">
                         <label className="block text-[10px] font-semibold uppercase text-slate-400 dark:text-slate-500 mb-0.5">Qty</label>
-                        <input
-                          type="number"
-                          min="1"
-                          value={item.qty ?? ''}
-                          onFocus={(e) => e.target.select()}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            handleItemChange(item.id, 'qty', val === '' ? '' : Math.max(0, parseInt(val, 10) || 0));
-                          }}
-                          onBlur={() => {
-                            if (item.qty === '' || Number(item.qty) < 1) {
-                              handleItemChange(item.id, 'qty', 1);
-                            }
-                          }}
+                        <NumberInput
+                          min={1}
+                          value={item.qty ?? 1}
+                          selectOnFocus
+                          onValueChange={(val) => handleItemChange(item.id, 'qty', Math.max(1, val))}
                           className="w-full rounded-md border border-slate-300 dark:border-slate-700 text-xs focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-900 text-slate-900 dark:text-white py-1 px-2.5 font-bold"
                           required
                         />

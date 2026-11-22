@@ -15,6 +15,7 @@ import {
   LayoutList,
 } from 'lucide-react';
 import { CategoryType, ScannedItem } from '../types';
+import { NumberInput } from './common/NumberInput';
 
 interface ScannedItemsListProps {
   items: ScannedItem[];
@@ -190,7 +191,7 @@ export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
                     <th className="hidden sm:table-cell py-2.5 px-3 w-[26%]">Nama Produk &amp; Size</th>
                     <th className="hidden sm:table-cell py-2.5 px-2.5 w-[13%]">Mode</th>
                     <th className="hidden sm:table-cell py-2.5 px-2.5 w-[13%]">Lokasi Rak</th>
-                    <th className="py-2 sm:py-2.5 px-1.5 sm:px-2.5 w-[82px] sm:w-[13%] text-center">Qty</th>
+                    <th className="py-2 sm:py-2.5 px-1.5 sm:px-2.5 w-[106px] sm:w-[14%] text-center">Qty</th>
                     <th className="py-2 sm:py-2.5 px-1.5 sm:px-2.5 w-[36px] sm:w-[7%] text-right">
                       <span className="sr-only sm:not-sr-only">Aksi</span>
                     </th>
@@ -362,20 +363,38 @@ export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
                                 type="button"
                                 onClick={() => onUpdateQty(item.id, Math.max(1, (item.qty || 1) - 1))}
                                 aria-label="Kurangi Qty"
-                                className="w-6 h-7 sm:w-auto sm:h-auto sm:px-2 sm:py-0.5 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold cursor-pointer"
+                                className="w-7 h-7 sm:w-7 sm:h-7 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold cursor-pointer shrink-0"
                               >
                                 -
                               </button>
                             )}
-                            <span className="text-[11px] sm:text-xs font-black font-mono text-slate-900 dark:text-white px-1.5 sm:px-2 py-0.5 min-w-[22px] text-center">
-                              {item.qty || 1}
-                            </span>
+                            {onUpdateQty ? (
+                              <NumberInput
+                                value={item.qty || 1}
+                                min={1}
+                                max={99999}
+                                selectOnFocus
+                                aria-label={`Jumlah Qty ${item.text}`}
+                                title="Ketik langsung jumlah Qty (mis. 50) atau gunakan tombol - / +"
+                                onValueChange={(newQty) => onUpdateQty(item.id, Math.max(1, newQty))}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.currentTarget.blur();
+                                  }
+                                }}
+                                className="w-11 sm:w-12 h-7 bg-white dark:bg-slate-900 border-x border-slate-200 dark:border-slate-700 text-[11px] sm:text-xs font-black font-mono text-slate-900 dark:text-white text-center focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+                              />
+                            ) : (
+                              <span className="text-[11px] sm:text-xs font-black font-mono text-slate-900 dark:text-white px-1.5 sm:px-2 py-0.5 min-w-[22px] text-center">
+                                {item.qty || 1}
+                              </span>
+                            )}
                             {onUpdateQty && (
                               <button
                                 type="button"
                                 onClick={() => onUpdateQty(item.id, (item.qty || 1) + 1)}
                                 aria-label="Tambah Qty"
-                                className="w-6 h-7 sm:w-auto sm:h-auto sm:px-2 sm:py-0.5 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold cursor-pointer"
+                                className="w-7 h-7 sm:w-7 sm:h-7 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold cursor-pointer shrink-0"
                               >
                                 +
                               </button>
@@ -491,19 +510,39 @@ export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
                         <button
                           type="button"
                           onClick={() => onUpdateQty(item.id, Math.max(1, (item.qty || 1) - 1))}
-                          className="px-2.5 py-0.5 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold cursor-pointer"
+                          aria-label="Kurangi Qty"
+                          className="w-7 h-7 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold cursor-pointer shrink-0"
                         >
                           -
                         </button>
                       )}
-                      <span className="text-[11px] font-black font-mono text-slate-900 dark:text-white px-2 py-0.5">
-                        x{item.qty || 1}
-                      </span>
+                      {onUpdateQty ? (
+                        <NumberInput
+                          value={item.qty || 1}
+                          min={1}
+                          max={99999}
+                          selectOnFocus
+                          aria-label={`Jumlah Qty ${item.text}`}
+                          title="Ketik langsung jumlah Qty (mis. 50) atau gunakan tombol - / +"
+                          onValueChange={(newQty) => onUpdateQty(item.id, Math.max(1, newQty))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.currentTarget.blur();
+                            }
+                          }}
+                          className="w-12 h-7 bg-white dark:bg-slate-900 border-x border-slate-200 dark:border-slate-700 text-[11px] font-black font-mono text-slate-900 dark:text-white text-center focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+                        />
+                      ) : (
+                        <span className="text-[11px] font-black font-mono text-slate-900 dark:text-white px-2 py-0.5">
+                          x{item.qty || 1}
+                        </span>
+                      )}
                       {onUpdateQty && (
                         <button
                           type="button"
                           onClick={() => onUpdateQty(item.id, (item.qty || 1) + 1)}
-                          className="px-2.5 py-0.5 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold cursor-pointer"
+                          aria-label="Tambah Qty"
+                          className="w-7 h-7 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold cursor-pointer shrink-0"
                         >
                           +
                         </button>

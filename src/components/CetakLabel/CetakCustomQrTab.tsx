@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   Printer,
   Plus,
@@ -923,11 +924,11 @@ export const CetakCustomQrTab: React.FC = () => {
                       <span className="text-xs font-bold text-slate-600 dark:text-slate-400">
                         Jumlah Salinan:
                       </span>
-                      <input
-                        type="number"
-                        min="1"
+                      <NumberInput
+                        min={1}
                         value={formCopies}
-                        onChange={(e) => setFormCopies(parseInt(e.target.value, 10) || 1)}
+                        selectOnFocus
+                        onValueChange={(val) => setFormCopies(Math.max(1, val))}
                         className="w-16 px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-center"
                       />
                     </div>
@@ -964,11 +965,11 @@ export const CetakCustomQrTab: React.FC = () => {
                       <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                         Nomor Awal
                       </label>
-                      <input
-                        type="number"
-                        min="1"
+                      <NumberInput
+                        min={1}
                         value={seqStart}
-                        onChange={(e) => setSeqStart(parseInt(e.target.value, 10) || 1)}
+                        selectOnFocus
+                        onValueChange={(val) => setSeqStart(Math.max(1, val))}
                         className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold"
                       />
                     </div>
@@ -977,11 +978,11 @@ export const CetakCustomQrTab: React.FC = () => {
                       <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                         Nomor Akhir
                       </label>
-                      <input
-                        type="number"
-                        min="1"
+                      <NumberInput
+                        min={1}
                         value={seqEnd}
-                        onChange={(e) => setSeqEnd(parseInt(e.target.value, 10) || 1)}
+                        selectOnFocus
+                        onValueChange={(val) => setSeqEnd(Math.max(1, val))}
                         className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold"
                       />
                     </div>
@@ -1020,11 +1021,11 @@ export const CetakCustomQrTab: React.FC = () => {
                       <span className="text-xs font-bold text-slate-600 dark:text-slate-400">
                         Salinan per Item:
                       </span>
-                      <input
-                        type="number"
-                        min="1"
+                      <NumberInput
+                        min={1}
                         value={seqCopies}
-                        onChange={(e) => setSeqCopies(parseInt(e.target.value, 10) || 1)}
+                        selectOnFocus
+                        onValueChange={(val) => setSeqCopies(Math.max(1, val))}
                         className="w-16 px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-center"
                       />
                     </div>

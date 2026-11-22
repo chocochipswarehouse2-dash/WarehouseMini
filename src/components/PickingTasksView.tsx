@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useDeferredValue, useMemo, useCallback } from 'react';
 import confetti from 'canvas-confetti';
+import { NumberInput } from './common/NumberInput';
 import {
   Package,
   Search,
@@ -4343,20 +4344,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                         <label className="text-[10px] font-bold text-slate-400 block mb-1">
                           Qty Pcs
                         </label>
-                        <input
-                          type="number"
+                        <NumberInput
                           min={1}
                           value={searchQty}
-                          onFocus={(e) => e.target.select()}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setSearchQty(val === '' ? '' : Math.max(0, parseInt(val, 10) || 0));
-                          }}
-                          onBlur={() => {
-                            if (searchQty === '' || Number(searchQty) < 1) {
-                              setSearchQty(1);
-                            }
-                          }}
+                          selectOnFocus
+                          onValueChange={(val) => setSearchQty(val)}
                           className="w-full px-3 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 rounded-xl text-xs font-black text-center text-slate-800 dark:text-white outline-none"
                         />
                       </div>
@@ -4429,20 +4421,35 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-black font-mono text-primary-600 dark:text-primary-400">
-                      +{unexp.qty_picked} Pcs
-                    </span>
-
-                    {/* Counter Buttons */}
+                    {/* Counter Buttons + Direct Input */}
                     <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
                       <button
+                        type="button"
                         onClick={() => handleAdjustUnexpectedQty(idx, -1)}
                         className="w-7 h-7 flex items-center justify-center rounded bg-white dark:bg-[#131d31] text-slate-600 dark:text-slate-300 hover:text-primary-600 cursor-pointer"
                         title="Kurangi 1"
                       >
                         <MinusCircle className="w-4 h-4" />
                       </button>
+                      <NumberInput
+                        value={unexp.qty_picked}
+                        min={0}
+                        max={99999}
+                        selectOnFocus
+                        commitOnBlurOnly
+                        aria-label={`Qty salah ambil ${unexp.sku}`}
+                        title="Ketik langsung jumlah Qty"
+                        onValueChange={(newQty) => {
+                          const delta = newQty - unexp.qty_picked;
+                          if (delta !== 0) handleAdjustUnexpectedQty(idx, delta);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') e.currentTarget.blur();
+                        }}
+                        className="w-12 h-7 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded text-center text-xs font-black font-mono text-primary-600 dark:text-primary-400 outline-none focus:ring-2 focus:ring-primary-500"
+                      />
                       <button
+                        type="button"
                         onClick={() => handleAdjustUnexpectedQty(idx, 1)}
                         className="w-7 h-7 flex items-center justify-center rounded bg-white dark:bg-[#131d31] text-slate-600 dark:text-slate-300 hover:text-primary-600 cursor-pointer"
                         title="Tambah 1"
@@ -5002,9 +5009,23 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       >
                         <MinusCircle className="w-5 h-5" />
                       </button>
-                      <div className="px-1.5 min-w-[56px] text-center flex items-baseline justify-center">
-                        <span
-                          className={`text-xl font-black font-mono tabular-nums leading-none ${
+                      <div className="px-1 min-w-[68px] text-center flex items-center justify-center gap-0.5">
+                        <NumberInput
+                          value={item.qty_picked}
+                          min={0}
+                          max={99999}
+                          selectOnFocus
+                          commitOnBlurOnly
+                          aria-label={`Qty diambil ${item.sku}`}
+                          title="Ketik langsung jumlah Qty yang diambil (Enter untuk simpan)"
+                          onValueChange={(newQty) => {
+                            const delta = newQty - item.qty_picked;
+                            if (delta !== 0) handleAdjustQty(index, delta);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') e.currentTarget.blur();
+                          }}
+                          className={`w-11 h-8 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-center text-base font-black font-mono tabular-nums leading-none outline-none focus:ring-2 focus:ring-indigo-500 ${
                             isKosong
                               ? 'text-rose-500 line-through'
                               : isOver
@@ -5013,10 +5034,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                               ? 'text-emerald-600 dark:text-emerald-400'
                               : 'text-slate-900 dark:text-white'
                           }`}
-                        >
-                          {item.qty_picked}
-                        </span>
-                        <span className="text-xs font-bold font-mono text-slate-400 ml-0.5">
+                        />
+                        <span className="text-xs font-bold font-mono text-slate-400">
                           /{reqQty}
                         </span>
                       </div>
@@ -6261,21 +6280,12 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     />
                   </div>
                   <div className="sm:col-span-2">
-                    <input
-                      type="number"
-                      min="1"
+                    <NumberInput
+                      min={1}
                       placeholder="Qty"
                       value={newSjSkuQty}
-                      onFocus={(e) => e.target.select()}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setNewSjSkuQty(val === '' ? '' : Math.max(0, Number(val) || 0));
-                      }}
-                      onBlur={() => {
-                        if (newSjSkuQty === '' || Number(newSjSkuQty) < 1) {
-                          setNewSjSkuQty(1);
-                        }
-                      }}
+                      selectOnFocus
+                      onValueChange={(val) => setNewSjSkuQty(val)}
                       className="w-full p-2 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-800 dark:text-white"
                     />
                   </div>
@@ -6349,25 +6359,16 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       </div>
                       <div className="col-span-10 sm:col-span-2">
                         <label className="text-[9px] font-bold text-slate-400 block mb-0.5 sm:hidden">Target Qty</label>
-                        <input
-                          type="number"
-                          min="1"
+                        <NumberInput
+                          min={1}
                           required
                           placeholder="Qty"
                           value={row.qty_req}
-                          onFocus={(e) => e.target.select()}
-                          onChange={(e) => {
-                            const val = e.target.value;
+                          selectOnFocus
+                          onValueChange={(val) => {
                             const updated = [...editSjRows];
-                            updated[idx].qty_req = val === '' ? ('' as any) : Math.max(0, Number(val) || 0);
+                            updated[idx].qty_req = val;
                             setEditSjRows(updated);
-                          }}
-                          onBlur={() => {
-                            if ((row.qty_req as any) === '' || Number(row.qty_req) < 1) {
-                              const updated = [...editSjRows];
-                              updated[idx].qty_req = 1;
-                              setEditSjRows(updated);
-                            }
                           }}
                           className="w-full p-2 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-800 dark:text-white"
                         />
@@ -6499,26 +6500,16 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     >
                       -
                     </button>
-                    <input
-                      type="number"
-                      min="0"
+                    <NumberInput
+                      min={0}
                       value={editingItemData.qty_picked}
-                      onFocus={(e) => e.target.select()}
-                      onChange={(e) => {
-                        const val = e.target.value;
+                      selectOnFocus
+                      onValueChange={(val) =>
                         setEditingItemData({
                           ...editingItemData,
-                          qty_picked: val === '' ? ('' as any) : Math.max(0, parseInt(val, 10) || 0),
-                        });
-                      }}
-                      onBlur={() => {
-                        if ((editingItemData.qty_picked as any) === '') {
-                          setEditingItemData({
-                            ...editingItemData,
-                            qty_picked: 0,
-                          });
-                        }
-                      }}
+                          qty_picked: val,
+                        })
+                      }
                       className="flex-1 py-2 text-center bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold text-slate-800 dark:text-white outline-none"
                     />
                     <button

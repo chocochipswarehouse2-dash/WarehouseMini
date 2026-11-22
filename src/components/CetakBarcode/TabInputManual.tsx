@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import { Plus, Search, Check, Tag } from 'lucide-react';
 import { ProductItem } from '../../types';
 import {
@@ -317,11 +318,11 @@ export const TabInputManual: React.FC<TabInputManualProps> = ({
               >
                 -
               </button>
-              <input
-                type="number"
-                min="1"
+              <NumberInput
+                min={1}
                 value={formCopies}
-                onChange={(e) => setFormCopies(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                selectOnFocus
+                onValueChange={(val) => setFormCopies(Math.max(1, val))}
                 className="w-14 text-center text-xs font-black bg-transparent text-slate-900 dark:text-white focus:outline-none"
               />
               <button

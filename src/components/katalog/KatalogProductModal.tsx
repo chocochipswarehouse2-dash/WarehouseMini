@@ -21,6 +21,7 @@ import {
 import { KatalogBatch, KatalogItem, KatalogVariant } from '../../types';
 import { compressImageDataUri } from './katalogStorage';
 import { uploadKatalogImageToGdrive } from '../../services/katalogGdrive';
+import { NumberInput } from '../common/NumberInput';
 
 interface KatalogProductModalProps {
   isOpen: boolean;
@@ -759,11 +760,12 @@ export const KatalogProductModal: React.FC<KatalogProductModalProps> = ({
 
                           {/* Qty */}
                           <td className="py-1.5 px-2.5 text-right">
-                            <input
-                              type="number"
-                              min="0"
+                            <NumberInput
+                              min={0}
+                              allowEmpty
+                              selectOnFocus
                               value={v.qty}
-                              onChange={(e) => handleVariantChange(idx, 'qty', e.target.value)}
+                              onStringValueChange={(val) => handleVariantChange(idx, 'qty', val)}
                               className="w-full px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-right focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
                             />
                           </td>

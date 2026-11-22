@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   Radio,
   Search,
@@ -2086,13 +2087,13 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                         <label className="text-[10px] text-slate-500 font-bold block mb-0.5">
                           Qty:
                         </label>
-                        <input
-                          type="number"
-                          min="1"
+                        <NumberInput
+                          min={1}
                           value={it.qty}
-                          onChange={(e) => {
+                          selectOnFocus
+                          onValueChange={(val) => {
                             const updated = [...formItems];
-                            updated[idx].qty = Number(e.target.value) || 1;
+                            updated[idx].qty = Math.max(1, val);
                             setFormItems(updated);
                           }}
                           className="w-full p-1.5 text-xs text-center font-bold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded"

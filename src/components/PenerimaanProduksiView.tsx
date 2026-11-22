@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { NumberInput } from './common/NumberInput';
 import {
   Truck,
   Package,
@@ -2977,20 +2978,13 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                               {/* Kolom Kuantitas: All Size vs Multi-Size */}
                               {isAllSize ? (
                                 <td className="p-2.5 align-middle text-center border-r border-slate-200 dark:border-slate-700">
-                                  <input
-                                    type="number"
-                                    inputMode="numeric"
+                                  <NumberInput
                                     min={0}
                                     value={w.sizes[0]?.qty ?? 0}
-                                    onFocus={(e) => e.target.select()}
-                                    onChange={(e) =>
-                                      updateSizeField(blockIdx, wIdx, 0, 'qty', e.target.value)
+                                    selectOnFocus
+                                    onValueChange={(val) =>
+                                      updateSizeField(blockIdx, wIdx, 0, 'qty', val)
                                     }
-                                    onBlur={() => {
-                                      if (w.sizes[0]?.qty === '') {
-                                        updateSizeField(blockIdx, wIdx, 0, 'qty', 0);
-                                      }
-                                    }}
                                     className="w-full max-w-[220px] mx-auto py-1.5 px-3 rounded-md bg-indigo-50/40 dark:bg-indigo-950/30 hover:bg-indigo-50/80 focus:bg-white dark:focus:bg-slate-800 border border-transparent focus:border-indigo-400 text-center text-base font-extrabold text-indigo-700 dark:text-indigo-300 focus:outline-none"
                                   />
                                 </td>
@@ -3004,26 +2998,19 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                                         key={`cell_${w.id}_${colIdx}`}
                                         className="p-1.5 align-middle text-center border-r border-slate-200 dark:border-slate-700"
                                       >
-                                        <input
-                                          type="number"
-                                          inputMode="numeric"
+                                        <NumberInput
                                           min={0}
                                           value={sCell?.qty ?? 0}
-                                          onFocus={(e) => e.target.select()}
-                                          onChange={(e) =>
+                                          selectOnFocus
+                                          onValueChange={(val) =>
                                             updateSizeField(
                                               blockIdx,
                                               wIdx,
                                               colIdx,
                                               'qty',
-                                              e.target.value
+                                              val
                                             )
                                           }
-                                          onBlur={() => {
-                                            if (sCell?.qty === '') {
-                                              updateSizeField(blockIdx, wIdx, colIdx, 'qty', 0);
-                                            }
-                                          }}
                                           className={`w-full py-1.5 px-1 text-center text-sm rounded-md bg-transparent hover:bg-slate-50 focus:bg-white dark:hover:bg-slate-800 dark:focus:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 ${
                                             qtyVal > 0
                                               ? 'font-extrabold text-slate-900 dark:text-white'
@@ -3284,20 +3271,13 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                               <span className="text-xs font-bold text-indigo-900 dark:text-indigo-200 uppercase">
                                 QTY (ALL SIZE)
                               </span>
-                              <input
-                                type="number"
-                                inputMode="numeric"
+                              <NumberInput
                                 min={0}
                                 value={w.sizes[0]?.qty ?? 0}
-                                onFocus={(e) => e.target.select()}
-                                onChange={(e) =>
-                                  updateSizeField(blockIdx, wIdx, 0, 'qty', e.target.value)
+                                selectOnFocus
+                                onValueChange={(val) =>
+                                  updateSizeField(blockIdx, wIdx, 0, 'qty', val)
                                 }
-                                onBlur={() => {
-                                  if (w.sizes[0]?.qty === '') {
-                                    updateSizeField(blockIdx, wIdx, 0, 'qty', 0);
-                                  }
-                                }}
                                 className="w-28 py-1 px-2 rounded-md bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 text-center text-sm font-extrabold text-indigo-700 dark:text-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                               />
                             </div>
@@ -3318,20 +3298,13 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                                     <span className="px-2 py-1.5 bg-emerald-50 dark:bg-emerald-950/60 border-r border-slate-200 dark:border-slate-700 text-[10px] font-extrabold text-slate-700 dark:text-slate-200 uppercase min-w-[32px] text-center">
                                       {colSize}
                                     </span>
-                                    <input
-                                      type="number"
-                                      inputMode="numeric"
+                                    <NumberInput
                                       min={0}
                                       value={sCell?.qty ?? 0}
-                                      onFocus={(e) => e.target.select()}
-                                      onChange={(e) =>
-                                        updateSizeField(blockIdx, wIdx, colIdx, 'qty', e.target.value)
+                                      selectOnFocus
+                                      onValueChange={(val) =>
+                                        updateSizeField(blockIdx, wIdx, colIdx, 'qty', val)
                                       }
-                                      onBlur={() => {
-                                        if (sCell?.qty === '') {
-                                          updateSizeField(blockIdx, wIdx, colIdx, 'qty', 0);
-                                        }
-                                      }}
                                       className={`w-full py-1.5 px-1 text-center text-xs bg-transparent focus:outline-none ${
                                         qtyVal > 0
                                           ? 'font-extrabold text-slate-900 dark:text-white'
@@ -4858,16 +4831,13 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                                   </select>
 
                                   <div className="flex items-center gap-1">
-                                    <input
-                                      type="number"
+                                    <NumberInput
                                       min={1}
-                                      value={vItem.qty ?? ''}
-                                      onFocus={(e) => e.target.select()}
-                                      onChange={(e) => {
-                                        const val = e.target.value;
-                                        const newQty = val === '' ? ('' as any) : Math.max(0, parseInt(val, 10) || 0);
+                                      value={vItem.qty ?? 1}
+                                      selectOnFocus
+                                      onValueChange={(val) => {
                                         const updated = editingBatch.items.map((it) =>
-                                          it === vItem ? { ...it, qty: newQty } : it
+                                          it === vItem ? { ...it, qty: Math.max(1, val) } : it
                                         );
                                         setEditingBatch({ ...editingBatch, items: updated });
                                       }}

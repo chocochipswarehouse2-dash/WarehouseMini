@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   Layers,
   Sliders,
@@ -2611,16 +2612,17 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                     1. Minimal Stok di Rak ABCD
                   </label>
                   <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min={10}
+                    <NumberInput
+                      min={5}
                       max={150}
                       step={5}
+                      emptyFallback={25}
                       value={evacRule.minStockThreshold}
-                      onChange={(e) =>
+                      selectOnFocus
+                      onValueChange={(val) =>
                         setEvacRule((prev) => ({
                           ...prev,
-                          minStockThreshold: Math.max(5, Number(e.target.value) || 25),
+                          minStockThreshold: Math.max(5, val),
                         }))
                       }
                       className="w-20 px-2 py-1 text-xs font-bold font-mono bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded text-slate-900 dark:text-white"
@@ -2638,16 +2640,17 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                     2. Sisa Wajib Tinggal di Rak ABCD
                   </label>
                   <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min={3}
+                    <NumberInput
+                      min={1}
                       max={40}
                       step={1}
+                      emptyFallback={10}
                       value={evacRule.mandatoryPickingBuffer}
-                      onChange={(e) =>
+                      selectOnFocus
+                      onValueChange={(val) =>
                         setEvacRule((prev) => ({
                           ...prev,
-                          mandatoryPickingBuffer: Math.max(1, Number(e.target.value) || 10),
+                          mandatoryPickingBuffer: Math.max(1, val),
                         }))
                       }
                       className="w-20 px-2 py-1 text-xs font-bold font-mono bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded text-slate-900 dark:text-white"
@@ -2760,11 +2763,11 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               <label className="block text-[11px] font-bold text-slate-500 mb-1">
                 Jumlah Pindah (Pcs)
               </label>
-              <input
-                type="number"
+              <NumberInput
                 min={1}
                 value={simQty}
-                onChange={(e) => setSimQty(Math.max(1, Number(e.target.value) || 1))}
+                selectOnFocus
+                onValueChange={(val) => setSimQty(Math.max(1, val))}
                 className="w-full px-3 py-1.5 text-xs font-mono tabular-nums bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
               />
             </div>
@@ -3789,13 +3792,11 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                       <td className="py-2.5 px-3.5 text-right font-mono tabular-nums">
                         {isEditingThis ? (
                           <div className="inline-flex items-center gap-1 justify-end">
-                            <input
-                              type="number"
+                            <NumberInput
                               min={1}
                               value={inlineEditCap}
-                              onChange={(e) =>
-                                setInlineEditCap(Math.max(1, Number(e.target.value) || 1))
-                              }
+                              selectOnFocus
+                              onValueChange={(val) => setInlineEditCap(Math.max(1, val))}
                               className="w-16 px-2 py-1 text-right text-xs font-mono border border-amber-500 rounded bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
                             />
                             <button
@@ -4193,11 +4194,11 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                         <label className="block text-[11px] font-bold text-slate-500 mb-1">
                           Kapasitas Max (Pcs)
                         </label>
-                        <input
-                          type="number"
+                        <NumberInput
                           min={1}
                           value={editCapValue}
-                          onChange={(e) => setEditCapValue(Math.max(1, Number(e.target.value) || 1))}
+                          selectOnFocus
+                          onValueChange={(val) => setEditCapValue(Math.max(1, val))}
                           className="w-full px-3 py-2 text-xs font-mono font-bold tabular-nums bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
                         />
                       </div>
@@ -4730,15 +4731,15 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                                   }}
                                   className="w-12 px-2 py-1.5 text-xs font-mono bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
                                 />
-                                <input
-                                  type="number"
+                                <NumberInput
                                   min={1}
                                   value={z.startNum}
-                                  onChange={(e) => {
+                                  selectOnFocus
+                                  onValueChange={(val) => {
                                     const next = [...draftZones];
                                     next[idx] = {
                                       ...z,
-                                      startNum: Math.max(1, Number(e.target.value) || 1),
+                                      startNum: Math.max(1, val),
                                     };
                                     setDraftZones(next);
                                   }}
@@ -4750,15 +4751,16 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                               <label className="block text-[10px] font-bold text-slate-400 mb-1">
                                 Sampai Nomor
                               </label>
-                              <input
-                                type="number"
+                              <NumberInput
                                 min={1}
+                                emptyFallback={100}
                                 value={z.endNum}
-                                onChange={(e) => {
+                                selectOnFocus
+                                onValueChange={(val) => {
                                   const next = [...draftZones];
                                   next[idx] = {
                                     ...z,
-                                    endNum: Math.max(z.startNum, Number(e.target.value) || 100),
+                                    endNum: Math.max(z.startNum, val),
                                   };
                                   setDraftZones(next);
                                 }}
@@ -4772,15 +4774,15 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                             <label className="block text-[10px] font-bold text-slate-400 mb-1">
                               Kapasitas Max (Pcs)
                             </label>
-                            <input
-                              type="number"
+                            <NumberInput
                               min={1}
                               value={z.defaultMaxCapacity}
-                              onChange={(e) => {
+                              selectOnFocus
+                              onValueChange={(val) => {
                                 const next = [...draftZones];
                                 next[idx] = {
                                   ...z,
-                                  defaultMaxCapacity: Math.max(1, Number(e.target.value) || 1),
+                                  defaultMaxCapacity: Math.max(1, val),
                                 };
                                 setDraftZones(next);
                               }}
@@ -4829,13 +4831,11 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                         <label className="block text-[11px] font-bold text-slate-500 mb-1">
                           Kapasitas Max (Pcs)
                         </label>
-                        <input
-                          type="number"
+                        <NumberInput
                           min={1}
                           value={singleOverrideCap}
-                          onChange={(e) =>
-                            setSingleOverrideCap(Math.max(1, Number(e.target.value) || 1))
-                          }
+                          selectOnFocus
+                          onValueChange={(val) => setSingleOverrideCap(Math.max(1, val))}
                           className="w-full px-3 py-1.5 text-xs font-mono bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
                         />
                       </div>
@@ -5014,11 +5014,11 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                         <label className="block text-[11px] font-bold text-slate-500 mb-1">
                           No Awal
                         </label>
-                        <input
-                          type="number"
+                        <NumberInput
                           min={1}
                           value={newZoneStart}
-                          onChange={(e) => setNewZoneStart(Math.max(1, Number(e.target.value) || 1))}
+                          selectOnFocus
+                          onValueChange={(val) => setNewZoneStart(Math.max(1, val))}
                           className="w-full px-2.5 py-2 text-xs font-mono bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
                         />
                       </div>
@@ -5026,11 +5026,12 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                         <label className="block text-[11px] font-bold text-slate-500 mb-1">
                           No Akhir
                         </label>
-                        <input
-                          type="number"
+                        <NumberInput
                           min={1}
+                          emptyFallback={50}
                           value={newZoneEnd}
-                          onChange={(e) => setNewZoneEnd(Math.max(1, Number(e.target.value) || 50))}
+                          selectOnFocus
+                          onValueChange={(val) => setNewZoneEnd(Math.max(1, val))}
                           className="w-full px-2.5 py-2 text-xs font-mono bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
                         />
                       </div>
@@ -5038,12 +5039,12 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                         <label className="block text-[11px] font-bold text-slate-500 mb-1">
                           Digit (001)
                         </label>
-                        <input
-                          type="number"
+                        <NumberInput
                           min={0}
                           max={4}
                           value={newZonePad}
-                          onChange={(e) => setNewZonePad(Number(e.target.value) || 0)}
+                          selectOnFocus
+                          onValueChange={(val) => setNewZonePad(val)}
                           className="w-full px-2.5 py-2 text-xs font-mono bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
                         />
                       </div>
@@ -5053,11 +5054,12 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                         <label className="block text-[11px] font-bold text-slate-500 mb-1">
                           Kapasitas Default (Pcs)
                         </label>
-                        <input
-                          type="number"
+                        <NumberInput
                           min={1}
+                          emptyFallback={25}
                           value={newZoneCap}
-                          onChange={(e) => setNewZoneCap(Math.max(1, Number(e.target.value) || 25))}
+                          selectOnFocus
+                          onValueChange={(val) => setNewZoneCap(Math.max(1, val))}
                           className="w-full px-3 py-2 text-xs font-mono bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
                         />
                       </div>
@@ -5129,16 +5131,17 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                           1. Minimal Stok di Rak ABCD (Syarat Evaluasi)
                         </label>
                         <div className="flex items-center gap-2">
-                          <input
-                            type="number"
+                          <NumberInput
                             min={5}
                             max={200}
                             step={5}
+                            emptyFallback={25}
                             value={evacRule.minStockThreshold}
-                            onChange={(e) =>
+                            selectOnFocus
+                            onValueChange={(val) =>
                               setEvacRule((prev) => ({
                                 ...prev,
-                                minStockThreshold: Math.max(5, Number(e.target.value) || 25),
+                                minStockThreshold: Math.max(5, val),
                               }))
                             }
                             className="w-24 px-2.5 py-1.5 text-xs font-bold font-mono bg-slate-50 dark:bg-[#0E1420] border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
@@ -5156,16 +5159,17 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                           2. Sisa Wajib Tinggal di Rak ABCD (Buffer Picker)
                         </label>
                         <div className="flex items-center gap-2">
-                          <input
-                            type="number"
+                          <NumberInput
                             min={1}
                             max={50}
                             step={1}
+                            emptyFallback={10}
                             value={evacRule.mandatoryPickingBuffer}
-                            onChange={(e) =>
+                            selectOnFocus
+                            onValueChange={(val) =>
                               setEvacRule((prev) => ({
                                 ...prev,
-                                mandatoryPickingBuffer: Math.max(1, Number(e.target.value) || 10),
+                                mandatoryPickingBuffer: Math.max(1, val),
                               }))
                             }
                             className="w-24 px-2.5 py-1.5 text-xs font-bold font-mono bg-slate-50 dark:bg-[#0E1420] border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
@@ -5231,14 +5235,13 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                           Ambang Batas Trigger Refill (Sisa di Rak ABCD)
                         </label>
                         <div className="flex items-center gap-2">
-                          <input
-                            type="number"
+                          <NumberInput
                             min={0}
                             max={15}
                             value={config.refillTriggerThreshold ?? 3}
-                            onChange={(e) => {
-                              const val = Math.max(0, Number(e.target.value) || 0);
-                              setConfig((prev) => ({ ...prev, refillTriggerThreshold: val }));
+                            selectOnFocus
+                            onValueChange={(val) => {
+                              setConfig((prev) => ({ ...prev, refillTriggerThreshold: Math.max(0, val) }));
                             }}
                             className="w-20 px-2 py-1 text-xs font-bold font-mono bg-slate-50 dark:bg-[#0E1420] border border-slate-300 dark:border-slate-700 rounded text-slate-900 dark:text-white"
                           />
@@ -5255,14 +5258,14 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                           Batas Maksimal Refill Per SKU ke Rak ABCD
                         </label>
                         <div className="flex items-center gap-2">
-                          <input
-                            type="number"
+                          <NumberInput
                             min={3}
                             max={40}
+                            emptyFallback={12}
                             value={config.refillMaxPerSkuAbcd ?? 12}
-                            onChange={(e) => {
-                              const val = Math.max(3, Number(e.target.value) || 12);
-                              setConfig((prev) => ({ ...prev, refillMaxPerSkuAbcd: val }));
+                            selectOnFocus
+                            onValueChange={(val) => {
+                              setConfig((prev) => ({ ...prev, refillMaxPerSkuAbcd: Math.max(3, val) }));
                             }}
                             className="w-20 px-2 py-1 text-xs font-bold font-mono bg-slate-50 dark:bg-[#0E1420] border border-slate-300 dark:border-slate-700 rounded text-slate-900 dark:text-white"
                           />
@@ -5334,14 +5337,14 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-xs font-mono font-bold text-slate-500">Maks Jarak:</span>
-                        <input
-                          type="number"
+                        <NumberInput
                           min={1}
                           max={10}
+                          emptyFallback={3}
                           value={config.consolidationDistanceThreshold ?? 3}
-                          onChange={(e) => {
-                            const val = Math.max(1, Number(e.target.value) || 3);
-                            setConfig((prev) => ({ ...prev, consolidationDistanceThreshold: val }));
+                          selectOnFocus
+                          onValueChange={(val) => {
+                            setConfig((prev) => ({ ...prev, consolidationDistanceThreshold: Math.max(1, val) }));
                           }}
                           className="w-16 px-2 py-1 text-xs font-bold font-mono bg-slate-50 dark:bg-[#0E1420] border border-slate-300 dark:border-slate-700 rounded text-slate-900 dark:text-white"
                         />

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
+import { NumberInput } from './common/NumberInput';
 import {
   RefreshCw,
   Search,
@@ -2222,21 +2223,11 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
 
                         <div className="col-span-1 sm:col-span-2">
                           <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Qty</label>
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            min="1"
-                            value={item.qty ?? ''}
-                            onFocus={(e) => e.target.select()}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              handleItemFieldChange(idx, 'qty', val === '' ? '' : Math.max(0, parseInt(val, 10) || 0));
-                            }}
-                            onBlur={() => {
-                              if (item.qty === '' || Number(item.qty) < 1) {
-                                handleItemFieldChange(idx, 'qty', 1);
-                              }
-                            }}
+                          <NumberInput
+                            min={1}
+                            value={item.qty ?? 1}
+                            selectOnFocus
+                            onValueChange={(val) => handleItemFieldChange(idx, 'qty', Math.max(1, val))}
                             className="w-full px-2.5 min-h-[40px] text-xs font-mono font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
                           />
                         </div>

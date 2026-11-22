@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   Store,
   Calendar,
@@ -1106,12 +1107,13 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
                   <span>Jumlah Qty</span>
                   <span className="text-rose-500">*</span>
                 </label>
-                <input
-                  type="number"
+                <NumberInput
                   min={1}
+                  allowEmpty
                   placeholder="Contoh: 15"
                   value={qty}
-                  onChange={(e) => setQty(e.target.value === '' ? '' : Number(e.target.value))}
+                  selectOnFocus
+                  onStringValueChange={(val) => setQty(val === '' ? '' : Number(val))}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-slate-800 dark:text-slate-100"
                 />
               </div>

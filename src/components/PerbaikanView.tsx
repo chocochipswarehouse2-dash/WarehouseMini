@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
+import { NumberInput } from './common/NumberInput';
 import {
   Wrench,
   Scissors,
@@ -2394,20 +2395,11 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
                     Qty (Pcs)
                   </label>
-                  <input
-                    type="number"
+                  <NumberInput
                     min={1}
                     value={formQty}
-                    onFocus={(e) => e.target.select()}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setFormQty(val === '' ? '' : Math.max(0, parseInt(val, 10) || 0));
-                    }}
-                    onBlur={() => {
-                      if (formQty === '' || Number(formQty) < 1) {
-                        setFormQty(1);
-                      }
-                    }}
+                    selectOnFocus
+                    onValueChange={(val) => setFormQty(Math.max(1, val))}
                     className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-black text-center text-slate-900 dark:text-white outline-none"
                   />
                   {Number(formQty) > 1 && (
@@ -3510,15 +3502,12 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                   <label className="font-bold text-slate-700 dark:text-slate-300">
                     Biaya Reparasi (Rp)
                   </label>
-                  <input
-                    type="number"
+                  <NumberInput
                     min={0}
+                    allowEmpty
                     value={progressBiaya === 0 ? '' : progressBiaya}
-                    onFocus={(e) => e.target.select()}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setProgressBiaya(val === '' ? 0 : Math.max(0, parseInt(val, 10) || 0));
-                    }}
+                    selectOnFocus
+                    onValueChange={(val) => setProgressBiaya(Math.max(0, val))}
                     placeholder="0"
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
                   />
@@ -3635,12 +3624,12 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                   <label className="font-bold text-purple-900 dark:text-purple-300">
                     Nilai Harga Jual Defect Disetujui (Rp): *
                   </label>
-                  <input
-                    type="number"
+                  <NumberInput
                     min={0}
                     step={5000}
                     value={accHargaValue}
-                    onChange={(e) => setAccHargaValue(Number(e.target.value) || 0)}
+                    selectOnFocus
+                    onValueChange={(val) => setAccHargaValue(Math.max(0, val))}
                     className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-purple-300 dark:border-purple-700 rounded-xl font-mono text-base font-black text-purple-700 dark:text-purple-300"
                   />
                   <span className="text-[10px] text-purple-700 dark:text-purple-400">
@@ -3855,20 +3844,11 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                   <label className="font-bold text-slate-700 dark:text-slate-300">
                     Jumlah (Qty Pcs)
                   </label>
-                  <input
-                    type="number"
+                  <NumberInput
                     min={1}
                     value={editQty}
-                    onFocus={(e) => e.target.select()}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setEditQty(val === '' ? '' : Math.max(0, parseInt(val, 10) || 0));
-                    }}
-                    onBlur={() => {
-                      if (editQty === '' || Number(editQty) < 1) {
-                        setEditQty(1);
-                      }
-                    }}
+                    selectOnFocus
+                    onValueChange={(val) => setEditQty(Math.max(1, val))}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-bold outline-none"
                   />
                 </div>
@@ -3893,11 +3873,11 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                   <label className="font-bold text-slate-700 dark:text-slate-300">
                     Biaya Reparasi (Rp)
                   </label>
-                  <input
-                    type="number"
+                  <NumberInput
                     min={0}
                     value={editBiayaReparasi}
-                    onChange={(e) => setEditBiayaReparasi(Number(e.target.value) || 0)}
+                    selectOnFocus
+                    onValueChange={(val) => setEditBiayaReparasi(Math.max(0, val))}
                     placeholder="Ongkos reparasi"
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-bold outline-none"
                   />

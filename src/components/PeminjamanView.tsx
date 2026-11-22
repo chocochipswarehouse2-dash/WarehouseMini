@@ -1,4 +1,5 @@
 import { getLocalUsers } from '../utils/localStore';
+import { NumberInput } from './common/NumberInput';
 import React, { useState, useEffect, useMemo, useDeferredValue, useRef } from 'react';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
 import {
@@ -2585,22 +2586,12 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                             >
                               −
                             </button>
-                            <input
-                              type="number"
-                              min="1"
-                              value={item.qty ?? ''}
-                              onFocus={(e) => e.target.select()}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                handleItemChange(item.id, { qty: val === '' ? '' : Math.max(0, parseInt(val, 10) || 0) });
-                              }}
-                              onBlur={(e) => {
-                                const val = e.target.value;
-                                if (val === '' || parseInt(val, 10) < 1) {
-                                  handleItemChange(item.id, { qty: 1 });
-                                }
-                              }}
-                              className="w-full min-w-[30px] text-center bg-transparent border-none outline-none text-xs font-extrabold font-mono text-slate-800 dark:text-slate-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            <NumberInput
+                              min={1}
+                              value={item.qty ?? 1}
+                              selectOnFocus
+                              onValueChange={(val) => handleItemChange(item.id, { qty: Math.max(1, val) })}
+                              className="w-full min-w-[30px] text-center bg-transparent border-none outline-none text-xs font-extrabold font-mono text-slate-800 dark:text-slate-100"
                             />
                             <button
                               type="button"
@@ -4600,11 +4591,11 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                             />
                           </td>
                           <td className="p-2">
-                            <input
-                              type="number"
-                              min="1"
+                            <NumberInput
+                              min={1}
                               value={it.qty || 1}
-                              onChange={(e) => handleUpdateItemInEdit(idx, 'qty', Math.max(1, parseInt(e.target.value, 10) || 1))}
+                              selectOnFocus
+                              onValueChange={(val) => handleUpdateItemInEdit(idx, 'qty', Math.max(1, val))}
                               className="w-full px-1.5 py-1 text-center bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-800 rounded font-mono font-bold text-blue-600 dark:text-blue-400 outline-none focus:border-blue-500"
                             />
                           </td>

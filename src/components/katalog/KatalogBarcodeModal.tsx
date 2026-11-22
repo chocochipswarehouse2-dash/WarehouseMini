@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import { X, Printer, QrCode, Check, Copy, SlidersHorizontal, Plus, Minus, Layers } from 'lucide-react';
 import QRCode from 'qrcode';
 import { KatalogItem, KatalogVariant } from '../../types';
@@ -432,12 +433,11 @@ export const KatalogBarcodeModal: React.FC<KatalogBarcodeModalProps> = ({
                   >
                     <Minus className="w-3.5 h-3.5" />
                   </button>
-                  <input
-                    type="number"
-                    min="0"
+                  <NumberInput
+                    min={0}
                     value={ent.copies}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value, 10) || 0;
+                    selectOnFocus
+                    onValueChange={(val) => {
                       setEntries((prev) =>
                         prev.map((item, i) => (i === idx ? { ...item, copies: Math.max(0, val) } : item))
                       );

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   ChevronLeft,
   Users,
@@ -719,12 +720,11 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
                 >
                   -
                 </button>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min="0"
+                <NumberInput
+                  min={0}
                   value={activeSize.qty_oke || 0}
-                  onChange={(e) => updateActiveSizeTally({ qty_oke: Math.max(0, parseInt(e.target.value) || 0) })}
+                  selectOnFocus
+                  onValueChange={(val) => updateActiveSizeTally({ qty_oke: Math.max(0, val) })}
                   className="flex-1 min-w-0 max-w-[110px] h-11 text-center text-lg font-black font-mono tabular-nums bg-white dark:bg-slate-800 border border-emerald-300 dark:border-emerald-700 rounded-xl text-emerald-700 dark:text-emerald-300 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
                 />
                 <button
@@ -764,12 +764,11 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
                 >
                   -
                 </button>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min="0"
+                <NumberInput
+                  min={0}
                   value={activeSize.qty_noda || 0}
-                  onChange={(e) => updateActiveSizeTally({ qty_noda: Math.max(0, parseInt(e.target.value) || 0) })}
+                  selectOnFocus
+                  onValueChange={(val) => updateActiveSizeTally({ qty_noda: Math.max(0, val) })}
                   className="flex-1 min-w-0 max-w-[110px] h-11 text-center text-lg font-black font-mono tabular-nums bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 rounded-xl text-amber-700 dark:text-amber-300 focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
                 />
                 <button
@@ -809,12 +808,11 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
                 >
                   -
                 </button>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min="0"
+                <NumberInput
+                  min={0}
                   value={activeSize.qty_permak || 0}
-                  onChange={(e) => updateActiveSizeTally({ qty_permak: Math.max(0, parseInt(e.target.value) || 0) })}
+                  selectOnFocus
+                  onValueChange={(val) => updateActiveSizeTally({ qty_permak: Math.max(0, val) })}
                   className="flex-1 min-w-0 max-w-[110px] h-11 text-center text-lg font-black font-mono tabular-nums bg-white dark:bg-slate-800 border border-orange-300 dark:border-orange-700 rounded-xl text-orange-700 dark:text-orange-300 focus:ring-2 focus:ring-orange-500 focus:outline-hidden"
                 />
                 <button
@@ -854,12 +852,11 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
                 >
                   -
                 </button>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min="0"
+                <NumberInput
+                  min={0}
                   value={activeSize.qty_defect || 0}
-                  onChange={(e) => updateActiveSizeTally({ qty_defect: Math.max(0, parseInt(e.target.value) || 0) })}
+                  selectOnFocus
+                  onValueChange={(val) => updateActiveSizeTally({ qty_defect: Math.max(0, val) })}
                   className="flex-1 min-w-0 max-w-[110px] h-11 text-center text-lg font-black font-mono tabular-nums bg-white dark:bg-slate-800 border border-rose-300 dark:border-rose-700 rounded-xl text-rose-700 dark:text-rose-300 focus:ring-2 focus:ring-rose-500 focus:outline-hidden"
                 />
                 <button
@@ -983,16 +980,12 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
                     <label className="block text-[10px] font-bold uppercase text-emerald-700 dark:text-emerald-400 mb-1">
                       Lolos (OKE)
                     </label>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min="0"
+                    <NumberInput
+                      min={0}
+                      allowEmpty
                       value={s.qty_oke === 0 ? '' : s.qty_oke}
                       placeholder="0"
-                      onChange={(e) => {
-                        const val = Math.max(0, parseInt(e.target.value, 10) || 0);
-                        updateSizeTallyByIndex(idx, { qty_oke: val });
-                      }}
+                      onValueChange={(val) => updateSizeTallyByIndex(idx, { qty_oke: Math.max(0, val) })}
                       className="w-full min-h-[40px] text-center font-mono font-black text-sm tabular-nums rounded-xl border border-emerald-300 dark:border-emerald-800 bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
                     />
                   </div>
@@ -1000,16 +993,12 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
                     <label className="block text-[10px] font-bold uppercase text-amber-700 dark:text-amber-400 mb-1">
                       Noda (Cuci)
                     </label>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min="0"
+                    <NumberInput
+                      min={0}
+                      allowEmpty
                       value={s.qty_noda === 0 ? '' : s.qty_noda}
                       placeholder="0"
-                      onChange={(e) => {
-                        const val = Math.max(0, parseInt(e.target.value, 10) || 0);
-                        updateSizeTallyByIndex(idx, { qty_noda: val });
-                      }}
+                      onValueChange={(val) => updateSizeTallyByIndex(idx, { qty_noda: Math.max(0, val) })}
                       className="w-full min-h-[40px] text-center font-mono font-bold text-sm tabular-nums rounded-xl border border-amber-300 dark:border-amber-800 bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-300 focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
                     />
                   </div>
@@ -1017,16 +1006,12 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
                     <label className="block text-[10px] font-bold uppercase text-orange-700 dark:text-orange-400 mb-1">
                       Permak
                     </label>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min="0"
+                    <NumberInput
+                      min={0}
+                      allowEmpty
                       value={s.qty_permak === 0 ? '' : s.qty_permak}
                       placeholder="0"
-                      onChange={(e) => {
-                        const val = Math.max(0, parseInt(e.target.value, 10) || 0);
-                        updateSizeTallyByIndex(idx, { qty_permak: val });
-                      }}
+                      onValueChange={(val) => updateSizeTallyByIndex(idx, { qty_permak: Math.max(0, val) })}
                       className="w-full min-h-[40px] text-center font-mono font-bold text-sm tabular-nums rounded-xl border border-orange-300 dark:border-orange-800 bg-white dark:bg-slate-800 text-orange-700 dark:text-orange-300 focus:ring-2 focus:ring-orange-500 focus:outline-hidden"
                     />
                   </div>
@@ -1034,16 +1019,12 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
                     <label className="block text-[10px] font-bold uppercase text-rose-700 dark:text-rose-400 mb-1">
                       Defect (BS)
                     </label>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min="0"
+                    <NumberInput
+                      min={0}
+                      allowEmpty
                       value={s.qty_defect === 0 ? '' : s.qty_defect}
                       placeholder="0"
-                      onChange={(e) => {
-                        const val = Math.max(0, parseInt(e.target.value, 10) || 0);
-                        updateSizeTallyByIndex(idx, { qty_defect: val });
-                      }}
+                      onValueChange={(val) => updateSizeTallyByIndex(idx, { qty_defect: Math.max(0, val) })}
                       className="w-full min-h-[40px] text-center font-mono font-bold text-sm tabular-nums rounded-xl border border-rose-300 dark:border-rose-800 bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-300 focus:ring-2 focus:ring-rose-500 focus:outline-hidden"
                     />
                   </div>
@@ -1173,16 +1154,12 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
 
                     <td className="px-2 py-1.5 text-center bg-emerald-50/25 dark:bg-emerald-950/10">
                       <div className="flex items-center justify-center gap-1">
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          min="0"
+                        <NumberInput
+                          min={0}
+                          allowEmpty
                           value={s.qty_oke === 0 ? '' : s.qty_oke}
                           placeholder="0"
-                          onChange={(e) => {
-                            const val = Math.max(0, parseInt(e.target.value, 10) || 0);
-                            updateSizeTallyByIndex(idx, { qty_oke: val });
-                          }}
+                          onValueChange={(val) => updateSizeTallyByIndex(idx, { qty_oke: Math.max(0, val) })}
                           className="w-16 text-center font-mono font-black tabular-nums text-xs py-1.5 px-1 rounded-lg border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
                         />
                         <button
@@ -1200,46 +1177,32 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
                     </td>
 
                     <td className="px-2 py-1.5 text-center bg-amber-50/25 dark:bg-amber-950/10">
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        min="0"
+                      <NumberInput
+                        min={0}
+                        allowEmpty
                         value={s.qty_noda === 0 ? '' : s.qty_noda}
                         placeholder="0"
-                        onChange={(e) => {
-                          const val = Math.max(0, parseInt(e.target.value, 10) || 0);
-                          updateSizeTallyByIndex(idx, { qty_noda: val });
-                        }}
+                        onValueChange={(val) => updateSizeTallyByIndex(idx, { qty_noda: Math.max(0, val) })}
                         className="w-14 text-center font-mono font-bold tabular-nums text-xs py-1.5 px-1 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-300 focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
                       />
                     </td>
-
                     <td className="px-2 py-1.5 text-center bg-orange-50/25 dark:bg-orange-950/10">
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        min="0"
+                      <NumberInput
+                        min={0}
+                        allowEmpty
                         value={s.qty_permak === 0 ? '' : s.qty_permak}
                         placeholder="0"
-                        onChange={(e) => {
-                          const val = Math.max(0, parseInt(e.target.value, 10) || 0);
-                          updateSizeTallyByIndex(idx, { qty_permak: val });
-                        }}
+                        onValueChange={(val) => updateSizeTallyByIndex(idx, { qty_permak: Math.max(0, val) })}
                         className="w-14 text-center font-mono font-bold tabular-nums text-xs py-1.5 px-1 rounded-lg border border-orange-300 dark:border-orange-700 bg-white dark:bg-slate-800 text-orange-700 dark:text-orange-300 focus:ring-2 focus:ring-orange-500 focus:outline-hidden"
                       />
                     </td>
-
                     <td className="px-2 py-1.5 text-center bg-rose-50/25 dark:bg-rose-950/10">
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        min="0"
+                      <NumberInput
+                        min={0}
+                        allowEmpty
                         value={s.qty_defect === 0 ? '' : s.qty_defect}
                         placeholder="0"
-                        onChange={(e) => {
-                          const val = Math.max(0, parseInt(e.target.value, 10) || 0);
-                          updateSizeTallyByIndex(idx, { qty_defect: val });
-                        }}
+                        onValueChange={(val) => updateSizeTallyByIndex(idx, { qty_defect: Math.max(0, val) })}
                         className="w-14 text-center font-mono font-bold tabular-nums text-xs py-1.5 px-1 rounded-lg border border-rose-300 dark:border-rose-700 bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-300 focus:ring-2 focus:ring-rose-500 focus:outline-hidden"
                       />
                     </td>

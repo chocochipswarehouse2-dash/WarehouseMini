@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   Map as MapIcon,
   Plus,
@@ -1325,33 +1326,34 @@ export const Warehouse2DFloorplanEditor: React.FC<Warehouse2DFloorplanEditorProp
                     </label>
                     <label className="space-y-1">
                       <span className="text-[11px] font-bold text-slate-500">Mulai Nomor</span>
-                      <input
-                        type="number"
+                      <NumberInput
                         min={1}
                         value={seqStart}
-                        onChange={(e) => setSeqStart(Math.max(1, Number(e.target.value) || 1))}
+                        selectOnFocus
+                        onValueChange={(val) => setSeqStart(Math.max(1, val))}
                         className="w-full px-2.5 py-1.5 font-mono rounded-lg bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
                       />
                     </label>
                     <label className="space-y-1">
                       <span className="text-[11px] font-bold text-slate-500">Slot per Rak</span>
-                      <input
-                        type="number"
+                      <NumberInput
                         min={1}
                         max={50}
                         value={seqSlotsPerRack}
-                        onChange={(e) => setSeqSlotsPerRack(Math.max(1, Number(e.target.value) || 1))}
+                        selectOnFocus
+                        onValueChange={(val) => setSeqSlotsPerRack(Math.max(1, val))}
                         className="w-full px-2.5 py-1.5 font-mono rounded-lg bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
                       />
                     </label>
                     <label className="space-y-1">
                       <span className="text-[11px] font-bold text-slate-500">Digit Pad</span>
-                      <input
-                        type="number"
+                      <NumberInput
                         min={1}
                         max={5}
+                        emptyFallback={3}
                         value={seqPad}
-                        onChange={(e) => setSeqPad(Math.max(1, Number(e.target.value) || 3))}
+                        selectOnFocus
+                        onValueChange={(val) => setSeqPad(Math.max(1, val))}
                         className="w-full px-2.5 py-1.5 font-mono rounded-lg bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
                       />
                     </label>
@@ -1607,14 +1609,13 @@ export const Warehouse2DFloorplanEditor: React.FC<Warehouse2DFloorplanEditorProp
                     return (
                       <label key={fld.key} className="space-y-0.5">
                         <span className="text-[10px] font-bold text-slate-500">{fld.label}</span>
-                        <input
-                          type="number"
+                        <NumberInput
                           step={fld.step}
+                          allowDecimal
+                          allowNegative={!['w', 'd', 'h'].includes(fld.key)}
                           disabled={lockedField}
                           value={Number((primarySelectedObj as any)[fld.key] ?? 0)}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value);
-                            if (isNaN(val)) return;
+                          onValueChange={(val) => {
                             if (['w', 'd', 'h'].includes(fld.key) && val <= 0.01) return;
                             handlePatchObj(primarySelectedObj.id, { [fld.key]: val });
                           }}

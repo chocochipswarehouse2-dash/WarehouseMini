@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { NumberInput } from './common/NumberInput';
 import {
   ClipboardCheck,
   CheckCircle2,
@@ -1999,28 +2000,12 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                           >
                             -
                           </button>
-                          <input
-                            type="number"
-                            min="1"
+                          <NumberInput
+                            min={1}
                             required
-                            value={variant.qty_diperiksa === 0 ? '' : variant.qty_diperiksa}
-                            onFocus={(e) => e.target.select()}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              if (val === '') {
-                                handleQtyDiperiksaChange(variant.id, 0);
-                              } else {
-                                const num = parseInt(val, 10);
-                                if (!isNaN(num)) {
-                                  handleQtyDiperiksaChange(variant.id, Math.max(0, num));
-                                }
-                              }
-                            }}
-                            onBlur={() => {
-                              if (!variant.qty_diperiksa || variant.qty_diperiksa <= 0) {
-                                handleQtyDiperiksaChange(variant.id, 1);
-                              }
-                            }}
+                            value={variant.qty_diperiksa || 1}
+                            selectOnFocus
+                            onValueChange={(val) => handleQtyDiperiksaChange(variant.id, Math.max(1, val))}
                             placeholder="1"
                             className={`w-32 text-center px-3 py-2 rounded-xl border font-black text-lg outline-none transition-all ${
                               isReject
@@ -3434,33 +3419,19 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                     <span className="text-[10px] text-slate-500 dark:text-slate-400 block mb-1">
                       Qty Diperiksa
                     </span>
-                    <input
-                      type="number"
-                      min="1"
-                      value={editQtyDiperiksa === 0 ? '' : editQtyDiperiksa}
-                      onFocus={(e) => e.target.select()}
-                      onChange={(e) => {
-                        const raw = e.target.value;
-                        const val = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
-                        setEditQtyDiperiksa(val);
+                    <NumberInput
+                      min={1}
+                      value={editQtyDiperiksa || 1}
+                      selectOnFocus
+                      onValueChange={(val) => {
+                        const qty = Math.max(1, val);
+                        setEditQtyDiperiksa(qty);
                         if (editStatus === 'OKE') {
-                          setEditQtyOke(val);
+                          setEditQtyOke(qty);
                           setEditQtyReject(0);
                         } else {
-                          setEditQtyReject(val);
+                          setEditQtyReject(qty);
                           setEditQtyOke(0);
-                        }
-                      }}
-                      onBlur={() => {
-                        if (!editQtyDiperiksa || editQtyDiperiksa < 1) {
-                          setEditQtyDiperiksa(1);
-                          if (editStatus === 'OKE') {
-                            setEditQtyOke(1);
-                            setEditQtyReject(0);
-                          } else {
-                            setEditQtyReject(1);
-                            setEditQtyOke(0);
-                          }
                         }
                       }}
                       className="w-full px-2.5 py-1.5 text-xs text-center font-bold rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
@@ -3470,18 +3441,11 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                     <span className="text-[10px] text-slate-500 dark:text-slate-400 block mb-1">
                       Qty OKE
                     </span>
-                    <input
-                      type="number"
-                      min="0"
+                    <NumberInput
+                      min={0}
                       value={editQtyOke}
-                      onFocus={(e) => e.target.select()}
-                      onChange={(e) => {
-                        const raw = e.target.value;
-                        setEditQtyOke(raw === '' ? ('' as any) : Math.max(0, parseInt(raw, 10) || 0));
-                      }}
-                      onBlur={() => {
-                        if (editQtyOke === '') setEditQtyOke(0);
-                      }}
+                      selectOnFocus
+                      onValueChange={(val) => setEditQtyOke(Math.max(0, val))}
                       className="w-full px-2.5 py-1.5 text-xs text-center font-bold rounded-lg border border-emerald-300 dark:border-emerald-700 bg-emerald-50/50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300"
                     />
                   </div>
@@ -3489,18 +3453,11 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                     <span className="text-[10px] text-slate-500 dark:text-slate-400 block mb-1">
                       Qty Reject
                     </span>
-                    <input
-                      type="number"
-                      min="0"
+                    <NumberInput
+                      min={0}
                       value={editQtyReject}
-                      onFocus={(e) => e.target.select()}
-                      onChange={(e) => {
-                        const raw = e.target.value;
-                        setEditQtyReject(raw === '' ? ('' as any) : Math.max(0, parseInt(raw, 10) || 0));
-                      }}
-                      onBlur={() => {
-                        if (editQtyReject === '') setEditQtyReject(0);
-                      }}
+                      selectOnFocus
+                      onValueChange={(val) => setEditQtyReject(Math.max(0, val))}
                       className="w-full px-2.5 py-1.5 text-xs text-center font-bold rounded-lg border border-rose-300 dark:border-rose-700 bg-rose-50/50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300"
                     />
                   </div>

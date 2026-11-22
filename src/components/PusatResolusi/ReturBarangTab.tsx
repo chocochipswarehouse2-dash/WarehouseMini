@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   RefreshCcw,
   Plus,
@@ -1920,13 +1921,13 @@ _Pusat Resolusi WMS Chocochips_`;
                         </div>
                         <div className="col-span-1">
                           <label className="block text-[10px] font-bold text-slate-400 uppercase">Qty</label>
-                          <input
-                            type="number"
+                          <NumberInput
                             min={1}
                             value={item.qty}
-                            onChange={e =>
+                            selectOnFocus
+                            onValueChange={(val) =>
                               setProdukPesanan(prev =>
-                                prev.map(i => (i.id === item.id ? { ...i, qty: Math.max(1, Number(e.target.value) || 1) } : i))
+                                prev.map(i => (i.id === item.id ? { ...i, qty: Math.max(1, val) } : i))
                               )
                             }
                             className="w-full px-1.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-center font-bold text-slate-900 dark:text-white"
@@ -2071,13 +2072,13 @@ _Pusat Resolusi WMS Chocochips_`;
                           </div>
                           <div className="col-span-2">
                             <label className="block text-[10px] font-bold text-slate-400 uppercase">Qty *</label>
-                            <input
-                              type="number"
+                            <NumberInput
                               min={1}
                               value={item.qty}
-                              onChange={e =>
+                              selectOnFocus
+                              onValueChange={(val) =>
                                 setProdukPengganti(prev =>
-                                  prev.map(i => (i.id === item.id ? { ...i, qty: Math.max(1, Number(e.target.value) || 1) } : i))
+                                  prev.map(i => (i.id === item.id ? { ...i, qty: Math.max(1, val) } : i))
                                 )
                               }
                               className="w-full px-1.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-center font-bold text-slate-900 dark:text-white"
@@ -2168,10 +2169,11 @@ _Pusat Resolusi WMS Chocochips_`;
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                       Selisih Harga yang Harus Dibayar (Rp) <span className="text-[10px] font-normal text-slate-400">(Opsional)</span>
                     </label>
-                    <input
-                      type="number"
+                    <NumberInput
+                      min={0}
+                      allowEmpty
                       value={selisihHarga}
-                      onChange={e => setSelisihHarga(e.target.value)}
+                      onStringValueChange={val => setSelisihHarga(val)}
                       placeholder="Bisa dikosongkan di awal (Cth: 50000)"
                       className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono font-bold text-slate-900 dark:text-white"
                     />
@@ -2181,10 +2183,11 @@ _Pusat Resolusi WMS Chocochips_`;
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                       Ongkir yang Perlu Dibayar (Rp) <span className="text-[10px] font-normal text-slate-400">(Opsional)</span>
                     </label>
-                    <input
-                      type="number"
+                    <NumberInput
+                      min={0}
+                      allowEmpty
                       value={ongkirDibayar}
-                      onChange={e => setOngkirDibayar(e.target.value)}
+                      onStringValueChange={val => setOngkirDibayar(val)}
                       placeholder="Bisa dikosongkan di awal (Cth: 18000)"
                       className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono font-bold text-slate-900 dark:text-white"
                     />
@@ -3238,10 +3241,11 @@ _Pusat Resolusi WMS Chocochips_`;
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                   Selisih Harga yang Harus Dibayar (Rp)
                 </label>
-                <input
-                  type="number"
+                <NumberInput
+                  min={0}
+                  allowEmpty
                   value={paymentModal.selisih}
-                  onChange={e => setPaymentModal(prev => (prev ? { ...prev, selisih: e.target.value } : null))}
+                  onStringValueChange={val => setPaymentModal(prev => (prev ? { ...prev, selisih: val } : null))}
                   placeholder="Cth: 50000"
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono font-bold text-slate-900 dark:text-white"
                 />
@@ -3250,10 +3254,11 @@ _Pusat Resolusi WMS Chocochips_`;
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                   Ongkir yang Perlu Dibayar (Rp)
                 </label>
-                <input
-                  type="number"
+                <NumberInput
+                  min={0}
+                  allowEmpty
                   value={paymentModal.ongkir}
-                  onChange={e => setPaymentModal(prev => (prev ? { ...prev, ongkir: e.target.value } : null))}
+                  onStringValueChange={val => setPaymentModal(prev => (prev ? { ...prev, ongkir: val } : null))}
                   placeholder="Cth: 18000"
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono font-bold text-slate-900 dark:text-white"
                 />

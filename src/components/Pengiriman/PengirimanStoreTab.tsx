@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   Store,
   Calendar,
@@ -1972,14 +1973,11 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                           Qty &amp; Satuan <span className="text-rose-500">*</span>
                         </label>
                         <div className="flex items-center gap-1.5">
-                          <input
-                            type="number"
-                            min="1"
+                          <NumberInput
+                            min={1}
                             value={row.qty}
-                            onChange={(e) => {
-                              const val = e.target.value === '' ? '' : Math.max(1, Number(e.target.value));
-                              handleUpdateRow(index, 'qty', val);
-                            }}
+                            selectOnFocus
+                            onValueChange={(val) => handleUpdateRow(index, 'qty', Math.max(1, val))}
                             className="flex-1 min-w-0 px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-center text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
                           />
                           <select
@@ -2464,9 +2462,26 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                               >
                                 <Minus className="w-3 h-3" />
                               </button>
-                              <span className="text-[11px] font-extrabold text-amber-900 dark:text-amber-200 min-w-[46px] text-center">
-                                {rep.total_koli} Koli
-                              </span>
+                              <div className="inline-flex items-center gap-1">
+                                <NumberInput
+                                  min={1}
+                                  max={9999}
+                                  value={rep.total_koli}
+                                  selectOnFocus
+                                  commitOnBlurOnly
+                                  disabled={confirmingKoliReportId === rep.id}
+                                  onValueChange={(val) => {
+                                    if (val !== rep.total_koli) {
+                                      handleQuickUpdateDispatchedKoli(rep, Math.max(1, val));
+                                    }
+                                  }}
+                                  aria-label="Jumlah koli aktual"
+                                  className="w-11 h-6 text-center font-mono text-[11px] font-extrabold text-amber-900 dark:text-amber-200 bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500/40 disabled:opacity-40 tabular-nums"
+                                />
+                                <span className="text-[11px] font-extrabold text-amber-900 dark:text-amber-200">
+                                  Koli
+                                </span>
+                              </div>
                               <button
                                 type="button"
                                 disabled={confirmingKoliReportId === rep.id}
@@ -3973,16 +3988,12 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                           <div className="sm:col-span-3 grid grid-cols-2 gap-1.5">
                             <div className="space-y-1">
                               <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400">Qty</label>
-                              <input
-                                type="number"
+                              <NumberInput
                                 min={1}
                                 value={item.qty || 1}
-                                onChange={(e) =>
-                                  handleUpdateEditItem(
-                                    idx,
-                                    'qty',
-                                    Math.max(1, parseInt(e.target.value) || 1)
-                                  )
+                                selectOnFocus
+                                onValueChange={(val) =>
+                                  handleUpdateEditItem(idx, 'qty', Math.max(1, val))
                                 }
                                 className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-center outline-none"
                               />
@@ -4067,16 +4078,12 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                               <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
                                 Jumlah Koli Aktual:
                               </label>
-                              <input
-                                type="number"
+                              <NumberInput
                                 min={1}
                                 value={rowKoli}
-                                onChange={(e) =>
-                                  handleUpdateEditItem(
-                                    idx,
-                                    'hitung_koli',
-                                    Math.max(1, parseInt(e.target.value) || 1)
-                                  )
+                                selectOnFocus
+                                onValueChange={(val) =>
+                                  handleUpdateEditItem(idx, 'hitung_koli', Math.max(1, val))
                                 }
                                 className="w-20 px-2 py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-center outline-none"
                               />
@@ -5010,11 +5017,11 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                 {/* Qty per Toko */}
                 <div className="space-y-1">
                   <label className="font-bold text-slate-700 dark:text-slate-300">Qty Tiap Toko</label>
-                  <input
-                    type="number"
+                  <NumberInput
                     min={1}
                     value={multiStoreQty}
-                    onChange={(e) => setMultiStoreQty(Math.max(1, parseInt(e.target.value) || 1))}
+                    selectOnFocus
+                    onValueChange={(val) => setMultiStoreQty(Math.max(1, val))}
                     className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-center outline-none"
                   />
                 </div>

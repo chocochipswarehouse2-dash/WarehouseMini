@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { NumberInput } from '../common/NumberInput';
 import {
   Scissors,
   Wrench,
@@ -1631,12 +1632,12 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
                       <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
                         Qty *
                       </label>
-                      <input
-                        type="number"
+                      <NumberInput
                         min={1}
                         required
                         value={item.qty ?? 1}
-                        onChange={(e) => handleUpdateItem(idx, { qty: Number(e.target.value) || 1 })}
+                        selectOnFocus
+                        onValueChange={(val) => handleUpdateItem(idx, { qty: Math.max(1, val) })}
                         className="w-full px-2 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white font-bold text-xs shadow-2xs text-center"
                       />
                     </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { NumberInput } from './common/NumberInput';
 import { 
   Calendar, Briefcase, Plus, X, UploadCloud, FileText, Image as ImageIcon, 
   CheckCircle2, ChevronLeft, ChevronRight, Clock, MapPin, User, Tag, 
@@ -4598,33 +4599,33 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                         Estimasi Koli / Qty
                       </label>
                       <div className="flex gap-2">
-                        <input
-                          type="number"
+                        <NumberInput
                           min={0}
+                          allowEmpty
                           placeholder="Koli"
                           value={editingEvent.distribution_info?.total_koli ?? ''}
-                          onChange={(e) =>
+                          onStringValueChange={(raw) =>
                             setEditingEvent({
                               ...editingEvent,
                               distribution_info: {
                                 ...editingEvent.distribution_info,
-                                total_koli: e.target.value ? Number(e.target.value) : undefined,
+                                total_koli: raw === '' ? undefined : Number(raw),
                               },
                             })
                           }
                           className="w-1/2 px-2.5 py-2 text-xs font-mono rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 outline-none"
                         />
-                        <input
-                          type="number"
+                        <NumberInput
                           min={0}
+                          allowEmpty
                           placeholder="Pcs"
                           value={editingEvent.distribution_info?.total_qty ?? ''}
-                          onChange={(e) =>
+                          onStringValueChange={(raw) =>
                             setEditingEvent({
                               ...editingEvent,
                               distribution_info: {
                                 ...editingEvent.distribution_info,
-                                total_qty: e.target.value ? Number(e.target.value) : undefined,
+                                total_qty: raw === '' ? undefined : Number(raw),
                               },
                             })
                           }
@@ -5403,14 +5404,13 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast, in
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Progres (%)</label>
-                  <input
-                    type="number"
+                  <NumberInput
                     min={0}
                     max={100}
                     value={editingProject.progress ?? 0}
-                    onChange={e => {
-                      const raw = parseInt(e.target.value, 10);
-                      const clamped = Number.isNaN(raw) ? 0 : Math.max(0, Math.min(100, raw));
+                    selectOnFocus
+                    onValueChange={(val) => {
+                      const clamped = Math.max(0, Math.min(100, val));
                       setEditingProject({ ...editingProject, progress: clamped });
                     }}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono tabular-nums"
