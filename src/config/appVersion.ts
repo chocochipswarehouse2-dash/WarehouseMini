@@ -15,11 +15,11 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.25.0",
-  "versionCode": 450,
+  "version": "v2.26.0",
+  "versionCode": 460,
   "buildDate": "22 November 2026",
-  "buildHash": "wms-261122-v450-1438",
-  "releaseTitle": "WMS v2.25.0 — Memori Permanen Global & Full-Coverage Asisten AI WMS",
+  "buildHash": "wms-261122-v460-2343",
+  "releaseTitle": "WMS v2.26.0 — Pembaruan Sistem & Optimasi Operasional",
   "releaseNotes": [
     "Fondasi Memori Permanen Global semua modul di docs/memory/ (Feature Registry, Changelog & AI Backlog) + pembersihan GEMINI.md",
     "Sistem AI Self-Reporting Capability Gap (Supabase + panel Backlog Dev + CLI pull_ai_dev_reports.cjs)",
@@ -29,6 +29,19 @@ export const CURRENT_APP_VERSION_INFO: VersionInfo = {
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.25.0",
+    "versionCode": 450,
+    "buildDate": "22 November 2026",
+    "buildHash": "wms-261122-v450-1438",
+    "releaseTitle": "WMS v2.25.0 — Memori Permanen Global & Full-Coverage Asisten AI WMS",
+    "releaseNotes": [
+      "Fondasi Memori Permanen Global semua modul di docs/memory/ (Feature Registry, Changelog & AI Backlog) + pembersihan GEMINI.md",
+      "Sistem AI Self-Reporting Capability Gap (Supabase + panel Backlog Dev + CLI pull_ai_dev_reports.cjs)",
+      "Upgrade Full-Coverage Asisten AI: 10 tool lintas modul (SOP/FAQ QnA, Loading Dock, Distribusi/Pengiriman, Order Channels, SO/Putaway, Store Help, Ringkasan Eksekutif, Validasi Master Produk, Navigasi 1-Klik) & Export CSV (.csv)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.24.9",
     "versionCode": 449,
@@ -116,19 +129,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Pilihan mode Outlet Toko (DealPOS) vs Rak Fisik Gudang",
       "Penyempurnaan layout stiker thermal 50x20mm Code128 & QR Code sesuai standard",
       "Pratinjau label WYSIWYG realistis"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.24.2",
-    "versionCode": 442,
-    "buildDate": "21 November 2026",
-    "buildHash": "wms-261121-v442-0614",
-    "releaseTitle": "WMS v2.24.2 — Live Chat Full-Screen Edge-to-Edge",
-    "releaseNotes": [
-      "Menghapus seluruh margin pinggir, padding ganda, dan bingkai kartu pada Live Chat agar tampil full-screen edge-to-edge seperti aplikasi chat asli di seluler maupun desktop",
-      "Ruang percakapan aktif di seluler kini tampil layar penuh (menutupi bilah navigasi bawah & header ganda) dengan safe-area top/bottom",
-      "Proporsi panel chat desktop diperluas (sidebar 25% & area chat 75% di layar xl+) serta dukungan edge-to-edge penuh di Panel Pendamping"
     ],
     "minSupportedVersion": "v2.0.0"
   }

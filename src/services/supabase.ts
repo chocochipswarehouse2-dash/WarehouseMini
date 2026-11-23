@@ -5561,7 +5561,8 @@ export function extractPickingItemFromRow(row: any): PickingListItem | null {
   }
 
   const rawTujuan = String(row.tujuan || row.destination || row.channel || 'Marketplace').trim();
-  const isStoreTujuan = /store|toko|outlet/i.test(rawTujuan);
+  const isWarehousePickingTujuan = /manual\s*shipment|alter|marketplace|gudang|warehouse|retur/i.test(rawTujuan);
+  const isStoreTujuan = !isWarehousePickingTujuan && /store|toko|outlet/i.test(rawTujuan);
   let rawLokasi = String(row.lokasi || row.location || row.rak || '').trim();
 
   if (isStoreTujuan) {
@@ -6712,7 +6713,8 @@ export async function createPickingSuratJalanSupabase(
     const formattedNama = rawNama || cleanSku;
     const safeNumericId = baseTime * 1000 + (idx % 1000);
 
-    const isStoreTujuan = /store|toko|outlet/i.test(cleanTujuan);
+    const isWarehousePickingTujuan = /manual\s*shipment|alter|marketplace|gudang|warehouse|retur/i.test(cleanTujuan);
+    const isStoreTujuan = !isWarehousePickingTujuan && /store|toko|outlet/i.test(cleanTujuan);
     let itemLokasi = (it.lokasi || '').trim();
     if (!itemLokasi || itemLokasi === '-' || itemLokasi === '--' || itemLokasi === 'KOSONG' || itemLokasi === 'A-01') {
       if (isStoreTujuan) {
@@ -6776,10 +6778,11 @@ export async function createPickingSuratJalanSupabase(
     throw err;
   }
 
-  // 3. Dispatch picking update event if in browser
+  // 3. Dispatch picking update events if in browser
   if (typeof window !== 'undefined') {
     try {
       window.dispatchEvent(new CustomEvent('picking_list_updated', { detail: newItems }));
+      window.dispatchEvent(new CustomEvent('wms_picking_list_updated', { detail: newItems }));
     } catch {}
   }
 

@@ -975,7 +975,26 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     const handleItemSyncQueueChange = () => {
       setPendingItemSyncCount(getPendingPickingItemSyncCount());
     };
-    const handleListUpdated = () => {
+    const handleListUpdated = (ev?: Event) => {
+      const detail = (ev as CustomEvent)?.detail;
+      if (Array.isArray(detail) && detail.length > 0) {
+        const addedSjs = new Set(
+          detail
+            .map((it: any) => String(it?.no_sj || '').toUpperCase().trim())
+            .filter(Boolean)
+        );
+        setRawItems((prev) => {
+          const remaining = prev.filter(
+            (it) => !addedSjs.has(String(it.no_sj || '').toUpperCase().trim())
+          );
+          return [...detail, ...remaining];
+        });
+      } else if (detail && typeof detail === 'object' && detail.removedNoSj) {
+        const removedKey = String(detail.removedNoSj).toUpperCase().trim();
+        setRawItems((prev) =>
+          prev.filter((it) => String(it.no_sj || '').toUpperCase().trim() !== removedKey)
+        );
+      }
       setDraftsRevision((r) => r + 1);
     };
 
@@ -1391,7 +1410,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         ? item.nama_produk
         : (catMatch?.p || (catMatch as any)?.nama_produk || catMatch?.n || item.nama_produk);
 
-      const isStoreItem = /store|toko|outlet/i.test(item.tujuan || '');
+      const isWarehousePickingTujuan = /manual\s*shipment|alter|marketplace|gudang|warehouse|retur/i.test(item.tujuan || '');
+      const isStoreItem = !isWarehousePickingTujuan && /store|toko|outlet/i.test(item.tujuan || '');
       let effectiveLokasi = (item.lokasi || '').trim();
       if (!effectiveLokasi || effectiveLokasi === '-' || effectiveLokasi === '--' || effectiveLokasi === 'KOSONG') {
         if (isStoreItem) {
@@ -1614,6 +1634,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       }
       if (
         noSj.startsWith('MS-') ||
+        /^MS[A-Z0-9]+-/.test(noSj) ||
+        noSj.startsWith('AR-') ||
         noSj.startsWith('ALT-') ||
         noSj.startsWith('MNL-') ||
         tujuan.includes('MANUAL SHIPMENT') ||

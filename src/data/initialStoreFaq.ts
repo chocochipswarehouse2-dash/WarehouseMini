@@ -546,7 +546,46 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
 
     keywords: ['sort', 'urutkan', 'sorting', 'terlama', 'terbaru', 'fifo', 'urut toko', 'per toko', 'urut customer', 'urut kurir', 'rekap pesanan', 'rekap retur', 'tabel', 'kartu', 'aksi'],
     view_count: 95
+  },
+
+  {
+    id: 'faq-auto-picking-marketplace-submit',
+    category: 'manual_shipment',
+    is_pinned: true,
+    question: 'Apakah produk dengan fulfillment Marketplace pada Manual Shipment / Alter otomatis memunculkan Tugas Picking?',
+    answer: 'Ya! Setiap kali pesanan Manual Shipment atau Request Alteration & Repair (sumber Stok Gudang) disubmit, seluruh item produk dengan fulfillment Marketplace / Gudang otomatis membuat Tugas Picking di menu Tugas Picking (kategori Manual shipment/alter) lengkap dengan lokasi rak gudang live dari database.',
+    target_audience: 'all',
+
+    // PERSPEKTIF ADMIN GUDANG
+    answer_admin: 'Begitu pesanan Manual Shipment atau Alter & Repair (Stok Gudang) disubmit, sistem otomatis menyaring item dengan fulfillment Marketplace/Gudang (item fulfillment Store dikecualikan), mengambil lokasi rak fisik prioritas dari Supabase (Warehouse -> Kolian -> Blok F, mengecualikan Perbaikan/Anomali), dan langsung membuat Tugas Picking di menu Tugas Picking ➔ kategori "Manual shipment/alter". Jika pesanan diedit, ditandai Sold Out, atau dibatalkan sebelum dipick (status masih PENDING / qty_picked = 0), tugas picking otomatis disinkronkan/dihapus. Tugas yang sudah mulai dipick tidak akan tertimpa otomatis.',
+    action_steps_admin: [
+      { step: 1, title: 'Buka Menu Tugas Picking', desc: 'Masuk ke menu Tugas Picking dan pilih filter kategori "Manual shipment/alter".' },
+      { step: 2, title: 'Kerjakan Antrean Otomatis', desc: 'Setiap pesanan baru dengan item Marketplace/Gudang otomatis muncul sesuai No. Pesanan (MS... / AR-WH-...) lengkap dengan rekomendasi rak fisik.' },
+      { step: 3, title: 'Sinkron Aman Saat Edit/Batal', desc: 'Jika pesanan diedit atau dibatalkan sebelum discan picker, tugas picking PENDING otomatis diperbarui atau dihapus. Tugas yang sudah berjalan tetap terjaga progresnya.' }
+    ],
+    button_badges_admin: [
+      { label: 'Tugas Picking', color: 'indigo', icon: 'PackageCheck' },
+      { label: 'Manual shipment/alter', color: 'emerald', icon: 'Layers' }
+    ],
+    admin_notes: 'ℹ️ Item fulfillment Store tidak dimasukkan ke antrean Tugas Picking gudang karena barang dikirim oleh Store terkait melalui alur Live Chat WMS.',
+
+    // PERSPEKTIF TIM STORE / OUTLET
+    answer_store: 'Ya! Saat Tim Store mensubmit pesanan Manual Shipment yang memilih fulfillment "Marketplace" (atau membuat tiket Alter & Repair dengan sumber "Ambil Stok Gudang"), sistem otomatis meneruskan item tersebut ke antrean Tugas Picking tim gudang. Tim Store tidak perlu melakukan langkah tambahan apa pun untuk memicu picking gudang.',
+    action_steps_store: [
+      { step: 1, title: 'Pilih Fulfillment "Marketplace" / "Stok Gudang"', desc: 'Pada form Manual Shipment pilih Fulfillment "Marketplace" untuk item yang diambil dari gudang, atau pilih "Ambil Stok Gudang" pada form Alter & Repair.' },
+      { step: 2, title: 'Klik [Submit Pesanan]', desc: 'Begitu pesanan berhasil disubmit, antrean picking otomatis masuk ke perangkat tim picker gudang.' },
+      { step: 3, title: 'Pantau di Rekap Pesanan & Live Chat WMS', desc: 'Anda cukup memantau progres pemrosesan, No. SJ Delivery (MKT ➔ Store), dan nomor resi di Rekap Pesanan atau Grup Live Chat WMS.' }
+    ],
+    button_badges_store: [
+      { label: 'Fulfillment: Marketplace', color: 'emerald', icon: 'Store' },
+      { label: 'Submit Pesanan', color: 'indigo', icon: 'Send' }
+    ],
+    store_notes: '💡 Jika dalam 1 pesanan ada item dari Marketplace dan item dari Store (Split Fulfil), hanya item Marketplace yang otomatis masuk ke Tugas Picking Gudang; item Store tetap perlu Anda siapkan dan kirim dari toko.',
+
+    keywords: ['auto picking', 'tugas picking', 'otomatis', 'marketplace', 'manual shipment', 'alter', 'submit pesanan', 'picking list', 'stok gudang'],
+    view_count: 100
   }
 ];
+
 
 

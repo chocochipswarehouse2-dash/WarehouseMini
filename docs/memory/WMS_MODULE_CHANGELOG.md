@@ -4,6 +4,17 @@
 
 ---
 
+## v2.26.0 — 22 November 2026
+**Modul**: Manual Shipment, Alteration & Repair, Tugas Picking (`gasManualShipment.ts`, `ManualShipmentTab.tsx`, `AlterationRepairTab.tsx`, `PickingTasksView.tsx`, `supabase.ts`, `initialStoreFaq.ts`)
+- **Auto-Create Tugas Picking untuk Item Fulfillment Marketplace / Gudang**:
+  - Menambahkan `syncAutoPickingTaskForManualOrder`, `isMarketplaceFulfillmentItem`, dan `removePendingAutoPickingTask` di `src/services/gasManualShipment.ts`.
+  - Setiap submit pesanan **Manual Shipment** yang memiliki item ber-fulfillment `Marketplace` (atau `Gudang`/`Warehouse`) dan setiap submit **Alteration & Repair** bersumber `Stok Gudang` otomatis membuat baris Tugas Picking di Supabase `picking_list` (kategori `Manual shipment/alter`) dengan agregasi qty per SKU, lookup nama & size Master Produk (`lookupProductBySku`), dan lookup live lokasi rak prioritas (`isWarehouseLocation` + `getPickingPriority`, mengecualikan Perbaikan & Anomali).
+  - Sinkronisasi aman saat **Edit**, **Sold Out / Pulihkan**, **Batalkan**, dan **Hapus** pesanan: hanya memperbarui/menghapus tugas yang masih `PENDING` (`qty_picked = 0`), serta melindungi penuh tugas yang sudah `SEDANG PICKING` atau `SELESAI`.
+  - Memperbarui klasifikasi kategori `MANUAL_ALTER` di `PickingTasksView.tsx` agar mencakup prefix `MS{KODE}-` dan `AR-`, menjaga guard `isStoreTujuan` agar tugas picking gudang tidak tertimpa label store, serta menyinkronkan event `wms_picking_list_updated` agar tab Tugas Picking keep-alive langsung termuat tanpa refresh.
+  - Menyinkronkan panduan role-aware di `src/data/initialStoreFaq.ts` (perspektif terpisah Admin Gudang & Tim Store).
+
+---
+
 ## v2.25.0 — 22 November 2026
 **Fokus**: Fondasi Memori Permanen Global Semua Modul & Upgrade Full-Coverage Asisten AI WMS
 - **Memori Permanen Global & Sinkronisasi Lintas Agen GitHub (`docs/memory/`, `docs/plans/`, `docs/PENDING_PLANS.md`, `GEMINI.md`, `tools/bump_version.cjs`)**:

@@ -1,8 +1,17 @@
-import { ManualShipmentOrder, ManualShipmentHistoryLog, ManualShipmentItem } from '../types';
-import { supabaseFetch } from './supabase';
+import { ManualShipmentOrder, ManualShipmentHistoryLog, ManualShipmentItem, ProductItem } from '../types';
+import {
+  supabaseFetch,
+  createPickingSuratJalanSupabase,
+  fetchStockForSkus,
+  isWarehouseLocation,
+  getPickingPriority,
+  invalidatePickingListCache,
+  StockRealtimeItem,
+} from './supabase';
 import { hasValidArData, orderNeedsResi } from '../utils/alterationUtils';
 import { globalRealtimeStore } from './store';
 import { lookupProductBySku } from '../utils/productLookup';
+import { getStoreCode } from '../utils/transactionGenerator';
 
 export const DEFAULT_MANUAL_SHIPMENT_GAS_URL = '';
 
@@ -1826,6 +1835,9 @@ export async function markItemSoldAndProcess(
 
     const res = await editManualShipment(updatedOrder);
     if (res.success) {
+      if (resolution === 'cancel_order' || resolution === 'partial_fulfill') {
+        void syncAutoPickingTaskForManualOrder(updatedOrder, { isEdit: true }).catch(() => {});
+      }
       return { success: true, message: 'Status item dan histori berhasil diperbarui', updatedOrder };
     }
     return { success: false, message: res.message || 'Gagal menyimpan perubahan' };
@@ -1884,8 +1896,304 @@ export async function restoreSoldItem(
     };
 
     const res = await editManualShipment(updatedOrder);
+    if (res.success) {
+      void syncAutoPickingTaskForManualOrder(updatedOrder, { isEdit: true }).catch(() => {});
+    }
     return { success: res.success, message: res.message, updatedOrder };
   } catch (err: any) {
     return { success: false, message: err.message || 'Gagal memulihkan status item' };
   }
 }
+
+/**
+ * Mengecek apakah suatu item pesanan Manual Shipment / Alteration & Repair
+ * menggunakan sumber fulfillment Marketplace / Gudang / Warehouse (bukan Store).
+ */
+export function isMarketplaceFulfillmentItem(it: ManualShipmentItem): boolean {
+  if (!it) return false;
+  if (it.item_status === 'sold_out' || it.item_status === 'cancelled') return false;
+  const ful = String(it.fulfillment || (it as any).toko_asal || (it as any).store_name || '')
+    .trim()
+    .toLowerCase();
+  if (!ful) return false;
+  return ful.includes('marketplace') || ful.includes('gudang') || ful.includes('warehouse');
+}
+
+export interface AutoPickingSyncResult {
+  status: 'created' | 'updated' | 'removed' | 'skipped_no_items' | 'skipped_in_progress' | 'error';
+  invoice_picking?: string;
+  itemCount?: number;
+  totalQty?: number;
+  message?: string;
+}
+
+/**
+ * Menghapus Tugas Picking otomatis yang masih berstatus PENDING (belum pernah discan / qty_picked = 0)
+ * saat pesanan Manual Shipment / Alter dibatalkan, dihapus, atau seluruh item Marketplace-nya diubah ke Store.
+ * TIDAK PERNAH menghapus tugas picking yang sudah diproses (SEDANG PICKING / SELESAI / qty_picked > 0).
+ */
+export async function removePendingAutoPickingTask(noPesanan: string): Promise<boolean> {
+  const cleanNoSj = String(noPesanan || '').trim().toUpperCase();
+  if (!cleanNoSj) return false;
+
+  try {
+    const existingRows = await supabaseFetch<Array<{ id: number; status?: string; qty_picked?: number }>>(
+      'picking_list',
+      'GET',
+      undefined,
+      `select=id,status,qty_picked&no_sj=ilike.${encodeURIComponent(cleanNoSj)}&limit=200`
+    );
+
+    if (!Array.isArray(existingRows) || existingRows.length === 0) {
+      return false;
+    }
+
+    const hasProgress = existingRows.some((r) => {
+      const st = String(r.status || '').trim().toUpperCase();
+      return (Number(r.qty_picked) || 0) > 0 || st === 'SEDANG PICKING' || st === 'SELESAI';
+    });
+    if (hasProgress) {
+      return false;
+    }
+
+    await supabaseFetch('picking_list', 'DELETE', undefined, `no_sj=ilike.${encodeURIComponent(cleanNoSj)}`);
+    invalidatePickingListCache();
+
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        for (const key of ['wms_picking_cache', 'wms_raw_picking_list_cache']) {
+          const cached = JSON.parse(localStorage.getItem(key) || '[]');
+          if (Array.isArray(cached)) {
+            const filtered = cached.filter(
+              (c: any) => String(c?.no_sj || '').trim().toUpperCase() !== cleanNoSj
+            );
+            localStorage.setItem(key, JSON.stringify(filtered));
+          }
+        }
+      } catch {}
+      try {
+        window.dispatchEvent(new CustomEvent('picking_list_updated', { detail: { removedNoSj: cleanNoSj } }));
+        window.dispatchEvent(new CustomEvent('wms_picking_list_updated', { detail: { removedNoSj: cleanNoSj } }));
+      } catch {}
+    }
+
+    return true;
+  } catch (err) {
+    console.warn('[AutoPicking] Gagal menghapus pending picking task:', err);
+    return false;
+  }
+}
+
+/**
+ * Otomatis membuat / menyinkronkan Tugas Picking (tabel `picking_list`, kategori `Manual shipment/alter`)
+ * untuk seluruh item produk dengan fulfillment Marketplace / Gudang / Warehouse pada pesanan
+ * Manual Shipment maupun Alteration & Repair.
+ */
+export async function syncAutoPickingTaskForManualOrder(
+  order: ManualShipmentOrder,
+  options?: { isEdit?: boolean; productCatalog?: ProductItem[] }
+): Promise<AutoPickingSyncResult> {
+  const cleanNoSj = String(order?.no_pesanan || '').trim().toUpperCase();
+  if (!cleanNoSj) {
+    return { status: 'skipped_no_items', message: 'Nomor pesanan kosong' };
+  }
+
+  try {
+    const isOrderCancelled =
+      String(order.status || '').trim().toLowerCase() === 'batal' ||
+      String(order.status || '').trim().toUpperCase() === 'DELETED';
+
+    const orderItems = Array.isArray(order.items) ? order.items : [];
+    const marketplaceItems = isOrderCancelled ? [] : orderItems.filter(isMarketplaceFulfillmentItem);
+
+    // 1. Cek apakah sudah ada tugas picking untuk no_pesanan ini (khususnya saat Edit / Batal)
+    let hadExistingRows = false;
+    if (options?.isEdit || isOrderCancelled) {
+      try {
+        const existingRows = await supabaseFetch<Array<{ id: number; status?: string; qty_picked?: number }>>(
+          'picking_list',
+          'GET',
+          undefined,
+          `select=id,status,qty_picked&no_sj=ilike.${encodeURIComponent(cleanNoSj)}&limit=200`
+        );
+        if (Array.isArray(existingRows) && existingRows.length > 0) {
+          hadExistingRows = true;
+          const hasProgress = existingRows.some((r) => {
+            const st = String(r.status || '').trim().toUpperCase();
+            return (Number(r.qty_picked) || 0) > 0 || st === 'SEDANG PICKING' || st === 'SELESAI';
+          });
+          if (hasProgress) {
+            return {
+              status: 'skipped_in_progress',
+              message: 'Tugas picking sudah diproses/selesai oleh picker, tidak ditimpa otomatis.',
+            };
+          }
+        }
+      } catch (checkErr) {
+        console.warn('[AutoPicking] Gagal mengecek status picking eksisting:', checkErr);
+      }
+    }
+
+    // 2. Jika tidak ada item fulfillment Marketplace (atau pesanan dibatalkan)
+    if (marketplaceItems.length === 0) {
+      if (hadExistingRows) {
+        const removed = await removePendingAutoPickingTask(cleanNoSj);
+        if (removed) {
+          return {
+            status: 'removed',
+            message: 'Tugas picking PENDING dihapus karena tidak ada item fulfillment Marketplace.',
+          };
+        }
+      }
+      return { status: 'skipped_no_items' };
+    }
+
+    // 3. Agregasi qty per SKU (mencegah duplikasi baris SKU pada 1 surat jalan picking)
+    //    Sekaligus terapkan Master Produk lookup (Rule 8) agar nama & size 100% sesuai standar master
+    const aggregatedMap = new Map<
+      string,
+      { sku: string; nama_produk: string; size: string; qty_req: number; lokasi?: string }
+    >();
+
+    for (const it of marketplaceItems) {
+      const cleanSku = String(it.sku || '').trim().toUpperCase() || 'NON-SKU';
+      const qty = Math.max(1, Number(it.qty) || 1);
+      const master =
+        cleanSku !== 'NON-SKU' && cleanSku !== 'ALTER-REPAIR'
+          ? lookupProductBySku(cleanSku, options?.productCatalog, it.nama_produk, it.size)
+          : null;
+      const officialName =
+        master && master.found ? master.nama_produk : String(it.nama_produk || cleanSku).trim();
+      const officialSize =
+        master && master.found
+          ? master.size || '-'
+          : String(it.size || '-').trim() || '-';
+
+      const existing = aggregatedMap.get(cleanSku);
+      if (existing) {
+        existing.qty_req += qty;
+      } else {
+        aggregatedMap.set(cleanSku, {
+          sku: cleanSku,
+          nama_produk: officialName,
+          size: officialSize,
+          qty_req: qty,
+        });
+      }
+    }
+
+    const aggregatedItems = Array.from(aggregatedMap.values());
+    if (aggregatedItems.length === 0) {
+      return { status: 'skipped_no_items' };
+    }
+
+    // 4. Live lookup lokasi rak gudang valid dari Supabase stok_real_fisik (Rule 7)
+    //    Priority 1 (Warehouse A-D, Aksesoris, Transit) -> Priority 2 (Kolian R/V/Z) -> Priority 3 (Blok F).
+    //    Strictly exclude Perbaikan (CC/PMK/DF/SORTIR) & Anomali!
+    const skusForStock = aggregatedItems
+      .map((it) => it.sku)
+      .filter((s) => s && s !== 'NON-SKU' && s !== 'ALTER-REPAIR');
+
+    const skuLocationMap = new Map<string, string>();
+    if (skusForStock.length > 0) {
+      try {
+        const stockRows = await fetchStockForSkus(skusForStock);
+        const bySku = new Map<string, StockRealtimeItem[]>();
+        for (const stk of stockRows) {
+          const k = String(stk.sku || '').trim().toUpperCase();
+          if (!k) continue;
+          const list = bySku.get(k);
+          if (list) list.push(stk);
+          else bySku.set(k, [stk]);
+        }
+
+        for (const sku of skusForStock) {
+          const rows = bySku.get(sku) || [];
+          const eligible = rows.filter((s) => {
+            const loc = String(s.lokasi || '').trim().toUpperCase();
+            return (
+              loc &&
+              loc !== '-' &&
+              loc !== '--' &&
+              loc !== 'KOSONG' &&
+              (Number(s.sisa_stok) || 0) > 0 &&
+              isWarehouseLocation(loc, s.area || '')
+            );
+          });
+
+          if (eligible.length > 0) {
+            eligible.sort((a, b) => {
+              const pA = getPickingPriority(a.lokasi || '', a.area || '');
+              const pB = getPickingPriority(b.lokasi || '', b.area || '');
+              if (pA !== pB) return pA - pB;
+              const qtyDiff = (Number(b.sisa_stok) || 0) - (Number(a.sisa_stok) || 0);
+              if (qtyDiff !== 0) return qtyDiff;
+              return String(a.lokasi || '').localeCompare(String(b.lokasi || ''), undefined, {
+                numeric: true,
+                sensitivity: 'base',
+              });
+            });
+
+            const uniqueLocCodes = Array.from(
+              new Set(eligible.map((e) => String(e.lokasi || '').trim().toUpperCase()).filter(Boolean))
+            );
+            skuLocationMap.set(sku, uniqueLocCodes.join(', '));
+          }
+        }
+      } catch (stockErr) {
+        console.warn('[AutoPicking] Gagal memuat lokasi rak live Supabase:', stockErr);
+      }
+    }
+
+    const pickingPayloadItems = aggregatedItems.map((it) => ({
+      sku: it.sku,
+      nama_produk: it.nama_produk,
+      size: it.size,
+      lokasi: skuLocationMap.get(it.sku) || '-',
+      qty_req: it.qty_req,
+    }));
+
+    // 5. Susun label Tujuan yang jelas & otomatis masuk kategori MANUAL_ALTER di Tugas Picking
+    const isAlterOrder =
+      order.order_type === 'alteration_repair' ||
+      cleanNoSj.startsWith('AR-') ||
+      cleanNoSj.startsWith('ALT-');
+    const hasAlterItem = marketplaceItems.some((it) => Boolean(it.needs_alteration));
+    const storeCode = getStoreCode(order.nama_pengirim || '');
+    const rawDest = String(order.nama_tujuan || order.nama_pengirim || 'Customer').trim();
+    const cleanDest = rawDest.replace(/^Store\s*\((.+)\)$/i, '$1').trim() || 'Customer';
+
+    let tujuanLabel = `Manual Shipment (Marketplace) - ${cleanDest}`;
+    if (isAlterOrder) {
+      tujuanLabel = `Alter & Repair (Marketplace) - ${cleanDest}`;
+    } else if (hasAlterItem) {
+      tujuanLabel = `Manual Shipment & Alter (Marketplace) - ${cleanDest}`;
+    }
+    if (storeCode) {
+      tujuanLabel += ` [${storeCode}]`;
+    }
+
+    // 6. Simpan ke tabel picking_list Supabase (sekaligus update cache lokal & broadcast realtime ke Picker/WH)
+    const createRes = await createPickingSuratJalanSupabase(
+      cleanNoSj,
+      tujuanLabel,
+      pickingPayloadItems
+    );
+
+    const totalQty = pickingPayloadItems.reduce((sum, it) => sum + (Number(it.qty_req) || 1), 0);
+    return {
+      status: hadExistingRows ? 'updated' : 'created',
+      invoice_picking: createRes.invoice_picking,
+      itemCount: pickingPayloadItems.length,
+      totalQty,
+      message: `Tugas Picking ${cleanNoSj} (${pickingPayloadItems.length} SKU / ${totalQty} pcs) berhasil dibuat.`,
+    };
+  } catch (err: any) {
+    console.error('[AutoPicking] Gagal membuat tugas picking otomatis:', err);
+    return {
+      status: 'error',
+      message: err?.message || 'Gagal membuat tugas picking otomatis',
+    };
+  }
+}
+

@@ -69,7 +69,8 @@ import {
   getFullStoreName,
   isStoreOrOutletName,
   getStoreContact,
-  OutletItem
+  OutletItem,
+  syncAutoPickingTaskForManualOrder,
 } from '../../services/gasManualShipment';
 import { formatProductNameWithSize } from '../../utils/sortUtils';
 import { notifyOrderSubmittedToChat } from '../../services/orderChatNotificationService';
@@ -827,6 +828,29 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
           'success'
         );
 
+        // OTOMATIS TUGAS PICKING (Kategori Manual shipment/alter) untuk item dari Stok Gudang / Marketplace
+        if (isWarehouseStock) {
+          try {
+            const pickRes = await syncAutoPickingTaskForManualOrder(newOrderPayload, {
+              isEdit: false,
+              productCatalog,
+            });
+            if (pickRes.status === 'created') {
+              onShowToast(
+                `📋 Tugas Picking otomatis dibuat untuk ${pickRes.itemCount} SKU Stok Gudang (${regNo})`,
+                'info'
+              );
+            } else if (pickRes.status === 'error') {
+              onShowToast(
+                `⚠️ Tiket tersimpan, namun Tugas Picking otomatis gagal dibuat: ${pickRes.message || 'Cek koneksi'}`,
+                'warning'
+              );
+            }
+          } catch (pickErr) {
+            console.warn('Auto picking sync error (Alter & Repair):', pickErr);
+          }
+        }
+
         // OTOMATIS LIVE CHAT WMS: Buat / perbarui grup Store Ops (@warehouse + @chocoadm + Store) & kirim SPK Alterasi
         await Promise.race([
           notifyOrderSubmittedToChat(newOrderPayload, {
@@ -1004,6 +1028,15 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
               </span>
             </button>
           </div>
+
+          {formSource === 'warehouse' && (
+            <div className="rounded-xl border border-indigo-200/80 dark:border-indigo-800/60 bg-indigo-50/70 dark:bg-indigo-950/30 px-3.5 py-2.5 flex items-start gap-2 text-xs text-indigo-800 dark:text-indigo-200">
+              <CheckCircle2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+              <span className="leading-relaxed">
+                <strong className="font-bold">Tugas Picking Otomatis Aktif:</strong> Karena sumber barang dari Stok Gudang/Marketplace, Tugas Picking di kategori <strong className="font-semibold">Manual shipment/alter</strong> akan otomatis dibuat saat tiket disubmit.
+              </span>
+            </div>
+          )}
 
           {/* Form ID & Referensi */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">

@@ -50,6 +50,9 @@ import {
   OutletItem,
   getStoreContact,
   resolveOrderFulfillmentStores,
+  isMarketplaceFulfillmentItem,
+  syncAutoPickingTaskForManualOrder,
+  removePendingAutoPickingTask,
 } from '../../services/gasManualShipment';
 import { clearDeltaSyncCache } from '../../services/gasSync';
 import { sendFonnteMessage, getFonnteConfig } from '../../services/whatsapp';
@@ -1457,6 +1460,37 @@ _WMS Warehouse System_`;
     if (result.success) {
       onShowToast(editingOrder ? 'Pesanan berhasil diupdate' : 'Pesanan berhasil disubmit', 'success');
 
+      // OTOMATIS TUGAS PICKING (Kategori Manual shipment/alter) untuk item fulfillment Marketplace / Gudang
+      try {
+        const pickRes = await syncAutoPickingTaskForManualOrder(orderData, {
+          isEdit: Boolean(editingOrder),
+          productCatalog,
+        });
+        if (pickRes.status === 'created') {
+          onShowToast(
+            `📋 Tugas Picking otomatis dibuat untuk ${pickRes.itemCount} SKU Marketplace (${orderData.no_pesanan})`,
+            'info'
+          );
+        } else if (pickRes.status === 'updated') {
+          onShowToast(
+            `📋 Tugas Picking ${orderData.no_pesanan} ikut diperbarui (${pickRes.itemCount} SKU Marketplace)`,
+            'info'
+          );
+        } else if (pickRes.status === 'removed') {
+          onShowToast(
+            `📋 Tugas Picking PENDING ${orderData.no_pesanan} dihapus (tidak ada item Marketplace)`,
+            'info'
+          );
+        } else if (pickRes.status === 'error') {
+          onShowToast(
+            `⚠️ Pesanan tersimpan, namun Tugas Picking otomatis gagal dibuat: ${pickRes.message || 'Cek koneksi'}`,
+            'warning'
+          );
+        }
+      } catch (pickErr) {
+        console.warn('Auto picking sync error:', pickErr);
+      }
+
       // NOTIFIKASI EMAIL (Chocochips Official) ke Store PIC & Customer jika email dilampirkan
       triggerOrderEmailNotifications(
         orderData,
@@ -2364,6 +2398,18 @@ _WMS Warehouse System_`;
               }
             </div>
           </div>
+
+          {items.some(isMarketplaceFulfillmentItem) && (
+            <div className="rounded-xl border border-indigo-200/80 dark:border-indigo-800/60 bg-indigo-50/70 dark:bg-indigo-950/30 px-3.5 py-2.5 flex items-start gap-2.5 text-xs text-indigo-800 dark:text-indigo-200">
+              <PackageCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+              <div className="leading-relaxed">
+                <span className="font-bold">Tugas Picking Otomatis Aktif:</span>{' '}
+                <span>
+                  {items.filter(isMarketplaceFulfillmentItem).length} baris produk ({items.filter(isMarketplaceFulfillmentItem).reduce((s, it) => s + (Number(it.qty) || 1), 0)} pcs) dengan fulfillment <strong className="font-semibold">Marketplace</strong> akan otomatis memunculkan Tugas Picking di kategori <strong className="font-semibold">Manual shipment/alter</strong> begitu pesanan disubmit.
+                </span>
+              </div>
+            </div>
+          )}
 
           <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2.5">
             {editingOrder && (
@@ -3839,6 +3885,7 @@ _WMS Warehouse System_`;
     setLoading(true);
     const success = await deleteManualShipment(no_pesanan);
     if (success) {
+      void removePendingAutoPickingTask(no_pesanan).catch(() => {});
       onShowToast('Pesanan berhasil dihapus', 'success');
       loadOrders();
     } else {
@@ -3905,6 +3952,7 @@ _WMS Warehouse System_`;
 
       const res = await editManualShipment(updatedOrder);
       if (res.success) {
+        void removePendingAutoPickingTask(order.no_pesanan).catch(() => {});
         onShowToast(`Pesanan ${order.no_pesanan} berhasil dibatalkan. Histori tersimpan.`, 'success');
 
         // Kirim notifikasi pembatalan ke Grup Live Chat WMS jika diminta

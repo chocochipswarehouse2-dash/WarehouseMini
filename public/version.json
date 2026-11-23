@@ -1,9 +1,9 @@
 {
-  "version": "v2.25.0",
-  "versionCode": 450,
+  "version": "v2.26.0",
+  "versionCode": 460,
   "buildDate": "22 November 2026",
-  "buildHash": "wms-261122-v450-1438",
-  "releaseTitle": "WMS v2.25.0 — Memori Permanen Global & Full-Coverage Asisten AI WMS",
+  "buildHash": "wms-261122-v460-2343",
+  "releaseTitle": "WMS v2.26.0 — Pembaruan Sistem & Optimasi Operasional",
   "releaseNotes": [
     "Fondasi Memori Permanen Global semua modul di docs/memory/ (Feature Registry, Changelog & AI Backlog) + pembersihan GEMINI.md",
     "Sistem AI Self-Reporting Capability Gap (Supabase + panel Backlog Dev + CLI pull_ai_dev_reports.cjs)",
