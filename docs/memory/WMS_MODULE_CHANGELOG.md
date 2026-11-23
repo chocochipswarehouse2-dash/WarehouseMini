@@ -4,12 +4,23 @@
 
 ---
 
+## v2.27.0 — 22 November 2026
+**Modul**: Manual Shipment & Alteration (`BulkUpdateSjModal.tsx`, `RekapToolbar.tsx`, `ManualShipmentTab.tsx`, `gasManualShipment.ts`, `orderChatNotificationService.ts`, `initialStoreFaq.ts`)
+- **Fitur Input No. SJ DealPOS Massal (`SJ Massal`) untuk Produk Fulfillment Marketplace / Gudang**:
+  - Menambahkan modal `BulkUpdateSjModal.tsx` (khusus Admin WH, akses via tombol outline netral **"SJ Massal"** beserta badge jumlah antrean di samping tombol primer **"Resi Massal"** pada `RekapToolbar.tsx`).
+  - Menampilkan daftar lengkap **No. Pesanan** beserta rincian **produk aktif fulfillment Marketplace/Gudang** (`SKU`, nama & size resmi Master Produk via `lookupProductBySku`, `qty`, badge alter, status SJ) yang perlu dibuatkan No. SJ Delivery DealPOS.
+  - Menyediakan filter `Belum Ada SJ` vs `Semua MKT`, filter **Store** (dengan hitungan pending per toko untuk mempermudah pembuatan 1 Transfer Order DealPOS per Store), pencarian bebas (`#order`, `SKU`, `nama produk`, `store`, `no SJ`), pilihan multi-baris + **Terapkan 1 No. SJ ke X Pesanan**, **Tempel SJ Berurutan**, **Salin Daftar Produk** (dikelompokkan per Store), serta tab **Import CSV & Template** (unduh template lengkap kolom rincian produk Marketplace + pratinjau validasi upload).
+  - Menambahkan `bulkUpdateOrdersSjDealpos` di `src/services/gasManualShipment.ts` (update batch paralel ke Supabase + validasi tolak No. SJ yang sama dengan `no_transaksi_pengirim` kasir Store) dan `notifyBulkSjMarketplaceUpdatedToChat` di `src/services/orderChatNotificationService.ts` (notifikasi ringkasan terkelompok per Store di Live Chat WMS).
+  - Menyelaraskan `pendingSjCount` dan filter `filterDealposSj` di `ManualShipmentTab.tsx` agar mengecualikan pesanan `batal` serta item `sold_out`/`cancelled` menggunakan `isMarketplaceFulfillmentItem`, dan menyinkronkan panduan role-aware di `src/data/initialStoreFaq.ts`.
+
+---
+
 ## v2.26.0 — 22 November 2026
 **Modul**: Manual Shipment, Alteration & Repair, Tugas Picking (`gasManualShipment.ts`, `ManualShipmentTab.tsx`, `AlterationRepairTab.tsx`, `PickingTasksView.tsx`, `supabase.ts`, `initialStoreFaq.ts`)
 - **Auto-Create Tugas Picking untuk Item Fulfillment Marketplace / Gudang**:
   - Menambahkan `syncAutoPickingTaskForManualOrder`, `isMarketplaceFulfillmentItem`, dan `removePendingAutoPickingTask` di `src/services/gasManualShipment.ts`.
   - Setiap submit pesanan **Manual Shipment** yang memiliki item ber-fulfillment `Marketplace` (atau `Gudang`/`Warehouse`) dan setiap submit **Alteration & Repair** bersumber `Stok Gudang` otomatis membuat baris Tugas Picking di Supabase `picking_list` (kategori `Manual shipment/alter`) dengan agregasi qty per SKU, lookup nama & size Master Produk (`lookupProductBySku`), dan lookup live lokasi rak prioritas (`isWarehouseLocation` + `getPickingPriority`, mengecualikan Perbaikan & Anomali).
-  - Sinkronisasi aman saat **Edit**, **Sold Out / Pulihkan**, **Batalkan**, dan **Hapus** pesanan: hanya memperbarui/menghapus tugas yang masih `PENDING` (`qty_picked = 0`), serta melindungi penuh tugas yang sudah `SEDANG PICKING` atau `SELESAI`.
+  - Sinkronisasi aman saat **Edit**, **Sold Out / Pulihkan**, **Batalkan**, dan **Hapus** pesanan: **hanya** memperbarui/menghapus tugas yang sudah ada & masih `PENDING` (`qty_picked = 0`). Tidak pernah membuat tugas picking baru secara retroaktif untuk pesanan lama maupun menimpa tugas yang sudah `SEDANG PICKING`/`SELESAI`.
   - Memperbarui klasifikasi kategori `MANUAL_ALTER` di `PickingTasksView.tsx` agar mencakup prefix `MS{KODE}-` dan `AR-`, menjaga guard `isStoreTujuan` agar tugas picking gudang tidak tertimpa label store, serta menyinkronkan event `wms_picking_list_updated` agar tab Tugas Picking keep-alive langsung termuat tanpa refresh.
   - Menyinkronkan panduan role-aware di `src/data/initialStoreFaq.ts` (perspektif terpisah Admin Gudang & Tim Store).
 

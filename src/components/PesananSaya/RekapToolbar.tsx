@@ -90,6 +90,7 @@ export interface RekapToolbarProps {
   isUtilsMenuOpen: boolean;
   onSetUtilsMenuOpen: (v: boolean) => void;
   onOpenBulkResi: () => void;
+  onOpenBulkSj: () => void;
   onOpenSopPresentation: () => void;
   onExportCsv: () => void;
   onRefreshDelta: () => void;
@@ -174,6 +175,7 @@ export const RekapToolbar: React.FC<RekapToolbarProps> = ({
   isUtilsMenuOpen,
   onSetUtilsMenuOpen,
   onOpenBulkResi,
+  onOpenBulkSj,
   onOpenSopPresentation,
   onExportCsv,
   onRefreshDelta,
@@ -237,6 +239,25 @@ export const RekapToolbar: React.FC<RekapToolbarProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Admin Secondary Action: Input SJ DealPOS Massal (Neutral Outline — Anti-Pelangi) */}
+          {userIsAdmin && (
+            <button
+              type="button"
+              onClick={onOpenBulkSj}
+              className="h-9 sm:h-8 px-2.5 sm:px-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+              title="Input No. SJ DealPOS Massal untuk produk fulfillment Marketplace (Tabel & CSV)"
+            >
+              <FileText className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <span className="hidden sm:inline">SJ Massal</span>
+              <span className="sm:hidden">SJ</span>
+              {pendingSjCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 text-[10px] font-mono font-bold tabular-nums">
+                  {pendingSjCount}
+                </span>
+              )}
+            </button>
+          )}
+
           {/* Single Primary Action (Admin: Update Resi Massal) */}
           {userIsAdmin && (
             <button

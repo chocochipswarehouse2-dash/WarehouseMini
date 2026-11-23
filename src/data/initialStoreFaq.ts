@@ -356,17 +356,18 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
     target_audience: 'all',
 
     // PERSPEKTIF ADMIN GUDANG
-    answer_admin: 'Admin Gudang (WH) memegang akses penuh untuk mengisi dan mengubah No. SJ Delivery DealPOS (MKT ➔ Store) pada item dengan fulfillment "Marketplace". Nomor ini terpisah dari No. Transaksi Kasir DealPOS yang diinput oleh Store.',
+    answer_admin: 'Admin Gudang (WH) memegang akses penuh untuk mengisi dan mengubah No. SJ Delivery DealPOS (MKT ➔ Store) pada item dengan fulfillment "Marketplace" (atau Stok Gudang), baik satuan per pesanan maupun secara massal sekaligus lewat tombol "SJ Massal" di toolbar Rekap Pesanan. Nomor ini terpisah dari No. Transaksi Kasir DealPOS yang diinput oleh Store.',
     action_steps_admin: [
-      { step: 1, title: 'Buka DealPOS Backoffice', desc: 'Buat Surat Jalan (SJ Delivery) transfer stok dari alokasi Marketplace/Gudang ke Store pemesan.' },
-      { step: 2, title: 'Klik + Input SJ DealPOS / Edit SJ DealPOS', desc: 'Pada kotak "Produk dari Marketplace" di tabel Rekap Pesanan, klik tombol "+ Input SJ DealPOS" atau "Edit SJ DealPOS".' },
-      { step: 3, title: 'Simpan Nomor SJ Delivery', desc: 'Masukkan nomor SJ Delivery (contoh: 26.10.00286) dan simpan. Status item akan berubah menjadi SJ Lengkap.' }
+      { step: 1, title: 'Cek Daftar Produk Marketplace di "SJ Massal"', desc: 'Klik tombol "SJ Massal" di toolbar Rekap Pesanan untuk melihat daftar pesanan & rincian produk fulfillment Marketplace yang belum memiliki No. SJ (bisa difilter per Store dan disalin ke clipboard sebagai acuan buat Transfer Order di DealPOS).' },
+      { step: 2, title: 'Input SJ Satuan atau Massal (Tabel / CSV)', desc: 'Isi No. SJ langsung pada baris tabel, centang beberapa pesanan untuk menerapkan 1 No. SJ sekaligus ke Store yang sama, tempel berurutan, atau unggah lewat tab Import CSV & Template. Untuk edit satuan, klik "+ Input SJ DealPOS" / "Edit SJ DealPOS" pada baris pesanan.' },
+      { step: 3, title: 'Simpan & Notifikasi Otomatis ke Store', desc: 'Klik Simpan. Sistem otomatis memvalidasi agar No. SJ tidak sama dengan No. Transaksi kasir Store, memperbarui status SJ Lengkap, dan mengirim ringkasan notifikasi ke grup Live Chat masing-masing Store.' }
     ],
     button_badges_admin: [
+      { label: 'SJ Massal', color: 'indigo', icon: 'FileText' },
       { label: '+ Input SJ DealPOS', color: 'indigo', icon: 'FileText' },
       { label: 'Edit SJ DealPOS', color: 'indigo', icon: 'FileText' }
     ],
-    admin_notes: 'ℹ️ Hanya akun Admin WH / Superadmin yang dapat melihat tombol Input/Edit SJ DealPOS. Akun Store hanya dapat melihat (view-only) nomor SJ yang sudah diinput Admin WH.',
+    admin_notes: 'ℹ️ Hanya akun Admin WH / Superadmin yang dapat melihat tombol SJ Massal dan Input/Edit SJ DealPOS. Akun Store hanya dapat melihat (view-only) nomor SJ yang sudah diinput Admin WH.',
 
     // PERSPEKTIF TIM STORE / OUTLET
     answer_store: 'Saat membuat pesanan, Tim Store WAJIB mengisi "No. Transaksi DealPOS" (nomor struk penjualan kasir toko). Adapun "No. SJ Delivery DealPOS (MKT ➔ Store)" pada produk fulfillment Marketplace dibuat dan diinput oleh Admin WH — Tim Store hanya perlu memantau (view) nomor SJ tersebut di kartu pesanan.',
@@ -380,7 +381,7 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
     ],
     store_notes: '💡 Store tidak perlu dan tidak dapat mengedit No. SJ Delivery (MKT ➔ Store) karena dokumen transfer tersebut diterbitkan oleh Admin WH.',
 
-    keywords: ['dealpos', 'no sj', 'surat jalan', 'transaksi dealpos', 'marketplace', 'alokasi', 'pos', 'kasir', 'view only'],
+    keywords: ['dealpos', 'no sj', 'sj massal', 'surat jalan', 'transaksi dealpos', 'marketplace', 'alokasi', 'pos', 'kasir', 'view only', 'import csv'],
     view_count: 88
   },
 

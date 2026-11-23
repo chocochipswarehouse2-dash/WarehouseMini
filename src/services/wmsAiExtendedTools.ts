@@ -1069,11 +1069,21 @@ async function execValidateItemsAgainstMaster(args: any) {
   }
 
   const catalog = await resolveCatalogList();
-  const normalizedCatalog = catalog.map((p) => ({
-    item: p,
-    skuUpper: String(p.sku || '').toUpperCase().trim(),
-    searchKey: `${p.nama || ''} ${p.size || ''} ${p.sku || ''}`.toLowerCase()
-  }));
+  const normalizedCatalog = catalog.map((p) => {
+    const sku = String(p.k || (p as any).sku || '').trim();
+    const nama = String(p.n || p.p || (p as any).nama || '').trim();
+    const size = String(p.s || (p as any).size || '').trim();
+    const dealposQty = Number(p.q ?? (p as any).stock ?? (p as any).stok_dealpos ?? 0);
+    return {
+      item: p,
+      sku,
+      nama,
+      size,
+      dealposQty,
+      skuUpper: sku.toUpperCase(),
+      searchKey: `${nama} ${size} ${sku}`.toLowerCase()
+    };
+  });
 
   const validatedRows: Array<{
     input: string;
@@ -1097,24 +1107,31 @@ async function execValidateItemsAgainstMaster(args: any) {
     const sizeIn = String(raw?.size || '').trim().toUpperCase();
     const qtyIn = raw?.qty !== undefined && raw?.qty !== null && !Number.isNaN(Number(raw.qty)) ? Number(raw.qty) : null;
 
-    let matchedProduct: ProductItem | null = null;
+    let matchedEntry: (typeof normalizedCatalog)[number] | null = null;
     let note = '';
 
     if (skuIn) {
       const exact = lookupProductBySku(skuIn);
-      if (exact && exact.sku) {
-        matchedProduct =
-          normalizedCatalog.find((c) => c.skuUpper === exact.sku.toUpperCase())?.item ||
-          ({
-            sku: exact.sku,
-            nama: exact.nama,
-            size: exact.size,
-            stock: 0
-          } as ProductItem);
+      if (exact && exact.found && exact.sku) {
+        const foundCatalog = normalizedCatalog.find((c) => c.skuUpper === exact.sku.toUpperCase());
+        matchedEntry = foundCatalog || {
+          item: exact.masterItem || {
+            k: exact.sku,
+            n: exact.nama_produk,
+            s: exact.size,
+            q: exact.dealposQty
+          },
+          sku: exact.sku,
+          nama: exact.nama_produk,
+          size: exact.size,
+          dealposQty: exact.dealposQty,
+          skuUpper: exact.sku.toUpperCase(),
+          searchKey: `${exact.nama_produk} ${exact.size} ${exact.sku}`.toLowerCase()
+        };
       }
     }
 
-    if (!matchedProduct && queryIn) {
+    if (!matchedEntry && queryIn) {
       const tokens = queryIn
         .toLowerCase()
         .replace(/[^a-z0-9\s]/g, ' ')
@@ -1124,16 +1141,16 @@ async function execValidateItemsAgainstMaster(args: any) {
       if (candidates.length > 0) {
         if (sizeIn) {
           const exactSize = candidates.find(
-            (c) => String(resolveProductDisplaySize(c.item.sku, c.item.size, c.item.nama) || '').toUpperCase() === sizeIn
+            (c) => String(resolveProductDisplaySize(c.sku, c.size, c.nama) || '').toUpperCase() === sizeIn
           );
-          matchedProduct = (exactSize || candidates[0]).item;
+          matchedEntry = exactSize || candidates[0];
         } else {
-          matchedProduct = candidates[0].item;
+          matchedEntry = candidates[0];
         }
       }
     }
 
-    if (!matchedProduct) {
+    if (!matchedEntry) {
       validatedRows.push({
         input: skuIn || queryIn || '-',
         requested_size: sizeIn || '-',
@@ -1148,8 +1165,8 @@ async function execValidateItemsAgainstMaster(args: any) {
       continue;
     }
 
-    const officialName = cleanProductName(matchedProduct.nama || '');
-    const officialSize = resolveProductDisplaySize(matchedProduct.sku, matchedProduct.size, matchedProduct.nama) || '-';
+    const officialName = cleanProductName(matchedEntry.nama || '');
+    const officialSize = resolveProductDisplaySize(matchedEntry.sku, matchedEntry.size, matchedEntry.nama) || '-';
     const sizeMismatch = Boolean(sizeIn && officialSize !== '-' && officialSize.toUpperCase() !== sizeIn);
 
     if (sizeMismatch) {
@@ -1158,16 +1175,16 @@ async function execValidateItemsAgainstMaster(args: any) {
       note = 'Sesuai Master Produk.';
     }
 
-    matchedSkus.push(matchedProduct.sku);
+    matchedSkus.push(matchedEntry.sku);
     validatedRows.push({
       input: skuIn || queryIn,
       requested_size: sizeIn || '-',
       requested_qty: qtyIn,
       status: sizeMismatch ? 'ANOMALI_SIZE' : 'VALID',
-      sku_resmi: matchedProduct.sku,
+      sku_resmi: matchedEntry.sku,
       nama_resmi_master: officialName,
       size_resmi_master: officialSize,
-      stok_dealpos: Number((matchedProduct as any).stock ?? (matchedProduct as any).stok_dealpos ?? 0),
+      stok_dealpos: matchedEntry.dealposQty,
       catatan: note
     });
   }
@@ -1175,14 +1192,22 @@ async function execValidateItemsAgainstMaster(args: any) {
   if (matchedSkus.length > 0) {
     try {
       const uniqueSkus = Array.from(new Set(matchedSkus));
-      const stockMap = await fetchStockForSkus(uniqueSkus);
+      const stockRows = await fetchStockForSkus(uniqueSkus);
+      const stockMap = new Map<string, typeof stockRows>();
+      stockRows.forEach((s) => {
+        const key = String(s.sku || '').trim().toUpperCase();
+        if (!key) return;
+        const list = stockMap.get(key) || [];
+        list.push(s);
+        stockMap.set(key, list);
+      });
       validatedRows.forEach((row) => {
         if (row.sku_resmi === '-') return;
-        const rowsForSku = stockMap.get(row.sku_resmi.toUpperCase()) || stockMap.get(row.sku_resmi) || [];
-        const totalFisik = rowsForSku.reduce((sum: number, s: any) => sum + Number(s.qty || 0), 0);
+        const rowsForSku = stockMap.get(row.sku_resmi.toUpperCase()) || [];
+        const totalFisik = rowsForSku.reduce((sum, s) => sum + Number(s.sisa_stok || 0), 0);
         const rakStr = rowsForSku
-          .filter((s: any) => Number(s.qty || 0) !== 0)
-          .map((s: any) => `${s.lokasi} (${s.qty})`)
+          .filter((s) => Number(s.sisa_stok || 0) !== 0)
+          .map((s) => `${s.lokasi} (${s.sisa_stok})`)
           .join(', ');
         row.stok_fisik_total = totalFisik;
         row.lokasi_rak = rakStr || 'Kosong';

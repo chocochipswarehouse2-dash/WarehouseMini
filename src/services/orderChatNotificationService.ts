@@ -566,6 +566,61 @@ export async function notifySjMarketplaceUpdatedToChat(
 }
 
 /**
+ * 6b. Update No. SJ Delivery DealPOS Massal — Dikelompokkan per Store agar rapi & tidak spam
+ */
+export async function notifyBulkSjMarketplaceUpdatedToChat(
+  entries: Array<{ order: ManualShipmentOrder; newSj: string }>,
+  actorName?: string
+): Promise<number> {
+  let groupsSent = 0;
+  try {
+    const valid = entries.filter((e) => e.order && e.newSj && e.newSj.trim());
+    if (valid.length === 0) return 0;
+
+    const byStore = new Map<string, Array<{ order: ManualShipmentOrder; newSj: string }>>();
+    for (const entry of valid) {
+      const storeName = getRequesterStoreName(entry.order);
+      if (!storeName) continue;
+      if (!byStore.has(storeName)) byStore.set(storeName, []);
+      byStore.get(storeName)!.push(entry);
+    }
+
+    for (const [storeName, storeEntries] of byStore.entries()) {
+      const lines = storeEntries
+        .map(
+          (e, idx) =>
+            `${idx + 1}. #${getOrderId(e.order)} — ${e.order.nama_tujuan || '-'}\n   📄 No. SJ DealPOS: ${e.newSj.trim()}`
+        )
+        .join('\n');
+
+      const text =
+        `📄 UPDATE NO. SJ DELIVERY DEALPOS MASSAL (${storeEntries.length} PESANAN)\n` +
+        `────────────────────────────────────\n` +
+        `Halo Tim ${storeName}, berikut pembaruan No. SJ Delivery DealPOS (MKT ➔ Store) oleh ${actorName || 'Admin Gudang'}:\n\n` +
+        `${lines}`;
+
+      const tags: ChatContextTag[] = storeEntries
+        .slice(0, 5)
+        .map((e) => ({ type: 'ORDER' as const, code: getOrderId(e.order) }));
+
+      const res = await liveChatManager.sendSystemGroupMessage({
+        storeName,
+        text,
+        contextTags: tags,
+        orderContext:
+          storeEntries.length === 1 ? buildOrderContext(storeEntries[0].order) : undefined,
+        eventType: 'sj_marketplace',
+        actorName: actorName || 'Admin Gudang',
+      });
+      if (res.success) groupsSent++;
+    }
+  } catch (err) {
+    console.warn('[OrderChatNotify] notifyBulkSjMarketplaceUpdatedToChat error:', err);
+  }
+  return groupsSent;
+}
+
+/**
  * 7. Gudang Menandai Item Fulfillment Store Diterima (atau Dibatalkan Terima) + Mirroring Inter-Store
  */
 export async function notifyWarehouseReceivedStoreItemToChat(

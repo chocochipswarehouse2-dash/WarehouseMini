@@ -1721,6 +1721,80 @@ export async function bulkUpdateOrderSjDealpos(orderId: string, noSj: string, up
   }
 }
 
+export interface BulkSjDealposUpdateItem {
+  order: ManualShipmentOrder;
+  no_sj_dealpos: string;
+}
+
+/**
+ * Update No. SJ Delivery DealPOS (MKT -> Store) secara massal untuk banyak pesanan sekaligus.
+ * Hanya memperbarui item aktif ber-fulfillment Marketplace / Gudang / Warehouse pada tiap pesanan.
+ */
+export async function bulkUpdateOrdersSjDealpos(
+  entries: BulkSjDealposUpdateItem[],
+  updatedBy?: string
+): Promise<{
+  successCount: number;
+  failCount: number;
+  errors: string[];
+  updatedOrders: ManualShipmentOrder[];
+}> {
+  let successCount = 0;
+  let failCount = 0;
+  const errors: string[] = [];
+  const updatedOrders: ManualShipmentOrder[] = [];
+  const nowIso = new Date().toISOString();
+  const actor = (updatedBy || 'Admin').trim() || 'Admin';
+
+  const chunkSize = 5;
+  for (let i = 0; i < entries.length; i += chunkSize) {
+    const chunk = entries.slice(i, i + chunkSize);
+    await Promise.all(
+      chunk.map(async (entry) => {
+        const { order, no_sj_dealpos } = entry;
+        const cleanSj = String(no_sj_dealpos || '').trim();
+        if (!cleanSj || !order) return;
+
+        try {
+          const updatedItems = (order.items || []).map((it) => {
+            if (isMarketplaceFulfillmentItem(it)) {
+              return {
+                ...it,
+                no_sj_dealpos: cleanSj,
+                sj_updated_at: nowIso,
+                sj_updated_by: actor,
+              };
+            }
+            return it;
+          });
+
+          let filter = '';
+          if (order.id) {
+            filter = `id=eq.${order.id}`;
+          } else if (order.no_pesanan) {
+            filter = `no_pesanan=eq.${encodeURIComponent(order.no_pesanan)}`;
+          } else {
+            throw new Error('ID / No. Pesanan tidak valid');
+          }
+
+          await supabaseFetch('manual_shipment', 'PATCH', { items: updatedItems }, filter);
+          successCount++;
+          updatedOrders.push({ ...order, items: updatedItems });
+        } catch (err: any) {
+          failCount++;
+          errors.push(`${order.no_pesanan || '-'}: ${err?.message || 'Gagal update SJ'}`);
+        }
+      })
+    );
+  }
+
+  if (successCount > 0) {
+    invalidateManualShipmentsCache();
+  }
+
+  return { successCount, failCount, errors, updatedOrders };
+}
+
 export async function markItemSoldAndProcess(
   orderId: string,
   itemId: string,
@@ -1999,14 +2073,21 @@ export async function syncAutoPickingTaskForManualOrder(
   }
 
   try {
+    const normalizedStatus = String(order.status || '').trim().toLowerCase();
     const isOrderCancelled =
-      String(order.status || '').trim().toLowerCase() === 'batal' ||
-      String(order.status || '').trim().toUpperCase() === 'DELETED';
+      normalizedStatus === 'batal' ||
+      normalizedStatus === 'deleted';
+    const isOrderAlreadyShipped =
+      normalizedStatus === 'dikirim' ||
+      normalizedStatus === 'selesai' ||
+      Boolean(String(order.no_resi || '').trim());
 
     const orderItems = Array.isArray(order.items) ? order.items : [];
     const marketplaceItems = isOrderCancelled ? [] : orderItems.filter(isMarketplaceFulfillmentItem);
 
     // 1. Cek apakah sudah ada tugas picking untuk no_pesanan ini (khususnya saat Edit / Batal)
+    //    INVARIANT KETAT: Tugas picking baru HANYA dibuat saat Submit Pesanan Baru (isEdit = false).
+    //    Saat Edit / Sold Out / Pulihkan pada pesanan lama yang belum punya tugas picking, JANGAN buat tugas baru!
     let hadExistingRows = false;
     if (options?.isEdit || isOrderCancelled) {
       try {
@@ -2031,6 +2112,19 @@ export async function syncAutoPickingTaskForManualOrder(
         }
       } catch (checkErr) {
         console.warn('[AutoPicking] Gagal mengecek status picking eksisting:', checkErr);
+        if (options?.isEdit) {
+          return {
+            status: 'skipped_no_items',
+            message: 'Melewati sinkronisasi edit karena status picking eksisting tidak dapat diverifikasi.',
+          };
+        }
+      }
+
+      if (options?.isEdit && (!hadExistingRows || isOrderAlreadyShipped)) {
+        return {
+          status: 'skipped_no_items',
+          message: 'Pesanan belum memiliki tugas picking aktif atau sudah dikirim — tidak membuat tugas picking baru saat edit.',
+        };
       }
     }
 

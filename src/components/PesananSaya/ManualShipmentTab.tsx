@@ -22,6 +22,7 @@ import { SuratJalanAlterReceiptModal } from './SuratJalanAlterReceiptModal';
 import { WaStoreNoticeModal } from './WaStoreNoticeModal';
 import { AlterationActionModal, AlterationActionType } from './AlterationActionModal';
 import { BulkUpdateResiModal } from './BulkUpdateResiModal';
+import { BulkUpdateSjModal } from './BulkUpdateSjModal';
 import { SopPresentationModal } from './SopPresentationModal';
 import { StoreHelpModal } from './StoreHelpModal';
 import { SuperadminKnowledgeHubModal } from './SuperadminKnowledgeHubModal';
@@ -77,6 +78,7 @@ import {
   notifyBulkResiUpdatedToChat,
   notifyOrderCancelledToChat,
   notifySjMarketplaceUpdatedToChat,
+  notifyBulkSjMarketplaceUpdatedToChat,
   notifyWarehouseReceivedStoreItemToChat,
   notifyOrderSoldOutToChat,
   notifySoldItemRestoredToChat,
@@ -158,6 +160,7 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
   const [filterOrderType, setFilterOrderType] = useState<'all' | 'manual_shipment' | 'manual_with_alter' | 'alteration_repair'>('all');
   const [filterAlterStatus, setFilterAlterStatus] = useState<'all' | 'manual_with_alter' | 'all_alter' | 'no_alter'>('all');
   const [isBulkResiModalOpen, setIsBulkResiModalOpen] = useState(false);
+  const [isBulkSjModalOpen, setIsBulkSjModalOpen] = useState(false);
   const [arReceiptOrder, setArReceiptOrder] = useState<ManualShipmentOrder | null>(null);
   const [sjAlterModalOrders, setSjAlterModalOrders] = useState<ManualShipmentOrder[] | null>(null);
   const [waNoticeModalOrder, setWaNoticeModalOrder] = useState<ManualShipmentOrder | null>(null);
@@ -4692,17 +4695,18 @@ _WMS Warehouse System_`;
       });
     }
 
-    // Filter DealPOS Surat Jalan (Khusus produk fulfilment Marketplace)
+    // Filter DealPOS Surat Jalan (Khusus produk fulfilment Marketplace / Gudang aktif)
     if (filterDealposSj === 'need_sj') {
-      result = result.filter(o => 
-        (o.items || []).some(it => 
-          (it.fulfillment || '').toLowerCase().includes('marketplace') && !getValidItemSjDealpos(o, it)
+      result = result.filter(o =>
+        o.status !== 'batal' &&
+        (o.items || []).some(it =>
+          isMarketplaceFulfillmentItem(it) && !getValidItemSjDealpos(o, it)
         )
       );
     } else if (filterDealposSj === 'has_sj') {
-      result = result.filter(o => 
-        (o.items || []).some(it => 
-          (it.fulfillment || '').toLowerCase().includes('marketplace') && !!getValidItemSjDealpos(o, it)
+      result = result.filter(o =>
+        (o.items || []).some(it =>
+          isMarketplaceFulfillmentItem(it) && !!getValidItemSjDealpos(o, it)
         )
       );
     }
@@ -4907,11 +4911,12 @@ _WMS Warehouse System_`;
     onShowToast(`Membuka Surat Jalan Struk Rangkap 2 untuk ${selectedList.length} pesanan`, 'success');
   };
 
-  // Hitung jumlah order yang memiliki produk Marketplace yang butuh No SJ DealPOS
+  // Hitung jumlah order aktif yang memiliki produk Marketplace / Gudang yang belum punya No SJ DealPOS
   const pendingSjCount = useMemo(() => {
-    return scopedOrders.filter(o => 
-      (o.items || []).some(it => 
-        (it.fulfillment || '').toLowerCase().includes('marketplace') && !getValidItemSjDealpos(o, it)
+    return scopedOrders.filter(o =>
+      o.status !== 'batal' &&
+      (o.items || []).some(it =>
+        isMarketplaceFulfillmentItem(it) && !getValidItemSjDealpos(o, it)
       )
     ).length;
   }, [scopedOrders]);
@@ -5144,6 +5149,7 @@ _WMS Warehouse System_`;
           isUtilsMenuOpen={isRekapUtilsMenuOpen}
           onSetUtilsMenuOpen={setIsRekapUtilsMenuOpen}
           onOpenBulkResi={() => setIsBulkResiModalOpen(true)}
+          onOpenBulkSj={() => setIsBulkSjModalOpen(true)}
           onOpenSopPresentation={() => setIsSopPresentationOpen(true)}
           onExportCsv={handleExportCSV}
           onRefreshDelta={loadOrders}
@@ -6531,6 +6537,24 @@ _WMS Warehouse System_`;
           if (updatedEntries && updatedEntries.length > 0) {
             const actorName = session?.name || getUserPersonName(session?.username) || session?.username || 'Admin Gudang';
             void notifyBulkResiUpdatedToChat(updatedEntries, actorName);
+          }
+          loadOrders();
+        }}
+        onShowToast={onShowToast}
+      />
+
+      {/* Modal Input No. SJ DealPOS Massal (Produk Fulfillment Marketplace / Gudang) */}
+      <BulkUpdateSjModal
+        isOpen={isBulkSjModalOpen}
+        onClose={() => setIsBulkSjModalOpen(false)}
+        orders={orders}
+        productCatalog={productCatalog}
+        operatorName={session?.name || getUserPersonName(session?.username) || session?.username || 'Admin Gudang'}
+        getValidItemSjDealpos={getValidItemSjDealpos}
+        onSuccess={(_, updatedEntries) => {
+          if (updatedEntries && updatedEntries.length > 0) {
+            const actorName = session?.name || getUserPersonName(session?.username) || session?.username || 'Admin Gudang';
+            void notifyBulkSjMarketplaceUpdatedToChat(updatedEntries, actorName);
           }
           loadOrders();
         }}

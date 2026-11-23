@@ -15,11 +15,11 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.26.0",
-  "versionCode": 460,
-  "buildDate": "22 November 2026",
-  "buildHash": "wms-261122-v460-2343",
-  "releaseTitle": "WMS v2.26.0 — Pembaruan Sistem & Optimasi Operasional",
+  "version": "v2.27.0",
+  "versionCode": 470,
+  "buildDate": "23 November 2026",
+  "buildHash": "wms-261123-v470-0505",
+  "releaseTitle": "WMS v2.27.0 — Pembaruan Sistem & Optimasi Operasional",
   "releaseNotes": [
     "Fondasi Memori Permanen Global semua modul di docs/memory/ (Feature Registry, Changelog & AI Backlog) + pembersihan GEMINI.md",
     "Sistem AI Self-Reporting Capability Gap (Supabase + panel Backlog Dev + CLI pull_ai_dev_reports.cjs)",
@@ -29,6 +29,19 @@ export const CURRENT_APP_VERSION_INFO: VersionInfo = {
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.26.0",
+    "versionCode": 460,
+    "buildDate": "22 November 2026",
+    "buildHash": "wms-261122-v460-2343",
+    "releaseTitle": "WMS v2.26.0 — Pembaruan Sistem & Optimasi Operasional",
+    "releaseNotes": [
+      "Fondasi Memori Permanen Global semua modul di docs/memory/ (Feature Registry, Changelog & AI Backlog) + pembersihan GEMINI.md",
+      "Sistem AI Self-Reporting Capability Gap (Supabase + panel Backlog Dev + CLI pull_ai_dev_reports.cjs)",
+      "Upgrade Full-Coverage Asisten AI: 10 tool lintas modul (SOP/FAQ QnA, Loading Dock, Distribusi/Pengiriman, Order Channels, SO/Putaway, Store Help, Ringkasan Eksekutif, Validasi Master Produk, Navigasi 1-Klik) & Export CSV (.csv)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.25.0",
     "versionCode": 450,
@@ -115,20 +128,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Perbaiki bug cetak hanya 1 lembar pembatas pada printer thermal roll",
       "Tambah opsi orientasi Lanskap Potret & rotasi 0 90 180 270 derajat",
       "Filter otomatis kolom summary TOTAL_STOK & TP dari daftar outlet"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.24.3",
-    "versionCode": 443,
-    "buildDate": "21 November 2026",
-    "buildHash": "wms-261121-v443-1328",
-    "releaseTitle": "WMS v2.24.3 — Integrasi Database Live WMS DealPOS & Standardisasi Label Barcode 50x20mm",
-    "releaseNotes": [
-      "Integrasi database langsung WMS & DealPOS tanpa wajib upload CSV",
-      "Pilihan mode Outlet Toko (DealPOS) vs Rak Fisik Gudang",
-      "Penyempurnaan layout stiker thermal 50x20mm Code128 & QR Code sesuai standard",
-      "Pratinjau label WYSIWYG realistis"
     ],
     "minSupportedVersion": "v2.0.0"
   }
